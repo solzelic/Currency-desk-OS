@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Exchange Rates — Currency Converter | York Foreign Exchange</title>
+<meta name="description" content="Today's live exchange rates from York Foreign Exchange in Yorkville, Toronto. Convert 40+ currencies, see our buy and sell rates, and reserve cash for same-day pickup. FINTRAC-registered." />
+<link rel="stylesheet" href="../yorkfx.css" />
+<link rel="stylesheet" href="yorkfx-rates.css" />
+<script>
+  window.addEventListener('error', function (e) {
+    if (e && e.message && e.message.indexOf('ResizeObserver') !== -1) {
+      e.stopImmediatePropagation();
+      return true;
+    }
+  }, true);
+</script>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="YorkFX Homepage.html" aria-label="York Foreign Exchange — home">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </a>
+    <nav class="nav-links">
+      <a href="YorkFX Rates.html" style="color:#ffffff;">Rates</a>
+      <a href="YorkFX Services.html">Services</a>
+      <a href="YorkFX Regulations.html">Regulations</a>
+    </nav>
+    <a href="YorkFX Visit.html#quote" class="btn btn-solid">Get a live quote</a>
+  </div>
+</header>
+
+<main>
+
+<!-- ===================== HERO: static banknote bg + converter ===================== -->
+<section class="rates-hero" id="top" data-screen-label="Rates hero">
+  <div class="rates-bg" aria-hidden="true"></div>
+  <div class="rates-scrim" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <div class="rates-intro">
+      <span class="eyebrow">CURRENCY EXCHANGE · YORKVILLE | TORONTO</span>
+      <h1>Today's live exchange rates.</h1>
+      <p class="hero-sub">Pick any two currencies, see exactly what you'll get, then reserve cash for same-day pickup at our Yorkville desk.</p>
+      <span class="updated-line"><span class="live-dot"></span> LIVE · MID-MARKET + OUR MARGIN · <span id="introUpdated">updated just now</span></span>
+    </div>
+
+    <!-- CONVERTER CARD -->
+    <div class="fx-card" id="converter" aria-label="Currency converter">
+      <div class="fx-head">
+        <span class="live"><span class="live-dot"></span> CONVERTER</span>
+        <span class="updated" id="convUpdated">rate locks for 30 min</span>
+      </div>
+
+      <div class="fx-field">
+        <label for="fxAmount">You give</label>
+        <div class="fx-row">
+          <input id="fxAmount" value="1,000.00" inputmode="decimal" autocomplete="off" aria-label="Amount to convert" />
+          <div class="cur-select" id="selFrom"></div>
+        </div>
+      </div>
+
+      <div class="fx-mid">
+        <span class="swap" id="fxSwap" title="Swap currencies" role="button" tabindex="0">⇅</span>
+        <span class="rate-label" id="fxRateLabel">1 CAD = 0.7331 USD</span>
+      </div>
+
+      <div class="fx-field">
+        <label for="fxResult">They receive</label>
+        <div class="fx-row is-result">
+          <span class="fx-out" id="fxResult">733.10</span>
+          <div class="cur-select" id="selTo"></div>
+        </div>
+      </div>
+
+      <a href="YorkFX Visit.html#quote" class="btn btn-solid">Reserve &amp; pick up today →</a>
+      <p class="fx-note">Indicative rates. Final rate confirmed in branch · 69 Yorkville Ave</p>
+    </div>
+  </div>
+
+  <!-- TICKER (replaces the credibility row) -->
+  <div class="ticker" aria-label="Live rate ticker" data-screen-label="Ticker">
+    <div class="ticker-label"><span class="dot"></span> Live rates</div>
+    <div class="ticker-mask">
+      <div class="ticker-track" id="tickerTrack"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FULL CURRENCY LIST ===================== -->
+<section class="rates-list-section" data-screen-label="Rate board">
+  <div class="wrap">
+    <div class="list-head">
+      <div class="lh-copy">
+        <span class="eyebrow">All currencies · per 1 unit in CAD</span>
+        <h2>The full board</h2>
+        <span class="sub">What we buy and sell each currency for, in Canadian dollars.</span>
+      </div>
+      <label class="list-search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input id="listSearch" type="text" placeholder="Search currency or country…" autocomplete="off" />
+      </label>
+    </div>
+
+    <div class="rates-table" id="ratesTable">
+      <div class="rt-row head">
+        <span></span>
+        <span>Currency</span>
+        <span class="rt-num">We buy (CAD)</span>
+        <span class="rt-num rt-sell">We sell (CAD)</span>
+        <span class="rt-num">24h</span>
+      </div>
+      <div id="ratesBody"></div>
+    </div>
+    <p class="list-foot">Rates indicative and updated continuously · spread shown is our buy/sell margin · FINTRAC-registered MSB #M09351691 · confirm final rate in branch.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="YorkFX Homepage.html">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </a>
+    <nav class="links">
+      <a href="YorkFX Rates.html">Rates</a>
+      <a href="YorkFX Services.html">Services</a>
+      <a href="YorkFX Regulations.html">Regulations</a>
+      <a href="YorkFX Visit.html">Visit</a>
+      <a href="YorkFX Rate Board.html" class="staff">Rate board</a>
+    </nav>
+    <span class="fine">FINTRAC-registered MSB · © 2026 York Foreign Exchange Inc · 69 Yorkville Ave, Toronto</span>
+  </div>
+</footer>
+
+<script src="../yorkfx-converter.js"></script>
+<script>
+/* ===================================================================
+   CONVERTER (shared widget — data + selects live in yorkfx-converter.js)
+   =================================================================== */
+var conv = initConverter({
+  amountId: 'fxAmount',
+  fromSlot: 'selFrom',
+  toSlot: 'selTo',
+  resultId: 'fxResult',
+  rateLabelId: 'fxRateLabel',
+  swapId: 'fxSwap',
+  from: 'CAD',
+  to: 'USD'
+});
+
+/* ===================================================================
+   TICKER
+   =================================================================== */
+function tickerItem(c) {
+  var cls = c.chg > 0 ? 'up' : (c.chg < 0 ? 'down' : '');
+  return '<span class="tk">' +
+    '<span class="flag">' + c.flag + '</span>' +
+    '<span class="pair">' + c.code + '/CAD</span>' +
+    '<span class="val">' + fmtCad(cadValue(c.code)) + '</span>' +
+    '<span class="chg ' + cls + '">' + fmtChg(c.chg) + '</span>' +
+  '</span>';
+}
+function renderTicker() {
+  var items = CUR.filter(function (c) { return c.code !== 'CAD' && c.show !== false; }).map(tickerItem).join('');
+  // duplicate once for a seamless -50% loop
+  document.getElementById('tickerTrack').innerHTML = items + items;
+}
+renderTicker();
+
+/* ===================================================================
+   FULL LIST
+   =================================================================== */
+function renderList(query) {
+  query = (query || '').trim().toLowerCase();
+  var rows = CUR.filter(function (c) {
+    return c.code !== 'CAD' && c.show !== false &&
+      (!query || c.code.toLowerCase().indexOf(query) > -1 || c.name.toLowerCase().indexOf(query) > -1);
+  });
+  var body = document.getElementById('ratesBody');
+  if (!rows.length) {
+    body.innerHTML = '<div class="rt-empty">No currency matches “' + query + '”.</div>';
+    return;
+  }
+  body.innerHTML = rows.map(function (c) {
+    var buy = buyCad(c.code);
+    var sell = sellCad(c.code);
+    var cls = c.chg > 0 ? 'up' : (c.chg < 0 ? 'down' : '');
+    return '<div class="rt-row data">' +
+      '<span class="rt-flag">' + c.flag + '</span>' +
+      '<span class="rt-name"><span class="code">' + c.code + '</span><span class="full">' + c.name + '</span></span>' +
+      '<span class="rt-num rt-buy">' + fmtCad(buy) + '</span>' +
+      '<span class="rt-num rt-sell">' + fmtCad(sell) + '</span>' +
+      '<span class="rt-chg ' + cls + '">' + fmtChg(c.chg) + '</span>' +
+    '</div>';
+  }).join('');
+}
+renderList('');
+document.getElementById('listSearch').addEventListener('input', function () {
+  renderList(this.value);
+});
+
+// live cross-tab sync: when staff reorder / hide / show the board in the Rate
+// Editor, re-apply the order to CUR and re-render the ticker + full list so the
+// order here follows without a manual reload.
+window.addEventListener('storage', function (e) {
+  if (e.key === 'yorkfx_board_order' || e.key === 'yorkfx_rates_v1' || e.key === 'yorkfx_board_removed' || e.key === null) {
+    if (window.applyBoardOrder) window.applyBoardOrder();
+    renderTicker();
+    renderList(document.getElementById('listSearch').value);
+  }
+});
+
+/* ===================================================================
+   LIVE DRIFT — nudge rates so the board feels alive
+   =================================================================== */
+function drift() {
+  CUR.forEach(function (c) {
+    if (c.code === 'CAD') return;
+    c.perCad = Math.max(0.0001, c.perCad + (Math.random() - 0.5) * c.perCad * 0.0006);
+    c.chg = Math.max(-0.9, Math.min(0.9, c.chg + (Math.random() - 0.5) * 0.06));
+  });
+  renderTicker();
+  conv.update();
+  document.getElementById('introUpdated').textContent = 'updated just now';
+}
+setInterval(drift, 6000);
+// refresh the full board a little less often so it stays easy to read
+setInterval(function () {
+  renderList(document.getElementById('listSearch').value);
+}, 24000);
+</script>
+
+<script src="yorkfx-site.js"></script>
+
+<!-- ===================== TWEAKS ===================== -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="homepage-tweaks.jsx"></script>
+
+</body>
+</html>

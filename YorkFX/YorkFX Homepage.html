@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Currency Exchange Yorkville Toronto — Live Rates | York Foreign Exchange</title>
+<meta name="description" content="Toronto's best currency exchange rates, live from our Yorkville desk — footsteps from the Four Seasons at Bay &amp; Yorkville. 40+ currencies in stock, wire transfers, Western Union. FINTRAC-registered." />
+<link rel="stylesheet" href="../yorkfx.css" />
+<link rel="stylesheet" href="yorkfx-rates.css" />
+<script src="image-slot.js"></script>
+<script src="../yorkfx-converter.js"></script>
+<script>
+  window.addEventListener('error', function (e) {
+    if (e && e.message && e.message.indexOf('ResizeObserver') !== -1) {
+      e.stopImmediatePropagation();
+      return true;
+    }
+  }, true);
+</script>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="York Foreign Exchange">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </a>
+    <nav class="nav-links">
+      <a href="YorkFX Rates.html">Rates</a>
+      <a href="YorkFX Services.html">Services</a>
+      <a href="YorkFX Regulations.html">Regulations</a>
+    </nav>
+    <a href="YorkFX Visit.html#quote" class="btn btn-solid">Get a live quote</a>
+  </div>
+</header>
+
+<main>
+
+<!-- ===================== HERO ===================== -->
+<section class="hero" id="top" data-screen-label="Hero">
+  <div class="hero-fallback" aria-hidden="true">
+    <img src="assets/banknote-collage.jpg" alt="" />
+  </div>
+  <video class="hero-video" autoplay muted loop playsinline data-src="assets/yorkfx-hero.mp4"></video>
+  <div class="hero-scrim"></div>
+
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="eyebrow">CURRENCY EXCHANGE · YORKVILLE | TORONTO · FINTRAC-REGISTERED</span>
+      <h1>Beat your bank's exchange rate. Every single time.</h1>
+      <p class="hero-sub">Ultra-competitive rates on 40+ currencies, bought and sold in person at Toronto's most trusted exchange desk.</p>
+      <div class="hero-ctas">
+        <a href="YorkFX Visit.html#quote" class="btn btn-solid">Get a live quote →</a>
+        <a href="YorkFX Visit.html" class="btn btn-ghost">Visit us in Yorkville</a>
+      </div>
+      <div class="chips">
+        <span class="chip">⌁ FINTRAC</span>
+        <span class="chip">Western Union</span>
+        <span class="chip">Interac</span>
+        <span class="chip">ATM on-site</span>
+      </div>
+    </div>
+
+    <!-- LIVE RATE BOARD -->
+    <aside class="board" id="rates" aria-label="Live exchange rates">
+      <div class="board-head">
+        <span class="live"><span class="live-dot"></span> CURRENCY BOARD</span>
+        <span class="updated" id="boardUpdated">updated 2 min ago</span>
+      </div>
+      <div class="board-grid" id="boardGrid"></div>
+      <div class="board-foot">
+        <a class="more" href="YorkFX Rates.html">Open full rate board →</a>
+        <a href="YorkFX Visit.html#quote" class="btn btn-ghost">Get a live quote</a>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ===================== CONVERTER STRIP ===================== -->
+<section class="section paper" id="converter" data-screen-label="Converter">
+  <div class="wrap conv-grid">
+    <div class="reveal">
+      <div class="section-head" style="margin-bottom: 22px;">
+        <span class="eyebrow">Currency converter</span>
+        <h2>Know what you'll get before you walk in</h2>
+      </div>
+      <p class="lede">The mid-market rate and our margin, no hidden fees, no airport-kiosk surprises. Lock your rate and pick up the same day at our Yorkville location.</p>
+    </div>
+
+    <div class="fx-card light reveal" aria-label="Currency converter">
+      <div class="fx-head">
+        <span class="live"><span class="live-dot"></span> CONVERTER</span>
+        <span class="updated">rate locks for 30 min</span>
+      </div>
+
+      <div class="fx-field">
+        <label for="fxAmount">You give</label>
+        <div class="fx-row">
+          <input id="fxAmount" value="1,000.00" inputmode="decimal" autocomplete="off" aria-label="Amount to convert" />
+          <div class="cur-select" id="selFrom"></div>
+        </div>
+      </div>
+
+      <div class="fx-mid">
+        <span class="swap" id="fxSwap" title="Swap currencies" role="button" tabindex="0">⇅</span>
+        <span class="rate-label" id="fxRateLabel">1 CAD = 0.7331 USD</span>
+      </div>
+
+      <div class="fx-field">
+        <label for="fxResult">They receive</label>
+        <div class="fx-row is-result">
+          <span class="fx-out" id="fxResult">733.10</span>
+          <div class="cur-select" id="selTo"></div>
+        </div>
+      </div>
+
+      <a href="YorkFX Visit.html#quote" class="btn btn-dark">Reserve &amp; pick up today →</a>
+      <a href="YorkFX Rates.html" class="btn btn-ghost-dark">See all 40+ live rates →</a>
+      <p class="fx-note">Indicative rates. Final rate confirmed in branch · 69 Yorkville Ave</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== EXPLORE ===================== -->
+<section class="section explore-band" data-screen-label="Explore">
+  <div class="wrap">
+    <a class="explore-row reveal" href="YorkFX Services.html">
+      <span class="eyebrow">What we do</span>
+      <span class="explore-title">Services<span class="arrow">→</span></span>
+      <span class="explore-sub">Currency exchange · international wires · Western Union · business FX</span>
+    </a>
+    <a class="explore-row reveal" href="YorkFX Visit.html">
+      <span class="eyebrow">In the heart of Yorkville</span>
+      <span class="explore-title">Visit the desk<span class="arrow">→</span></span>
+      <span class="explore-sub">69 Yorkville Ave · open 7 days a week · footsteps from the Four Seasons</span>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="#top">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </a>
+    <nav class="links">
+      <a href="YorkFX Rates.html">Rates</a>
+      <a href="YorkFX Services.html">Services</a>
+      <a href="YorkFX Regulations.html">Regulations</a>
+      <a href="YorkFX Visit.html">Visit</a>
+      <a href="YorkFX Rate Board.html" class="staff">Rate board</a>
+    </nav>
+    <span class="fine">FINTRAC-registered MSB · © 2026 York Foreign Exchange Inc · 69 Yorkville Ave, Toronto</span>
+  </div>
+</footer>
+
+<script>
+  // ===== Live rate board (reflects staff-published rates) =====
+  function boardCurrencies() {
+    return CUR.filter(function (c) { return c.code !== 'CAD' && c.show !== false; }).slice(0, 6);
+  }
+
+  function renderBoard(flash) {
+    document.getElementById('boardGrid').innerHTML = boardCurrencies().map(function (c) {
+      var cls = c.chg > 0 ? 'up' : (c.chg < 0 ? 'down' : '');
+      return '<div class="rate' + (flash ? ' flash' : '') + '">' +
+        '<span class="pair">' + c.code + '/CAD</span>' +
+        '<span class="big">' + cadValue(c.code).toFixed(4) + '</span>' +
+        '<span class="delta ' + cls + '">' + fmtChg(c.chg) + '</span>' +
+        '</div>';
+    }).join('');
+  }
+  renderBoard(false);
+
+  // live cross-tab sync: when staff reorder (or hide/show) the board in the Rate
+  // Editor, re-apply the order to CUR and re-render so the top-six here update
+  // without a manual reload.
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'yorkfx_board_order' || e.key === 'yorkfx_rates_v1' || e.key === 'yorkfx_board_removed' || e.key === null) {
+      if (window.applyBoardOrder) window.applyBoardOrder();
+      renderBoard(true);
+    }
+  });
+
+  setInterval(function () {
+    CUR.forEach(function (c) {
+      if (c.code === 'CAD') return;
+      c.perCad = Math.max(0.0001, c.perCad + (Math.random() - 0.5) * c.perCad * 0.0008);
+    });
+    renderBoard(true);
+    if (window.__yorkConv) window.__yorkConv.update();
+    document.getElementById('boardUpdated').textContent = 'updated just now';
+  }, 7000);
+
+  // ===== Converter (shared widget) =====
+  window.__yorkConv = initConverter({
+    amountId: 'fxAmount',
+    fromSlot: 'selFrom',
+    toSlot: 'selTo',
+    resultId: 'fxResult',
+    rateLabelId: 'fxRateLabel',
+    swapId: 'fxSwap',
+    from: 'CAD',
+    to: 'USD'
+  });
+
+  // ===== Hero video: load via blob (server doesn't support byte-range
+  // requests and the file's moov atom is at the end, so a static src
+  // never reaches readyState>0 — fetching the whole file first works).
+  var heroVid = document.querySelector('.hero-video');
+  heroVid.addEventListener('playing', function () {
+    if (heroVid.videoWidth > 0) heroVid.classList.add('playing');
+  });
+  fetch(heroVid.dataset.src)
+    .then(function (r) { return r.blob(); })
+    .then(function (b) {
+      heroVid.src = URL.createObjectURL(b);
+      heroVid.playbackRate = 0.384;
+      heroVid.play().catch(function () {});
+    })
+    .catch(function () { /* fallback image stays */ });
+
+</script>
+
+<script src="yorkfx-site.js"></script>
+
+<!-- ===================== TWEAKS ===================== -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="homepage-tweaks.jsx"></script>
+
+</body>
+</html>

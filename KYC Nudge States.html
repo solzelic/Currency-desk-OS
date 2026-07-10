@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KYC — Verification States</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { margin: 0; }
+  body { font-family: 'Archivo', system-ui, sans-serif; background: var(--cd-desk, #ece7db); color: var(--cd-ink, #23211c); }
+  .mono { font-family: 'Space Mono', monospace; }
+  .panel { background: var(--cd-panel, #fbf9f3); border: 1px solid var(--cd-line, #e4e0d5); border-radius: 14px; }
+  .ey { font-family: 'Space Mono', monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div id="root" style="min-height:100%"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+    <rect width="400" height="400" fill="#1c1b18"/>
+    <rect x="118" y="150" width="164" height="100" rx="12" fill="none" stroke="#e0a106" stroke-width="9"/>
+    <circle cx="160" cy="200" r="18" fill="none" stroke="#e0a106" stroke-width="9"/>
+    <path d="M196 188h60M196 212h60" stroke="#e0a106" stroke-width="9" stroke-linecap="round"/>
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="yorkfx-converter.js"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-base.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-infotip.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-kyc.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+  const { useState } = React;
+  const { CD, Ic, KYC, TODAY } = window.CDOS;
+  const Nudge = KYC.VerificationNudge;
+  const DAY = 86400000;
+  const daysAgo = (ms) => Math.floor((Date.now() - ms) / DAY);
+  const plusDays = (n) => new Date(Date.now() + n * DAY).toISOString().slice(0, 10);
+  const afterToday = (n) => { const d = new Date(TODAY); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const chk = (tpl, n) => ({ template: tpl, status: 'completed', ms: Date.now() - n * DAY, price: tpl === 'plus' ? 14.99 : tpl === 'verify' ? 6.99 : 3.99, result: { decision: 'approved', completedAt: '' } });
+
+  // ---- build a client record from the variable knobs ----
+  const ID_BASE = { idType: "Driver's Licence", idNum: 'DL 4821-118' };
+  function recFor(idDoc, risk) {
+    let r = idDoc === 'none' ? {} : idDoc === 'valid' ? { ...ID_BASE, idExpiry: '2031-04-02' }
+      : idDoc === 'expiring' ? { ...ID_BASE, idExpiry: afterToday(15) } : { ...ID_BASE, idExpiry: '2024-02-10' };
+    if (risk && risk !== 'normal') r = { ...r, risk };
+    return r;
+  }
+  const demoFor = (tier, days) => tier === 'none' ? [] : [chk(tier, days)];
+
+  // ---- status badge (mirrors the app ladder used in Clients + the tx modal) ----
+  function badgeFor(rec, demo) {
+    const idMissing = !rec.idType || !rec.idNum;
+    if (idMissing) return { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' };
+    if (rec.idExpiry && rec.idExpiry < TODAY) return { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' };
+    const ap = demo.filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved').map(c => c.template);
+    if (ap.includes('plus')) return { t: 'Verified Plus', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' };
+    if (ap.includes('verify')) return { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' };
+    if (ap.includes('quick')) return { t: 'Screened', c: CD.amber, bg: CD.amberSoft, ic: 'search' };
+    if (rec.idExpiry) { const d = (new Date(rec.idExpiry) - new Date(TODAY)) / DAY; if (d >= 0 && d <= 30) return { t: 'ID expiring', c: CD.amber, bg: CD.amberSoft, ic: 'alert' }; }
+    return { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' };
+  }
+  // ---- mirror of the nudge decision, for the readout line ----
+  function decide(rec, demo, amount, policy) {
+    const RECO = 180, REV = 365, TH = 10000;
+    const idMissing = !rec.idType || !rec.idNum;
+    const idExpired = rec.idExpiry && rec.idExpiry < TODAY;
+    const done = demo.filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved');
+    const full = done.filter(c => c.template === 'verify' || c.template === 'plus');
+    const lastAny = done.length ? Math.min(...done.map(c => daysAgo(c.ms))) : null;
+    const lastFull = full.length ? Math.min(...full.map(c => daysAgo(c.ms))) : null;
+    const bigDeal = amount != null && amount >= TH;
+    let level = null, tier = 'quick';
+    if (idExpired) { level = 'force'; tier = 'verify'; }
+    else if (bigDeal && lastFull == null) { level = 'reco'; tier = 'plus'; }
+    else if (bigDeal && policy && policy !== 'off') { level = 'force'; tier = policy; }
+    else if (lastFull == null) { level = 'reco'; tier = 'verify'; }
+    else if (lastAny != null && lastAny >= RECO) { level = 'reco'; tier = 'quick'; }
+    if (level && rec.risk === 'high' && tier === 'verify') tier = 'plus';
+    return { level, tier };
+  }
+
+  const Badge = ({ b }) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: b.bg, color: b.c, whiteSpace: 'nowrap' }}><Ic n={b.ic} s={12} c={b.c} /> {b.t}</span>;
+
+  function Seg({ value, set, options }) {
+    return (
+      <div style={{ display: 'inline-flex', border: `1px solid ${CD.line}`, borderRadius: 9, overflow: 'hidden', flexWrap: 'wrap' }}>
+        {options.map(([v, lb]) => (
+          <button key={v} onClick={() => set(v)} className="text-[12px] font-medium" style={{ padding: '7px 12px', background: value === v ? CD.ink : 'transparent', color: value === v ? 'var(--cd-on-ink)' : CD.mute }}>{lb}</button>
+        ))}
+      </div>
+    );
+  }
+  const Row = ({ label, children }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 0', borderTop: `1px solid ${CD.lineSoft}` }}>
+      <div className="ey" style={{ color: CD.faint, width: 128, flex: 'none' }}>{label}</div>
+      <div style={{ flex: 1 }}>{children}</div>
+    </div>
+  );
+
+  function Playground({ onRun }) {
+    const [idDoc, setIdDoc] = useState('valid');
+    const [tier, setTier] = useState('verify');
+    const [days, setDays] = useState(412);
+    const [risk, setRisk] = useState('normal');
+    const [amount, setAmount] = useState(2500);
+    const [policy, setPolicy] = useState('off');
+    const rec = recFor(idDoc, risk);
+    const demo = demoFor(tier, days);
+    const b = badgeFor(rec, demo);
+    const d = decide(rec, demo, amount, policy);
+    const outLbl = d.level ? `${d.tier.toUpperCase()} · ${d.level === 'force' ? 'forcing' : 'recommended'}` : 'no nudge — file is current';
+    return (
+      <div className="panel" style={{ padding: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 24 }}>
+          <div>
+            <div className="ey" style={{ color: CD.brass, marginBottom: 4 }}>Playground</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Flip any variable</div>
+            <Row label="ID document"><Seg value={idDoc} set={setIdDoc} options={[['none', 'None'], ['valid', 'Valid'], ['expiring', 'Expiring'], ['expired', 'Expired']]} /></Row>
+            <Row label="Provider history"><Seg value={tier} set={setTier} options={[['none', 'None'], ['quick', 'Quick'], ['verify', 'Verify'], ['plus', 'Plus']]} /></Row>
+            <Row label="Days since check">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input type="range" min="0" max="540" step="1" value={days} disabled={tier === 'none'} onChange={e => setDays(+e.target.value)} style={{ flex: 1, accentColor: CD.brass, opacity: tier === 'none' ? .4 : 1 }} />
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, width: 74, textAlign: 'right', color: tier === 'none' ? CD.faint : CD.ink }}>{tier === 'none' ? '—' : days + 'd'}</span>
+              </div>
+            </Row>
+            <Row label="Risk flag"><Seg value={risk} set={setRisk} options={[['normal', 'Normal'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']]} /></Row>
+            <Row label="Deal amount">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input type="range" min="0" max="20000" step="250" value={amount} onChange={e => setAmount(+e.target.value)} style={{ flex: 1, accentColor: amount >= 10000 ? CD.flag : CD.brass }} />
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, width: 84, textAlign: 'right', color: amount >= 10000 ? CD.flag : CD.ink }}>${amount.toLocaleString()}</span>
+              </div>
+            </Row>
+            <Row label="Large-deal policy"><Seg value={policy} set={setPolicy} options={[['off', 'Off'], ['quick', 'Quick req.'], ['verify', 'Verify req.']]} /></Row>
+          </div>
+
+          <div style={{ borderLeft: `1px solid ${CD.line}`, paddingLeft: 24, display: 'flex', flexDirection: 'column' }}>
+            <div className="ey" style={{ color: CD.faint, marginBottom: 8 }}>What the teller sees</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Jordan Lee</span><Badge b={b} />
+            </div>
+            {d.level
+              ? <Nudge key={idDoc + tier + days + risk + amount + policy} name="Jordan Lee" rec={rec} demoChecks={demo} amountCad={amount} settings={{ largeTxCheck: policy }} onRun={onRun} />
+              : <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '13px 12px', borderRadius: 11, border: `1px dashed ${CD.line}`, color: CD.mute, fontSize: 12.5 }}><Ic n="checkcircle" s={15} c={CD.green} /> File current — the nudge stays hidden.</div>}
+            <div className="mono" style={{ marginTop: 'auto', paddingTop: 14, fontSize: 11, color: CD.faint }}>decision → <span style={{ color: d.level === 'force' ? CD.flag : d.level ? CD.brass : CD.green, fontWeight: 700 }}>{outLbl}</span></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- pricing tiers — conversion-designed (CMO cut) ----
+  const BLUE = '#2B50E2';
+  const TIERS = [
+    {
+      id: 'quick', price: '3.99', per: 'per re-screen', name: 'Quick check', kicker: 'Maintenance', ic: 'search',
+      pitch: 'Keeps an already-verified file current. A re-screen — not a verification.',
+      bestFor: ['Walk-ins & small cash deals — even when no ID is taken', 'Keeping verified files current', 'A compliance-first desk'],
+      feats: [
+        ['Smart-routed — our records checked first, nothing re-bought unnecessarily', false],
+        ['Name + DOB re-screened against global sanctions & watchlists', false],
+        ['Stamped to the file + audit trail, ~5 seconds', false],
+      ],
+      cta: 'Keep the file current',
+      up: 'For $3 more, a full ID authentication — most desks choose Verified.',
+    },
+    {
+      id: 'verify', price: '6.99', per: 'per verification', name: 'Verified', kicker: 'Most popular', ic: 'id', chip: 'MOST POPULAR',
+      pitch: 'The green badge. Proper KYC — the desk’s standard.',
+      feats: [
+        ['Government ID captured & authenticated — 200+ countries', false],
+        ['Identity cross-checked against issuing & authoritative databases', false],
+        ['Full screening: sanctions, watchlists & politically-exposed persons', false],
+        ['Green “ID verified” badge + annual re-verification clock', false],
+        ['~1 minute for the customer, by link or at the counter', false],
+      ],
+      cta: 'Verify this client',
+      up: 'For $8 more, add biometrics + the full risk file — the strongest position you can hold.',
+    },
+    {
+      id: 'plus', price: '14.99', per: 'per deep file', name: 'Verified Plus', kicker: 'Maximum protection', ic: 'shield', chip: 'BEST PROTECTION', hero: true,
+      pitch: 'The file that ends the conversation with any auditor. Biometric certainty, documented.',
+      bestFor: ['First-time clients', 'Large & reportable deals', 'High-risk profiles', 'Business & corporate clients'],
+      feats: [
+        ['Full identity verification — ID authentication + database cross-check', false],
+        ['Full screening: sanctions, watchlists & politically-exposed persons', false],
+        ['Selfie liveness + biometric face-match — anti-spoof, anti-deepfake', false],
+        ['Adverse media + phone & email risk reports', false],
+        ['Audit-ready enhanced due-diligence report, attached to the file forever', false],
+      ],
+      cta: 'Run the deep file',
+      up: null,
+    },
+  ];
+  function Pricing() {
+    const [sel, setSel] = useState('plus');
+    return (
+      <div>
+        <div className="ey" style={{ color: CD.faint, margin: '34px 0 6px' }}>The three tiers — what you’re actually buying</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 4 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Verification, priced to say yes.</h2>
+        </div>
+        <p style={{ fontSize: 12.5, color: CD.mute, margin: '4px 0 18px', maxWidth: 760, lineHeight: 1.55 }}>
+          One question decides the tier: <b style={{ color: CD.ink }}>how much certainty do you want on this file?</b>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'stretch' }}>
+          {TIERS.map(t => { const on = sel === t.id; return (
+            <div key={t.id} className="panel" role="button" tabIndex={0} onClick={() => setSel(t.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(t.id); } }}
+              style={{ padding: '24px 20px 18px', display: 'flex', flexDirection: 'column', position: 'relative', cursor: 'pointer', outline: 'none', overflow: 'visible',
+                transition: 'transform .28s cubic-bezier(.2,.9,.3,1.2), box-shadow .28s ease, border-color .28s ease, opacity .28s ease',
+                border: on ? `1.5px solid ${BLUE}` : '1px solid var(--cd-line, #e4e0d5)',
+                boxShadow: on ? '0 16px 40px rgba(43,80,226,.20)' : '0 1px 2px rgba(20,18,12,.04)',
+                transform: on ? 'translateY(-6px) scale(1.02)' : 'translateY(0) scale(1)',
+                opacity: on ? 1 : .8 }}>
+              {t.chip && <span className="mono" style={{ position: 'absolute', top: -10, left: 20, fontSize: 9, fontWeight: 700, letterSpacing: '.12em', background: t.hero ? BLUE : CD.ink, color: '#fff', padding: '3px 10px', borderRadius: 999, transition: 'transform .3s cubic-bezier(.2,.9,.3,1.4)', transform: on ? 'translateY(0) scale(1.06)' : 'translateY(0) scale(1)' }}>{t.chip}</span>}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ display: 'grid', placeItems: 'center', width: 34, height: 34, borderRadius: 9, background: 'var(--cd-chip, #f0ece1)', transition: 'transform .28s cubic-bezier(.2,.9,.3,1.4)', transform: on ? 'scale(1.08)' : 'scale(1)' }}><Ic n={t.ic} s={16} c={CD.ink} /></span>
+                <span style={{ textAlign: 'right' }}>
+                  <span className="mono" style={{ fontSize: 24, fontWeight: 700, color: on ? BLUE : CD.ink, transition: 'color .28s ease', display: 'block', lineHeight: 1 }}><span style={{ fontSize: 12, verticalAlign: 'top' }}>$</span>{t.price}</span>
+                  <span className="mono" style={{ fontSize: 9, color: CD.faint, letterSpacing: '.06em' }}>{t.per}</span>
+                </span>
+              </div>
+              <div className="ey" style={{ color: t.hero ? BLUE : CD.brass }}>{t.kicker}</div>
+              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', margin: '2px 0 4px' }}>{t.name}</div>
+              <div style={{ fontSize: 12.5, color: CD.mute, lineHeight: 1.5, marginBottom: 13 }}>{t.pitch}</div>
+              {t.bestFor && t.id === 'quick' && <div style={{ marginBottom: 13 }}>
+                <div className="ey" style={{ color: CD.faint, fontSize: 9, marginBottom: 6 }}>Recommended for</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {t.bestFor.map((b, i) => (
+                    <span key={i} style={{ fontSize: 10.5, fontWeight: 600, color: on ? BLUE : CD.ink, background: on ? 'rgba(43,80,226,.08)' : 'var(--cd-chip, #f0ece1)', border: `1px solid ${on ? 'rgba(43,80,226,.25)' : 'transparent'}`, padding: '4px 9px', borderRadius: 999, lineHeight: 1.35, transition: 'background .28s ease, color .28s ease, border-color .28s ease' }}>{b}</span>
+                  ))}
+                </div>
+              </div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${CD.lineSoft}`, paddingTop: 12 }}>
+                {t.feats.map(([f], i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', transition: 'opacity .35s ease ' + (on ? (i * 55) + 'ms' : '0ms'), opacity: on ? 1 : .68 }}>
+                    <span style={{ flex: 'none', marginTop: 1 }}><Ic n="check" s={13} c={on ? BLUE : CD.green} /></span>
+                    <span style={{ fontSize: 12, color: CD.ink, lineHeight: 1.45 }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={e => { e.stopPropagation(); setSel(t.id); }} style={{ marginTop: 'auto', width: '100%', padding: '10px 0', fontSize: 12.5, fontWeight: 700, borderRadius: 9, border: on ? 'none' : `1px solid ${CD.line}`, background: on ? BLUE : 'transparent', color: on ? '#fff' : CD.ink, cursor: 'pointer', transition: 'background .28s ease, color .28s ease, box-shadow .28s ease', boxShadow: on ? '0 6px 18px rgba(43,80,226,.35)' : 'none', marginTop: 16 }}>{t.cta}</button>
+              {t.up && <div style={{ fontSize: 10.5, color: CD.faint, lineHeight: 1.5, marginTop: 10, textAlign: 'center', fontStyle: 'italic' }}>{t.up}</div>}
+              {t.bestFor && t.id !== 'quick' && <div style={{ fontSize: 10, color: CD.faint, lineHeight: 1.5, marginTop: t.up ? 4 : 10, textAlign: 'center' }}>Recommended for {t.bestFor.map(b => b.toLowerCase()).join(' · ')}</div>}
+            </div>
+          ); })}
+        </div>
+        <div className="mono" style={{ marginTop: 14, fontSize: 10.5, color: CD.faint, display: 'flex', alignItems: 'flex-start', gap: 7, lineHeight: 1.6 }}><Ic n="lock" s={12} c={CD.faint} /> <span>How the $3.99 stays $3.99 — the check is smart-routed: our own system is checked first, and if the file is already current nothing is re-bought; only what’s stale is purchased from the provider. You never pay twice for the same answer. Every check is logged, receipted and audit-ready.</span></div>
+      </div>
+    );
+  }
+  // ---- galleries ----
+  const BADGES = [
+    { rec: {}, demo: [], note: 'No ID captured at all.' },
+    { rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [], note: 'ID scanned / typed — never verified. Amber.' },
+    { rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('quick', 5)], note: 'Quick check ran — screened, still not verified.' },
+    { rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('verify', 20)], note: 'Verify passed — green.' },
+    { rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('plus', 20)], note: 'Verify Plus passed — green.' },
+    { rec: { ...ID_BASE, idExpiry: afterToday(15) }, demo: [], note: 'ID on file, expiring soon, not verified.' },
+    { rec: { ...ID_BASE, idExpiry: '2024-02-10' }, demo: [chk('verify', 200)], note: 'The document on file has expired.' },
+  ];
+  const NUDGES = [
+    { name: 'Aisha Rahman', tag: 'No ID · never verified', rec: {}, demo: [] },
+    { name: 'Marcus Bello', tag: 'ID on file · never verified', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [] },
+    { name: 'Leah Odum', tag: 'Quick check only, 30d ago · no full verify', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('quick', 30)] },
+    { name: 'Priya Nair', tag: 'Verified 204d ago (> 180)', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('verify', 204)] },
+    { name: 'Daniel Osei', tag: 'Verified 412d ago (> 365)', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('verify', 412)], star: true },
+    { name: 'Victor Cheng', tag: 'High-risk · verified 400d ago', rec: { ...ID_BASE, idExpiry: '2031-04-02', risk: 'high' }, demo: [chk('verify', 400)] },
+    { name: 'Nadia Haq', tag: 'High-risk · never verified', rec: { ...ID_BASE, idExpiry: '2031-04-02', risk: 'high' }, demo: [] },
+    { name: 'Omar Farouk', tag: 'First-time · $12,000 deal (≥ threshold)', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [], amount: 12000 },
+    { name: 'Grace Lin', tag: 'Verified 30d ago · $12,000 deal · policy: quick req.', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('verify', 30)], amount: 12000, policy: 'quick' },
+    { name: 'Iryna Kovač', tag: 'ID expired (forcing)', rec: { ...ID_BASE, idExpiry: '2024-02-10' }, demo: [chk('verify', 120)] },
+    { name: 'Sofia Ramos', tag: 'Verified 30d ago — healthy', rec: { ...ID_BASE, idExpiry: '2031-04-02' }, demo: [chk('verify', 30)], healthy: true },
+  ];
+
+  function App() {
+    const [send, setSend] = useState(null);   // { subject, tpl }
+    const onRun = (tpl) => setSend({ subject: 'Jordan Lee', tpl });
+    return (
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 28px 80px' }}>
+        <div className="ey" style={{ color: CD.brass }}>CurrencyDesk OS · KYC</div>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: '8px 0 6px', letterSpacing: '-0.01em' }}>Verification states — full matrix</h1>
+        <p style={{ fontSize: 14.5, color: CD.mute, maxWidth: 780, lineHeight: 1.55, margin: '0 0 26px' }}>
+          Every variable that drives a client’s status and the recommendation engine. Use the playground to flip
+          <b style={{ color: CD.ink }}> ID document</b>, <b style={{ color: CD.ink }}>provider history</b>, <b style={{ color: CD.ink }}>time since the last check</b>, and <b style={{ color: CD.ink }}>risk</b> —
+          the badge and nudge update live. The two galleries below show every resting state at a glance. Buttons open the real verification page.
+        </p>
+
+        <Playground onRun={onRun} />
+
+        <Pricing />
+
+        <div className="ey" style={{ color: CD.faint, margin: '34px 0 12px' }}>Status badge — every state</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
+          {BADGES.map((x, i) => (
+            <div key={i} className="panel" style={{ padding: 14 }}>
+              <Badge b={badgeFor(x.rec, x.demo)} />
+              <div style={{ fontSize: 11.5, color: CD.mute, marginTop: 9, lineHeight: 1.45 }}>{x.note}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="ey" style={{ color: CD.faint, margin: '34px 0 12px' }}>Verification nudge — every state</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(430px, 1fr))', gap: 16 }}>
+          {NUDGES.map((c) => (
+            <div key={c.name} className="panel" style={{ padding: 16, outline: c.star ? `2px solid ${CD.brass}` : 'none', outlineOffset: c.star ? 2 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
+                <Badge b={badgeFor(c.rec, c.demo)} />
+                {c.star && <span className="mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.08em', color: CD.brass, background: CD.brassSoft, padding: '2px 6px', borderRadius: 5 }}>EXAMPLE</span>}
+              </div>
+              <div className="ey" style={{ color: CD.faint, marginBottom: 11 }}>{c.tag}</div>
+              {c.healthy
+                ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '13px 12px', borderRadius: 11, border: `1px dashed ${CD.line}`, color: CD.mute, fontSize: 12.5 }}><Ic n="checkcircle" s={15} c={CD.green} /> File current — no nudge is rendered.</div>
+                : <Nudge name={c.name} rec={c.rec} demoChecks={c.demo} amountCad={c.amount} settings={c.policy ? { largeTxCheck: c.policy } : undefined} onRun={(tpl) => setSend({ subject: c.name, tpl })} />}
+            </div>
+          ))}
+        </div>
+
+        {send && KYC.SendModal && React.createElement(KYC.SendModal, { subject: send.subject, kind: 'individual', rec: {}, by: 'Demo', initialTpl: send.tpl, onClose: () => setSend(null) })}
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
