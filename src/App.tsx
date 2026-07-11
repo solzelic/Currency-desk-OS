@@ -7,6 +7,7 @@ import { SignInScreen } from "./components/SignInScreen";
 import { TillSummary } from "./components/TillSummary";
 import { WorkspaceShell } from "./components/WorkspaceShell";
 import type { Customer, ExchangeDraft } from "./domain/types";
+import type { PersistenceAdapter } from "./persistence/types";
 import { useDeskStore } from "./state/useDeskStore";
 
 const initialDraft: ExchangeDraft = {
@@ -19,8 +20,8 @@ const initialDraft: ExchangeDraft = {
   sourceOfFunds: "Cash on hand"
 };
 
-export function App() {
-  const store = useDeskStore();
+export function App({ persistence }: { persistence: PersistenceAdapter }) {
+  const store = useDeskStore({ persistence });
   const { state, activeUser } = store;
   const [draft, setDraft] = useState<ExchangeDraft>(initialDraft);
   const [lastReceiptId, setLastReceiptId] = useState<string | null>(null);

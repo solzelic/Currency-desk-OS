@@ -1,21 +1,39 @@
 export type CurrencyCode = "CAD" | "USD" | "EUR" | "GBP";
 
-export type StaffRole = "Owner" | "Manager" | "Teller";
+export type TenantId = string;
+export type LegalEntityId = string;
+export type BranchId = string;
+export type WorkspaceId = string;
 
-export interface StaffUser {
+export interface DomainScope {
+  tenantId: TenantId;
+  legalEntityId: LegalEntityId;
+  branchId: BranchId;
+  workspaceId: WorkspaceId;
+}
+
+export type StaffRole =
+  | "teller"
+  | "supervisor"
+  | "compliance_officer"
+  | "branch_manager"
+  | "administrator"
+  | "auditor";
+
+export interface StaffUser extends DomainScope {
   id: string;
   name: string;
   role: StaffRole;
+  authorizedBranchIds: BranchId[];
 }
 
-export interface Workspace {
-  branchId: string;
+export interface Workspace extends DomainScope {
   branchName: string;
   tillId: string;
   businessDate: string;
 }
 
-export interface Customer {
+export interface Customer extends DomainScope {
   id: string;
   name: string;
   risk: "Low" | "Normal" | "Medium" | "High";
@@ -51,7 +69,7 @@ export interface ExchangeDraft {
   sourceOfFunds: string;
 }
 
-export interface LedgerTransaction {
+export interface LedgerTransaction extends DomainScope {
   id: string;
   ref: string;
   postedAt: string;
@@ -70,7 +88,7 @@ export interface LedgerTransaction {
   sourceOfFunds: string;
 }
 
-export interface Receipt {
+export interface Receipt extends DomainScope {
   id: string;
   transactionId: string;
   issuedAt: string;
@@ -82,6 +100,7 @@ export interface TillPosition {
 }
 
 export interface DeskState {
+  scope: DomainScope;
   staff: StaffUser[];
   activeUserId: string | null;
   workspace: Workspace;
