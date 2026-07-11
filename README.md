@@ -39,6 +39,7 @@ Sign in -> open workspace -> select or create customer -> create currency exchan
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Development](docs/DEVELOPMENT.md)
 - [Migration plan](docs/MIGRATION.md)
 - [Repository audit](docs/REPOSITORY_AUDIT.md)
 - [KYC developer handoff](design_handoff_kyc/README.md)
