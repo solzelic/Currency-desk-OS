@@ -31,6 +31,7 @@ export function postExchange(state: DeskState, draft: ExchangeDraft, now?: Date)
     draft,
     customer,
     teller,
+    workspace: state.workspace,
     compliance,
     sequence: state.ledger.length + 1,
     now

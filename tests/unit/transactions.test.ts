@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runComplianceChecks } from "../../src/domain/compliance";
-import { staff } from "../../src/domain/seed";
+import { staff, workspace } from "../../src/domain/seed";
 import { applyTransactionToTill, createReceipt, postExchangeTransaction } from "../../src/domain/transactions";
 import type { Customer, ExchangeDraft } from "../../src/domain/types";
 
@@ -29,6 +29,7 @@ describe("transaction posting", () => {
       draft,
       customer,
       teller: staff[0],
+      workspace,
       compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
@@ -46,6 +47,7 @@ describe("transaction posting", () => {
       draft,
       customer,
       teller: staff[0],
+      workspace,
       compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
@@ -62,6 +64,7 @@ describe("transaction posting", () => {
       draft,
       customer,
       teller: staff[0],
+      workspace,
       compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
@@ -81,6 +84,7 @@ describe("transaction posting", () => {
         draft: { ...draft, inputAmount: 0 },
         customer,
         teller: staff[0],
+        workspace,
         compliance: runComplianceChecks(customer, { ...draft, inputAmount: 0 }, till),
         sequence: 1
       })
