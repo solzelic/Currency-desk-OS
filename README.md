@@ -7,6 +7,8 @@ This repository now has two tracks:
 - **Preserved prototype:** the existing buildless React/Babel demo in the repository root and `os-src/`.
 - **Frontend foundation:** a new React and TypeScript app under `src/`, built to migrate the product into production-shaped code without disturbing the prototype.
 
+> **Security status:** This is not a production-compliant system. The browser persistence adapter is for synthetic demos only. Never store real KYC documents or production financial data in localStorage. See [Security and Compliance Foundation](docs/SECURITY_COMPLIANCE_FOUNDATION.md).
+
 ## Current Prototype
 
 Open the prototype through a static server:
@@ -39,6 +41,8 @@ Sign in -> open workspace -> select or create customer -> create currency exchan
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Security and compliance foundation](docs/SECURITY_COMPLIANCE_FOUNDATION.md)
+- [Threat model](docs/THREAT_MODEL.md)
 - [Development](docs/DEVELOPMENT.md)
 - [Migration plan](docs/MIGRATION.md)
 - [Repository audit](docs/REPOSITORY_AUDIT.md)

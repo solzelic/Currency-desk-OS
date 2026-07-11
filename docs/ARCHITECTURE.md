@@ -28,12 +28,16 @@ The new app is a Vite React TypeScript app. It should grow as a production-shape
 Initial boundaries:
 
 - `src/domain/` contains pure domain types, seed data, calculations, compliance checks, and transaction posting.
-- `src/state/` owns app-level state and persistence.
+- `src/state/` owns React state orchestration and depends on persistence ports.
+- `src/persistence/` defines state/audit ports plus in-memory and demo-only localStorage adapters.
+- `src/security/` defines scoped authorization, tenant isolation, audit, classification, retention, and legal-hold primitives.
 - `src/components/` contains reusable UI primitives and workflow components.
 - `src/App.tsx` composes the vertical slice.
 - `src/styles.css` contains foundation styling and design tokens.
 
-The foundation is intentionally local-first for now. Backend services, real auth, KYC providers, rate feeds, audit storage, and compliance filing integrations are future production seams.
+The foundation is intentionally local-first for now. Backend services, real auth, KYC providers, rate feeds, tamper-resistant audit storage, and compliance filing integrations are future production boundaries. See `SECURITY_COMPLIANCE_FOUNDATION.md` and `THREAT_MODEL.md`.
+
+The localStorage adapter is for synthetic demonstrations only. It must never hold real KYC documents or production financial data.
 
 ## Target Vertical Slice
 
