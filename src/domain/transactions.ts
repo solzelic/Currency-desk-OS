@@ -1,11 +1,13 @@
-import type { ComplianceCheck, Customer, ExchangeDraft, LedgerTransaction, Receipt, StaffUser } from "./types";
+import type { ComplianceCheck, Customer, ExchangeDraft, LedgerTransaction, Receipt, StaffUser, Workspace } from "./types";
 import { canPost } from "./compliance";
 import { inputAmountCad, money, quoteExchange, round } from "./rates";
+import { assertSameWorkspace } from "../security/tenantIsolation";
 
 export function postExchangeTransaction(params: {
   draft: ExchangeDraft;
   customer: Customer;
   teller: StaffUser;
+  workspace: Workspace;
   compliance: ComplianceCheck[];
   sequence: number;
   now?: Date;
@@ -13,11 +15,17 @@ export function postExchangeTransaction(params: {
   if (!canPost(params.compliance)) {
     throw new Error("Cannot post a transaction with blocking checks.");
   }
+  assertSameWorkspace(params.workspace, params.customer);
+  assertSameWorkspace(params.workspace, params.teller);
 
   const now = params.now ?? new Date();
   const quote = quoteExchange(params.draft.from, params.draft.to, params.draft.inputAmount, params.draft.feeCad);
 
   return {
+    tenantId: params.workspace.tenantId,
+    legalEntityId: params.workspace.legalEntityId,
+    branchId: params.workspace.branchId,
+    workspaceId: params.workspace.workspaceId,
     id: `tx-${now.getTime()}-${params.sequence}`,
     ref: `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${String(params.sequence).padStart(3, "0")}`,
     postedAt: now.toISOString(),
@@ -38,7 +46,14 @@ export function postExchangeTransaction(params: {
 }
 
 export function createReceipt(transaction: LedgerTransaction, customer: Customer, teller: StaffUser): Receipt {
+  assertSameWorkspace(transaction, customer);
+  assertSameWorkspace(transaction, teller);
+
   return {
+    tenantId: transaction.tenantId,
+    legalEntityId: transaction.legalEntityId,
+    branchId: transaction.branchId,
+    workspaceId: transaction.workspaceId,
     id: `rcpt-${transaction.id}`,
     transactionId: transaction.id,
     issuedAt: transaction.postedAt,

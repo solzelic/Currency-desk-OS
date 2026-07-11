@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { canPost, runComplianceChecks } from "../../src/domain/compliance";
+import { defaultScope } from "../../src/domain/seed";
 import type { Customer, ExchangeDraft } from "../../src/domain/types";
 
 const verifiedCustomer: Customer = {
+  ...defaultScope,
   id: "c-1",
   name: "Verified Customer",
   risk: "Normal",

@@ -6,9 +6,10 @@ node_modules/
 dist/
 coverage/
 .vite/
-*.tsbuildinfo
 test-results/
 playwright-report/
+*.tsbuildinfo
+.tsbuild/
 vite.config.js
 vite.config.d.ts
 
