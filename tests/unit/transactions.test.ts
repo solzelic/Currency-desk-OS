@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { runComplianceChecks } from "../../src/domain/compliance";
-import { staff, workspace } from "../../src/domain/seed";
+import { defaultScope, staff, workspace } from "../../src/domain/seed";
 import { applyTransactionToTill, createReceipt, postExchangeTransaction } from "../../src/domain/transactions";
 import type { Customer, ExchangeDraft } from "../../src/domain/types";
 
 const customer: Customer = {
+  ...defaultScope,
   id: "c-1",
   name: "Verified Customer",
   risk: "Normal",
