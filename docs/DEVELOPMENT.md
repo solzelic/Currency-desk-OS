@@ -5,7 +5,7 @@
 - Node.js 22 LTS or newer.
 - npm 10 or newer.
 
-This machine did not have `node` or `npm` on PATH during the foundation setup, so the first dependency install and toolchain validation still need to be run in an environment with Node available.
+This repository is validated with Node 22. The local validation branch installed Node through Homebrew at `/opt/homebrew/opt/node@22/bin`.
 
 ## Install
 
@@ -13,7 +13,7 @@ This machine did not have `node` or `npm` on PATH during the foundation setup, s
 npm install
 ```
 
-The install should create `package-lock.json`. Commit the lockfile after the first successful install.
+Use `npm ci` once `package-lock.json` exists and exact dependency versions should be reproduced.
 
 ## Run
 

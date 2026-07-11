@@ -1,4 +1,5 @@
 import type { ComplianceCheck, Customer, ExchangeDraft, LedgerTransaction, Receipt, StaffUser } from "./types";
+import { canPost } from "./compliance";
 import { inputAmountCad, money, quoteExchange, round } from "./rates";
 
 export function postExchangeTransaction(params: {
@@ -9,11 +10,15 @@ export function postExchangeTransaction(params: {
   sequence: number;
   now?: Date;
 }): LedgerTransaction {
+  if (!canPost(params.compliance)) {
+    throw new Error("Cannot post a transaction with blocking checks.");
+  }
+
   const now = params.now ?? new Date();
   const quote = quoteExchange(params.draft.from, params.draft.to, params.draft.inputAmount, params.draft.feeCad);
 
   return {
-    id: `tx-${now.getTime()}`,
+    id: `tx-${now.getTime()}-${params.sequence}`,
     ref: `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${String(params.sequence).padStart(3, "0")}`,
     postedAt: now.toISOString(),
     tellerId: params.teller.id,
