@@ -1,12 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { canPost, runComplianceChecks } from "../domain/compliance";
 import { createInitialState, defaultScope } from "../domain/seed";
-import { applyTransactionToTill, createReceipt, postExchangeTransaction } from "../domain/transactions";
+import { postExchange as postAuthorizedExchange } from "../domain/posting";
 import type { Customer, DeskState, DomainScope, ExchangeDraft, StaffUser } from "../domain/types";
 import type { PersistenceAdapter } from "../persistence/types";
 import { auditStateReference, createAuditEvent } from "../security/audit";
 import type { AuditActor, AuditEvent, AuditTarget } from "../security/audit";
-import { authorize } from "../security/authorization";
 import { isSameWorkspace } from "../security/tenantIsolation";
 
 export interface DeskStoreDependencies {
@@ -144,7 +142,6 @@ export function useDeskStore({
   function postExchange(draft: ExchangeDraft) {
     const current = stateRef.current;
     const user = current.staff.find((item) => item.id === current.activeUserId);
-    const customer = current.customers.find((item) => item.id === draft.customerId);
     const occurredAt = now();
     const correlationId = createId("correlation");
     const failedTarget: AuditTarget = { type: "transaction", id: `draft-${draft.customerId || "unassigned"}` };
@@ -164,44 +161,24 @@ export function useDeskStore({
       return { ok: false as const, reason };
     }
 
-    if (!customer || !user) return fail("Missing customer or active user.");
-    if (!isSameWorkspace(current.scope, customer)) return fail("Customer is outside the active workspace.");
+    if (!user) return fail("Missing active user.");
 
-    const authorization = authorize(user, "transaction:post", current.scope);
-    if (!authorization.allowed) return fail(`Posting authorization denied: ${authorization.reason}.`);
+    const result = postAuthorizedExchange({ state: current, draft, actor: user, now: occurredAt });
+    if (!result.ok) return fail(result.reason);
 
-    const compliance = runComplianceChecks(customer, draft, current.till);
-    if (!canPost(compliance)) return fail("Compliance checks are blocking.");
-
-    const transaction = postExchangeTransaction({
-      draft,
-      customer,
-      teller: user,
-      workspace: current.workspace,
-      compliance,
-      sequence: current.ledger.length + 1,
-      now: occurredAt
-    });
-    const receipt = createReceipt(transaction, customer, user);
-    const next: DeskState = {
-      ...current,
-      ledger: [transaction, ...current.ledger],
-      receipts: [receipt, ...current.receipts],
-      till: applyTransactionToTill(current.till, transaction)
-    };
-    const target: AuditTarget = { type: "transaction", id: transaction.id };
-    commit(next, eventFor({
+    const target: AuditTarget = { type: "transaction", id: result.transaction.id };
+    commit(result.state, eventFor({
       state: current,
       actor: actorFor(user),
       action: "transaction.post",
       target,
       reason: "Currency exchange posted after authorization and compliance checks.",
       previousState: null,
-      newState: auditStateReference(target, transaction.postedAt),
+      newState: auditStateReference(target, result.transaction.postedAt),
       occurredAt,
       correlationId
     }));
-    return { ok: true as const, transaction, receipt };
+    return result;
   }
 
   function resetDemo(): void {

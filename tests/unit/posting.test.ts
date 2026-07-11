@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { postExchange } from "../../src/domain/posting";
 import { createInitialState } from "../../src/domain/seed";
-import type { ExchangeDraft } from "../../src/domain/types";
+import type { DeskState, ExchangeDraft, StaffUser } from "../../src/domain/types";
 
 const draft: ExchangeDraft = {
   customerId: "c-jakob-miller",
@@ -13,14 +13,22 @@ const draft: ExchangeDraft = {
   sourceOfFunds: "Cash"
 };
 
-function signedInState() {
+function signedInState(): DeskState {
   return { ...createInitialState(), activeUserId: "a.singh" };
 }
 
+function actorFor(state = signedInState()): StaffUser {
+  return state.staff.find((staff) => staff.id === state.activeUserId)!;
+}
+
+function post(state = signedInState(), actor = actorFor(state), now = new Date("2026-07-11T12:00:00.000Z")) {
+  return postExchange({ state, draft, actor, now });
+}
+
 describe("exchange posting orchestration", () => {
-  it("atomically creates the ledger entry, receipt, and till movement", () => {
+  it("allows an authorized teller to create the ledger entry, receipt, and till movement", () => {
     const initial = signedInState();
-    const result = postExchange(initial, draft, new Date("2026-07-11T12:00:00.000Z"));
+    const result = post(initial);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -35,7 +43,12 @@ describe("exchange posting orchestration", () => {
 
   it("leaves state unchanged when posting is blocked", () => {
     const initial = signedInState();
-    const result = postExchange(initial, { ...draft, inputAmount: 100000 }, new Date("2026-07-11T12:00:00.000Z"));
+    const result = postExchange({
+      state: initial,
+      draft: { ...draft, inputAmount: 100000 },
+      actor: actorFor(initial),
+      now: new Date("2026-07-11T12:00:00.000Z")
+    });
 
     expect(result).toEqual({ ok: false, reason: "Compliance checks are blocking." });
     expect(initial.ledger).toHaveLength(0);
@@ -45,15 +58,44 @@ describe("exchange posting orchestration", () => {
 
   it("generates unique IDs for consecutive posts at the same timestamp", () => {
     const now = new Date("2026-07-11T12:00:00.000Z");
-    const first = postExchange(signedInState(), draft, now);
+    const initial = signedInState();
+    const first = post(initial, actorFor(initial), now);
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    const second = postExchange(first.state, draft, now);
+    const second = post(first.state, actorFor(first.state), now);
     expect(second.ok).toBe(true);
     if (!second.ok) return;
 
     expect(second.transaction.id).not.toBe(first.transaction.id);
     expect(second.transaction.ref).toBe("CD-260711-002");
+  });
+
+  it("rejects a direct posting-helper call from an unauthorized role", () => {
+    const initial = signedInState();
+    const auditor = { ...actorFor(initial), role: "auditor" as const };
+    initial.staff = initial.staff.map((staff) => staff.id === auditor.id ? auditor : staff);
+
+    expect(post(initial, auditor)).toEqual({
+      ok: false,
+      reason: "Posting authorization denied: permission_denied."
+    });
+    expect(initial.ledger).toHaveLength(0);
+  });
+
+  it("rejects actors outside the active tenant or branch", () => {
+    const tenantState = signedInState();
+    expect(post(tenantState, { ...actorFor(tenantState), tenantId: "tenant-other" })).toEqual({
+      ok: false,
+      reason: "Actor is not valid for the active workspace."
+    });
+
+    const branchState = signedInState();
+    const branchRestrictedActor = { ...actorFor(branchState), authorizedBranchIds: ["branch-other"] };
+    branchState.staff = branchState.staff.map((staff) => staff.id === branchRestrictedActor.id ? branchRestrictedActor : staff);
+    expect(post(branchState, branchRestrictedActor)).toEqual({
+      ok: false,
+      reason: "Posting authorization denied: branch_denied."
+    });
   });
 });
