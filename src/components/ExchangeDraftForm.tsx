@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { runComplianceChecks } from "../domain/compliance";
 import { money, quoteExchange } from "../domain/rates";
-import type { CurrencyCode, Customer, ExchangeDraft } from "../domain/types";
+import type { CurrencyCode, Customer, ExchangeDraft, TillPosition } from "../domain/types";
 import { ComplianceChecklist } from "./ComplianceChecklist";
 import { PanelTitle } from "./shared";
 
@@ -10,18 +10,23 @@ const currencies: CurrencyCode[] = ["CAD", "USD", "EUR", "GBP"];
 export function ExchangeDraftForm({
   draft,
   selectedCustomer,
+  till,
   postMessage,
   onDraftChange,
   onPost
 }: {
   draft: ExchangeDraft;
   selectedCustomer: Customer | undefined;
+  till: TillPosition;
   postMessage: string;
   onDraftChange: (patch: Partial<ExchangeDraft>) => void;
   onPost: () => void;
 }) {
   const quote = quoteExchange(draft.from, draft.to, draft.inputAmount, draft.feeCad);
-  const compliance = useMemo(() => runComplianceChecks(selectedCustomer, draft), [selectedCustomer, draft]);
+  const compliance = useMemo(
+    () => runComplianceChecks(selectedCustomer, draft, till),
+    [selectedCustomer, draft, till]
+  );
   const blockingCount = compliance.filter((check) => check.status === "block").length;
 
   return (
@@ -56,7 +61,15 @@ export function ExchangeDraftForm({
         <div className="two-col">
           <label>
             From
-            <select value={draft.from} onChange={(event) => onDraftChange({ from: event.target.value as CurrencyCode })}>
+            <select
+              value={draft.from}
+              onChange={(event) => {
+                const from = event.target.value as CurrencyCode;
+                const to = from === draft.to ? currencies.find((currency) => currency !== from) ?? draft.to : draft.to;
+                onDraftChange({ from, to });
+              }}
+              data-testid="from-currency"
+            >
               {currencies.map((currency) => (
                 <option key={currency}>{currency}</option>
               ))}
@@ -64,7 +77,11 @@ export function ExchangeDraftForm({
           </label>
           <label>
             To
-            <select value={draft.to} onChange={(event) => onDraftChange({ to: event.target.value as CurrencyCode })}>
+            <select
+              value={draft.to}
+              onChange={(event) => onDraftChange({ to: event.target.value as CurrencyCode })}
+              data-testid="to-currency"
+            >
               {currencies
                 .filter((currency) => currency !== draft.from)
                 .map((currency) => (

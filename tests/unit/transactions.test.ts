@@ -21,13 +21,15 @@ const draft: ExchangeDraft = {
   sourceOfFunds: "Cash"
 };
 
+const till = { CAD: 25000, USD: 12000, EUR: 7000, GBP: 3500 };
+
 describe("transaction posting", () => {
   it("posts exchange transactions with stable ledger fields", () => {
     const tx = postExchangeTransaction({
       draft,
       customer,
       teller: staff[0],
-      compliance: runComplianceChecks(customer, draft),
+      compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
     });
@@ -36,7 +38,7 @@ describe("transaction posting", () => {
     expect(tx.customerId).toBe(customer.id);
     expect(tx.outputAmount).toBe(724.42);
     expect(tx.profitCad).toBe(13);
-    expect(tx.compliance).toHaveLength(5);
+    expect(tx.compliance).toHaveLength(8);
   });
 
   it("updates till balances from posted transactions", () => {
@@ -44,15 +46,15 @@ describe("transaction posting", () => {
       draft,
       customer,
       teller: staff[0],
-      compliance: runComplianceChecks(customer, draft),
+      compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
     });
 
-    const till = applyTransactionToTill({ CAD: 25000, USD: 12000 }, tx);
+    const updatedTill = applyTransactionToTill({ CAD: 25000, USD: 12000 }, tx);
 
-    expect(till.CAD).toBe(26000);
-    expect(till.USD).toBe(11275.58);
+    expect(updatedTill.CAD).toBe(26000);
+    expect(updatedTill.USD).toBe(11275.58);
   });
 
   it("creates receipts from posted transactions", () => {
@@ -60,7 +62,7 @@ describe("transaction posting", () => {
       draft,
       customer,
       teller: staff[0],
-      compliance: runComplianceChecks(customer, draft),
+      compliance: runComplianceChecks(customer, draft, till),
       sequence: 1,
       now: new Date("2026-07-11T12:00:00.000Z")
     });
@@ -71,5 +73,17 @@ describe("transaction posting", () => {
     expect(receipt.lines).toContain("Receipt CD-260711-001");
     expect(receipt.lines.join("\n")).toContain("Customer: Verified Customer");
     expect(receipt.lines.join("\n")).toContain("Received: US$724.42");
+  });
+
+  it("refuses to construct a posted transaction with blocking checks", () => {
+    expect(() =>
+      postExchangeTransaction({
+        draft: { ...draft, inputAmount: 0 },
+        customer,
+        teller: staff[0],
+        compliance: runComplianceChecks(customer, { ...draft, inputAmount: 0 }, till),
+        sequence: 1
+      })
+    ).toThrow("Cannot post a transaction with blocking checks.");
   });
 });

@@ -8,11 +8,18 @@ test("posts the full currency exchange vertical slice", async ({ page }) => {
   await page.getByTestId("signin-a.singh").click();
   await expect(page.getByRole("heading", { name: "Yorkville Desk" })).toBeVisible();
 
+  await page.getByTestId("from-currency").selectOption("USD");
+  await expect(page.getByTestId("to-currency")).toHaveValue("CAD");
+  await page.getByTestId("from-currency").selectOption("CAD");
+  await expect(page.getByTestId("to-currency")).toHaveValue("USD");
+
   await page.getByTestId("new-customer-name").fill("E2E Verified Client");
   await page.getByTestId("create-customer").click();
   await expect(page.getByTestId("selected-customer")).toContainText("E2E Verified Client");
 
   await page.getByTestId("input-amount").fill("1000");
+  await page.getByTestId("fee-cad").fill("-1");
+  await expect(page.getByTestId("post-transaction")).toBeDisabled();
   await page.getByTestId("fee-cad").fill("4");
   await expect(page.getByTestId("quote-box")).toContainText("US$724.42");
   await expect(page.getByTestId("compliance-checks")).toContainText("No enhanced review required.");
@@ -24,5 +31,10 @@ test("posts the full currency exchange vertical slice", async ({ page }) => {
   await expect(page.getByTestId("receipt")).toContainText("Receipt CD-");
   await expect(page.getByTestId("receipt")).toContainText("Received: US$724.42");
   await expect(page.getByTestId("till-summary")).toContainText("CAD$26,000.00");
+  await expect(page.getByTestId("till-summary")).toContainText("US$11,275.58");
+
+  await page.reload();
+  await expect(page.getByTestId("ledger-list")).toContainText("E2E Verified Client");
+  await expect(page.getByTestId("receipt")).toContainText("Received: US$724.42");
   await expect(page.getByTestId("till-summary")).toContainText("US$11,275.58");
 });

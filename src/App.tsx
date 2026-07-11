@@ -74,6 +74,7 @@ export function App() {
       <ExchangeDraftForm
         draft={draft}
         selectedCustomer={selectedCustomer}
+        till={state.till}
         postMessage={postMessage}
         onDraftChange={updateDraft}
         onPost={postTransaction}

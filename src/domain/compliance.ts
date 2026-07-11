@@ -1,18 +1,38 @@
-import type { ComplianceCheck, Customer, ExchangeDraft } from "./types";
-import { inputAmountCad, money } from "./rates";
+import type { ComplianceCheck, Customer, ExchangeDraft, TillPosition } from "./types";
+import { inputAmountCad, money, quoteExchange } from "./rates";
 
 const reportableThresholdCad = 10000;
 const idRequiredCad = 3000;
 
-export function runComplianceChecks(customer: Customer | undefined, draft: ExchangeDraft): ComplianceCheck[] {
+export function runComplianceChecks(
+  customer: Customer | undefined,
+  draft: ExchangeDraft,
+  till: TillPosition
+): ComplianceCheck[] {
   const cadAmount = inputAmountCad(draft.from, draft.inputAmount);
   const checks: ComplianceCheck[] = [];
+  const validAmount = Number.isFinite(draft.inputAmount) && draft.inputAmount > 0;
+  const validFee = Number.isFinite(draft.feeCad) && draft.feeCad >= 0;
 
   checks.push({
     id: "amount",
     label: "Amount entered",
-    status: draft.inputAmount > 0 ? "pass" : "block",
-    detail: draft.inputAmount > 0 ? `${money(cadAmount)} CAD equivalent` : "Enter an amount before posting."
+    status: validAmount ? "pass" : "block",
+    detail: validAmount ? `${money(cadAmount)} CAD equivalent` : "Enter a valid amount greater than zero."
+  });
+
+  checks.push({
+    id: "fee",
+    label: "Fee entered",
+    status: validFee ? "pass" : "block",
+    detail: validFee ? `${money(draft.feeCad)} fee` : "Enter a valid fee of zero or more."
+  });
+
+  checks.push({
+    id: "currency",
+    label: "Currency pair",
+    status: draft.from !== draft.to ? "pass" : "block",
+    detail: draft.from !== draft.to ? `${draft.from} to ${draft.to}` : "Source and destination currencies must differ."
   });
 
   checks.push({
@@ -40,7 +60,9 @@ export function runComplianceChecks(customer: Customer | undefined, draft: Excha
     label: "Reportable threshold",
     status: reportable && (!draft.purpose.trim() || !draft.sourceOfFunds.trim()) ? "block" : reportable ? "warn" : "pass",
     detail: reportable
-      ? "Large cash transaction. Capture purpose and source of funds before posting."
+      ? draft.purpose.trim() && draft.sourceOfFunds.trim()
+        ? "Large cash transaction. Required details are captured for reporting."
+        : "Large cash transaction. Capture purpose and source of funds before posting."
       : `Below ${money(reportableThresholdCad)} CAD reportable threshold.`
   });
 
@@ -49,6 +71,18 @@ export function runComplianceChecks(customer: Customer | undefined, draft: Excha
     label: "Risk review",
     status: customer?.risk === "High" ? "warn" : "pass",
     detail: customer?.risk === "High" ? "High-risk customer. Enhanced review recommended." : "No enhanced review required."
+  });
+
+  const outputAmount = quoteExchange(draft.from, draft.to, draft.inputAmount, draft.feeCad).outputAmount;
+  const availableAmount = till[draft.to] ?? 0;
+  const hasLiquidity = Number.isFinite(outputAmount) && outputAmount > 0 && availableAmount >= outputAmount;
+  checks.push({
+    id: "liquidity",
+    label: "Till liquidity",
+    status: hasLiquidity ? "pass" : "block",
+    detail: hasLiquidity
+      ? `${money(availableAmount, draft.to)} available`
+      : `Insufficient ${draft.to} cash in the till.`
   });
 
   return checks;
