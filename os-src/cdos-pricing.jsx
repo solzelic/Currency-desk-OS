@@ -60,6 +60,14 @@
       cfg.publishedAt = Date.now(); cfg.publishedBy = me ? me.name : 'owner';
       const str = JSON.stringify(cfg);
       try { localStorage.setItem('yorkfx_rates_v1', str); window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: str })); } catch (e) {}
+      // publish to the backend too (append-only rate_boards + audit trail);
+      // requires a session with rates:change — silently skipped standalone
+      try {
+        fetch('/api/rates/publish', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ buyMargin: cfg.buyMargin, sellMargin: cfg.sellMargin, rows: cfg.rows, order: (JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null') || undefined) }),
+        }).catch(() => {});
+      } catch (e) {}
       setPushedAt(Date.now());
       setJustPushed(true); setTimeout(() => setJustPushed(false), 1800);
       log && log('Rates published to board', `${FOREIGN.length} currencies · default ${defSpread}% · by ${me ? me.name : 'owner'}`);

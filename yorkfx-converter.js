@@ -80,23 +80,55 @@ var RATE_CONFIG = null;      // last published config, if any
    { buyMargin, sellMargin, rows: { USD:{ mid, show }, ... }, publishedAt, publishedBy }
    `mid` is CAD per 1 unit of the currency.                                  */
 (function applyRateConfig() {
+  applyRateConfig.run = function () {
+    try {
+      var raw = localStorage.getItem('yorkfx_rates_v1');
+      if (!raw) return;
+      var cfg = JSON.parse(raw);
+      RATE_CONFIG = cfg;
+      if (typeof cfg.buyMargin === 'number') { BUY_MARGIN = cfg.buyMargin; }
+      if (typeof cfg.sellMargin === 'number') { SELL_MARGIN = cfg.sellMargin; }
+      if (cfg.rows) {
+        Object.keys(cfg.rows).forEach(function (code) {
+          var c = BY[code];
+          if (!c) return;
+          var r = cfg.rows[code];
+          if (typeof r.mid === 'number' && r.mid > 0) { c.perCad = 1 / r.mid; }
+          c.show = (r.show !== false);
+        });
+      }
+    } catch (e) { /* malformed config — fall back to factory rates */ }
+  };
+  applyRateConfig.run();
+  if (typeof window !== 'undefined') window.applyRateConfig = applyRateConfig.run;
+})();
+
+/* ---------- pull the published board from the backend (server/) ----------
+   The backend's rate_boards table is the source of truth when the API is
+   reachable (served prototype / deployed app). The published board lands in
+   the same localStorage key the Rate Editor writes, then the same apply +
+   storage-event path runs — so standalone/offline behaviour is unchanged. */
+(function syncRatesFromBackend() {
   try {
-    var raw = localStorage.getItem('yorkfx_rates_v1');
-    if (!raw) return;
-    var cfg = JSON.parse(raw);
-    RATE_CONFIG = cfg;
-    if (typeof cfg.buyMargin === 'number') { BUY_MARGIN = cfg.buyMargin; }
-    if (typeof cfg.sellMargin === 'number') { SELL_MARGIN = cfg.sellMargin; }
-    if (cfg.rows) {
-      Object.keys(cfg.rows).forEach(function (code) {
-        var c = BY[code];
-        if (!c) return;
-        var r = cfg.rows[code];
-        if (typeof r.mid === 'number' && r.mid > 0) { c.perCad = 1 / r.mid; }
-        c.show = (r.show !== false);
-      });
-    }
-  } catch (e) { /* malformed config — fall back to factory rates */ }
+    if (typeof fetch !== 'function' || typeof window === 'undefined') return;
+    if (window.location.protocol === 'file:') return;
+    fetch('/api/rates', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.board || !data.board.rows) return;
+        var cfg = data.board;
+        var str = JSON.stringify(cfg);
+        try { localStorage.setItem('yorkfx_rates_v1', str); } catch (e) {}
+        if (cfg.order && cfg.order.length) {
+          try { localStorage.setItem('yorkfx_board_order', JSON.stringify(cfg.order)); } catch (e) {}
+          if (window.applyBoardOrder) window.applyBoardOrder();
+        }
+        if (window.applyRateConfig) window.applyRateConfig();
+        // same event the Rate Editor fires on publish — every open view re-renders
+        try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: str })); } catch (e) {}
+      })
+      .catch(function () { /* backend not running — factory/local rates stand */ });
+  } catch (e) {}
 })();
 
 function cadValue(code) { return 1 / BY[code].perCad; }      // 1 unit -> CAD (mid)

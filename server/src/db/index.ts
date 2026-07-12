@@ -21,8 +21,9 @@ export interface DbHandle {
 // DDL applied on boot for the embedded database. Real Postgres deployments
 // should run drizzle-kit migrations instead; keeping the DDL here means dev
 // and CI need zero extra steps.
+const ENUM_DDL = `CREATE TYPE staff_role AS ENUM ('teller','supervisor','compliance_officer','branch_manager','administrator','auditor');`;
+
 const DDL = `
-CREATE TYPE staff_role AS ENUM ('teller','supervisor','compliance_officer','branch_manager','administrator','auditor');
 CREATE TABLE IF NOT EXISTS tenants (
   id text PRIMARY KEY,
   name text NOT NULL,
@@ -89,6 +90,19 @@ CREATE TABLE IF NOT EXISTS audit_events (
   at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS audit_scope_idx ON audit_events(tenant_id, branch_id, at);
+CREATE TABLE IF NOT EXISTS rate_boards (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  legal_entity_id text NOT NULL REFERENCES legal_entities(id),
+  branch_id text NOT NULL REFERENCES branches(id),
+  buy_margin double precision NOT NULL,
+  sell_margin double precision NOT NULL,
+  board_rows jsonb NOT NULL,
+  board_order jsonb,
+  published_by text,
+  published_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);
 `;
 
 export async function createDb(): Promise<DbHandle> {
@@ -102,11 +116,14 @@ export async function createDb(): Promise<DbHandle> {
   // pure in-memory when PGLITE_MEMORY=1 (tests)
   const dataDir = process.env.PGLITE_MEMORY === "1" ? undefined : process.env.PGLITE_DIR ?? "./.pgdata";
   const client = dataDir ? new PGlite(dataDir) : new PGlite();
-  // idempotent bootstrap: the enum CREATE throws if it exists — probe first
+  // idempotent bootstrap: the enum CREATE throws if it exists — probe just
+  // that; the table DDL is IF NOT EXISTS throughout, so re-running it picks
+  // up newly added tables in an existing data directory
   const typeExists = await client.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
   if (typeExists.rows.length === 0) {
-    await client.exec(DDL);
+    await client.exec(ENUM_DDL);
   }
+  await client.exec(DDL);
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }

@@ -5,7 +5,7 @@
    Staff roles are the same union as src/domain/types.ts StaffRole,
    so the two sides can never drift apart on authorization.
    ============================================================ */
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
   "teller",
@@ -95,6 +95,34 @@ export const sessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+/* Rate board publications — APPEND-ONLY. A publication is the full board
+   at a moment in time (same shape the prototype's converter reads):
+   mids are CAD per 1 unit, margins are fractions (0.015 = 1.5%), a row's
+   `spread` overrides the board margin for that currency. The current board
+   is simply the newest row per branch; history is the compliance trail. */
+export interface RateBoardRow {
+  mid: number;
+  spread?: number;
+  show?: boolean;
+}
+
+export const rateBoards = pgTable(
+  "rate_boards",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    legalEntityId: text("legal_entity_id").notNull().references(() => legalEntities.id),
+    branchId: text("branch_id").notNull().references(() => branches.id),
+    buyMargin: doublePrecision("buy_margin").notNull(),
+    sellMargin: doublePrecision("sell_margin").notNull(),
+    boardRows: jsonb("board_rows").$type<Record<string, RateBoardRow>>().notNull(),
+    boardOrder: jsonb("board_order").$type<string[]>(),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("rate_boards_branch_idx").on(t.branchId, t.publishedAt)],
 );
 
 // append-only security audit (mirrors src/security/audit.ts event shape)
