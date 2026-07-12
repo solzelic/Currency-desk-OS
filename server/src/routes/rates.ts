@@ -51,6 +51,19 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
 }
 
 export function registerRatesRoutes(app: FastifyInstance, db: Db) {
+  // latest raw market snapshot (mid-market is public information)
+  app.get("/api/rates/market", async () => {
+    const rows = await db
+      .select()
+      .from(schema.marketRates)
+      .orderBy(desc(schema.marketRates.fetchedAt))
+      .limit(1);
+    const snap = rows[0];
+    return snap
+      ? { provider: snap.provider, mids: snap.mids, providerTimestamp: snap.providerTimestamp, fetchedAt: snap.fetchedAt.getTime() }
+      : { provider: null, mids: null };
+  });
+
   app.get("/api/rates", async (req) => {
     const branchId = (req.query as { branchId?: string }).branchId ?? DEMO_BRANCH;
     const rows = await db

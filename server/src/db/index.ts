@@ -103,6 +103,14 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);
+CREATE TABLE IF NOT EXISTS market_rates (
+  id text PRIMARY KEY,
+  provider text NOT NULL,
+  mids jsonb NOT NULL,
+  provider_timestamp text,
+  fetched_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS market_rates_fetched_idx ON market_rates(fetched_at);
 `;
 
 export async function createDb(): Promise<DbHandle> {

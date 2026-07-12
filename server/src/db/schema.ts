@@ -125,6 +125,21 @@ export const rateBoards = pgTable(
   (t) => [index("rate_boards_branch_idx").on(t.branchId, t.publishedAt)],
 );
 
+/* Market-rate snapshots — APPEND-ONLY. One row per provider pull; mids are
+   CAD per 1 unit (board convention). The scheduler publishes a fresh board
+   from the newest snapshot, preserving staff margins/spreads/order. */
+export const marketRates = pgTable(
+  "market_rates",
+  {
+    id: text("id").primaryKey(),
+    provider: text("provider").notNull(),
+    mids: jsonb("mids").$type<Record<string, number>>().notNull(),
+    providerTimestamp: text("provider_timestamp"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("market_rates_fetched_idx").on(t.fetchedAt)],
+);
+
 // append-only security audit (mirrors src/security/audit.ts event shape)
 export const auditEvents = pgTable(
   "audit_events",
