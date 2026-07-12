@@ -26,3 +26,4 @@ Thumbs.db
 # Backend (server/)
 server/node_modules/
 server/.pgdata/
+server/.env

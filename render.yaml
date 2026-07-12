@@ -17,3 +17,5 @@ services:
         value: ../dist
       - key: DATABASE_URL
         sync: false # paste your Neon/Postgres connection string in the dashboard
+      - key: OXR_APP_ID
+        sync: false # openexchangerates.org App ID (hourly market rates)

@@ -1,3 +1,11 @@
+// local secrets (OXR_APP_ID etc.) — server/.env is gitignored; in production
+// these come from the host's environment (Render dashboard)
+try {
+  process.loadEnvFile(new URL("../.env", import.meta.url).pathname);
+} catch {
+  /* no .env — fine */
+}
+
 import { createDb } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
 import { buildApp } from "./app.js";
