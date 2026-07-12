@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rate Board | York Foreign Exchange</title>
+<meta name="description" content="Rate board for York Foreign Exchange — set spot rates, buy/sell margins and per-currency spreads, then publish to the live boards." />
+<link rel="stylesheet" href="../yorkfx.css" />
+<link rel="stylesheet" href="yorkfx-staff.css" />
+<style>
+  /* drag-to-reorder grip on each rate row */
+  .et-row .cur-cell { display: flex; align-items: center; gap: 9px; }
+  .rt-grip { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 26px; flex: none;
+    color: var(--muted, #8a8a82); cursor: grab; border-radius: 5px; opacity: 0.5; transition: opacity .12s, background .12s, color .12s; touch-action: none; }
+  .rt-grip:hover { opacity: 1; color: var(--ink, #0a0a0a); background: rgba(10,10,10,0.05); }
+  .et-row.data { transition: background .12s, box-shadow .12s; }
+  .et-row.data.dragging { opacity: 0.96; background: #fff; box-shadow: 0 8px 22px rgba(10,10,10,0.16); cursor: grabbing; position: relative; z-index: 5; }
+  .et-row.data.dragging .rt-grip { cursor: grabbing; opacity: 1; }
+  @media (max-width: 720px) { .rt-grip { width: 24px; height: 30px; opacity: 0.6; } }
+</style>
+<script>
+  /* embedded inside CurrencyDesk OS (?embed=1) → hide the public nav */
+  (function () {
+    try { if (new URLSearchParams(location.search).get('embed') === '1' || location.hash === '#embed') document.documentElement.classList.add('embed'); } catch (e) {}
+  })();
+  /* silence the benign ResizeObserver loop warning */
+  window.addEventListener('error', function (e) {
+    if (e && e.message && e.message.indexOf('ResizeObserver') !== -1) { e.stopImmediatePropagation(); return true; }
+  }, true);
+</script>
+</head>
+<body class="staff">
+
+<!-- ===================== NAV ===================== -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="YorkFX Homepage.html" aria-label="York Foreign Exchange — home">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </a>
+    <div class="nav-right">
+      <span class="staff-badge">Rate board</span>
+      <button class="signout" id="signout" type="button" style="display:none">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="staff-main">
+
+  <!-- ===================== SIGN-IN ===================== -->
+  <section class="signin-wrap" id="signin">
+    <div class="signin-card">
+      <a class="brand" href="YorkFX Homepage.html" aria-label="York Foreign Exchange">
+        <span class="yk">YORK</span>
+        <span class="sub">FOREIGN EXCHANGE INC</span>
+      </a>
+      <h1>Rate board sign-in</h1>
+      <div class="sub-note">Back office</div>
+      <form id="signinForm" novalidate>
+        <div>
+          <label class="field-label" for="user">Username</label>
+          <input id="user" placeholder="e.g. j.masri" autocomplete="username" />
+        </div>
+        <div>
+          <label class="field-label" for="pw">Password</label>
+          <input id="pw" type="password" placeholder="••••" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-solid" type="submit">Sign in</button>
+        <div class="signin-error" id="signinError" role="alert"></div>
+      </form>
+      <div class="signin-hint">Demo access — any username, password <b>york</b>.</div>
+    </div>
+  </section>
+
+  <!-- ===================== EDITOR ===================== -->
+  <section class="editor" id="dash" hidden>
+    <div style="max-width:1180px;margin:0 auto;padding:0 24px;">
+
+      <div class="ed-head">
+        <div>
+          <div class="eyebrow">Rate board</div>
+          <h1>Today's rates</h1>
+          <p style="font-family:var(--f-mono);font-size:12px;color:var(--muted);max-width:520px;margin:0;">
+            Set the spot rate, buy/sell margins and any per-currency spread, then publish. The customer boards and the desk read whatever you publish here. <b style="color:var(--ink)">Drag the handle</b> on any row to reorder — the top six show on your homepage, and the full order carries through to the rates page.
+          </p>
+        </div>
+        <div class="ed-actions">
+          <div class="ed-actions-info">
+            <span class="ed-since" id="edSince"><span class="tdot"></span>Not yet published</span>
+            <span class="status" id="edStatus"><span class="dot"></span><span class="label">All changes published</span></span>
+          </div>
+          <button class="btn btn-solid" id="publishBtn" type="button" disabled>Publish</button>
+        </div>
+      </div>
+
+      <!-- live feed status -->
+      <div class="feed-bar" id="feedBar">
+        <span class="feed-state"><span class="fdot"></span><span id="feedLabel">Feed connected · updates hourly</span></span>
+        <span class="feed-sep"></span>
+        <span class="feed-info" id="feedLastWrap">Rates as of <b>—</b></span>
+        <span class="feed-sep"></span>
+        <span class="feed-info" id="feedNextWrap">Next update in <b>—</b></span>
+        <span class="feed-right">
+          <button class="lockbtn" id="lockToggle" type="button" aria-pressed="false">
+            <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <svg class="ic-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="lock-label">Lock rates</span>
+          </button>
+        </span>
+      </div>
+
+      <!-- controls: margins + search -->
+      <div class="ed-controls">
+        <div class="ctrl">
+          <label>Buy margin · under spot</label>
+          <div class="num">
+            <button data-step="buy:-" type="button" aria-label="Lower buy margin">−</button>
+            <input id="buyMargin" inputmode="decimal" aria-label="Buy margin percent" />
+            <span class="pct">%</span>
+            <button data-step="buy:+" type="button" aria-label="Raise buy margin">+</button>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label>Sell margin · over spot</label>
+          <div class="num">
+            <button data-step="sell:-" type="button" aria-label="Lower sell margin">−</button>
+            <input id="sellMargin" inputmode="decimal" aria-label="Sell margin percent" />
+            <span class="pct">%</span>
+            <button data-step="sell:+" type="button" aria-label="Raise sell margin">+</button>
+          </div>
+        </div>
+        <div class="ctrl search">
+          <label>Find a currency</label>
+          <div class="searchbox">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="search" placeholder="Search code or name…" aria-label="Search currencies" />
+          </div>
+        </div>
+      </div>
+
+      <!-- rate table -->
+      <div class="ed-table" id="edTable">
+        <div class="et-row et-head">
+          <span>Currency</span>
+          <span>Spot · CAD / unit</span>
+          <span>Spread</span>
+          <span>We buy</span>
+          <span>We sell</span>
+          <span>Board</span>
+        </div>
+        <div id="etBody"></div>
+        <div class="et-empty" id="etEmpty" style="display:none">No currencies match your search.</div>
+        <div class="add-ccy" id="addCcy">
+          <div class="add-ccy-info"><span class="add-ccy-label">From your rate feed</span><span class="add-ccy-sub" id="feedCount"></span></div>
+          <div class="add-ccy-pick">
+            <button id="addBtn" class="add-ccy-btn" type="button">+ Add currency</button>
+            <div class="add-menu" id="addMenu" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ed-foot">
+        <span class="saved-note" id="savedNote"><span class="tdot" style="width:6px;height:6px;border-radius:50%;background:#1f8a4c;display:inline-block;"></span>Draft autosaves as you edit</span>
+        <button class="linkbtn" id="resetBtn" type="button">Reset to factory defaults</button>
+      </div>
+
+      <div class="feed-provider">
+        <span class="fp-label">Rate feed provided by</span>
+        <div class="fp-select">
+          <select id="rateProvider" aria-label="Rate feed provider">
+            <option value="oanda">OANDA · fxTrade rates</option>
+          </select>
+          <span class="fp-chev" aria-hidden="true">▾</span>
+        </div>
+        <span class="fp-note">Live spot prices stream from this provider; your spreads &amp; margins are applied on top.</span>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+<!-- publish toast -->
+<div class="toast" id="toast" role="status"><span class="dot"></span><span class="msg"></span></div>
+
+<script src="../yorkfx-converter.js"></script>
+<script src="yorkfx-staff.js"></script>
+<template id="__bundler_thumbnail" data-bg-color="#12100c">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#12100c"/>
+    <rect x="180" y="150" width="840" height="70" rx="8" fill="#1D6B45"/>
+    <rect x="180" y="270" width="840" height="46" rx="6" fill="#2a2620"/>
+    <rect x="180" y="336" width="840" height="46" rx="6" fill="#221f19"/>
+    <rect x="180" y="402" width="840" height="46" rx="6" fill="#2a2620"/>
+    <rect x="180" y="468" width="840" height="46" rx="6" fill="#221f19"/>
+    <rect x="180" y="534" width="840" height="46" rx="6" fill="#2a2620"/>
+    <text x="600" y="196" font-family="monospace" font-size="34" fill="#fff" text-anchor="middle" letter-spacing="4">RATE BOARD</text>
+  </svg>
+</template>
+</body>
+</html>

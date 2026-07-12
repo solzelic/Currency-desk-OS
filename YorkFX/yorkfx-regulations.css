@@ -1,0 +1,208 @@
+/* ============================================================
+   YORK FX — REGULATIONS / COMPLIANCE PAGE
+   Builds on yorkfx.css tokens.
+   ============================================================ */
+
+/* light chips for paper sections */
+.chip-ink {
+  font-family: var(--f-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(10,10,10,0.6);
+  border: 1px solid var(--hairline-dark);
+  padding: 7px 13px;
+}
+.chip-strong { color: var(--ink); border-color: var(--ink); }
+
+/* ---------- two-column split (FINTRAC explainer) ---------- */
+.reg-split {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 64px;
+  align-items: center;
+}
+.reg-copy { display: flex; flex-direction: column; gap: 18px; }
+.reg-copy h3 { color: var(--white); }
+.section.paper .reg-copy h3 { color: var(--ink); }
+.reg-media {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: #161616;
+}
+.reg-media image-slot, .reg-media img { width: 100%; height: 100%; display: block; }
+.section.paper .reg-media { border-color: var(--hairline-dark); background: #e2e2df; }
+.reg-fact {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 22px;
+  padding: 16px 0;
+  border-top: 1px solid var(--hairline);
+}
+.section.paper .reg-fact { border-top-color: var(--hairline-dark); }
+.reg-fact .k {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray-3);
+  padding-top: 3px;
+}
+.section.paper .reg-fact .k { color: rgba(10,10,10,0.45); }
+.reg-fact .v { font-size: 15px; line-height: 1.6; color: var(--gray-1); }
+.section.paper .reg-fact .v { color: rgba(10,10,10,0.78); }
+
+/* ---------- section head with a trailing badge ---------- */
+.head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.head-row h2 { font-size: clamp(30px, 3vw, 48px); line-height: 1.08; }
+.sub-annot {
+  font-size: 15px;
+  color: rgba(10,10,10,0.6);
+  margin-bottom: 40px;
+  max-width: 620px;
+}
+
+/* ---------- what to bring (personal) ---------- */
+.bring-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.bring-card {
+  background: var(--white);
+  border: 1px solid var(--hairline-dark);
+  padding: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.bring-step {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: rgba(10,10,10,0.4);
+}
+.bring-card h3 { font-size: 22px; }
+.bring-card p { font-size: 14.5px; line-height: 1.65; color: rgba(10,10,10,0.62); }
+.check-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline-dark);
+  margin-top: 2px;
+}
+.checkitem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline-dark);
+  font-size: 15.5px;
+  color: var(--ink);
+}
+.checkitem .tick {
+  width: 22px; height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---------- business documents ---------- */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.doc {
+  background: var(--white);
+  border: 1px solid var(--hairline-dark);
+  padding: 32px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 250px;
+}
+.doc .ic {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink);
+}
+.doc h3 { font-size: 19px; margin-top: 12px; }
+.doc p { font-size: 14px; line-height: 1.6; color: rgba(10,10,10,0.6); }
+.doc .note {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: rgba(10,10,10,0.45);
+  margin-top: auto;
+  line-height: 1.6;
+}
+
+/* ---------- mandatory reporting (dark) ---------- */
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--hairline);
+  border-left: 1px solid var(--hairline);
+}
+.report-card {
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  padding: 34px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: background 0.3s var(--ease);
+}
+.report-card:hover { background: rgba(255,255,255,0.04); }
+.report-card .tag {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gray-3);
+}
+.report-card .big {
+  font-family: var(--f-display);
+  font-weight: 800;
+  font-size: clamp(28px, 3vw, 40px);
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+.report-card .sub {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  color: var(--gray-3);
+  line-height: 1.6;
+}
+
+/* ---------- official-source CTA ---------- */
+.reg-cta {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.reg-cta h3 { font-size: clamp(26px, 3vw, 40px); color: var(--white); }
+.section.paper .reg-cta h3 { color: var(--ink); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1080px) {
+  .reg-split { grid-template-columns: 1fr; gap: 40px; }
+  .doc-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .bring-grid { grid-template-columns: 1fr; }
+  .report-grid { grid-template-columns: 1fr; }
+  .bring-card { padding: 26px; }
+}

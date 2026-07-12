@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 140" width="660" height="140" font-family="&#39;Schibsted Grotesk&#39;, sans-serif">
+  
+  <mask id="slot-lh">
+    <rect width="660" height="140" fill="#FFFFFF"></rect>
+    <rect x="60" y="64.5" width="92" height="11" fill="#000000"></rect>
+  </mask>
+  <g mask="url(#slot-lh)">
+    <circle cx="60" cy="70" r="48" fill="#17140F"></circle>
+    <path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path>
+  </g>
+  <circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle>
+  <text x="196" y="84" font-size="42" font-weight="800" textLength="400" lengthAdjust="spacingAndGlyphs" fill="#17140F">CURRENCYDESK</text>
+  <text x="608" y="56" font-family="&#39;IBM Plex Mono&#39;, monospace" font-size="19" font-weight="600" letter-spacing="1.5" fill="#1D6B45">OS</text>
+</svg>

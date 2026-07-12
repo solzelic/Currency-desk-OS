@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Toronto FX & Money Services</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html,body,#root{height:100%;margin:0}
+  body{font-family:ui-sans-serif,system-ui,sans-serif}
+  *{scroll-behavior:smooth}
+  @media print{body *{visibility:hidden!important}#rcpt,#rcpt *{visibility:visible!important}#rcpt{position:absolute;left:0;top:0;width:320px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef } = React;
+
+const C = { ink:"#122231", inkSoft:"#1c3548", paper:"#F4F5F3", panel:"#FFFFFF", line:"#D9DEDA", lineSoft:"#E8EBE7",
+  brass:"#B0822F", brassSoft:"#EBDDBF", text:"#1E2A33", mute:"#697680", flag:"#9A3B2E", flagSoft:"#F2E0DC",
+  green:"#2E5E4E", greenSoft:"#DDEAE3", amber:"#9A6B1F", amberSoft:"#F5E8CF" };
+
+const ICONS = {
+  lock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  smartphone:'<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  building:'<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+  chev:'<path d="m9 18 6-6-6-6"/>',
+  calc:'<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+  dash:'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  coins:'<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
+  scroll:'<path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  gear:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  id:'<rect width="18" height="14" x="3" y="5" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M15 11h3M14 15h4M6 15h6"/>',
+  printer:'<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
+  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  del:'<path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+};
+function Ic({ n, s=16, c="currentColor" }) {
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}} dangerouslySetInnerHTML={{__html: ICONS[n]||""}} />;
+}
+
+const TYPES = ["Currency Exchange","Remittance — Send","Remittance — Receive","Cheque Cashing","Money Order","Bill Payment"];
+const CCY = ["CAD","USD","EUR","GBP","INR","PHP","CNY","MXN","AED"];
+const PER_CAD = { CAD:1, USD:0.731, EUR:0.676, GBP:0.581, INR:62.4, PHP:41.2, CNY:5.28, MXN:13.1, AED:2.68 };
+const cross = (i,o) => +(PER_CAD[o]/PER_CAD[i]).toFixed(4);
+const THRESHOLD = 10000, TODAY = "2026-06-17";
+const STAFF = [{name:"J. Masri",role:"Owner"},{name:"A. Singh",role:"Teller"},{name:"M. Costa",role:"Teller"},{name:"R. Haddad",role:"Teller"}];
+const fmt = (n,c) => isNaN(n)||n===""?"":new Intl.NumberFormat("en-CA",{style:"currency",currency:c||"CAD",maximumFractionDigits:2}).format(Number(n));
+const num = (n) => new Intl.NumberFormat("en-CA",{maximumFractionDigits:2}).format(Number(n)||0);
+const dDiff = (a,b) => (new Date(b)-new Date(a))/86400000;
+
+const seedRows = () => [
+  {id:1,date:"2026-06-17",customer:"Daniel Okafor",type:"Currency Exchange",inCcy:"CAD",inAmt:2400,rate:0.7255,outCcy:"USD",outAmt:1741.2,fee:18,teller:"A. Singh",notes:""},
+  {id:2,date:"2026-06-17",customer:"Lucia Ferraro",type:"Remittance — Send",inCcy:"CAD",inAmt:600,rate:40.8,outCcy:"PHP",outAmt:24480,fee:9.99,teller:"M. Costa",notes:"Cebu pickup"},
+  {id:3,date:"2026-06-16",customer:"Northbridge Imports",type:"Currency Exchange",inCcy:"USD",inAmt:14500,rate:1.355,outCcy:"CAD",outAmt:19647.5,fee:120,teller:"R. Haddad",notes:"Invoice settlement"},
+  {id:4,date:"2026-06-16",customer:"Daniel Okafor",type:"Cheque Cashing",inCcy:"CAD",inAmt:1850,rate:1,outCcy:"CAD",outAmt:1813,fee:37,teller:"A. Singh",notes:"Payroll cheque"},
+  {id:5,date:"2026-06-15",customer:"Aran Voss",type:"Currency Exchange",inCcy:"CAD",inAmt:9400,rate:0.7255,outCcy:"USD",outAmt:6819.7,fee:70,teller:"Front Desk",notes:""},
+  {id:6,date:"2026-06-17",customer:"Aran Voss",type:"Currency Exchange",inCcy:"CAD",inAmt:9200,rate:0.7255,outCcy:"USD",outAmt:6674.6,fee:68,teller:"Front Desk",notes:""},
+  {id:7,date:"2026-06-15",customer:"Lucia Ferraro",type:"Currency Exchange",inCcy:"CAD",inAmt:950,rate:0.671,outCcy:"EUR",outAmt:637.45,fee:12,teller:"M. Costa",notes:""},
+];
+const seedClients = () => ({
+  "Daniel Okafor":{idType:"Driver's Licence",idNum:"DL 8841-220",idExpiry:"2028-04-01",photo:null},
+  "Lucia Ferraro":{idType:"Passport",idNum:"X4521889",idExpiry:"2027-11-12",photo:null},
+  "Northbridge Imports":{idType:"Business Number",idNum:"BN 77120",idExpiry:"2030-01-01",photo:null},
+  "Aran Voss":{idType:"",idNum:"",idExpiry:"",photo:null},
+});
+
+function App(){
+  const [stage,setStage] = useState("site");
+  return (<div style={{background:C.paper,color:C.text,minHeight:"100%"}}>
+    {stage==="site" && <Site onLogin={()=>setStage("otp")} />}
+    {stage==="otp" && <Otp onBack={()=>setStage("site")} onNext={()=>setStage("app")} />}
+    {stage==="app" && <Workspace onLogout={()=>setStage("site")} />}
+  </div>);
+}
+
+/* ───────── Public marketing site + login at the bottom ───────── */
+function Site({ onLogin }){
+  const [u,setU]=useState(""); const [p,setP]=useState("");
+  const SERVICES=[["Currency Exchange","Bank-beating rates on 40+ currencies, updated every 30 minutes."],["International Remittance","Send money to 120 countries — cash pickup or bank deposit."],["Cheque Cashing","Payroll and government cheques cashed on the spot."],["Money Orders","Secure, traceable payments for rent, tuition, and bills."]];
+  return (<div>
+    {/* nav */}
+    <header className="flex items-center justify-between px-6 py-4" style={{background:C.ink,color:"#EAF0F2"}}>
+      <div className="flex items-center gap-2"><Ic n="building" s={20} c={C.brass}/><span className="font-semibold">Toronto FX <span style={{color:C.brassSoft}}>& Money Services</span></span></div>
+      <nav className="hidden md:flex items-center gap-6 text-sm" style={{color:"#9FB0B9"}}>
+        <a href="#services">Services</a><a href="#rates">Rates</a><a href="#about">About</a>
+        <a href="#login" className="px-3 py-1.5 rounded-md" style={{background:C.brass,color:C.ink,fontWeight:600}}>Staff Login</a>
+      </nav>
+    </header>
+    {/* hero */}
+    <section className="px-6 py-16 md:py-24 max-w-5xl mx-auto">
+      <div className="text-xs tracking-[0.25em] mb-3" style={{color:C.brass}}>REGISTERED MSB · SERVING TORONTO SINCE 1998</div>
+      <h1 className="text-4xl md:text-6xl font-semibold leading-tight" style={{color:C.ink,letterSpacing:"-0.02em"}}>Exchange currency.<br/>Send money home.<br/>Without the bank markup.</h1>
+      <p className="mt-5 text-lg max-w-xl" style={{color:C.mute}}>Walk-in foreign exchange and international transfers in the heart of downtown. Honest rates, refreshed every half hour.</p>
+      <div className="mt-7 flex gap-3"><a href="#rates" className="px-5 py-2.5 rounded-md text-sm font-medium text-white" style={{background:C.ink}}>Today's rates</a><a href="#login" className="px-5 py-2.5 rounded-md text-sm font-medium" style={{border:`1px solid ${C.line}`,color:C.ink}}>Staff login</a></div>
+    </section>
+    {/* rates strip */}
+    <section id="rates" className="px-6 py-10" style={{background:C.ink}}>
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-4"><h2 className="text-white font-semibold text-lg">Live rates <span className="text-xs font-normal" style={{color:C.brassSoft}}>· locked 14:30, next 15:00</span></h2><span className="flex items-center gap-1.5 text-xs" style={{color:"#9FB0B9"}}><Ic n="clock" s={12}/> per 1 CAD</span></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{["USD","EUR","GBP","PHP","INR","MXN","AED","CNY"].map(c=>(
+          <div key={c} className="rounded-lg px-4 py-3" style={{background:C.inkSoft}}><div className="text-xs" style={{color:"#8198A2"}}>{c}</div><div className="text-xl font-semibold text-white" style={{fontVariantNumeric:"tabular-nums"}}>{PER_CAD[c]}</div></div>))}</div>
+      </div>
+    </section>
+    {/* services */}
+    <section id="services" className="px-6 py-16 max-w-5xl mx-auto">
+      <h2 className="text-2xl font-semibold mb-6" style={{color:C.ink}}>What we do</h2>
+      <div className="grid md:grid-cols-2 gap-3">{SERVICES.map(([t,d])=>(
+        <div key={t} className="rounded-lg p-5" style={{background:C.panel,border:`1px solid ${C.line}`}}><div className="font-semibold mb-1" style={{color:C.ink}}>{t}</div><div className="text-sm" style={{color:C.mute}}>{d}</div></div>))}</div>
+    </section>
+    {/* about */}
+    <section id="about" className="px-6 py-12" style={{background:C.panel,borderTop:`1px solid ${C.line}`,borderBottom:`1px solid ${C.line}`}}>
+      <div className="max-w-3xl mx-auto text-center"><div className="flex justify-center mb-3"><Ic n="shield" s={28} c={C.green}/></div>
+        <p className="text-lg" style={{color:C.ink}}>A family-run money services business, FINTRAC-registered and fully compliant. Three generations of customers trust us with their hard-earned money — we don't take that lightly.</p></div>
+    </section>
+    {/* login at the bottom */}
+    <section id="login" className="px-6 py-16">
+      <div className="max-w-sm mx-auto rounded-xl p-6" style={{background:C.panel,border:`1px solid ${C.line}`}}>
+        <div className="flex items-center gap-2 mb-1" style={{color:C.brass}}><Ic n="lock" s={15}/><span className="text-xs tracking-widest">STAFF PORTAL</span></div>
+        <h3 className="text-xl font-semibold mb-1" style={{color:C.ink}}>Sign in</h3>
+        <p className="text-xs mb-5" style={{color:C.mute}}>Access the back office from anywhere — counter, home, or on the road.</p>
+        <label className="block text-xs mb-1" style={{color:C.mute}}>Staff ID</label>
+        <input value={u} onChange={e=>setU(e.target.value)} placeholder="e.g. a.singh" className="w-full mb-3 px-3 py-2.5 rounded-md outline-none text-sm" style={{background:C.paper,border:`1px solid ${C.line}`}}/>
+        <label className="block text-xs mb-1" style={{color:C.mute}}>Password</label>
+        <input value={p} onChange={e=>setP(e.target.value)} type="password" placeholder="••••••••" className="w-full mb-5 px-3 py-2.5 rounded-md outline-none text-sm" style={{background:C.paper,border:`1px solid ${C.line}`}}/>
+        <button onClick={onLogin} className="w-full py-2.5 rounded-md text-sm font-medium flex items-center justify-center gap-2 text-white" style={{background:C.ink}}>Continue <Ic n="chev" s={16}/></button>
+        <p className="mt-3 text-xs" style={{color:C.mute}}>Demo — any credentials work. Real sign-in uses a managed auth provider.</p>
+      </div>
+    </section>
+    <footer className="px-6 py-8 text-center text-xs" style={{background:C.ink,color:"#5E7079"}}>
+      © 2026 Toronto FX & Money Services · FINTRAC-registered MSB · <span style={{color:"#8198A2"}}>Built by Saily</span>
+    </footer>
+  </div>);
+}
+
+function Otp({ onBack, onNext }){
+  const DEMO="418302"; const [d,setD]=useState(Array(6).fill("")); const refs=useRef([]);
+  const set=(i,v)=>{ if(!/^\d?$/.test(v))return; const n=[...d]; n[i]=v; setD(n); if(v&&i<5)refs.current[i+1]?.focus(); };
+  const ok=d.join("")===DEMO;
+  return (<div className="min-h-screen flex items-center justify-center p-6"><div className="w-full max-w-sm">
+    <div className="flex items-center gap-2 mb-1" style={{color:C.brass}}><Ic n="smartphone" s={15}/><span className="text-xs tracking-widest">TWO-STEP VERIFICATION</span></div>
+    <h1 className="text-2xl font-semibold mb-2" style={{color:C.ink}}>Enter your code</h1>
+    <p className="text-sm mb-6" style={{color:C.mute}}>We texted a 6-digit code to •••• ••• 4821. You can change this number once you're in.</p>
+    <div className="flex gap-2 mb-4">{d.map((v,i)=>(<input key={i} ref={el=>refs.current[i]=el} value={v} onChange={e=>set(i,e.target.value)} inputMode="numeric" maxLength={1} className="w-12 h-14 text-center text-xl rounded-md outline-none" style={{background:C.panel,border:`1px solid ${ok?C.brass:C.line}`,fontVariantNumeric:"tabular-nums"}}/>))}</div>
+    <div className="mb-6 px-3 py-2 rounded-md text-xs" style={{background:C.brassSoft,color:"#6B5119"}}>Simulated: demo code is <b className="tracking-widest">{DEMO}</b>. Real SMS needs a backend + provider like Twilio.</div>
+    <button onClick={onNext} disabled={!ok} className="w-full py-2.5 rounded-md text-sm font-medium flex items-center justify-center gap-2" style={{background:ok?C.ink:"#C2CAC4",color:"#fff",cursor:ok?"pointer":"not-allowed"}}>Verify & open workspace <Ic n="chev" s={16}/></button>
+    <button onClick={onBack} className="w-full mt-3 text-xs" style={{color:C.mute}}>← Back to site</button>
+  </div></div>);
+}
+
+function Workspace({ onLogout }){
+  const [rows,setRows]=useState(seedRows);
+  const [clients,setClients]=useState(seedClients);
+  const [audit,setAudit]=useState([{ts:"2026-06-17 09:02",user:"System",action:"Day opened",detail:"Drawer floats loaded"}]);
+  const [tab,setTab]=useState("ledger");
+  const [q,setQ]=useState(""); const [tf,setTf]=useState("All"); const [client,setClient]=useState(null);
+  const [me,setMe]=useState(STAFF[0]);
+  const [perms,setPerms]=useState({Teller:{canDelete:true,canExport:true,canViewReports:true,canEditKYC:true,canSettings:false}});
+  const [settings,setSettings]=useState({requireIdPhoto:false,structuringDays:7});
+  const [calc,setCalc]=useState({open:false,x:360,y:130});
+  const [receipt,setReceipt]=useState(null);
+
+  const can=(k)=> me.role==="Owner"?true:!!perms.Teller[k];
+  const log=(action,detail)=> setAudit(a=>[{ts:new Date().toLocaleString("en-CA",{hour12:false}).replace(",",""),user:me.name,action,detail},...a].slice(0,300));
+
+  const update=(id,key,val)=> setRows(r=>r.map(x=>{
+    if(x.id!==id)return x; const row={...x,[key]:val};
+    if(key==="inCcy"||key==="outCcy")row.rate=cross(row.inCcy,row.outCcy);
+    if(["inCcy","outCcy","inAmt","rate"].includes(key)){const o=(Number(row.inAmt)||0)*(Number(row.rate)||0);row.outAmt=o?+o.toFixed(2):"";}
+    return row; }));
+  const del=(row)=>{ setRows(r=>r.filter(x=>x.id!==row.id)); log("Deleted entry",`${row.customer||"—"} · ${fmt(row.inAmt,row.inCcy)}`); };
+  const add=()=>{ const id=Date.now(); setRows(r=>[{id,date:TODAY,customer:client||"",type:"Currency Exchange",inCcy:"CAD",inAmt:"",rate:cross("CAD","USD"),outCcy:"USD",outAmt:"",fee:"",teller:me.name,notes:""},...r]); log("New entry","Blank transaction added"); };
+
+  const flags=useMemo(()=>{ const map={};
+    rows.forEach(row=>{ const single=(Number(row.inAmt)||0)>=THRESHOLD;
+      const agg=rows.filter(o=>o.customer&&o.customer===row.customer&&dDiff(o.date,row.date)>=0&&dDiff(o.date,row.date)<=settings.structuringDays).reduce((s,o)=>s+(Number(o.inAmt)||0),0);
+      const str=!single&&agg>=THRESHOLD; const rec=clients[row.customer]; let kyc="ok";
+      if(!rec||!rec.idType||!rec.idNum)kyc="missing ID"; else if(rec.idExpiry&&rec.idExpiry<TODAY)kyc="ID expired"; else if(settings.requireIdPhoto&&!rec.photo)kyc="photo needed";
+      map[row.id]={single,str,agg,kyc}; }); return map; },[rows,clients,settings]);
+  const alerts=useMemo(()=>{ const str=new Set(),idI=new Set(); let rpt=0;
+    rows.forEach(r=>{const f=flags[r.id];if(!f)return;if(f.single)rpt++;if(f.str)str.add(r.customer);if(f.kyc!=="ok")idI.add(r.customer);});
+    return {str:str.size,id:idI.size,rpt}; },[rows,flags]);
+  const filtered=useMemo(()=>rows.filter(x=>{ const t=tf==="All"||x.type===tf,c=!client||x.customer===client;
+    const blob=`${x.customer} ${x.teller} ${x.notes}`.toLowerCase(); return t&&c&&(q===""||blob.includes(q.toLowerCase())); }),[rows,q,tf,client]);
+  const stats=useMemo(()=>{ const src=client?rows.filter(r=>r.customer===client):rows;
+    return {n:src.length,vol:src.reduce((s,x)=>s+(+x.inAmt||0),0),fees:src.reduce((s,x)=>s+(+x.fee||0),0),rpt:src.filter(x=>(+x.inAmt||0)>=THRESHOLD).length}; },[rows,client]);
+
+  const exportCsv=()=>{ const head=["Date","Customer","Type","InCcy","InAmt","Rate","OutCcy","OutAmt","Fee","Teller","Notes"];
+    const lines=rows.map(x=>[x.date,x.customer,x.type,x.inCcy,x.inAmt,x.rate,x.outCcy,x.outAmt,x.fee,x.teller,x.notes].map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(","));
+    const blob=new Blob([[head.join(","),...lines].join("\n")],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="ledger.csv"; a.click(); log("Exported CSV",`${rows.length} rows`); };
+
+  const TABS=[["ledger","Ledger","scroll"],["clients","Clients","users"],["dashboard","Dashboard","dash"],["dayclose","Day Close","coins"],["audit","Audit","shield"],["settings","Settings","gear"]];
+  const visTabs=TABS.filter(([k])=>(k==="dashboard"||k==="dayclose")?can("canViewReports"):k==="settings"?(me.role==="Owner"||perms.Teller.canSettings):true);
+
+  return (<div className="min-h-screen flex flex-col relative" style={{overflow:"hidden"}}>
+    <header className="flex items-center justify-between px-5 py-2.5" style={{background:C.ink,color:"#EAF0F2"}}>
+      <div className="flex items-center gap-3"><Ic n="building" s={18} c={C.brass}/><div className="leading-tight"><div className="text-sm font-semibold">Toronto FX & Money Services</div><div className="text-[11px] flex items-center gap-1" style={{color:"#8198A2"}}><Ic n="globe" s={11}/> Workspace · accessible anywhere</div></div></div>
+      <div className="hidden lg:flex items-center gap-3 text-[11px]" style={{color:"#9FB0B9"}}><span className="flex items-center gap-1" style={{color:C.brassSoft}}><Ic n="lock" s={11}/> Rates locked 14:30</span>{["USD","EUR","PHP"].map(c=><span key={c} style={{fontVariantNumeric:"tabular-nums"}}>{c} {PER_CAD[c]}</span>)}</div>
+      <div className="flex items-center gap-2">
+        <select value={me.name} onChange={e=>setMe(STAFF.find(s=>s.name===e.target.value))} className="text-xs px-2 py-1.5 rounded-md outline-none" style={{background:C.inkSoft,color:"#EAF0F2",border:"1px solid #2C4456"}}>{STAFF.map(s=><option key={s.name} value={s.name}>{s.name} · {s.role}</option>)}</select>
+        <button onClick={()=>setCalc(c=>({...c,open:true}))} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md" style={{border:"1px solid #2C4456"}}><Ic n="calc" s={13}/><span className="hidden sm:inline">Calc</span></button>
+        <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md" style={{border:"1px solid #2C4456"}}><Ic n="logout" s={13}/></button>
+      </div>
+    </header>
+    <div className="flex items-center gap-1 px-3 pt-2 overflow-x-auto" style={{background:C.ink}}>
+      {visTabs.map(([k,label,ic])=>(<button key={k} onClick={()=>setTab(k)} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-t-md font-medium whitespace-nowrap" style={{background:tab===k?C.paper:"transparent",color:tab===k?C.ink:"#9FB0B9"}}><Ic n={ic} s={13}/> {label}{k==="ledger"&&(alerts.str+alerts.id>0)&&<span className="ml-1 text-[10px] px-1 rounded-full" style={{background:C.flag,color:"#fff"}}>{alerts.str+alerts.id}</span>}</button>))}
+    </div>
+    <div className="flex-1 overflow-auto" style={{background:C.paper}}>
+      {tab==="ledger"&&<Ledger {...{rows:filtered,flags,stats,client,setClient,q,setQ,tf,setTf,add,del,update,exportCsv,can,alerts,setReceipt}}/>}
+      {tab==="clients"&&<Clients {...{rows,clients,setClients,setTab,setClient,settings,can,log}}/>}
+      {tab==="dashboard"&&<Dashboard rows={rows}/>}
+      {tab==="dayclose"&&<DayClose rows={rows} log={log}/>}
+      {tab==="audit"&&<Audit audit={audit}/>}
+      {tab==="settings"&&<SettingsView {...{perms,setPerms,settings,setSettings,me,log}}/>}
+    </div>
+    {calc.open&&<FloatWindow title="Calculator" icon="calc" pos={calc} onMove={(x,y)=>setCalc(c=>({...c,x,y}))} onClose={()=>setCalc(c=>({...c,open:false}))} width={248}><CalcPanel/></FloatWindow>}
+    {receipt&&<ReceiptModal row={receipt} onClose={()=>setReceipt(null)}/>}
+  </div>);
+}
+
+function Ledger({rows,flags,stats,client,setClient,q,setQ,tf,setTf,add,del,update,exportCsv,can,alerts,setReceipt}){
+  return (<div>
+    <div className="grid grid-cols-2 md:grid-cols-4 border-b" style={{borderColor:C.line,background:C.panel}}>
+      <Stat label={client?`Transactions · ${client}`:"Transactions"} value={stats.n}/>
+      <Stat label="Pay-in volume (nominal)" value={fmt(stats.vol,"CAD")} mono/>
+      <Stat label="Fees collected" value={fmt(stats.fees,"CAD")} mono/>
+      <Stat label={`Reportable ≥ ${fmt(THRESHOLD,"CAD")}`} value={stats.rpt} flag={stats.rpt>0}/>
+    </div>
+    {(alerts.str>0||alerts.id>0||alerts.rpt>0)&&(<div className="flex flex-wrap gap-2 px-4 pt-3">
+      {alerts.rpt>0&&<Pill icon="alert" c={C.flag} bg={C.flagSoft} t={`${alerts.rpt} reportable (≥ $10k)`}/>}
+      {alerts.str>0&&<Pill icon="alert" c={C.amber} bg={C.amberSoft} t={`${alerts.str} structuring watch — near-threshold totals`}/>}
+      {alerts.id>0&&<Pill icon="id" c={C.ink} bg={C.lineSoft} t={`${alerts.id} client(s) with ID issues`}/>}
+    </div>)}
+    <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+      {client&&<span className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-md" style={{background:C.ink,color:"#fff"}}>Viewing {client} <button onClick={()=>setClient(null)}><Ic n="x" s={13}/></button></span>}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md flex-1 min-w-[180px]" style={{background:C.panel,border:`1px solid ${C.line}`}}><Ic n="search" s={15} c={C.mute}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search customer, teller, notes" className="w-full outline-none text-sm bg-transparent"/></div>
+      <select value={tf} onChange={e=>setTf(e.target.value)} className="px-3 py-2 rounded-md text-sm outline-none" style={{background:C.panel,border:`1px solid ${C.line}`}}><option>All</option>{TYPES.map(t=><option key={t}>{t}</option>)}</select>
+      <button onClick={add} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-white" style={{background:C.ink}}><Ic n="plus" s={15}/> New</button>
+      {can("canExport")&&<button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm" style={{border:`1px solid ${C.line}`,background:C.panel}}><Ic n="download" s={15}/> Export</button>}
+    </div>
+    <div className="px-4 pb-6"><div className="min-w-[1040px] rounded-lg overflow-hidden" style={{border:`1px solid ${C.line}`}}>
+      <table className="w-full border-collapse text-sm" style={{background:C.panel}}>
+        <thead><tr style={{background:"#EFF2EE",color:C.mute}} className="text-left text-[11px] uppercase tracking-wide">{["Date","Customer","Type","Pay-in","Rate","Pay-out (auto)","Fee","Teller","Flags",""].map((h,i)=><th key={i} className="px-2 py-2 font-medium" style={{borderBottom:`1px solid ${C.line}`}}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map(x=>{const f=flags[x.id]||{};return(
+          <tr key={x.id} style={{borderBottom:`1px solid ${C.lineSoft}`}}>
+            <Cell w="100" v={x.date} on={v=>update(x.id,"date",v)} type="date"/>
+            <Cell w="150" v={x.customer} on={v=>update(x.id,"customer",v)} ph="Name"/>
+            <SelCell w="160" v={x.type} on={v=>update(x.id,"type",v)} opts={TYPES}/>
+            <td className="px-1 py-1"><div className="flex items-center gap-1"><Sel v={x.inCcy} on={v=>update(x.id,"inCcy",v)} opts={CCY} narrow/><Num v={x.inAmt} on={v=>update(x.id,"inAmt",v)} ph="0.00"/></div></td>
+            <Num w="70" v={x.rate} on={v=>update(x.id,"rate",v)} ph="—"/>
+            <td className="px-1 py-1"><div className="flex items-center gap-1"><Sel v={x.outCcy} on={v=>update(x.id,"outCcy",v)} opts={CCY} narrow/><span className="px-1.5 py-1 text-sm text-right" style={{width:88,color:C.green,fontVariantNumeric:"tabular-nums",fontWeight:600}}>{x.outAmt===""?"—":num(x.outAmt)}</span></div></td>
+            <Num w="60" v={x.fee} on={v=>update(x.id,"fee",v)} ph="0"/>
+            <Cell w="110" v={x.teller} on={v=>update(x.id,"teller",v)}/>
+            <td className="px-1 py-1"><div className="flex flex-wrap gap-1">
+              {f.single&&<Tag c={C.flag} bg={C.flagSoft} t="RPT" title="Single transaction ≥ $10k — reportable"/>}
+              {f.str&&<Tag c={C.amber} bg={C.amberSoft} t="STR" title={`Client 7-day total ${fmt(f.agg,"CAD")} — possible structuring`}/>}
+              {f.kyc&&f.kyc!=="ok"&&<Tag c={C.ink} bg={C.lineSoft} t="ID" title={f.kyc}/>}
+            </div></td>
+            <td className="px-1 py-1"><div className="flex items-center gap-0.5"><button onClick={()=>setReceipt(x)} title="Receipt" className="p-1 rounded"><Ic n="receipt" s={14} c={C.mute}/></button>{can("canDelete")&&<button onClick={()=>del(x)} title="Delete" className="p-1 rounded"><Ic n="trash" s={14} c={C.mute}/></button>}</div></td>
+          </tr>);})}
+          {rows.length===0&&<tr><td colSpan={10} className="px-4 py-10 text-center text-sm" style={{color:C.mute}}>No entries match.</td></tr>}
+        </tbody></table></div>
+      <p className="mt-4 text-[11px]" style={{color:"#A9B1AA"}}>Prototype · pay-out auto-computes from locked rate · STR watch sums each client's last 7 days · in-memory only · Built by Saily</p>
+    </div></div>);
+}
+
+function Clients({rows,clients,setClients,setTab,setClient,settings,can,log}){
+  const [s,setS]=useState(""); const [open,setOpen]=useState(null);
+  const agg=useMemo(()=>{ const m={};
+    rows.forEach(x=>{const k=x.customer||"—";if(!m[k])m[k]={name:k,n:0,vol:0,fees:0};m[k].n++;m[k].vol+=+x.inAmt||0;m[k].fees+=+x.fee||0;});
+    Object.keys(clients).forEach(k=>{if(!m[k])m[k]={name:k,n:0,vol:0,fees:0};});
+    return Object.values(m).sort((a,b)=>b.vol-a.vol); },[rows,clients]);
+  const status=(name)=>{const r=clients[name];if(!r||!r.idType||!r.idNum)return["missing ID",C.flag,C.flagSoft];if(r.idExpiry&&r.idExpiry<TODAY)return["ID expired",C.flag,C.flagSoft];if(settings.requireIdPhoto&&!r.photo)return["photo needed",C.amber,C.amberSoft];return["verified",C.green,C.greenSoft];};
+  const shown=agg.filter(c=>c.name.toLowerCase().includes(s.toLowerCase()));
+  const setField=(name,key,val)=>setClients(c=>({...c,[name]:{...(c[name]||{}),[key]:val}}));
+  const upload=(name,file)=>{const r=new FileReader();r.onload=()=>{setField(name,"photo",r.result);log("ID photo saved",name);};r.readAsDataURL(file);};
+  return (<div className="p-4">
+    <div className="flex items-center gap-2 mb-3"><div className="flex items-center gap-2 px-3 py-2 rounded-md flex-1 max-w-md" style={{background:C.panel,border:`1px solid ${C.line}`}}><Ic n="search" s={15} c={C.mute}/><input value={s} onChange={e=>setS(e.target.value)} placeholder="Search clients…" className="w-full outline-none text-sm bg-transparent"/></div></div>
+    <div className="grid md:grid-cols-2 gap-2">{shown.map(c=>{const [st,col,bg]=status(c.name);const rec=clients[c.name]||{};const isOpen=open===c.name;return(
+      <div key={c.name} className="rounded-lg" style={{background:C.panel,border:`1px solid ${C.line}`}}>
+        <button onClick={()=>setOpen(isOpen?null:c.name)} className="w-full text-left px-4 py-3">
+          <div className="flex items-center justify-between"><span className="font-medium" style={{color:C.ink}}>{c.name}</span><span className="text-[11px] px-2 py-0.5 rounded-full" style={{background:bg,color:col}}>{st}</span></div>
+          <div className="flex gap-3 mt-1 text-[11px]" style={{color:C.mute,fontVariantNumeric:"tabular-nums"}}><span>{c.n} txns</span><span>vol {fmt(c.vol,"CAD")}</span><span>fees {fmt(c.fees,"CAD")}</span></div>
+        </button>
+        {isOpen&&<div className="px-4 pb-4 border-t" style={{borderColor:C.lineSoft}}>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <Field label="ID type"><select disabled={!can("canEditKYC")} value={rec.idType||""} onChange={e=>setField(c.name,"idType",e.target.value)} className="w-full text-sm px-2 py-1.5 rounded outline-none" style={{border:`1px solid ${C.line}`,background:C.paper}}><option value="">—</option>{["Driver's Licence","Passport","Provincial ID","PR Card","Business Number"].map(o=><option key={o}>{o}</option>)}</select></Field>
+            <Field label="ID number"><input disabled={!can("canEditKYC")} value={rec.idNum||""} onChange={e=>setField(c.name,"idNum",e.target.value)} className="w-full text-sm px-2 py-1.5 rounded outline-none" style={{border:`1px solid ${C.line}`,background:C.paper}}/></Field>
+            <Field label="Expiry"><input disabled={!can("canEditKYC")} type="date" value={rec.idExpiry||""} onChange={e=>setField(c.name,"idExpiry",e.target.value)} className="w-full text-sm px-2 py-1.5 rounded outline-none" style={{border:`1px solid ${C.line}`,background:C.paper}}/></Field>
+            <Field label="ID photo (optional)">{rec.photo?<div className="flex items-center gap-2"><img src={rec.photo} alt="ID" className="h-10 rounded" style={{border:`1px solid ${C.line}`}}/><button onClick={()=>setField(c.name,"photo",null)} className="text-xs" style={{color:C.flag}}>Remove</button></div>:<label className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded cursor-pointer" style={{border:`1px dashed ${C.line}`,color:C.mute}}><Ic n="upload" s={13}/> Upload<input type="file" accept="image/*" className="hidden" disabled={!can("canEditKYC")} onChange={e=>e.target.files[0]&&upload(c.name,e.target.files[0])}/></label>}</Field>
+          </div>
+          <button onClick={()=>{setClient(c.name);setTab("ledger");}} className="mt-3 text-xs px-3 py-1.5 rounded-md font-medium text-white" style={{background:C.ink}}>View {c.n} transactions →</button>
+          <p className="mt-2 text-[10px]" style={{color:"#A9B1AA"}}>Demo: photo held in memory. Real: encrypted document store.</p>
+        </div>}
+      </div>);})}</div>
+  </div>);
+}
+
+function Dashboard({rows}){
+  const d=useMemo(()=>{ const fees=rows.reduce((s,x)=>s+(+x.fee||0),0),vol=rows.reduce((s,x)=>s+(+x.inAmt||0),0);
+    let margin=0; rows.forEach(x=>{if(!x.inAmt||!x.outAmt)return;const mid=(+x.inAmt)*cross(x.inCcy,x.outCcy);const diff=mid-(+x.outAmt);if(diff>0)margin+=diff/(PER_CAD[x.outCcy]||1);});
+    const by=(key)=>{const m={};rows.forEach(x=>{const k=x[key]||"—";m[k]=(m[k]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
+    const ft={};rows.forEach(x=>{ft[x.teller||"—"]=(ft[x.teller||"—"]||0)+(+x.fee||0);});
+    const vc={};rows.forEach(x=>{vc[x.inCcy]=(vc[x.inCcy]||0)+(+x.inAmt||0);});
+    return {fees,vol,margin,byType:by("type"),feesByTeller:Object.entries(ft).sort((a,b)=>b[1]-a[1]),volByCcy:Object.entries(vc).sort((a,b)=>b[1]-a[1])}; },[rows]);
+  return (<div className="p-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><Kpi label="Pay-in volume" value={fmt(d.vol,"CAD")}/><Kpi label="Fee revenue" value={fmt(d.fees,"CAD")} accent={C.green}/><Kpi label="Est. FX margin" value={fmt(d.margin,"CAD")} accent={C.green}/><Kpi label="Transactions" value={rows.length}/></div>
+    <div className="grid md:grid-cols-3 gap-3"><BarCard title="Fees by teller" data={d.feesByTeller} fmtV={v=>fmt(v,"CAD")}/><BarCard title="Volume by currency" data={d.volByCcy} fmtV={v=>num(v)}/><BarCard title="Transactions by type" data={d.byType} fmtV={v=>v}/></div>
+    <p className="mt-3 text-[11px]" style={{color:"#A9B1AA"}}>Est. FX margin = locked mid-rate value minus actual pay-out, in CAD. Revenue = margin + fees.</p>
+  </div>);
+}
+
+function DayClose({rows,log}){
+  const ccys=useMemo(()=>Array.from(new Set(rows.flatMap(r=>[r.inCcy,r.outCcy]))),[rows]);
+  const [open,setOpen]=useState(()=>Object.fromEntries(ccys.map(c=>[c,c==="CAD"?5000:2000])));
+  const [counted,setCounted]=useState({});
+  const calc=(c)=>{const cashIn=rows.filter(r=>r.inCcy===c).reduce((s,r)=>s+(+r.inAmt||0),0);const cashOut=rows.filter(r=>r.outCcy===c).reduce((s,r)=>s+(+r.outAmt||0),0);const expected=(+open[c]||0)+cashIn-cashOut;const cnt=counted[c];const variance=cnt===undefined||cnt===""?null:(+cnt-expected);return {cashIn,cashOut,expected,variance};};
+  return (<div className="p-4">
+    <div className="rounded-lg overflow-hidden" style={{border:`1px solid ${C.line}`,background:C.panel}}>
+      <table className="w-full text-sm border-collapse"><thead><tr style={{background:"#EFF2EE",color:C.mute}} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Opening</th><th className="px-3 py-2 text-right">Cash in</th><th className="px-3 py-2 text-right">Cash out</th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Counted</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
+      <tbody>{ccys.map(c=>{const r=calc(c);return(<tr key={c} style={{borderTop:`1px solid ${C.lineSoft}`}}>
+        <td className="px-3 py-2 font-medium" style={{color:C.ink}}>{c}</td>
+        <td className="px-2 py-1 text-right"><input type="number" value={open[c]??""} onChange={e=>setOpen(o=>({...o,[c]:e.target.value}))} className="w-24 text-right px-2 py-1 rounded outline-none" style={{border:`1px solid ${C.line}`,fontVariantNumeric:"tabular-nums"}}/></td>
+        <td className="px-3 py-2 text-right" style={{fontVariantNumeric:"tabular-nums"}}>{num(r.cashIn)}</td>
+        <td className="px-3 py-2 text-right" style={{fontVariantNumeric:"tabular-nums"}}>{num(r.cashOut)}</td>
+        <td className="px-3 py-2 text-right font-semibold" style={{fontVariantNumeric:"tabular-nums",color:C.ink}}>{num(r.expected)}</td>
+        <td className="px-2 py-1 text-right"><input type="number" placeholder="count" value={counted[c]??""} onChange={e=>setCounted(o=>({...o,[c]:e.target.value}))} className="w-24 text-right px-2 py-1 rounded outline-none" style={{border:`1px solid ${C.line}`,fontVariantNumeric:"tabular-nums"}}/></td>
+        <td className="px-3 py-2 text-right font-semibold" style={{fontVariantNumeric:"tabular-nums",color:r.variance===null?C.mute:r.variance===0?C.green:C.flag}}>{r.variance===null?"—":(r.variance>0?"+":"")+num(r.variance)}</td>
+      </tr>);})}</tbody></table></div>
+    <button onClick={()=>log("Day closed",`Drawer reconciled for ${ccys.length} currencies`)} className="mt-3 px-4 py-2 rounded-md text-sm font-medium text-white" style={{background:C.ink}}>Close day & log</button>
+    <p className="mt-2 text-[11px]" style={{color:"#A9B1AA"}}>Expected = opening float + cash in − cash out. Demo runs over all logged entries.</p>
+  </div>);
+}
+
+function Audit({audit}){
+  return (<div className="p-4"><div className="rounded-lg overflow-hidden" style={{border:`1px solid ${C.line}`,background:C.panel}}>
+    <table className="w-full text-sm border-collapse"><thead><tr style={{background:"#EFF2EE",color:C.mute}} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Time</th><th className="px-3 py-2">Staff</th><th className="px-3 py-2">Action</th><th className="px-3 py-2">Detail</th></tr></thead>
+    <tbody>{audit.map((a,i)=>(<tr key={i} style={{borderTop:`1px solid ${C.lineSoft}`}}><td className="px-3 py-2 whitespace-nowrap" style={{color:C.mute,fontVariantNumeric:"tabular-nums"}}>{a.ts}</td><td className="px-3 py-2">{a.user}</td><td className="px-3 py-2 font-medium" style={{color:C.ink}}>{a.action}</td><td className="px-3 py-2" style={{color:C.mute}}>{a.detail}</td></tr>))}</tbody></table></div>
+    <p className="mt-2 text-[11px]" style={{color:"#A9B1AA"}}>Append-only log. Real version is tamper-evident and never editable — this is what makes the ledger examiner-ready.</p>
+  </div>);
+}
+
+function SettingsView({perms,setPerms,settings,setSettings,me,log}){
+  if(me.role!=="Owner"&&!perms.Teller.canSettings)return <div className="p-6 text-sm" style={{color:C.mute}}>Owner access required.</div>;
+  const toggle=(k)=>{setPerms(p=>({...p,Teller:{...p.Teller,[k]:!p.Teller[k]}}));log("Permission changed",`Teller · ${k}`);};
+  const CAPS=[["canDelete","Delete transactions"],["canExport","Export data"],["canViewReports","View Dashboard & Day Close"],["canEditKYC","Edit client ID / KYC"],["canSettings","Open Settings"]];
+  return (<div className="p-4 max-w-2xl">
+    <Section title="Staff permissions" sub="Everyone starts with full access. Restrict the Teller role here if you want — Owner always has everything.">
+      {CAPS.map(([k,label])=>(<div key={k} className="flex items-center justify-between py-2" style={{borderTop:`1px solid ${C.lineSoft}`}}><span className="text-sm">{label}</span><button onClick={()=>toggle(k)} className="w-11 h-6 rounded-full relative" style={{background:perms.Teller[k]?C.green:"#CBD2CC"}}><span className="absolute top-0.5 w-5 h-5 rounded-full bg-white" style={{left:perms.Teller[k]?22:2}}/></button></div>))}
+    </Section>
+    <Section title="Compliance settings" sub="Tune the rules to how this branch operates.">
+      <div className="flex items-center justify-between py-2" style={{borderTop:`1px solid ${C.lineSoft}`}}><div><div className="text-sm">Require ID photo on file</div><div className="text-[11px]" style={{color:C.mute}}>If on, clients without a photo are flagged.</div></div><button onClick={()=>{setSettings(s=>({...s,requireIdPhoto:!s.requireIdPhoto}));log("Setting changed",`Require ID photo · ${!settings.requireIdPhoto}`);}} className="w-11 h-6 rounded-full relative" style={{background:settings.requireIdPhoto?C.green:"#CBD2CC"}}><span className="absolute top-0.5 w-5 h-5 rounded-full bg-white" style={{left:settings.requireIdPhoto?22:2}}/></button></div>
+      <div className="flex items-center justify-between py-2" style={{borderTop:`1px solid ${C.lineSoft}`}}><div><div className="text-sm">Structuring window</div><div className="text-[11px]" style={{color:C.mute}}>Days of client activity summed against the $10k line.</div></div><select value={settings.structuringDays} onChange={e=>setSettings(s=>({...s,structuringDays:+e.target.value}))} className="text-sm px-2 py-1.5 rounded outline-none" style={{border:`1px solid ${C.line}`,background:C.paper}}>{[1,7,14,30].map(d=><option key={d} value={d}>{d} days</option>)}</select></div>
+    </Section>
+  </div>);
+}
+
+function Stat({label,value,mono,flag}){return(<div className="px-5 py-3" style={{borderRight:`1px solid ${C.lineSoft}`}}><div className="text-[11px]" style={{color:C.mute}}>{label}</div><div className="text-lg font-semibold" style={{color:flag?C.flag:C.ink,fontVariantNumeric:mono?"tabular-nums":"normal"}}>{value}</div></div>);}
+function Kpi({label,value,accent}){return(<div className="rounded-lg px-4 py-3" style={{background:C.panel,border:`1px solid ${C.line}`}}><div className="text-[11px]" style={{color:C.mute}}>{label}</div><div className="text-xl font-semibold" style={{color:accent||C.ink,fontVariantNumeric:"tabular-nums"}}>{value}</div></div>);}
+function Pill({icon,c,bg,t}){return(<span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md font-medium" style={{background:bg,color:c}}><Ic n={icon} s={13}/> {t}</span>);}
+function Tag({c,bg,t,title}){return(<span title={title} className="text-[10px] px-1 rounded font-medium" style={{background:bg,color:c}}>{t}</span>);}
+function Field({label,children}){return(<div><div className="text-[11px] mb-1" style={{color:C.mute}}>{label}</div>{children}</div>);}
+function Section({title,sub,children}){return(<div className="mb-5 rounded-lg p-4" style={{background:C.panel,border:`1px solid ${C.line}`}}><div className="font-semibold" style={{color:C.ink}}>{title}</div>{sub&&<div className="text-[11px] mt-0.5 mb-1" style={{color:C.mute}}>{sub}</div>}{children}</div>);}
+function BarCard({title,data,fmtV}){const max=Math.max(1,...data.map(d=>d[1]));return(<div className="rounded-lg p-4" style={{background:C.panel,border:`1px solid ${C.line}`}}><div className="text-sm font-semibold mb-3" style={{color:C.ink}}>{title}</div>{data.map(([k,v])=>(<div key={k} className="mb-2"><div className="flex justify-between text-[11px] mb-0.5"><span style={{color:C.text}}>{k}</span><span style={{color:C.mute,fontVariantNumeric:"tabular-nums"}}>{fmtV(v)}</span></div><div className="h-2 rounded-full" style={{background:C.lineSoft}}><div className="h-2 rounded-full" style={{width:`${(v/max)*100}%`,background:C.brass}}/></div></div>))}</div>);}
+
+function Cell({v,on,ph,w,type}){return(<td className="px-1 py-1" style={{width:w?`${w}px`:"auto"}}><input value={v} onChange={e=>on(e.target.value)} placeholder={ph} type={type||"text"} className="w-full px-1.5 py-1 rounded outline-none text-sm bg-transparent" style={{border:"1px solid transparent"}} onFocus={e=>e.target.style.border=`1px solid ${C.brass}`} onBlur={e=>e.target.style.border="1px solid transparent"}/></td>);}
+function Num({v,on,ph,w}){return(<input value={v} onChange={e=>on(e.target.value)} placeholder={ph} type="number" className="px-1.5 py-1 rounded outline-none text-sm bg-transparent text-right" style={{border:"1px solid transparent",width:w?`${w}px`:"90px",fontVariantNumeric:"tabular-nums"}} onFocus={e=>e.target.style.border=`1px solid ${C.brass}`} onBlur={e=>e.target.style.border="1px solid transparent"}/>);}
+function Sel({v,on,opts,narrow}){return(<select value={v} onChange={e=>on(e.target.value)} className="px-1 py-1 rounded outline-none text-sm bg-transparent" style={{border:"1px solid transparent",width:narrow?"62px":"auto"}}>{opts.map(o=><option key={o}>{o}</option>)}</select>);}
+function SelCell({v,on,opts,w}){return(<td className="px-1 py-1" style={{width:w?`${w}px`:"auto"}}><Sel v={v} on={on} opts={opts}/></td>);}
+
+function FloatWindow({title,icon,pos,onMove,onClose,children,width}){
+  const drag=useRef(null);
+  const onDown=(e)=>{const sx=e.clientX,sy=e.clientY,ox=pos.x,oy=pos.y;drag.current={sx,sy,ox,oy};
+    const move=(ev)=>{const d=drag.current;if(!d)return;onMove(Math.max(0,d.ox+ev.clientX-d.sx),Math.max(0,d.oy+ev.clientY-d.sy));};
+    const up=()=>{drag.current=null;window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);};
+    window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);};
+  return(<div className="absolute rounded-lg shadow-2xl select-none" style={{left:pos.x,top:pos.y,width,zIndex:60,background:C.panel,border:`1px solid ${C.line}`}}>
+    <div onPointerDown={onDown} className="flex items-center justify-between px-3 py-2 rounded-t-lg" style={{background:C.ink,color:"#EAF0F2",cursor:"grab"}}><div className="flex items-center gap-2 text-xs font-medium"><Ic n={icon} s={14} c={C.brass}/> {title}</div><button onClick={onClose}><Ic n="x" s={15}/></button></div>
+    {children}</div>);
+}
+function CalcPanel(){
+  const [disp,setDisp]=useState("0"),[acc,setAcc]=useState(null),[op,setOp]=useState(null),[fresh,setFresh]=useState(true);
+  const compute=(a,b,o)=>o==="+"?a+b:o==="−"?a-b:o==="×"?a*b:o==="÷"?(b===0?NaN:a/b):b;
+  const digit=(x)=>{if(fresh){setDisp(x==="."?"0.":x);setFresh(false);}else{if(x==="."&&disp.includes("."))return;setDisp(disp+x);}};
+  const operator=(o)=>{const cur=parseFloat(disp);if(acc===null)setAcc(cur);else if(!fresh){const r=compute(acc,cur,op);setAcc(r);setDisp(String(r));}setOp(o);setFresh(true);};
+  const equals=()=>{if(op===null||acc===null)return;const r=compute(acc,parseFloat(disp),op);setDisp(String(isNaN(r)?"Err":+r.toFixed(6)));setAcc(null);setOp(null);setFresh(true);};
+  const K=({label,on,kind})=>(<button onClick={on} className="h-11 rounded-md text-sm font-medium flex items-center justify-center" style={{background:kind==="op"?C.brassSoft:C.paper,color:C.ink,border:`1px solid ${C.line}`}}>{label}</button>);
+  return(<div className="p-3"><div className="rounded-md px-3 py-3 mb-2 text-right text-2xl font-semibold overflow-hidden" style={{background:C.ink,color:"#EAF0F2",fontVariantNumeric:"tabular-nums"}}>{disp}</div>
+    <div className="grid grid-cols-4 gap-1.5">
+      <K label="C" on={()=>{setDisp("0");setAcc(null);setOp(null);setFresh(true);}}/><K label={<Ic n="del" s={15}/>} on={()=>setDisp(fresh?"0":disp.length>1?disp.slice(0,-1):"0")}/><K label="%" on={()=>setDisp(String(parseFloat(disp)/100))}/><K label="÷" on={()=>operator("÷")} kind="op"/>
+      {["7","8","9"].map(n=><K key={n} label={n} on={()=>digit(n)}/>)}<K label="×" on={()=>operator("×")} kind="op"/>
+      {["4","5","6"].map(n=><K key={n} label={n} on={()=>digit(n)}/>)}<K label="−" on={()=>operator("−")} kind="op"/>
+      {["1","2","3"].map(n=><K key={n} label={n} on={()=>digit(n)}/>)}<K label="+" on={()=>operator("+")} kind="op"/>
+      <K label="0" on={()=>digit("0")}/><K label="." on={()=>digit(".")}/><div className="col-span-2"><button onClick={equals} className="h-11 w-full rounded-md text-sm font-medium text-white" style={{background:C.ink}}>=</button></div>
+    </div></div>);
+}
+function ReceiptModal({row,onClose}){
+  return(<div className="fixed inset-0 flex items-center justify-center p-4" style={{background:"rgba(10,20,28,0.5)",zIndex:80}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} className="rounded-lg overflow-hidden" style={{width:340,background:C.panel}}>
+      <div id="rcpt" className="p-5" style={{fontFamily:"ui-monospace,monospace"}}>
+        <div className="text-center"><div className="font-semibold" style={{color:C.ink}}>TORONTO FX & MONEY SERVICES</div><div className="text-[11px]" style={{color:C.mute}}>Registered MSB · Toronto, ON</div></div>
+        <div className="my-3" style={{borderTop:`1px dashed ${C.line}`}}/>
+        <Line k="Date" v={row.date}/><Line k="Customer" v={row.customer||"—"}/><Line k="Type" v={row.type}/><Line k="Teller" v={row.teller}/>
+        <div className="my-3" style={{borderTop:`1px dashed ${C.line}`}}/>
+        <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`}/><Line k="Rate" v={row.rate}/><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`}/><Line k="Fee" v={fmt(row.fee,"CAD")}/>
+        <div className="my-3" style={{borderTop:`1px dashed ${C.line}`}}/>
+        <div className="text-center text-[11px]" style={{color:C.mute}}>Thank you — keep for your records</div>
+      </div>
+      <div className="flex gap-2 p-3" style={{borderTop:`1px solid ${C.line}`}}>
+        <button onClick={()=>window.print()} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium text-white" style={{background:C.ink}}><Ic n="printer" s={14}/> Print</button>
+        <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{border:`1px solid ${C.line}`}}>Close</button>
+      </div>
+    </div></div>);
+}
+function Line({k,v}){return(<div className="flex justify-between text-sm py-0.5"><span style={{color:C.mute}}>{k}</span><span style={{color:C.ink,fontVariantNumeric:"tabular-nums"}}>{v}</span></div>);}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

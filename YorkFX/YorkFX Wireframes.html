@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YorkFX — Homepage Wireframes</title>
+<link rel="stylesheet" href="wireframe.css" />
+<script>
+  // Suppress the benign "ResizeObserver loop" notification (fired by resize-aware UI).
+  window.addEventListener('error', function (e) {
+    if (e && e.message && e.message.indexOf('ResizeObserver loop') !== -1) {
+      e.stopImmediatePropagation();
+    }
+  });
+</script>
+</head>
+<body>
+
+<!-- ===================== APP BAR / TABS ===================== -->
+<div class="appbar">
+  <div class="appbar-top">
+    <div class="york-logo" style="font-size:30px">
+      <span class="yk">YORK</span>
+      <span class="sub">FOREIGN EXCHANGE INC</span>
+    </div>
+    <div class="col">
+      <h1 class="appbar-title">Homepage wireframes</h1>
+      <span class="appbar-sub">low-fi · structure &amp; flow · 4 directions + admin · pick one to take to hi-fi</span>
+    </div>
+  </div>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="a">Rate Board<small>challenger</small></button>
+    <button class="tab" data-tab="b">Editorial<small>private-bank</small></button>
+    <button class="tab" data-tab="c">Converter-First<small>fintech utility</small></button>
+    <button class="tab" data-tab="d">Yorkville Desk<small>local luxe</small></button>
+    <button class="tab" data-tab="compliance">Compliance<small>trust page</small></button>
+    <button class="tab" data-tab="admin">Rate Editor<small>employee login</small></button>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ============================================================
+     DIRECTION A — THE RATE BOARD (challenger to the banks)
+     ============================================================ -->
+<section class="panel active" id="panel-a">
+  <div class="concept">
+    <div class="concept-badge">A</div>
+    <div>
+      <h2>The Rate Board</h2>
+      <p>A confident challenger-to-the-banks layout. The <b>live rate board</b> sits beside the headline as the hero — it's the first thing you see and the reason to trust the price. Bold, transactional, walk-in friendly.</p>
+      <div class="tagrow">
+        <span class="chip">live rates = hero</span>
+        <span class="chip">"beat your bank"</span>
+        <span class="chip">quote + walk-in</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com</div></div>
+    <div class="site">
+
+      <!-- nav -->
+      <div class="sec" style="padding:18px 46px">
+        <div class="navbar">
+          <div class="york-logo" style="font-size:24px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line"></span><span class="line"></span><span class="line"></span><span class="line w50"></span></div>
+          <span class="btn accent">Get a live quote</span>
+        </div>
+      </div>
+
+      <!-- hero split -->
+      <div class="sec" style="padding-top:46px;padding-bottom:46px">
+        <div class="row gap28 wrap">
+          <div class="fill col gap20" style="min-width:300px">
+            <div class="eyebrow">FINTRAC-registered · Yorkville, Toronto</div>
+            <h2 class="h-xl">Beat your bank's<br>exchange rate.<br>Every single time.</h2>
+            <div class="lines" style="max-width:380px"><span class="line w90"></span><span class="line w70"></span></div>
+            <div class="row gap12 wrap mt8">
+              <span class="btn accent">Get a live quote →</span>
+              <span class="btn ghost">Visit us in Yorkville</span>
+            </div>
+            <div class="row gap8 wrap mt8">
+              <span class="chip">⌁ FINTRAC</span><span class="chip">Western Union</span><span class="chip">Interac</span><span class="chip">ATM</span>
+            </div>
+            <div class="note" style="margin-top:6px">↑ headline picks the fight: "we beat banks"</div>
+          </div>
+
+          <!-- LIVE RATE BOARD -->
+          <div class="fill" style="min-width:320px;position:relative">
+            <div class="sketch" style="background:#232323;border-color:#232323;padding:18px">
+              <div class="row between center" style="margin-bottom:14px">
+                <span class="eyebrow" style="color:oklch(0.8 0.1 150);margin:0">● LIVE BOARD</span>
+                <span class="annot" style="color:#888;font-size:13px;font-family:var(--font-mono)">updated 2 min ago</span>
+              </div>
+              <div class="rateboard cols3" style="gap:10px">
+                <div class="rate"><span class="pair"><span class="flag"></span>USD/CAD</span><span class="big">1.3642</span><span class="delta up">▲ 0.12%</span></div>
+                <div class="rate"><span class="pair"><span class="flag"></span>EUR/CAD</span><span class="big">1.4710</span><span class="delta down">▼ 0.08%</span></div>
+                <div class="rate"><span class="pair"><span class="flag"></span>GBP/CAD</span><span class="big">1.7305</span><span class="delta up">▲ 0.20%</span></div>
+                <div class="rate"><span class="pair"><span class="flag"></span>INR/CAD</span><span class="big">0.0164</span><span class="delta up">▲ 0.04%</span></div>
+                <div class="rate"><span class="pair"><span class="flag"></span>AED/CAD</span><span class="big">0.3714</span><span class="delta down">▼ 0.02%</span></div>
+                <div class="rate"><span class="pair"><span class="flag"></span>PHP/CAD</span><span class="big">0.0243</span><span class="delta up">▲ 0.09%</span></div>
+              </div>
+              <div class="row between center mt16">
+                <span class="annot" style="color:#888;font-size:13px;font-family:var(--font-mono)">+ 40 currencies →</span>
+                <span class="btn accent" style="padding:8px 14px;font-size:13px">Lock this rate</span>
+              </div>
+            </div>
+            <div class="note" style="position:absolute;right:-6px;bottom:-34px;text-align:right">staff-updated board ↑<br><span style="font-size:14px" class="annot">(see "Rate Editor" tab)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- converter strip -->
+      <div class="sec tint">
+        <div class="row between center wrap gap20">
+          <div class="col gap8" style="min-width:240px">
+            <div class="eyebrow" style="color:var(--accent)">Quick converter</div>
+            <h3 class="h-lg">See exactly what you'll get</h3>
+            <span class="annot">no surprises — mid-market + our margin shown</span>
+          </div>
+          <div class="sketch" style="min-width:300px;flex:1;max-width:440px;background:#fff;padding:6px">
+            <div class="converter" style="padding:14px">
+              <div class="conv-row"><span class="amt">1,000.00</span><span class="cur"><span class="flag"></span>CAD ▾</span></div>
+              <div class="conv-swap">⇅</div>
+              <div class="conv-row"><span class="amt">733.10</span><span class="cur"><span class="flag"></span>USD ▾</span></div>
+              <span class="btn accent" style="justify-content:center">Reserve &amp; pick up today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- services -->
+      <div class="sec">
+        <div class="eyebrow">What we do</div>
+        <h3 class="h-lg" style="margin-bottom:18px">Everything money, under one roof</h3>
+        <div class="grid g4">
+          <div class="feature sketch tight"><div class="ic">$</div><div class="h-md">Buy &amp; sell cash</div><div class="lines"><span class="line w90"></span><span class="line w60"></span></div></div>
+          <div class="feature sketch tight"><div class="ic">⇄</div><div class="h-md">Wire transfers</div><div class="lines"><span class="line w80"></span><span class="line w70"></span></div></div>
+          <div class="feature sketch tight"><div class="ic">◷</div><div class="h-md">Western Union</div><div class="lines"><span class="line w90"></span><span class="line w50"></span></div></div>
+          <div class="feature sketch tight"><div class="ic">▦</div><div class="h-md">Business FX</div><div class="lines"><span class="line w70"></span><span class="line w80"></span></div></div>
+        </div>
+      </div>
+
+      <!-- use cases -->
+      <div class="sec">
+        <div class="eyebrow">Built for</div>
+        <div class="grid g3">
+          <div class="col gap8"><div class="ph" style="height:120px"><span>[ student paying tuition abroad ]</span></div><div class="h-md">Students &amp; newcomers</div><span class="annot">send money home, fee-fair</span></div>
+          <div class="col gap8"><div class="ph" style="height:120px"><span>[ keys / condo close-up ]</span></div><div class="h-md">Real estate &amp; large sums</div><span class="annot">cross-border closings</span></div>
+          <div class="col gap8"><div class="ph" style="height:120px"><span>[ travel / passport ]</span></div><div class="h-md">Travellers</div><span class="annot">40+ currencies in stock</span></div>
+        </div>
+      </div>
+
+      <!-- location + lead -->
+      <div class="sec dark">
+        <div class="row gap28 wrap">
+          <div class="fill col gap12" style="min-width:280px">
+            <div class="eyebrow">Come say hi</div>
+            <h3 class="h-lg">69 Yorkville Ave, Toronto</h3>
+            <div class="lines"><span class="line w70 dark"></span><span class="line w50 dark"></span></div>
+            <div class="ph dark" style="height:150px;margin-top:8px"><span>[ map of Yorkville ]</span></div>
+          </div>
+          <div class="fill col gap10" style="min-width:280px">
+            <div class="eyebrow">Get a quote — no obligation</div>
+            <div class="formblk">
+              <div class="field">amount + currency</div>
+              <div class="field">name</div>
+              <div class="field">phone / email</div>
+              <span class="btn accent" style="justify-content:center">Send me a rate</span>
+            </div>
+            <span class="annot" style="color:#888">↑ the lead capture</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- footer -->
+      <div class="sec" style="padding:26px 46px">
+        <div class="row between center wrap gap12">
+          <div class="york-logo" style="font-size:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line w40"></span><span class="line w40"></span><span class="line w40"></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DIRECTION B — PREMIUM EDITORIAL (private-bank feel)
+     ============================================================ -->
+<section class="panel" id="panel-b">
+  <div class="concept">
+    <div class="concept-badge">B</div>
+    <div>
+      <h2>Premium Editorial</h2>
+      <p>The "he spent a lot on this site" direction. A full-bleed <b>close-up money photograph</b>, lots of air, restrained type, and a <b>thin live-rate ticker</b> riding the bottom of the hero. Feels like a private bank, not a kiosk.</p>
+      <div class="tagrow">
+        <span class="chip">cinematic imagery</span>
+        <span class="chip">thin rate ticker</span>
+        <span class="chip">luxury / trust</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com</div></div>
+    <div class="site">
+
+      <!-- full-bleed hero -->
+      <div class="ph dark" style="height:430px;border:none;border-radius:0;position:relative;padding:0">
+        <span style="position:absolute;top:18px;left:46px;font-family:var(--font-mono);font-size:12px">[ FULL-BLEED CLOSE-UP: layered banknotes / macro of currency texture, dim &amp; moody ]</span>
+        <!-- nav over photo -->
+        <div style="position:absolute;top:22px;right:46px;left:46px" class="row between center">
+          <div class="york-logo light" style="font-size:22px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="row gap20 center">
+            <div class="navlinks"><span class="line" style="background:rgba(255,255,255,.6)"></span><span class="line" style="background:rgba(255,255,255,.6)"></span><span class="line w50" style="background:rgba(255,255,255,.6)"></span></div>
+            <span class="btn ghost" style="color:#fff;border-color:#fff">Get a quote</span>
+          </div>
+        </div>
+        <!-- headline -->
+        <div style="position:absolute;left:46px;bottom:88px;max-width:560px" class="col gap12">
+          <div class="eyebrow" style="color:oklch(0.85 0.08 150)">Foreign exchange · Toronto · since 1996</div>
+          <h2 class="h-xl" style="color:#fff;font-size:42px">The considered way<br>to move money.</h2>
+          <div class="lines" style="max-width:360px"><span class="line w80" style="background:rgba(255,255,255,.5)"></span></div>
+        </div>
+        <!-- thin ticker -->
+        <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);border-top:1px solid rgba(255,255,255,.2);padding:11px 46px" class="row gap28 center">
+          <span class="delta" style="color:#fff">USD/CAD <b>1.3642</b> <span class="up">▲</span></span>
+          <span class="delta" style="color:#fff">EUR/CAD <b>1.4710</b> <span class="down">▼</span></span>
+          <span class="delta" style="color:#fff">GBP/CAD <b>1.7305</b> <span class="up">▲</span></span>
+          <span class="delta" style="color:#fff">INR/CAD <b>0.0164</b> <span class="up">▲</span></span>
+          <span class="annot" style="color:#999;margin-left:auto">— quiet, scrolling ticker</span>
+        </div>
+      </div>
+      <div class="note" style="padding:8px 46px 0">↑ imagery does the "premium" work; rates stay present but understated</div>
+
+      <!-- editorial statement -->
+      <div class="sec center-txt" style="padding:54px 46px">
+        <div style="max-width:640px;margin:0 auto" class="col gap12 center-x">
+          <div class="eyebrow">Our promise</div>
+          <h3 class="h-lg" style="font-size:30px">Bank-beating rates, delivered with the calm and care of a private desk.</h3>
+        </div>
+      </div>
+
+      <!-- services as editorial rows -->
+      <div class="sec" style="padding:0 46px">
+        <div class="row gap28 center wrap" style="padding:34px 0;border-bottom:1.5px dashed var(--ink-faint)">
+          <div class="ph" style="width:240px;height:150px;flex:none"><span>[ cash fan, macro ]</span></div>
+          <div class="fill col gap8" style="min-width:260px"><div class="eyebrow">01 — Cash exchange</div><h3 class="h-lg">Buy &amp; sell 40+ currencies</h3><div class="lines"><span class="line w90"></span><span class="line w70"></span></div></div>
+        </div>
+        <div class="row gap28 center wrap" style="padding:34px 0;border-bottom:1.5px dashed var(--ink-faint);flex-direction:row-reverse">
+          <div class="ph" style="width:240px;height:150px;flex:none"><span>[ wire / globe macro ]</span></div>
+          <div class="fill col gap8" style="min-width:260px"><div class="eyebrow">02 — Transfers</div><h3 class="h-lg">Same-day international wires</h3><div class="lines"><span class="line w80"></span><span class="line w60"></span></div></div>
+        </div>
+        <div class="row gap28 center wrap" style="padding:34px 0">
+          <div class="ph" style="width:240px;height:150px;flex:none"><span>[ handshake / desk ]</span></div>
+          <div class="fill col gap8" style="min-width:260px"><div class="eyebrow">03 — Private &amp; business</div><h3 class="h-lg">Tailored rates for large sums</h3><div class="lines"><span class="line w90"></span><span class="line w50"></span></div></div>
+        </div>
+      </div>
+
+      <!-- elegant converter inset -->
+      <div class="sec tint center-txt">
+        <div style="max-width:460px;margin:0 auto" class="col gap14 center-x">
+          <div class="eyebrow">Try it</div>
+          <h3 class="h-lg">What will you receive?</h3>
+          <div class="sketch" style="width:100%;background:#fff;padding:8px">
+            <div class="converter" style="padding:14px">
+              <div class="conv-row"><span class="amt">10,000</span><span class="cur"><span class="flag"></span>CAD ▾</span></div>
+              <div class="conv-swap">⇅</div>
+              <div class="conv-row"><span class="amt">7,331</span><span class="cur"><span class="flag"></span>USD ▾</span></div>
+            </div>
+          </div>
+          <span class="btn" style="justify-content:center">Request a private quote</span>
+        </div>
+      </div>
+
+      <!-- location -->
+      <div class="sec">
+        <div class="row gap28 wrap center">
+          <div class="ph" style="flex:1;min-width:280px;height:200px"><span>[ storefront / Yorkville street, refined ]</span></div>
+          <div class="fill col gap10" style="min-width:260px">
+            <div class="eyebrow">Visit</div>
+            <h3 class="h-lg">69 Yorkville Avenue</h3>
+            <div class="lines"><span class="line w60"></span><span class="line w40"></span></div>
+            <span class="btn ghost mt8">Directions &amp; hours</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec dark" style="padding:30px 46px">
+        <div class="row between center wrap gap12">
+          <div class="york-logo light" style="font-size:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line w40" style="background:#666"></span><span class="line w40" style="background:#666"></span><span class="line w40" style="background:#666"></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DIRECTION C — CONVERTER-FIRST (fintech utility)
+     ============================================================ -->
+<section class="panel" id="panel-c">
+  <div class="concept">
+    <div class="concept-badge">C</div>
+    <div>
+      <h2>Converter-First</h2>
+      <p>Wise-style utility. The hero <b>is</b> an interactive converter — "you send / they get" — fed by the live rate. Best for the <b>newcomer / student</b> sending money home: clear, fee-fair, and obvious what to do next. Walk-in is offered as an easy alt path.</p>
+      <div class="tagrow">
+        <span class="chip">converter = hero</span>
+        <span class="chip">newcomers &amp; students</span>
+        <span class="chip">start online OR walk in</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com</div></div>
+    <div class="site">
+
+      <div class="sec" style="padding:18px 46px">
+        <div class="navbar">
+          <div class="york-logo" style="font-size:24px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line"></span><span class="line"></span><span class="line w50"></span></div>
+          <span class="btn accent">Start a transfer</span>
+        </div>
+      </div>
+
+      <!-- hero converter -->
+      <div class="sec tint" style="padding:46px">
+        <div class="row gap28 wrap center">
+          <div class="fill col gap14" style="min-width:280px">
+            <div class="eyebrow">No hidden fees · FINTRAC-registered</div>
+            <h2 class="h-xl">Send money home<br>for less than the banks.</h2>
+            <div class="lines" style="max-width:340px"><span class="line w90"></span><span class="line w60"></span></div>
+            <div class="row gap8 wrap mt8"><span class="chip">India</span><span class="chip">Philippines</span><span class="chip">UAE</span><span class="chip">+50 more</span></div>
+          </div>
+          <!-- the converter is the hero -->
+          <div style="min-width:330px;flex:1;max-width:420px;position:relative">
+            <div class="sketch" style="background:#fff;padding:20px">
+              <div class="converter" style="padding:2px;gap:10px">
+                <div class="col gap6"><span class="annot" style="font-size:13px">You send</span><div class="conv-row"><span class="amt">1,000.00</span><span class="cur"><span class="flag"></span>CAD ▾</span></div></div>
+                <div class="row center gap8" style="padding-left:6px"><span class="annot" style="font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)">rate 1 CAD = 60.31 INR · fee $0</span></div>
+                <div class="col gap6"><span class="annot" style="font-size:13px">They receive</span><div class="conv-row" style="border-color:var(--accent)"><span class="amt">60,310</span><span class="cur"><span class="flag"></span>INR ▾</span></div></div>
+                <span class="btn accent mt8" style="justify-content:center">Start transfer →</span>
+                <span class="annot center-txt" style="margin-top:2px">or <u>reserve cash for pickup in Yorkville</u></span>
+              </div>
+            </div>
+            <div class="note" style="position:absolute;left:-4px;bottom:-32px">↑ the whole hero is the tool</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- trust badges -->
+      <div class="sec" style="padding:20px 46px">
+        <div class="row center between wrap gap20" style="opacity:.85">
+          <span class="chip">⌁ FINTRAC registered</span><span class="chip">Western Union partner</span><span class="chip">Interac</span><span class="chip">ATM on-site</span><span class="annot">— credibility row</span>
+        </div>
+      </div>
+
+      <!-- how it works -->
+      <div class="sec">
+        <div class="eyebrow">How it works</div>
+        <h3 class="h-lg" style="margin-bottom:18px">Three steps, done in minutes</h3>
+        <div class="grid g3">
+          <div class="feature sketch tight"><div class="ic">1</div><div class="h-md">Lock your rate</div><div class="lines"><span class="line w90"></span><span class="line w60"></span></div></div>
+          <div class="feature sketch tight"><div class="ic">2</div><div class="h-md">Send or drop in funds</div><div class="lines"><span class="line w80"></span><span class="line w70"></span></div></div>
+          <div class="feature sketch tight"><div class="ic">3</div><div class="h-md">They get paid</div><div class="lines"><span class="line w90"></span><span class="line w50"></span></div></div>
+        </div>
+      </div>
+
+      <!-- live rates table -->
+      <div class="sec dark">
+        <div class="row between center wrap" style="margin-bottom:16px">
+          <div><div class="eyebrow">Today's rates</div><h3 class="h-lg">Live, and better than the bank</h3></div>
+          <span class="annot" style="color:#888;font-family:var(--font-mono);font-size:12px">↻ auto-refresh · staff-set</span>
+        </div>
+        <div class="rateboard cols4">
+          <div class="rate"><span class="pair"><span class="flag"></span>USD</span><span class="big">1.3642</span><span class="delta up">▲</span></div>
+          <div class="rate"><span class="pair"><span class="flag"></span>EUR</span><span class="big">1.4710</span><span class="delta down">▼</span></div>
+          <div class="rate"><span class="pair"><span class="flag"></span>GBP</span><span class="big">1.7305</span><span class="delta up">▲</span></div>
+          <div class="rate"><span class="pair"><span class="flag"></span>INR</span><span class="big">0.0164</span><span class="delta up">▲</span></div>
+        </div>
+      </div>
+
+      <!-- location -->
+      <div class="sec">
+        <div class="row gap28 wrap center">
+          <div class="fill col gap10" style="min-width:260px">
+            <div class="eyebrow">Prefer in person?</div>
+            <h3 class="h-lg">Walk into 69 Yorkville Ave</h3>
+            <div class="lines"><span class="line w70"></span><span class="line w50"></span></div>
+            <span class="btn ghost mt8">Hours &amp; directions</span>
+          </div>
+          <div class="ph" style="flex:1;min-width:280px;height:170px"><span>[ map ]</span></div>
+        </div>
+      </div>
+
+      <div class="sec" style="padding:26px 46px">
+        <div class="row between center wrap gap12">
+          <div class="york-logo" style="font-size:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line w40"></span><span class="line w40"></span><span class="line w40"></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DIRECTION D — YORKVILLE DESK (local luxe)
+     ============================================================ -->
+<section class="panel" id="panel-d">
+  <div class="concept">
+    <div class="concept-badge">D</div>
+    <div>
+      <h2>The Yorkville Desk</h2>
+      <p>Leads with <b>place &amp; personal service</b>. The storefront and address are the hero, with a rate ticker underneath. It says: a real, trusted desk in Toronto's most prestigious neighbourhood — come in and be looked after. Strong walk-in driver.</p>
+      <div class="tagrow">
+        <span class="chip">location-forward</span>
+        <span class="chip">concierge service</span>
+        <span class="chip">drives walk-ins</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com</div></div>
+    <div class="site">
+
+      <div class="sec" style="padding:18px 46px">
+        <div class="navbar">
+          <div class="york-logo" style="font-size:24px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line"></span><span class="line"></span><span class="line w50"></span></div>
+          <span class="btn accent">Call the desk</span>
+        </div>
+      </div>
+
+      <!-- hero with storefront -->
+      <div class="sec" style="padding:46px">
+        <div class="row gap28 wrap center">
+          <div class="fill col gap12" style="min-width:280px">
+            <div class="eyebrow">Bloor-Yorkville · Toronto</div>
+            <h2 class="h-xl">Yorkville's<br>currency desk.</h2>
+            <div class="lines" style="max-width:340px"><span class="line w90"></span><span class="line w70"></span></div>
+            <div class="sketch soft mt8" style="padding:14px 16px;max-width:330px">
+              <div class="row between center"><span class="h-md">69 Yorkville Ave</span><span class="chip">Open · 9–6</span></div>
+              <div class="lines mt8"><span class="line w70"></span></div>
+            </div>
+            <div class="row gap12 wrap mt8"><span class="btn accent">Get directions</span><span class="btn ghost">Today's rates ↓</span></div>
+          </div>
+          <div class="fill" style="min-width:300px;position:relative">
+            <div class="ph" style="height:300px"><span>[ warm storefront photo — the YORK window sign, golden hour ]</span></div>
+            <div class="note" style="position:absolute;right:0;bottom:-32px;text-align:right">↑ recreate the real storefront — instant recognition</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- rate ticker bar -->
+      <div class="sec dark" style="padding:16px 46px">
+        <div class="row gap28 center wrap">
+          <span class="delta" style="color:#fff">USD/CAD <b>1.3642</b> <span class="up">▲</span></span>
+          <span class="delta" style="color:#fff">EUR/CAD <b>1.4710</b> <span class="down">▼</span></span>
+          <span class="delta" style="color:#fff">GBP/CAD <b>1.7305</b> <span class="up">▲</span></span>
+          <span class="delta" style="color:#fff">INR/CAD <b>0.0164</b> <span class="up">▲</span></span>
+          <span class="annot" style="color:#888;margin-left:auto;font-family:var(--font-mono);font-size:12px">live · staff-set</span>
+        </div>
+      </div>
+
+      <!-- concierge service -->
+      <div class="sec tint">
+        <div class="row gap28 wrap center">
+          <div class="fill col gap8" style="min-width:260px">
+            <div class="eyebrow">Personal service</div>
+            <h3 class="h-lg">Talk to a real person who knows FX</h3>
+            <div class="lines"><span class="line w90"></span><span class="line w70"></span><span class="line w50"></span></div>
+          </div>
+          <div class="ph" style="flex:1;min-width:260px;height:160px"><span>[ teller / friendly handoff of cash ]</span></div>
+        </div>
+      </div>
+
+      <!-- services -->
+      <div class="sec">
+        <div class="eyebrow">At the desk</div>
+        <div class="grid g4 mt8">
+          <div class="feature sketch tight"><div class="ic">$</div><div class="h-md">Cash exchange</div></div>
+          <div class="feature sketch tight"><div class="ic">⇄</div><div class="h-md">Wire transfers</div></div>
+          <div class="feature sketch tight"><div class="ic">◷</div><div class="h-md">Western Union</div></div>
+          <div class="feature sketch tight"><div class="ic">▤</div><div class="h-md">ATM &amp; Interac</div></div>
+        </div>
+      </div>
+
+      <!-- map + lead -->
+      <div class="sec">
+        <div class="row gap28 wrap">
+          <div class="ph" style="flex:1;min-width:280px;height:220px"><span>[ map — Yorkville Ave pin ]</span></div>
+          <div class="fill col gap10" style="min-width:260px">
+            <div class="eyebrow">Plan your visit</div>
+            <h3 class="h-md">Reserve a currency for pickup</h3>
+            <div class="formblk">
+              <div class="field">currency + amount</div>
+              <div class="field">pickup date</div>
+              <div class="field">phone</div>
+              <span class="btn accent" style="justify-content:center">Reserve &amp; we'll text you</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec" style="padding:26px 46px">
+        <div class="row between center wrap gap12">
+          <div class="york-logo" style="font-size:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line w40"></span><span class="line w40"></span><span class="line w40"></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     COMPLIANCE & REGULATIONS (site content page)
+     ============================================================ -->
+<section class="panel" id="panel-compliance">
+  <div class="concept">
+    <div class="concept-badge">§</div>
+    <div>
+      <h2>Compliance &amp; Regulations</h2>
+      <p>A trust page that doubles as a "what to bring" guide. It reassures larger clients that York is FINTRAC-registered and by-the-book, while telling walk-ins exactly what ID &amp; documents to bring — so nobody shows up unprepared.</p>
+      <div class="tagrow">
+        <span class="chip">FINTRAC-registered</span>
+        <span class="chip">"what to bring" checklist</span>
+        <span class="chip">builds confidence</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com/compliance</div></div>
+    <div class="site">
+
+      <!-- nav -->
+      <div class="sec" style="padding:18px 46px">
+        <div class="navbar">
+          <div class="york-logo" style="font-size:24px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line"></span><span class="line"></span><span class="line w50"></span></div>
+          <span class="btn accent">Get a live quote</span>
+        </div>
+      </div>
+
+      <!-- page header -->
+      <div class="sec" style="padding:44px 46px 30px">
+        <div class="eyebrow">Compliance &amp; regulations</div>
+        <h2 class="h-xl" style="max-width:640px">Safe, regulated, and transparent — every transaction.</h2>
+        <div class="row gap8 wrap mt16">
+          <span class="chip">⌁ FINTRAC registered MSB</span>
+          <span class="chip">Anti-money-laundering program</span>
+          <span class="chip">Trained personnel</span>
+        </div>
+        <div class="note" style="margin-top:12px">↑ leads with the badges large clients look for</div>
+      </div>
+
+      <!-- FINTRAC explainer -->
+      <div class="sec">
+        <div class="row gap28 wrap">
+          <div class="fill col gap10" style="min-width:280px">
+            <div class="eyebrow">Who regulates us</div>
+            <h3 class="h-lg">FINTRAC — Canada's financial intelligence unit</h3>
+            <div class="lines"><span class="line w90"></span><span class="line w80"></span><span class="line w90"></span><span class="line w60"></span></div>
+            <span class="annot">plain-language: created 2000, fights money-laundering &amp; terrorist financing; York follows its rules with a full AML compliance regime</span>
+          </div>
+          <div class="ph" style="flex:1;min-width:240px;height:170px"><span>[ FINTRAC / Govt of Canada crest · or secure-vault macro ]</span></div>
+        </div>
+      </div>
+
+      <!-- what to bring: personal -->
+      <div class="sec tint">
+        <div class="row between center wrap" style="margin-bottom:6px">
+          <h3 class="h-lg">What to bring</h3>
+          <span class="chip" style="border-color:var(--accent);color:var(--accent)">transactions over $3,000 CAD</span>
+        </div>
+        <span class="annot ink" style="display:block;margin-bottom:16px">turns a legal requirement into a helpful pre-visit checklist</span>
+        <div class="grid g2">
+          <div class="sketch tight" style="background:#fff;padding:18px">
+            <div class="h-md" style="margin-bottom:10px">① Declaration of funds</div>
+            <div class="lines"><span class="line w80"></span><span class="line w50"></span></div>
+          </div>
+          <div class="sketch tight" style="background:#fff;padding:18px">
+            <div class="h-md" style="margin-bottom:10px">② Government-issued photo ID</div>
+            <div class="col gap8">
+              <span class="checkitem">✓ Full name</span>
+              <span class="checkitem">✓ Photo</span>
+              <span class="checkitem">✓ Full address</span>
+              <span class="checkitem">✓ Date of birth</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- what to bring: corporate -->
+      <div class="sec">
+        <div class="row between center wrap" style="margin-bottom:14px">
+          <h3 class="h-lg">Transacting as a business?</h3>
+          <span class="chip">corporate clients</span>
+        </div>
+        <div class="grid g3">
+          <div class="feature sketch tight"><div class="ic">▦</div><div class="h-md">Articles of incorporation</div><div class="lines"><span class="line w90"></span><span class="line w60"></span></div><span class="annot" style="font-size:14px">must show current signing officers</span></div>
+          <div class="feature sketch tight"><div class="ic">✎</div><div class="h-md">Signed corporate letter</div><div class="lines"><span class="line w80"></span><span class="line w70"></span></div><span class="annot" style="font-size:14px">from directors, stating nature of business</span></div>
+          <div class="feature sketch tight"><div class="ic">⌁</div><div class="h-md">ID + proof of residence</div><div class="lines"><span class="line w90"></span><span class="line w50"></span></div><span class="annot" style="font-size:14px">for signing officer(s), presented in person</span></div>
+        </div>
+      </div>
+
+      <!-- reporting thresholds -->
+      <div class="sec dark">
+        <div class="eyebrow">Mandatory reporting</div>
+        <h3 class="h-lg" style="margin-bottom:16px">Some transactions are reported to FINTRAC</h3>
+        <div class="grid g2">
+          <div class="rate" style="gap:10px;padding:18px"><span class="pair">LCTR · Large Cash Transaction Report</span><span class="big">Cash &gt; $10,000</span><span class="annot" style="color:#999">reported automatically</span></div>
+          <div class="rate" style="gap:10px;padding:18px"><span class="pair">EFTR · Electronic Fund Transfer Report</span><span class="big">Int'l wires</span><span class="annot" style="color:#999">reported automatically</span></div>
+        </div>
+      </div>
+
+      <!-- official link -->
+      <div class="sec center-txt">
+        <div style="max-width:540px;margin:0 auto" class="col gap10 center-x">
+          <span class="annot">Want the full legal description?</span>
+          <h3 class="h-md">Read FINTRAC's official overview</h3>
+          <span class="btn ghost">fintrac-canafe.gc.ca →</span>
+        </div>
+      </div>
+
+      <!-- footer -->
+      <div class="sec" style="padding:26px 46px">
+        <div class="row between center wrap gap12">
+          <div class="york-logo" style="font-size:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="navlinks"><span class="line w40"></span><span class="line w40"></span><span class="line w40"></span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ADMIN — RATE EDITOR (employee login)
+     ============================================================ -->
+<section class="panel" id="panel-admin">
+  <div class="concept">
+    <div class="concept-badge">⚙</div>
+    <div>
+      <h2>Rate Editor — staff login</h2>
+      <p>The back-office your team uses to keep the board honest. An employee logs in, edits the <b>buy/sell rates</b> (or sets a margin over mid-market), hits <b>Publish</b>, and every "live board" on the site updates instantly. No developer needed.</p>
+      <div class="tagrow">
+        <span class="chip">private · password</span>
+        <span class="chip">edit → publish</span>
+        <span class="chip">feeds every rate board</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row gap28 wrap" style="align-items:flex-start">
+
+    <!-- login card -->
+    <div style="flex:1;min-width:280px;max-width:360px;position:relative">
+      <div class="browser">
+        <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com/admin</div></div>
+        <div class="sec center-txt" style="padding:40px 34px;border:none">
+          <div class="york-logo" style="font-size:24px;align-items:center;margin-bottom:18px"><span class="yk">YORK</span><span class="sub">FOREIGN EXCHANGE INC</span></div>
+          <div class="h-md" style="margin-bottom:4px">Staff sign-in</div>
+          <span class="annot" style="display:block;margin-bottom:16px">private — not linked from the site</span>
+          <div class="formblk" style="text-align:left">
+            <div class="field">username</div>
+            <div class="field">password ••••••••</div>
+            <span class="btn accent" style="justify-content:center">Sign in</span>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="margin-top:14px">↑ simple gate. Could add a 2nd staff PIN for safety.</div>
+    </div>
+
+    <!-- dashboard -->
+    <div style="flex:1.6;min-width:340px">
+      <div class="browser">
+        <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">yorkfx.com/admin/rates</div></div>
+        <div class="site">
+          <!-- dash topbar -->
+          <div class="sec" style="padding:16px 26px">
+            <div class="row between center wrap gap12">
+              <div class="col"><div class="h-md">Rate board editor</div><span class="annot" style="font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)">last published: today 9:42 AM by Sam</span></div>
+              <div class="row gap8 center"><span class="chip" style="border-color:var(--accent);color:var(--accent)">● unpublished changes</span><span class="btn accent" style="padding:9px 16px">Publish to site</span></div>
+            </div>
+          </div>
+
+          <!-- margin control -->
+          <div class="sec tint" style="padding:16px 26px">
+            <div class="row between center wrap gap12">
+              <span class="annot ink">Quick set: margin over mid-market</span>
+              <div class="row gap8 center">
+                <span class="chip">buy +1.2%</span><span class="chip">sell +1.5%</span>
+                <span class="btn ghost" style="padding:7px 12px;font-size:13px">Apply to all ▾</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- editable table -->
+          <div class="sec" style="padding:8px 26px 26px">
+            <div class="row between" style="padding:12px 14px;font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);letter-spacing:.04em">
+              <span style="flex:1.2">CURRENCY</span><span style="flex:1">MID-MKT</span><span style="flex:1">WE BUY</span><span style="flex:1">WE SELL</span><span style="flex:.8">SHOW</span>
+            </div>
+            <!-- rows -->
+            <div class="rate-edit-row">
+              <span style="flex:1.2" class="row center gap8"><span class="flag"></span><b style="font-family:var(--font-mono)">USD</b></span>
+              <span style="flex:1" class="muted mono">1.3710</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.3530</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.3820</span>
+              <span style="flex:.8" class="toggle on">on</span>
+            </div>
+            <div class="rate-edit-row">
+              <span style="flex:1.2" class="row center gap8"><span class="flag"></span><b style="font-family:var(--font-mono)">EUR</b></span>
+              <span style="flex:1" class="muted mono">1.4790</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.4610</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.4920</span>
+              <span style="flex:.8" class="toggle on">on</span>
+            </div>
+            <div class="rate-edit-row">
+              <span style="flex:1.2" class="row center gap8"><span class="flag"></span><b style="font-family:var(--font-mono)">GBP</b></span>
+              <span style="flex:1" class="muted mono">1.7380</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.7180</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">1.7520</span>
+              <span style="flex:.8" class="toggle on">on</span>
+            </div>
+            <div class="rate-edit-row">
+              <span style="flex:1.2" class="row center gap8"><span class="flag"></span><b style="font-family:var(--font-mono)">INR</b></span>
+              <span style="flex:1" class="muted mono">0.0164</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">0.0161</span>
+              <span style="flex:1" class="field" style="padding:7px 10px">0.0167</span>
+              <span style="flex:.8" class="toggle off">off</span>
+            </div>
+            <div class="row center gap8 mt16">
+              <span class="btn ghost" style="padding:8px 14px;font-size:13px">+ Add currency</span>
+              <span class="annot">edit a cell → "unpublished changes" appears → Publish pushes it live</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</div><!-- /stage -->
+
+<!-- tweaks panel mount -->
+<div id="tweaks-root"></div>
+
+<script>
+  // tab switching
+  (function () {
+    var tabs = document.querySelectorAll('.tab');
+    var panels = { a:'panel-a', b:'panel-b', c:'panel-c', d:'panel-d', compliance:'panel-compliance', admin:'panel-admin' };
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        tabs.forEach(function (x){ x.classList.remove('active'); });
+        t.classList.add('active');
+        Object.values(panels).forEach(function (id){ document.getElementById(id).classList.remove('active'); });
+        document.getElementById(panels[t.dataset.tab]).classList.add('active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  })();
+</script>
+
+<!-- small extra styles for admin table -->
+<style>
+  .mono { font-family: var(--font-mono); font-size: 13px; }
+  .rate-edit-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 14px; border-bottom: 1.5px dashed var(--ink-faint);
+  }
+  .rate-edit-row .field { background:#fff; font-family: var(--font-mono); color: var(--ink); font-size: 13px; }
+  .toggle { font-family: var(--font-mono); font-size: 11px; font-weight: 700; padding: 5px 12px; border:2px solid var(--ink-soft); border-radius: 12px 8px 12px 8px/8px 12px 8px 12px; text-align:center; }
+  .toggle.on { color:#fff; background: var(--accent); border-color: var(--accent); }
+  .toggle.off { color: var(--ink-soft); }
+  .checkitem { font-family: var(--font-hand); font-size: 15px; color: var(--ink); }
+</style>
+
+<!-- React + Babel for the Tweaks panel only -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="tweaks-app.jsx"></script>
+
+</body>
+</html>

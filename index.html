@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CurrencyDesk OS</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="ext-resource-dependency" content="YorkFX/YorkFX Rate Board (standalone).html" data-resource-id="rateBoard" />
+<script>
+  // Silence the benign "ResizeObserver loop" notification (a known browser false-positive
+  // that fires when observer callbacks adjust layout — harmless, not an app error).
+  (function () {
+    const swallow = (msg) => typeof msg === 'string' && msg.indexOf('ResizeObserver loop') !== -1;
+    window.addEventListener('error', function (e) { if (swallow(e && e.message)) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    const _err = window.console && console.error;
+    if (_err) console.error = function () { if (swallow(arguments[0])) return; return _err.apply(console, arguments); };
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="yorkfx.css" />
+<link rel="stylesheet" href="os-src/york-os.css" />
+<script>
+  // apply the persisted appearance (light / dark / auto) BEFORE first paint
+  (function () {
+    try {
+      var p = localStorage.getItem('cdos_theme') || 'light';
+      var t = p === 'auto' ? (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : (p === 'dark' ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-cdtheme', t);
+      document.documentElement.style.colorScheme = t;
+    } catch (e) {}
+  })();
+</script>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { font-family: 'Archivo', system-ui, sans-serif; }
+  #os, #lock { font-family: 'Archivo', system-ui, sans-serif; }
+  /* keep module text in brand type even though modules use Tailwind */
+  .win-body, .win-body table, .win-body input, .win-body select, .win-body button { font-family: 'Archivo', system-ui, sans-serif; }
+  @media print { body * { visibility: hidden !important; } #rcpt, #rcpt * { visibility: visible !important; } #rcpt { position: absolute; left: 0; top: 0; width: 320px; } }
+</style>
+<script>
+  // swallow benign ResizeObserver noise
+  window.addEventListener('error', function (e) {
+    if (e && e.message && e.message.indexOf('ResizeObserver') !== -1) { e.stopImmediatePropagation(); return true; }
+  }, true);
+  // the ResizeObserver "loop completed/limit" notice is benign and surfaces on
+  // the console channel too — drop ONLY that message, keep every real error.
+  (function () {
+    var _ce = console.error;
+    console.error = function () {
+      var a0 = arguments[0];
+      if (typeof a0 === 'string' && a0.indexOf('ResizeObserver') !== -1) return;
+      return _ce.apply(console, arguments);
+    };
+  })();
+</script>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+    <rect width="400" height="400" fill="#0a0a0a"/>
+    <rect x="120" y="120" width="160" height="160" fill="none" stroke="#fff" stroke-width="10"/>
+    <text x="200" y="215" font-family="monospace" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">CD</text>
+    <text x="200" y="255" font-family="monospace" font-size="22" fill="#e0a106" text-anchor="middle">OS</text>
+  </svg>
+</template>
+
+<!-- React + Babel (pinned) -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- live rate engine (reads the published / locked rate board) -->
+<script src="yorkfx-converter.js"></script>
+
+<!-- CurrencyDesk OS app -->
+<script type="text/babel" data-presets="react" src="os-src/cdos-base.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-infotip.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-modules.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-settings.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-dashboard.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-till.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-vault.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-branches.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-clients.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-search.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-ledger.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-txmodal.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-transfers.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-transfers-app.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-cheques.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-cheques-app.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-compliance.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-lctr.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-compliance-app.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-kyc.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-apps.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-reports.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-pricing.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-import.jsx"></script>
+<script type="text/babel" data-presets="react" src="os-src/cdos-os.jsx"></script>
+<script type="text/babel" data-presets="react">
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.CDOS_App));
+</script>
+</body>
+</html>

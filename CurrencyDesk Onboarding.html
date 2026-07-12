@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CurrencyDesk OS — Set up your desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #14201b; --mute: rgba(20,32,27,0.6); --faint: rgba(20,32,27,0.42);
+    --green: #2c7a5b; --green-deep: #1f5a42; --bronze: #b9873f; --oxblood: #a24450;
+    --line: rgba(20,32,27,0.14); --hair: rgba(20,32,27,0.08);
+    --glass: rgba(255,255,255,0.62);
+    --glass-brd: rgba(255,255,255,0.7);
+    --field: rgba(255,255,255,0.55);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: 'Archivo', system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; overflow: hidden; }
+  .mono { font-family: 'Space Mono', monospace; }
+  #root { height: 100%; }
+
+  /* ===================== animated money scene ===================== */
+  .scene { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+    background:
+      radial-gradient(1100px 720px at 18% -8%, #2a6b52 0%, transparent 58%),
+      radial-gradient(1000px 700px at 92% 108%, #7a5a24 0%, transparent 55%),
+      radial-gradient(900px 900px at 60% 40%, #1c4a3a 0%, transparent 70%),
+      linear-gradient(160deg, #0f2a21 0%, #12211b 46%, #171410 100%);
+  }
+  .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.42; mix-blend-mode: screen; will-change: transform; }
+  .note { position: absolute; will-change: transform; opacity: 0.16; pointer-events: auto; cursor: grab; touch-action: none; transition: opacity .25s; }
+  .note.held { opacity: 0.42; cursor: grabbing; }
+  .falllayer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .faller { position: absolute; top: -110px; opacity: 0; will-change: transform, opacity; animation: fall 1.15s cubic-bezier(.34,0,.36,1) both; }
+  .falllayer.heavy .faller { animation-duration: 2s; animation-timing-function: cubic-bezier(.28,0,.5,1); }
+  @keyframes deskfade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fall { 0% { transform: translateY(-30px) scale(var(--fsc)) rotate(var(--fr)); opacity: 0; } 16% { opacity: 0.5; } 68% { opacity: 0.34; } 100% { transform: translateY(72vh) scale(var(--fsc)) rotate(calc(var(--fr) + 46deg)); opacity: 0; } }
+  .note svg { display: block; filter: drop-shadow(0 14px 30px rgba(0,0,0,0.35)); }
+  .glyph { position: absolute; font-family: 'Space Mono', monospace; font-weight: 700; color: rgba(255,255,255,0.09); will-change: transform, opacity; user-select: none; }
+  .grain { position: absolute; inset: 0; opacity: 0.045; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .vign { position: absolute; inset: 0; background: radial-gradient(120% 120% at 50% 50%, transparent 52%, rgba(6,14,11,0.55) 100%); }
+  .deskbg { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: top center; will-change: filter; }
+
+  @keyframes float1 { 0%{transform:translate(0,0) rotate(var(--r));} 100%{transform:translate(var(--dx),var(--dy)) rotate(calc(var(--r) + var(--dr)));} }
+  @keyframes blobmove { 0%{transform:translate(0,0) scale(1);} 100%{transform:translate(var(--bx),var(--by)) scale(var(--bs));} }
+  @keyframes rise { 0%{transform:translateY(30px);opacity:0;} 12%{opacity:0.12;} 82%{opacity:0.12;} 100%{transform:translateY(-120px);opacity:0;} }
+
+  /* ===================== glass wizard ===================== */
+  .wrap { position: relative; z-index: 1; height: 100vh; display: grid; place-items: center; padding: 22px; }
+  .glass {
+    width: min(486px, 100%); max-height: min(90vh, 792px); display: flex; flex-direction: column;
+    background: var(--glass); backdrop-filter: blur(34px) saturate(150%); -webkit-backdrop-filter: blur(34px) saturate(150%);
+    border: 1px solid var(--glass-brd); border-radius: 30px; overflow: hidden; position: relative;
+    box-shadow: 0 40px 90px -28px rgba(0,0,0,0.62), 0 2px 0 rgba(255,255,255,0.35) inset, 0 -30px 60px -40px rgba(0,0,0,0.4) inset;
+  }
+  /* slow specular sheen */
+  .glass::before { content: ''; position: absolute; top: -60%; left: -30%; width: 80%; height: 220%;
+    background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.35) 48%, transparent 62%);
+    transform: rotate(8deg); pointer-events: none; animation: sheen 9s ease-in-out infinite; opacity: 0.5; }
+  @keyframes sheen { 0%,100%{ transform: translateX(-30%) rotate(8deg); } 50%{ transform: translateX(140%) rotate(8deg); } }
+
+  .top { flex: none; display: flex; align-items: center; gap: 12px; padding: 9px 22px 10px; position: relative; z-index: 2; }
+  .back { width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--line); background: rgba(255,255,255,0.4); display: grid; place-items: center; cursor: pointer; color: var(--mute); transition: all .15s; flex: none; }
+  .back:hover { color: var(--ink); background: rgba(255,255,255,0.7); }
+  .back:disabled { opacity: 0; pointer-events: none; }
+  .prog { flex: 1; height: 10px; border-radius: 999px; background: rgba(20,32,27,0.1); overflow: hidden; box-shadow: inset 0 1px 2px rgba(20,32,27,0.12); }
+  .prog > i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--green-deep), var(--green) 60%, #4aa17c); transition: width .45s cubic-bezier(.4,0,.2,1); box-shadow: 0 0 10px rgba(74,161,124,0.5); }
+  .phase { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); font-family: 'Space Mono', monospace; }
+
+  .stage { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 26px 8px; position: relative; z-index: 2; }
+  .stage::-webkit-scrollbar { width: 0; }
+  .screen { animation: slidein .42s cubic-bezier(.2,.75,.2,1) both; }
+  @keyframes slidein { from { opacity: 0; transform: translateY(14px) scale(.99); } to { opacity: 1; transform: none; } }
+  @keyframes pop { 0%{transform:scale(.5);opacity:0;} 62%{transform:scale(1.1);} 100%{transform:scale(1);opacity:1;} }
+
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bronze); font-weight: 700; margin-bottom: 13px; }
+  .q { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.14; margin: 0; color: var(--ink); }
+  .help { font-size: 14px; color: var(--mute); margin-top: 10px; line-height: 1.5; }
+  .stepicon { width: 50px; height: 50px; border-radius: 15px; background: linear-gradient(150deg, var(--green), var(--green-deep)); display: grid; place-items: center; margin-bottom: 18px; box-shadow: 0 10px 22px -8px rgba(31,90,66,0.6), inset 0 1px 0 rgba(255,255,255,0.25); }
+
+  /* inputs */
+  .fieldwrap { margin-top: 22px; }
+  label.lbl { display: block; font-size: 12px; font-weight: 600; color: var(--mute); margin-bottom: 7px; }
+  .inp { width: 100%; font-family: inherit; font-size: 16.5px; font-weight: 500; padding: 14px 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--field); color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s, background .15s; backdrop-filter: blur(6px); }
+  .inp::placeholder { color: var(--faint); font-weight: 400; }
+  .inp:focus { border-color: var(--green); background: rgba(255,255,255,0.78); box-shadow: 0 0 0 4px rgba(44,122,91,0.16); }
+  .inp.mono { font-family: 'Space Mono', monospace; letter-spacing: 0.02em; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+  .prefix { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: var(--field); transition: border-color .15s, box-shadow .15s; }
+  .prefix:focus-within { border-color: var(--green); box-shadow: 0 0 0 4px rgba(44,122,91,0.16); }
+  .prefix > span.pre { display: grid; place-items: center; padding: 0 13px; background: rgba(20,32,27,0.05); color: var(--mute); font-weight: 700; font-size: 14px; border-right: 1px solid var(--line); }
+  .prefix > input { flex: 1; min-width: 0; border: 0; outline: none; font-family: 'Space Mono', monospace; font-size: 16px; padding: 13px 14px; text-align: right; background: transparent; color: var(--ink); }
+  .prefix > span.suf { padding: 0 14px; display: grid; place-items: center; color: var(--mute); border-left: 1px solid var(--line); background: rgba(20,32,27,0.05); font-weight: 700; }
+
+  /* option cards */
+  .opts { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .opt { display: flex; align-items: center; gap: 13px; text-align: left; padding: 15px 16px; border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,0.42); cursor: pointer; transition: all .15s; font-size: 15px; color: var(--ink); font-weight: 500; width: 100%; backdrop-filter: blur(6px); }
+  .opt:hover { background: rgba(255,255,255,0.66); transform: translateY(-1px); }
+  .opt.sel { border-color: var(--green); background: rgba(44,122,91,0.14); box-shadow: 0 0 0 3px rgba(44,122,91,0.14); }
+  .opt .tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; transition: all .15s; }
+  .opt.sel .tick { background: var(--green); border-color: var(--green); }
+  .opt .sub { display: block; font-size: 12.5px; color: var(--mute); font-weight: 400; margin-top: 3px; }
+
+  .grid2 { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .chip { display: flex; align-items: center; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.42); cursor: pointer; transition: all .15s; backdrop-filter: blur(6px); }
+  .chip:hover { background: rgba(255,255,255,0.66); }
+  .chip.sel { border-color: var(--green); background: rgba(44,122,91,0.14); box-shadow: 0 0 0 3px rgba(44,122,91,0.14); }
+  .chip.lock { opacity: 0.85; cursor: default; background: rgba(20,32,27,0.05); }
+  .codechip { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 12px; color: var(--ink); background: rgba(255,255,255,0.7); border-radius: 7px; padding: 5px 7px; flex: none; min-width: 34px; display: inline-flex; align-items: center; gap: 6px; }
+  .flag { display: inline-flex; border-radius: 3.5px; overflow: hidden; box-shadow: 0 0 0 1px rgba(20,32,27,0.14), 0 1px 2px rgba(20,32,27,0.18); flex: none; line-height: 0; }
+  .flag svg { display: block; }
+  /* brand header */
+  .brand { display: flex; align-items: center; gap: 9px; padding: 15px 22px 2px; position: relative; z-index: 2; }
+  .brandmark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(150deg, var(--green), var(--green-deep)); display: grid; place-items: center; flex: none; box-shadow: 0 5px 12px -5px rgba(31,90,66,0.7), inset 0 1px 0 rgba(255,255,255,0.28); }
+  .brandtype { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .brandtype b { font-weight: 800; }
+  .brandtag { margin-left: auto; font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+  .cname { font-size: 13px; font-weight: 600; line-height: 1.1; }
+  .ctag { font-size: 10.5px; color: var(--faint); }
+
+  /* money rows */
+  .panel { margin-top: 20px; border: 1px solid var(--line); border-radius: 15px; padding: 4px 15px; background: rgba(255,255,255,0.4); backdrop-filter: blur(6px); }
+  .mrow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--hair); }
+  .mrow:first-child { border-top: 0; }
+  .mrow .mc { font-family: 'Space Mono', monospace; font-weight: 700; font-size: 13px; width: 42px; flex: none; }
+  .mrow .mn { flex: 1; font-size: 12.5px; color: var(--mute); min-width: 0; }
+  .tally { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-radius: 13px; background: rgba(44,122,91,0.12); border: 1px solid rgba(44,122,91,0.25); }
+  .tally .tl { font-size: 12.5px; color: var(--green-deep); font-weight: 600; }
+  .tally .tv { font-family: 'Space Mono', monospace; font-weight: 700; color: var(--green-deep); font-size: 15px; }
+
+  .seg { display: flex; gap: 8px; margin-top: 20px; }
+  .seg button { flex: 1; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.42); font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); cursor: pointer; transition: all .15s; }
+  .seg button.on { border-color: var(--green); background: rgba(44,122,91,0.14); }
+
+  /* buttons */
+  .footer { flex: none; padding: 12px 26px 20px; position: relative; z-index: 2; }
+  .cta { width: 100%; font-family: inherit; font-size: 16px; font-weight: 700; padding: 15px; border: 0; border-radius: 15px; color: #fff; cursor: pointer; transition: transform .12s, box-shadow .15s, filter .15s;
+    background: linear-gradient(180deg, #34926d, var(--green-deep)); box-shadow: 0 5px 0 #164534, 0 14px 26px -10px rgba(22,69,52,0.7); }
+  .cta:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+  .cta:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 #164534, 0 8px 16px -10px rgba(22,69,52,0.7); }
+  .cta.dark { background: linear-gradient(180deg, #2c2a24, #17140f); box-shadow: 0 5px 0 rgba(0,0,0,0.4), 0 14px 26px -10px rgba(0,0,0,0.6); }
+  .cta:disabled { background: rgba(20,32,27,0.22); box-shadow: 0 5px 0 rgba(20,32,27,0.16); color: rgba(255,255,255,0.7); cursor: not-allowed; }
+  .ghost { display: block; width: 100%; text-align: center; margin-top: 11px; background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; padding: 5px; }
+  .ghost:hover { color: var(--ink); }
+
+  /* interstitial + intro */
+  .inter { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 26px 8px 12px; }
+  .burst { width: 88px; height: 88px; border-radius: 26px; display: grid; place-items: center; margin-bottom: 22px; animation: pop .55s cubic-bezier(.2,.8,.2,1) both;
+    background: linear-gradient(150deg, var(--green), var(--green-deep)); box-shadow: 0 16px 34px -12px rgba(31,90,66,0.7), inset 0 1px 0 rgba(255,255,255,0.3); }
+  .burst.bronze { background: linear-gradient(150deg, #cf9c4d, var(--bronze)); box-shadow: 0 16px 34px -12px rgba(185,135,63,0.7), inset 0 1px 0 rgba(255,255,255,0.3); }
+  .burst.dark { background: linear-gradient(150deg, #2c2a24, #14120e); }
+  .inter h2 { font-size: 27px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .inter p { font-size: 14.5px; color: var(--mute); margin-top: 11px; max-width: 340px; line-height: 1.55; }
+
+  /* review */
+  .rcard { border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,0.42); padding: 13px 15px; margin-top: 11px; backdrop-filter: blur(6px); }
+  .rcard .rh { display: flex; align-items: center; justify-content: space-between; }
+  .rcard .rt { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); font-family: 'Space Mono', monospace; }
+  .redit { font-size: 12.5px; font-weight: 700; color: var(--green); background: none; border: 0; cursor: pointer; padding: 2px 4px; }
+  .rline { font-size: 14px; margin-top: 7px; line-height: 1.5; }
+  .rline b { font-weight: 700; }
+  .rmute { color: var(--mute); }
+
+  .teammate { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.42); margin-top: 9px; }
+  .avatar { width: 36px; height: 36px; border-radius: 11px; background: linear-gradient(150deg, #2c2a24, #14120e); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+  .del { margin-left: auto; background: none; border: 0; color: var(--faint); cursor: pointer; padding: 4px; }
+  .del:hover { color: var(--oxblood); }
+  .addbtn { width: 100%; margin-top: 11px; padding: 13px; border: 1px dashed var(--line); border-radius: 14px; background: none; color: var(--mute); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all .15s; }
+  .addbtn:hover { border-color: var(--green); color: var(--green); background: rgba(44,122,91,0.06); }
+
+  .hrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--hair); }
+  .hrow:first-child { border-top: 0; }
+  .hday { width: 92px; font-size: 13px; font-weight: 600; flex: none; }
+  .htoggle { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer; flex: none; font-family: inherit; }
+  .htoggle.on { background: rgba(44,122,91,0.14); border-color: var(--green); color: var(--green-deep); }
+  .htoggle.off { background: rgba(20,32,27,0.05); color: var(--mute); }
+  .htimes { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .htimes select { font-family: inherit; font-size: 12.5px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 9px; background: var(--field); color: var(--ink); outline: none; cursor: pointer; }
+  .hclosed { margin-left: auto; color: var(--faint); font-size: 13px; font-style: italic; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 26px 18px; border: 1.5px dashed var(--line); border-radius: 16px; background: rgba(255,255,255,0.4); cursor: pointer; transition: all .15s; }
+  .drop:hover { border-color: var(--green); background: rgba(44,122,91,0.06); }
+  .drop .sub2 { font-size: 12px; color: var(--mute); margin-top: 3px; }
+  .planopt { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 14px 15px; border: 1.5px solid var(--line); border-radius: 15px; background: rgba(255,255,255,0.42); cursor: pointer; transition: all .15s; }
+  .planopt:hover { background: rgba(255,255,255,0.66); }
+  .planopt.sel { border-color: var(--green); background: rgba(44,122,91,0.14); box-shadow: 0 0 0 3px rgba(44,122,91,0.14); }
+  .planopt .pt { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mute); font-family: 'Space Mono', monospace; }
+  .planopt .pp { font-size: 22px; font-weight: 800; color: var(--ink); margin-top: 4px; letter-spacing: -0.02em; }
+  .planopt .pn { font-size: 11.5px; color: var(--mute); }
+  .popular { position: absolute; top: -9px; right: 10px; font-family: 'Space Mono', monospace; font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; background: linear-gradient(150deg, #cf9c4d, var(--bronze)); border-radius: 6px; padding: 3px 7px; box-shadow: 0 3px 8px -3px rgba(185,135,63,0.7); }
+  .planrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,0.42); cursor: pointer; transition: all .15s; backdrop-filter: blur(6px); width: 100%; }
+  .planrow:hover { background: rgba(255,255,255,0.66); }
+  .planrow.sel { border-color: var(--green); background: rgba(44,122,91,0.14); box-shadow: 0 0 0 3px rgba(44,122,91,0.14); }
+  .planrow .rd { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; }
+  .planrow.sel .rd { background: var(--green); border-color: var(--green); }
+  .prname { display: block; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+  .popular2 { font-family: 'Space Mono', monospace; font-size: 8px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; background: linear-gradient(150deg, #cf9c4d, var(--bronze)); border-radius: 5px; padding: 2px 5px; margin-left: 7px; vertical-align: middle; }
+  .prtag { display: block; font-size: 11px; color: var(--mute); margin-top: 1px; line-height: 1.3; }
+  .prprice { display: block; font-size: 18px; font-weight: 800; color: var(--ink); letter-spacing: -0.01em; white-space: nowrap; }
+  .prper { font-size: 11px; font-weight: 600; color: var(--mute); margin-left: 1px; }
+  .prsave { display: block; font-size: 10px; font-weight: 700; color: var(--green); font-family: 'Space Mono', monospace; margin-top: 1px; }
+  .paypanel { margin-top: 16px; border: 1px solid var(--line); border-radius: 15px; padding: 15px; background: rgba(255,255,255,0.78); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+  .securenote { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 13px; font-size: 11.5px; color: var(--faint); }
+  .whytwo { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; padding: 11px 13px; border-radius: 13px; background: rgba(20,32,27,0.045); border: 1px solid var(--line); font-size: 11.5px; color: var(--mute); line-height: 1.45; }
+  .whytwo b { color: var(--ink); font-weight: 700; }
+  .paylabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mute); font-family: 'Space Mono', monospace; margin-bottom: 9px; }
+  .backuprow { display: flex; align-items: center; gap: 11px; margin-top: 11px; padding: 12px 13px; border: 1px dashed var(--line); border-radius: 14px; background: rgba(255,255,255,0.3); }
+  .addbackup { flex: none; font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--green); background: rgba(44,122,91,0.12); color: var(--green-deep); cursor: pointer; transition: background .15s; }
+  .addbackup:hover { background: rgba(44,122,91,0.22); }
+  .promolink { background: none; border: 0; font-family: inherit; font-size: 11.5px; color: var(--faint); cursor: pointer; padding: 4px 6px; text-decoration: underline; text-underline-offset: 2px; transition: color .15s; }
+  .promolink:hover { color: var(--mute); }
+  .promowrap { max-width: 230px; margin: 12px auto 0; }
+  .promook { text-align: center; font-size: 11px; color: var(--green); margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .guarantee { display: flex; align-items: center; gap: 9px; margin-top: 20px; padding: 11px 13px; border-radius: 13px; background: rgba(44,122,91,0.1); border: 1px solid rgba(44,122,91,0.24); font-size: 12px; color: var(--green-deep); line-height: 1.42; }
+  .guarantee b { font-weight: 700; }
+  .gicon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: rgba(44,122,91,0.14); }
+  svg.i { display: block; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .blob, .note, .glyph, .glass::before { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+/* ---------- icons ---------- */
+const I = ({ d, s = 22, c = '#fff', sw = 2 }) => (
+  <svg className="i" viewBox="0 0 24 24" width={s} height={s} fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+);
+const ic = {
+  stack: <><rect x="3" y="8" width="18" height="11" rx="2"/><circle cx="12" cy="13.5" r="2.2"/><path d="M6 8V6.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2V8M6.5 4.5V3.2a2 2 0 0 1 2-2h7"/></>,
+  id: <><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M14 9h4M14 13h4M6.5 16h5"/></>,
+  pin: <><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></>,
+  user: <><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></>,
+  coins: <><ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v5c0 1.7 2.7 3 6 3s6-1.3 6-3V7"/><path d="M15 12.5c2.5-.2 6-1.3 6-3.5"/><path d="M9 15v3c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></>,
+  percent: <><path d="M19 5L5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></>,
+  wallet: <><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5"/><circle cx="16.5" cy="12" r="1.3"/></>,
+  shield: <><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/></>,
+  team: <><circle cx="8.5" cy="9" r="3"/><path d="M2.5 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 6.5a3 3 0 0 1 0 5.5M17 14.6c2.4.5 4 2.4 4 5.4"/></>,
+  check: <path d="M4 12.5l5 5L20 6.5"/>,
+  plus: <><path d="M12 5v14M5 12h14"/></>,
+  x: <><path d="M6 6l12 12M18 6L6 18"/></>,
+  arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
+  spark: <><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></>,
+  clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></>,
+  upload: <><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></>,
+  card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></>,
+};
+
+/* ---------- flags (simplified, render identically everywhere) ---------- */
+const FLAGS = {
+  CA: [<rect width="24" height="16" fill="#fff"/>, <rect width="7" height="16" fill="#d52b1e"/>, <rect x="17" width="7" height="16" fill="#d52b1e"/>, <path d="M12 5.2l.6 1.3 1.4-.3-.7 1.2.9.6-1.4.3.1 1.4-.9-.8-.9.8.1-1.4-1.4-.3.9-.6-.7-1.2 1.4.3z" fill="#d52b1e"/>],
+  US: [<rect width="24" height="16" fill="#fff"/>, <rect y="0" width="24" height="2.05" fill="#b22234"/>, <rect y="4.1" width="24" height="2.05" fill="#b22234"/>, <rect y="8.2" width="24" height="2.05" fill="#b22234"/>, <rect y="12.3" width="24" height="2.05" fill="#b22234"/>, <rect width="10" height="8.6" fill="#3c3b6e"/>, <circle cx="2.5" cy="2.2" r="0.55" fill="#fff"/>, <circle cx="5" cy="2.2" r="0.55" fill="#fff"/>, <circle cx="7.5" cy="2.2" r="0.55" fill="#fff"/>, <circle cx="3.7" cy="4.3" r="0.55" fill="#fff"/>, <circle cx="6.2" cy="4.3" r="0.55" fill="#fff"/>, <circle cx="2.5" cy="6.4" r="0.55" fill="#fff"/>, <circle cx="5" cy="6.4" r="0.55" fill="#fff"/>, <circle cx="7.5" cy="6.4" r="0.55" fill="#fff"/>],
+  EU: [<rect width="24" height="16" fill="#039"/>, <circle cx="12" cy="3.2" r="0.85" fill="#fc0"/>, <circle cx="16.4" cy="4.4" r="0.85" fill="#fc0"/>, <circle cx="17.6" cy="8" r="0.85" fill="#fc0"/>, <circle cx="16.4" cy="11.6" r="0.85" fill="#fc0"/>, <circle cx="12" cy="12.8" r="0.85" fill="#fc0"/>, <circle cx="7.6" cy="11.6" r="0.85" fill="#fc0"/>, <circle cx="6.4" cy="8" r="0.85" fill="#fc0"/>, <circle cx="7.6" cy="4.4" r="0.85" fill="#fc0"/>],
+  GB: [<rect width="24" height="16" fill="#012169"/>, <path d="M0 0L24 16" stroke="#fff" strokeWidth="3.2"/>, <path d="M24 0L0 16" stroke="#fff" strokeWidth="3.2"/>, <path d="M0 0L24 16" stroke="#c8102e" strokeWidth="1.2"/>, <path d="M24 0L0 16" stroke="#c8102e" strokeWidth="1.2"/>, <rect x="9.5" width="5" height="16" fill="#fff"/>, <rect y="5.5" width="24" height="5" fill="#fff"/>, <rect x="10.7" width="2.6" height="16" fill="#c8102e"/>, <rect y="6.7" width="24" height="2.6" fill="#c8102e"/>],
+  AU: [<rect width="24" height="16" fill="#012169"/>, <path d="M0 0L10 8M10 0L0 8" stroke="#fff" strokeWidth="1.3"/>, <rect x="4.2" width="1.6" height="8" fill="#fff"/>, <rect y="3.2" width="10" height="1.6" fill="#fff"/>, <rect x="4.6" width="0.8" height="8" fill="#c8102e"/>, <rect y="3.6" width="10" height="0.8" fill="#c8102e"/>, <circle cx="18" cy="12" r="1.3" fill="#fff"/>, <circle cx="5" cy="13" r="0.9" fill="#fff"/>],
+  AE: [<rect width="24" height="16" fill="#fff"/>, <rect x="6" width="18" height="5.33" fill="#009639"/>, <rect x="6" y="10.66" width="18" height="5.34" fill="#000"/>, <rect width="6" height="16" fill="#ce1126"/>],
+  IN: [<rect width="24" height="16" fill="#fff"/>, <rect width="24" height="5.33" fill="#ff9933"/>, <rect y="10.66" width="24" height="5.34" fill="#138808"/>, <circle cx="12" cy="8" r="1.7" fill="none" stroke="#008" strokeWidth="0.5"/>],
+  PH: [<rect width="24" height="8" fill="#0038a8"/>, <rect y="8" width="24" height="8" fill="#ce1126"/>, <path d="M0 0L11 8L0 16Z" fill="#fff"/>, <circle cx="3.6" cy="8" r="1.3" fill="#fcd116"/>],
+  CN: [<rect width="24" height="16" fill="#de2910"/>, <path d="M5 2.6l.85 2.6 2.73 0-2.21 1.6.84 2.6L5 6.4 2.79 8l.84-2.6L1.42 5.2l2.73 0z" fill="#ffde00"/>, <circle cx="9.6" cy="2.4" r="0.5" fill="#ffde00"/>, <circle cx="11" cy="4.2" r="0.5" fill="#ffde00"/>, <circle cx="11" cy="6.6" r="0.5" fill="#ffde00"/>, <circle cx="9.6" cy="8.2" r="0.5" fill="#ffde00"/>],
+  MX: [<rect width="8" height="16" fill="#006847"/>, <rect x="8" width="8" height="16" fill="#fff"/>, <rect x="16" width="8" height="16" fill="#ce1126"/>, <circle cx="12" cy="8" r="1.5" fill="none" stroke="#8c6239" strokeWidth="0.7"/>],
+  JP: [<rect width="24" height="16" fill="#fff"/>, <circle cx="12" cy="8" r="4.2" fill="#bc002d"/>],
+  XX: [<rect width="24" height="16" fill="#4a6572"/>, <circle cx="12" cy="8" r="5" fill="none" stroke="#fff" strokeWidth="0.85"/>, <path d="M7 8h10M12 3v10M8.6 4.6c1.9 2 1.9 4.8 0 6.8M15.4 4.6c-1.9 2-1.9 4.8 0 6.8" stroke="#fff" strokeWidth="0.6" fill="none"/>],
+};
+const CC = { CAD: 'CA', USD: 'US', EUR: 'EU', GBP: 'GB', INR: 'IN', PHP: 'PH', CNY: 'CN', AED: 'AE', MXN: 'MX', JPY: 'JP', AUD: 'AU' };
+const Flag = ({ cc, size = 22 }) => {
+  const parts = FLAGS[cc] || FLAGS.XX; const h = Math.round(size * 2 / 3);
+  return (
+    <span className="flag" style={{ width: size, height: h }}>
+      <svg viewBox="0 0 24 16" width={size} height={h} preserveAspectRatio="none">{parts.map((p, k) => React.cloneElement(p, { key: k }))}</svg>
+    </span>
+  );
+};
+const EXCH = <><path d="M4 9h13" /><path d="M13 5l4 4-4 4" /><path d="M20 15H7" /><path d="M11 11l-4 4 4 4" /></>;
+function BrandHeader({ tag }) {
+  return (
+    <div className="brand">
+      <span className="brandmark"><I d={EXCH} s={16} c="#fff" sw={2.1} /></span>
+      <span className="brandtype">Currency<b>Desk</b></span>
+      <span className="brandtag">{tag || 'Setup'}</span>
+    </div>
+  );
+}
+
+/* ---------- decorative money scene ---------- */
+function Banknote({ tint }) {
+  return (
+    <svg width="150" height="74" viewBox="0 0 150 74">
+      <rect x="1" y="1" width="148" height="72" rx="8" fill={tint} stroke="rgba(255,255,255,0.5)" strokeWidth="1"/>
+      <rect x="7" y="7" width="136" height="60" rx="5" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1"/>
+      <circle cx="75" cy="37" r="18" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.4"/>
+      <circle cx="75" cy="37" r="11" fill="rgba(255,255,255,0.14)"/>
+      <path d="M20 22h20M20 52h20M110 22h20M110 52h20" stroke="rgba(255,255,255,0.34)" strokeWidth="2" strokeLinecap="round"/>
+      <text x="16" y="20" fontFamily="monospace" fontSize="11" fill="rgba(255,255,255,0.5)">$</text>
+      <text x="128" y="60" fontFamily="monospace" fontSize="11" fill="rgba(255,255,255,0.5)">$</text>
+    </svg>
+  );
+}
+const NOTES = [
+  { top: '8%', left: '6%', tint: 'rgba(58,140,104,0.55)', r: -14, dx: '40px', dy: '30px', dr: '6deg', dur: 34, sc: 1 },
+  { top: '68%', left: '4%', tint: 'rgba(185,135,63,0.5)', r: 10, dx: '30px', dy: '-36px', dr: '-8deg', dur: 42, sc: 1.15 },
+  { top: '14%', left: '78%', tint: 'rgba(72,120,150,0.45)', r: 16, dx: '-34px', dy: '30px', dr: '7deg', dur: 38, sc: 1.1 },
+  { top: '74%', left: '80%', tint: 'rgba(58,140,104,0.5)', r: -10, dx: '-30px', dy: '-28px', dr: '-6deg', dur: 46, sc: 0.9 },
+  { top: '44%', left: '86%', tint: 'rgba(185,135,63,0.4)', r: 22, dx: '-24px', dy: '20px', dr: '9deg', dur: 40, sc: 0.75 },
+  { top: '40%', left: '2%', tint: 'rgba(162,68,80,0.34)', r: -22, dx: '26px', dy: '-18px', dr: '8deg', dur: 44, sc: 0.8 },
+];
+const BLOBS = [
+  { top: '-6%', left: '10%', w: 460, h: 460, c: '#3f9a72', bx: '80px', by: '60px', bs: 1.15, dur: 26 },
+  { top: '58%', left: '62%', w: 520, h: 520, c: '#c79646', bx: '-70px', by: '-50px', bs: 1.1, dur: 32 },
+  { top: '30%', left: '-8%', w: 380, h: 380, c: '#2f8f9a', bx: '60px', by: '40px', bs: 1.2, dur: 30 },
+  { top: '76%', left: '8%', w: 300, h: 300, c: '#a24450', bx: '40px', by: '-40px', bs: 1.1, dur: 36 },
+];
+const GLYPHS = [
+  { g: '$', left: '20%', size: 46, dur: 15, delay: 0 }, { g: '€', left: '72%', size: 38, dur: 19, delay: 3 },
+  { g: '£', left: '46%', size: 52, dur: 17, delay: 6 }, { g: '¥', left: '88%', size: 34, dur: 21, delay: 2 },
+  { g: '₹', left: '10%', size: 40, dur: 23, delay: 8 }, { g: '₱', left: '60%', size: 30, dur: 16, delay: 11 },
+  { g: '$', left: '34%', size: 28, dur: 20, delay: 5 }, { g: '€', left: '82%', size: 44, dur: 25, delay: 9 },
+];
+const FALLERS = [
+  { left: '12%', delay: '0s', sc: 0.7, r: -12, tint: 'rgba(58,140,104,0.6)' },
+  { left: '30%', delay: '0.12s', sc: 0.52, r: 8, tint: 'rgba(185,135,63,0.55)' },
+  { left: '52%', delay: '0.05s', sc: 0.76, r: -6, tint: 'rgba(72,120,150,0.5)' },
+  { left: '70%', delay: '0.19s', sc: 0.6, r: 14, tint: 'rgba(58,140,104,0.55)' },
+  { left: '86%', delay: '0.08s', sc: 0.48, r: -10, tint: 'rgba(162,68,80,0.42)' },
+  { left: '40%', delay: '0.24s', sc: 0.64, r: 10, tint: 'rgba(185,135,63,0.5)' },
+];
+function FallLayer({ heavy }) {
+  const set = heavy ? FALLERS_HEAVY : FALLERS;
+  return <div className={'falllayer' + (heavy ? ' heavy' : '')} aria-hidden="true">{set.map((f, k) => <div key={k} className="faller" style={{ left: f.left, animationDelay: f.delay, '--fr': f.r + 'deg', '--fsc': f.sc }}><Banknote tint={f.tint} /></div>)}</div>;
+}
+const FALLERS_HEAVY = [
+  { left: '6%', delay: '0s', sc: 0.7, r: -12, tint: 'rgba(58,140,104,0.6)' },
+  { left: '18%', delay: '0.18s', sc: 0.5, r: 9, tint: 'rgba(185,135,63,0.5)' },
+  { left: '30%', delay: '0.06s', sc: 0.78, r: -6, tint: 'rgba(72,120,150,0.5)' },
+  { left: '42%', delay: '0.3s', sc: 0.6, r: 14, tint: 'rgba(58,140,104,0.55)' },
+  { left: '52%', delay: '0.13s', sc: 0.66, r: -10, tint: 'rgba(185,135,63,0.5)' },
+  { left: '64%', delay: '0.36s', sc: 0.55, r: 8, tint: 'rgba(162,68,80,0.4)' },
+  { left: '74%', delay: '0.2s', sc: 0.72, r: -8, tint: 'rgba(58,140,104,0.55)' },
+  { left: '84%', delay: '0.44s', sc: 0.5, r: 12, tint: 'rgba(72,120,150,0.45)' },
+  { left: '92%', delay: '0.24s', sc: 0.6, r: -14, tint: 'rgba(185,135,63,0.5)' },
+  { left: '12%', delay: '0.5s', sc: 0.58, r: 6, tint: 'rgba(58,140,104,0.5)' },
+  { left: '58%', delay: '0.6s', sc: 0.64, r: -9, tint: 'rgba(72,120,150,0.5)' },
+];
+function Note({ n }) {
+  const [drag, setDrag] = useState(null);
+  const ref = useRef(null); const st = useRef(null);
+  const down = (e) => { e.preventDefault(); e.stopPropagation(); try { ref.current.setPointerCapture(e.pointerId); } catch (_) {} st.current = { x: e.clientX, y: e.clientY, dx: drag ? drag.dx : 0, dy: drag ? drag.dy : 0 }; };
+  const move = (e) => { if (!st.current) return; setDrag({ dx: st.current.dx + (e.clientX - st.current.x), dy: st.current.dy + (e.clientY - st.current.y) }); };
+  const up = () => { st.current = null; };
+  const on = !!drag;
+  return (
+    <div ref={ref} className={'note' + (on ? ' held' : '')} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+      style={{ top: n.top, left: n.left, '--r': n.r + 'deg', '--dx': n.dx, '--dy': n.dy, '--dr': n.dr,
+        transform: on ? `translate(${drag.dx}px, ${drag.dy}px) scale(${n.sc * 1.06})` : `scale(${n.sc})`,
+        animation: on ? 'none' : `float1 ${n.dur}s ease-in-out infinite alternate` }}>
+      <Banknote tint={n.tint} />
+    </div>
+  );
+}
+function Scene() {
+  return (
+    <div className="scene" aria-hidden="true">
+      {BLOBS.map((b, i) => <div key={'b' + i} className="blob" style={{ top: b.top, left: b.left, width: b.w, height: b.h, background: b.c, '--bx': b.bx, '--by': b.by, '--bs': b.bs, animation: `blobmove ${b.dur}s ease-in-out infinite alternate` }} />)}
+      {NOTES.map((n, i) => <Note key={'n' + i} n={n} />)}
+      {GLYPHS.map((g, i) => <div key={'g' + i} className="glyph" style={{ left: g.left, bottom: '-40px', fontSize: g.size, animation: `rise ${g.dur}s linear ${g.delay}s infinite` }}>{g.g}</div>)}
+      <div className="grain" />
+      <div className="vign" />
+    </div>
+  );
+}
+
+/* ---------- data ---------- */
+const CCY = [
+  { code: 'CAD', name: 'Canadian Dollar', tag: 'Canada', rate: 1 },
+  { code: 'USD', name: 'US Dollar', tag: 'United States', rate: 1.37 },
+  { code: 'EUR', name: 'Euro', tag: 'Eurozone', rate: 1.48 },
+  { code: 'GBP', name: 'British Pound', tag: 'United Kingdom', rate: 1.73 },
+  { code: 'INR', name: 'Indian Rupee', tag: 'India', rate: 0.0164 },
+  { code: 'PHP', name: 'Philippine Peso', tag: 'Philippines', rate: 0.024 },
+  { code: 'CNY', name: 'Chinese Yuan', tag: 'China', rate: 0.19 },
+  { code: 'AED', name: 'UAE Dirham', tag: 'U.A.E.', rate: 0.37 },
+  { code: 'MXN', name: 'Mexican Peso', tag: 'Mexico', rate: 0.08 },
+  { code: 'JPY', name: 'Japanese Yen', tag: 'Japan', rate: 0.0092 },
+  { code: 'AUD', name: 'Australian Dollar', tag: 'Australia', rate: 0.90 },
+];
+const rateOf = (c) => (CCY.find(x => x.code === c) || {}).rate || 0;
+const ccyName = (c) => (CCY.find(x => x.code === c) || {}).name || c;
+
+/* jurisdiction → regulator, registration prompt, home currency & reporting line */
+const JURIS = [
+  { id: 'CA', country: 'Canada', reg: 'FINTRAC', regLabel: 'FINTRAC registration number', ph: 'M21-0098765', hint: 'Starts with “M” — issued when you registered your money services business with FINTRAC.', home: 'CAD', thr: 10000, thc: 'CAD', report: 'Large Cash Transaction Report (LCTR)' },
+  { id: 'US', country: 'United States', reg: 'FinCEN', regLabel: 'FinCEN MSB registration number', ph: '31000000000000', hint: 'Your money services business registration from FinCEN’s BSA E-Filing system.', home: 'USD', thr: 10000, thc: 'USD', report: 'Currency Transaction Report (CTR)' },
+  { id: 'GB', country: 'United Kingdom', reg: 'HMRC', regLabel: 'HMRC money-service business number', ph: '12345678', hint: 'Your MSB registration number issued by HMRC.', home: 'GBP', thr: 10000, thc: 'GBP', report: 'Suspicious Activity Report (SAR)' },
+  { id: 'AU', country: 'Australia', reg: 'AUSTRAC', regLabel: 'AUSTRAC enrolment number', ph: '100000000', hint: 'Your remittance / exchange enrolment number with AUSTRAC.', home: 'AUD', thr: 10000, thc: 'AUD', report: 'Threshold Transaction Report (TTR)' },
+  { id: 'AE', country: 'United Arab Emirates', reg: 'CBUAE', regLabel: 'Exchange-house licence number', ph: 'CB-000000', hint: 'Your exchange-business licence from the Central Bank of the UAE.', home: 'AED', thr: 55000, thc: 'AED', report: 'Suspicious Transaction Report (STR)' },
+  { id: 'EU', country: 'European Union', reg: 'National FIU', regLabel: 'AML registration number', ph: 'EU-000000', hint: 'Your money-service registration with your national financial regulator.', home: 'EUR', thr: 10000, thc: 'EUR', report: 'Suspicious Transaction Report (STR)' },
+  { id: 'XX', country: 'Somewhere else', reg: 'your regulator', regLabel: 'Business / AML registration number', ph: 'Registration number', hint: 'Whatever registration your local regulator issued for handling money services.', home: 'USD', thr: 10000, thc: 'USD', report: 'large-transaction report' },
+];
+const jurisOf = (id) => JURIS.find(j => j.id === id) || JURIS[0];
+const niceRound = (n) => Math.round(n / 500) * 500;
+const idOptionsFor = (j) => ([
+  [String(j.thr), `Only at ${money(j.thr)} ${j.thc}`, 'The legal minimum — nothing extra.'],
+  [String(niceRound(j.thr / 2)), `At ${money(niceRound(j.thr / 2))} ${j.thc}`, 'A cautious middle ground.'],
+  [String(niceRound(j.thr * 0.3)), `At ${money(niceRound(j.thr * 0.3))} ${j.thc}`, 'Careful — ID on most larger deals.'],
+  [String(niceRound(j.thr * 0.1)), `At ${money(niceRound(j.thr * 0.1))} ${j.thc}`, 'Strictest — ID on almost every deal.'],
+]);
+
+const ROLES = ['Manager', 'Senior teller', 'Cashier'];
+const DAYS = [['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'], ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
+const TIMES = (() => { const a = []; for (let h = 6; h <= 23; h++) { for (const m of [0, 30]) { const v = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); const lbl = ((h % 12) || 12) + ':' + String(m).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM'); a.push([v, lbl]); } } return a; })();
+const timeLbl = (v) => (TIMES.find(t => t[0] === v) || [v, v])[1];
+const defHours = () => ({ mon: { o: true, f: '09:00', t: '18:00' }, tue: { o: true, f: '09:00', t: '18:00' }, wed: { o: true, f: '09:00', t: '18:00' }, thu: { o: true, f: '09:00', t: '18:00' }, fri: { o: true, f: '09:00', t: '18:00' }, sat: { o: true, f: '10:00', t: '16:00' }, sun: { o: false, f: '10:00', t: '16:00' } });
+const KEY = 'cdos_onboarding_v2';
+const money = (n) => n === '' || n == null || isNaN(n) ? '' : Number(n).toLocaleString('en-CA');
+const money0 = (n, c) => Math.round(Number(n) || 0).toLocaleString('en-CA') + (c ? ' ' + c : '');
+const first = (s) => (s || '').trim().split(/\s+/)[0] || '';
+const initials = (s) => (s || '').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+const formatCard = (v) => v.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
+const formatExp = (v) => { const x = v.replace(/\D/g, '').slice(0, 4); return x.length > 2 ? x.slice(0, 2) + '/' + x.slice(2) : x; };
+const PLANS = [
+  { id: 'rates', name: 'Rates', tag: 'Live rate board & pricing tools', mo: 299 },
+  { id: 'system', name: 'Full System', tag: 'The complete exchange desk — ledger, till, compliance, reports', mo: 499, popular: true },
+  { id: 'ai', name: 'AI Bundle', tag: 'Everything in Full System, plus the AI assistant', mo: 749 },
+];
+const planMoOf = (id) => (PLANS.find(p => p.id === id) || PLANS[1]).mo;
+const fresh = () => ({
+  country: '', operatingName: '', bizName: '', msbNumber: '',
+  street: '', city: '', region: '', postal: '', country_addr: '',
+  ownerName: '', ownerEmail: '', ownerPass: '',
+  currencies: ['USD', 'EUR'], sameSpread: true, spreadAll: '2.0', spreads: {},
+  float: {}, idOver: '', team: [],
+  code: '', phone: '', compName: '', compEmail: '', taxId: '', hours: defHours(), website: '',
+  records: [], plan: 'system', term: 'annual', cardNum: '', cardExp: '', cardCvc: '', cardName: '', promo: '',
+  card2Num: '', card2Exp: '', card2Cvc: '',
+});
+
+/* ---------- head block ---------- */
+const Head = ({ icon, eyebrow, q, help }) => (
+  <div>
+    {icon && <div className="stepicon"><I d={ic[icon]} s={25} /></div>}
+    {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+    <h1 className="q">{q}</h1>
+    {help && <p className="help">{help}</p>}
+  </div>
+);
+
+/* ---------- screen registry ---------- */
+function buildScreens(d, set, go) {
+  const j = jurisOf(d.country);
+  const home = j.home;
+  const term = d.term || 'annual';
+  const planMo = planMoOf(d.plan || 'system');
+  const priceNow = term === 'annual' ? planMo * 10 : planMo;
+  const checkoutCta = `Start — $${priceNow.toLocaleString('en-CA')} / ${term === 'annual' ? 'year' : 'month'}`;
+  const spreadFor = (c) => d.sameSpread ? d.spreadAll : (d.spreads[c] ?? d.spreadAll);
+
+  return [
+    /* 0 intro */
+    { chrome: false, cta: false,
+      body: (
+        <div className="inter">
+          <div className="burst" style={{ width: 92, height: 92, borderRadius: 24 }}><I d={EXCH} s={46} c="#fff" sw={2.1} /></div>
+          <div className="eyebrow" style={{ color: 'var(--bronze)', fontSize: 12, letterSpacing: '0.2em' }}>Currency<b style={{ fontWeight: 800 }}>Desk</b> OS</div>
+          <h2 style={{ fontSize: 30 }}>Let's open your desk.</h2>
+          <p>A few plain questions and your exchange shop is ready to trade. About five minutes — and you only do this once.</p>
+          <p className="mono" style={{ fontSize: 11, color: 'var(--faint)', marginTop: 16, letterSpacing: '0.05em' }}>WE'LL TAILOR EVERYTHING TO WHERE YOU OPERATE</p>
+          <button className="cta" style={{ maxWidth: 300, marginTop: 24 }} onClick={() => go(1)}>Let's do it</button>
+        </div>
+      ) },
+    /* 1 country / jurisdiction */
+    { phase: 'Location', valid: !!d.country,
+      body: <Head icon="pin" eyebrow="Where you operate" q="Which country are you licensed in?" help="This sets your regulator, the registration we ask for, your home currency and your reporting thresholds — so the desk fits your rules, not someone else's." /> },
+    /* 2 operating name */
+    { phase: 'Your shop', valid: d.operatingName.trim().length > 1, enter: true,
+      body: <Head icon="stack" eyebrow="Your shop · 1 of 4" q="What do you call your shop?" help="The name your customers see on the door and on their receipts." /> },
+    /* 3 legal name */
+    { phase: 'Your shop', valid: d.bizName.trim().length > 1, enter: true,
+      body: <Head icon="stack" eyebrow="Your shop · 2 of 4" q={`And ${d.operatingName ? d.operatingName + "’s" : 'the'} legal name?`} help="The registered company name — this is what appears on official reports." /> },
+    /* 4 registration (dynamic) */
+    { phase: 'Your shop', valid: true, enter: true, ghost: { label: "I'll add this later", onClick: () => go(5) },
+      body: <Head icon="id" eyebrow={`Your shop · 3 of 4`} q={`Your ${j.regLabel}?`} help={`${j.hint} No number yet? Skip and add it later.`} /> },
+    /* 5 address */
+    { phase: 'Your shop', valid: d.street.trim() && d.city.trim() && d.postal.trim(),
+      body: <Head icon="pin" eyebrow="Your shop · 4 of 4" q="Where's the shop?" help="Your storefront address — used on receipts and reports." /> },
+    /* 6 owner account */
+    { phase: 'Account', valid: d.ownerName.trim() && /.+@.+\..+/.test(d.ownerEmail) && d.ownerPass.length >= 6,
+      body: <Head icon="user" eyebrow="Your account" q="Now — your owner login." help="This account is you: full access to everything. You'll add your team in a minute." /> },
+    /* 7 interstitial */
+    { chrome: false, go: true, ctaLabel: 'Set up the money',
+      body: (
+        <div className="inter">
+          <div className="burst"><I d={ic.check} s={42} c="#fff" sw={2.4} /></div>
+          <h2>You're the owner{d.ownerName ? `, ${first(d.ownerName)}` : ''}.</h2>
+          <p>Full control of {d.operatingName || 'your desk'} — rates, reports, staff, all of it. Now let's set up the money side.</p>
+        </div>
+      ) },
+    /* 8 currencies */
+    { phase: 'Money · 1/3', valid: d.currencies.filter(c => c !== home).length >= 1,
+      body: <Head icon="coins" eyebrow="The money · 1 of 3" q="Which currencies do you trade?" help={`Tap every currency you buy or sell. ${ccyName(home)} is your home currency, so it's always in.`} /> },
+    /* 9 spreads */
+    { phase: 'Money · 2/3', valid: true,
+      body: <Head icon="percent" eyebrow="The money · 2 of 3" q="What's your margin on an exchange?" help="Your spread is what you add over the market rate. Set one for everything, or tune each currency." /> },
+    /* 10 float */
+    { phase: 'Money · 3/3', valid: true,
+      body: <Head icon="wallet" eyebrow="The money · 3 of 3" q="How much cash are you starting with?" help="Roughly what's in the drawer right now, per currency. Your first count will true it up — no need to be exact." /> },
+    /* 11 interstitial */
+    { chrome: false, go: true, ctaLabel: 'Two quick things',
+      body: (
+        <div className="inter">
+          <div className="burst bronze"><I d={ic.spark} s={40} c="#fff" /></div>
+          <h2>Your drawer's loaded.</h2>
+          <p>{d.operatingName || 'Your desk'} is stocked and priced. Two quick things left — your ID rule and your team.</p>
+        </div>
+      ) },
+    /* 12 id policy (dynamic) */
+    { phase: 'Your rules', valid: true,
+      body: <Head icon="shield" eyebrow="Your rules" q="When should the desk ask for ID?" help={`In ${j.country}, ${j.reg} requires ID on cash deals of ${money(j.thr)} ${j.thc} or more — that's always on, and files a ${j.report}. Many shops take ID earlier, to be safe.`} /> },
+    /* 13 team */
+    { phase: 'Your team', valid: true, ghost: d.team.length === 0 ? { label: "It's just me for now", onClick: () => go(14) } : null,
+      body: <Head icon="team" eyebrow="Your team" q="Who else works the counter?" help="Add anyone who serves customers — each gets their own login and role. It's often just you; you can add people anytime." /> },
+    /* 14 review */
+    { phase: 'Review', go: true, ctaLabel: 'Looks right — secure & finish', onCta: 900,
+      body: <Review d={d} go={go} /> },
+    /* 15 interstitial — secure */
+    { chrome: false, go: true, ctaLabel: 'Verify my email',
+      body: (
+        <div className="inter">
+          <div className="burst bronze"><I d={ic.shield} s={40} c="#fff" /></div>
+          <h2>Your desk is built.</h2>
+          <p>Now let's lock it down and tie up the few details a money-services business needs. Two minutes and {d.operatingName || 'your desk'} is truly yours.</p>
+        </div>
+      ) },
+    /* 16 verify email */
+    { phase: 'Secure', valid: (d.code || '').replace(/\D/g, '').length === 6,
+      body: <Head icon="shield" eyebrow="Secure your account" q="Check your email." help={`We sent a 6-digit code to ${d.ownerEmail || 'your inbox'}. Enter it to confirm it's really you.`} /> },
+    /* 17 phone */
+    { phase: 'Secure', valid: true, ghost: { label: "I'll add this later", onClick: () => go(18) },
+      body: <Head icon="user" eyebrow="Secure your account" q="Best number for the shop?" help="For account recovery, security alerts, and on your customer receipts." /> },
+    /* 18 compliance officer */
+    { phase: 'Compliance', valid: !!d.compName.trim(),
+      body: <Head icon="shield" eyebrow="One requirement" q="Who's your compliance officer?" help={`${j.reg} expects a named person responsible for compliance. It's usually the owner — that's completely fine.`} /> },
+    /* 19 business hours */
+    { phase: 'Hours', valid: true, ghost: { label: 'Set hours later', onClick: () => go(20) },
+      body: <Head icon="clock" eyebrow="Almost open" q="When are you open?" help="Set your trading hours for each day — they show on your storefront and receipts, and you can change them anytime." /> },
+    /* 20 business profile */
+    { phase: 'Profile', valid: true, ghost: { label: 'Skip the rest for now', onClick: () => go(21) },
+      body: <Head icon="stack" eyebrow="Almost open" q="A few last details." help="These round out your profile for reports and your storefront. Add what you have — skip the rest, you can finish it anytime." /> },
+    /* 21 import old records */
+    { phase: 'Import', valid: true, ghost: { label: 'Skip — start fresh', onClick: () => go(22) },
+      body: <Head icon="upload" eyebrow="Bring your history" q="Import your old records?" help="Records from another system or a spreadsheet? Drop them in and we'll bring your transactions and clients over — no rush, you can also do this later in Settings." /> },
+    /* 22 go-live */
+    { chrome: false, go: true, ctaLabel: 'Start my desk',
+      body: (
+        <div className="inter">
+          <div className="burst" style={{ width: 100, height: 100 }}><I d={ic.stack} s={48} c="#fff" /></div>
+          <div className="eyebrow" style={{ color: 'var(--bronze)' }}>The final step</div>
+          <h2 style={{ fontSize: 30 }}>Ready to go live?</h2>
+          <p>Everything's built — {d.operatingName || 'your desk'} is set up and waiting. Activate it, and you're open for business.</p>
+        </div>
+      ) },
+    /* 23 checkout */
+    { phase: 'Activate', go: true, ctaLabel: checkoutCta, valid: (d.cardNum || '').replace(/\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3,
+      body: <Head icon="card" eyebrow="Activate CurrencyDesk" q="Pick a term & add a card." help="You've built the whole desk — now make it yours. You're not charged until it goes live, and you can cancel anytime." /> },
+    /* 23 done */
+    { chrome: false, cta: false,
+      body: (
+        <div className="inter">
+          <div className="burst" style={{ width: 104, height: 104 }}><I d={ic.check} s={52} c="#fff" sw={2.4} /></div>
+          <div className="eyebrow" style={{ color: 'var(--green)' }}>Launched</div>
+          <h2 style={{ fontSize: 30 }}>You're live.</h2>
+          <p>{d.operatingName || 'Your desk'} is open for business — verified, stocked, priced and staffed. It's running right behind this screen.</p>
+          <p style={{ fontSize: 12.5, color: 'var(--faint)', marginTop: 8, maxWidth: 330, lineHeight: 1.5 }}>Billing, your cards, records and compliance obligations all live in <b style={{ color: 'var(--mute)' }}>Settings</b> — we won't bombard you now, it's there whenever you need it.</p>
+          <button className="cta" style={{ maxWidth: 300, marginTop: 24 }} onClick={() => { try { localStorage.removeItem(KEY); } catch (e) {} location.reload(); }}>Enter the desk</button>
+          <button className="ghost" onClick={() => { try { localStorage.removeItem(KEY); } catch (e) {} location.reload(); }}>Run the setup again</button>
+        </div>
+      ) },
+  ];
+}
+
+/* ---------- review ---------- */
+function Review({ d, go }) {
+  const j = jurisOf(d.country); const home = j.home;
+  const spreadFor = (c) => d.sameSpread ? d.spreadAll : (d.spreads[c] ?? d.spreadAll);
+  const sel = d.currencies.filter(c => c !== home);
+  const idNum = d.idOver || String(j.thr);
+  const idTxt = idNum === String(j.thr) ? `At ${money(j.thr)} ${j.thc} (legal minimum)` : `At ${money(idNum)} ${j.thc}`;
+  const drawerHome = [home, ...sel].reduce((s, c) => s + (parseFloat(d.float[c]) || 0) * rateOf(c), 0) / (rateOf(home) || 1);
+  const R = ({ t, step, children }) => (
+    <div className="rcard"><div className="rh"><span className="rt">{t}</span><button className="redit" onClick={() => go(step)}>Edit</button></div>{children}</div>
+  );
+  return (
+    <div>
+      <Head icon="check" eyebrow="Last look" q="Here's your desk." help="Give it a once-over — tap Edit on anything to change it. Nothing's final until you open the desk." />
+      <div style={{ marginTop: 6 }}>
+        <R t="Business" step={2}>
+          <div className="rline"><b>{d.operatingName || '—'}</b> <span className="rmute">· {d.bizName || 'no legal name'}</span></div>
+          <div className="rline rmute" style={{ fontSize: 12.5 }}>{j.country} · {j.reg}{d.msbNumber ? ' ' + d.msbNumber : ' — not added'}{[d.street, d.city].filter(Boolean).length ? ' · ' + [d.street, d.city].filter(Boolean).join(', ') : ''}</div>
+        </R>
+        <R t="Owner account" step={6}>
+          <div className="rline"><b>{d.ownerName || '—'}</b> <span className="rmute">· Owner · full access</span></div>
+          <div className="rline rmute" style={{ fontSize: 12.5 }}>{d.ownerEmail || '—'}</div>
+        </R>
+        <R t="Currencies & spreads" step={8}>
+          <div className="rline">{[home, ...sel].map(c => <span key={c} style={{ display: 'inline-block', marginRight: 11 }}><b>{c}</b>{c !== home ? <span className="rmute" style={{ fontSize: 12.5 }}> {spreadFor(c)}%</span> : <span className="rmute" style={{ fontSize: 12.5 }}> home</span>}</span>)}</div>
+        </R>
+        <R t="Opening float" step={10}>
+          <div className="rline">{[home, ...sel].every(c => !d.float[c]) ? <span className="rmute">Not set — count on day one</span> : <><b>{money0(drawerHome, home)}</b> <span className="rmute" style={{ fontSize: 12.5 }}>≈ in the drawer</span></>}</div>
+        </R>
+        <R t="ID policy" step={12}><div className="rline">{idTxt}</div></R>
+        <R t="Team" step={13}>
+          <div className="rline">{d.team.length === 0 ? <span className="rmute">Just you for now</span> : <><b>{d.team.length + 1} people</b> <span className="rmute" style={{ fontSize: 12.5 }}>· {[first(d.ownerName) || 'You', ...d.team.map(t => first(t.name))].join(', ')}</span></>}</div>
+        </R>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- team builder ---------- */
+function TeamStep({ d, setData }) {
+  const [adding, setAdding] = useState(d.team.length === 0);
+  const [nm, setNm] = useState(''); const [role, setRole] = useState('Cashier'); const [em, setEm] = useState('');
+  const add = () => { if (!nm.trim()) return; setData(dd => ({ ...dd, team: [...dd.team, { name: nm.trim(), role, email: em.trim() }] })); setNm(''); setEm(''); setRole('Cashier'); setAdding(false); };
+  const del = (idx) => setData(dd => ({ ...dd, team: dd.team.filter((_, k) => k !== idx) }));
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div className="teammate" style={{ borderColor: 'var(--green)', background: 'rgba(44,122,91,0.12)' }}>
+        <span className="avatar" style={{ background: 'linear-gradient(150deg,var(--green),var(--green-deep))' }}>{initials(d.ownerName) || 'You'}</span>
+        <div><div style={{ fontWeight: 700, fontSize: 14 }}>{d.ownerName || 'You'}</div><div style={{ fontSize: 12, color: 'var(--mute)' }}>Owner · full access</div></div>
+      </div>
+      {d.team.map((t, k) => (
+        <div key={k} className="teammate">
+          <span className="avatar">{initials(t.name)}</span>
+          <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div><div style={{ fontSize: 12, color: 'var(--mute)' }}>{t.role}{t.email ? ' · ' + t.email : ''}</div></div>
+          <button className="del" onClick={() => del(k)}><I d={ic.x} s={16} c="currentColor" /></button>
+        </div>
+      ))}
+      {adding ? (
+        <div style={{ marginTop: 11, border: '1px solid var(--line)', borderRadius: 16, padding: 14, background: 'rgba(255,255,255,0.4)' }}>
+          <input autoFocus className="inp" value={nm} onChange={e => setNm(e.target.value)} placeholder="Teammate's name" />
+          <div className="seg" style={{ marginTop: 11 }}>{ROLES.map(r => <button key={r} className={role === r ? 'on' : ''} onClick={() => setRole(r)} style={{ fontSize: 12.5 }}>{r}</button>)}</div>
+          <input className="inp" style={{ marginTop: 11 }} value={em} onChange={e => setEm(e.target.value)} placeholder="Email for their login (optional)" />
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <button className="cta dark" style={{ flex: 1, fontSize: 14.5, padding: 12 }} onClick={add} disabled={!nm.trim()}>Add teammate</button>
+            {d.team.length > 0 && <button className="ghost" style={{ width: 'auto', margin: 0, padding: '0 14px' }} onClick={() => setAdding(false)}>Cancel</button>}
+          </div>
+        </div>
+      ) : <button className="addbtn" onClick={() => setAdding(true)}><I d={ic.plus} s={18} c="currentColor" /> Add another teammate</button>}
+    </div>
+  );
+}
+
+/* ---------- weekly hours ---------- */
+function HoursStep({ d, setData }) {
+  const H = (d.hours && d.hours.mon) ? d.hours : defHours();
+  const upd = (day, patch) => setData(dd => ({ ...dd, hours: { ...H, [day]: { ...H[day], ...patch } } }));
+  const copyMon = () => setData(dd => { const nh = {}; DAYS.forEach(([k]) => nh[k] = { ...H.mon }); return { ...dd, hours: nh }; });
+  return (
+    <div style={{ marginTop: 18 }}>
+      <button className="addbtn" style={{ marginTop: 0, marginBottom: 12 }} onClick={copyMon}><I d={ic.check} s={16} c="currentColor" /> Use Monday's hours for every day</button>
+      <div className="panel" style={{ padding: '2px 15px' }}>
+        {DAYS.map(([k, label]) => { const day = H[k] || { o: false, f: '09:00', t: '18:00' }; return (
+          <div key={k} className="hrow">
+            <span className="hday">{label}</span>
+            <button className={'htoggle ' + (day.o ? 'on' : 'off')} onClick={() => upd(k, { o: !day.o })}>{day.o ? 'Open' : 'Closed'}</button>
+            {day.o ? (
+              <span className="htimes">
+                <select value={day.f} onChange={e => upd(k, { f: e.target.value })}>{TIMES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <span style={{ color: 'var(--faint)' }}>–</span>
+                <select value={day.t} onChange={e => upd(k, { t: e.target.value })}>{TIMES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              </span>
+            ) : <span className="hclosed">Closed</span>}
+          </div>); })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- discount code (tucked at the very bottom) ---------- */
+function PromoCode({ d, set }) {
+  const [open, setOpen] = useState(!!d.promo);
+  const applied = (d.promo || '').trim().length >= 3;
+  if (!open) return (<div style={{ textAlign: 'center', marginTop: 10 }}><button className="promolink" onClick={() => setOpen(true)}>Have a discount code?</button></div>);
+  return (
+    <div className="promowrap">
+      <input className="inp mono" value={d.promo || ''} onChange={e => set('promo', e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="DISCOUNT CODE" style={{ textAlign: 'center', letterSpacing: '0.14em', fontSize: 14, paddingRight: 15 }} />
+      {applied && <div className="promook"><I d={ic.check} s={12} c="var(--green)" /> Code applied at checkout</div>}
+    </div>
+  );
+}
+
+/* ---------- optional backup card ---------- */
+function BackupCard({ d, set }) {
+  const [open, setOpen] = useState(!!d.card2Num);
+  if (!open) return (
+    <div className="backuprow">
+      <span className="gicon" style={{ background: 'rgba(20,32,27,0.06)' }}><I d={ic.card} s={14} c="var(--mute)" /></span>
+      <span style={{ flex: 1, minWidth: 0 }}><span className="prname" style={{ fontSize: 13 }}>Add a backup card <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 11 }}>· recommended</span></span><span className="prtag">Fine to go with one — a reminder waits in your desk until you add it.</span></span>
+      <button className="addbackup" onClick={() => setOpen(true)}>Add</button>
+    </div>
+  );
+  return (
+    <div className="paypanel" style={{ marginTop: 11 }}>
+      <div className="paylabel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>Backup card <button className="promolink" style={{ textDecoration: 'none' }} onClick={() => { set('card2Num', ''); set('card2Exp', ''); set('card2Cvc', ''); setOpen(false); }}>Remove</button></div>
+      <label className="lbl">Card number</label>
+      <div className="prefix"><input value={d.card2Num} onChange={e => set('card2Num', formatCard(e.target.value))} inputMode="numeric" placeholder="1234 5678 9012 3456" style={{ textAlign: 'left', fontFamily: "'Space Mono', monospace" }} /><span className="suf"><I d={ic.card} s={16} c="var(--mute)" /></span></div>
+      <div className="row2" style={{ marginTop: 11 }}>
+        <div><label className="lbl">Expiry</label><input className="inp mono" value={d.card2Exp} onChange={e => set('card2Exp', formatExp(e.target.value))} placeholder="MM/YY" inputMode="numeric" /></div>
+        <div><label className="lbl">CVC</label><input className="inp mono" value={d.card2Cvc} onChange={e => set('card2Cvc', e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="123" inputMode="numeric" /></div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- root ---------- */
+function Root() {
+  const [i, setI] = useState(0);
+  const [data, setData] = useState(() => { try { const s = JSON.parse(localStorage.getItem(KEY)); return s && s.data ? { ...fresh(), ...s.data } : fresh(); } catch (e) { return fresh(); } });
+  const stageRef = useRef(null);
+  useEffect(() => { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.i && s.i > 0 && s.i < 24) setI(s.i); } catch (e) {} }, []);
+  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify({ i, data })); } catch (e) {} }, [i, data]);
+  useEffect(() => { if (stageRef.current) stageRef.current.scrollTop = 0; }, [i]);
+
+  const set = (k, v) => setData(d => ({ ...d, [k]: v }));
+  const go = (n) => setI(n);
+  const next = () => setI(x => x + 1);
+  const back = () => setI(x => Math.max(0, x - 1));
+  const d = data;
+  const j = jurisOf(d.country);
+  const home = j.home;
+  const foreignOpts = CCY.filter(c => c.code !== home);
+  const selCcy = d.currencies.filter(c => c !== home);
+  const toggleCcy = (c) => setData(dd => ({ ...dd, currencies: dd.currencies.includes(c) ? dd.currencies.filter(x => x !== c) : [...dd.currencies, c] }));
+  const pickCountry = (id) => { const jj = jurisOf(id); setData(dd => ({ ...dd, country: id, idOver: String(jj.thr), currencies: dd.currencies.filter(c => c !== jj.home), country_addr: dd.country_addr || jj.country })); };
+
+  const base = buildScreens(d, set, go);
+
+  const earnEg = Math.round(1000 * (parseFloat(d.spreadAll) || 0) / 100);
+  const drawerTotal = [home, ...selCcy].reduce((s, c) => s + (parseFloat(d.float[c]) || 0) * rateOf(c), 0) / (rateOf(home) || 1);
+  const idOpts = idOptionsFor(j);
+
+  const inputs = {
+    1: (
+      <div className="opts" style={{ marginTop: 20 }}>
+        {JURIS.map(o => { const on = d.country === o.id; return (
+          <button key={o.id} className={'opt' + (on ? ' sel' : '')} onClick={() => { pickCountry(o.id); setTimeout(next, 320); }}>
+            <Flag cc={o.id} size={30} />
+            <span style={{ flex: 1 }}><span style={{ fontWeight: 700 }}>{o.country}</span><span className="sub">{o.reg} · home currency {o.home}</span></span>
+            {on && <I d={ic.check} s={16} c="var(--green)" />}
+          </button>); })}
+      </div>
+    ),
+    2: <div className="fieldwrap"><input autoFocus className="inp" value={d.operatingName} onChange={e => set('operatingName', e.target.value)} placeholder="e.g. York Currency Exchange" /></div>,
+    3: <div className="fieldwrap"><input autoFocus className="inp" value={d.bizName} onChange={e => set('bizName', e.target.value)} placeholder="e.g. York Foreign Exchange Inc." /></div>,
+    4: <div className="fieldwrap"><input autoFocus className="inp mono" value={d.msbNumber} onChange={e => set('msbNumber', e.target.value)} placeholder={j.ph} /></div>,
+    5: (
+      <div className="fieldwrap">
+        <input autoFocus className="inp" value={d.street} onChange={e => set('street', e.target.value)} placeholder="Street address" />
+        <div className="row2" style={{ marginTop: 11 }}>
+          <input className="inp" value={d.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+          <input className="inp mono" value={d.postal} onChange={e => set('postal', e.target.value.toUpperCase())} placeholder="Postal / ZIP" />
+        </div>
+        <div className="row2" style={{ marginTop: 11 }}>
+          <input className="inp" value={d.region} onChange={e => set('region', e.target.value)} placeholder="State / province" />
+          <input className="inp" value={d.country_addr} onChange={e => set('country_addr', e.target.value)} placeholder={j.country} />
+        </div>
+      </div>
+    ),
+    6: (
+      <div className="fieldwrap">
+        <label className="lbl">Your name</label>
+        <input autoFocus className="inp" value={d.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="e.g. Jordan Masri" />
+        <label className="lbl" style={{ marginTop: 15 }}>Email</label>
+        <input className="inp" type="email" value={d.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} placeholder="you@yourshop.com" />
+        <label className="lbl" style={{ marginTop: 15 }}>Create a password</label>
+        <input className="inp" type="password" value={d.ownerPass} onChange={e => set('ownerPass', e.target.value)} placeholder="At least 6 characters" />
+      </div>
+    ),
+    8: (
+      <div className="grid2">
+        <div className="chip lock sel"><span className="codechip"><Flag cc={CC[home]} size={16} /> {home}</span><div style={{ minWidth: 0 }}><div className="cname">{ccyName(home)}</div><div className="ctag">Home currency</div></div></div>
+        {foreignOpts.map(c => { const on = selCcy.includes(c.code); return (
+          <div key={c.code} className={'chip' + (on ? ' sel' : '')} onClick={() => toggleCcy(c.code)}>
+            <span className="codechip"><Flag cc={CC[c.code]} size={16} /> {c.code}</span>
+            <div style={{ minWidth: 0, flex: 1 }}><div className="cname">{c.name}</div><div className="ctag">{c.tag}</div></div>
+            {on && <I d={ic.check} s={15} c="var(--green)" />}
+          </div>); })}
+      </div>
+    ),
+    9: (
+      <div>
+        <div className="seg">
+          <button className={d.sameSpread ? 'on' : ''} onClick={() => set('sameSpread', true)}>One spread for all</button>
+          <button className={!d.sameSpread ? 'on' : ''} onClick={() => set('sameSpread', false)}>Set each currency</button>
+        </div>
+        {d.sameSpread ? (
+          <div className="fieldwrap">
+            <label className="lbl">Spread on every currency</label>
+            <div className="prefix"><input inputMode="decimal" value={d.spreadAll} onChange={e => set('spreadAll', e.target.value)} /><span className="suf">%</span></div>
+            <div className="tally"><span className="tl">On a 1,000 {home} exchange you'd earn about</span><span className="tv">{money0(earnEg, home)}</span></div>
+          </div>
+        ) : (
+          <div className="panel">
+            {selCcy.map(c => (
+              <div key={c} className="mrow">
+                <span className="mc">{c}</span><span className="mn">{ccyName(c)}</span>
+                <div className="prefix" style={{ width: 116, flex: 'none' }}><input inputMode="decimal" value={d.spreads[c] ?? d.spreadAll} onChange={e => setData(dd => ({ ...dd, spreads: { ...dd.spreads, [c]: e.target.value } }))} /><span className="suf">%</span></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ),
+    10: (
+      <div>
+        <div className="panel">
+          {[home, ...selCcy].map(c => (
+            <div key={c} className="mrow">
+              <span className="mc">{c}</span><span className="mn">{ccyName(c)}{c === home ? ' · home' : ''}</span>
+              <div className="prefix" style={{ width: 150, flex: 'none' }}><span className="pre">{c}</span><input inputMode="decimal" value={d.float[c] || ''} onChange={e => setData(dd => ({ ...dd, float: { ...dd.float, [c]: e.target.value.replace(/[^0-9.]/g, '') } }))} placeholder="0" /></div>
+            </div>
+          ))}
+        </div>
+        {drawerTotal > 0 && <div className="tally"><span className="tl">Opening drawer, in {home}</span><span className="tv">≈ {money0(drawerTotal, home)}</span></div>}
+      </div>
+    ),
+    12: (
+      <div className="opts">
+        {idOpts.map(([v, t, s]) => { const on = (d.idOver || String(j.thr)) === v; return (
+          <button key={v} className={'opt' + (on ? ' sel' : '')} onClick={() => { set('idOver', v); setTimeout(next, 320); }}>
+            <span className="tick">{on && <I d={ic.check} s={13} c="#fff" />}</span>
+            <span><span style={{ fontWeight: 700 }}>{t}</span><span className="sub">{s}</span></span>
+          </button>); })}
+      </div>
+    ),
+    13: <TeamStep d={d} setData={setData} />,
+    16: (
+      <div className="fieldwrap">
+        <input autoFocus className="inp mono" style={{ textAlign: 'center', letterSpacing: '0.42em', fontSize: 24, fontWeight: 700, paddingRight: 0 }} inputMode="numeric" maxLength={6} value={d.code} onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); set('code', v); if (v.length === 6) setTimeout(next, 420); }} placeholder="000000" />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+          <span className="help" style={{ margin: 0, fontSize: 12.5 }}>Didn't get it?</span>
+          <button className="ghost" style={{ width: 'auto', margin: 0, padding: '4px 6px', color: 'var(--green)' }} onClick={() => set('code', '')}>Resend the code</button>
+        </div>
+      </div>
+    ),
+    17: (
+      <div className="fieldwrap">
+        <input autoFocus className="inp" type="tel" value={d.phone} onChange={e => set('phone', e.target.value)} placeholder="Phone number" />
+      </div>
+    ),
+    18: (
+      <div className="fieldwrap">
+        <button className="opt" style={{ marginBottom: 14 }} onClick={() => setData(dd => ({ ...dd, compName: dd.ownerName, compEmail: dd.ownerEmail }))}>
+          <span className="avatar" style={{ width: 34, height: 34, background: 'linear-gradient(150deg,var(--green),var(--green-deep))' }}>{initials(d.ownerName) || 'You'}</span>
+          <span style={{ flex: 1 }}><span style={{ fontWeight: 700 }}>That's me{d.ownerName ? ` — ${d.ownerName}` : ''}</span><span className="sub">Use my details as the compliance officer.</span></span>
+          {d.compName && d.compName === d.ownerName && <I d={ic.check} s={16} c="var(--green)" />}
+        </button>
+        <label className="lbl">Compliance officer's name</label>
+        <input className="inp" value={d.compName} onChange={e => set('compName', e.target.value)} placeholder="Full name" />
+        <label className="lbl" style={{ marginTop: 15 }}>Their email</label>
+        <input className="inp" type="email" value={d.compEmail} onChange={e => set('compEmail', e.target.value)} placeholder="compliance@yourshop.com" />
+      </div>
+    ),
+    19: <HoursStep d={d} setData={setData} />,
+    20: (
+      <div className="fieldwrap">
+        <label className="lbl">Business / tax registration number</label>
+        <input autoFocus className="inp mono" value={d.taxId} onChange={e => set('taxId', e.target.value)} placeholder="e.g. GST/HST, EIN, VAT number" />
+        <label className="lbl" style={{ marginTop: 15 }}>Website <span style={{ color: 'var(--faint)', fontWeight: 400 }}>· optional</span></label>
+        <input className="inp" value={d.website} onChange={e => set('website', e.target.value)} placeholder="yourshop.com" />
+      </div>
+    ),
+    21: (
+      <div className="fieldwrap">
+        <label className="drop">
+          <I d={ic.upload} s={26} c="var(--mute)" />
+          <span style={{ fontWeight: 600, marginTop: 8 }}>Drop files or browse</span>
+          <span className="sub2">CSV, Excel or PDF — transactions &amp; client lists</span>
+          <input type="file" multiple style={{ display: 'none' }} onChange={e => { const names = [...e.target.files].map(f => f.name); setData(dd => ({ ...dd, records: [...(dd.records || []), ...names] })); }} />
+        </label>
+        {(d.records || []).length > 0 && (
+          <div className="panel" style={{ marginTop: 12 }}>
+            {d.records.map((n, k) => (
+              <div key={k} className="mrow">
+                <I d={ic.check} s={15} c="var(--green)" />
+                <span className="mn" style={{ color: 'var(--ink)', fontWeight: 500 }}>{n}</span>
+                <button className="del" onClick={() => setData(dd => ({ ...dd, records: dd.records.filter((_, x) => x !== k) }))}><I d={ic.x} s={14} c="currentColor" /></button>
+              </div>))}
+          </div>)}
+      </div>
+    ),
+    23: (
+      <div>
+        <div className="guarantee">
+          <span className="gicon"><I d={ic.shield} s={15} c="var(--green)" /></span>
+          <span><b>2-month money-back guarantee.</b> Try the whole system — if it's not for you, we refund you. No questions.</span>
+        </div>
+        <div className="seg" style={{ marginTop: 12 }}>
+          <button className={(d.term || 'annual') === 'monthly' ? 'on' : ''} onClick={() => set('term', 'monthly')}>Monthly</button>
+          <button className={(d.term || 'annual') === 'annual' ? 'on' : ''} onClick={() => set('term', 'annual')}>Annual · 2 months free</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+          {PLANS.map(p => { const on = (d.plan || 'system') === p.id; const term = d.term || 'annual'; const price = term === 'annual' ? p.mo * 10 : p.mo; return (
+            <button key={p.id} className={'planrow' + (on ? ' sel' : '')} onClick={() => set('plan', p.id)}>
+              <span className="rd">{on && <I d={ic.check} s={12} c="#fff" />}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="prname">{p.name}{p.popular && <span className="popular2">Popular</span>}</span>
+                <span className="prtag">{p.tag}</span>
+              </span>
+              <span style={{ textAlign: 'right', flex: 'none' }}>
+                <span className="prprice">${price.toLocaleString('en-CA')}<span className="prper">/{term === 'annual' ? 'yr' : 'mo'}</span></span>
+                {term === 'annual' && <span className="prsave">save ${(p.mo * 2).toLocaleString('en-CA')}</span>}
+              </span>
+            </button>); })}
+        </div>
+        <div className="whytwo">
+          <span className="gicon"><I d={ic.shield} s={14} c="var(--green)" /></span>
+          <span><b>A backup card is recommended.</b> A money-services business must keep unbroken 5-year records — a backup keeps your desk and audit trail from lapsing if a payment fails. Add it now, or later from your desk.</span>
+        </div>
+        <div className="paypanel">
+          <div className="paylabel">Primary card</div>
+          <label className="lbl">Card number</label>
+          <div className="prefix"><input value={d.cardNum} onChange={e => set('cardNum', formatCard(e.target.value))} inputMode="numeric" placeholder="1234 5678 9012 3456" style={{ textAlign: 'left', fontFamily: "'Space Mono', monospace" }} /><span className="suf"><I d={ic.card} s={16} c="var(--mute)" /></span></div>
+          <div className="row2" style={{ marginTop: 11 }}>
+            <div><label className="lbl">Expiry</label><input className="inp mono" value={d.cardExp} onChange={e => set('cardExp', formatExp(e.target.value))} placeholder="MM/YY" inputMode="numeric" /></div>
+            <div><label className="lbl">CVC</label><input className="inp mono" value={d.cardCvc} onChange={e => set('cardCvc', e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="123" inputMode="numeric" /></div>
+          </div>
+          <label className="lbl" style={{ marginTop: 11 }}>Name on card</label>
+          <input className="inp" value={d.cardName} onChange={e => set('cardName', e.target.value)} placeholder="Full name" />
+        </div>
+        <BackupCard d={d} set={set} />
+        <div className="securenote"><I d={ic.lock} s={13} c="var(--faint)" /> Encrypted &amp; secure · not charged until your desk goes live</div>
+        <PromoCode d={d} set={set} />
+      </div>
+    ),
+  };
+
+  const scr = base[i];
+  const bodyWithInput = inputs[i] ? <div>{scr.body}{inputs[i]}</div> : scr.body;
+  const total = base.length - 1;
+  const progress = Math.round((i / total) * 100);
+  const onCta = () => { if (scr.onCta === 900) { setI(15); return; } next(); };
+  const onKey = (e) => { if (e.key === 'Enter' && scr.enter && scr.valid !== false) onCta(); };
+
+  return (
+    <div>
+      <Scene />
+      <FallLayer key={'fl' + i} heavy={i === 23} />
+      {(i === 23 || i === 24) && <div className="deskbg" style={{ backgroundImage: "url('onb-desktop.png')", filter: i === 24 ? 'brightness(0.99) saturate(1.02)' : 'blur(7px) brightness(0.6) saturate(1.05)', transform: 'scale(1.06)', animation: i === 23 ? 'deskfade 1s ease both' : 'none' }} />}
+      <div className="wrap">
+        <div className="glass" onKeyDown={onKey}>
+          {scr.chrome !== false && <BrandHeader tag={scr.phase ? undefined : 'Setup'} />}
+          {scr.chrome !== false && (
+            <div className="top">
+              <button className="back" onClick={back} disabled={i === 0}><I d={<path d="M15 5l-7 7 7 7" />} s={18} c="currentColor" /></button>
+              <div className="prog"><i style={{ width: progress + '%' }} /></div>
+              <div className="phase">{scr.phase || ''}</div>
+            </div>
+          )}
+          <div className="stage" ref={stageRef}><div className="screen" key={i} style={{ animationDelay: i === 23 ? '0.35s' : '0s' }}>{bodyWithInput}</div></div>
+          {scr.cta !== false && (
+            <div className="footer">
+              <button className="cta" disabled={scr.valid === false} onClick={onCta}>{scr.ctaLabel || 'Continue'}</button>
+              {scr.ghost && <button className="ghost" onClick={scr.ghost.onClick}>{scr.ghost.label}</button>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+    <rect width="400" height="400" fill="#12211b"/>
+    <rect x="96" y="120" width="208" height="160" rx="24" fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.4)"/>
+    <rect x="128" y="168" width="128" height="12" rx="6" fill="#4aa17c"/>
+    <rect x="128" y="196" width="84" height="12" rx="6" fill="rgba(255,255,255,0.4)"/>
+    <circle cx="300" cy="96" r="10" fill="#b9873f"/>
+    <circle cx="110" cy="300" r="8" fill="#4aa17c"/>
+  </svg>
+</template>
+</body>
+</html>

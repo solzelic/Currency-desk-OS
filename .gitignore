@@ -1,0 +1,24 @@
+.DS_Store
+*.log
+
+# Dependency and build output
+node_modules/
+dist/
+coverage/
+.vite/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.tsbuild/
+vite.config.js
+vite.config.d.ts
+
+# Environment and editor state
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+
+# Local OS/cache files
+Thumbs.db
