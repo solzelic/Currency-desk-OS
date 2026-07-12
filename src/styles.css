@@ -86,6 +86,7 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .os-active-app { min-width: 0; overflow: hidden; color: var(--muted); font-family: var(--mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
 .os-menubar-right { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: auto; font-family: var(--mono); font-size: 10px; }
 .os-quick-action { width: 26px; height: 26px; border: 0; background: transparent; color: var(--muted); font-family: var(--mono); font-size: 18px; }
+.os-deferred-action { display: inline-grid; place-items: center; opacity: 0.45; }
 .os-live-status { display: inline-flex; align-items: center; gap: 5px; color: var(--red); }
 .os-live-status i { width: 6px; height: 6px; border-radius: 50%; background: #47b66d; box-shadow: 0 0 0 3px rgba(71, 182, 109, 0.16); }
 .os-time { color: #c9c3b9; }

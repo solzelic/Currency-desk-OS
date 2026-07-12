@@ -133,8 +133,8 @@ export function WorkspaceShell({
         <span className="os-menu-separator" />
         <span className="os-active-app">{applicationById.get(activeId)?.title ?? "Desktop"}</span>
         <div className="os-menubar-right">
-          <button className="os-quick-action" aria-label="New transaction" title="New transaction">+</button>
-          <button className="os-quick-action" aria-label="Calculator" title="Calculator">▦</button>
+          <button className="os-quick-action" onClick={() => focusApp("exchange")} aria-label="New transaction" title="New transaction">+</button>
+          <span className="os-quick-action os-deferred-action" title="Calculator is not yet migrated" aria-label="Calculator not yet migrated">▦</span>
           <span className="os-live-status"><i /> 8</span>
           <span className="os-time">20:10</span>
           <div className="os-account"><b>{activeUser.name}</b><span>{activeUser.role.replace("_", " ")}</span></div>
