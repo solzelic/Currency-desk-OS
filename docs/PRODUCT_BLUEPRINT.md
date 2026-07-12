@@ -30,6 +30,10 @@ Posting is an application boundary, not a UI-only rule. It requires the active a
 
 The legacy prototype is a preserved visual and interaction reference. It is not the migration target for data logic and must not be edited. React modules should replace individual applications only after their business contracts, permissions, data classifications, audit behavior, and user flows are explicit.
 
+## Prototype parity pass
+
+The current visual-shell pass uses a fixed `1440 x 900` executable prototype capture and the parity matrix in `docs/PROTOTYPE_PARITY_MATRIX.md`. The light menu/tenant/application bars, textured desktop, window dimensions, title chrome, dock state, and dense transaction workspace are being aligned first. The React desktop intentionally opens the secured Exchange Desk rather than the prototype's default Ledger so the already validated sign-in-to-post transaction path remains directly available; this is a recorded partial parity decision, not a new product design.
+
 ## Product boundaries
 
 | Area | In scope now | Explicitly not production-ready |

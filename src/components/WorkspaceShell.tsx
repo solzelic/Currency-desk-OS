@@ -24,12 +24,12 @@ interface DesktopWindow {
 }
 
 const initialBoxes: Record<DeskAppId, Omit<DesktopWindow, "id" | "minimized" | "z">> = {
-  exchange: { x: 28, y: 28, width: 850, height: 680 },
-  clients: { x: 72, y: 74, width: 470, height: 640 },
-  compliance: { x: 118, y: 118, width: 480, height: 530 },
-  ledger: { x: 98, y: 374, width: 710, height: 350 },
-  receipt: { x: 900, y: 44, width: 390, height: 465 },
-  till: { x: 850, y: 515, width: 390, height: 265 }
+  exchange: { x: 80, y: 64, width: 1040, height: 600 },
+  clients: { x: 112, y: 88, width: 760, height: 560 },
+  compliance: { x: 150, y: 104, width: 960, height: 600 },
+  ledger: { x: 80, y: 64, width: 1040, height: 600 },
+  receipt: { x: 890, y: 84, width: 390, height: 465 },
+  till: { x: 760, y: 420, width: 440, height: 330 }
 };
 
 function makeWindow(id: DeskAppId, z: number): DesktopWindow {
@@ -133,8 +133,10 @@ export function WorkspaceShell({
         <span className="os-menu-separator" />
         <span className="os-active-app">{applicationById.get(activeId)?.title ?? "Desktop"}</span>
         <div className="os-menubar-right">
-          <span className="os-live-status"><i /> Desk online</span>
-          <span className="os-time">{workspace.businessDate}</span>
+          <button className="os-quick-action" aria-label="New transaction" title="New transaction">+</button>
+          <button className="os-quick-action" aria-label="Calculator" title="Calculator">▦</button>
+          <span className="os-live-status"><i /> 8</span>
+          <span className="os-time">20:10</span>
           <div className="os-account"><b>{activeUser.name}</b><span>{activeUser.role.replace("_", " ")}</span></div>
           <button className="os-icon-button os-power" onClick={onSignOut} aria-label="Sign out" title="Sign out" />
         </div>
@@ -144,16 +146,16 @@ export function WorkspaceShell({
         <div className="os-tenant-ident">
           <span className="os-building" aria-hidden="true" />
           <div>
-            <span className="os-tenant-label">Your logo</span>
+          <span className="os-tenant-label">Your logo</span>
             <h1>{workspace.branchName}</h1>
           </div>
           <span className="os-station">{workspace.tillId} · Open</span>
         </div>
         <div className="os-rate-ticker" aria-label="Desk rates">
-          <span>USD <b>0.7244</b></span>
-          <span>EUR <b>0.6778</b></span>
-          <span>GBP <b>0.5751</b></span>
-          <span className="ticker-positive">Rates live</span>
+          <span className="ticker-label"><i /> Hourly</span>
+          <span>USD <b>1.3641</b> <em>▲0.12%</em></span>
+          <span>EUR <b>1.4710</b> <em className="ticker-negative">▼0.08%</em></span>
+          <span>GBP <b>1.7304</b> <em>▲0.20%</em></span>
         </div>
       </section>
 

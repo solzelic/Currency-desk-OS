@@ -30,3 +30,10 @@
 - Added production-served copies of the approved prototype application icons for the React shell; the original `uploads/` source assets remain unchanged.
 - Added Chromium visual baselines for the desktop shell, Exchange Desk, and completed transaction state.
 - Validation passed: typecheck, 30 unit tests, production build, and 6 Chromium end-to-end tests.
+
+## 2026-07-11: Prototype parity pass
+
+- Captured the preserved executable prototype at `1440 x 900` through its sign-in, OTP, branch-picker, and desktop sequence.
+- Added `PROTOTYPE_PARITY_MATRIX.md`, covering every visible prototype application and the shell, panel, window, menu, transaction, customer, compliance, receipt, till, audit, and deferred-module boundaries.
+- Aligned React chrome to the prototype's light 44px menu bar, 52px tenant/rate strip, 58px application row, centered 1040px work-window geometry, compact spacing, and translucent rounded chrome.
+- Expanded deterministic Chromium references to desktop default, Exchange Desk initial, customer-selected, completed transaction, multi-window, and minimized/restored states.
