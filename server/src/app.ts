@@ -24,13 +24,15 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   // serve the built frontend (vite build → dist) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
   if (staticDir && existsSync(staticDir)) {
+    // which HTML is the app shell:
+    //   production (Render): STATIC_DIR=../dist → frontend.html (vite build)
+    //   prototype mode (npm run dev:prototype): STATIC_DIR=.. STATIC_INDEX="CurrencyDesk OS.html"
+    const indexFile = process.env.STATIC_INDEX ?? "frontend.html";
     await app.register(fastifyStatic, { root: staticDir, index: false });
-    // the vite build's entry is frontend.html (see vite.config.ts);
-    // SPA fallback for every non-API GET
-    app.get("/", (_req, reply) => reply.sendFile("frontend.html"));
+    app.get("/", (_req, reply) => reply.sendFile(indexFile));
     app.setNotFoundHandler((req, reply) => {
       if (req.method === "GET" && !req.url.startsWith("/api/")) {
-        return reply.sendFile("frontend.html");
+        return reply.sendFile(indexFile);
       }
       return reply.code(404).send({ error: "not_found" });
     });

@@ -134,7 +134,19 @@
     const [u, setU] = useState(''); const [p, setP] = useState(''); const [err, setErr] = useState('');
     const dir = (employees || []).filter(e => e.active !== false);
     const resolve = (raw) => { const q = raw.trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
-    const submit = (e) => { e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; } const rec = resolve(u); if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; } onNext(rec); };
+    const submit = async (e) => {
+      e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; }
+      const rec = resolve(u); if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
+      // backend bridge: establish a real session (server/) when the API is up;
+      // the demo flow continues regardless so the prototype still works standalone
+      try {
+        await fetch('/api/auth/login', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: rec.code || rec.name, password: p || 'yorkville' }),
+        });
+      } catch (_) { /* no backend running — standalone demo */ }
+      onNext(rec);
+    };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
       <h1>Staff sign-in</h1>

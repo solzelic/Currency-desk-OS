@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiLogin, apiLogout } from "./api/client";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { ExchangeDraftForm } from "./components/ExchangeDraftForm";
 import { LedgerSummary } from "./components/LedgerSummary";
@@ -26,9 +27,32 @@ export function App({ persistence }: { persistence: PersistenceAdapter }) {
   const [draft, setDraft] = useState<ExchangeDraft>(initialDraft);
   const [lastReceiptId, setLastReceiptId] = useState<string | null>(null);
   const [postMessage, setPostMessage] = useState("");
+  const [signInNotice, setSignInNotice] = useState("");
+
+  // Backend-first sign-in: a real session against server/ when it's running,
+  // graceful local demo mode when it isn't (offline dev, CI).
+  async function handleSignIn(staffId: string) {
+    const result = await apiLogin(staffId);
+    if (result.ok) {
+      setSignInNotice("");
+      store.signIn(staffId);
+      return;
+    }
+    if (result.reason === "unreachable") {
+      setSignInNotice("Backend not running — signed in with local demo state.");
+      store.signIn(staffId);
+      return;
+    }
+    setSignInNotice("Backend rejected the credentials for this account.");
+  }
+
+  function handleSignOut() {
+    void apiLogout();
+    store.signOut();
+  }
 
   if (!activeUser) {
-    return <SignInScreen staff={state.staff} onSignIn={store.signIn} />;
+    return <SignInScreen staff={state.staff} onSignIn={(staffId) => void handleSignIn(staffId)} notice={signInNotice} />;
   }
 
   const selectedCustomer = state.customers.find((customer) => customer.id === draft.customerId);
@@ -63,7 +87,7 @@ export function App({ persistence }: { persistence: PersistenceAdapter }) {
       ledgerCount={state.ledger.length}
       receiptCount={state.receipts.length}
       till={state.till}
-      onSignOut={store.signOut}
+      onSignOut={handleSignOut}
     >
       <CustomerPanel
         customers={state.customers}
