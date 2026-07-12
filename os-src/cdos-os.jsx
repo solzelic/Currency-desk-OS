@@ -7,7 +7,7 @@
 (function () {
   const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
   const {
-    CD, Ic, STAFF, ROLE_CAPS, seedRows, seedClients, perCadLive, crossRate, TODAY, fmt,
+    CD, Ic, STAFF, ROLE_CAPS, ROLE_SCOPE, seedRows, seedClients, perCadLive, crossRate, TODAY, fmt,
     computeFlags, computeAlerts, publishedBook, applyBook, bookSig,
     Ledger, Clients, Dashboard, TillDrawer, Audit, SettingsView, Calc, ReceiptModal, Tagged,
     Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing
@@ -126,21 +126,35 @@
     );
   }
 
-  /* ====================== LOCK + 2FA ====================== */
-  function Lock({ onNext }) {
+  /* ====================== LOCK + 2FA ======================
+     One door for the whole business (§04 of the Branch & Access Model spec):
+     the staff ID resolves a real employee record, and role + assignments —
+     not the person — decide where they land after 2FA. */
+  function Lock({ employees, onNext }) {
     const [u, setU] = useState(''); const [p, setP] = useState(''); const [err, setErr] = useState('');
-    const submit = (e) => { e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; } onNext(u.trim()); };
+    const dir = (employees || []).filter(e => e.active !== false);
+    const resolve = (raw) => { const q = raw.trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
+    const submit = (e) => { e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; } const rec = resolve(u); if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; } onNext(rec); };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
       <h1>Staff sign-in</h1>
-      <div className="station">Multi-branch · the OS for exchange houses</div>
+      <div className="station">One door for everyone — who you are decides where you land</div>
       <form onSubmit={submit}>
         <div><div className="lbl">Staff ID</div><input value={u} onChange={e => setU(e.target.value)} placeholder="e.g. a.singh" autoComplete="username" /></div>
         <div><div className="lbl">Password</div><input type="password" value={p} onChange={e => setP(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></div>
         <div className="lock-err">{err}</div>
         <button className="go" type="submit">Continue →</button>
       </form>
-      <div className="lock-hint">Demo — any credentials work. Next step is two-factor verification.</div>
+      <div className="lock-hint" style={{ textAlign: 'left' }}>
+        <div style={{ marginBottom: 7 }}>Demo directory — any password works. Each ID routes differently:</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {dir.map(e => (
+            <button key={e.code || e.name} type="button" onClick={() => { setU(e.code || e.name); setErr(''); }}
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 10, padding: '4px 8px', border: `1px solid var(--hair)`, borderRadius: 6, background: 'rgba(255,255,255,0.55)', color: 'var(--soft)', cursor: 'pointer' }}>
+              <b style={{ color: 'var(--ink)' }}>{e.code}</b> · {e.role.toLowerCase()}
+            </button>))}
+        </div>
+      </div>
     </div></div>);
   }
 
@@ -162,62 +176,101 @@
     </div></div>);
   }
 
-  /* ====================== STATION PICKER (sign-in) ====================== */
-  function StationPicker({ branches, station, onBack, onPick }) {
-    const open = branches.filter(b => b.status === 'open');
-    const firstOpen = open[0] || branches[0];
-    const [selId, setSelId] = useState(() => {
-      const b = branches.find(x => x.id === station.branchId && x.status === 'open') || firstOpen;
-      return b ? b.id : null;
-    });
-    const tillFor = (b) => (b.tills || []).find(t => t.status !== 'closed') || (b.tills || [])[0];
-    const confirm = () => {
-      const b = branches.find(x => x.id === selId);
-      if (!b) return;
-      const t = tillFor(b);
-      onPick({ branchId: b.id, tillId: t && t.id });
+  /* ====================== STATION PICKER (sign-in) ======================
+     Scoped per the spec's routing table (§04): owners see every branch;
+     everyone else sees only their assigned branches. Selecting a branch
+     expands its open tills — the employee's default till (the one they're
+     posted to) is pre-selected. Single-destination cases never reach this
+     screen at all (routeAfterAuth skips it). */
+  function StationPicker({ branches, station, rec, onBack, onPick }) {
+    const isOwner = !rec || rec.role === 'Owner' || rec.branches === '*';
+    const allowedIds = isOwner ? branches.map(b => b.id) : (Array.isArray(rec.branches) ? rec.branches : []);
+    const list = branches.filter(b => allowedIds.includes(b.id));
+    const defTill = (b) => {
+      if (!b) return null;
+      const mine = rec && (b.tills || []).find(t => t.teller === rec.name && t.status !== 'closed');
+      const t = mine || (b.tills || []).find(x => x.status !== 'closed') || (b.tills || [])[0];
+      return t ? t.id : null;
     };
+    const [selId, setSelId] = useState(() => {
+      const home = rec && rec.home && list.find(b => b.id === rec.home && b.status === 'open');
+      if (home) return home.id;
+      const prev = list.find(b => b.id === station.branchId && b.status === 'open');
+      const open = prev || list.find(b => b.status === 'open') || list[0];
+      return open ? open.id : null;
+    });
+    const [tillSel, setTillSel] = useState({});   // branchId -> tillId (explicit picks)
+    const selB = list.find(b => b.id === selId);
+    const effTill = selB ? (tillSel[selId] || defTill(selB)) : null;
+    const confirm = () => { if (selB && effTill) onPick({ branchId: selB.id, tillId: effTill }); };
     return (<div id="lock"><div className="lock-card" style={{ maxWidth: 444 }}>
-      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Choose your branch</span></div>
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Choose your station</span></div>
       <h1>Where are you working?</h1>
-      <div className="station">Pick your branch — you can switch any time from the header</div>
+      <div className="station">{isOwner ? 'Owner access — every branch, any till' : (list.length > 1 ? 'Your assigned branches — pick one, then your till' : 'Your branch — pick a till')}</div>
       <div className="sp-list">
-        {branches.map(b => {
+        {list.map(b => {
           const closed = b.status === 'closed';
-          const openTills = (b.tills || []).filter(t => t.status !== 'closed').length;
+          const openTills = (b.tills || []).filter(t => t.status !== 'closed');
           const sel = selId === b.id;
           return (
-            <button key={b.id} disabled={closed} onClick={() => setSelId(b.id)} className={'sp-branch' + (sel ? ' sel' : '')}>
-              <span className="sp-ico"><Ic n="building" s={19} c="var(--cd-on-ink)" /></span>
-              <span className="sp-info">
-                <span className="sp-name">{b.name} <i>{b.code}</i></span>
-                <span className="sp-city">{b.city}</span>
-                <span className="sp-meta">{closed ? 'Closed today' : openTills + (openTills === 1 ? ' till open' : ' tills open')}</span>
-              </span>
-              {closed ? <span className="sp-tag">Closed</span> : <span className="sp-radio">{sel && <Ic n="check" s={14} c="var(--cd-on-ink)" />}</span>}
-            </button>);
+            <div key={b.id}>
+              <button disabled={closed} onClick={() => setSelId(b.id)} className={'sp-branch' + (sel ? ' sel' : '')} style={{ width: '100%' }}>
+                <span className="sp-ico"><Ic n="building" s={19} c="var(--cd-on-ink)" /></span>
+                <span className="sp-info">
+                  <span className="sp-name">{b.name} <i>{b.code}</i>{rec && rec.home === b.id && !isOwner ? <i style={{ color: 'var(--faint)' }}>· home</i> : null}</span>
+                  <span className="sp-city">{b.city}</span>
+                  <span className="sp-meta">{closed ? 'Closed today' : openTills.length + (openTills.length === 1 ? ' till open' : ' tills open')}</span>
+                </span>
+                {closed ? <span className="sp-tag">Closed</span> : <span className="sp-radio">{sel && <Ic n="check" s={14} c="var(--cd-on-ink)" />}</span>}
+              </button>
+              {sel && !closed && openTills.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px 10px 56px' }}>
+                  {openTills.map(t => { const on = effTill === t.id; return (
+                    <button key={t.id} type="button" onClick={() => setTillSel(m => ({ ...m, [b.id]: t.id }))}
+                      style={{ fontFamily: 'var(--f-mono)', fontSize: 10, padding: '5px 9px', borderRadius: 7, cursor: 'pointer', border: `1px solid ${on ? 'var(--ink)' : 'var(--hair)'}`, background: on ? 'var(--ink)' : 'rgba(255,255,255,0.55)', color: on ? '#fff' : 'var(--soft)' }}>
+                      {t.name.replace(/\s+—.*/, '')}{rec && t.teller === rec.name ? ' · yours' : (t.operator ? ' · ' + t.operator + ' on now' : (t.teller ? ' · ' + t.teller : ' · free'))}
+                    </button>); })}
+                </div>)}
+            </div>);
         })}
       </div>
-      <button className="go" disabled={!selId} style={{ width: '100%', opacity: selId ? 1 : 0.4, cursor: selId ? 'pointer' : 'not-allowed' }} onClick={confirm}>Open workspace</button>
+      <button className="go" disabled={!effTill} style={{ width: '100%', opacity: effTill ? 1 : 0.4, cursor: effTill ? 'pointer' : 'not-allowed' }} onClick={confirm}>Open workspace</button>
       <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back</button>
+    </div></div>);
+  }
+
+  /* ====================== NO-ASSIGNMENT STOP SCREEN (rule R1) ====================== */
+  function NoAssign({ rec, manager, onBack }) {
+    return (<div id="lock"><div className="lock-card">
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Signed in · no station</span></div>
+      <h1>You're not assigned to a branch yet</h1>
+      <div className="station">Hi {rec ? rec.name : 'there'} — your account works, but it isn't posted anywhere</div>
+      <div style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid var(--hair)', borderRadius: 10, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.6, color: 'var(--soft)', textAlign: 'left', marginBottom: 14 }}>
+        Every employee works out of at least one branch. Ask <b style={{ color: 'var(--ink)' }}>{manager || 'your manager'}</b> to add you to a location in <b style={{ color: 'var(--ink)' }}>Branch Network → Team</b>, then sign in again.
+      </div>
+      <button className="lock-back" onClick={onBack} style={{ marginTop: 0 }}><Ic n="arrowleft" s={13} c="currentColor" /> Back to sign-in</button>
     </div></div>);
   }
 
   /* ====================== STATION SWITCHER (header) ======================
      You sign in to ONE store, so the header shows that branch and lets you
      hop between the TILLS at THIS location only. Changing store means signing
-     out and back in — there is deliberately no cross-store switch here. */
-  function StationSwitcher({ branches, station, setStation, log }) {
+     out and back in — there is deliberately no cross-store switch here.
+     lockTill (rule R5): till-scope roles (cashier/trainee) can't self-serve
+     a till switch — their drawer is their assignment. */
+  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate }) {
     const [open, setOpen] = useState(false);
+    const [pending, setPending] = useState(null);   // till id awaiting confirmation
     const ref = useRef(null);
     useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
     const tills = ((ab && ab.tills) || []).filter(t => t.status !== 'closed');
     const at = ab && (ab.tills || []).find(t => t.id === station.tillId);
-    const canSwitch = tills.length >= 1;
-    const pick = (tId) => { setStation({ branchId: ab.id, tillId: tId }); setOpen(false); const t = (ab.tills || []).find(x => x.id === tId) || {}; log && log('Till switched', (ab.name || '') + ' · ' + (t.name || '')); };
+    const canSwitch = !lockTill && tills.length >= 1;
+    const pick = (tId) => { if (tId === station.tillId) { setOpen(false); return; } setPending(tId); setOpen(false); };
+    const confirmPick = () => { const tId = pending; setPending(null); if (!tId) return; (gate || ((fn) => fn()))(() => { setStation({ branchId: ab.id, tillId: tId }); const t = (ab.tills || []).find(x => x.id === tId) || {}; if (t.operator) log && log('Till handover', `${t.operator} → you · ${ab.code} ${t.name}`); log && log('Till switched', (ab.name || '') + ' · ' + (t.name || '')); }); };
     return (<div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => canSwitch && setOpen(o => !o)} title={canSwitch ? 'Switch till at this location' : 'Your station'} style={{ display: 'flex', alignItems: 'center', gap: 6, background: open ? 'var(--cd-hover)' : 'transparent', border: 0, padding: '2px 6px', margin: '0 -6px', borderRadius: 7, cursor: canSwitch ? 'pointer' : 'default', color: 'inherit' }}>
+      <button onClick={() => canSwitch && setOpen(o => !o)} title={canSwitch ? 'Switch till at this location' : (lockTill ? 'Your assigned till — ask a manager to move you' : 'Your station')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: open ? 'var(--cd-hover)' : 'transparent', border: 0, padding: '2px 6px', margin: '0 -6px', borderRadius: 7, cursor: canSwitch ? 'pointer' : 'default', color: 'inherit' }}>
         <span style={{ width: 6, height: 6, borderRadius: 999, background: ab && ab.status === 'open' ? CD.green : CD.faint, flex: 'none' }}></span>
         <span style={{ fontSize: 12, fontWeight: 600, color: 'inherit', whiteSpace: 'nowrap' }}>{ab ? ab.name : 'Station'}</span>
         {at && <span style={{ fontSize: 11, color: CD.faint, whiteSpace: 'nowrap' }}>· {at.name.replace(/\s+—.*/, '')}</span>}
@@ -228,11 +281,12 @@
         {tills.map(t => { const on = station.tillId === t.id; return (
           <button key={t.id} onClick={() => pick(t.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}>
             <Ic n="wallet" s={13} c={on ? CD.ink : CD.mute} />
-            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{t.name}{t.teller ? <span style={{ color: CD.faint }}> · {t.teller}</span> : null}</span>
+            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{t.name}<span style={{ color: CD.faint }}>{on ? ' · you' : (t.operator ? ' · ' + t.operator + ' on now' : ' · free')}</span></span>
             {on && <Ic n="check" s={13} c={CD.ink} />}
           </button>); })}
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10.5, color: CD.faint, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n="logout" s={11} c={CD.faint} /> To change store, sign out &amp; back in.</div>
       </div>)}
+      {pending && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && React.createElement(window.CDOS._stations.ConfirmStationModal, { branch: ab, till: (ab.tills || []).find(x => x.id === pending), me, onClose: () => setPending(null), onConfirm: confirmPick })}
     </div>);
   }
 
@@ -304,6 +358,7 @@
   function App() {
     const [stage, setStage] = useState('lock');
     const [user, setUser] = useState('');
+    const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [me, setMe] = useState(STAFF[0]);
 
     // №02 (Roadmap v2): the book + client roster persist like every other store.
@@ -344,7 +399,12 @@
         receiptHeader: 'York Currency Exchange', receiptFooter: 'Thank you — keep for your records',
         receiptDisclaimer: 'All sales final. Rates as quoted at time of transaction.', showLogoOnReceipt: true, showMsbOnReceipt: true,
       };
-      try { const raw = localStorage.getItem('cdos_settings'); const merged = raw ? { ...def, ...JSON.parse(raw) } : def; if (merged.deskName === 'Front Desk 01') merged.deskName = 'Desk 1'; if (!merged.employees || !merged.employees.length) merged.employees = STAFF.map(s => ({ id: 'e_' + s.name.replace(/[^A-Za-z]/g, ''), name: s.name, role: s.role, email: '', phone: '', code: s.name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''), active: true, caps: { ...(ROLE_CAPS[s.role] || {}) }, apps: null })); return merged; } catch (e) { return def; }
+      try { const raw = localStorage.getItem('cdos_settings'); const merged = raw ? { ...def, ...JSON.parse(raw) } : def; if (merged.deskName === 'Front Desk 01') merged.deskName = 'Desk 1'; if (!merged.employees || !merged.employees.length) merged.employees = STAFF.map(s => ({ id: 'e_' + s.name.replace(/[^A-Za-z]/g, ''), name: s.name, role: s.role, email: '', phone: '', code: s.staffId || s.name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''), active: true, pin: '0000', requirePin: true, caps: { ...(ROLE_CAPS[s.role] || {}) }, apps: null, branches: s.branches, home: s.home }));
+      // migration: employees saved before the Branch & Access Model gain assignments (spec §06)
+      merged.employees = merged.employees.map(e => { if (e.branches !== undefined) { if (Array.isArray(e.branches)) { const fb = e.branches.filter(id => id !== 'b03' && id !== 'b04'); if (fb.length !== e.branches.length) return { ...e, branches: fb, home: (e.home === 'b03' || e.home === 'b04') ? (fb[0] || null) : e.home }; } return e; } const seed = STAFF.find(s => s.name === e.name); if (e.role === 'Owner') return { ...e, branches: '*', home: null }; return { ...e, branches: seed ? seed.branches : ['b01'], home: seed ? seed.home : 'b01' }; });
+      // every account carries a 4-digit transaction PIN (defaults to 0000) and a require-PIN flag
+      merged.employees = merged.employees.map(e => ({ ...e, pin: e.pin || '0000', requirePin: e.requirePin !== false }));
+      return merged; } catch (e) { return def; }
     });
     const [perms, setPerms] = useState(() => {
       const def = { Teller: { canDelete: true, canExport: true, canViewReports: true, canEditKYC: true, canSettings: false, canCloseDay: false } };
@@ -364,11 +424,67 @@
     // active station (branch + till) all live here so the shell chrome, the
     // Till drawer, and the Branch Network module read one source of truth. ----
     const _ST = window.CDOS._stations;
-    const [branches, setBranches] = useState(() => { try { const r = JSON.parse(localStorage.getItem(_ST.SKEY) || 'null'); return (Array.isArray(r) && r.length && r[0].tills) ? r : _ST.defaultBranches(); } catch (e) { return _ST.defaultBranches(); } });
+    const [branches, setBranches] = useState(() => { try { const r = JSON.parse(localStorage.getItem(_ST.SKEY) || 'null'); let base = (Array.isArray(r) && r.length && r[0].tills) ? r : _ST.defaultBranches(); base = base.filter(b => b.id !== 'b03' && b.id !== 'b04'); /* network trimmed to the two real locations */ const DEFV = _ST.defaultBranches(); const migrated = base.map(b => { const dv = DEFV.find(d => d.id === b.id); return { ...b, main: b.main !== undefined ? b.main : !!(dv && dv.main), vault: b.vault || (dv ? dv.vault : { CAD: 0 }), tills: (b.tills || []).map(t => t.operator !== undefined ? t : { ...t, operator: t.teller || '' }) }; }); if (!migrated.some(b => b.main)) migrated[0] = { ...migrated[0], main: true }; return migrated; } catch (e) { return _ST.defaultBranches(); } });
     const [branchMoves, setBranchMoves] = useState(() => { try { const r = JSON.parse(localStorage.getItem(_ST.MKEY) || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
     const [station, setStation] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_station_v1') || 'null'); return r && r.branchId ? r : _ST.defaultStation(_ST.defaultBranches()); } catch (e) { return _ST.defaultStation(_ST.defaultBranches()); } });
     useEffect(() => { try { localStorage.setItem(_ST.SKEY, JSON.stringify(branches)); } catch (e) {} }, [branches]);
+    // if the station points at a branch/till that no longer exists, snap to a live one
+    useEffect(() => {
+      const b = branches.find(x => x.id === station.branchId);
+      if (b && (b.tills || []).some(t => t.id === station.tillId)) return;
+      const nb = branches.find(x => x.status === 'open') || branches[0];
+      const nt = nb && ((nb.tills || []).find(t => t.status !== 'closed') || (nb.tills || [])[0]);
+      if (nb && nt) setStation({ branchId: nb.id, tillId: nt.id });
+    }, [branches]);
+    // live operator sessions: whoever is signed in at a station OWNS that till
+    // until they sign out or move — one operator per till. Claims the active
+    // till for `me` and releases any other till `me` was on. Covers sign-in
+    // routing, header till switches, Operate/Take over, and account switching.
+    useEffect(() => {
+      if (stage !== 'desktop' || !station || !station.tillId) return;
+      setBranches(list => {
+        let changed = false;
+        const next = list.map(b => ({ ...b, tills: (b.tills || []).map(t => {
+          const mine = b.id === station.branchId && t.id === station.tillId;
+          const want = mine ? me.name : ((t.operator || '') === me.name ? '' : (t.operator || ''));
+          if ((t.operator || '') === want) return t;
+          changed = true; return { ...t, operator: want };
+        }) }));
+        return changed ? next : list;
+      });
+    }, [stage, station, me.name]);
     useEffect(() => { try { localStorage.setItem(_ST.MKEY, JSON.stringify(branchMoves)); } catch (e) {} }, [branchMoves]);
+    // OS-level Move cash: one modal, one rail — openable from the Vault, the
+    // Cash Drawer, or the Branch Network with a preset (kind/branch/till).
+    const [moveCash, setMoveCash] = useState(null);
+    // vault → till: issue a multi-currency float directly on the rail (from the
+    // Vault's Assign flow — owner/manager hands money to a drawer, all recorded)
+    const issueToTill = (tId, amounts) => {
+      const b = branches.find(x => x.id === station.branchId); if (!b) return;
+      const t = (b.tills || []).find(x => x.id === tId); if (!t) return;
+      let list = branches, mv = branchMoves; const parts = [];
+      Object.keys(amounts || {}).forEach(ccy2 => {
+        const amt = +amounts[ccy2] || 0; if (amt <= 0) return;
+        const r = _ST.applyMove(list, mv, { kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel: b.code + ' · Vault', toLabel: b.code + ' · ' + t.name.replace(/\s+—.*/, '') }, me.name);
+        list = r.branches; mv = r.moves; parts.push(`${amt.toLocaleString()} ${ccy2}`);
+      });
+      if (!parts.length) return;
+      setBranches(list); setBranchMoves(mv);
+      log('Float issued', `${parts.join(' + ')} · ${b.code} Vault → ${t.name.replace(/\s+—.*/, '')}`);
+    };
+    // wholesale orders land in THIS branch's vault — other locations fill their
+    // own sub-vaults by ordering; the main vault stays the network's cash root
+    const creditVault = (ccy2, units, supplier) => {
+      const b = branches.find(x => x.id === station.branchId); if (!b || !units) return;
+      setBranches(list => list.map(x => x.id === b.id ? { ...x, vault: { ...(x.vault || {}), [ccy2]: (((x.vault || {})[ccy2]) || 0) + units } } : x));
+      setBranchMoves(list => [{ id: 'm' + Date.now(), ref: 'RC-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + (list.filter(m => m.date === TODAY).length + 1).toString().padStart(2, '0'), kind: 'order', from: supplier || 'Wholesale order', to: b.code + ' · Vault', ccy: ccy2, amount: units, cadVal: +((ccy2 === 'CAD' ? units : units * (crossRate(ccy2, 'CAD') || 0))).toFixed(2), date: TODAY, by: me.name }, ...list]);
+    };
+    const doOsMove = (payload) => {
+      const r = _ST.applyMove(branches, branchMoves, payload, me.name);
+      setBranches(r.branches); setBranchMoves(r.moves);
+      log(r.verb, r.detail);
+      setMoveCash(null);
+    };
     useEffect(() => { try { localStorage.setItem('cdos_station_v1', JSON.stringify(station)); } catch (e) {} }, [station]);
     // ---- beneficiaries + corridors: shared so Clients nests beneficiaries under
     // each contact AND Transfers reads the same store (one source of truth) ----
@@ -512,11 +628,47 @@
     // role preset to the shared (all-tellers) permission set, so the whole UI
     // reflects exactly what that role is allowed to do. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
+    const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
     const applyRole = (s) => {
       setMe({ name: s.name, role: s.role });
       if (s.role === 'Owner') { setMeApps(null); }
       else { const caps = s.caps || ROLE_CAPS[s.role] || {}; setPerms(p => ({ ...p, Teller: { ...caps } })); setMeApps(Array.isArray(s.apps) ? s.apps : null); }
+      // scope guard: switching to a non-owner whose assignments don't include the
+      // current station snaps the station to their home branch / default till (R2/R3)
+      if (s.role !== 'Owner' && Array.isArray(s.branches)) {
+        setStation(st => {
+          if (s.branches.includes(st.branchId)) return st;
+          const b = branches.find(x => s.branches.includes(x.id) && x.status === 'open') || branches.find(x => s.branches.includes(x.id));
+          if (!b) return st;
+          const t = (b.tills || []).find(x => x.teller === s.name && x.status !== 'closed') || (b.tills || []).find(x => x.status !== 'closed') || (b.tills || [])[0];
+          return { branchId: b.id, tillId: t && t.id };
+        });
+      }
       log('Signed in as', `${s.name} · ${s.role}`);
+    };
+    /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
+    const pinOf = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return (e && e.pin) || '0000'; };
+    const reqPin = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return e ? e.requirePin !== false : true; };
+    const askPin = (opts) => setPinGate(opts);
+    const switchTo = (s) => { setAcctMenu(false); if (s.name === me.name) return; const need = settings.pinOnSwitch !== false && s.requirePin !== false; if (need) askPin({ title: 'Switch account', sub: 'Enter ' + s.name + '’s PIN to continue', name: s.name, expected: s.pin || '0000', onOk: () => applyRole(s) }); else applyRole(s); };
+    const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, expected: pinOf(me.name), onOk: fn }); else fn(); };
+
+    /* Routing per §04 of the Branch & Access Model spec — a pure function of
+       role + assignments. Owner → full picker. One branch + a posted till →
+       straight to the desktop (the single-shop base case, rule R10). One
+       branch, no till → till pick. Multiple → filtered picker. None → stop. */
+    const routeAfterAuth = (rec) => {
+      if (!rec) { setStage('lock'); return; }
+      applyRole(rec);
+      const isOwner = rec.role === 'Owner' || rec.branches === '*';
+      const allowed = isOwner ? branches : branches.filter(b => Array.isArray(rec.branches) && rec.branches.includes(b.id));
+      if (!allowed.length) { setStage('noassign'); return; }
+      if (!isOwner && allowed.length === 1) {
+        const b = allowed[0];
+        const mine = b.status === 'open' && (b.tills || []).find(t => t.teller === rec.name && t.status !== 'closed');
+        if (mine) { setStation({ branchId: b.id, tillId: mine.id }); enterDesktop(); return; }
+      }
+      setStage('station');
     };
 
     useEffect(() => { const t = setInterval(() => { setClock(new Date()); }, 1000); return () => clearInterval(t); }, []);
@@ -580,6 +732,8 @@
     // computeAlerts still supplies the (row-based) structuring + KYC tallies; the
     // reportable count comes from the obligation list above.
     const alerts = useMemo(() => ({ ...computeAlerts(rows, flags), rpt: openObligations.length }), [rows, flags, openObligations]);
+    // house settings that break the active regulator's hard rules — persistent until fixed
+    const jViol = useMemo(() => (window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : []), [settings]);
     // per-item breakdown for the bell preview dropdown
     const alertList = useMemo(() => {
       const strM = new Map(), kycM = new Map();
@@ -852,6 +1006,8 @@
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+      // sign-out frees the till — the operator session ends with the person
+      setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.operator === me.name ? { ...t, operator: '' } : t) })));
       setWins([]); setStage('lock');
     }
 
@@ -867,9 +1023,10 @@
       return id === 'rates'; // basic — rate board only
     };
 
-    if (stage === 'lock') return <Lock onNext={(u) => { setUser(u); setStage('otp'); }} />;
-    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => setStage('station')} />;
-    if (stage === 'station') return <StationPicker branches={branches} station={station} onBack={() => setStage('otp')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec) => { setUser(rec.code || rec.name); setAuthRec(rec); setStage('otp'); }} />;
+    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
+    if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
+    if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('otp')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
 
     const topWin = wins.filter(w => !w.min).sort((a, b) => b.z - a.z)[0];
     const activeId = topWin ? topWin.id : null;
@@ -889,7 +1046,7 @@
       return { ...base, accent };
     };
     const canSettings = me.role === 'Owner' || perms.Teller.canSettings;
-    const alertCount = alerts.str + alerts.id + alerts.rpt;
+    const alertCount = alerts.str + alerts.id + alerts.rpt + jViol.length;
     const initials = me.name.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     const _activeBranch = branches.find(b => b.id === station.branchId) || branches[0];
     const _activeTill = _activeBranch && (_activeBranch.tills || []).find(t => t.id === station.tillId);
@@ -933,11 +1090,11 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} />;
-        case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} />;
-        case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} onOpenTill={() => openApp('till')} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} />;
+        case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} />;
+        case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger') }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
@@ -985,6 +1142,20 @@
                     <div className="bell-empty"><Ic n="check" s={22} c={CD.green} /><span>No open flags. Reportables filed, IDs current, no structuring watch.</span></div>
                   ) : (
                     <div className="bell-body">
+                      {jViol.length > 0 && (
+                        <div className="bell-sec">
+                          <div className="bell-cap"><span className="bell-dot sig-hi"></span>{jViol[0].authority} rules violated<i>{jViol.length}</i></div>
+                          {jViol.map(v => (
+                            <div key={v.id} className="bell-row tall" onClick={() => { setBellMenu(false); openSettingsTab('compliance'); }}>
+                              <div className="bell-row-main">
+                                <span className="bell-row-name" style={{ color: CD.flag }}>{v.label}</span>
+                                <span className="bell-row-sub">{v.detail}</span>
+                              </div>
+                              <button className="bell-act" title="Open Compliance settings to fix this" onClick={(e) => { e.stopPropagation(); setBellMenu(false); openSettingsTab('compliance'); }}>Fix →</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {alertList.rpt.length > 0 && (
                         <div className="bell-sec">
                           <div className="bell-cap"><span className="bell-dot sig-hi"></span>Unfiled reportables<i>{alertList.rpt.length}</i></div>
@@ -1056,7 +1227,7 @@
                   <div className="mb-menu-div"></div>
                   <div className="mb-menu-cap">Switch account</div>
                   {(settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => (
-                    <button key={s.name} className={'mb-menu-row' + (s.name === me.name ? ' active' : '')} onClick={() => { applyRole(s); setAcctMenu(false); }}>
+                    <button key={s.name} className={'mb-menu-row' + (s.name === me.name ? ' active' : '')} onClick={() => switchTo(s)}>
                       <span className="mb-menu-dot">{inits(s.name)}</span>
                       <span className="mb-menu-lbl">{s.name} <i>· {s.role}</i></span>
                       {s.name === me.name && <Ic n="chev" s={13} />}
@@ -1090,7 +1261,7 @@
           </div>
           <div className="tenant-meta">
             <span className="tenant-name">{settings.operatingName || settings.bizName || 'Exchange house'}</span>
-            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} />
+            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} />
           </div>
         </div>
         <div className="tenant-right">
@@ -1103,7 +1274,7 @@
         {visibleApps.map(id => {
           const w = wins.find(x => x.id === id);
           const removing = removingApps.includes(id);
-          const alertN = alerts.str + alerts.id + alerts.rpt;
+          const alertN = alerts.str + alerts.id + alerts.rpt + jViol.length;
           const cls = 'app-btn' + (w ? ' open' : '') + (w && w.min ? ' min' : '')
             + (editApps && !removing ? ' jiggle' : '') + (removing ? ' removing' : '') + (dragApp === id ? ' dragging' : '') + (activeBase === id ? ' is-active' : '');
           return (<div key={id} data-app={id} className={cls}
@@ -1142,6 +1313,8 @@
       </div>
 
       {receipt && <ReceiptModal row={receipt} settings={settings} onClose={() => setReceipt(null)} />}
+      {pinGate && window.CDOS.PinPrompt && <window.CDOS.PinPrompt {...pinGate} onOk={() => { const f = pinGate.onOk; setPinGate(null); f && f(); }} onCancel={() => setPinGate(null)} />}
+      {moveCash && _ST.MoveModal && React.createElement(_ST.MoveModal, { branches, station, preset: moveCash, onClose: () => setMoveCash(null), onMove: doOsMove })}
       {addContactOpen && window.CDOS.KYC && window.CDOS.KYC.NewContactFlow &&
         <window.CDOS.KYC.NewContactFlow by={me.name} setClients={setClients} onClose={() => setAddContactOpen(false)} onDone={() => setAddContactOpen(false)} />}
     </div>);

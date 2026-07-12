@@ -901,6 +901,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   function TxDetail({ row, flag, settings, me, can, log, setRows, clients, onClose, onReceipt, onOpenClient, onFileLCTR }) {
     const [note, setNote] = useState('');
     const [voiding, setVoiding] = useState(false);
+    const [pinAsk, setPinAsk] = useState(false);   // PIN gate before a void (Settings › Employees)
     const [correcting, setCorrecting] = useState(false);
     // filing status comes from the real Compliance filing record, not a local flag
     const filing = (() => { try { return (JSON.parse(localStorage.getItem('cdos_submissions_v1') || '{}') || {})['L-' + row.ref]; } catch (e) { return null; } })();
@@ -909,6 +910,10 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [shown, setShown] = useState(false);
     useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r); }, []);
     const isVoid = row.status === 'void';
+    // a void can require the operator's transaction PIN
+    const _emp = (settings.employees || []).find(x => x.name === me.name);
+    const _myPin = (_emp && _emp.pin) || '0000';
+    const voidNeedsPin = settings.pinOnVoid !== false && (!_emp || _emp.requirePin !== false);
     const patch = (fn, action, detail) => { setRows(rs => rs.map(r => r.id === row.id ? fn(r) : r)); log(action, `${row.ref} · ${detail}`); };
 
     const addNote = () => { if (!note.trim()) return; const entry = { ts: stamp(), user: me.name, text: note.trim() }; patch(r => ({ ...r, thread: [...(r.thread || []), entry] }), 'Note added', note.trim().slice(0, 60)); setNote(''); };
@@ -973,10 +978,13 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           <div className="flex items-center gap-2 px-5 py-2.5 flex-none" style={{ background: CD.flagSoft, borderBottom: `1px solid ${CD.flag}` }}>
             <span className="text-[12px] font-medium flex-none" style={{ color: CD.flag }}>Void reason</span>
             <input value={voidReason} onChange={e => setVoidReason(e.target.value)} autoFocus placeholder="Reason (required)…" className="flex-1 text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.flag}`, borderRadius: 8 }} />
-            <CommitBtn onCommit={doVoid} disabled={!voidReason.trim()} tone="danger" label="Confirm void" doneLabel="Voided" delay={420} style={{ padding: '0.5rem 0.75rem' }} title="Void this record" />
+            {voidNeedsPin
+              ? <button onClick={() => voidReason.trim() && setPinAsk(true)} disabled={!voidReason.trim()} className="text-[13px] font-semibold text-white" style={{ padding: '0.5rem 0.75rem', borderRadius: 8, background: voidReason.trim() ? CD.flag : 'var(--cd-disabled)', cursor: voidReason.trim() ? 'pointer' : 'not-allowed' }} title="Enter your PIN to void">Confirm void</button>
+              : <CommitBtn onCommit={doVoid} disabled={!voidReason.trim()} tone="danger" label="Confirm void" doneLabel="Voided" delay={420} style={{ padding: '0.5rem 0.75rem' }} title="Void this record" />}
             <button onClick={() => setVoiding(false)} className="p-2 flex-none"><Ic n="x" s={15} c={CD.mute} /></button>
           </div>
         )}
+        {pinAsk && window.CDOS.PinPrompt && <window.CDOS.PinPrompt title="Confirm void" sub="Enter your PIN to void this record" name={me.name} expected={_myPin} onOk={() => { setPinAsk(false); doVoid(); }} onCancel={() => setPinAsk(false)} />}
         <div className="flex-1 overflow-auto">
           <div className="mx-auto w-full px-5 py-6 space-y-5" style={{ maxWidth: 760 }}>
             {isVoid && (<div className="p-3 text-[12px]" style={{ background: row.correctedTo ? CD.amberSoft : CD.lineSoft, borderRadius: 10, color: CD.ink }}><b>{row.correctedTo ? 'Corrected & voided' : 'Voided'}</b> by {row.voidBy} · {row.voidAt}<div style={{ color: CD.mute }}>Reason: {row.voidReason}</div>{row.correctedTo && <div className="mt-1 font-medium" style={{ color: 'var(--cd-brass-text)' }}>Replaced by <span style={{ fontFamily: 'Space Mono, monospace' }}>{row.correctedTo}</span> — the corrected record.</div>}</div>)}
@@ -1553,7 +1561,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         </div>
         <select value={tf} onChange={e => setTf(e.target.value)} className="px-3 py-2 text-sm outline-none" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 8 }}><option>All</option>{TYPES.map(t => <option key={t}>{t}</option>)}</select>
         <button onClick={openNew} disabled={dayClosed} title={dayClosed ? 'Day is closed — reopen to post' : 'New transaction'} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: dayClosed ? CD.mute : CD.ink, borderRadius: 8, cursor: dayClosed ? 'not-allowed' : 'pointer', opacity: dayClosed ? 0.7 : 1, transition: 'background .16s ease, transform .07s ease' }} onMouseEnter={e => { if (!dayClosed) e.currentTarget.style.background = CD.green; }} onMouseLeave={e => { if (!dayClosed) e.currentTarget.style.background = CD.ink; }} onMouseDown={e => { if (!dayClosed) e.currentTarget.style.transform = 'scale(0.97)'; }} onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}><Ic n="plus" s={15} /> New transaction</button>
-        {can('canExport') && <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 8 }}><Ic n="download" s={15} /> Export</button>}
         {can('canExport') && <button onClick={genReport} title="Generate a printable report from the current search & filters" className="flex items-center gap-1.5 pl-2.5 pr-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 8, transition: 'background .16s ease, transform .07s ease' }} onMouseEnter={e => e.currentTarget.style.background = CD.flag} onMouseLeave={e => e.currentTarget.style.background = CD.ink} onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'} onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}>
           <span className="grid place-items-center" style={{ width: 18, height: 18, background: 'var(--cd-on-ink-faint)', borderRadius: 5 }}><Ic n="plus" s={13} c="var(--cd-on-ink)" /></span>
           Generate report

@@ -74,7 +74,7 @@
   function StatusPill({ status, small }) { const s = STATUS[status] || STATUS.held; return <span className="inline-flex items-center gap-1.5 font-semibold" style={{ background: s.soft, color: s.ink, borderRadius: 999, fontSize: small ? 10 : 11, padding: small ? '2px 8px' : '3px 10px' }}><Ic n={s.icon} s={small ? 10 : 12} c={s.ink} />{s.label}</span>; }
 
   /* ===================== CAPTURE MODAL ===================== */
-  function CaptureModal({ rows, setRows, clients, schedule, me, log, cheques, setCheques, onClose, onDone }) {
+  function CaptureModal({ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques, onClose, onDone }) {
     const names = useMemo(() => { const s = new Set(Object.keys(clients || {})); (rows || []).forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, rows]);
     const [customer, setCustomer] = useState('');
     const [typeId, setTypeId] = useState('payroll');
@@ -90,7 +90,9 @@
     const amtN = parseFloat(amount) || 0;
     const fee = +feeFor(amtN, type).toFixed(2);
     const net = +(amtN - fee).toFixed(2);
-    const holdDays = holdOverride != null ? holdOverride : type.holdDays;
+    // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
+    const minHold = Math.max(0, +((settings && settings.chequeMinHoldDays)) || 0);
+    const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
     const holdUntil = addDays(TODAY, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
     const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;

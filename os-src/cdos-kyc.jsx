@@ -468,11 +468,13 @@
     // pick the recommended tier from the file's state + house parameters
     const TH = (settings && +settings.threshold) || 10000;
     const bigDeal = amountCad != null && amountCad >= TH;
-    const policy = (settings && settings.largeTxCheck) || 'off';   // off | quick | verify — mandatory check on large deals
+    const policy = (settings && settings.largeTxCheck) || 'off';   // off | quick | verify | plus — mandatory check on large deals
+    const TIER_NAME = { quick: 'Quick', verify: 'Verified', plus: 'Verified Plus' };
     let level = null, tier = 'quick', title = '', reason = '';
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
+    // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
+    else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} and ${first} has never been verified. Run the full enhanced check.`; }
-    else if (bigDeal && policy !== 'off') { level = 'force'; tier = policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} requires a ${policy === 'verify' ? 'Verified' : 'quick'} check — even on a verified profile.`; }
     else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`; }
     else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
     else { return null; }

@@ -31,7 +31,7 @@
 
   function Pricing({ settings, setSettings, me, log }) {
     const set = (k, v, note) => { setSettings(s => ({ ...s, [k]: v })); if (note && log) log('Pricing updated', note); };
-    const setSpread = (code, v) => setSettings(s => ({ ...s, spreads: { ...(s.spreads || {}), [code]: v === '' ? '' : +v } }));
+    const setSpread = (code, v) => setSettings(s => ({ ...s, spreads: { ...(s.spreads || {}), [code]: v } }));
     const clearSpread = (code) => setSettings(s => { const sp = { ...(s.spreads || {}) }; delete sp[code]; return { ...s, spreads: sp }; });
     // ---- manual spot override: editing a spot PINS it (stops pulling from the
     // source feed) until reset. The source of truth is the feed; a pin is a
@@ -39,7 +39,7 @@
     const ov = settings.spotOverride || {};
     const isPinned = (c) => ov[c] != null && ov[c] !== '';
     const spotOf = (c) => c === 'CAD' ? 1 : (isPinned(c) ? +ov[c] : (crossRate(c, 'CAD') || 0));
-    const setSpot = (c, v) => setSettings(s => ({ ...s, spotOverride: { ...(s.spotOverride || {}), [c]: v === '' ? '' : +v } }));
+    const setSpot = (c, v) => setSettings(s => ({ ...s, spotOverride: { ...(s.spotOverride || {}), [c]: v } }));
     const resetSpot = (c) => setSettings(s => { const o = { ...(s.spotOverride || {}) }; delete o[c]; return { ...s, spotOverride: o }; });
 
     const [refreshedAt, setRefreshedAt] = useState(() => Date.now() - 132000);  // ~2m ago
@@ -220,7 +220,7 @@
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                     <div className="inline-flex items-center gap-1 justify-end">
                       <div style={{ ...inWrap, borderColor: pinned ? CD.amber : CD.line }}>
-                        <input type="number" step="0.0001" value={pinned ? ov[c] : ''} onChange={e => setSpot(c, e.target.value)} placeholder={liveMid.toFixed(4)} title={pinned ? 'Manual spot — not pulling from the source feed' : 'Live from source — type to pin a manual spot'} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 76, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: pinned ? CD.amber : CD.mute }} />
+                        <input type="text" inputMode="decimal" value={pinned ? ov[c] : ''} onChange={e => setSpot(c, e.target.value)} placeholder={liveMid.toFixed(4)} title={pinned ? 'Manual spot — not pulling from the source feed' : 'Live from source — type to pin a manual spot'} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 92, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: pinned ? CD.amber : CD.mute }} />
                       </div>
                       <button onClick={() => resetSpot(c)} title="Reset to source spot (resume the feed)" className="grid place-items-center" style={{ width: 22, height: 22, borderRadius: 6, visibility: pinned ? 'visible' : 'hidden', color: CD.amber }}><Ic n="x" s={12} c={CD.amber} /></button>
                     </div>
@@ -228,7 +228,7 @@
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     <div className="inline-flex items-center justify-end gap-1">
                       <div style={{ ...inWrap, borderColor: custom ? CD.ink : CD.line }}>
-                        <input type="number" step="0.05" value={sp[c] ?? ''} onChange={e => setSpread(c, e.target.value)} placeholder={defSpread.toString()} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 56, fontVariantNumeric: 'tabular-nums', color: thin ? CD.flag : CD.ink }} />
+                        <input type="text" inputMode="decimal" value={sp[c] ?? ''} onChange={e => setSpread(c, e.target.value)} placeholder={defSpread.toString()} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 52, fontVariantNumeric: 'tabular-nums', color: thin ? CD.flag : CD.ink }} />
                         <span className="px-1.5 text-[11px]" style={{ color: CD.faint }}>%</span>
                       </div>
                       <button onClick={() => clearSpread(c)} title="Reset to default" className="grid place-items-center" style={{ width: 24, height: 24, borderRadius: 6, visibility: custom ? 'visible' : 'hidden', color: CD.mute }}><Ic n="x" s={12} c={CD.mute} /></button>

@@ -399,6 +399,16 @@
             <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</div></div>
           </div>
         </div>
+        {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          {[['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
+            <button key={l} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
+              <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
+              <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: 24, lineHeight: 1.15 }}>{v}</div>
+              <div className="text-[10.5px]" style={{ color: CD.mute }}>{sub}</div>
+            </button>); })}
+        </div>
         <div className="fld-bar" style={{ '--ft': '#6B2E54', margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic, badge]) => (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>

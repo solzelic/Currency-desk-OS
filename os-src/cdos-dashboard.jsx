@@ -37,7 +37,7 @@
     document.head.appendChild(el);
   })();
   const T = {}; Object.keys(T_THEMES.light).forEach(k => { T[k] = 'var(--dt-' + k + ')'; });
-  const money0 = (v) => (v < 0 ? '\u2212' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-CA');
+  const money0 = (v) => (v < 0 ? '−' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-CA');
   const cadOf = (a, ccy) => ccy === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', ccy) || 1);
   const spreadOf = (r) => { const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy); const d = mid - (+r.outAmt || 0); return d > 0 ? d / (perCadLive(r.outCcy) || 1) : 0; };
   const flagEmoji = (code) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(c => c.code === code) || {}).flag : '') || ''; } catch (e) { return ''; } };
@@ -216,7 +216,7 @@
     const maxCorr = Math.max(1, ...D.corridors.map(c => c.vol));
     const headLabel = HEAD[range] || 'Period';
     const bucketWord = D.bmode === 'day' ? 'days' : D.bmode === 'week' ? 'weeks' : 'months';
-    const serial = (D.serialKey || '').replace(/-/g, '') + '\u2009·\u2009' + (settings && settings.deskName ? settings.deskName.replace(/[^0-9]/g, '') || '01' : '01');
+    const serial = (D.serialKey || '').replace(/-/g, '') + ' · ' + (settings && settings.deskName ? settings.deskName.replace(/[^0-9]/g, '') || '01' : '01');
     const deskName = (settings && (settings.operatingName || settings.bizName)) || 'York Currency Exchange';
 
     return (<div style={{ height: '100%', overflow: 'auto', background: CD.paper }}>

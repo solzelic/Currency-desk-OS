@@ -11,7 +11,13 @@
   const { CD, Ic, fmt, CCY, crossRate, spreadOf, buyUnitCad, sellUnitCad, STAFF, ROLE_CAPS } = window.CDOS;
   const CURX = (typeof CUR !== 'undefined' ? CUR : []).map(c => c.code);
   const BASE_OPTS = ['CAD', 'USD', 'EUR', 'GBP', 'AUD'].filter(c => CURX.includes(c) || ['CAD', 'USD', 'EUR', 'GBP', 'AUD'].includes(c));
-  const COUNTRIES = ['Canada', 'United States', 'United Kingdom', 'Australia', 'Other'];
+  const COUNTRIES = ['Canada', 'United States', 'European Union', 'United Kingdom', 'Australia', 'Other'];
+  // country → sub-jurisdiction (state / province / member state) when one applies
+  const JURIS_REGIONS = {
+    'Canada': { label: 'Province / territory', opts: ['Alberta', 'British Columbia', 'Manitoba', 'New Brunswick', 'Newfoundland and Labrador', 'Northwest Territories', 'Nova Scotia', 'Nunavut', 'Ontario', 'Prince Edward Island', 'Quebec', 'Saskatchewan', 'Yukon'] },
+    'United States': { label: 'State', opts: ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming', 'District of Columbia'] },
+    'European Union': { label: 'Member state', opts: ['Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia', 'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Ireland', 'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta', 'Netherlands', 'Poland', 'Portugal', 'Romania', 'Slovakia', 'Slovenia', 'Spain', 'Sweden'] },
+  };
   const TIMEZONES = ['America/Toronto', 'America/Vancouver', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Australia/Sydney'];
   // apps an employee can be granted access to (id must match the OS dock app ids)
   const APPS = [['rates', 'Rate Board'], ['ledger', 'Ledger'], ['transfers', 'Transfers'], ['cheques', 'Cheques'], ['clients', 'Clients · KYC'], ['compliance', 'Compliance'], ['dashboard', 'Dashboard'], ['till', 'Till & Drawer'], ['vault', 'Vault'], ['branches', 'Branches'], ['tagged', 'Tagged'], ['audit', 'Audit Trail']];
@@ -65,13 +71,60 @@
     );
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, jump, rows, setRows, clients, setClients, onOpenLedger }) {
+  // 4-digit transaction PIN. Changing it verifies the current PIN first, then
+  // takes the new PIN twice — the standard change-PIN flow.
+  function PinSetter({ hasPin, current, onSave }) {
+    const [open, setOpen] = useState(false);
+    const [cur, setCur] = useState('');
+    const [a, setA] = useState('');
+    const [b, setB] = useState('');
+    const [err, setErr] = useState('');
+    const [done, setDone] = useState(false);
+    const clean = (v) => (v || '').replace(/\D/g, '').slice(0, 4);
+    const close = () => { setOpen(false); setCur(''); setA(''); setB(''); setErr(''); };
+    const save = () => {
+      if (hasPin && cur !== String(current == null ? '0000' : current)) { setErr('Your current PIN isn’t right.'); return; }
+      if (a.length !== 4) { setErr('New PIN must be 4 digits.'); return; }
+      if (a !== b) { setErr('The two new PINs don’t match.'); return; }
+      onSave(a); setOpen(false); setCur(''); setA(''); setB(''); setErr('');
+      setDone(true); setTimeout(() => setDone(false), 1800);
+    };
+    const fld = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8, width: 128, letterSpacing: '0.4em', textAlign: 'center', fontFamily: 'Space Mono, monospace', fontSize: 15, padding: '8px 10px', outline: 'none' };
+    if (!open) return (
+      <div className="flex items-center gap-2">
+        <span className="text-[12px] flex items-center gap-1.5" style={{ color: done ? CD.green : (hasPin ? CD.green : CD.mute) }}><Ic n={(done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={done ? CD.green : (hasPin ? CD.green : CD.faint)} />{done ? 'PIN updated' : (hasPin ? 'PIN set' : 'No PIN yet')}</span>
+        <button onClick={() => { setDone(false); setOpen(true); }} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
+      </div>
+    );
+    return (
+      <div className="p-3.5" style={{ border: `1px solid ${CD.ink}`, borderRadius: 12, background: 'var(--cd-panel)', width: 300 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-2.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{hasPin ? 'Change your PIN' : 'Set your PIN'}</div>
+        <div className="flex flex-col gap-2">
+          {hasPin && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
+          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input value={a} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
+          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Confirm new PIN</span><input value={b} onChange={e => { setB(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" style={fld} /></label>
+        </div>
+        {err && <div className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}
+        <div className="flex items-center justify-end gap-2 mt-3">
+          <button onClick={close} className="text-[12px] px-3 py-2" style={{ color: CD.mute }}>Cancel</button>
+          <button onClick={save} className="text-[12px] px-3.5 py-2 font-semibold text-white flex items-center gap-1.5" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="check" s={13} c="var(--cd-on-ink)" /> Save PIN</button>
+        </div>
+      </div>
+    );
+  }
+
+  function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
+    const [addingLoc, setAddingLoc] = useState(false);   // enterprise Add-location modal (shared with Branch Network's rail)
     const [importing, setImporting] = useState(false);
+    const [expOpts, setExpOpts] = useState({ range: 'all', includeVoid: false, cols: 'all' });
+    const [exported, setExported] = useState(false);
     // nav search — filters the settings rail by label + per-tab keywords
     const [navQ, setNavQ] = useState('');
-    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity reset demo name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
+    const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
+    const [revealPin, setRevealPin] = useState({});   // owner-revealed PINs by employee id
+    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity reset demo name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
     // №02: the explicit, deliberate demo wipe — replaces "refresh" as the reset.
     const [resetArm, setResetArm] = useState(false);
@@ -90,10 +143,45 @@
     const [icfg, setIcfg] = useState(() => (window.CDOS.importCfg ? window.CDOS.importCfg.load() : {}));
     const setIc = (patch, note) => { const next = window.CDOS.importCfg ? window.CDOS.importCfg.save(patch) : Object.assign({}, icfg, patch); setIcfg(next); if (note) log('Import setting changed', note); };
     useEffect(() => { if (jump && jump.t) setTab(jump.t); }, [jump && jump.n]);
+    // jurisdiction follows Localization: when the operating country resolves to exactly
+    // one regulator pack, apply it automatically so the picker, threshold and codes agree.
+    useEffect(() => {
+      const REG = ((window.CDOS._compliance || {}).REGIMES) || {};
+      const mc = settings.bizCountry || 'Canada';
+      const match = Object.values(REG).filter(r => r.country === mc);
+      if (match.length === 1 && settings.regime !== match[0].id) {
+        const r = match[0];
+        setSettings(s => ({ ...s, regime: r.id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours }));
+      }
+    }, [settings.bizCountry]);
+    // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
+    const cadOfX = (a, c) => c === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', c) || 1);
+    const expList = (() => { const list = rows || []; const today = new Date().toISOString().slice(0, 10); const ym = today.slice(0, 7), yy = today.slice(0, 4); let l = expOpts.range === 'month' ? list.filter(r => String(r.date || '').slice(0, 7) === ym) : expOpts.range === 'year' ? list.filter(r => String(r.date || '').slice(0, 4) === yy) : list.slice(); if (!expOpts.includeVoid) l = l.filter(r => r.status !== 'void'); return l; })();
+    const exportLedger = () => {
+      const esc = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const full = expOpts.cols === 'all';
+      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', 'CAD value', 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', 'CAD value'];
+      const lines = expList.map(x => { const cad = cadOfX(x.inAmt, x.inCcy).toFixed(2); return (full
+        ? [x.ref, x.date, x.time, x.customer, x.type, x.inCcy, x.inAmt, x.rate, x.outCcy, x.outAmt, x.fee, cad, x.teller, x.status, x.filed ? (x.filedInfo && x.filedInfo.ref || 'yes') : '', x.notes]
+        : [x.ref, x.date, x.customer, x.type, (x.inAmt + ' ' + x.inCcy), (x.outAmt + ' ' + x.outCcy), x.fee, cad]).map(esc).join(','); });
+      const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ledger-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+      log && log('Ledger exported', expList.length + ' rows · ' + expOpts.range + (expOpts.includeVoid ? ' · incl. voided' : ''));
+      setExported(true); setTimeout(() => setExported(false), 1800);
+    };
+    // exporting the whole book is a sensitive action — gate it behind the operator's PIN
+    const exportLedgerGated = () => {
+      const need = askPin && (!reqPin || reqPin(me.name));
+      if (need) askPin({ title: 'Confirm export', sub: 'Enter your PIN to download the ledger', name: me.name, expected: pinOf ? pinOf(me.name) : '0000', onOk: exportLedger });
+      else exportLedger();
+    };
     const inits = (n) => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     // a staff member can ALWAYS manage their own profile; system + app settings need canSettings
     const myProf = (settings.staff && settings.staff[me.name]) || {};
     const setProf = (k, v) => setSettings(s => ({ ...s, staff: { ...(s.staff || {}), [me.name]: { ...((s.staff || {})[me.name] || {}), [k]: v } } }));
+    // the signed-in user's own account record — holds their transaction PIN
+    const myEmp = (settings.employees || []).find(e => e.name === me.name) || null;
+    const setMyPin = (pin) => { setSettings(s => ({ ...s, employees: (s.employees || []).map(e => e.name === me.name ? { ...e, pin } : e) })); log('Transaction PIN', pin ? 'PIN set' : 'PIN cleared'); };
 
     const set = (k, v, note) => { setSettings(s => ({ ...s, [k]: v })); if (note) log('Setting changed', note); };
     const toggleSet = (k, label) => { setSettings(s => ({ ...s, [k]: !s[k] })); log('Setting changed', `${label} · ${!settings[k] ? 'on' : 'off'}`); };
@@ -141,6 +229,7 @@
       ['Business', [
         ['business', 'Business profile', 'building'],
         ['locations', 'Locations & tills', 'wallet'],
+        ['employees', 'Employees', 'users'],
         ['localization', 'Localization', 'globe'],
         ['compliance', 'Compliance & jurisdiction', 'shield'],
         ['billing', 'Billing & plan', 'coins'],
@@ -149,14 +238,16 @@
       ['App settings', [
         ['ledger', 'Ledger', 'scroll'],
         ['clients', 'Clients · KYC', 'users'],
-        ['rates', 'Rates & fees', 'percent'],
+        ['till', 'Cash drawer', 'wallet'],
         ['vault', 'Cash on hand · Vault', 'building'],
+        ['transfers', 'Transfers', 'globe'],
+        ['cheques', 'Cheques', 'receipt'],
+        ['rates', 'Rates & fees', 'percent'],
         ['receipts', 'Receipts', 'receipt'],
         ['tagged', 'Tagged', 'bookmark'],
         ['ticker', 'Ticker tape', 'bars'],
       ]],
       ['Access', [
-        ['employees', 'Employees', 'users'],
         ['permissions', 'Role presets', 'id'],
       ]],
     ] : [];
@@ -234,6 +325,10 @@
           </div>
           <div className="mt-5 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
+            <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>A 4-digit PIN for quick in-app checks (switching accounts, taking a till, voiding). Separate from your sign-in password. Everyone starts at 0000.</div></div>
+              <div className="flex-1 flex justify-end">{myEmp ? <PinSetter hasPin={!!myEmp.pin} current={myEmp.pin} onSave={setMyPin} /> : <span className="text-[11px]" style={{ color: CD.faint }}>Available once your account is set up</span>}</div>
+            </div>
             <Row title="Two-step verification" desc="Require an SMS code when you sign in."><Sw on={myProf.twoFA !== false} click={() => setProf('twoFA', !(myProf.twoFA !== false))} /></Row>
             <Row title="Ask for my PIN before a void" desc="Extra confirmation before reversing a record."><Sw on={!!myProf.pinOnVoid} click={() => setProf('pinOnVoid', !myProf.pinOnVoid)} /></Row>
           </div>
@@ -441,6 +536,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <Row title="Skip rows whose reference already exists" desc="Avoids importing the same deal twice."><Sw on={icfg.skipDuplicateRefs !== false} click={() => setIc({ skipDuplicateRefs: !(icfg.skipDuplicateRefs !== false) }, 'import skip duplicates')} /></Row>
 
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="scroll" s={13} c={CD.mute} /><span>Imported deals are permanent ledger records — they run through the same compliance flags (reportable, structuring, KYC) as anything booked at the counter. Missing rate or pay-out is computed at the live mid.</span></div>
+
+          {/* export the whole book — lives here now, not in the Ledger toolbar */}
+          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Export</div>
+          <div className="p-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="grid place-items-center flex-none" style={{ width: 44, height: 44, borderRadius: 12, background: CD.lineSoft }}><Ic n="download" s={22} c={CD.ink} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold" style={{ color: CD.ink }}>Export the ledger</div>
+                <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>Download your transactions as a CSV — opens in Excel, Google Sheets or Numbers.</div>
+              </div>
+            </div>
+            <Row title="Date range" desc="Which transactions to include in the file."><Seg value={expOpts.range} onPick={v => setExpOpts(o => ({ ...o, range: v }))} opts={[['all', 'All time'], ['month', 'This month'], ['year', 'This year']]} /></Row>
+            <Row title="Columns" desc="Full detail, or a compact summary of the essentials."><Seg value={expOpts.cols} onPick={v => setExpOpts(o => ({ ...o, cols: v }))} opts={[['all', 'Full detail'], ['compact', 'Summary']]} /></Row>
+            <Row title="Include voided transactions" desc="Reversed records are left out unless you switch this on."><Sw on={expOpts.includeVoid} click={() => setExpOpts(o => ({ ...o, includeVoid: !o.includeVoid }))} /></Row>
+            <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <span className="text-[11.5px]" style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}><b style={{ color: CD.ink }}>{expList.length}</b> transaction{expList.length === 1 ? '' : 's'} ready</span>
+              <button onClick={exportLedgerGated} disabled={!expList.length} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: !expList.length ? 'var(--cd-disabled)' : exported ? CD.green : CD.ink, borderRadius: 9, cursor: expList.length ? 'pointer' : 'not-allowed' }}><Ic n={exported ? 'check' : 'lock'} s={15} c="var(--cd-on-ink)" /> {exported ? 'Downloaded' : 'Export CSV'}</button>
+            </div>
+          </div>
         </div>)}
 
         {tab === 'clients' && (<div>
@@ -486,6 +600,55 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="building" s={13} c={CD.mute} /><span>The <b style={{ color: CD.ink }}>Cash on Hand · Vault</b> app derives live positions from posted records; these floors decide when it warns you to reorder.</span></div>
         </div>)}
 
+        {tab === 'till' && (<div>
+          <SectionTitle icon="wallet" title="Cash drawer" sub="How tellers count, reconcile and hand off the drawer. Every control here changes the Till app directly." />
+          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Counting</div>
+          <Row title="Default count method" desc="How a drawer opens for counting — by denomination, or one quick total. Tellers can still switch per currency.">
+            <Seg value={settings.tillCountMode || 'denom'} onPick={v => set('tillCountMode', v, `count method · ${v}`)} opts={[['denom', 'Denominations'], ['total', 'Quick total']]} />
+          </Row>
+          <Row title="Blind count" desc="Hide the expected float until the teller reveals it, so a count isn't anchored to what the drawer 'should' hold.">
+            <Sw on={settings.tillBlindCount !== false} click={() => toggleSet('tillBlindCount', 'Blind count')} />
+          </Row>
+          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reconcile & close</div>
+          <Row title="Variance tolerance" desc="A drawer counted within this of expected reads as balanced; beyond it, it's flagged off on the reconcile and at close.">
+            <div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" min="0" step="1" value={settings.tillVarianceTol ?? 0} onChange={e => set('tillVarianceTol', Math.max(0, +e.target.value), `variance tolerance ${e.target.value}`)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>
+          </Row>
+          <Row title="Require a count before closing the day" desc="Every currency drawer must be counted before the trading day can be locked.">
+            <Sw on={!!settings.requireCountOnClose} click={() => toggleSet('requireCountOnClose', 'Require count on close')} />
+          </Row>
+          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Handoffs</div>
+          <Row title="Require a count when the drawer changes hands" desc="When one teller hands the drawer to another, count it first and record any variance against the outgoing operator.">
+            <Sw on={!!settings.requireCountOnHandoff} click={() => toggleSet('requireCountOnHandoff', 'Require count on handoff')} />
+          </Row>
+          <p className="mt-6 text-[11px]" style={{ color: CD.faint }}>The opening float is issued by the vault and is never editable in the Till — these settings govern only how the physical count is taken and checked against it.</p>
+        </div>)}
+
+        {tab === 'transfers' && (<div>
+          <SectionTitle icon="globe" title="Transfers" sub="Cross-border money movement — the reporting line and desk defaults for the Transfers app." />
+          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Regulatory reporting</div>
+          <Row title="Cross-border reporting threshold" desc={`International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${settings.regime || 'FINTRAC'}).`}><Money k="threshold" /></Row>
+          <div className="flex items-start gap-2 mt-3 px-3 py-2.5" style={{ background: 'var(--cd-chip)', borderRadius: 10 }}>
+            <Ic n="shield" s={14} c={CD.mute} /><span className="text-[11px]" style={{ color: CD.mute }}>One threshold drives both the pipeline flag and the qualifying list in Settlement → EFT report. Change the jurisdiction it follows under <b>Compliance & jurisdiction</b>.</span>
+          </div>
+          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Desk defaults</div>
+          <Row title="Require a purpose on every transfer" desc="Ask the teller to record why funds are moving — the backbone of a defensible audit trail on high-risk corridors.">
+            <Sw on={settings.transferRequirePurpose !== false} click={() => toggleSet('transferRequirePurpose', 'Require transfer purpose')} />
+          </Row>
+          <p className="mt-6 text-[11px]" style={{ color: CD.faint }}>Corridors, partners and beneficiaries are operational records — set them up in the Transfers app under <b>Corridors</b> and <b>Beneficiaries</b>.</p>
+        </div>)}
+
+        {tab === 'cheques' && (<div>
+          <SectionTitle icon="receipt" title="Cheques" sub="Risk controls for cheque cashing — these govern how long fronted cash stays at risk in the Cheques app." />
+          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Holds</div>
+          <Row title="Minimum hold on every cheque" desc="A floor applied on top of each cheque type's own hold — raise it in stricter jurisdictions or after a loss.">
+            <div className="flex items-center" style={inSty}><input type="number" min="0" step="1" value={settings.chequeMinHoldDays ?? 0} onChange={e => set('chequeMinHoldDays', Math.max(0, +e.target.value), `min cheque hold ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 70, fontVariantNumeric: 'tabular-nums' }} /><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>days</span></div>
+          </Row>
+          <div className="flex items-start gap-2 mt-3 px-3 py-2.5" style={{ background: 'var(--cd-chip)', borderRadius: 10 }}>
+            <Ic n="clock" s={14} c={CD.mute} /><span className="text-[11px]" style={{ color: CD.mute }}>Applied at capture: a cheque's hold becomes the greater of this floor and its type's scheduled hold — so government and certified cheques still clear on their faster schedule unless you raise the floor.</span>
+          </div>
+          <p className="mt-6 text-[11px]" style={{ color: CD.faint }}>Per-type fees and standard hold days are an operational table — edit them in the Cheques app under <b>Fee schedule</b>.</p>
+        </div>)}
+
         {tab === 'tagged' && (<div>
           <SectionTitle icon="bookmark" title="Tagged" sub="Rules that auto-tag transactions for a second look — they show up in the Tagged app and as a badge in the Ledger." />
           <Row title="Auto-tag deals at or over" desc="Large single deals are tagged for owner review."><Money k="autoTagOver" /></Row>
@@ -496,67 +659,129 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
         {tab === 'employees' && (() => {
           const emps = settings.employees || [];
-          const SEATS = 5, FEE = 9;
-          const activeN = emps.filter(e => e.active !== false).length;
-          const overage = Math.max(0, activeN - SEATS);
+          const ROLE_APPS = { 'Manager': ['rates', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'dashboard', 'till', 'vault', 'branches', 'tagged', 'audit'], 'Senior teller': ['rates', 'ledger', 'transfers', 'cheques', 'clients', 'till', 'vault', 'dashboard'], 'Cashier': ['rates', 'ledger', 'clients', 'till'], 'Trainee': ['rates', 'ledger', 'clients'] };
           const setEmps = (fn) => setSettings(s => ({ ...s, employees: fn(s.employees || []) }));
           const setEmp = (id, patch, note) => { setEmps(list => list.map(e => e.id === id ? { ...e, ...patch } : e)); if (note) log('Employee updated', note); };
-          const addEmp = () => { const id = 'e_' + Date.now(); setEmps(list => [...list, { id, name: 'New employee', role: 'Cashier', email: '', phone: '', code: '', active: true, caps: { ...(ROLE_CAPS.Cashier || {}) }, apps: DEF_APPS.slice() }]); log('Employee added', 'New account'); };
-          const removeEmp = (id, name) => { setEmps(list => list.filter(e => e.id !== id)); setBranches && setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.teller === name ? { ...t, teller: '' } : t) }))); log('Employee removed', name); };
+          const addEmp = () => { const id = 'e_' + Date.now(); setEmps(list => [...list, { id, name: 'New employee', role: 'Cashier', email: '', phone: '', code: '', active: true, caps: { ...(ROLE_CAPS.Cashier || {}) }, apps: DEF_APPS.slice(), branches: [], home: null }]); log('Employee added', 'New account'); return id; };
+          const removeEmp = (id, name) => { setEmps(list => list.filter(e => e.id !== id)); setBranches && setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => (t.teller === name || t.operator === name) ? { ...t, teller: t.teller === name ? '' : t.teller, operator: t.operator === name ? '' : t.operator } : t) }))); log('Employee removed', name); };
           const toggleCap = (e, k) => setEmp(e.id, { caps: { ...(e.caps || {}), [k]: !(e.caps || {})[k] } });
           const toggleApp = (e, id) => { const cur = Array.isArray(e.apps) ? e.apps : DEF_APPS.slice(); setEmp(e.id, { apps: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] }); };
           const assignmentOf = (name) => { for (const b of (branches || [])) for (const t of (b.tills || [])) if (t.teller === name) return { bId: b.id, tId: t.id, b, t }; return null; };
           const assignEmp = (name, bId, tId) => setBranches && setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => { let teller = t.teller === name ? '' : t.teller; if (b.id === bId && t.id === tId) teller = name; return { ...t, teller }; }) })));
-          const empCard = (e) => {
-            const asg = assignmentOf(e.name);
-            const apps = Array.isArray(e.apps) ? e.apps : null;
-            const isOwner = e.role === 'Owner';
-            return (<details key={e.id} style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: e.active === false ? 0.6 : 1 }}>
-              <summary style={{ listStyle: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="grid place-items-center flex-none" style={{ width: 32, height: 32, borderRadius: '50%', background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 11, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
-                <span className="flex-1 min-w-0"><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{e.name}</span> <span className="text-[11px]" style={{ color: CD.faint }}>· {e.role}</span></span>
-                {e.active === false ? <span className="text-[9px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>INACTIVE</span> : asg ? <span className="text-[10px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5" style={{ color: CD.faint }}>unposted</span>}
-                <span style={{ transform: 'rotate(90deg)' }}><Ic n="chev" s={13} c={CD.faint} /></span>
-              </summary>
-              <div style={{ padding: '4px 12px 12px', borderTop: `1px solid ${CD.lineSoft}` }}>
-                <div className="grid grid-cols-2 gap-2.5 mt-2">
-                  <Field label="Name"><input value={e.name} onChange={ev => setEmp(e.id, { name: ev.target.value })} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-                  <Field label="Role"><select value={e.role} onChange={ev => setEmp(e.id, { role: ev.target.value, caps: { ...(ROLE_CAPS[ev.target.value] || e.caps) } }, `${e.name} → ${ev.target.value}`)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{EMP_ROLES.map(r => <option key={r}>{r}</option>)}</select></Field>
-                  <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-                  <Field label="Phone"><input value={e.phone || ''} onChange={ev => setEmp(e.id, { phone: ev.target.value })} placeholder="(416) 555-0000" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-                  <Field label="Staff ID / sign-in" desc="What they use to sign in."><input value={e.code || ''} onChange={ev => setEmp(e.id, { code: ev.target.value })} placeholder="e.g. a.singh" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></Field>
-                  <Field label="Posted to" desc="Location & till they work at."><select value={asg ? asg.bId + '|' + asg.tId : ''} onChange={ev => { const v = ev.target.value; if (!v) assignEmp(e.name, null, null); else { const [bId, tId] = v.split('|'); assignEmp(e.name, bId, tId); log('Employee posted', `${e.name} → ${(branches.find(b => b.id === bId) || {}).name}`); } }} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}><option value="">Unposted</option>{(branches || []).map(b => (b.tills || []).map(t => <option key={b.id + t.id} value={b.id + '|' + t.id}>{b.name} · {t.name.replace(/\s+—.*/, '')}</option>))}</select></Field>
-                </div>
-                <div className="mt-3"><div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>What they can do</div>
-                  {isOwner ? <div className="text-[11px] px-2.5 py-2" style={{ color: CD.mute, background: CD.lineSoft, borderRadius: 8 }}>Owners have full access to everything.</div> : <div className="grid grid-cols-2 gap-x-4">{CAPS.map(([k, label]) => <label key={k} className="flex items-center justify-between gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="text-[12px]" style={{ color: CD.ink }}>{label}</span><Sw on={!!(e.caps || {})[k]} click={() => toggleCap(e, k)} /></label>)}</div>}
-                </div>
-                <div className="mt-3"><div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Apps they can open</div>
-                  {isOwner ? <div className="text-[11px] px-2.5 py-2" style={{ color: CD.mute, background: CD.lineSoft, borderRadius: 8 }}>Owners see every app.</div> : <><div className="flex flex-wrap gap-1.5">{APPS.map(([id, label]) => { const on = apps ? apps.includes(id) : true; return <button key={id} onClick={() => toggleApp(e, id)} className="text-[11px] px-2 py-1" style={{ borderRadius: 7, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.faint }}>{label}</button>; })}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Only the highlighted apps appear in their dock.</div></>}
-                </div>
-                <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={e.active !== false} click={() => setEmp(e.id, { active: e.active === false })} /> Active account</label>
-                  <button onClick={() => removeEmp(e.id, e.name)} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
+          // apply a role preset in one move: role + capability defaults + a sensible app set
+          const applyPreset = (e, role) => setEmp(e.id, { role, caps: { ...(ROLE_CAPS[role] || {}) }, apps: (ROLE_APPS[role] || DEF_APPS).slice() }, `${e.name} → ${role}`);
+          // assign the person to branches (★ home) directly from their profile
+          const toggleBranch = (e, bId) => { const cur = Array.isArray(e.branches) ? e.branches : []; const next = cur.includes(bId) ? cur.filter(x => x !== bId) : [...cur, bId]; const home = next.includes(e.home) ? e.home : (next[0] || null); setEmp(e.id, { branches: next, home }, `${e.name} · ${next.length} branch(es)`); const a = assignmentOf(e.name); if (a && !next.includes(a.bId)) assignEmp(e.name, null, null); };
+          const isCustom = (e) => { const rc = ROLE_CAPS[e.role] || {}; const capsMatch = CAPS.every(([k]) => !!(e.caps || {})[k] === !!rc[k]); const ra = ROLE_APPS[e.role] || DEF_APPS; const apps = Array.isArray(e.apps) ? e.apps : DEF_APPS; const appsMatch = apps.length === ra.length && ra.every(a => apps.includes(a)); return !(capsMatch && appsMatch); };
+
+          // ---- roster row: click to open the account ----
+          const empRow = (e) => {
+            const asg = assignmentOf(e.name); const blocked = e.active === false;
+            return (<button key={e.id} onClick={() => setEmpSel(e.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: blocked ? 0.62 : 1 }}>
+              <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 11.5, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
+              <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-semibold truncate" style={{ color: CD.ink }}>{e.name}</span><span className="block text-[11px] truncate" style={{ color: CD.faint }}>{e.role}{e.email ? ' · ' + e.email : ''}</span></span>
+              {blocked ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : asg ? <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ color: CD.faint }}>unposted</span>}
+              <Ic n="chev" s={15} c={CD.faint} />
+            </button>);
+          };
+
+          // ---- full account / profile editor ----
+          const empDetail = (e) => {
+            const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = e.active === false;
+            const worksAt = e.branches === '*' || isOwner ? 'Whole network' : (Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => { const b = (branches || []).find(x => x.id === id); return (b ? b.code : id) + (e.home === id ? ' ★' : ''); }).join(' · ') : 'Not assigned yet');
+            return (<div>
+              <button onClick={() => setEmpSel(null)} className="flex items-center gap-1.5 text-[12px] mb-3" style={{ color: CD.mute }}><span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><Ic n="chev" s={14} c={CD.mute} /></span> All employees</button>
+              <div className="flex items-center gap-3.5 mb-4 p-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
+                <span className="grid place-items-center flex-none" style={{ width: 52, height: 52, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 17, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
+                <div className="flex-1 min-w-0"><div className="text-[17px] font-bold leading-tight" style={{ color: CD.ink }}>{e.name || 'New employee'}</div><div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{e.role}{asg ? ' · posted → ' + asg.t.name.replace(/\s+—.*/, '') : ''}</div></div>
+                {blocked ? <span className="text-[10px] px-2 py-1 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : <span className="text-[10px] px-2 py-1 font-semibold flex-none" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>ACTIVE</span>}
+              </div>
+
+              <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Profile</div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Field label="Full name"><input value={e.name} onChange={ev => setEmp(e.id, { name: ev.target.value })} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
+                <Field label="Role"><select value={e.role} onChange={ev => applyPreset(e, ev.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{EMP_ROLES.map(r => <option key={r}>{r}</option>)}</select></Field>
+                <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
+                <Field label="Mobile phone"><input value={e.phone || ''} onChange={ev => setEmp(e.id, { phone: ev.target.value })} placeholder="(416) 555-0000" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
+                <Field label="Staff ID / sign-in" desc="What they type to sign in."><input value={e.code || ''} onChange={ev => setEmp(e.id, { code: ev.target.value })} placeholder="e.g. a.singh" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></Field>
+                <div className="col-span-2"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Works at</div>
+                  {isOwner ? <div className="text-sm px-2.5 py-2" style={{ ...inSty, color: CD.mute }}>Whole network — every branch &amp; till</div> : (
+                  <div className="p-2.5" style={{ ...inSty }}>
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      {(branches || []).map(b => { const on = Array.isArray(e.branches) && e.branches.includes(b.id); const home = e.home === b.id; return (
+                        <span key={b.id} className="flex items-center" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
+                          <button type="button" onClick={() => toggleBranch(e, b.id)} className="text-[11.5px] px-2 py-1 font-medium" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute }}>{b.code}</button>
+                          {on && <button type="button" onClick={() => setEmp(e.id, { home: b.id }, `${e.name} · home ${b.code}`)} title="Set as home branch" className="px-1.5 py-1" style={{ background: CD.ink, color: home ? '#f5c451' : 'var(--cd-on-ink-soft)' }}>★</button>}
+                        </span>); })}
+                      {!(Array.isArray(e.branches) && e.branches.length) && <span className="text-[11px]" style={{ color: CD.faint }}>Pick a branch — ★ marks their home</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <span className="text-[11px] flex-none" style={{ color: CD.mute }}>Posted to</span>
+                      <select value={asg ? asg.b.id + '|' + asg.t.id : ''} onChange={ev => { if (!ev.target.value) { assignEmp(e.name, null, null); log(`${e.name} · unposted`, ''); return; } const parts = ev.target.value.split('|'); assignEmp(e.name, parts[0], parts[1]); log(`${e.name} · posted`, ev.target.options[ev.target.selectedIndex].text); }} className="flex-1 text-sm px-2.5 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
+                        <option value="">Not posted to a till</option>
+                        {(branches || []).filter(b => Array.isArray(e.branches) && e.branches.includes(b.id)).map(b => (b.tills || []).map(t => <option key={b.id + t.id} value={b.id + '|' + t.id}>{b.code} · {t.name.replace(/\s+—.*/, '')}</option>))}
+                      </select>
+                    </div>
+                    <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Posting sets their default drawer — the same as dragging them on the team board.</div>
+                  </div>)}
                 </div>
               </div>
-            </details>);
+
+              {isOwner ? (
+                <div className="mt-4 text-[12px] px-3 py-3 flex items-start gap-2" style={{ color: CD.mute, background: CD.lineSoft, borderRadius: 10 }}><Ic n="shield" s={14} c={CD.mute} /><span><b style={{ color: CD.ink }}>Owner</b> — full access to every app and function across the whole network. This can't be reduced.</span></div>
+              ) : (<>
+                <div className="flex items-center justify-between mt-5 mb-2">
+                  <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Role preset</div>
+                  {isCustom(e) && <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 999 }}>CUSTOMIZED</span>}
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {['Manager', 'Senior teller', 'Cashier', 'Trainee'].map(r => { const on = e.role === r && !isCustom(e); return (<button key={r} onClick={() => applyPreset(e, r)} className="px-2 py-2 text-[11.5px] font-semibold text-center" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : CD.panel, color: on ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 9 }}>{r}</button>); })}
+                </div>
+                <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>A preset sets the functions and apps below in one move — tweak anything after and it reads “customized”.</div>
+
+                <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Functions they can perform</div>
+                <div className="grid grid-cols-2 gap-x-4">{CAPS.map(([k, label, desc]) => <label key={k} className="flex items-center justify-between gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }} title={desc}><span className="text-[12px]" style={{ color: CD.ink }}>{label}</span><Sw on={!!(e.caps || {})[k]} click={() => toggleCap(e, k)} /></label>)}</div>
+
+                <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Apps in their dock</div>
+                <div className="flex flex-wrap gap-1.5">{APPS.map(([id, label]) => { const on = apps ? apps.includes(id) : true; return <button key={id} onClick={() => toggleApp(e, id)} className="text-[11px] px-2 py-1" style={{ borderRadius: 7, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.faint }}>{label}</button>; })}</div>
+                <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Only the highlighted apps appear in their dock.</div>
+              </>)}
+
+              <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
+            <Row title="Transaction PIN" desc="The 4-digit PIN this person enters to sign in and confirm sensitive actions. Everyone starts at 0000."><span className="flex items-center gap-2.5">
+                <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{revealPin[e.id] ? (e.pin || '0000') : '••••'}</span>
+                <button onClick={() => setRevealPin(m => ({ ...m, [e.id]: !m[e.id] }))} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.mute }}>{revealPin[e.id] ? 'Hide' : 'Reveal'}</button>
+                <button onClick={() => setEmp(e.id, { pin: '0000' }, `${e.name} · PIN reset to 0000`)} className="text-[11px] px-2 py-1" style={{ color: CD.flag }}>Reset</button>
+              </span></Row>
+              <Row title="Require PIN" desc="When on, this person enters their PIN to switch to their account, take a till, and void a deal."><Sw on={e.requirePin !== false} click={() => setEmp(e.id, { requirePin: e.requirePin === false }, `${e.name} · PIN ${e.requirePin === false ? 'required' : 'optional'}`)} /></Row>
+
+              <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
+                {isOwner ? <span className="text-[11px]" style={{ color: CD.faint }}>The owner account can’t be blocked or removed here.</span> : (<>
+                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`)} /> Block this account</label>
+                  <button onClick={() => { removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
+                </>)}
+              </div>
+            </div>);
           };
-          const unposted = emps.filter(e => !assignmentOf(e.name));
+          const sel = empSel && emps.find(e => e.id === empSel);
+          if (sel) return empDetail(sel);
           return (<div>
-            <SectionTitle icon="users" title="Employees" sub="Create staff accounts, set what each can do and which apps they can open, and post them to a location." />
-            <div className="flex items-center justify-between p-3.5 mb-4" style={{ border: `1.5px solid ${overage ? CD.brass : CD.ink}`, borderRadius: 12, background: overage ? CD.brassSoft : 'var(--cd-chip)' }}>
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Team seats</div><div className="text-lg font-bold" style={{ color: overage ? 'var(--cd-brass-text)' : CD.ink }}>{activeN} <span className="text-[13px] font-normal" style={{ color: CD.mute }}>of {SEATS} included</span></div></div>
-              <div className="text-right text-[12px]" style={{ color: overage ? 'var(--cd-brass-text)' : CD.mute }}>{overage ? <><b>+{overage} extra</b> · {fmt(overage * FEE, 'CAD')}/mo</> : `${SEATS - activeN} more at no extra cost`}</div>
+            <SectionTitle icon="users" title="Employees" sub="Everyone with an account. Click a person to open their profile, set what they can do, and manage access." />
+            <div className="mb-4 p-3.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: 'var(--cd-chip)' }}>
+              <div className="text-[10px] uppercase tracking-widest mb-1.5 flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.faint} /> PIN security</div>
+              <div className="text-[10.5px] mb-1" style={{ color: CD.mute }}>The PIN is a quick in-app check — sign-in still uses each person’s password. Everyone’s PIN starts at <b>0000</b>.</div>
+              <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to switch account</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Prove it’s them before loading another person’s desk.</span></span><Sw on={settings.pinOnSwitch !== false} click={() => toggleSet('pinOnSwitch', 'PIN on account switch')} /></label>
+              <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to take a till</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Entering or taking over a drawer asks for the operator’s PIN.</span></span><Sw on={settings.pinOnTill !== false} click={() => toggleSet('pinOnTill', 'PIN on till switch')} /></label>
+              <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to void a transaction</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Reversing a posted deal asks the operator to confirm with their PIN.</span></span><Sw on={settings.pinOnVoid !== false} click={() => toggleSet('pinOnVoid', 'PIN on void')} /></label>
+              <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Exempt one person from these prompts with <b>Require PIN</b> in their profile.</div>
             </div>
-            {(branches || []).map(b => { const list = emps.filter(e => { const a = assignmentOf(e.name); return a && a.bId === b.id; }); return (
-              <div key={b.id} className="mb-4">
-                <div className="flex items-center gap-2 mb-2"><Ic n="building" s={14} c={CD.ink} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{b.name}</span><span className="text-[10px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{list.length}</span></div>
-                {list.length ? list.map(empCard) : <div className="text-[12px] px-3 py-2.5" style={{ color: CD.faint, border: `1px dashed ${CD.line}`, borderRadius: 10 }}>No one posted here yet.</div>}
-              </div>); })}
-            {unposted.length > 0 && <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2"><Ic n="users" s={14} c={CD.mute} /><span className="text-[13px] font-semibold" style={{ color: CD.mute }}>Not posted to a location</span><span className="text-[10px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{unposted.length}</span></div>
-              {unposted.map(empCard)}
-            </div>}
-            <button onClick={addEmp} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Add employee</button>
+            {window.CDOS.TeamBoard && (branches || []).length > 0 && (<div className="mb-5">
+              <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Who works where</div>
+              {React.createElement(window.CDOS.TeamBoard, { me, log, branches, setBranches, settings, setSettings })}
+            </div>)}
+            <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Accounts · {emps.length}</div>
+            {emps.map(empRow)}
+            <button onClick={() => setEmpSel(addEmp())} className="flex items-center gap-1.5 px-3 py-2 mt-1 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Add employee</button>
           </div>);
         })()}
 
@@ -621,7 +846,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         {tab === 'locations' && (<div>
           <SectionTitle icon="wallet" title="Locations, tills & people" sub="Set up each branch, add its tills, then assign a staff member to each till. The header station switcher, the Till and the Branch Network all read this one list." />
           <div className="flex justify-end mb-2">
-            <button onClick={addBranchF} className="text-xs px-2.5 py-1.5 flex items-center gap-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 7 }}><Ic n="plus" s={12} c="var(--cd-on-ink)" /> Add location</button>
+            <button onClick={() => setAddingLoc(true)} className="text-xs px-2.5 py-1.5 flex items-center gap-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 7 }} title="Enterprise · $699/mo per location"><Ic n="plus" s={12} c="var(--cd-on-ink)" /> Add location</button>
           </div>
           <div className="space-y-3">
             {(branches || []).map(b => (
@@ -654,19 +879,39 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             ))}
             {!(branches && branches.length) && <div className="text-[12px] text-center py-8" style={{ color: CD.faint, border: `1px dashed ${CD.line}`, borderRadius: 12 }}>No locations yet — add your first.</div>}
           </div>
-          <p className="mt-3 text-[11px]" style={{ color: CD.faint }}>One source of truth for your network. The <b>Branch Network</b> app uses this for daily cash movements; here is where you set it up.</p>
+          <p className="mt-3 text-[11px]" style={{ color: CD.faint }}>One source of truth for your network. The <b>Branch Network</b> app uses this for daily cash movements; here is where you set it up — adding a location updates the plan ($699/mo each) and can fund the new sub-vault from the main vault.</p>
+          {addingLoc && window.CDOS._stations && window.CDOS._stations.AddBranchModal && React.createElement(window.CDOS._stations.AddBranchModal, {
+            branches: branches || [], employees: settings.employees || [], mainB: (branches || []).find(b => b.main) || (branches || [])[0],
+            onClose: () => setAddingLoc(false),
+            onCreate: ({ name, code, city, managerId, fund }) => {
+              const id = 'b' + Date.now();
+              const nb = { id, name, code, city, status: 'open', main: false, dealsToday: 0, volToday: 0, vault: { CAD: 0 }, tills: [{ id: id + 't1', name: 'Till 1', teller: '', operator: '', status: 'open', cash: { CAD: 0 } }] };
+              let list = [...(branches || []), nb];
+              const mainB = list.find(b => b.main);
+              if (fund > 0 && mainB && setBranchMoves && window.CDOS._stations.applyMove) {
+                const r = window.CDOS._stations.applyMove(list, branchMoves || [], { kind: 'vault', fromB: mainB.id, toB: id, ccy: 'CAD', amt: fund, fromLabel: mainB.code + ' · Vault', toLabel: code + ' · Vault' }, me.name);
+                list = r.branches; setBranchMoves(r.moves); log(r.verb, r.detail);
+              }
+              setBranches(list);
+              if (managerId) setSettings(s => ({ ...s, employees: (s.employees || []).map(e => e.id === managerId ? { ...e, branches: e.branches === '*' ? '*' : [...(Array.isArray(e.branches) ? e.branches : []), id], home: e.home || id } : e) }));
+              log('Location added', `${name} · ${code} — plan now ${list.length} × $699/mo`);
+              setAddingLoc(false);
+            }
+          })}
         </div>)}
 
         {tab === 'localization' && (<div>
           <SectionTitle icon="globe" title="Localization" sub="Make the desk work for your region — not just Canada." />
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Region</div>
-          <Row title="Base currency" desc="Thresholds, drawer totals and reports are expressed in this currency."><select value={base} onChange={e => set('baseCurrency', e.target.value, `base ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[...new Set(['CAD', 'USD', 'EUR', 'GBP', 'AUD', ...CURX])].map(c => <option key={c}>{c}</option>)}</select></Row>
-          <Row title="Operating country / jurisdiction"><select value={settings.bizCountry || 'Canada'} onChange={e => set('bizCountry', e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 180 }}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
+          <Row title="Base currency" desc="Thresholds, drawer totals and reports are expressed in this currency. Changing it converts your thresholds at the live rate."><select value={base} onChange={e => { const nb = e.target.value; const ob = base; if (nb === ob) return; const conv = (v) => { const n = +v || 0; if (!n) return v; const cad = ob === 'CAD' ? n : n / (crossRate('CAD', ob) || 1); const out = nb === 'CAD' ? cad : cad * (crossRate('CAD', nb) || 1); return Math.round(out); }; setSettings(s => ({ ...s, baseCurrency: nb, threshold: conv(s.threshold), idRequiredOver: conv(s.idRequiredOver) })); log('Base currency changed', `${ob} → ${nb} · thresholds converted`); }} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[...new Set(['CAD', 'USD', 'EUR', 'GBP', 'AUD', ...CURX])].map(c => <option key={c}>{c}</option>)}</select></Row>
+          <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || 'Canada'} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
+          {JURIS_REGIONS[settings.bizCountry || 'Canada'] && (() => { const jr = JURIS_REGIONS[settings.bizCountry || 'Canada']; return (
+            <Row title={jr.label} desc={`The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`}><select value={settings.bizRegion || ''} onChange={e => set('bizRegion', e.target.value, `${jr.label} ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 240 }}><option value="">Select {jr.label.toLowerCase()}…</option>{jr.opts.map(o => <option key={o}>{o}</option>)}</select></Row>); })()}
           <Row title="Timezone"><select value={settings.timezone || 'America/Toronto'} onChange={e => set('timezone', e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 220 }}>{TIMEZONES.map(t => <option key={t}>{t}</option>)}</select></Row>
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Formats</div>
           <Row title="Date format"><Seg value={settings.dateFormat || 'YYYY-MM-DD'} onPick={v => set('dateFormat', v, `date ${v}`)} opts={[['YYYY-MM-DD', 'YYYY-MM-DD'], ['DD/MM/YYYY', 'DD/MM/YYYY'], ['MM/DD/YYYY', 'MM/DD/YYYY']]} /></Row>
           <Row title="Time format" desc="How times read across the desk — e.g. the Audit Trail."><Seg value={settings.timeFormat || '12h'} onPick={v => set('timeFormat', v, `time ${v}`)} opts={[['12h', '12-hour'], ['24h', '24-hour']]} /></Row>
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 9 }}><Ic n="alert" s={13} c="var(--cd-brass-text)" /><span>The live rate engine currently settles in CAD. Switching the base currency relabels thresholds and totals; full multi-base conversion is on the roadmap.</span></div>
+          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 9 }}><Ic n="alert" s={13} c="var(--cd-brass-text)" /><span>The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held.</span></div>
         </div>)}
 
         {tab === 'compliance' && (() => {
@@ -678,13 +923,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const recheckDays = +settings.recheckDays || 180;
           const reverifyDays = +settings.reverifyDays || 365;
           const escalateHighRisk = settings.escalateHighRisk !== false;
+          // jurisdiction follows the operating country set in Localization (same logic).
+          // Canada → FINTRAC only; US → FinCEN only; anything else falls back to all packs.
+          const myCountry = settings.bizCountry || 'Canada';
+          const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
+          const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+          const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
+          const jvF = (f) => jv.find(v => v.field === f);
+          const jvNote = (f) => { const v = jvF(f); return v ? <div className="text-[11px] mb-2 flex items-center gap-1.5" style={{ color: CD.flag, marginTop: -2 }}><Ic n="alert" s={11} c={CD.flag} /> {v.detail}</div> : null; };
           return (<div>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
 
           {/* one-click jurisdiction packs */}
           <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>
-          <div className="grid grid-cols-2 gap-2.5 mb-2">
-            {Object.values(REGIMES).map(r => { const on = activeRid === r.id; return (
+          <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
+            {shownRegimes.map(r => { const on = activeRid === r.id; return (
               <button key={r.id} onClick={() => isOwner && applyRegime(r.id)} className="text-left p-3" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1.5px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, cursor: isOwner ? 'pointer' : 'default' }}>
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2"><span style={{ fontSize: 22 }}>{r.flag}</span><div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{r.authority}</div><div className="text-[11px]" style={{ color: CD.mute }}>{r.country}</div></div></div>
@@ -694,17 +947,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>
           {!isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          <div className="text-[11px] mb-5 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /> Switching a pack rewrites the threshold, base currency, aggregation window and report codes below — then tune anything by hand.</div>
+          <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>
+          {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ---- */}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>
           <Row title="Large cash / reportable threshold" desc={`Deals at or above this (in ${base}) are reportable.`}><Money k="threshold" /></Row>
+          {jvNote('threshold')}
           <Row title="Require ID over" desc="Your own ID policy — collect identification at or above this amount, ahead of the mandatory reportable line. Below it, a missing ID is just an amber note the teller acknowledges, not a compliance warning."><Money k="idRequiredOver" /></Row>
           <Row title="Aggregation window" desc="Same person, cash-in within this window is summed against the threshold — automatically."><Seg value={String(aggH)} onPick={v => set('aggHours', +v, `aggregation ${v}h`)} opts={[['24', '24h'], ['48', '48h'], ['72', '72h']]} /></Row>
+          {jvNote('aggHours')}
           <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>
           <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
           <Row title="Record retention"><select value={settings.retentionYears || 5} onChange={e => set('retentionYears', +e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[5, 7, 10].map(y => <option key={y} value={y}>{y} years</option>)}</select></Row>
+          {jvNote('retentionYears')}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>
@@ -718,7 +975,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Row title="Suggest a quick re-screen after" desc="A dismissible Quick-check nudge appears once this many days have passed since the last screening."><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Require full re-verification after" desc="Past this many days — or sooner if the ID on file expires — the nudge becomes a hard stop until a full Verified check runs."><select value={reverifyDays} onChange={e => set('reverifyDays', +e.target.value, `re-verify required ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[180, 365, 545, 730].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Escalate high-risk clients to Verified Plus" desc="When a client is flagged high-risk, upgrade any recommended check to the deepest tier automatically."><Sw on={escalateHighRisk} click={() => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')} /></Row>
-            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${fmt(+settings.threshold || 10000, base)}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99']]} /></Row>
+            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${fmt(+settings.threshold || 10000, base)}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>
             <Row title="Require ID photo on file" desc="Contacts without a stored ID scan are flagged — in Clients · KYC and here."><Sw on={settings.requireIdPhoto} click={() => toggleSet('requireIdPhoto', 'Require ID photo')} /></Row>
 
             <details style={{ margin: '10px 0 0' }}>

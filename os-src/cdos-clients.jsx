@@ -689,26 +689,35 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="text-[12px] mt-1">{q ? 'Try a different search.' : 'Add your first contact or post a transaction.'}</div>
           </div>
         ) : (
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
-            {shown.map(c => { const [st, col, bg] = kycStatus(c.rec, settings, c.name); const corp = c.rec.kind === 'corporate'; return (
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(268px, 1fr))' }}>
+            {shown.map(c => { const [st, col, bg] = kycStatus(c.rec, settings, c.name); const corp = c.rec.kind === 'corporate'; const verified = isVerified(st); const risk = normalizeRisk ? normalizeRisk(c.rec.risk) : (c.rec.risk || 'Normal'); const rt = riskTone ? riskTone(risk) : { c: CD.mute, bg: CD.lineSoft }; const attention = /expir|no id|missing/i.test(st); const accent = attention ? CD.flag : verified ? CD.green : CD.line; return (
               <div key={c.name} onClick={() => onClick(c.name)} onDoubleClick={() => onDbl(c.name)} role="button" tabIndex={0}
-                className="text-left p-3.5 cursor-pointer select-none" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12, transition: 'border-color .12s, box-shadow .12s' }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = CD.ink; e.currentTarget.style.boxShadow = '0 6px 18px -10px var(--cd-shade)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = CD.line; e.currentTarget.style.boxShadow = 'none'; }}>
-                <div className="flex items-start gap-3">
-                  <Avatar rec={c.rec} name={c.name} size={42} />
+                className="cursor-pointer select-none" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 13, overflow: 'hidden', transition: 'border-color .12s, box-shadow .12s, transform .08s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = CD.ink; e.currentTarget.style.boxShadow = '0 8px 22px -12px var(--cd-shade)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = CD.line; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none'; }}>
+                {/* header — dossier style, accent keyed to KYC standing */}
+                <div className="flex items-start gap-3 p-3.5" style={{ borderLeft: `3px solid ${accent}` }}>
+                  <Avatar rec={c.rec} name={c.name} size={44} ring />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2"><span className="font-semibold truncate" style={{ color: CD.ink }}>{c.name}</span><Pill text={st} c={col} bg={bg} /></div>
-                    <div className="flex items-center gap-2 mt-0.5 text-[11px]" style={{ color: CD.faint }}>
-                      <span className="flex items-center gap-1"><Ic n={corp ? 'building' : 'users'} s={11} c={CD.faint} /> {corp ? 'Business' : 'Individual'}</span>
-                      {c.rec.phone && <span className="truncate">· {c.rec.phone}</span>}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-semibold truncate" style={{ color: CD.ink, fontSize: 14 }}>{c.name}</span>
+                      {verified && <Ic n="checkcircle" s={13} c={CD.green} />}
                     </div>
-                    <div className="flex gap-3 mt-2 text-[11px]" style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>
-                      <span><b style={{ color: CD.ink }}>{c.st.n}</b> txns</span>
-                      <span>{fmt(c.st.vol, 'CAD')} <span style={{ color: CD.faint }}>vol</span></span>
-                      {c.st.last && <span style={{ color: CD.faint }}>· {c.st.last}</span>}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 5, fontFamily: 'Space Mono, monospace', letterSpacing: '.03em' }}><Ic n={corp ? 'building' : 'users'} s={10} c={CD.mute} />{corp ? 'BUSINESS' : 'INDIVIDUAL'}</span>
+                      <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: rt.bg, color: rt.c, borderRadius: 5 }}>{risk}</span>
                     </div>
                   </div>
+                  <Pill text={st} c={col} bg={bg} />
+                </div>
+                {/* rate-board readout: the numbers that matter, in mono */}
+                <div className="grid grid-cols-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                  {[['TXNS', String(c.st.n)], ['VOLUME', fmt(c.st.vol, 'CAD')], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => (
+                    <div key={l} className="px-3 py-2.5" style={{ borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none' }}>
+                      <div className="text-[8.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div>
+                      <div className="text-[12.5px] font-bold truncate" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+                    </div>
+                  ))}
                 </div>
               </div>); })}
           </div>

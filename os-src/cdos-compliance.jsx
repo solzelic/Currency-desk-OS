@@ -22,6 +22,24 @@
   const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
   const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
 
+  // A house setting that breaks the active regulator's hard rule (looser than the
+  // mandate). Returns [] when the desk is compliant. Consumed by the top bell + Settings.
+  function jurisdictionViolations(settings) {
+    const REGIMES2 = REGIMES;
+    const REG = REGIMES2[(settings && settings.regime) || 'FINTRAC'] || REGIMES2.FINTRAC;
+    if (!REG) return [];
+    const out = [];
+    const aggH = +(settings && settings.aggHours) || REG.aggHours;
+    if (aggH !== REG.aggHours) out.push({ id: 'jv_agg', field: 'aggHours', label: 'Aggregation window', detail: `Set to ${aggH}h — ${REG.authority} mandates a ${REG.aggHours}h window.` });
+    const cur = (settings && settings.baseCurrency) || REG.currency;
+    const thr = +(settings && settings.threshold) || 0;
+    if (cur === REG.currency && thr > REG.threshold) out.push({ id: 'jv_thr', field: 'threshold', label: 'Reporting threshold', detail: `Set to ${fmt(thr, REG.currency)} — above the ${REG.authority} ${REG.largeCode} limit of ${fmt(REG.threshold, REG.currency)}.` });
+    const ret = +(settings && settings.retentionYears) || REG.retentionYears || 5;
+    const minRet = REG.retentionYears || 5;
+    if (ret < minRet) out.push({ id: 'jv_ret', field: 'retentionYears', label: 'Record retention', detail: `Set to ${ret} years — ${REG.authority} requires at least ${minRet}.` });
+    return out.map(v => ({ ...v, authority: REG.authority }));
+  }
+
   /* ===================== JURISDICTION PACKS ===================== */
   const REGIMES = {
     FINTRAC: {
@@ -169,5 +187,6 @@
   window.CDOS = Object.assign(window.CDOS || {}, {
     _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, dt },
     getRegime,
+    jurisdictionViolations,
   });
 })();
