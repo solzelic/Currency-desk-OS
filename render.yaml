@@ -1,0 +1,19 @@
+# Render blueprint — one web service serving both the API and the built
+# frontend (same origin, so session cookies need no CORS setup).
+# Connect the repo in the Render dashboard and every push to main deploys.
+# Provision Postgres separately (Neon free tier works) and set DATABASE_URL.
+services:
+  - type: web
+    name: currencydesk
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build && cd server && npm ci
+    startCommand: cd server && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STATIC_DIR
+        value: ../dist
+      - key: DATABASE_URL
+        sync: false # paste your Neon/Postgres connection string in the dashboard

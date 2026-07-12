@@ -22,3 +22,7 @@ vite.config.d.ts
 
 # Local OS/cache files
 Thumbs.db
+
+# Backend (server/)
+server/node_modules/
+server/.pgdata/
