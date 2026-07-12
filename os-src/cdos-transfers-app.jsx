@@ -19,16 +19,17 @@
   const SKEY = 'cdos_settlements_v1';
 
   /* ===================== PIPELINE ===================== */
-  function Pipeline({ transfers, beneficiaries, corridors, onOpen, onNew }) {
+  function Pipeline({ transfers, beneficiaries, corridors, onOpen, onNew, settings }) {
     const [filter, setFilter] = useState('active');
     const benName = (id) => { const b = beneficiaries.find(x => x.id === id); return b ? b.name : null; };
     const corOf = (id) => corridors.find(c => c.id === id) || {};
+    const threshold = (settings && settings.threshold) || THRESHOLD;   // cross-border reporting line (Settings › Transfers)
     const counts = useMemo(() => {
       const c = { active: 0, hold: 0, paid: 0, all: transfers.length };
       transfers.forEach(t => { if (t.status === 'hold') c.hold++; else if (t.status === 'paid') c.paid++; else if (t.status !== 'cancelled') c.active++; });
       return c;
     }, [transfers]);
-    const reportableOpen = transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= THRESHOLD).length;
+    const reportableOpen = transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -50,7 +51,7 @@
       </div>
 
       <div className="space-y-2">
-        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'); const rpt = cadAmt >= THRESHOLD; return (
+        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'); const rpt = cadAmt >= threshold; return (
           <button key={t.id} onClick={() => onOpen(t.id)} className="w-full text-left p-3 flex items-center gap-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
             <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, borderRadius: '50%', background: CD.lineSoft, fontSize: 18 }}>{cor.flag || '🌐'}</span>
             <div className="flex-1 min-w-0">
@@ -392,7 +393,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       </div>
 
       <div className="flex-1 overflow-auto">
-        {tab === 'pipeline' && <Pipeline transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} onOpen={setDetailId} onNew={() => setModal(true)} />}
+        {tab === 'pipeline' && <Pipeline transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} onOpen={setDetailId} onNew={() => setModal(true)} settings={settings} />}
         {tab === 'settlement' && <Settlement transfers={transfers} corridors={corridors} settlements={settlements} setSettlements={setSettlements} settings={settings} me={me} log={log} />}
         {tab === 'beneficiaries' && <Beneficiaries beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} log={log} />}
         {tab === 'corridors' && <Corridors corridors={corridors} setCorridors={setCorridors} transfers={transfers} log={log} />}

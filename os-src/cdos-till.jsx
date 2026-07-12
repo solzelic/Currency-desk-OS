@@ -158,7 +158,7 @@
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     // switch tills at THIS location only (same logic as the header) — change store = sign out
@@ -167,13 +167,17 @@
     useEffect(() => { if (!tillMenu) return; const h = (e) => { if (tillMenuRef.current && !tillMenuRef.current.contains(e.target)) setTillMenu(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [tillMenu]);
     const _ab = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
     const _tills = ((_ab && _ab.tills) || []).filter(t => t.status !== 'closed');
-    const pickTill = (tId) => { setStation && setStation({ branchId: _ab.id, tillId: tId }); setTillMenu(false); const t = (_ab.tills || []).find(x => x.id === tId) || {}; log && log('Till switched', (_ab.name || '') + ' · ' + (t.name || '')); };
+    const [pendingTill, setPendingTill] = useState(null);   // till id awaiting switch confirmation
+    const pickTill = (tId) => { setTillMenu(false); if (!station || tId === station.tillId) return; setPendingTill(tId); };
+    const confirmPickTill = () => { const tId = pendingTill; setPendingTill(null); if (!tId) return; setStation && setStation({ branchId: _ab.id, tillId: tId }); const t = (_ab.tills || []).find(x => x.id === tId) || {}; if (t.operator && t.operator !== me.name) log && log('Till handover', `${t.operator} → ${me.name} · ${_ab.code} ${t.name}`); log && log('Till switched', (_ab.name || '') + ' · ' + (t.name || '')); };
     const [ccy, setCcy] = useState('CAD');
     const [counts, setCounts] = useState(() => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}') || {}; } catch (e) { return {}; } });
     const [quick, setQuick] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_quick') || '{}') || {}; } catch (e) { return {}; } });
     const [mode, setMode] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_mode') || '{}') || {}; } catch (e) { return {}; } });
     // per-currency timestamp of when each drawer was last counted (ms epoch)
     const [countedAt, setCountedAt] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_counted_at') || '{}') || {}; } catch (e) { return {}; } });
+    // last SAVED count per currency — amount + when + by whom (survives reloads)
+    const [lastSaved, setLastSaved] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_lastcount_v1') || '{}') || {}; } catch (e) { return {}; } });
     // blind-count: expected float stays blurred per-currency until the teller reveals it
     const [revealExp, setRevealExp] = useState({});
     const [confirmClose, setConfirmClose] = useState(false);
@@ -184,9 +188,15 @@
     const tillNm = stationTill || (((_ab && _ab.tills) || []).find(t => t.id === tillId) || {}).name || 'This till';
     const roster = useMemo(() => ((settings && settings.employees && settings.employees.length ? settings.employees : STAFF) || []).filter(s => s.active !== false), [settings]);
     const requireCount = !!(settings && settings.requireCountOnHandoff);
+    // blind count: expected float stays blurred until revealed (Settings › Cash drawer)
+    const blind = !(settings && settings.tillBlindCount === false);
     const [shifts, setShifts] = useState(() => { try { return JSON.parse(localStorage.getItem(SHIFT_KEY) || '{}') || {}; } catch (e) { return {}; } });
     const [handoffs, setHandoffs] = useState(() => { try { return JSON.parse(localStorage.getItem(HANDOFF_KEY) || '[]') || []; } catch (e) { return []; } });
     const [handoffOpen, setHandoffOpen] = useState(false);
+    // the operator strip is usually the same person all day, so let it be dismissed
+    // to a small chip; the owner can pop it back open when the drawer changes hands.
+    const [stripOpen, setStripOpen] = useState(() => { try { return localStorage.getItem('cdos_till_strip_open') !== '0'; } catch (e) { return true; } });
+    useEffect(() => { try { localStorage.setItem('cdos_till_strip_open', stripOpen ? '1' : '0'); } catch (e) {} }, [stripOpen]);
     useEffect(() => { try { localStorage.setItem(SHIFT_KEY, JSON.stringify(shifts)); } catch (e) {} }, [shifts]);
     useEffect(() => { try { localStorage.setItem(HANDOFF_KEY, JSON.stringify(handoffs)); } catch (e) {} }, [handoffs]);
     const current = shifts[tillId];
@@ -225,7 +235,7 @@
     useEffect(() => { try { localStorage.setItem('cdos_till_mode', JSON.stringify(mode)); } catch (e) {} }, [mode]);
     useEffect(() => { try { localStorage.setItem('cdos_till_counted_at', JSON.stringify(countedAt)); } catch (e) {} }, [countedAt]);
     useEffect(() => { const id = setInterval(() => forceTick(t => t + 1), 30000); return () => clearInterval(id); }, []);
-    const ccyMode = (c) => mode[c] || 'denom';
+    const ccyMode = (c) => mode[c] || (settings && settings.tillCountMode) || 'denom';
 
     // stamp the moment a drawer was last touched, so we can show staleness
     const stampCount = (c) => setCountedAt(o => ({ ...o, [c]: Date.now() }));
@@ -267,6 +277,9 @@
       countedCcys.forEach(c => { const t = ccyTotal(c); byCcy[c] = t; grand += cadOf(t, c); });
       const snap = { byCcy, grand: Math.round(grand), at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
       setHistory(h => { const n = { ...h, [TODAY]: snap }; try { localStorage.setItem(HKEY, JSON.stringify(n)); } catch (e) {} return n; });
+      // remember each currency's saved count — the reconcile table shows this as
+      // "last count": the amount that was on record, when, and by whom
+      setLastSaved(o => { const n = { ...o }; countedCcys.forEach(c => { n[c] = { amt: ccyTotal(c), ts: now, by: me.name }; }); try { localStorage.setItem('cdos_till_lastcount_v1', JSON.stringify(n)); } catch (e) {} return n; });
       log && log('Drawer counted', `${fmt(grand, 'CAD')} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
       setSaved(true);
       savedTimer.current = setTimeout(() => setSaved(false), 1900);
@@ -274,8 +287,12 @@
 
     /* ---------------- RECONCILE / CLOSE TAB ---------------- */
     const recon = CCYS.map(c => { const expected = expectedOf(c); const counted = countedCcys.includes(c) ? ccyTotal(c) : null; const variance = counted == null ? null : counted - expected; return { c, expected, counted, variance }; }).filter(r => r.expected || r.counted != null || ['CAD', 'USD'].includes(r.c));
-    const offRows = recon.filter(r => r.variance != null && Math.abs(r.variance) > 0.005);
+    // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
+    const tolCad = Math.max(0, +((settings && settings.tillVarianceTol)) || 0);
+    const offOf = (r) => r.variance != null && Math.abs(cadOf(r.variance, r.c)) > tolCad + 0.005;
+    const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
+    const closeBlocked = !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     const totalExpCad = recon.reduce((s, r) => s + cadOf(r.expected, r.c), 0);
     const totalCountCad = recon.reduce((s, r) => s + (r.counted != null ? cadOf(r.counted, r.c) : 0), 0);
@@ -290,7 +307,7 @@
       saveSnapshot();
     };
     // first click opens a review modal; the irreversible commit lives in confirmAndClose
-    const clickClose = () => { if (!canCloseDay || closing || busyRef.current) return; setConfirmClose(true); };
+    const clickClose = () => { if (!canCloseDay || closing || busyRef.current || closeBlocked) return; setConfirmClose(true); };
     const confirmAndClose = () => {
       if (closing || busyRef.current) return;
       busyRef.current = true;
@@ -323,13 +340,28 @@
             </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span>· Day {day && day.num || 1}{day && day.closed ? ' · closed' : ''} · {countedCcys.length} drawer(s) counted</span>
           </div></div>
+          <div className="flex items-center gap-1.5 flex-none ml-auto">
+            {(() => {
+              // the drawer's rail balance — changes the moment cash is issued or returned.
+              // floats are ISSUED AT THE VAULT (Vault / Branch Network), never from here:
+              // the drawer only shows what it holds and links to where floats happen.
+              const _tRec = ((_ab && _ab.tills) || []).find(t => t.id === (station && station.tillId));
+              const _tc = _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
+              return (<>
+                {_tc != null && <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title="What this drawer holds on the cash rail — floats are issued and returned at the vault">Float in drawer <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmt(_tc, 'CAD')}</b></span>}
+                <button onClick={() => onOpenVault && onOpenVault()} title="Floats are issued & returned at the vault" className="flex items-center gap-1 text-[11px] px-2.5 py-1.5" style={{ color: CD.mute, border: 0, background: 'transparent' }}><Ic n="vaultsafe" s={13} c={CD.mute} /> Vault ›</button>
+              </>);
+            })()}
+          </div>
         </div>
         <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
         </div>
       </div>
 
-      {/* who's on the drawer — mom-and-pop operator strip */}
+      {/* who's on the drawer — mom-and-pop operator strip (dismissible to a chip) */}
+      {pendingTill && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && React.createElement(window.CDOS._stations.ConfirmStationModal, { branch: _ab, till: ((_ab && _ab.tills) || []).find(x => x.id === pendingTill), me, onClose: () => setPendingTill(null), onConfirm: confirmPickTill })}
+      {stripOpen ? (
       <div className="flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
@@ -338,8 +370,16 @@
             <div className="text-[10.5px]" style={{ color: CD.faint }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : 'unassigned'}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
-        <button onClick={() => setHandoffOpen(true)} className="flex items-center gap-1.5 flex-none text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>
+        <div className="flex items-center gap-1.5 flex-none">
+          <button onClick={() => setHandoffOpen(true)} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>
+          <button onClick={() => setStripOpen(false)} title="Hide operator bar" className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${CD.line}`, background: CD.panel, color: CD.mute }}><Ic n="x" s={13} c={CD.mute} /></button>
+        </div>
       </div>
+      ) : (
+      <div className="flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
+        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
+      </div>
+      )}
 
       <div className="flex-1 overflow-auto">
 
@@ -394,8 +434,8 @@
                 <div className="text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>
                   <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float'} className="inline-flex items-center gap-1.5" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
-                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: revealExp[ccy] ? 'none' : 'blur(6px)', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
-                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: revealExp[ccy] ? 'none' : 'blur(6px)', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
+                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
+                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
                   </button>
                   {ccy !== 'CAD' && isCounted(ccy) && <span>· ≈ {fmt(cadOf(ccyTotal(ccy), ccy), 'CAD')}</span>}
@@ -455,32 +495,58 @@
           </div>
         </div>) : (<div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>Counted column is pulled from the Cash Drawer count · {countedN} of {recon.length} counted</div></div>
+            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>Opening comes from the vault · expected = opening + today's deals · counted is your physical count · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
           </div>
           <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
-            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Opening</th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Counted</th><th className="px-3 py-2 text-right">Last counted</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
-              <tbody>{recon.map(r => (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title="Issued by the vault — not editable here" className="inline-flex items-center gap-1">Opening · vault <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
+              <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-                <td className="px-2 py-1 text-right"><input type="number" value={(baseline && baseline.units && baseline.units[r.c]) ?? ''} onChange={e => setBaseline(b => ({ ...b, units: { ...(b.units || {}), [r.c]: e.target.value === '' ? 0 : +e.target.value } }))} className="w-24 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
+                <td className="px-3 py-2 text-right" title="What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{num((baseline && baseline.units && baseline.units[r.c]) || 0)}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(r.expected)}</td>
-                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : num(r.counted)}</td>
-                <td className="px-3 py-2 text-right text-[11px]" style={{ color: countedAt[r.c] ? CD.mute : CD.faint }}>{countedAt[r.c] ? `${sinceLabel(countedAt[r.c])} · ${atLabel(countedAt[r.c])}` : '—'}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
-              </tr>))}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{num(totalExpCad)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(totalCountCad)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: Math.abs(totalVarCad) < 0.005 ? CD.green : CD.flag }}>{(totalVarCad > 0 ? '+' : '') + num(totalVarCad)}</td></tr></tfoot></table>
+                <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : '— never'}</td>
+                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
+                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
+              </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{num(totalExpCad)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(totalCountCad)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: Math.abs(totalVarCad) <= tolCad + 0.005 ? CD.green : CD.flag }}>{(totalVarCad > 0 ? '+' : '') + num(totalVarCad)}</td></tr></tfoot></table>
           </div>
           <div className="flex items-center gap-3 mt-3">
             {canCloseDay
-              ? <button onClick={clickClose} disabled={closing} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
+              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? 'Count every drawer first — required in Settings › Cash drawer' : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}
+            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: CD.mute }}>Count all {recon.length} drawers before closing</span>}
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length} drawer(s) off</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: CD.green }}>All counted drawers balanced</span>}
           </div>
-          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Expected = opening baseline + wholesale receipts + cash in − cash out (voids excluded) — the same one number the Vault derives. Editing Opening updates the shared baseline both modules read. Closing locks the ledger until the next day is opened.</p>
+          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>One direction only: the vault issues your <b>opening</b> (locked here — floats move at the vault), the day's deals produce <b>expected</b>, your physical count is <b>counted</b>, and <b>variance</b> = counted − expected — it lands on the operator. Closing locks the ledger until the next day is opened.</p>
         </div>))}
 
         {/* ===== HISTORY ===== */}
         {tab === 'history' && (<div className="p-4">
+          {/* the cash rail — every issue & return for THIS drawer */}
+          {(() => {
+            const _tRec = ((_ab && _ab.tills) || []).find(t => t.id === (station && station.tillId));
+            const tLabel = _ab && _tRec ? _ab.code + ' · ' + _tRec.name.replace(/\s+—.*/, '') : null;
+            const railMoves = tLabel ? (moves || []).filter(m => m.from === tLabel || m.to === tLabel) : [];
+            return (<div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] uppercase tracking-widest font-semibold flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="swap" s={12} c={CD.faint} /> Cash rail · this drawer</div>
+                {railMoves.length > 0 && <span className="text-[11px]" style={{ color: CD.faint }}>{railMoves.length} recorded</span>}
+              </div>
+              {railMoves.length === 0
+                ? <div className="text-[12px] px-3 py-3" style={{ color: CD.mute, background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}>No floats yet — cash issued to or returned from this drawer is recorded here.</div>
+                : <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden' }}>
+                    {railMoves.slice(0, 8).map((m, i) => { const out = m.from === tLabel; return (
+                      <div key={m.id} className="flex items-center gap-2.5 px-3 py-2.5" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
+                        <span className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 7, background: out ? CD.lineSoft : CD.greenSoft }}><Ic n={out ? 'arrowup' : 'arrowdown'} s={13} c={out ? CD.mute : CD.green} /></span>
+                        <div className="flex-1 min-w-0 leading-tight">
+                          <div className="text-[12.5px]" style={{ color: CD.ink }}><b>{out ? 'Returned to vault' : 'Float issued'}</b> <span style={{ color: CD.faint }}>{out ? '→' : '←'}</span> {out ? m.to : m.from}</div>
+                          <div className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{m.ref} · {m.date} · {m.by}</div>
+                        </div>
+                        <span className="text-[12px] font-bold flex-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: out ? CD.mute : CD.green }}>{out ? '−' : '+'}{num(m.amount)} {m.ccy}</span>
+                      </div>); })}
+                  </div>}
+            </div>);
+          })()}
           {/* shift handoff log */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">

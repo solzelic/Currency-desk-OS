@@ -180,7 +180,22 @@
   const TYPES = ['Currency Exchange', 'Remittance — Send', 'Remittance — Receive', 'Cheque Cashing', 'Money Order', 'Bill Payment'];
   const CCY = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY', 'MXN', 'AED'];
   const THRESHOLD = 10000, TODAY = '2026-06-18';
-  const STAFF = [{ name: 'J. Masri', role: 'Owner' }, { name: 'R. Haddad', role: 'Manager' }, { name: 'A. Singh', role: 'Senior teller' }, { name: 'M. Costa', role: 'Cashier' }, { name: 'S. Iqbal', role: 'Trainee' }];
+  /* Staff directory seed. Per the Branch & Access Model spec: a role carries
+     capabilities (ROLE_CAPS) AND a scope (ROLE_SCOPE); assignments say WHERE
+     the role applies — branches: '*' (owner) or an array of branch ids, with
+     one home branch. S. Iqbal is deliberately unassigned to demo the R1 stop
+     screen. The live, editable copy lives in settings.employees. */
+  const STAFF = [
+    { name: 'J. Masri',  role: 'Owner',         staffId: 'j.masri',  branches: '*',            home: null },
+    { name: 'R. Haddad', role: 'Manager',       staffId: 'r.haddad', branches: ['b02'],        home: 'b02' },
+    { name: 'A. Singh',  role: 'Senior teller', staffId: 'a.singh',  branches: ['b01'],        home: 'b01' },
+    { name: 'M. Costa',  role: 'Cashier',       staffId: 'm.costa',  branches: ['b01', 'b02'], home: 'b01' },
+    { name: 'S. Iqbal',  role: 'Trainee',       staffId: 's.iqbal',  branches: [],             home: null },
+  ];
+  /* scope axis: how much of the network a role can see/act on.
+     network = everything · branch = their assigned branch(es), all tills
+     till = their assigned till only (no self-serve till switching) */
+  const ROLE_SCOPE = { 'Owner': 'network', 'Manager': 'branch', 'Senior teller': 'branch', 'Cashier': 'till', 'Trainee': 'till' };
   /* capability preset per role. Owner is implicitly all-access. These mirror the
      one-click presets in Settings → Permissions; switching account applies the
      matching preset to the shared Teller config so each role can be previewed
@@ -588,10 +603,64 @@
   };
   const riskTone = (v) => RISK_TONE[normalizeRisk(v)];
 
+  /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
+     A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
+     physical keyboard works too. ---- */
+  function PinPrompt({ title, sub, name, expected, onOk, onCancel }) {
+    const [pin, setPin] = React.useState('');
+    const [err, setErr] = React.useState('');
+    const [shake, setShake] = React.useState(false);
+    const exp = String(expected == null ? '0000' : expected);
+    const ini = (nm) => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+    React.useEffect(() => {
+      if (!document.getElementById('cdos-pin-kf')) { const s = document.createElement('style'); s.id = 'cdos-pin-kf'; s.textContent = '@keyframes cdosPinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}'; document.head.appendChild(s); }
+    }, []);
+    const fail = () => { setErr('Incorrect PIN'); setShake(true); setTimeout(() => setShake(false), 420); setTimeout(() => { setPin(''); }, 260); };
+    const submit = (val) => { if (val === exp) { onOk && onOk(); } else { fail(); } };
+    const press = (dgt) => { setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
+    const back = () => { setErr(''); setPin(p => p.slice(0, -1)); };
+    React.useEffect(() => {
+      const h = (e) => {
+        if (e.key === 'Escape') { onCancel && onCancel(); return; }
+        if (e.key === 'Backspace') { e.preventDefault(); back(); return; }
+        if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
+      };
+      document.addEventListener('keydown', h);
+      return () => document.removeEventListener('keydown', h);
+    }, []);
+    const keyBtn = (label, onClick, kind) => (
+      <button key={label + kind} onClick={onClick} style={{ height: 56, borderRadius: 13, border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`, background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)', fontSize: 22, fontWeight: 600, fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: 'background .1s, transform .05s', WebkitTapHighlightColor: 'transparent' }}
+        onMouseDown={e => { e.currentTarget.style.background = CD.hover; e.currentTarget.style.transform = 'scale(0.97)'; }}
+        onMouseUp={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}>
+        {label}
+      </button>
+    );
+    return ReactDOM.createPortal(
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--cd-scrim)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={() => onCancel && onCancel()}>
+        <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 18, boxShadow: '0 30px 70px var(--cd-scrim)', padding: '24px 22px 18px', textAlign: 'center', animation: shake ? 'cdosPinShake .42s' : 'none' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: CD.faint, fontFamily: 'Space Mono, monospace', border: `1px solid ${CD.line}`, borderRadius: 999, padding: '3px 9px', marginBottom: 14 }}><Ic n="lock" s={10} c={CD.faint} /> PIN required</div>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: CD.ink, color: 'var(--cd-on-ink)', display: 'grid', placeItems: 'center', fontFamily: 'Space Mono, monospace', fontWeight: 700, fontSize: 16, margin: '0 auto 10px' }}>{ini(name)}</div>
+          <div style={{ fontSize: 16.5, fontWeight: 700, color: CD.ink, letterSpacing: '-0.01em' }}>{title || 'Enter your PIN'}</div>
+          <div style={{ fontSize: 11.5, color: CD.mute, marginTop: 3 }}>{sub || name || ''}</div>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', margin: '18px 0 6px' }}>
+            {[0, 1, 2, 3].map(i => { const filled = i < pin.length; return <span key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: filled ? (err ? CD.flag : CD.ink) : 'transparent', border: `2px solid ${err ? CD.flag : (filled ? CD.ink : CD.line)}`, transition: 'background .12s, border-color .12s' }} />; })}
+          </div>
+          <div style={{ fontSize: 11.5, color: CD.flag, minHeight: 18, marginBottom: 8 }}>{err}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => keyBtn(k, () => press(k)))}
+            {keyBtn('Cancel', () => onCancel && onCancel(), 'ghost')}
+            {keyBtn('0', () => press('0'))}
+            {keyBtn(<Ic n="arrowleft" s={20} c={CD.mute} />, back, 'ghost')}
+          </div>
+        </div>
+      </div>, document.body);
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
-    CD, ICONS, Ic, TYPES, CCY, THRESHOLD, TODAY, STAFF, ROLE_CAPS, auditFx, RISK_TIERS, normalizeRisk, riskTone,
+    CD, ICONS, Ic, TYPES, CCY, THRESHOLD, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
-    CommitBtn, APP_ACCENT,
+    CommitBtn, APP_ACCENT, PinPrompt,
     crossRate, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, position, holdings,

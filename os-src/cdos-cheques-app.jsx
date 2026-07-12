@@ -143,7 +143,7 @@
         {tab === 'schedule' && <FeeSchedule schedule={schedule} setSchedule={setSchedule} log={log} />}
       </div>
 
-      {modal && <CaptureModal {...{ rows, setRows, clients, schedule, me, log, cheques, setCheques }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('clearing'); setDetailId(id); }} />}
+      {modal && <CaptureModal {...{ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('clearing'); setDetailId(id); }} />}
       {detail && <ChequeDetail c={detail} me={me} log={log} setCheques={setCheques} onClose={() => setDetailId(null)} />}
     </div>);
   }

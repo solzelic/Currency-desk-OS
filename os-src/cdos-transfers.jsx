@@ -163,7 +163,8 @@
     const [method, setMethod] = useState('cash');
     const [payAmt, setPayAmt] = useState('');
     const [fee, setFee] = useState(settings && settings.defaultFee ? String(settings.defaultFee) : '9.99');
-    const [purpose, setPurpose] = useState('Family support');
+    const requirePurpose = !(settings && settings.transferRequirePurpose === false);   // Settings › Transfers
+    const [purpose, setPurpose] = useState(requirePurpose ? '' : 'Family support');
     const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
@@ -191,7 +192,7 @@
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
     const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
     const needBen = direction === 'send';
-    const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok');
+    const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
 
     const pickSender = (n) => { setSenderName(n); setSenderOpen(false); setBenId(''); };
     useEffect(() => { const h = (e) => { if (senderWrap.current && !senderWrap.current.contains(e.target)) setSenderOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
@@ -304,7 +305,7 @@
             </Field>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <Field label="Transfer fee (CAD)"><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, fontVariantNumeric: 'tabular-nums' }} /></Field>
-              <Field label="Purpose"><select value={purpose} onChange={e => setPurpose(e.target.value)} className={inputCls} style={inputSty}>{PURPOSES.map(p => <option key={p}>{p}</option>)}</select></Field>
+              <Field label={requirePurpose ? 'Purpose (required)' : 'Purpose'}><select value={purpose} onChange={e => setPurpose(e.target.value)} className={inputCls} style={{ ...inputSty, borderColor: (requirePurpose && !purpose) ? CD.flag : undefined }}>{requirePurpose && <option value="">Select a purpose…</option>}{PURPOSES.map(p => <option key={p}>{p}</option>)}</select></Field>
             </div>
             {amtN > 0 && (<div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <span className="text-[11px]" style={{ color: CD.mute }}>Spread captured <b style={{ color: CD.green }}>{fmt(pricing.marginCad, 'CAD')}</b>{(parseFloat(fee) || 0) > 0 && <span style={{ color: CD.faint }}> · +{fmt(fee, 'CAD')} fee</span>}</span>

@@ -175,11 +175,16 @@
   }
 
   /* ===================== SHIFTS (per-teller float + blind count) ===================== */
-  function Shifts({ rows, baseline, receipts, me, log, shifts, setShifts, settings, setSettings }) {
+  function Shifts({ rows, baseline, receipts, me, log, shifts, setShifts, settings, setSettings, branches, station, onIssueTill }) {
     const [assigning, setAssigning] = useState(false);
     const [settling, setSettling] = useState(null);
     const fc = floatCcysOf(settings);
-    const tellers = STAFF.filter(s => s.role !== 'Owner');
+    // the branch you're standing in — assignment targets live here
+    const myB = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
+    const roster = ((settings && settings.employees && settings.employees.length ? settings.employees : STAFF) || []).filter(e => e.active !== false && e.role !== 'Owner');
+    const tellers = roster.filter(e => e.branches === '*' || !myB || !Array.isArray(e.branches) || e.branches.includes(myB.id));
+    const tills = ((myB && myB.tills) || []).filter(t => t.status !== 'closed');
+    const vaultAvailOf = (c) => (myB && myB.vault && myB.vault[c]) || 0;
     const open = shifts.filter(s => s.status === 'open');
     const settled = shifts.filter(s => s.status === 'settled').sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''));
 
@@ -207,6 +212,7 @@
       log && log('Shift float assigned', `${teller} · ${fmt(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0), 'CAD')} on the desk (accountability — holdings unchanged)`);
       setAssigning(false);
     };
+    const doIssueTill = (tId, opening) => { onIssueTill && onIssueTill(tId, opening); setAssigning(false); };
     const doSettle = (shift, counted) => {
       let varCad = 0;
       Object.keys(shift.opening || {}).forEach(c => { varCad += cadVal((+counted[c] || 0) - expectedFor(shift, c), c); });
@@ -223,8 +229,8 @@
 
     return (<div className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Shift floats · per-teller accountability</div><div className="text-[11px]" style={{ color: CD.mute }}>Hand a teller their working float, settle at close, variance lands on the person. Holdings never move — this is who's responsible, not a second balance.</div></div>
-        <button onClick={() => setAssigning(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="userplus" s={15} c="var(--cd-on-ink)" /> Assign float</button>
+        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Assign money — to a person or a till</div><div className="text-[11px]" style={{ color: CD.mute }}>To a <b>person</b>: a shift float — accountability, settled at close, variance lands on the name. To a <b>till</b>: cash physically moves vault → drawer on the rail, recorded in History.</div></div>
+        <button onClick={() => setAssigning(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="userplus" s={15} c="var(--cd-on-ink)" /> Assign</button>
       </div>
 
       {/* active float currencies — a setting (Tel Aviv shop sets its own) */}
@@ -275,32 +281,51 @@
         </table>
       </div>
 
-      {assigning && <AssignModal tellers={tellers} fc={fc} availOf={availOf} onClose={() => setAssigning(false)} onAssign={doAssign} />}
+      {assigning && <AssignModal tellers={tellers} tills={tills} branchCode={myB && myB.code} fc={fc} availOf={availOf} vaultAvailOf={vaultAvailOf} onClose={() => setAssigning(false)} onAssign={doAssign} onIssueTill={doIssueTill} />}
       {settling && <SettleModal shift={settling} expectedFor={expectedFor} onClose={() => setSettling(null)} onSettle={doSettle} />}
     </div>);
   }
 
-  function AssignModal({ tellers, fc, availOf, onClose, onAssign }) {
+  function AssignModal({ tellers, tills, branchCode, fc, availOf, vaultAvailOf, onClose, onAssign, onIssueTill }) {
+    const [target, setTarget] = useState('person');   // 'person' = accountability · 'till' = cash moves on the rail
     const [teller, setTeller] = useState(tellers[0] ? tellers[0].name : '');
+    const [tillId, setTillId] = useState(tills && tills[0] ? tills[0].id : '');
     const [opening, setOpening] = useState(() => Object.fromEntries(fc.map(c => [c, c === 'CAD' ? 5000 : c === 'USD' ? 2000 : 0])));
     const floatCad = fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0);
-    const short = fc.filter(c => (+opening[c] || 0) > availOf(c));
-    return (<Modal onClose={onClose} icon="userplus" title="Assign a shift float" sub="Hands existing pool cash to a named teller for the shift. Accountability only — total holdings don't change.">
-      <div className="mb-3">
-        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Teller</div>
-        <div className="flex flex-wrap gap-1.5">{tellers.map(t => <button key={t.name} onClick={() => setTeller(t.name)} className="px-3 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${teller === t.name ? CD.ink : CD.line}`, background: teller === t.name ? CD.ink : 'transparent', color: teller === t.name ? 'var(--cd-on-ink)' : CD.mute }}>{t.name}</button>)}</div>
+    const availFn = target === 'till' ? vaultAvailOf : availOf;
+    const short = fc.filter(c => (+opening[c] || 0) > availFn(c));
+    const tillOk = target !== 'till' || !!tillId;
+    const valid = tillOk && (target === 'till' || !!teller) && short.length === 0 && floatCad > 0;
+    const submit = () => { if (!valid) return; if (target === 'till') onIssueTill(tillId, opening); else onAssign(teller, opening); };
+    return (<Modal onClose={onClose} icon="userplus" title="Assign money" sub={target === 'person' ? 'A shift float on a named teller — accountability only, holdings don’t move.' : `Cash physically moves ${branchCode || 'this branch'} Vault → the drawer — recorded on the rail.`}>
+      {/* who gets it — a person (accountability) or a till (cash moves) */}
+      <div className="grid grid-cols-2 gap-1.5 mb-3">
+        {[['person', 'To a person', 'Shift float · settled at close'], ['till', 'To a till', 'Vault → drawer · moves cash']].map(([id, label, sub]) => { const on = target === id; return (
+          <button key={id} onClick={() => setTarget(id)} className="px-3 py-2 text-left" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', borderRadius: 10, cursor: 'pointer' }}>
+            <span className="flex items-center gap-1.5 text-[12.5px] font-semibold" style={{ color: on ? 'var(--cd-on-ink)' : CD.ink }}><Ic n={id === 'person' ? 'users' : 'wallet'} s={13} c={on ? 'var(--cd-on-ink)' : CD.mute} />{label}</span>
+            <span className="block text-[9.5px] mt-0.5" style={{ color: on ? 'var(--cd-on-ink)' : CD.faint, fontFamily: 'Space Mono, monospace', opacity: on ? 0.75 : 1 }}>{sub}</span>
+          </button>); })}
       </div>
-      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Opening float</div>
+      <div className="mb-3">
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{target === 'person' ? 'Teller' : 'Till · ' + (branchCode || '')}</div>
+        {target === 'person'
+          ? <div className="flex flex-wrap gap-1.5">{tellers.map(t => <button key={t.name} onClick={() => setTeller(t.name)} className="px-3 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${teller === t.name ? CD.ink : CD.line}`, background: teller === t.name ? CD.ink : 'transparent', color: teller === t.name ? 'var(--cd-on-ink)' : CD.mute }}>{t.name}</button>)}</div>
+          : <div className="flex flex-wrap gap-1.5">{(tills || []).map(t => <button key={t.id} onClick={() => setTillId(t.id)} className="px-3 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${tillId === t.id ? CD.ink : CD.line}`, background: tillId === t.id ? CD.ink : 'transparent', color: tillId === t.id ? 'var(--cd-on-ink)' : CD.mute }}>{t.name.replace(/\s+—.*/, '')}{t.operator ? ' · ' + t.operator : ''}</button>)}{!(tills || []).length && <span className="text-[11px]" style={{ color: CD.faint }}>No open tills at this branch.</span>}</div>}
+      </div>
+      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{target === 'person' ? 'Opening float' : 'Amounts · from the vault'}</div>
       <div className="grid grid-cols-2 gap-2 mb-3">
-        {fc.map(c => (<div key={c} className="flex items-center" style={{ border: `1px solid ${short.includes(c) ? CD.flag : CD.line}`, borderRadius: 9 }}>
-          <span className="px-2.5 text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono', borderRight: `1px solid ${CD.line}` }}>{flagOf(c)} {c}</span>
-          <input type="number" value={opening[c] ?? ''} onChange={e => setOpening(o => ({ ...o, [c]: e.target.value }))} placeholder="0" className="flex-1 min-w-0 px-2.5 py-2 text-right outline-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
+        {fc.map(c => (<div key={c}>
+          <div className="flex items-center" style={{ border: `1px solid ${short.includes(c) ? CD.flag : CD.line}`, borderRadius: 9 }}>
+            <span className="px-2.5 text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono', borderRight: `1px solid ${CD.line}` }}>{flagOf(c)} {c}</span>
+            <input type="number" value={opening[c] ?? ''} onChange={e => setOpening(o => ({ ...o, [c]: e.target.value }))} placeholder="0" className="flex-1 min-w-0 px-2.5 py-2 text-right outline-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
+          </div>
+          <div className="text-[9px] text-right mt-0.5 pr-1" style={{ color: short.includes(c) ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{target === 'till' ? 'vault holds ' : 'avail '}{num(availFn(c))}</div>
         </div>))}
       </div>
-      {short.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>Pool is short on {short.join(', ')} — reduce the float or replenish first.</div>}
+      {short.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>{target === 'till' ? 'The vault is short on ' : 'Pool is short on '}{short.join(', ')} — reduce the amount or replenish first.</div>}
       <div className="flex items-center justify-between pt-1">
-        <div className="text-[12px]" style={{ color: CD.mute }}>Float value <b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(floatCad, 'CAD')}</b></div>
-        <button disabled={!teller || short.length > 0 || floatCad <= 0} onClick={() => onAssign(teller, opening)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (!teller || short.length || floatCad <= 0) ? CD.faint : CD.ink, borderRadius: 9, cursor: (!teller || short.length || floatCad <= 0) ? 'not-allowed' : 'pointer' }}><Ic n="arrowright" s={15} c="var(--cd-on-ink)" /> Assign to desk</button>
+        <div className="text-[12px]" style={{ color: CD.mute }}>{target === 'person' ? 'Float value ' : 'Moving '}<b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(floatCad, 'CAD')}</b></div>
+        <button disabled={!valid} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: !valid ? CD.faint : CD.ink, borderRadius: 9, cursor: !valid ? 'not-allowed' : 'pointer' }}><Ic n="arrowright" s={15} c="var(--cd-on-ink)" /> {target === 'person' ? 'Assign to desk' : 'Issue to till'}</button>
       </div>
     </Modal>);
   }
@@ -540,7 +565,7 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings }) {
+  function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings, branches, station, onMoveCash, onOpenBranches, moves, onOrderReceived, onIssueTill }) {
     const [tab, setTab] = useState('position');
     const [shifts, setShifts] = useState(seedShifts);
     const [ordering, setOrdering] = useState(null);   // null | { ccy?, units?, order? }
@@ -558,6 +583,11 @@
       ...pending.map(o => ({ type: 'pending', order: o }))
     ];
     const openShifts = shifts.filter(s => s.status === 'open').length;
+    // station context — which branch's vault this window is standing in front of
+    const _ST = window.CDOS._stations || {};
+    const myB = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
+    const mainB = (branches || []).find(b => b.main) || (branches || [])[0];
+    const vCad = (b) => _ST.vaultCad ? _ST.vaultCad(b) : 0;
 
     const onOrder = (init) => { setNotifOpen(false); setOrdering(init || {}); };
     const onPlace = (p) => {
@@ -577,18 +607,19 @@
         setReceipts(list => [rec, ...(list || [])]);
       }
       log && log('Order received', `${num(units)} ${p.ccy} @ ${fmt(unitCost, 'CAD')} · ${fmt(costCad, 'CAD')} posted to inventory`);
+      onOrderReceived && onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes');   // the notes physically land in THIS branch's vault
       setOrdering(null); setTab('receive');
     };
     const onCancel = (id) => { setReceipts(list => (list || []).filter(o => o.id !== id)); log && log('Order cancelled', 'Pending banknote order removed'); };
 
-    const TABS = [['position', 'Position', 'pie'], ['shifts', 'Shift floats', 'users'], ['receive', 'Orders', 'arrowdown'], ['pnl', 'P&L', 'trendup']];
+    const TABS = [['position', 'Position', 'pie'], ['shifts', 'Floats', 'users'], ['receive', 'Orders', 'arrowdown'], ['history', 'History', 'clock'], ['pnl', 'P&L', 'trendup']];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="vaultsafe" s={17} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash on Hand · Vault</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(total, 'CAD')} on hand{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}</div></div>
+            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(total, 'CAD')} on hand{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
           </div>
           <div className="flex items-center gap-2" style={{ position: 'relative' }}>
             {/* notifications */}
@@ -596,6 +627,7 @@
               <Ic n="alert" s={17} c={notifOpen ? 'var(--cd-on-ink)' : CD.ink} />
               {notifs.length > 0 && <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 17, height: 17, padding: '0 4px', background: CD.flag, color: 'var(--cd-on-ink)', borderRadius: 999, fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono', display: 'grid', placeItems: 'center', border: '2px solid var(--cd-panel)' }}>{notifs.length}</span>}
             </button>
+            <button onClick={() => onMoveCash && onMoveCash({ kind: 'issue', bId: myB && myB.id })} title="Vault → till · till → vault · vault → vault" className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink, background: 'transparent' }}><Ic n="swap" s={15} c={CD.ink} /> Move cash</button>
             <button onClick={() => onOrder({})} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Order</button>
             {notifOpen && (<>
               <div onClick={() => setNotifOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }}></div>
@@ -630,8 +662,34 @@
 
       <div className="flex-1 overflow-auto">
         {tab === 'position' && <Position rows={rows} baseline={baseline} receipts={receipts} settings={settings} />}
-        {tab === 'shifts' && <Shifts rows={rows} baseline={baseline} receipts={receipts} me={me} log={log} shifts={shifts} setShifts={setShifts} settings={settings} setSettings={setSettings} />}
+        {tab === 'shifts' && <Shifts rows={rows} baseline={baseline} receipts={receipts} me={me} log={log} shifts={shifts} setShifts={setShifts} settings={settings} setSettings={setSettings} branches={branches} station={station} onIssueTill={onIssueTill} />}
         {tab === 'receive' && <Orders receipts={receipts} pending={pending} onOrder={onOrder} onCancel={onCancel} />}
+        {tab === 'history' && (() => {
+          const vLabel = myB ? myB.code + ' · Vault' : '';
+          const vMoves = (moves || []).filter(m => m.from === vLabel || m.to === vLabel);
+          const today = vMoves.filter(m => m.date === TODAY);
+          const inToday = today.filter(m => m.to === vLabel).reduce((s, m) => s + (m.cadVal || 0), 0);
+          const outToday = today.filter(m => m.from === vLabel).reduce((s, m) => s + (m.cadVal || 0), 0);
+          const KB = { issue: 'Float issued', return: 'Cash returned', vault: 'Vault run', order: 'Order received', branch: 'Vault run' };
+          return (<div className="p-4">
+            <div className="grid grid-cols-3 gap-2 mb-3" style={{ maxWidth: 560 }}>
+              {[['Into this vault · today', fmt(inToday, 'CAD'), CD.green], ['Out of this vault · today', fmt(outToday, 'CAD'), CD.mute], ['Net · today', (inToday - outToday >= 0 ? '+' : '') + fmt(inToday - outToday, 'CAD'), CD.ink]].map(([l, v, c]) => (
+                <div key={l} className="px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[15px] font-bold" style={{ color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
+            </div>
+            <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden', background: CD.panel }}>
+              {vMoves.length ? vMoves.slice(0, 30).map((m, i) => { const out = m.from === vLabel; const other = out ? m.to : m.from; return (
+                <div key={m.id} className="flex items-center gap-2.5 px-3.5 py-2.5" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none' }}>
+                  <span className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 7, background: out ? CD.lineSoft : CD.greenSoft }}><Ic n={out ? 'arrowup' : 'arrowdown'} s={14} c={out ? CD.mute : CD.green} /></span>
+                  <div className="flex-1 min-w-0 leading-tight">
+                    <div className="text-[12.5px]" style={{ color: CD.ink }}><b>{KB[m.kind] || 'Movement'}</b> <span style={{ color: CD.faint }}>{out ? '→' : '←'}</span> {other}</div>
+                    <div className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{m.ref} · {m.date === TODAY ? 'today' : m.date} · {m.by}</div>
+                  </div>
+                  <span className="flex-none text-right text-[13px] font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: out ? CD.mute : CD.green }}>{out ? '−' : '+'}{num(m.amount)} {m.ccy}</span>
+                </div>); }) : <div className="px-4 py-10 text-center text-[12px]" style={{ color: CD.faint }}>Nothing on the rail yet — issue a float, receive an order, or run cash between vaults.</div>}
+            </div>
+            <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Every dollar in and out of this vault, recorded forever — floats to tills, returns at close, wholesale orders received, and runs to other branches. The full network view lives in <button onClick={() => onOpenBranches && onOpenBranches()} style={{ color: CD.mute, textDecoration: 'underline', border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }}>Branch Network</button>.</p>
+          </div>);
+        })()}
         {tab === 'pnl' && <PnL rows={rows} baseline={baseline} receipts={receipts} />}
       </div>
 
