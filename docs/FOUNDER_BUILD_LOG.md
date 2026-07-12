@@ -14,6 +14,8 @@
 - Host the validated Exchange Desk workflow inside the OS shell.
 - Add Ledger, Till, Receipt, Customer, and Compliance views as linked windows over shared React state.
 - Add Playwright visual regression baselines for the shell, Exchange Desk, and completed transaction.
+- Maintain a source-to-baseline comparison index in `docs/VISUAL_COMPARISON.md`.
+- Verify that shell windows can open, focus, minimize, close, and reopen in Chromium coverage.
 
 ## Deliberate non-goals
 
@@ -21,3 +23,10 @@
 - No new financial product module or business workflow.
 - No claim of SOC 2, GDPR, AML, FINTRAC, or other regulatory compliance.
 - No attempt to make demo localStorage crash-atomic or suitable for real data.
+
+## 2026-07-11: Visual shell validation
+
+- Root Vite build now emits both `index.html` and the compatibility `frontend.html` entry, so the designed shell is available at `/` in development and production preview.
+- Added production-served copies of the approved prototype application icons for the React shell; the original `uploads/` source assets remain unchanged.
+- Added Chromium visual baselines for the desktop shell, Exchange Desk, and completed transaction state.
+- Validation passed: typecheck, 30 unit tests, production build, and 6 Chromium end-to-end tests.
