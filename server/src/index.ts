@@ -11,5 +11,8 @@ if (!process.env.DATABASE_URL) {
 
 const app = await buildApp(handle.db);
 const port = Number(process.env.PORT ?? 8787);
-await app.listen({ port, host: "127.0.0.1" });
-console.log(`currencydesk-server on http://127.0.0.1:${port}`);
+// bind all interfaces in production (Render/Railway route external traffic);
+// loopback-only in dev
+const host = process.env.HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+await app.listen({ port, host });
+console.log(`currencydesk-server on http://${host}:${port}`);
