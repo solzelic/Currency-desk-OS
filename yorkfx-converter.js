@@ -103,32 +103,86 @@ var RATE_CONFIG = null;      // last published config, if any
   if (typeof window !== 'undefined') window.applyRateConfig = applyRateConfig.run;
 })();
 
-/* ---------- pull the published board from the backend (server/) ----------
-   The backend's rate_boards table is the source of truth when the API is
-   reachable (served prototype / deployed app). The published board lands in
-   the same localStorage key the Rate Editor writes, then the same apply +
-   storage-event path runs — so standalone/offline behaviour is unchanged. */
-(function syncRatesFromBackend() {
-  try {
-    if (typeof fetch !== 'function' || typeof window === 'undefined') return;
-    if (window.location.protocol === 'file:') return;
+/* ---------- LIVE backend sync (server/) ----------
+   Polls every 60s while the page is open:
+   1. /api/rates — the published board → same localStorage + apply +
+      storage-event path the Rate Editor uses, so every open view updates.
+   2. /api/rates/market — the FULL provider catalog (~160 fiat currencies).
+      Codes not in the built-in list are appended to CUR (hidden from public
+      boards until staff add them), so pickers offer everything the feed has.
+   Standalone/offline (file:// or no backend) behaviour is unchanged. */
+(function liveBackendSync() {
+  if (typeof fetch !== 'function' || typeof window === 'undefined') return;
+  if (window.location.protocol === 'file:') return;
+
+  var currencyName = (function () {
+    var dn = null;
+    try { dn = new Intl.DisplayNames(['en'], { type: 'currency' }); } catch (e) {}
+    return function (code) {
+      try { var n = dn && dn.of(code); return (n && n !== code) ? n : code + ' '; } catch (e) { return code; }
+    };
+  })();
+  function flagFor(code) {
+    // ISO 4217 codes usually start with the ISO 3166 country (USD→US 🇺🇸);
+    // EUR→EU also maps to the EU flag. Fallback: generic banknote.
+    try {
+      var cc = code.slice(0, 2);
+      var f = String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65);
+      return f;
+    } catch (e) { return '💱'; }
+  }
+
+  function applyBoard(board) {
+    if (!board || !board.rows) return;
+    var str = JSON.stringify(board);
+    var prev = null;
+    try { prev = localStorage.getItem('yorkfx_rates_v1'); } catch (e) {}
+    if (prev === str) return; // nothing changed — no repaint churn
+    try { localStorage.setItem('yorkfx_rates_v1', str); } catch (e) {}
+    if (board.order && board.order.length) {
+      try { localStorage.setItem('yorkfx_board_order', JSON.stringify(board.order)); } catch (e) {}
+      if (window.applyBoardOrder) window.applyBoardOrder();
+    }
+    if (window.applyRateConfig) window.applyRateConfig();
+    try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: str })); } catch (e) {}
+  }
+
+  function applyCatalog(data) {
+    if (!data || !data.mids) return;
+    window.MARKET = { mids: data.mids, provider: data.provider, fetchedAt: data.fetchedAt };
+    var added = 0;
+    Object.keys(data.mids).forEach(function (code) {
+      var mid = data.mids[code];
+      if (!mid || mid <= 0 || BY[code]) {
+        // known currency: refresh the live change % against the current mid
+        if (BY[code] && mid > 0 && BY[code].perCad) {
+          var oldMid = 1 / BY[code].perCad;
+          BY[code].chg = oldMid > 0 ? ((mid - oldMid) / oldMid) * 100 : 0;
+        }
+        return;
+      }
+      var c = {
+        code: code, name: currencyName(code), flag: flagFor(code),
+        perCad: 1 / mid, perCadDefault: 1 / mid, chg: 0,
+        show: false, catalog: true // catalog-only until staff put it on the board
+      };
+      CUR.push(c); BY[code] = c; added++;
+    });
+    try { window.dispatchEvent(new CustomEvent('yorkfx:catalog', { detail: { added: added, total: CUR.length } })); } catch (e) {}
+  }
+
+  function tick() {
     fetch('/api/rates', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (!data || !data.board || !data.board.rows) return;
-        var cfg = data.board;
-        var str = JSON.stringify(cfg);
-        try { localStorage.setItem('yorkfx_rates_v1', str); } catch (e) {}
-        if (cfg.order && cfg.order.length) {
-          try { localStorage.setItem('yorkfx_board_order', JSON.stringify(cfg.order)); } catch (e) {}
-          if (window.applyBoardOrder) window.applyBoardOrder();
-        }
-        if (window.applyRateConfig) window.applyRateConfig();
-        // same event the Rate Editor fires on publish — every open view re-renders
-        try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: str })); } catch (e) {}
-      })
-      .catch(function () { /* backend not running — factory/local rates stand */ });
-  } catch (e) {}
+      .then(function (d) { applyBoard(d && d.board); })
+      .catch(function () {});
+    fetch('/api/rates/market', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(applyCatalog)
+      .catch(function () {});
+  }
+  tick();
+  setInterval(tick, 60000);
 })();
 
 function cadValue(code) { return 1 / BY[code].perCad; }      // 1 unit -> CAD (mid)

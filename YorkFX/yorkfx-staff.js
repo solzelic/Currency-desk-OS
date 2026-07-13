@@ -13,8 +13,8 @@
   var KEY_PUB = 'yorkfx_rates_v1';      // published — what the live site reads
   var KEY_DRAFT = 'yorkfx_rates_draft'; // work-in-progress — survives refresh
   var KEY_AUTH = 'yorkfx_staff_auth';   // simple demo session
-  var DEMO_PASSWORD = 'york';
-  var PULL_MS = 3600000;                // upstream feed refresh cadence — one update per hour
+  var DEMO_PASSWORD = 'york';           // offline fallback ONLY (no backend at all)
+  var PULL_MS = 60000;                  // backend poll cadence — the converter refreshes every minute
 
   /* ---------------- currencies (everything except CAD) ---------------- */
   var LIST = CUR.filter(function (c) { return c.code !== 'CAD'; });
@@ -22,9 +22,11 @@
      A 'removed' currency is off the board (and off the public boards). */
   var KEY_REMOVED = 'yorkfx_board_removed';
   var removed = (function () { try { var r = JSON.parse(localStorage.getItem(KEY_REMOVED)); return new Set(Array.isArray(r) ? r : []); } catch (e) { return new Set(); } })();
-  function saveRemoved() { try { localStorage.setItem(KEY_REMOVED, JSON.stringify([].slice.call(removed))); } catch (e) {} }
+  function saveRemoved() { try { localStorage.setItem(KEY_REMOVED, JSON.stringify(Array.from(removed))); } catch (e) {} }
   function boardList() { return LIST.filter(function (c) { return !removed.has(c.code); }); }
   function feedAvailable() { return LIST.filter(function (c) { return removed.has(c.code); }); }
+  /* membership edits awaiting Publish — reconciliation must not undo them */
+  var pendingAdd = new Set(), pendingRemove = new Set();
 
   function round(v, dp) { var f = Math.pow(10, dp); return Math.round(v * f) / f; }
   function midDp(v) { return v >= 100 ? 2 : (v >= 1 ? 4 : 5); }
@@ -102,18 +104,41 @@
     if (authed) { buildTable(); refresh(); }
   }
 
+  function enterAs(user) {
+    sessionStorage.setItem(KEY_AUTH, '1');
+    sessionStorage.setItem('yorkfx_staff_user', user);
+    feed.nextPull = Date.now() + PULL_MS;   // fresh feed window on login
+    showApp();
+  }
+
+  // single sign-on: inside the OS (or any page with a live backend session)
+  // the board opens without asking again
+  (function autoAuth() {
+    if (isAuthed() || window.location.protocol === 'file:' || typeof fetch !== 'function') return;
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.user) enterAs(d.user.id); })
+      .catch(function () {});
+  })();
+
   document.getElementById('signinForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var err = document.getElementById('signinError');
     var pw = document.getElementById('pw').value.trim();
     var user = document.getElementById('user').value.trim();
     if (!user) { err.textContent = 'Enter your username.'; return; }
-    if (pw.toLowerCase() !== DEMO_PASSWORD) { err.textContent = 'Incorrect password. Try again.'; return; }
-    err.textContent = '';
-    sessionStorage.setItem(KEY_AUTH, '1');
-    sessionStorage.setItem('yorkfx_staff_user', user);
-    feed.nextPull = Date.now() + PULL_MS;   // fresh feed window on login
-    showApp();
+    // backend is the door when reachable; the demo password only exists offline
+    fetch('/api/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ staffId: user, password: pw }),
+    }).then(function (r) {
+      if (r.ok) { err.textContent = ''; enterAs(user); }
+      else { err.textContent = 'Incorrect staff ID or password.'; }
+    }).catch(function () {
+      if (pw.toLowerCase() !== DEMO_PASSWORD) { err.textContent = 'Incorrect password. Try again.'; return; }
+      err.textContent = '';
+      enterAs(user);
+    });
   });
 
   signoutBtn.addEventListener('click', function () {
@@ -220,7 +245,7 @@
       var rm = e.target.closest('.rm');
       if (rm) {
         var rc = rm.dataset.code;
-        removed.add(rc); saveRemoved();
+        removed.add(rc); pendingRemove.add(rc); pendingAdd.delete(rc); saveRemoved();
         if (draft.rows[rc]) draft.rows[rc].show = false;
         var rEl = rowEls[rc]; if (rEl && rEl.row && rEl.row.parentNode) rEl.row.parentNode.removeChild(rEl.row);
         delete rowEls[rc];
@@ -398,10 +423,14 @@
 
   /* ====================== LIVE FEED ====================== */
   function doPull() {
+    // REAL market data: the converter's backend poller maintains
+    // window.MARKET.mids (CAD per unit, from the live provider). No backend
+    // (standalone/offline) → mids simply hold at their last values.
+    var live = (window.MARKET && window.MARKET.mids) || null;
     LIST.forEach(function (c) {
       var code = c.code;
       var prev = market[code];
-      var next = round(Math.max(0.00001, prev + (Math.random() - 0.5) * prev * 0.004), 6); // ±0.2%
+      var next = (live && typeof live[code] === 'number' && live[code] > 0) ? round(live[code], 6) : prev;
       pullDelta[code] = next - prev;
       market[code] = next;
       if (!draft.rows[code].manual) { draft.rows[code].mid = next; } // pinned rows keep staff value
@@ -413,6 +442,52 @@
     refreshStatus();
     renderFeed();
   }
+
+  /* ---- catalog & board membership (deterministic, not timing-based) ----
+     The board's contents = the currencies in the PUBLISHED config's rows
+     (raw localStorage — normalize() fabricates rows for every known code,
+     so it must never be used for membership checks). Everything else in
+     the provider catalog sits in the "available to add" list. */
+  function reconcileMembership() {
+    var pubRaw = readJSON(KEY_PUB);
+    if (!pubRaw || !pubRaw.rows) return;
+    var changed = false;
+    LIST.forEach(function (c) {
+      var onBoard = !!pubRaw.rows[c.code];
+      if (onBoard) { pendingAdd.delete(c.code); } else if (pendingRemove.has(c.code)) { pendingRemove.delete(c.code); }
+      if (!onBoard && !removed.has(c.code) && !pendingAdd.has(c.code)) { removed.add(c.code); changed = true; }
+      if (onBoard && removed.has(c.code) && !pendingRemove.has(c.code)) { removed.delete(c.code); changed = true; }
+    });
+    if (changed) {
+      saveRemoved();
+      if (isAuthed()) { buildTable(); refresh(); }
+    }
+  }
+
+  // fold newly fetched catalog currencies into the working set
+  function foldCatalog() {
+    var known = {}; LIST.forEach(function (c) { known[c.code] = 1; });
+    var grew = false;
+    CUR.forEach(function (c) {
+      if (c.code === 'CAD' || known[c.code]) return;
+      LIST.push(c);
+      market[c.code] = round(1 / c.perCad, 6);
+      pullDelta[c.code] = 0;
+      grew = true;
+    });
+    if (grew) {
+      draft = normalize(draft);          // give new codes complete rows
+      published = normalize(published);
+    }
+    reconcileMembership();
+    if (grew && isAuthed()) { buildTable(); refresh(); }
+  }
+  foldCatalog();
+  window.addEventListener('yorkfx:catalog', foldCatalog);
+  // republished board (this tab's converter poll, or another tab) → re-derive
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === KEY_PUB) { reconcileMembership(); }
+  });
 
   function fmtClock(ts) { return new Date(ts).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false }); }
   function fmtCountdown(ms) {
@@ -500,7 +575,7 @@
       (published.publishedBy ? ' \u00b7 ' + published.publishedBy : '');
   }
 
-  function refresh() { syncMarginInputs(); paintAll(); refreshStatus(); tickSince(); renderFeed(); }
+  function refresh() { syncMarginInputs(); paintAll(); refreshStatus(); tickSince(); renderFeed(); renderAddMenu(); }
 
   /* ====================== PUBLISH / RESET ====================== */
   var publishing = false;
@@ -514,7 +589,32 @@
       draft.publishedAt = new Date().toISOString();
       draft.publishedBy = user.charAt(0).toUpperCase() + user.slice(1);
       var payload = normalize(draft);
+      // the published config carries ONLY board currencies — catalog-only
+      // codes must never leak onto the public boards
+      payload.rows = (function () {
+        var rows = {};
+        boardList().forEach(function (c) {
+          var full = normalize(draft).rows[c.code];
+          if (full) rows[c.code] = full;
+        });
+        return rows;
+      })();
       try { localStorage.setItem(KEY_PUB, JSON.stringify(payload)); } catch (e) {}
+      // publish to the backend (append-only rate_boards + audit)
+      try {
+        var apiRows = {};
+        boardList().forEach(function (c) {
+          var r = payload.rows[c.code]; if (!r) return;
+          apiRows[c.code] = { mid: r.mid, show: r.show !== false };
+          if (typeof r.spread === 'number') { apiRows[c.code].spread = r.spread; }
+        });
+        var order = null;
+        try { order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null'); } catch (e2) {}
+        fetch('/api/rates/publish', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ buyMargin: payload.buyMargin, sellMargin: payload.sellMargin, rows: apiRows, order: order || undefined }),
+        }).catch(function () {});
+      } catch (e3) {}
       published = normalize(payload);
       draft = normalize(payload);
       saveDraft();
@@ -548,7 +648,7 @@
   }
   function addCurrency(code) {
     var c = BY[code]; if (!c) return;
-    removed.delete(code); saveRemoved();
+    removed.delete(code); pendingAdd.add(code); pendingRemove.delete(code); saveRemoved();
     if (!draft.rows[code]) draft.rows[code] = { mid: round(1 / c.perCadDefault, 6), show: true, spread: null, manual: false };
     else draft.rows[code].show = true;
     market[code] = draft.rows[code].mid; pullDelta[code] = 0;

@@ -30,10 +30,10 @@ const rowSchema = z.object({
 const publishBody = z.object({
   buyMargin: z.number().min(0).max(0.2),
   sellMargin: z.number().min(0).max(0.2),
-  rows: z.record(z.string().regex(/^[A-Z]{3}$/), rowSchema).refine((r) => Object.keys(r).length > 0 && Object.keys(r).length <= 60, {
-    message: "1-60 currencies",
+  rows: z.record(z.string().regex(/^[A-Z]{3}$/), rowSchema).refine((r) => Object.keys(r).length > 0 && Object.keys(r).length <= 200, {
+    message: "1-200 currencies",
   }),
-  order: z.array(z.string().regex(/^[A-Z]{3}$/)).max(60).optional(),
+  order: z.array(z.string().regex(/^[A-Z]{3}$/)).max(200).optional(),
   branchId: z.string().min(1).max(120).optional(),
 });
 

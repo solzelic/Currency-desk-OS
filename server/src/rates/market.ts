@@ -14,12 +14,8 @@ import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 
-// the currencies the desk trades — the board only ever shows these
-export const DESK_CURRENCIES = [
-  "USD", "EUR", "GBP", "CHF", "AUD", "JPY", "CNY", "INR", "AED", "PHP",
-  "MXN", "KRW", "HKD", "SGD", "NZD", "HUF", "TWD", "DKK", "ILS", "SEK",
-  "NOK", "ZAR", "BRL", "THB", "PLN", "TRY", "SAR", "PKR",
-] as const;
+// non-fiat provider symbols we never offer (metals, IMF SDR, crypto)
+const NON_FIAT = new Set(["XAU", "XAG", "XPT", "XPD", "XDR", "BTC"]);
 
 export interface MarketPull {
   provider: string;
@@ -28,11 +24,13 @@ export interface MarketPull {
   mids: Record<string, number>;
 }
 
-/** Normalize a units-per-CAD table (rates[X] = X per 1 CAD) to board mids. */
+/** Normalize a units-per-CAD table (rates[X] = X per 1 CAD) to board mids.
+    Keeps every fiat currency the provider offers — the full catalog is what
+    the staff board's "add currency" list draws from. */
 export function normalizePerCad(rates: Record<string, number>): Record<string, number> {
   const mids: Record<string, number> = {};
-  for (const code of DESK_CURRENCIES) {
-    const perCad = rates[code];
+  for (const [code, perCad] of Object.entries(rates)) {
+    if (!/^[A-Z]{3}$/.test(code) || code === "CAD" || NON_FIAT.has(code)) continue;
     if (typeof perCad === "number" && perCad > 0) {
       mids[code] = Number((1 / perCad).toPrecision(8));
     }
@@ -90,14 +88,12 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
   const prev = last[0];
   if (!prev) return null; // no seed yet — nothing to inherit scope/margins from
 
+  // the board's contents are a STAFF decision — market sync only refreshes
+  // mids for currencies already on the board, never adds or removes any
   const rows: Record<string, { mid: number; spread?: number; show?: boolean }> = {};
-  for (const [code, mid] of Object.entries(pull.mids)) {
-    const prevRow = prev.boardRows[code];
-    rows[code] = { mid, ...(prevRow?.spread != null ? { spread: prevRow.spread } : {}), show: prevRow ? prevRow.show !== false : true };
-  }
-  // keep currencies staff added that the provider didn't return
   for (const [code, prevRow] of Object.entries(prev.boardRows)) {
-    if (!rows[code]) rows[code] = prevRow;
+    const mid = pull.mids[code];
+    rows[code] = mid && mid > 0 ? { ...prevRow, mid } : prevRow;
   }
 
   const id = randomUUID();
