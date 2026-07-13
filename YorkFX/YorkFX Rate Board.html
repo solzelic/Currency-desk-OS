@@ -3,199 +3,394 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Rate Board | York Foreign Exchange</title>
-<meta name="description" content="Rate board for York Foreign Exchange — set spot rates, buy/sell margins and per-currency spreads, then publish to the live boards." />
-<link rel="stylesheet" href="../yorkfx.css" />
-<link rel="stylesheet" href="yorkfx-staff.css" />
+<title>Rate Board | CurrencyDesk</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
-  /* drag-to-reorder grip on each rate row */
-  .et-row .cur-cell { display: flex; align-items: center; gap: 9px; }
-  .rt-grip { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 26px; flex: none;
-    color: var(--muted, #8a8a82); cursor: grab; border-radius: 5px; opacity: 0.5; transition: opacity .12s, background .12s, color .12s; touch-action: none; }
-  .rt-grip:hover { opacity: 1; color: var(--ink, #0a0a0a); background: rgba(10,10,10,0.05); }
-  .et-row.data { transition: background .12s, box-shadow .12s; }
-  .et-row.data.dragging { opacity: 0.96; background: #fff; box-shadow: 0 8px 22px rgba(10,10,10,0.16); cursor: grabbing; position: relative; z-index: 5; }
-  .et-row.data.dragging .rt-grip { cursor: grabbing; opacity: 1; }
-  @media (max-width: 720px) { .rt-grip { width: 24px; height: 30px; opacity: 0.6; } }
-</style>
-<script>
-  /* embedded inside CurrencyDesk OS (?embed=1) → hide the public nav */
-  (function () {
-    try { if (new URLSearchParams(location.search).get('embed') === '1' || location.hash === '#embed') document.documentElement.classList.add('embed'); } catch (e) {}
-  })();
-  /* silence the benign ResizeObserver loop warning */
-  window.addEventListener('error', function (e) {
-    if (e && e.message && e.message.indexOf('ResizeObserver') !== -1) { e.stopImmediatePropagation(); return true; }
-  }, true);
-</script>
-</head>
-<body class="staff">
+  /* ============ CurrencyDesk Rate Board V2 (brand project design) ============ */
+  :root {
+    --f: 'Archivo', system-ui, sans-serif; --m: 'Space Mono', monospace;
+    --ink: #17140F; --paper: #F1EEE8; --panel: #FFFFFF;
+    --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.07);
+    --mute: #6E675E; --faint: #9a938a;
+    --primary: #1D6B45; --primary-deep: #17583A;
+    --green-live: #1f8a4c; --green-soft: #E2EFE8;
+    --amber: #9a6b1f; --amber-soft: #f5e8cf; --hair: rgba(23,20,15,0.12);
+  }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: var(--f); color: var(--ink);
+    background-color: #e7e4dd;
+    background-image: radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px);
+    background-size: auto, 22px 22px;
+  }
+  @keyframes cdSpin { to { transform: rotate(360deg); } }
+  @keyframes cdWinIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+  @keyframes cdFadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes cdAiPulse { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.55); } 70% { box-shadow: 0 0 0 6px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
+  .cdScroll::-webkit-scrollbar { width: 11px; }
+  .cdScroll::-webkit-scrollbar-track { background: rgba(23,20,15,0.05); border-radius: 999px; }
+  .cdScroll::-webkit-scrollbar-thumb { background: rgba(23,20,15,0.3); border-radius: 999px; border: 3px solid #fff; }
+  .cdScroll::-webkit-scrollbar-thumb:hover { background: rgba(23,20,15,0.5); }
 
-<!-- ===================== NAV ===================== -->
-<header class="nav">
-  <div class="nav-inner">
-    <a class="brand" href="YorkFX Homepage.html" aria-label="York Foreign Exchange — home">
-      <span class="yk">YORK</span>
-      <span class="sub">FOREIGN EXCHANGE INC</span>
-    </a>
-    <div class="nav-right">
-      <span class="staff-badge">Rate board</span>
-      <button class="signout" id="signout" type="button" style="display:none">Sign out</button>
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px -18px rgba(23,20,15,0.28); }
+  .chip { display: inline-flex; align-items: center; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; font-family: var(--m); font-size: 10px; color: var(--mute); box-shadow: 0 4px 14px -8px rgba(23,20,15,0.2); }
+  .klabel8 { font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+  .thead { font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+  .stepbtn { display: grid; place-items: center; width: 30px; height: 30px; background: #fff; border: 1px solid var(--line); border-radius: 8px; font-family: var(--m); font-size: 14px; cursor: pointer; }
+  .stepbtn:hover { background: rgba(23,20,15,0.05); }
+  .rowgrid { display: grid; grid-template-columns: 26px 1.35fr minmax(120px,150px) 84px 132px 140px 128px 30px; gap: 12px; align-items: center; }
+
+  /* row inputs */
+  .mid-input { width: 118px; height: 40px; box-sizing: border-box; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-family: var(--m); font-size: 14.5px; font-weight: 700; box-shadow: inset 0 1px 3px rgba(23,20,15,0.06); text-align: center; color: var(--ink); }
+  .mid-input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(23,20,15,0.07); }
+  .sp-wrap { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 28px; background: var(--soft); border-radius: 7px; padding: 0 6px; }
+  .sp-input { width: 34px; border: 0; background: transparent; font-family: var(--m); font-size: 9.5px; color: var(--mute); text-align: right; outline: none; }
+  .sp-input::placeholder { color: var(--mute); }
+  .sp-pct { font-family: var(--m); font-size: 9.5px; color: var(--mute); }
+  .bs-input { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px; background: transparent; font-family: var(--m); font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; padding: 6px 6px; color: var(--mute); }
+  .sell-input { font-weight: 700; color: var(--ink); }
+  .bs-input:hover { border-color: var(--line); background: rgba(255,255,255,0.7); }
+  .bs-input:focus { outline: none; border-color: var(--ink); background: #fff; box-shadow: 0 0 0 3px rgba(23,20,15,0.06); }
+  .chg { font-family: var(--m); font-size: 8.5px; display: block; margin-top: 3px; min-height: 10px; }
+  .chg.up { color: var(--green-live); } .chg.down { color: #C2452D; } .chg.pinned { color: var(--amber); }
+
+  /* board badges */
+  .tg { border: 0; cursor: pointer; }
+  .tg.on { display: inline-flex; align-items: center; gap: 6px; background: var(--green-soft); color: var(--green-live); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; padding: 7px 12px; border-radius: 999px; }
+  .tg.off { display: inline-grid; place-items: center; background: var(--soft); color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; padding: 7px 14px; border-radius: 999px; }
+  .rm { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--faint); cursor: pointer; font-size: 14px; background: transparent; border: 0; }
+  .rm:hover { background: var(--soft); color: var(--ink); }
+  .et-row.data { padding: 11px 0; border-bottom: 1px solid var(--soft); }
+  .et-row.data.hidden-row { opacity: 0.45; }
+  .et-row.data.hidden-row .flagbox { filter: grayscale(1); }
+  .rt-grip { color: rgba(23,20,15,0.22); font-size: 13px; letter-spacing: 2px; cursor: grab; user-select: none; }
+  .flagbox { display: grid; place-items: center; width: 36px; height: 36px; background: var(--soft); border-radius: 10px; font-size: 18px; flex: none; }
+
+  /* signin (brand skin, same contract) */
+  #signin { min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+  #signin[hidden], #dash[hidden], #feedPop[hidden], #addMenu[hidden], #tour[hidden] { display: none; }
+  .si-card { width: 380px; max-width: 92vw; background: #FDFCFA; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 40px 90px -30px rgba(23,20,15,0.5); padding: 30px 30px 26px; box-sizing: border-box; }
+  .si-card h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .si-sub { font-family: var(--m); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); margin-bottom: 20px; }
+  .si-card label { display: block; font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 14px 0 6px; }
+  .si-card input { width: 100%; box-sizing: border-box; font-family: var(--f); font-size: 14px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .si-card input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(23,20,15,0.07); }
+  .si-err { color: #C2452D; font-size: 12px; min-height: 16px; margin-top: 10px; }
+  .si-go { width: 100%; margin-top: 8px; padding: 13px; background: var(--ink); color: #fff; border: 0; border-radius: 10px; font-family: var(--m); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; cursor: pointer; }
+  .si-go:hover { filter: brightness(1.3); }
+
+  /* feed popover */
+  #feedPop { position: absolute; top: calc(100% + 8px); right: 0; width: 324px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 28px 70px -18px rgba(23,20,15,0.5), 0 0 0 1px rgba(23,20,15,0.04); padding: 16px; z-index: 60; text-align: left; animation: cdWinIn 0.22s cubic-bezier(0.2,0.8,0.2,1) both; }
+  .fp-opt { width: 100%; display: flex; align-items: center; gap: 11px; background: transparent; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; text-align: left; margin-bottom: 7px; font-family: var(--f); box-sizing: border-box; }
+  .fp-radio { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line); flex: none; background: #fff; box-sizing: border-box; }
+  .fp-cur { font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.08em; color: var(--green-live); background: var(--green-soft); padding: 4px 8px; border-radius: 999px; }
+  .fp-soon { font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); background: var(--soft); padding: 4px 8px; border-radius: 999px; }
+
+  /* locked / stale states on the feed pill */
+  #feedBar.locked { background: var(--amber-soft); border-color: rgba(154,107,31,0.3); color: var(--amber); }
+  #feedBar.locked .fdot { background: var(--amber); animation: none; }
+  #feedBar.stale .fdot { background: #C2452D; animation: none; }
+  .lockbtn .ic-closed { display: none; }
+  .lockbtn[aria-pressed="true"] { background: var(--amber-soft); border-color: rgba(154,107,31,0.3); color: var(--amber); }
+  .lockbtn[aria-pressed="true"] .ic-open { display: none; }
+  .lockbtn[aria-pressed="true"] .ic-closed { display: inline; }
+
+  /* add-currency menu */
+  #addMenu { position: absolute; bottom: calc(100% + 8px); right: 0; width: 300px; max-height: 320px; overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 -18px 60px -18px rgba(23,20,15,0.45), 0 0 0 1px rgba(23,20,15,0.04); padding: 8px; z-index: 70; }
+  .add-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; background: transparent; border-radius: 9px; cursor: pointer; font-family: var(--f); text-align: left; }
+  .add-item:hover { background: var(--soft); }
+  .ai-flag { font-size: 15px; } .ai-code { font-family: var(--m); font-size: 12px; font-weight: 700; } .ai-name { flex: 1; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ai-plus { color: var(--faint); }
+  .add-empty { padding: 14px; font-size: 12px; color: var(--faint); text-align: center; }
+
+  /* publish state chip */
+  #edStatus { background: var(--green-soft); }
+  #edStatus .dot { background: var(--green-live); }
+  #edStatus .label { color: var(--green-live); }
+  #edStatus.dirty { background: var(--amber-soft); }
+  #edStatus.dirty .dot { background: var(--amber); }
+  #edStatus.dirty .label { color: var(--amber); }
+  #publishBtn:hover { background: var(--primary-deep); }
+  #publishBtn:disabled { opacity: 0.55; cursor: default; }
+  #publishBtn.arming { background: #C2452D; }
+  #publishBtn.done { background: var(--green-live); }
+
+  /* tour */
+  #tour { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; }
+  #tour .veil { position: absolute; inset: 0; background: rgba(23,20,15,0.42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  .tour-card { position: relative; width: 450px; max-width: calc(100vw - 48px); box-sizing: border-box; background: #FDFCFA; border-radius: 18px; box-shadow: 0 40px 90px -20px rgba(23,20,15,0.6); padding: 26px 28px 22px; animation: cdWinIn 0.4s cubic-bezier(0.2,0.8,0.2,1) both; }
+  .tour-card[hidden] { display: none; }
+  .tour-eyebrow { font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.18em; color: var(--primary); }
+  .tour-skip { font-family: var(--m); font-size: 9.5px; color: var(--faint); cursor: pointer; }
+  .tour-skip:hover { color: var(--ink); }
+  .tour-stage { height: 150px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; display: grid; place-items: center; margin: 16px 0 18px; padding: 0 22px; box-sizing: border-box; }
+  .tour-card h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .tour-card p { font-size: 13px; line-height: 1.6; color: var(--mute); margin: 0 0 20px; }
+  .tour-dots { display: flex; gap: 6px; } .tour-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--line); } .tour-dots span.on { background: var(--ink); }
+  .tour-next { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--ink); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; cursor: pointer; border: 0; }
+  .tour-next:hover { filter: brightness(1.25); }
+  .tour-next.go { background: var(--primary); box-shadow: 0 6px 16px rgba(29,107,69,0.3); }
+  .tour-next.go:hover { background: var(--primary-deep); filter: none; }
+
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #F7F4ED; font-family: var(--m); font-size: 11px; padding: 11px 18px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 300; max-width: 80vw; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (max-width: 1100px) { #rail { display: none; } #dash > div { grid-template-columns: 1fr !important; } }
+</style>
+</head>
+<body>
+
+<!-- ===== sign-in (backend is the door; standalone demo offline) ===== -->
+<section id="signin">
+  <div class="si-card">
+    <h1>Rate board sign-in</h1>
+    <div class="si-sub">CurrencyDesk · back office</div>
+    <form id="signinForm">
+      <label for="user">Staff ID</label>
+      <input id="user" autocomplete="username" placeholder="e.g. j.masri" />
+      <label for="pw">Password</label>
+      <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••" />
+      <div class="si-err" id="signinError"></div>
+      <button class="si-go" type="submit">Continue →</button>
+    </form>
+  </div>
+</section>
+
+<!-- ===== board ===== -->
+<section id="dash" hidden style="max-width: 1460px; margin: 0 auto; box-sizing: border-box; padding: 36px 40px 34px; min-height: 100vh;">
+  <div style="display: grid; grid-template-columns: minmax(0,1fr) 330px; gap: 18px; animation: cdWinIn 0.5s cubic-bezier(0.2,0.8,0.2,1) both;">
+
+    <!-- LEFT COLUMN -->
+    <div style="display: flex; flex-direction: column; gap: 14px; min-width: 0;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap;">
+        <div>
+          <h1 style="font-weight: 800; font-size: 34px; letter-spacing: -0.02em; margin: 0;">Today's rates</h1>
+          <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); margin-top: 8px;">The one place your rates live — set them here, the site follows</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none;">
+          <span style="position: relative; display: inline-block;">
+            <button id="feedBar" type="button" class="chip" style="font-weight: 700; letter-spacing: 0.06em; color: var(--ink); cursor: pointer;">
+              <span class="fdot" style="width: 7px; height: 7px; border-radius: 50%; background: var(--green-live); animation: cdAiPulse 2.2s ease-out infinite;"></span>
+              <span id="feedLabel">FEED LIVE</span>
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--mute)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+            </button>
+            <div id="feedPop" hidden>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <span style="font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.16em; color: var(--faint);">YOUR RATE FEED</span>
+                <span id="feedPopClose" style="display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; color: var(--faint); cursor: pointer; font-size: 14px;">×</span>
+              </div>
+              <p style="font-size: 11.5px; line-height: 1.55; color: var(--mute); margin: 0 0 12px;">Spot prices stream in from your provider. Your margins sit on top — <b style="color: var(--ink);">switching feeds never touches your margins.</b></p>
+              <div class="fp-opt">
+                <span class="fp-radio"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></span></span>
+                <span style="flex: 1;"><span style="display: block; font-size: 12.5px; font-weight: 700; color: var(--ink);">Open Exchange Rates</span><span style="display: block; font-family: var(--m); font-size: 9px; color: var(--mute); margin-top: 2px;">Live spot · refreshes hourly</span></span>
+                <span class="fp-cur">CURRENT</span>
+              </div>
+              <div class="fp-opt" style="opacity: 0.65;">
+                <span class="fp-radio"></span>
+                <span style="flex: 1;"><span style="display: block; font-size: 12.5px; font-weight: 700; color: var(--ink);">OANDA · fxTrade rates</span><span style="display: block; font-family: var(--m); font-size: 9px; color: var(--mute); margin-top: 2px;">Live spot</span></span>
+                <span class="fp-soon">COMING SOON</span>
+              </div>
+              <div class="fp-opt" style="opacity: 0.65;">
+                <span class="fp-radio"></span>
+                <span style="flex: 1;"><span style="display: block; font-size: 12.5px; font-weight: 700; color: var(--ink);">Bank of Canada · official</span><span style="display: block; font-family: var(--m); font-size: 9px; color: var(--mute); margin-top: 2px;">Noon rate · once daily</span></span>
+                <span class="fp-soon">COMING SOON</span>
+              </div>
+              <div class="fp-opt" style="opacity: 0.65; margin-bottom: 0;">
+                <span class="fp-radio"></span>
+                <span style="flex: 1;"><span style="display: block; font-size: 12.5px; font-weight: 700; color: var(--ink);">XE · corporate feed</span><span style="display: block; font-family: var(--m); font-size: 9px; color: var(--mute); margin-top: 2px;">Live spot</span></span>
+                <span class="fp-soon">COMING SOON</span>
+              </div>
+              <div id="feedLastWrap" style="margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--soft); font-family: var(--m); font-size: 9px; color: var(--faint);">—</div>
+            </div>
+          </span>
+          <span class="chip" id="feedNextWrap">—</span>
+          <button id="lockToggle" type="button" class="chip lockbtn" aria-pressed="false" style="font-weight: 700; letter-spacing: 0.08em; cursor: pointer;">
+            <svg class="ic-open" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <svg class="ic-closed" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="lock-label">LOCK RATES</span>
+          </button>
+          <button id="tourBtn" type="button" title="Replay setup tour" style="display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px dashed rgba(23,20,15,0.25); border-radius: 10px; padding: 9px 12px; font-family: var(--m); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); cursor: pointer;">↻ TOUR</button>
+          <button id="signout" type="button" class="chip" style="cursor: pointer;">Sign out</button>
+        </div>
+      </div>
+
+      <!-- margins + search strip -->
+      <div class="card" style="display: flex; align-items: center; gap: 22px; padding: 18px 24px; flex-wrap: wrap; animation: cdFadeUp 0.45s ease 0.1s both;">
+        <div>
+          <div class="klabel8">Buy margin · under spot</div>
+          <div class="num" style="display: inline-flex; align-items: center; gap: 6px;">
+            <button class="stepbtn" data-step="buy:-" type="button" aria-label="Lower buy margin">−</button>
+            <span style="display: inline-flex; align-items: center; min-width: 66px; height: 34px; background: var(--soft); border-radius: 9px; justify-content: center;">
+              <input id="buyMargin" inputmode="decimal" aria-label="Buy margin percent" style="width: 42px; border: 0; background: transparent; font-family: var(--m); font-size: 14.5px; font-weight: 700; text-align: right; outline: none;" /><span style="font-family: var(--m); font-size: 12px; color: var(--mute);">%</span>
+            </span>
+            <button class="stepbtn" data-step="buy:+" type="button" aria-label="Raise buy margin">+</button>
+          </div>
+        </div>
+        <div>
+          <div class="klabel8">Sell margin · over spot</div>
+          <div class="num" style="display: inline-flex; align-items: center; gap: 6px;">
+            <button class="stepbtn" data-step="sell:-" type="button" aria-label="Lower sell margin">−</button>
+            <span style="display: inline-flex; align-items: center; min-width: 66px; height: 34px; background: var(--soft); border-radius: 9px; justify-content: center;">
+              <input id="sellMargin" inputmode="decimal" aria-label="Sell margin percent" style="width: 42px; border: 0; background: transparent; font-family: var(--m); font-size: 14.5px; font-weight: 700; text-align: right; outline: none;" /><span style="font-family: var(--m); font-size: 12px; color: var(--mute);">%</span>
+            </span>
+            <button class="stepbtn" data-step="sell:+" type="button" aria-label="Raise sell margin">+</button>
+          </div>
+        </div>
+        <div style="width: 1px; align-self: stretch; background: var(--soft);"></div>
+        <div style="flex: 1; align-self: flex-end; min-width: 180px;">
+          <div style="display: flex; align-items: center; gap: 10px; height: 34px; background: var(--soft); border-radius: 9px; padding: 0 14px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--faint)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+            <input id="search" placeholder="Find a currency…" aria-label="Search currencies" style="flex: 1; border: 0; background: transparent; font-family: var(--m); font-size: 11.5px; color: var(--ink); outline: none;" />
+          </div>
+        </div>
+        <div id="workedOut" style="align-self: flex-end; font-family: var(--m); font-size: 9.5px; color: var(--faint); padding-bottom: 9px;"></div>
+      </div>
+
+      <!-- rates table -->
+      <div class="card" id="edTable" style="padding: 18px 26px 14px; display: flex; flex-direction: column; min-height: 0; animation: cdFadeUp 0.45s ease 0.16s both;">
+        <div class="rowgrid" style="gap: 10px; padding: 6px 0 10px; border-bottom: 1px solid var(--line);">
+          <span></span>
+          <span class="thead">Currency</span>
+          <span class="thead">Spot · CAD/unit</span>
+          <span class="thead">Spread</span>
+          <span class="thead" style="text-align: right;">We buy</span>
+          <span class="thead" style="text-align: right;">We sell</span>
+          <span class="thead" style="text-align: center;">On the board</span>
+          <span></span>
+        </div>
+        <div class="cdScroll" id="etBody" style="max-height: calc(100vh - 430px); min-height: 260px; overflow-y: auto; overscroll-behavior: contain; margin-right: -14px; padding-right: 8px; scrollbar-width: thin; scrollbar-color: rgba(23,20,15,0.3) rgba(23,20,15,0.05);"></div>
+        <div id="etEmpty" hidden style="padding: 30px 0; text-align: center; font-family: var(--m); font-size: 11px; color: var(--faint);">No currencies match your search.</div>
+        <div style="margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); position: relative;">
+          <span style="font-family: var(--m); font-size: 10px; color: var(--mute);"><span id="feedCount">—</span> · drag <span style="color: var(--faint);">⠿</span> to reorder — the top six show on your homepage</span>
+          <span style="position: relative;">
+            <button id="addBtn" type="button" style="display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 8px 14px; font-family: var(--m); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink); cursor: pointer;">+ ADD CURRENCY</button>
+            <div id="addMenu" hidden></div>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT RAIL -->
+    <div id="rail" style="display: flex; flex-direction: column; gap: 14px; min-height: 0;">
+      <!-- publish card -->
+      <div class="card" style="padding: 18px 20px; animation: cdFadeUp 0.45s ease 0.12s both;">
+        <div id="edStatus" style="display: flex; align-items: center; gap: 9px; border-radius: 10px; padding: 10px 13px; margin-bottom: 14px;">
+          <span class="dot" style="width: 8px; height: 8px; border-radius: 50%; flex: none;"></span>
+          <span class="label" style="font-size: 12px; font-weight: 600;">All changes published</span>
+        </div>
+        <button id="publishBtn" type="button" style="width: 100%; padding: 15px; background: var(--primary); color: #fff; border: 0; border-radius: 10px; font-family: var(--m); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px rgba(29,107,69,0.3); display: inline-flex; align-items: center; justify-content: center; gap: 9px; transition: background 0.15s;">Publish</button>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px;">
+          <span style="min-width: 0;"><span style="display: block; font-family: var(--m); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink);">AUTO-PUBLISH</span><span style="display: block; font-size: 10.5px; color: var(--mute); margin-top: 2px;">Each hourly feed refresh goes straight to the site</span></span>
+          <span title="Hourly auto-publish is on — your margins are preserved on every push" style="width: 40px; height: 23px; border-radius: 999px; background: var(--primary); position: relative; flex: none;"><span style="position: absolute; top: 2.5px; left: 19px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(23,20,15,0.3);"></span></span>
+        </div>
+        <div id="savedNote" style="font-family: var(--m); font-size: 9.5px; color: var(--green-live); margin-top: 9px; min-height: 13px;"></div>
+        <div style="font-family: var(--m); font-size: 10px; line-height: 1.7; color: var(--mute); margin-top: 8px;"><span id="edSince">—</span><br>The site swaps to the new board instantly — customers never see a blank one.</div>
+        <div style="margin-top: 10px; text-align: right;"><button id="resetBtn" type="button" style="background: none; border: 0; font-family: var(--m); font-size: 9px; color: var(--faint); cursor: pointer; text-decoration: underline;">Reset to factory defaults</button></div>
+      </div>
+
+      <!-- live site preview -->
+      <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; animation: cdFadeUp 0.45s ease 0.2s both;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <span style="font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);">Live on your site</span>
+          <span style="font-family: var(--m); font-size: 9.5px; color: var(--mute);">your public board ↗</span>
+        </div>
+        <div style="background: #17140F; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; flex: 1;">
+          <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #45403A; padding-bottom: 10px;">
+            <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.22em; color: #F7F4ED;">TODAY'S RATES</span>
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #2EA36B; animation: cdAiPulse 2.2s ease-out infinite;"></span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 62px 62px; gap: 8px; padding: 10px 0 6px;">
+            <span></span>
+            <span style="font-family: var(--m); font-size: 7.5px; letter-spacing: 0.12em; color: #7A736A; text-align: right;">WE BUY</span>
+            <span style="font-family: var(--m); font-size: 7.5px; letter-spacing: 0.12em; color: #7A736A; text-align: right;">WE SELL</span>
+          </div>
+          <div id="sitePrevRows"></div>
+          <div id="sitePrevMore" style="margin-top: auto; padding-top: 12px; font-family: var(--m); font-size: 8px; letter-spacing: 0.14em; color: #7A736A; text-align: center;"></div>
+          <div style="padding-top: 7px; font-family: var(--m); font-size: 7.5px; letter-spacing: 0.16em; color: #7A736A; text-align: center;">FAIR EXCHANGE · NO SURPRISES AT THE COUNTER</div>
+        </div>
+        <div style="font-family: var(--m); font-size: 9.5px; line-height: 1.65; color: var(--faint); margin-top: 11px;">Your public board, exactly as customers see it. It mirrors the top six the moment you publish.</div>
+      </div>
     </div>
   </div>
-</header>
+</section>
 
-<main class="staff-main">
+<!-- legacy provider select (kept for the JS contract; the popover is the visible UI) -->
+<select id="rateProvider" hidden aria-hidden="true"></select>
 
-  <!-- ===================== SIGN-IN ===================== -->
-  <section class="signin-wrap" id="signin">
-    <div class="signin-card">
-      <a class="brand" href="YorkFX Homepage.html" aria-label="York Foreign Exchange">
-        <span class="yk">YORK</span>
-        <span class="sub">FOREIGN EXCHANGE INC</span>
-      </a>
-      <h1>Rate board sign-in</h1>
-      <div class="sub-note">Back office</div>
-      <form id="signinForm" novalidate>
-        <div>
-          <label class="field-label" for="user">Username</label>
-          <input id="user" placeholder="e.g. j.masri" autocomplete="username" />
-        </div>
-        <div>
-          <label class="field-label" for="pw">Password</label>
-          <input id="pw" type="password" placeholder="••••" autocomplete="current-password" />
-        </div>
-        <button class="btn btn-solid" type="submit">Sign in</button>
-        <div class="signin-error" id="signinError" role="alert"></div>
-      </form>
-      <div class="signin-hint">Demo access — any username, password <b>york</b>.</div>
+<!-- ===== setup tour (4 steps, from the brand design) ===== -->
+<div id="tour" hidden>
+  <div class="veil" data-tour-skip></div>
+  <div class="tour-card" data-step="1">
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 1 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
+    <div class="tour-stage">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; gap: 9px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 11px 17px; font-family: var(--m); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; box-shadow: 0 6px 18px -8px rgba(23,20,15,0.25);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--green-live); animation: cdAiPulse 2.2s ease-out infinite;"></span>FEED LIVE · OPEN EXCHANGE RATES</span>
+        <span id="tourSpotLine" style="font-family: var(--m); font-size: 10.5px; color: var(--mute);">USD spot streams in every hour</span>
+      </div>
     </div>
-  </section>
-
-  <!-- ===================== EDITOR ===================== -->
-  <section class="editor" id="dash" hidden>
-    <div style="max-width:1180px;margin:0 auto;padding:0 24px;">
-
-      <div class="ed-head">
-        <div>
-          <div class="eyebrow">Rate board</div>
-          <h1>Today's rates</h1>
-          <p style="font-family:var(--f-mono);font-size:12px;color:var(--muted);max-width:520px;margin:0;">
-            <b style="color:var(--ink)">How pricing works:</b> the <b style="color:var(--ink)">Spot</b> price streams in from your rate feed automatically — you never have to look rates up. Your profit comes from the <b style="color:var(--ink)">margin</b>: We&nbsp;Buy = spot − margin, We&nbsp;Sell = spot + margin. Set one margin for the whole board, or type directly into any row's <b style="color:var(--ink)">We Buy / We Sell</b> price — the margin adjusts itself, just like writing prices on your window board. Hit <b style="color:var(--ink)">Publish</b> and the customer boards and the desk update everywhere. <b style="color:var(--ink)">Drag the handle</b> to reorder — the top six show on your homepage.
-          </p>
-        </div>
-        <div class="ed-actions">
-          <div class="ed-actions-info">
-            <span class="ed-since" id="edSince"><span class="tdot"></span>Not yet published</span>
-            <span class="status" id="edStatus"><span class="dot"></span><span class="label">All changes published</span></span>
-          </div>
-          <button class="btn btn-solid" id="publishBtn" type="button" disabled>Publish</button>
-        </div>
-      </div>
-
-      <!-- live feed status -->
-      <div class="feed-bar" id="feedBar">
-        <span class="feed-state"><span class="fdot"></span><span id="feedLabel">Feed connected · updates hourly</span></span>
-        <span class="feed-sep"></span>
-        <span class="feed-info" id="feedLastWrap">Rates as of <b>—</b></span>
-        <span class="feed-sep"></span>
-        <span class="feed-info" id="feedNextWrap">Next update in <b>—</b></span>
-        <span class="feed-right">
-          <button class="lockbtn" id="lockToggle" type="button" aria-pressed="false">
-            <svg class="ic-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
-            <svg class="ic-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span class="lock-label">Lock rates</span>
-          </button>
-        </span>
-      </div>
-
-      <!-- controls: margins + search -->
-      <div class="ed-controls">
-        <div class="ctrl">
-          <label>Buy margin · under spot</label>
-          <div class="num">
-            <button data-step="buy:-" type="button" aria-label="Lower buy margin">−</button>
-            <input id="buyMargin" inputmode="decimal" aria-label="Buy margin percent" />
-            <span class="pct">%</span>
-            <button data-step="buy:+" type="button" aria-label="Raise buy margin">+</button>
-          </div>
-        </div>
-        <div class="ctrl">
-          <label>Sell margin · over spot</label>
-          <div class="num">
-            <button data-step="sell:-" type="button" aria-label="Lower sell margin">−</button>
-            <input id="sellMargin" inputmode="decimal" aria-label="Sell margin percent" />
-            <span class="pct">%</span>
-            <button data-step="sell:+" type="button" aria-label="Raise sell margin">+</button>
-          </div>
-        </div>
-        <div class="ctrl search">
-          <label>Find a currency</label>
-          <div class="searchbox">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input id="search" placeholder="Search code or name…" aria-label="Search currencies" />
-          </div>
-        </div>
-      </div>
-
-      <!-- rate table -->
-      <div class="ed-table" id="edTable">
-        <div class="et-row et-head">
-          <span>Currency</span>
-          <span>Spot · CAD / unit</span>
-          <span>Spread</span>
-          <span>We buy</span>
-          <span>We sell</span>
-          <span>Board</span>
-        </div>
-        <div id="etBody"></div>
-        <div class="et-empty" id="etEmpty" style="display:none">No currencies match your search.</div>
-        <div class="add-ccy" id="addCcy">
-          <div class="add-ccy-info"><span class="add-ccy-label">From your rate feed</span><span class="add-ccy-sub" id="feedCount"></span></div>
-          <div class="add-ccy-pick">
-            <button id="addBtn" class="add-ccy-btn" type="button">+ Add currency</button>
-            <div class="add-menu" id="addMenu" hidden></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="ed-foot">
-        <span class="saved-note" id="savedNote"><span class="tdot" style="width:6px;height:6px;border-radius:50%;background:#1f8a4c;display:inline-block;"></span>Draft autosaves as you edit</span>
-        <button class="linkbtn" id="resetBtn" type="button">Reset to factory defaults</button>
-      </div>
-
-      <div class="feed-provider">
-        <span class="fp-label">Rate feed provided by</span>
-        <div class="fp-select">
-          <select id="rateProvider" aria-label="Rate feed provider">
-            <option value="active">Open Exchange Rates · live</option>
-          </select>
-          <span class="fp-chev" aria-hidden="true">▾</span>
-        </div>
-        <span class="fp-note">Live spot prices refresh hourly from this provider; your margins are applied on top. More providers coming soon.</span>
-      </div>
-
+    <h2>Your rates start at spot</h2>
+    <p>Live market rates stream in from your provider every hour. You never type a rate again — the feed does that part for you.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span class="tour-dots"><span class="on"></span><span></span><span></span><span></span></span>
+      <button class="tour-next" data-tour-next type="button">NEXT →</button>
     </div>
-  </section>
+  </div>
+  <div class="tour-card" data-step="2" hidden>
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 2 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
+    <div class="tour-stage">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 13px;">
+        <div style="display: flex; gap: 22px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">−</span><span style="display: grid; place-items: center; min-width: 58px; height: 30px; background: var(--soft); border-radius: 8px; font-family: var(--m); font-size: 13px; font-weight: 700;">1.5%</span><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">+</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">−</span><span style="display: grid; place-items: center; min-width: 58px; height: 30px; background: var(--soft); border-radius: 8px; font-family: var(--m); font-size: 13px; font-weight: 700;">1.6%</span><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">+</span></span>
+        </div>
+        <span id="tourMathLine" style="font-family: var(--m); font-size: 10.5px; color: var(--mute);">spot → we buy · we sell, computed for you</span>
+      </div>
+    </div>
+    <h2>Your margins do the math</h2>
+    <p>Set how far under and over spot you trade — once. Every buy and sell price on the board follows automatically. You can also type any We&nbsp;Buy or We&nbsp;Sell price directly — the margin adjusts itself.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span class="tour-dots"><span></span><span class="on"></span><span></span><span></span></span>
+      <button class="tour-next" data-tour-next type="button">NEXT →</button>
+    </div>
+  </div>
+  <div class="tour-card" data-step="3" hidden>
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 3 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
+    <div class="tour-stage">
+      <div style="width: 100%; display: flex; flex-direction: column; gap: 7px;">
+        <div style="display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; box-shadow: 0 4px 12px -6px rgba(23,20,15,0.2);"><span style="color: rgba(23,20,15,0.3); font-size: 12px; letter-spacing: 2px;">⠿</span><span style="font-size: 13px;">🇺🇸</span><span style="font-family: var(--m); font-size: 11px; font-weight: 700; flex: 1;">USD</span><span class="tg on" style="font-size: 8px; padding: 5px 9px;"><span style="width: 5px; height: 5px; border-radius: 50%; background: var(--green-live);"></span>ON BOARD</span></div>
+        <div style="display: flex; align-items: center; gap: 10px;"><span style="flex: 1; border-top: 1.5px dashed rgba(29,107,69,0.45);"></span><span style="font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.12em; color: var(--primary);">TOP SIX · YOUR HOMEPAGE</span><span style="flex: 1; border-top: 1.5px dashed rgba(29,107,69,0.45);"></span></div>
+        <div style="display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; opacity: 0.55;"><span style="color: rgba(23,20,15,0.3); font-size: 12px; letter-spacing: 2px;">⠿</span><span style="font-size: 13px; filter: grayscale(1);">🇸🇦</span><span style="font-family: var(--m); font-size: 11px; font-weight: 700; flex: 1;">SAR</span><span class="tg off" style="font-size: 8px; padding: 5px 11px;">HIDDEN</span></div>
+      </div>
+    </div>
+    <h2>Arrange it like your window</h2>
+    <p>Drag rows into the order your customers look for. The top six show on your homepage — switch any currency off the board without losing it.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span class="tour-dots"><span></span><span></span><span class="on"></span><span></span></span>
+      <button class="tour-next" data-tour-next type="button">NEXT →</button>
+    </div>
+  </div>
+  <div class="tour-card" data-step="4" hidden>
+    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 4 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
+    <div class="tour-stage">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; background: var(--primary); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; box-shadow: 0 6px 16px rgba(29,107,69,0.35);"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>PUBLISH TO SITE</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        <span style="display: inline-flex; flex-direction: column; gap: 4px; background: #17140F; border-radius: 10px; padding: 11px 15px;"><span style="font-family: var(--m); font-size: 8px; letter-spacing: 0.18em; color: #F7F4ED;">YOUR SITE</span><span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.1em; color: #2EA36B;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2EA36B;"></span>UPDATED JUST NOW</span></span>
+      </div>
+    </div>
+    <h2>Publish — the site follows</h2>
+    <p>One tap replaces the rates on your website and window boards, instantly. No more editing the site by hand — this board is the only place rates live.</p>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span class="tour-dots"><span></span><span></span><span></span><span class="on"></span></span>
+      <button class="tour-next go" data-tour-finish type="button">OPEN THE BOARD ✓</button>
+    </div>
+  </div>
+</div>
 
-</main>
-
-<!-- publish toast -->
-<div class="toast" id="toast" role="status"><span class="dot"></span><span class="msg"></span></div>
+<div id="toast"></div>
 
 <script src="../yorkfx-converter.js"></script>
 <script src="yorkfx-staff.js"></script>
-<template id="__bundler_thumbnail" data-bg-color="#12100c">
-  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-    <rect width="1200" height="800" fill="#12100c"/>
-    <rect x="180" y="150" width="840" height="70" rx="8" fill="#1D6B45"/>
-    <rect x="180" y="270" width="840" height="46" rx="6" fill="#2a2620"/>
-    <rect x="180" y="336" width="840" height="46" rx="6" fill="#221f19"/>
-    <rect x="180" y="402" width="840" height="46" rx="6" fill="#2a2620"/>
-    <rect x="180" y="468" width="840" height="46" rx="6" fill="#221f19"/>
-    <rect x="180" y="534" width="840" height="46" rx="6" fill="#2a2620"/>
-    <text x="600" y="196" font-family="monospace" font-size="34" fill="#fff" text-anchor="middle" letter-spacing="4">RATE BOARD</text>
-  </svg>
-</template>
 </body>
 </html>

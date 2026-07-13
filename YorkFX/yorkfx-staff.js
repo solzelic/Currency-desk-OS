@@ -163,28 +163,19 @@
 
   function rowHTML(c) {
     return '' +
-      '<div class="et-row data" data-code="' + c.code + '">' +
-        '<div class="cur-cell">' +
-          '<span class="rt-grip" title="Drag to reorder — the first six show on your homepage" aria-label="Drag to reorder">' +
-            '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>' +
-          '</span>' +
-          '<span class="flag">' + c.flag + '</span>' +
-          '<span class="stack"><span class="code">' + c.code + '</span>' +
-          '<span class="name">' + c.name + '</span></span>' +
-        '</div>' +
-        '<div class="mid-cell">' +
-          '<span class="klabel">Spot · CAD/unit</span>' +
-          '<input class="mid-input" inputmode="decimal" data-code="' + c.code + '" aria-label="Spot rate for ' + c.code + '" />' +
-          '<span class="chg" data-code="' + c.code + '"></span>' +
-        '</div>' +
-        '<div class="spread-cell">' +
-          '<span class="klabel">Spread</span>' +
-          '<span class="sp-dot" title="Custom spread active"></span>' +
-          '<span class="sp-wrap"><input class="sp-input" inputmode="decimal" data-code="' + c.code + '" placeholder="auto" aria-label="Custom spread for ' + c.code + '" /><span class="sp-pct">%</span></span>' +
-        '</div>' +
-        '<div class="out buy" data-k="We buy" data-code="' + c.code + '"><input class="bs-input buy-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-buy price for ' + c.code + '" /><span class="unit">CAD</span></div>' +
-        '<div class="out sell" data-k="We sell" data-code="' + c.code + '"><input class="bs-input sell-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-sell price for ' + c.code + '" /><span class="unit">CAD</span></div>' +
-        '<div class="tg-cell"><button class="tg" data-code="' + c.code + '" type="button">Show</button><button class="rm" data-code="' + c.code + '" type="button" title="Remove ' + c.code + ' from the board" aria-label="Remove ' + c.code + '">\u00d7</button></div>' +
+      '<div class="et-row data rowgrid" data-code="' + c.code + '">' +
+        '<span class="rt-grip" draggable="true" title="Drag to reorder — the first six show on your homepage" aria-label="Drag to reorder">\u283f</span>' +
+        '<span style="display: flex; align-items: center; gap: 11px; min-width: 0;">' +
+          '<span class="flagbox">' + c.flag + '</span>' +
+          '<span style="min-width: 0;"><span style="display: block; font-family: var(--m); font-size: 13.5px; font-weight: 700;">' + c.code + '</span>' +
+          '<span style="display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + c.name + '</span></span>' +
+        '</span>' +
+        '<span><input class="mid-input" inputmode="decimal" data-code="' + c.code + '" aria-label="Spot rate for ' + c.code + '" /><span class="chg" data-code="' + c.code + '"></span></span>' +
+        '<span><span class="sp-wrap"><input class="sp-input" inputmode="decimal" data-code="' + c.code + '" placeholder="auto" aria-label="Custom spread for ' + c.code + '" /><span class="sp-pct">%</span></span></span>' +
+        '<span><input class="bs-input buy-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-buy price for ' + c.code + '" /></span>' +
+        '<span><input class="bs-input sell-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-sell price for ' + c.code + '" /></span>' +
+        '<span style="text-align: center;"><button class="tg" data-code="' + c.code + '" type="button"></button></span>' +
+        '<button class="rm" data-code="' + c.code + '" type="button" title="Remove ' + c.code + ' from the board" aria-label="Remove ' + c.code + '">\u00d7</button>' +
       '</div>';
   }
   function wireRow(row) {
@@ -361,8 +352,12 @@
     el.input.classList.toggle('edited', amber);
 
     el.tg.classList.toggle('on', r.show);
-    el.tg.textContent = r.show ? 'On board' : 'Hidden';
+    el.tg.classList.toggle('off', !r.show);
+    el.tg.innerHTML = r.show
+      ? '<span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-live);"></span>ON BOARD'
+      : 'HIDDEN';
     el.row.classList.toggle('off', !r.show);
+    el.row.classList.toggle('hidden-row', !r.show);
   }
 
   function paintAll() { LIST.forEach(function (c) { paintRow(c.code, true); }); }
@@ -539,15 +534,16 @@
       // truth: the provider is polled hourly by the server; pages check for
       // fresh data every minute (free — our own backend, not the provider)
       var nextProvider = mk.fetchedAt + 3600000;
-      feedLabel.textContent = 'Feed connected · provider updates hourly';
-      feedLastWrap.innerHTML = 'Provider rates as of <b>' + fmtClock(mk.fetchedAt) + '</b>';
+      var pname = mk.provider === 'openexchangerates.org' ? 'OPEN EXCHANGE RATES' : String(mk.provider || 'LIVE FEED').toUpperCase();
+      feedLabel.textContent = 'FEED LIVE · ' + pname;
+      feedLastWrap.innerHTML = 'Provider rates as of <b>' + fmtClock(mk.fetchedAt) + '</b> · feed healthy · hourly';
       feedNextWrap.innerHTML = now < nextProvider
-        ? 'Next provider update in <b>' + fmtCountdown(nextProvider - now) + '</b>'
-        : 'Provider update due <b>any moment</b>';
+        ? 'Next refresh <b>' + fmtCountdown(nextProvider - now) + '</b>'
+        : 'Refresh due <b>any moment</b>';
     } else {
-      feedLabel.textContent = stale ? 'Feed offline — rates held' : 'Standalone mode · rates held at last values';
-      feedLastWrap.innerHTML = 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b>';
-      feedNextWrap.innerHTML = 'Live feed needs the backend';
+      feedLabel.textContent = stale ? 'FEED OFFLINE — RATES HELD' : 'STANDALONE · RATES HELD';
+      feedLastWrap.innerHTML = 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b> · live feed needs the backend';
+      feedNextWrap.innerHTML = 'Offline';
     }
   }
 
@@ -600,7 +596,7 @@
       (published.publishedBy ? ' \u00b7 ' + published.publishedBy : '');
   }
 
-  function refresh() { syncMarginInputs(); paintAll(); refreshStatus(); tickSince(); renderFeed(); renderAddMenu(); }
+  function refresh() { syncMarginInputs(); paintAll(); refreshStatus(); tickSince(); renderFeed(); renderAddMenu(); paintPreview(); paintWorked(); }
 
   /* ====================== PUBLISH / RESET ====================== */
   var publishing = false;
@@ -741,4 +737,98 @@
   /* ====================== GO ====================== */
   setInterval(function () { tickSince(); feedTick(); }, 1000);
   showApp();
+
+  /* ====================== V2 UI GLUE (brand design) ====================== */
+
+  // right-rail live site preview — mirrors the top six of the board
+  function paintPreview() {
+    var wrap = document.getElementById('sitePrevRows');
+    var more = document.getElementById('sitePrevMore');
+    if (!wrap) return;
+    var shown = boardList().filter(function (c) { return draft.rows[c.code] && draft.rows[c.code].show !== false; });
+    var six = shown.slice(0, 6);
+    wrap.innerHTML = six.map(function (c) {
+      var r = draft.rows[c.code];
+      var sp = (typeof r.spread === 'number');
+      var b = r.mid * (1 - (sp ? r.spread : draft.buyMargin));
+      var sl = r.mid * (1 + (sp ? r.spread : draft.sellMargin));
+      return '<div style="display: grid; grid-template-columns: 1fr 62px 62px; gap: 8px; align-items: center; padding: 6.5px 0; border-top: 1px solid rgba(247,244,237,0.08);">' +
+        '<span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 12px;">' + c.flag + '</span><span style="font-family: var(--m); font-size: 11px; font-weight: 700; color: #F7F4ED;">' + c.code + '</span></span>' +
+        '<span style="font-family: var(--m); font-size: 11px; color: #b5aea3; text-align: right; font-variant-numeric: tabular-nums;">' + fmtMid(b) + '</span>' +
+        '<span style="font-family: var(--m); font-size: 11px; font-weight: 700; color: #2EA36B; text-align: right; font-variant-numeric: tabular-nums;">' + fmtMid(sl) + '</span>' +
+      '</div>';
+    }).join('');
+    if (more) more.textContent = shown.length > 6 ? ('+ ' + (shown.length - 6) + ' MORE ON THE RATES PAGE') : '';
+  }
+
+  // "USD worked out" example under the margins strip
+  function paintWorked() {
+    var el = document.getElementById('workedOut');
+    if (!el || !draft.rows.USD) return;
+    var r = draft.rows.USD;
+    var sp = (typeof r.spread === 'number');
+    el.innerHTML = 'USD worked out: <b style="color: var(--mute);">' + fmtMid(r.mid) + '</b> spot \u2192 buy <b style="color: var(--mute);">' +
+      fmtMid(r.mid * (1 - (sp ? r.spread : draft.buyMargin))) + '</b> \u00b7 sell <b style="color: var(--mute);">' +
+      fmtMid(r.mid * (1 + (sp ? r.spread : draft.sellMargin))) + '</b>';
+  }
+
+  // feed popover open/close
+  (function feedPopover() {
+    var pop = document.getElementById('feedPop');
+    var bar = document.getElementById('feedBar');
+    if (!pop || !bar) return;
+    bar.addEventListener('click', function (e) { e.stopPropagation(); pop.hidden = !pop.hidden; });
+    var close = document.getElementById('feedPopClose');
+    if (close) close.addEventListener('click', function () { pop.hidden = true; });
+    document.addEventListener('click', function (e) { if (!pop.hidden && !pop.contains(e.target)) pop.hidden = true; });
+  })();
+
+  // ---- setup tour: first visit per browser, replayable from ↻ TOUR ----
+  (function tour() {
+    var KEY_TOUR = 'cdos_tour_rateboard_done';
+    var root = document.getElementById('tour');
+    if (!root) return;
+    var cards = Array.prototype.slice.call(root.querySelectorAll('.tour-card'));
+    var step = 1;
+    function showStep(n) {
+      step = n;
+      cards.forEach(function (c) { c.hidden = c.dataset.step !== String(n); });
+    }
+    function openTour() {
+      // live numbers inside the tour, so it teaches with today's rates
+      try {
+        var r = draft.rows.USD;
+        if (r) {
+          var sl = document.getElementById('tourSpotLine');
+          if (sl) sl.innerHTML = 'USD spot <b style="color: var(--ink);">' + fmtMid(r.mid) + '</b> \u00b7 arrives hourly, automatically';
+          var ml = document.getElementById('tourMathLine');
+          if (ml) ml.innerHTML = fmtMid(r.mid) + ' spot \u2192 we buy <b style="color: var(--ink);">' + fmtMid(r.mid * (1 - draft.buyMargin)) + '</b> \u00b7 we sell <b style="color: var(--ink);">' + fmtMid(r.mid * (1 + draft.sellMargin)) + '</b>';
+        }
+      } catch (e) {}
+      showStep(1);
+      root.hidden = false;
+    }
+    function closeTour() {
+      root.hidden = true;
+      try { localStorage.setItem(KEY_TOUR, '1'); } catch (e) {}
+    }
+    root.addEventListener('click', function (e) {
+      if (e.target.closest('[data-tour-next]')) { showStep(Math.min(4, step + 1)); return; }
+      if (e.target.closest('[data-tour-finish]')) { closeTour(); return; }
+      if (e.target.closest('[data-tour-skip]')) { closeTour(); return; }
+    });
+    var replay = document.getElementById('tourBtn');
+    if (replay) replay.addEventListener('click', openTour);
+    // first visit: show once the dashboard is actually on screen
+    var seen = null; try { seen = localStorage.getItem(KEY_TOUR); } catch (e) {}
+    if (!seen) {
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        if (isAuthed() && !dash.hidden) { clearInterval(t); openTour(); }
+        else if (tries > 40) { clearInterval(t); }
+      }, 250);
+    }
+  })();
+
 })();
