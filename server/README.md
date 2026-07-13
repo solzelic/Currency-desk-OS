@@ -71,10 +71,14 @@ LEDGER_DATABASE_URL=postgres://$USER@127.0.0.1:54329/currencydesk_ledger_test np
 # GET http://127.0.0.1:8787/api/health
 
 # actual PostgreSQL ledger integration suite
-TEST_DATABASE_URL=postgres://$USER@127.0.0.1:54329/currencydesk_ledger_test npm test -- --run tests/ledger.postgres.test.ts
+TEST_DATABASE_URL=postgres://$USER@127.0.0.1:54329/currencydesk_ledger_test npm run test:ledger:postgres
 ```
 
 The isolated cluster is development/test only. Never set these URLs to a production database. The ledger endpoints require an authenticated session, are scoped to the active workspace, and are available at `POST /api/ledger/exchanges` and `POST /api/ledger/transactions/:transactionId/reversal`.
+
+On a real `DATABASE_URL`, the same idempotent ledger SQL migration is part of
+the server's normal database bootstrap lifecycle. `ledger:migrate` remains a
+convenience command for provisioning an isolated test database.
 
 ## Next slices
 

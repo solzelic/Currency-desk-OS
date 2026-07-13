@@ -9,6 +9,8 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -18,9 +20,10 @@ export interface DbHandle {
   close(): Promise<void>;
 }
 
-// DDL applied on boot for the embedded database. Real Postgres deployments
-// should run drizzle-kit migrations instead; keeping the DDL here means dev
-// and CI need zero extra steps.
+// The base schema and ledger migration are idempotent and applied during the
+// existing database bootstrap. This keeps the production database lifecycle
+// versioned alongside the server instead of creating a separate ledger-only
+// setup path.
 const ENUM_DDL = `CREATE TYPE staff_role AS ENUM ('teller','supervisor','compliance_officer','branch_manager','administrator','auditor');`;
 
 const DDL = `
@@ -124,6 +127,7 @@ export async function createDb(): Promise<DbHandle> {
       await pool.query(ENUM_DDL);
     }
     await pool.query(DDL);
+    await pool.query(await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"));
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }
