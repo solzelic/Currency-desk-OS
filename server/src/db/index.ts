@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   board_rows jsonb NOT NULL,
   board_order jsonb,
   published_by text,
+  market_snapshot_id text,
   published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);

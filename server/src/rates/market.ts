@@ -78,7 +78,7 @@ export async function fetchMarketRates(): Promise<MarketPull> {
 
 /** Derive + publish a fresh board from market mids, preserving the newest
     staff-set margins, per-currency spreads, show flags and board order. */
-export async function publishFromMarket(db: Db, pull: MarketPull, branchId: string): Promise<string | null> {
+export async function publishFromMarket(db: Db, pull: MarketPull, branchId: string, marketSnapshotId?: string): Promise<string | null> {
   if (Object.keys(pull.mids).length === 0) return null;
   const last = await db
     .select()
@@ -108,6 +108,7 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
     boardRows: rows,
     boardOrder: prev.boardOrder,
     publishedBy: `market-sync (${pull.provider})`,
+    marketSnapshotId: marketSnapshotId ?? null,
   });
   return id;
 }
@@ -116,13 +117,14 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
 export async function syncMarketRates(db: Db, branchId: string, fetcher: () => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
   try {
     const pull = await fetcher();
+    const snapshotId = randomUUID();
     await db.insert(schema.marketRates).values({
-      id: randomUUID(),
+      id: snapshotId,
       provider: pull.provider,
       mids: pull.mids,
       providerTimestamp: pull.providerTimestamp,
     });
-    const publicationId = await publishFromMarket(db, pull, branchId);
+    const publicationId = await publishFromMarket(db, pull, branchId, snapshotId);
     return { ok: true, detail: `${Object.keys(pull.mids).length} mids from ${pull.provider}${publicationId ? ", board published" : ""}` };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };

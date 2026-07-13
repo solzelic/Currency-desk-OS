@@ -1,3 +1,4 @@
+ALTER TABLE rate_boards ADD COLUMN IF NOT EXISTS market_snapshot_id text;
 CREATE TABLE IF NOT EXISTS quotes (
   quote_id text PRIMARY KEY,
   tenant_id text NOT NULL,
@@ -19,12 +20,14 @@ CREATE TABLE IF NOT EXISTS quotes (
   spread_cad numeric(24,2) NOT NULL CHECK (spread_cad >= 0),
   rate_board_publication_id text NOT NULL,
   market_snapshot_id text,
+  rate_source_type text NOT NULL DEFAULT 'manual' CHECK (rate_source_type IN ('market_sync','manual','seed')),
   status text NOT NULL CHECK (status IN ('draft','active','expired','cancelled','posted','rejected')),
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL,
   posted_transaction_id text UNIQUE,
   supersedes_quote_id text REFERENCES quotes(quote_id)
 );
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS rate_source_type text NOT NULL DEFAULT 'manual';
 CREATE INDEX IF NOT EXISTS quotes_scope_idx ON quotes(tenant_id, legal_entity_id, branch_id, workspace_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS quote_overrides (
   override_id text PRIMARY KEY,
@@ -52,7 +55,9 @@ BEGIN
     NEW.input_amount <> OLD.input_amount OR NEW.output_amount <> OLD.output_amount OR
     NEW.market_mid <> OLD.market_mid OR NEW.customer_rate <> OLD.customer_rate OR
     NEW.fee_cad <> OLD.fee_cad OR NEW.spread_cad <> OLD.spread_cad OR
-    NEW.rate_board_publication_id <> OLD.rate_board_publication_id
+    NEW.rate_board_publication_id <> OLD.rate_board_publication_id OR
+    NEW.market_snapshot_id IS DISTINCT FROM OLD.market_snapshot_id OR
+    NEW.rate_source_type <> OLD.rate_source_type
   ) THEN RAISE EXCEPTION 'activated quote terms are immutable'; END IF;
   RETURN NEW;
 END; $$;

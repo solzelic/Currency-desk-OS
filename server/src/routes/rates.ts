@@ -45,6 +45,7 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
     order: row.boardOrder ?? undefined,
     publishedAt: row.publishedAt.getTime(),
     publishedBy: row.publishedBy ?? undefined,
+    marketSnapshotId: row.marketSnapshotId ?? undefined,
     branchId: row.branchId,
     publicationId: row.id,
   };
