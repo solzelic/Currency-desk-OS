@@ -344,6 +344,15 @@ html.embed body { background: var(--paper); }
 }
 .out.sell { color: var(--ink); font-weight: 700; }
 .out .unit { color: var(--faint); font-size: 11px; margin-left: 4px; font-weight: 400; }
+/* We Buy / We Sell are directly editable — typing a price back-computes the margin */
+.bs-input {
+  font: inherit; color: inherit; font-variant-numeric: tabular-nums;
+  width: 9ch; padding: 4px 6px; text-align: right;
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  transition: border-color .12s ease, background .12s ease;
+}
+.bs-input:hover { border-color: var(--hair); background: rgba(255,255,255,0.6); }
+.bs-input:focus { outline: none; border-color: var(--ink); background: #fff; box-shadow: 0 0 0 3px rgba(10,10,10,0.06); }
 
 /* show toggle */
 .tg {

@@ -182,8 +182,8 @@
           '<span class="sp-dot" title="Custom spread active"></span>' +
           '<span class="sp-wrap"><input class="sp-input" inputmode="decimal" data-code="' + c.code + '" placeholder="auto" aria-label="Custom spread for ' + c.code + '" /><span class="sp-pct">%</span></span>' +
         '</div>' +
-        '<div class="out buy" data-k="We buy" data-code="' + c.code + '">\u2014</div>' +
-        '<div class="out sell" data-k="We sell" data-code="' + c.code + '">\u2014</div>' +
+        '<div class="out buy" data-k="We buy" data-code="' + c.code + '"><input class="bs-input buy-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-buy price for ' + c.code + '" /><span class="unit">CAD</span></div>' +
+        '<div class="out sell" data-k="We sell" data-code="' + c.code + '"><input class="bs-input sell-input" inputmode="decimal" data-code="' + c.code + '" aria-label="We-sell price for ' + c.code + '" /><span class="unit">CAD</span></div>' +
         '<div class="tg-cell"><button class="tg" data-code="' + c.code + '" type="button">Show</button><button class="rm" data-code="' + c.code + '" type="button" title="Remove ' + c.code + ' from the board" aria-label="Remove ' + c.code + '">\u00d7</button></div>' +
       '</div>';
   }
@@ -193,8 +193,8 @@
       input: row.querySelector('.mid-input'),
       chg: row.querySelector('.chg'),
       sp: row.querySelector('.sp-input'),
-      buy: row.querySelector('.out.buy'),
-      sell: row.querySelector('.out.sell'),
+      buy: row.querySelector('.buy-input'),
+      sell: row.querySelector('.sell-input'),
       tg: row.querySelector('.tg')
     };
   }
@@ -226,6 +226,19 @@
         }
         paintRow(code, false); onChange(); return;
       }
+      var bs = e.target.closest('.bs-input');
+      if (bs) {
+        var c3 = bs.dataset.code;
+        var pv = parseFloat(bs.value.replace(/,/g, ''));
+        var mid = draft.rows[c3].mid;
+        if (!isNaN(pv) && pv > 0 && mid > 0) {
+          // implied margin from the typed price, held to a sane 0–20%
+          var sp = bs.classList.contains('buy-input') ? (mid - pv) / mid : (pv - mid) / mid;
+          sp = Math.min(0.2, Math.max(0, sp));
+          draft.rows[c3].spread = round(sp, 4);
+        }
+        paintRow(c3, false); onChange(); return;
+      }
       var si = e.target.closest('.sp-input');
       if (si) {
         var c2 = si.dataset.code;
@@ -237,7 +250,7 @@
     });
     // reformat fields on blur
     body.addEventListener('blur', function (e) {
-      var f = e.target.closest('.mid-input, .sp-input');
+      var f = e.target.closest('.mid-input, .sp-input, .bs-input');
       if (f) paintRow(f.dataset.code, true);
     }, true);
     // show / hide toggle
@@ -325,8 +338,8 @@
 
     var bsp = custom ? r.spread : draft.buyMargin;
     var ssp = custom ? r.spread : draft.sellMargin;
-    el.buy.innerHTML = fmtMid(r.mid * (1 - bsp)) + ' <span class="unit">CAD</span>';
-    el.sell.innerHTML = fmtMid(r.mid * (1 + ssp)) + ' <span class="unit">CAD</span>';
+    if (reformat || document.activeElement !== el.buy) { el.buy.value = fmtMid(r.mid * (1 - bsp)); }
+    if (reformat || document.activeElement !== el.sell) { el.sell.value = fmtMid(r.mid * (1 + ssp)); }
 
     // change arrow (feed-driven) or pinned marker (manual)
     if (r.manual) {
@@ -519,11 +532,23 @@
       return;
     }
     feedBar.classList.remove('locked');
-    var stale = now > feed.nextPull + 8000; // timer overdue (tab backgrounded) → disconnected
+    var mk = window.MARKET || null;
+    var stale = !mk && now > feed.nextPull + 8000;
     feedBar.classList.toggle('stale', stale);
-    feedLabel.textContent = stale ? 'Feed reconnecting…' : 'Feed connected · updates hourly';
-    feedLastWrap.innerHTML = 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b>';
-    feedNextWrap.innerHTML = 'Next update in <b>' + (stale ? '—' : fmtCountdown(feed.nextPull - now)) + '</b>';
+    if (mk && mk.fetchedAt) {
+      // truth: the provider is polled hourly by the server; pages check for
+      // fresh data every minute (free — our own backend, not the provider)
+      var nextProvider = mk.fetchedAt + 3600000;
+      feedLabel.textContent = 'Feed connected · provider updates hourly';
+      feedLastWrap.innerHTML = 'Provider rates as of <b>' + fmtClock(mk.fetchedAt) + '</b>';
+      feedNextWrap.innerHTML = now < nextProvider
+        ? 'Next provider update in <b>' + fmtCountdown(nextProvider - now) + '</b>'
+        : 'Provider update due <b>any moment</b>';
+    } else {
+      feedLabel.textContent = stale ? 'Feed offline — rates held' : 'Standalone mode · rates held at last values';
+      feedLastWrap.innerHTML = 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b>';
+      feedNextWrap.innerHTML = 'Live feed needs the backend';
+    }
   }
 
   function feedTick() {
@@ -680,12 +705,18 @@
     var sel = document.getElementById('rateProvider');
     if (!sel) return;
     var KEY_PROV = 'yorkfx_rate_provider';
-    var PROVIDERS = ['OANDA \u00b7 fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
-    var saved = null; try { saved = localStorage.getItem(KEY_PROV); } catch (e) {}
-    sel.innerHTML = PROVIDERS.map(function (p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
-    if (saved && PROVIDERS.indexOf(saved) === -1) { sel.insertAdjacentHTML('afterbegin', '<option value="' + saved + '">' + saved + '</option>'); }
-    sel.value = saved || PROVIDERS[0];
-    sel.addEventListener('change', function () { try { localStorage.setItem(KEY_PROV, sel.value); } catch (e) {} });
+    // the ACTIVE provider is whatever the backend actually pulls from;
+    // the rest are roadmap, shown but not selectable
+    var COMING = ['OANDA \u00b7 fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
+    function renderProviders() {
+      var activeName = (window.MARKET && window.MARKET.provider === 'openexchangerates.org')
+        ? 'Open Exchange Rates \u00b7 live'
+        : (window.MARKET && window.MARKET.provider ? window.MARKET.provider + ' \u00b7 live' : 'Open Exchange Rates');
+      sel.innerHTML = '<option value="active" selected>' + activeName + '</option>' +
+        COMING.map(function (p) { return '<option value="" disabled>' + p + ' \u2014 coming soon</option>'; }).join('');
+    }
+    renderProviders();
+    window.addEventListener('yorkfx:catalog', renderProviders);
   })();
 
   document.getElementById('resetBtn').addEventListener('click', function () {

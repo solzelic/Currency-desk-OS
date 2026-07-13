@@ -81,7 +81,7 @@
           <div class="eyebrow">Rate board</div>
           <h1>Today's rates</h1>
           <p style="font-family:var(--f-mono);font-size:12px;color:var(--muted);max-width:520px;margin:0;">
-            Set the spot rate, buy/sell margins and any per-currency spread, then publish. The customer boards and the desk read whatever you publish here. <b style="color:var(--ink)">Drag the handle</b> on any row to reorder — the top six show on your homepage, and the full order carries through to the rates page.
+            <b style="color:var(--ink)">How pricing works:</b> the <b style="color:var(--ink)">Spot</b> price streams in from your rate feed automatically — you never have to look rates up. Your profit comes from the <b style="color:var(--ink)">margin</b>: We&nbsp;Buy = spot − margin, We&nbsp;Sell = spot + margin. Set one margin for the whole board, or type directly into any row's <b style="color:var(--ink)">We Buy / We Sell</b> price — the margin adjusts itself, just like writing prices on your window board. Hit <b style="color:var(--ink)">Publish</b> and the customer boards and the desk update everywhere. <b style="color:var(--ink)">Drag the handle</b> to reorder — the top six show on your homepage.
           </p>
         </div>
         <div class="ed-actions">
@@ -168,11 +168,11 @@
         <span class="fp-label">Rate feed provided by</span>
         <div class="fp-select">
           <select id="rateProvider" aria-label="Rate feed provider">
-            <option value="oanda">OANDA · fxTrade rates</option>
+            <option value="active">Open Exchange Rates · live</option>
           </select>
           <span class="fp-chev" aria-hidden="true">▾</span>
         </div>
-        <span class="fp-note">Live spot prices stream from this provider; your spreads &amp; margins are applied on top.</span>
+        <span class="fp-note">Live spot prices refresh hourly from this provider; your margins are applied on top. More providers coming soon.</span>
       </div>
 
     </div>
