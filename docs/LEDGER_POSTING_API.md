@@ -2,6 +2,10 @@
 
 The ledger service is the authoritative backend boundary. It accepts transaction inputs, not browser-calculated totals. PostgreSQL `numeric` and `decimal.js` derive the quote, CAD valuation, spread, journal, till movements, receipt response, and audit evidence in one serializable transaction.
 
+The direct exchange endpoint is retained only for legacy/demo compatibility and
+does not apply a commercial multiplier. Production commercial pricing is
+created by the Quote Service and posted through frozen quote terms.
+
 ## Endpoints
 
 | Method | Path | Auth | Result |

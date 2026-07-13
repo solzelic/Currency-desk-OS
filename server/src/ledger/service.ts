@@ -42,7 +42,9 @@ export class LedgerService {
       if (!rates[request.from] || !rates[request.to]) throw new LedgerError("RATE_NOT_AVAILABLE", "Scoped rate missing.");
       const input = decimal(request.inputAmount, "0.01"); const fee = decimal(request.feeCad, "0");
       const rate = rates[request.to].div(rates[request.from]).toDecimalPlaces(12);
-      const inputCad = input.div(rates[request.from]).toDecimalPlaces(2); const output = input.mul(rate).mul("0.991").toDecimalPlaces(2); const outputCad = output.div(rates[request.to]).toDecimalPlaces(2); const spread = inputCad.sub(outputCad).toDecimalPlaces(2);
+      // Legacy direct posting has no commercial adjustment. Quote posting
+      // supplies frozen customer rate and spread through postFrozenQuote.
+      const inputCad = input.div(rates[request.from]).toDecimalPlaces(2); const output = input.mul(rate).toDecimalPlaces(2); const outputCad = output.div(rates[request.to]).toDecimalPlaces(2); const spread = inputCad.sub(outputCad).toDecimalPlaces(2);
       if ((inputCad.gte(3000) && customer.rows[0].id_status !== "verified") || (inputCad.gte(10000) && (!request.purpose.trim() || !request.sourceOfFunds.trim()))) throw new LedgerError("COMPLIANCE_BLOCKED", "Authoritative compliance policy blocked posting.");
       const destination = await client.query("SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE", [...scope(actor), request.to]);
       if (!destination.rowCount || new Decimal(destination.rows[0].available_amount).lt(output)) throw new LedgerError("INSUFFICIENT_TILL_LIQUIDITY", "Insufficient till liquidity.");
