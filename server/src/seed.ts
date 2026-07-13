@@ -83,7 +83,10 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
         authorizedBranchIds: [DEMO.branchId],
         passwordHash,
       })
-      .onConflictDoNothing();
+      // existing staff keep their record but the password hash tracks the
+      // current SEED_PASSWORD — so setting it in the Render dashboard takes
+      // effect on the next boot. (Interim scheme until per-employee logins.)
+      .onConflictDoUpdate({ target: schema.staffUsers.id, set: { passwordHash } });
   }
 }
 

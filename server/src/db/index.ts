@@ -117,6 +117,13 @@ export async function createDb(): Promise<DbHandle> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const pool = new pg.Pool({ connectionString: url });
+    // same idempotent bootstrap as the embedded path — a fresh managed
+    // Postgres (Neon) gets its schema on first boot, existing ones no-op
+    const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
+    if (typeExists.rows.length === 0) {
+      await pool.query(ENUM_DDL);
+    }
+    await pool.query(DDL);
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }
