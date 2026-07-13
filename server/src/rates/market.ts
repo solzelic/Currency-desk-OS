@@ -9,7 +9,7 @@
    is derived from the newest staff publication (their margins, spread
    overrides, show flags and ordering are preserved — only mids move).
    ============================================================ */
-import { desc } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -83,6 +83,7 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
   const last = await db
     .select()
     .from(schema.rateBoards)
+    .where(eq(schema.rateBoards.branchId, branchId))
     .orderBy(desc(schema.rateBoards.publishedAt))
     .limit(1);
   const prev = last[0];

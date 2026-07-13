@@ -157,6 +157,7 @@ export async function createDb(): Promise<DbHandle> {
     }
     await pool.query(DDL);
     await pool.query(await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"));
+    await pool.query(await readFile(resolve(process.cwd(), "src/db/migrations/002_quote_service.sql"), "utf8"));
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }

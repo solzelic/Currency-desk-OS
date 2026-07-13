@@ -76,6 +76,10 @@ TEST_DATABASE_URL=postgres://$USER@127.0.0.1:54329/currencydesk_ledger_test npm 
 
 The isolated cluster is development/test only. Never set these URLs to a production database. The ledger endpoints require an authenticated session, are scoped to the active workspace, and are available at `POST /api/ledger/exchanges` and `POST /api/ledger/transactions/:transactionId/reversal`.
 
+Quote endpoints use the same database lifecycle: `POST /api/quotes` creates an
+authoritative 60-second quote from the published branch board, and
+`POST /api/quotes/:quoteId/post` posts its frozen terms.
+
 On a real `DATABASE_URL`, the same idempotent ledger SQL migration is part of
 the server's normal database bootstrap lifecycle. `ledger:migrate` remains a
 convenience command for provisioning an isolated test database.

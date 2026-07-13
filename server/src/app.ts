@@ -19,6 +19,7 @@ import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
+import { registerQuoteRoutes } from "./quotes/routes.js";
 
 export async function buildApp(db: Db): Promise<FastifyInstance> {
   const app = Fastify({
@@ -36,7 +37,10 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (ledgerDatabaseUrl) registerLedgerRoutes(app, db, ledgerDatabaseUrl);
+  if (ledgerDatabaseUrl) {
+    registerLedgerRoutes(app, db, ledgerDatabaseUrl);
+    registerQuoteRoutes(app, db, ledgerDatabaseUrl);
+  }
 
   // serve the built frontend (vite build → dist) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
