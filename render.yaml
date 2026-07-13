@@ -10,7 +10,9 @@ services:
   - type: web
     name: currencydesk
     runtime: node
-    plan: starter
+    # free tier: $0, sleeps after ~15 idle minutes (~30s wake on next visit).
+    # switch to "starter" ($7/mo) for always-on once customers rely on it.
+    plan: free
     buildCommand: cd server && npm ci
     startCommand: cd server && npm start
     healthCheckPath: /api/health
