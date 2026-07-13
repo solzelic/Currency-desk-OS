@@ -1,21 +1,29 @@
-# Render blueprint — one web service serving both the API and the built
-# frontend (same origin, so session cookies need no CORS setup).
-# Connect the repo in the Render dashboard and every push to main deploys.
-# Provision Postgres separately (Neon free tier works) and set DATABASE_URL.
+# Render blueprint — one web service: the CurrencyDesk OS prototype + API,
+# same origin, auto-deployed on every push to main.
+#
+# One-time setup in the Render dashboard (each marked sync:false below):
+#   DATABASE_URL  — Neon Postgres connection string (neon.tech, free tier)
+#   OXR_APP_ID    — openexchangerates.org App ID (hourly market rates)
+#   SEED_PASSWORD — the staff sign-in password for the live site (pick a
+#                   strong one; the local-dev default is NOT used in prod)
 services:
   - type: web
     name: currencydesk
     runtime: node
     plan: starter
-    buildCommand: npm ci && npm run build && cd server && npm ci
+    buildCommand: cd server && npm ci
     startCommand: cd server && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: STATIC_DIR
-        value: ../dist
+        value: ..
+      - key: STATIC_INDEX
+        value: CurrencyDesk OS.html
       - key: DATABASE_URL
-        sync: false # paste your Neon/Postgres connection string in the dashboard
+        sync: false
       - key: OXR_APP_ID
-        sync: false # openexchangerates.org App ID (hourly market rates)
+        sync: false
+      - key: SEED_PASSWORD
+        sync: false

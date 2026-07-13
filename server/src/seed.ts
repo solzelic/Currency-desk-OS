@@ -13,7 +13,9 @@ export const DEMO = {
   legalEntityId: "le-yorkfx-canada",
   branchId: "br-yorkville",
   workspaceId: "ws-yorkville-till-01",
-  password: "yorkville",
+  // staff password for the seeded accounts: SEED_PASSWORD env in production
+  // (set it in the Render dashboard), "yorkville" for local dev only
+  password: process.env.SEED_PASSWORD ?? "yorkville",
 };
 
 export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {

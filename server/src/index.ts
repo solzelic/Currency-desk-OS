@@ -12,11 +12,10 @@ import { buildApp } from "./app.js";
 import { syncMarketRates } from "./rates/market.js";
 
 const handle = await createDb();
-// dev convenience: embedded DB is seeded on boot; against real Postgres
-// (DATABASE_URL) seeding is an explicit `npm run seed`.
-if (!process.env.DATABASE_URL) {
-  await seed(handle.db);
-}
+// seed on every boot — it's idempotent (onConflictDoNothing throughout), so
+// an empty database gets the demo tenant/staff/board and an existing one is
+// untouched. First boot on Render provisions Neon automatically this way.
+await seed(handle.db);
 
 const app = await buildApp(handle.db);
 const port = Number(process.env.PORT ?? 8787);
