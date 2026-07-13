@@ -47,7 +47,7 @@ describe("rate board", () => {
   });
 
   it("rejects publishing from a teller (no rates:change permission)", async () => {
-    const cookies = await loginAs("a.singh");
+    const cookies = await loginAs("m.costa");
     const res = await app.inject({
       method: "POST",
       url: "/api/rates/publish",

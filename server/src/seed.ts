@@ -36,9 +36,12 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     .onConflictDoNothing();
 
   const staff = [
+    // matches the prototype's demo directory (cdos-os.jsx employees)
     { staffId: "j.masri", name: "J. Masri", role: "administrator" as const },
     { staffId: "r.haddad", name: "R. Haddad", role: "branch_manager" as const },
-    { staffId: "a.singh", name: "A. Singh", role: "teller" as const },
+    { staffId: "a.singh", name: "A. Singh", role: "supervisor" as const },
+    { staffId: "m.costa", name: "M. Costa", role: "teller" as const },
+    { staffId: "s.iqbal", name: "S. Iqbal", role: "teller" as const },
   ];
   // initial rate board publication — factory rates from the prototype's
   // converter (yorkfx-converter.js CUR list). perCad = units per 1 CAD;

@@ -137,13 +137,15 @@
     const submit = async (e) => {
       e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; }
       const rec = resolve(u); if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
-      // backend bridge: establish a real session (server/) when the API is up;
-      // the demo flow continues regardless so the prototype still works standalone
+      // backend auth: when the API is reachable it is the door — a rejected
+      // password stops sign-in. Standalone (no backend at all) keeps the
+      // offline demo flow so the prototype still works from a static server.
       try {
-        await fetch('/api/auth/login', {
+        const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId: rec.code || rec.name, password: p || 'yorkville' }),
         });
+        if (res && res.status === 401) { setErr('Wrong password for this staff ID.'); return; }
       } catch (_) { /* no backend running — standalone demo */ }
       onNext(rec);
     };
@@ -158,7 +160,7 @@
         <button className="go" type="submit">Continue →</button>
       </form>
       <div className="lock-hint" style={{ textAlign: 'left' }}>
-        <div style={{ marginBottom: 7 }}>Demo directory — any password works. Each ID routes differently:</div>
+        <div style={{ marginBottom: 7 }}>Staff directory — each ID routes to its own workspace:</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
           {dir.map(e => (
             <button key={e.code || e.name} type="button" onClick={() => { setU(e.code || e.name); setErr(''); }}

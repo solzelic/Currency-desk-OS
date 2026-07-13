@@ -43,7 +43,7 @@ describe("auth", () => {
     const body = res.json();
     expect(body.user).toMatchObject({
       id: "a.singh",
-      role: "teller",
+      role: "supervisor",
       tenantId: DEMO.tenantId,
       legalEntityId: DEMO.legalEntityId,
       branchId: DEMO.branchId,
