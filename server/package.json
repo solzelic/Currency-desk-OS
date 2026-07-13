@@ -9,7 +9,10 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "ledger:migrate": "tsx src/ledger/migrate.ts",
+    "ledger:seed": "tsx src/ledger/seed.ts",
+    "test:ledger:postgres": "vitest run tests/ledger.postgres.test.ts tests/ledger.routes.postgres.test.ts"
   },
   "engines": {
     "node": ">=22"
@@ -18,6 +21,7 @@
     "@electric-sql/pglite": "^0.2.17",
     "@fastify/cookie": "^11.0.2",
     "@fastify/static": "^10.1.0",
+    "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.38.4",
     "fastify": "^5.2.1",
     "pg": "^8.13.1",

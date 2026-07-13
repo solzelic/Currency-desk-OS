@@ -14,6 +14,7 @@ import path from "node:path";
 import type { Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerRatesRoutes } from "./routes/rates.js";
+import { registerLedgerRoutes } from "./ledger/routes.js";
 
 export async function buildApp(db: Db): Promise<FastifyInstance> {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
@@ -22,6 +23,8 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));
   registerAuthRoutes(app, db);
   registerRatesRoutes(app, db);
+  const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (ledgerDatabaseUrl) registerLedgerRoutes(app, db, ledgerDatabaseUrl);
 
   // serve the built frontend (vite build → dist) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
