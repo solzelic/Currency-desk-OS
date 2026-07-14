@@ -124,6 +124,48 @@
     const [navQ, setNavQ] = useState('');
     const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
     const [revealPin, setRevealPin] = useState({});   // owner-revealed PINs by employee id
+    // ---- server sign-in accounts (per-employee credentials) ----
+    const [srvStaff, setSrvStaff] = useState(null);       // staffId → server account
+    const [srvState, setSrvState] = useState('loading');  // loading | ok | offline | forbidden
+    const [srvPw, setSrvPw] = useState('');               // temp-password draft in the open profile
+    const [srvMsg, setSrvMsg] = useState('');
+    const [srvBusy, setSrvBusy] = useState(false);
+    const [pwForm, setPwForm] = useState(null);           // my own password change {cur,a,b,msg,busy}
+    const SRV_ROLE = { 'Owner': 'administrator', 'Manager': 'branch_manager', 'Senior teller': 'supervisor', 'Cashier': 'teller', 'Trainee': 'teller' };
+    const srvReload = () => {
+      if (typeof fetch !== 'function' || window.location.protocol === 'file:') { setSrvState('offline'); return; }
+      fetch('/api/staff', { credentials: 'same-origin' })
+        .then(r => { if (r.status === 401 || r.status === 403) { setSrvState('forbidden'); return null; } if (!r.ok) { setSrvState('offline'); return null; } return r.json(); })
+        .then(d => { if (!d) return; const m = {}; (d.staff || []).forEach(a => { m[a.staffId] = a; }); setSrvStaff(m); setSrvState('ok'); })
+        .catch(() => setSrvState('offline'));
+    };
+    useEffect(() => { srvReload(); }, []);
+    useEffect(() => { setSrvPw(''); setSrvMsg(''); setSrvBusy(false); }, [empSel]);
+    const srvCall = async (method, url, body) => {
+      const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: body ? JSON.stringify(body) : undefined });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((d && (d.detail || d.error)) || ('HTTP ' + res.status));
+      return d;
+    };
+    // blocking or removing a person locally also shuts their server sign-in
+    const srvSetActive = (code, active) => {
+      const sid = (code || '').trim(); if (!sid || !srvStaff || !srvStaff[sid]) return;
+      srvCall('PATCH', '/api/staff/' + encodeURIComponent(sid), { active }).then(srvReload).catch(() => {});
+    };
+    const changeMyPassword = async () => {
+      if (!pwForm) return;
+      if (pwForm.a.length < 8) { setPwForm(f => ({ ...f, msg: 'New password needs at least 8 characters.' })); return; }
+      if (pwForm.a !== pwForm.b) { setPwForm(f => ({ ...f, msg: 'The two new entries don\u2019t match.' })); return; }
+      setPwForm(f => ({ ...f, busy: true, msg: 'Saving\u2026' }));
+      try {
+        const res = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ currentPassword: pwForm.cur, newPassword: pwForm.a }) });
+        if (res.status === 401) { setPwForm(f => ({ ...f, busy: false, msg: 'Current password is wrong.' })); return; }
+        if (!res.ok) { setPwForm(f => ({ ...f, busy: false, msg: 'Couldn\u2019t save (' + res.status + ') \u2014 try again.' })); return; }
+      } catch (e2) { setPwForm(f => ({ ...f, busy: false, msg: 'Server unreachable \u2014 password changes need the live desk.' })); return; }
+      log('Password changed', 'sign-in password');
+      setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
+      setTimeout(() => setPwForm(null), 1600);
+    };
     const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity reset demo name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
     // №02: the explicit, deliberate demo wipe — replaces "refresh" as the reset.
@@ -328,6 +370,25 @@
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>A 4-digit PIN for quick in-app checks (switching accounts, taking a till, voiding). Separate from your sign-in password. Everyone starts at 0000.</div></div>
               <div className="flex-1 flex justify-end">{myEmp ? <PinSetter hasPin={!!myEmp.pin} current={myEmp.pin} onSave={setMyPin} /> : <span className="text-[11px]" style={{ color: CD.faint }}>Available once your account is set up</span>}</div>
+            </div>
+            <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>What you type at the staff sign-in. Only you know it — changing it signs out your other devices.</div></div>
+              <div className="flex-1 flex justify-end">
+                {!pwForm ? (
+                  <button onClick={() => setPwForm({ cur: '', a: '', b: '', msg: '', busy: false })} className="text-xs px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Change password…</button>
+                ) : (
+                  <div className="w-full" style={{ maxWidth: 300 }}>
+                    <input type="password" autoComplete="current-password" value={pwForm.cur} onChange={ev => setPwForm(f => ({ ...f, cur: ev.target.value }))} placeholder="Current password" className="w-full text-[12px] px-2.5 py-1.5 outline-none mb-1.5" style={inSty} />
+                    <input type="password" autoComplete="new-password" value={pwForm.a} onChange={ev => setPwForm(f => ({ ...f, a: ev.target.value }))} placeholder="New password · min 8 chars" className="w-full text-[12px] px-2.5 py-1.5 outline-none mb-1.5" style={inSty} />
+                    <input type="password" autoComplete="new-password" value={pwForm.b} onChange={ev => setPwForm(f => ({ ...f, b: ev.target.value }))} placeholder="Repeat new password" className="w-full text-[12px] px-2.5 py-1.5 outline-none mb-1.5" style={inSty} />
+                    {pwForm.msg && <div className="text-[11px] mb-1.5" style={{ color: pwForm.msg === 'Password changed.' ? CD.green : CD.flag }}>{pwForm.msg}</div>}
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setPwForm(null)} className="text-xs px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.mute }}>Cancel</button>
+                      <button disabled={pwForm.busy} onClick={changeMyPassword} className="text-xs px-2.5 py-1.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 7, opacity: pwForm.busy ? 0.5 : 1 }}>Save</button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <Row title="Two-step verification" desc="Require an SMS code when you sign in."><Sw on={myProf.twoFA !== false} click={() => setProf('twoFA', !(myProf.twoFA !== false))} /></Row>
             <Row title="Ask for my PIN before a void" desc="Extra confirmation before reversing a record."><Sw on={!!myProf.pinOnVoid} click={() => setProf('pinOnVoid', !myProf.pinOnVoid)} /></Row>
@@ -748,6 +809,65 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </>)}
 
               <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
+              {(() => {
+                const sid = (e.code || '').trim();
+                const acct = sid && srvStaff ? srvStaff[sid] : null;
+                const doCreate = () => {
+                  if (srvPw.length < 8) { setSrvMsg('Temporary password needs at least 8 characters.'); return; }
+                  setSrvBusy(true); setSrvMsg('');
+                  srvCall('POST', '/api/staff', { staffId: sid, name: e.name, role: SRV_ROLE[e.role] || 'teller', password: srvPw })
+                    .then(() => { log('Sign-in created', e.name + ' \u00b7 ' + sid); setSrvPw(''); srvReload(); })
+                    .catch(err => setSrvMsg(String(err.message || err)))
+                    .then(() => setSrvBusy(false));
+                };
+                const doReset = () => {
+                  if (srvPw.length < 8) { setSrvMsg('Temporary password needs at least 8 characters.'); return; }
+                  setSrvBusy(true); setSrvMsg('');
+                  srvCall('POST', '/api/staff/' + encodeURIComponent(sid) + '/password', { password: srvPw })
+                    .then(() => { log('Password reset', e.name + ' \u00b7 temporary issued'); setSrvPw(''); srvReload(); })
+                    .catch(err => setSrvMsg(String(err.message || err)))
+                    .then(() => setSrvBusy(false));
+                };
+                const doToggle = () => {
+                  setSrvBusy(true); setSrvMsg('');
+                  srvCall('PATCH', '/api/staff/' + encodeURIComponent(sid), { active: !acct.active })
+                    .then(() => { log(acct.active ? 'Sign-in disabled' : 'Sign-in enabled', e.name + ' \u00b7 ' + sid); srvReload(); })
+                    .catch(err => setSrvMsg(String(err.message || err)))
+                    .then(() => setSrvBusy(false));
+                };
+                return (
+                  <div className="p-3 mb-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium" style={{ color: CD.ink }}>Sign-in password</div>
+                        <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>
+                          {srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' :
+                            srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' :
+                            srvState === 'loading' ? 'Checking the server…' :
+                            !sid ? 'Give them a Staff ID above first — that’s their username.' :
+                            !acct ? 'No server account yet — issue a temporary password and hand it to them privately.' :
+                            !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' :
+                            acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' :
+                            'Password set by the employee — only they know it. Reset issues a new temporary one.'}
+                        </div>
+                      </div>
+                      {acct && <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: acct.active ? CD.greenSoft : CD.flagSoft, color: acct.active ? CD.green : CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{acct.active ? (acct.mustChangePassword ? 'TEMP ISSUED' : 'ACTIVE') : 'DISABLED'}</span>}
+                    </div>
+                    {srvState === 'ok' && sid && (
+                      <div className="flex items-center gap-2 mt-2.5" style={{ opacity: srvBusy ? 0.5 : 1, pointerEvents: srvBusy ? 'none' : 'auto' }}>
+                        <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
+                        {!acct
+                          ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Create sign-in</button>
+                          : (<React.Fragment>
+                              <button onClick={doReset} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reset password</button>
+                              <button onClick={doToggle} className="text-[11.5px] px-2.5 py-1.5 flex-none" style={{ border: `1px solid ${acct.active ? CD.flagSoft : CD.line}`, background: acct.active ? CD.flagSoft : 'transparent', color: acct.active ? CD.flag : CD.ink, borderRadius: 8 }}>{acct.active ? 'Disable' : 'Enable'}</button>
+                            </React.Fragment>)}
+                      </div>
+                    )}
+                    {srvMsg && <div className="text-[11px] mt-1.5" style={{ color: CD.flag }}>{srvMsg}</div>}
+                  </div>
+                );
+              })()}
             <Row title="Transaction PIN" desc="The 4-digit PIN this person enters to sign in and confirm sensitive actions. Everyone starts at 0000."><span className="flex items-center gap-2.5">
                 <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{revealPin[e.id] ? (e.pin || '0000') : '••••'}</span>
                 <button onClick={() => setRevealPin(m => ({ ...m, [e.id]: !m[e.id] }))} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.mute }}>{revealPin[e.id] ? 'Hide' : 'Reveal'}</button>
@@ -757,8 +877,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
               <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
                 {isOwner ? <span className="text-[11px]" style={{ color: CD.faint }}>The owner account can’t be blocked or removed here.</span> : (<>
-                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`)} /> Block this account</label>
-                  <button onClick={() => { removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
+                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => { setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`); srvSetActive(e.code, blocked); }} /> Block this account</label>
+                  <button onClick={() => { srvSetActive(e.code, false); removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
                 </>)}
               </div>
             </div>);

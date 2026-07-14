@@ -1,19 +1,22 @@
 /* ============================================================
    Auth routes
-     POST /api/auth/login   { staffId, password } → session cookie + user
-     POST /api/auth/logout  → revokes the session
-     GET  /api/auth/me      → current user + scope (or 401)
+     POST /api/auth/login            { staffId, password } → session cookie + user
+     POST /api/auth/logout           → revokes the session
+     GET  /api/auth/me               → current user + scope (or 401)
+     POST /api/auth/change-password  { currentPassword, newPassword }
+       — self-service; proves the current password, clears the
+         must-change flag, and revokes every OTHER session.
    Login answers are deliberately uniform ("invalid credentials")
    so staff IDs can't be enumerated; every attempt is audited.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { verifyPassword } from "../auth/password.js";
-import { createSession, resolveSession, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
+import { createSession, resolveSession, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { audit } from "../audit.js";
 
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -23,17 +26,10 @@ const loginBody = z.object({
   tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
 });
 
-async function audit(db: Db, e: { tenantId: string; legalEntityId: string; branchId: string; actorId?: string | null; action: string; detail?: Record<string, unknown> }) {
-  await db.insert(schema.auditEvents).values({
-    id: randomUUID(),
-    tenantId: e.tenantId,
-    legalEntityId: e.legalEntityId,
-    branchId: e.branchId,
-    actorId: e.actorId ?? null,
-    action: e.action,
-    detail: e.detail ?? {},
-  });
-}
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(512),
+  newPassword: z.string().min(8, "password: at least 8 characters").max(512),
+});
 
 export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   const cookieOpts = {
@@ -82,8 +78,35 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         legalEntityId: user.legalEntityId,
         branchId: user.branchId,
         authorizedBranchIds: user.authorizedBranchIds,
+        mustChangePassword: user.mustChangePassword,
       },
     };
+  });
+
+  app.post("/api/auth/change-password", async (req, reply) => {
+    const token = req.cookies[SESSION_COOKIE];
+    const who = await resolveSession(db, token);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const parsed = changePasswordBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+
+    const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1);
+    const user = rows[0];
+    if (!user) return reply.code(401).send({ error: "unauthenticated" });
+    const ok = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
+    if (!ok) {
+      await audit(db, { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id, action: "auth.password_change_failed" });
+      return reply.code(401).send({ error: "invalid_credentials" });
+    }
+
+    await db
+      .update(schema.staffUsers)
+      .set({ passwordHash: await hashPassword(parsed.data.newPassword), mustChangePassword: false, passwordUpdatedAt: new Date() })
+      .where(eq(schema.staffUsers.id, who.id));
+    // new password invalidates every other device; this session stays alive
+    await revokeAllSessions(db, who.id, token);
+    await audit(db, { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id, action: "auth.password_changed" });
+    return { ok: true };
   });
 
   app.post("/api/auth/logout", async (req, reply) => {
@@ -109,6 +132,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         legalEntityId: who.legalEntityId,
         branchId: who.branchId,
         authorizedBranchIds: who.authorizedBranchIds,
+        mustChangePassword: who.mustChangePassword,
       },
     };
   });

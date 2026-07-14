@@ -69,10 +69,14 @@ CREATE TABLE IF NOT EXISTS staff_users (
   role staff_role NOT NULL,
   authorized_branch_ids jsonb NOT NULL DEFAULT '[]',
   password_hash text NOT NULL,
+  must_change_password boolean NOT NULL DEFAULT false,
+  password_updated_at timestamptz,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS staff_tenant_staffid_idx ON staff_users(tenant_id, staff_id);
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS password_updated_at timestamptz;
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

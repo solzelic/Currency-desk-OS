@@ -6,7 +6,7 @@
    individually revocable the moment someone is let go.
    ============================================================ */
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 
@@ -31,6 +31,7 @@ export interface SessionUser {
   legalEntityId: string;
   branchId: string;
   authorizedBranchIds: string[];
+  mustChangePassword: boolean;
 }
 
 export async function resolveSession(db: Db, token: string | undefined): Promise<SessionUser | null> {
@@ -60,6 +61,7 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
     legalEntityId: u.legalEntityId,
     branchId: u.branchId,
     authorizedBranchIds: u.authorizedBranchIds,
+    mustChangePassword: u.mustChangePassword,
   };
 }
 
@@ -69,4 +71,16 @@ export async function revokeSession(db: Db, token: string | undefined): Promise<
     .update(schema.sessions)
     .set({ revokedAt: new Date() })
     .where(eq(schema.sessions.tokenHash, sha256(token)));
+}
+
+/* Kill every live session a person holds — the moment a password is reset or
+   an account is deactivated, existing logins stop working everywhere.
+   `keepToken` preserves the caller's own session (self-service password change). */
+export async function revokeAllSessions(db: Db, userId: string, keepToken?: string): Promise<void> {
+  const conds = [eq(schema.sessions.userId, userId), isNull(schema.sessions.revokedAt)];
+  if (keepToken) conds.push(ne(schema.sessions.tokenHash, sha256(keepToken)));
+  await db
+    .update(schema.sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(...conds));
 }

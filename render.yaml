@@ -4,8 +4,13 @@
 # One-time setup in the Render dashboard (each marked sync:false below):
 #   DATABASE_URL  — Neon Postgres connection string (neon.tech, free tier)
 #   OXR_APP_ID    — openexchangerates.org App ID (hourly market rates)
-#   SEED_PASSWORD — the staff sign-in password for the live site (pick a
-#                   strong one; the local-dev default is NOT used in prod)
+#   SEED_PASSWORD — FIRST-BOOT bootstrap only: the initial password for the
+#                   seeded accounts when the database is brand new. Once
+#                   accounts exist, passwords are per-employee and managed
+#                   in-app (Settings → Employees); this var is ignored.
+#   RESET_STAFF_PASSWORD — break-glass, normally UNSET. "staffId:newpassword"
+#                   resets that one account at boot (audited, temporary
+#                   password). Remove it right after signing back in.
 services:
   - type: web
     name: currencydesk

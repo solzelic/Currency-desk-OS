@@ -136,21 +136,37 @@
     const resolve = (raw) => { const q = raw.trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
     const submit = async (e) => {
       e.preventDefault(); if (!u.trim()) { setErr('Enter your staff ID.'); return; }
-      const rec = resolve(u); if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
-      // backend auth: when the API is reachable it is the door — a rejected
-      // password stops sign-in. Standalone (no backend at all) keeps the
-      // offline demo flow so the prototype still works from a static server.
+      let rec = resolve(u);
+      if (!p) { setErr('Enter your password.'); return; }
+      // backend auth: when the API is reachable it is the door — each person
+      // signs in with their OWN password (set by a manager in Settings →
+      // Employees). Standalone (no backend at all) keeps the offline demo
+      // flow so the prototype still works from a static server.
       setErr('Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)');
+      let mustChange = false;
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
-          body: JSON.stringify({ staffId: rec.code || rec.name, password: p || 'yorkville' }),
+          body: JSON.stringify({ staffId: rec ? (rec.code || rec.name) : u.trim().toLowerCase(), password: p }),
         });
-        if (res && res.status === 401) { setErr('Wrong password for ' + (rec.code || rec.name) + '. Check it and try again.'); return; }
+        if (res && res.status === 401) { setErr('Wrong staff ID or password' + (rec ? ' for ' + (rec.code || rec.name) : '') + '. Check both and try again \u2014 or ask a manager to reset your password.'); return; }
         if (res && !res.ok) { setErr('Sign-in service error (' + res.status + ') \u2014 try again in a moment.'); return; }
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          mustChange = !!(data && data.user && data.user.mustChangePassword);
+          // the server vouches for this person even when this device's local
+          // directory doesn't know them yet (account created on another
+          // terminal) — adopt a local record so the OS can route them
+          if (!rec && data && data.user) {
+            const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+            rec = { id: 'e_' + Date.now(), code: data.user.id, name: data.user.name || data.user.id, role: SRV2OS[data.user.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+          }
+        }
       } catch (_) { /* no backend at all — standalone demo continues */ }
+      if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
       setErr('');
-      onNext(rec);
+      // a manager-issued temporary password must be replaced before the desk opens
+      onNext(rec, mustChange ? { current: p } : null);
     };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
@@ -172,6 +188,41 @@
             </button>))}
         </div>
       </div>
+    </div></div>);
+  }
+
+  /* ====================== FIRST-SIGN-IN PASSWORD ======================
+     A manager-issued password is temporary: the server flags it
+     (mustChangePassword) and the desk won't open until the person picks
+     their own. The change also signs out every other device. */
+  function SetPassword({ staffId, current, onDone, onBack }) {
+    const [a, setA] = useState(''); const [b, setB] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+    const submit = async (e) => {
+      e.preventDefault();
+      if (a.length < 8) { setErr('Pick at least 8 characters.'); return; }
+      if (a !== b) { setErr('The two entries don\u2019t match \u2014 type the same password twice.'); return; }
+      setBusy(true); setErr('Saving\u2026');
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ currentPassword: current, newPassword: a }),
+        });
+        if (!res.ok) { setErr('Couldn\u2019t save the new password (' + res.status + ') \u2014 try again.'); setBusy(false); return; }
+      } catch (_) { setErr('Network error \u2014 try again in a moment.'); setBusy(false); return; }
+      setErr(''); onDone();
+    };
+    return (<div id="lock"><div className="lock-card">
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">First sign-in</span></div>
+      <h1>Set your own password</h1>
+      <div className="station">The password you signed in with was temporary — pick your own to continue. Only you will know it.</div>
+      <form onSubmit={submit}>
+        <div><div className="lbl">New password</div><input type="password" value={a} onChange={e => setA(e.target.value)} placeholder="at least 8 characters" autoComplete="new-password" autoFocus /></div>
+        <div><div className="lbl">Repeat it</div><input type="password" value={b} onChange={e => setB(e.target.value)} placeholder="••••••••" autoComplete="new-password" /></div>
+        <div className="lock-err">{err}</div>
+        <button className="go" type="submit" disabled={busy} style={{ opacity: busy ? 0.5 : 1 }}>Save &amp; continue →</button>
+      </form>
+      <div className="lock-hint">Signed in as <b>{staffId}</b>. Changing the password signs out every other device on this account.</div>
+      <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back</button>
     </div></div>);
   }
 
@@ -376,6 +427,7 @@
     const [stage, setStage] = useState('lock');
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
+    const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
     const [me, setMe] = useState(STAFF[0]);
 
     // №02 (Roadmap v2): the book + client roster persist like every other store.
@@ -1040,7 +1092,8 @@
       return id === 'rates'; // basic — rate board only
     };
 
-    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec) => { setUser(rec.code || rec.name); setAuthRec(rec); setStage('otp'); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec, temp) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={() => { setPwTemp(null); setStage('otp'); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
     if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
     if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('otp')} onPick={(st) => { setStation(st); enterDesktop(); }} />;

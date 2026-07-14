@@ -1,9 +1,11 @@
 /* ============================================================
    Demo seed — mirrors src/domain/seed.ts on the frontend
    (Yorkville Desk, till-01, j.masri / r.haddad / a.singh) so the
-   two sides agree on day one. Demo password for every account:
-   "yorkville" (dev only — replace before anything real).
-   Idempotent: safe to run repeatedly.
+   two sides agree on day one.
+   Idempotent: safe to run repeatedly. Passwords are per-employee
+   and managed in-app (Settings → Employees); the seed password is
+   only the FIRST-BOOT bootstrap for a brand-new database and never
+   touches existing accounts.
    ============================================================ */
 import { createDb, schema } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
@@ -13,8 +15,9 @@ export const DEMO = {
   legalEntityId: "le-yorkfx-canada",
   branchId: "br-yorkville",
   workspaceId: "ws-yorkville-till-01",
-  // staff password for the seeded accounts: SEED_PASSWORD env in production
-  // (set it in the Render dashboard), "yorkville" for local dev only
+  // first-boot bootstrap password for a brand-new database only —
+  // SEED_PASSWORD env if set, "yorkville" for local dev. Once accounts
+  // exist their passwords are individual and this value is ignored.
   password: process.env.SEED_PASSWORD ?? "yorkville",
 };
 
@@ -86,10 +89,9 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
         authorizedBranchIds: [DEMO.branchId],
         passwordHash,
       })
-      // existing staff keep their record but the password hash tracks the
-      // current SEED_PASSWORD — so setting it in the Render dashboard takes
-      // effect on the next boot. (Interim scheme until per-employee logins.)
-      .onConflictDoUpdate({ target: schema.staffUsers.id, set: { passwordHash } });
+      // per-employee credentials: never touch an existing account — passwords
+      // are set and reset in-app by managers, not by the environment
+      .onConflictDoNothing();
   }
 }
 

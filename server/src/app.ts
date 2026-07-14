@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerStaffRoutes } from "./routes/staff.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
 
@@ -22,6 +23,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
 
   app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));
   registerAuthRoutes(app, db);
+  registerStaffRoutes(app, db);
   registerRatesRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   if (ledgerDatabaseUrl) registerLedgerRoutes(app, db, ledgerDatabaseUrl);

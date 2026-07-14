@@ -77,6 +77,10 @@ export const staffUsers = pgTable(
     role: staffRole("role").notNull(),
     authorizedBranchIds: jsonb("authorized_branch_ids").$type<string[]>().notNull().default([]),
     passwordHash: text("password_hash").notNull(),
+    // true while the password is a manager-issued temporary — the person is
+    // forced to pick their own at next sign-in
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    passwordUpdatedAt: timestamp("password_updated_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
