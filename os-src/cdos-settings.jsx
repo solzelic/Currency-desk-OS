@@ -183,6 +183,27 @@
         .then(d => { if (d && d.tenant) { setSiteInfo(d.tenant); setSiteDraft(d.tenant.siteDomain || ''); } })
         .catch(() => {});
     }, []);
+    const [pubHours, setPubHours] = useState([{ days: 'Mon\u2013Fri', hours: '9:30am\u20136:00pm' }, { days: 'Sat\u2013Sun & holidays', hours: '10:00am\u20135:00pm' }]);
+    const [pubMsg, setPubMsg] = useState('');
+    const [pubBusy, setPubBusy] = useState(false);
+    useEffect(() => { if (siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.hours) && siteInfo.siteConfig.hours.length) setPubHours(siteInfo.siteConfig.hours); }, [siteInfo && siteInfo.siteConfig && siteInfo.siteConfig.updatedAt]);
+    const publishSiteConfig = () => {
+      setPubBusy(true); setPubMsg('');
+      const body = { siteConfig: {
+        phone: settings.bizPhone || '', email: settings.bizEmail || '',
+        address: settings.bizAddress || '', city: settings.bizCity || '', region: settings.bizRegion || '', postal: settings.bizPostal || '',
+        hours: pubHours.filter(h => h.days.trim() && h.hours.trim()),
+      } };
+      fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
+        .then(async r => {
+          const d = await r.json().catch(() => null);
+          if (r.ok) { setSiteInfo(d.tenant ? { ...siteInfo, ...d.tenant } : siteInfo); setPubMsg('Published \u2014 the site shows this now.'); log('Public site', 'contact & hours published'); }
+          else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');
+          else setPubMsg((d && d.detail) || 'Couldn\u2019t publish (' + r.status + ').');
+        })
+        .catch(() => setPubMsg('Server unreachable \u2014 publish from the live desk.'))
+        .then(() => setPubBusy(false));
+    };
     const saveSiteDomain = () => {
       const domain = siteDraft.trim().toLowerCase() || null;
       setSiteBusy(true); setSiteMsg('');
@@ -998,6 +1019,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   </div>
                 </Field>
                 {siteInfo.siteDomain && <div className="text-[11px] mt-1.5" style={{ color: CD.green }}>Connected: <b style={{ fontFamily: 'Space Mono, monospace' }}>{siteInfo.siteDomain}</b> serves your site the moment DNS points here.</div>}
+                <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                  <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Contact & hours shown on the site</div>
+                  <div className="text-[10.5px] mb-2" style={{ color: CD.faint }}>Phone, email and address come from the business profile above. Set the hours here, then publish — the site updates immediately.</div>
+                  {pubHours.map((h, i) => (
+                    <div key={i} className="flex items-center gap-2 mb-1.5">
+                      <input value={h.days} onChange={ev => setPubHours(list => list.map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, width: 180 }} />
+                      <input value={h.hours} onChange={ev => setPubHours(list => list.map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={inSty} />
+                      <button onClick={() => setPubHours(list => list.filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 6, color: CD.faint }}>×</button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 mt-2">
+                    <button onClick={() => setPubHours(list => [...list, { days: '', hours: '' }])} className="text-[11px] px-2.5 py-1.5" style={{ border: `1px dashed ${CD.line}`, borderRadius: 7, color: CD.mute }}>+ Add hours row</button>
+                    <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold ml-auto" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact & hours →</button>
+                  </div>
+                  {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</div>}
+                  {pubMsg && <div className="text-[11px] mt-1.5" style={{ color: pubMsg.startsWith('Published') ? CD.green : CD.flag }}>{pubMsg}</div>}
+                </div>
                 {siteMsg && <div className="text-[11px] mt-1.5" style={{ color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag }}>{siteMsg}</div>}
               </div>
             );

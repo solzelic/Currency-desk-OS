@@ -27,8 +27,22 @@ export const tenants = pgTable("tenants", {
   // same site at their root (see src/sites.ts)
   siteSlug: text("site_slug"),
   siteDomain: text("site_domain"),
+  // public storefront content the OS publishes: contact + hours the site
+  // hydrates from — one source of truth for every shop we host
+  siteConfig: jsonb("site_config").$type<SiteConfig>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export interface SiteConfig {
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  region?: string;
+  postal?: string;
+  hours?: { days: string; hours: string }[];
+  updatedAt?: string;
+}
 
 export type TenantPlan = "basic" | "pro" | "premium";
 export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
@@ -153,6 +167,32 @@ export const marketRates = pgTable(
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("market_rates_fetched_idx").on(t.fetchedAt)],
+);
+
+/* SMS rate-hold quotes — a site visitor asks for a rate by text; the
+   server prices it off the newest published board and HOLDS it for 30
+   minutes. Status walks held → confirmed | expired | cancelled; expiry
+   is computed on read, no scheduler needed. */
+export const rateQuotes = pgTable(
+  "rate_quotes",
+  {
+    id: text("id").primaryKey(),                    // customer-facing ref, "Q-4821"
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    phone: text("phone").notNull(),                 // normalized +E.164
+    name: text("name"),
+    haveCcy: text("have_ccy").notNull(),
+    wantCcy: text("want_ccy").notNull(),
+    haveAmount: doublePrecision("have_amount").notNull(),
+    quotedRate: doublePrecision("quoted_rate").notNull(),   // want per 1 have
+    receiveAmount: doublePrecision("receive_amount").notNull(),
+    status: text("status").notNull().default("held"),
+    smsStatus: text("sms_status").notNull().default("simulated"),
+    smsText: text("sms_text").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("rate_quotes_tenant_idx").on(t.tenantId, t.createdAt)],
 );
 
 // append-only security audit (mirrors src/security/audit.ts event shape)

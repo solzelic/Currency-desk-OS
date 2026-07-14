@@ -40,6 +40,12 @@ export async function refreshSiteDomains(db: Db): Promise<void> {
   }
 }
 
+/* which site does this Host header belong to? (custom-domain visitors) */
+export function siteSlugForHost(host: string | undefined): string | null {
+  if (!host) return null;
+  return siteDomains.get(host.toLowerCase().split(":")[0]!.replace(/^www\./, "")) ?? null;
+}
+
 /* sync — used by Fastify's rewriteUrl, which runs before routing */
 export function rewriteHostToSite(host: string | undefined, url: string): string {
   if (!host) return url;

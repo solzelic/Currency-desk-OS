@@ -47,15 +47,15 @@
       <div class="addr-rows">
         <div class="addr-row">
           <span class="k">Address</span>
-          <span class="v">69 Yorkville Ave, Unit 102<br />Toronto, ON M5R 1B8</span>
+          <span class="v" data-site="address">69 Yorkville Ave, Unit 102<br />Toronto, ON M5R 1B8</span>
         </div>
         <div class="addr-row">
           <span class="k">Hours</span>
-          <span class="v">Mon–Fri 9:30am–6:00pm<br />Sat–Sun &amp; holidays 10:00am–5:00pm</span>
+          <span class="v" data-site="hours">Mon–Fri 9:30am–6:00pm<br />Sat–Sun &amp; holidays 10:00am–5:00pm</span>
         </div>
         <div class="addr-row">
           <span class="k">Contact</span>
-          <span class="v">647-349-0980 · yorkfx.com</span>
+          <span class="v" data-site="contact">647-349-0980 · yorkfx.com</span>
         </div>
         <div class="addr-row">
           <span class="k">Getting here</span>
@@ -68,21 +68,27 @@
     </div>
 
     <aside class="lead reveal" id="quote">
-      <h3>Get a live quote — no obligation</h3>
-      <p class="hint">Tell us what you're exchanging and we'll come back with a rate the banks won't match.</p>
-      <form onsubmit="event.preventDefault(); this.querySelector('button').textContent='Sent — we\u2019ll be in touch';">
+      <h3>Text me today's rate — held for 30 minutes</h3>
+      <p class="hint">Tell us what you're exchanging and where to text you. We hold the rate at the desk for 30 minutes — no obligation.</p>
+      <form id="quoteForm">
         <div class="two">
-          <input type="text" inputmode="decimal" placeholder="Amount" required />
-          <select required>
-            <option value="" disabled selected hidden>Currency</option>
-            <option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>AED</option><option>PHP</option><option>Other</option>
+          <input id="qAmount" type="text" inputmode="decimal" placeholder="Amount" value="1,000" required />
+          <select id="qFrom" required>
+            <option value="CAD" selected>CAD — you give</option>
+            <option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option><option value="AED">AED</option><option value="PHP">PHP</option><option value="CNY">CNY</option><option value="MXN">MXN</option><option value="JPY">JPY</option>
           </select>
         </div>
-        <input type="text" placeholder="Name" required />
-        <input type="text" placeholder="Phone or email" required />
-        <button type="submit" class="btn btn-solid">Send me a rate</button>
+        <div class="two">
+          <select id="qTo" required>
+            <option value="USD" selected>USD — you receive</option>
+            <option value="CAD">CAD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option><option value="AED">AED</option><option value="PHP">PHP</option><option value="CNY">CNY</option><option value="MXN">MXN</option><option value="JPY">JPY</option>
+          </select>
+          <input id="qPhone" type="tel" autocomplete="tel" placeholder="Mobile number" required />
+        </div>
+        <button type="submit" class="btn btn-solid">Text me this rate — held 30 min</button>
+        <div id="quoteResult" class="fine" hidden style="margin-top: 10px;"></div>
       </form>
-      <p class="fine">Rates are confirmed at the desk or by phone at 647-349-0980. Government-issued ID required for transactions over CAD $3,000 — FINTRAC regulation.</p>
+      <p class="fine">The held rate is honoured at the desk with this text. Government-issued ID required for transactions over CAD $3,000 — FINTRAC regulation.</p>
     </aside>
   </div>
 </section>
@@ -107,6 +113,7 @@
   </div>
 </footer>
 
+<script src="yorkfx-site-config.js"></script>
 <script src="yorkfx-site.js"></script>
 
 <!-- ===================== TWEAKS ===================== -->

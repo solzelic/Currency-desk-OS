@@ -38,6 +38,25 @@ CREATE TABLE IF NOT EXISTS tenants (
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'premium';
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_slug text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
+CREATE TABLE IF NOT EXISTS rate_quotes (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  phone text NOT NULL,
+  name text,
+  have_ccy text NOT NULL,
+  want_ccy text NOT NULL,
+  have_amount double precision NOT NULL,
+  quoted_rate double precision NOT NULL,
+  receive_amount double precision NOT NULL,
+  status text NOT NULL DEFAULT 'held',
+  sms_status text NOT NULL DEFAULT 'simulated',
+  sms_text text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  confirmed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rate_quotes_tenant_idx ON rate_quotes(tenant_id, created_at);
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
