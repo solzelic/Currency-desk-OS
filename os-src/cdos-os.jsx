@@ -140,13 +140,16 @@
       // backend auth: when the API is reachable it is the door — a rejected
       // password stops sign-in. Standalone (no backend at all) keeps the
       // offline demo flow so the prototype still works from a static server.
+      setErr('Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)');
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId: rec.code || rec.name, password: p || 'yorkville' }),
         });
-        if (res && res.status === 401) { setErr('Wrong password for this staff ID.'); return; }
-      } catch (_) { /* no backend running — standalone demo */ }
+        if (res && res.status === 401) { setErr('Wrong password for ' + (rec.code || rec.name) + '. Check it and try again.'); return; }
+        if (res && !res.ok) { setErr('Sign-in service error (' + res.status + ') \u2014 try again in a moment.'); return; }
+      } catch (_) { /* no backend at all — standalone demo continues */ }
+      setErr('');
       onNext(rec);
     };
     return (<div id="lock"><div className="lock-card">

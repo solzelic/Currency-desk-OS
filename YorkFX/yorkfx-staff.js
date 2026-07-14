@@ -127,13 +127,15 @@
     var pw = document.getElementById('pw').value.trim();
     var user = document.getElementById('user').value.trim();
     if (!user) { err.textContent = 'Enter your username.'; return; }
+    err.textContent = 'Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)';
     // backend is the door when reachable; the demo password only exists offline
     fetch('/api/auth/login', {
       method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
       body: JSON.stringify({ staffId: user, password: pw }),
     }).then(function (r) {
       if (r.ok) { err.textContent = ''; enterAs(user); }
-      else { err.textContent = 'Incorrect staff ID or password.'; }
+      else if (r.status === 401) { err.textContent = 'Incorrect staff ID or password \u2014 check both and try again.'; }
+      else { err.textContent = 'Sign-in service error (' + r.status + ') \u2014 try again in a moment.'; }
     }).catch(function () {
       if (pw.toLowerCase() !== DEMO_PASSWORD) { err.textContent = 'Incorrect password. Try again.'; return; }
       err.textContent = '';
