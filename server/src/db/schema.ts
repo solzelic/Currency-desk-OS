@@ -22,6 +22,11 @@ export const tenants = pgTable("tenants", {
   // purchased tier — decides which apps the OS unlocks and which APIs the
   // server serves. basic = rate board + live rates on the customer's site.
   plan: text("plan").notNull().default("premium"),
+  // hosted storefront: served at /sites/<site_slug>; when the customer
+  // points their domain's DNS here, requests for site_domain serve the
+  // same site at their root (see src/sites.ts)
+  siteSlug: text("site_slug"),
+  siteDomain: text("site_domain"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

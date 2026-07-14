@@ -171,6 +171,31 @@
         })
         .catch(() => { /* no backend \u2014 offline demo keeps the local switch */ });
     };
+    // ---- hosted public site (server-side tenant: slug + custom domain) ----
+    const [siteInfo, setSiteInfo] = useState(null);    // { siteSlug, siteDomain } | null = unavailable
+    const [siteDraft, setSiteDraft] = useState('');
+    const [siteMsg, setSiteMsg] = useState('');
+    const [siteBusy, setSiteBusy] = useState(false);
+    useEffect(() => {
+      if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
+      fetch('/api/tenant', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d && d.tenant) { setSiteInfo(d.tenant); setSiteDraft(d.tenant.siteDomain || ''); } })
+        .catch(() => {});
+    }, []);
+    const saveSiteDomain = () => {
+      const domain = siteDraft.trim().toLowerCase() || null;
+      setSiteBusy(true); setSiteMsg('');
+      fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ siteDomain: domain }) })
+        .then(async r => {
+          const d = await r.json().catch(() => null);
+          if (r.ok) { setSiteInfo(d.tenant); setSiteDraft(d.tenant.siteDomain || ''); setSiteMsg(d.tenant.siteDomain ? 'Saved — point your DNS and the site answers on it.' : 'Domain disconnected.'); log('Public site', d.tenant.siteDomain ? 'domain ' + d.tenant.siteDomain : 'domain disconnected'); }
+          else if (r.status === 401 || r.status === 403) setSiteMsg('Only the owner account can change the site domain.');
+          else setSiteMsg((d && d.detail) || 'Couldn\u2019t save (' + r.status + ').');
+        })
+        .catch(() => setSiteMsg('Server unreachable \u2014 try again on the live desk.'))
+        .then(() => setSiteBusy(false));
+    };
     const changeMyPassword = async () => {
       if (!pwForm) return;
       if (pwForm.a.length < 8) { setPwForm(f => ({ ...f, msg: 'New password needs at least 8 characters.' })); return; }
@@ -955,6 +980,28 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             </div>
             <Field label="Country"><select value={settings.bizCountry || 'Canada'} onChange={e => set('bizCountry', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
           </div>
+          {siteInfo && siteInfo.siteSlug && (() => {
+            const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
+            return (
+              <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
+                <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your public site</div>
+                <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>CurrencyDesk hosts your customer-facing website — rate board, converter and all — and it always shows whatever you publish from the desk.</div>
+                <div className="flex items-center gap-2 mb-3 p-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
+                  <span className="text-[11px] flex-none" style={{ color: CD.faint }}>Hosted at</span>
+                  <a href={siteUrl} target="_blank" rel="noreferrer" className="text-[12.5px] font-semibold truncate" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{siteUrl.replace(/^https?:\/\//, '')}</a>
+                  <span className="text-[10px] px-1.5 py-0.5 font-semibold flex-none ml-auto" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>LIVE</span>
+                </div>
+                <Field label="Your own domain" desc="When you're ready, point your domain's DNS (CNAME or ALIAS) at this server and add it in the hosting dashboard for HTTPS — the same site answers on it automatically. Clear the field to disconnect.">
+                  <div className="flex items-center gap-2">
+                    <input value={siteDraft} onChange={ev => setSiteDraft(ev.target.value)} placeholder="e.g. yorkfx.ca" className="flex-1 text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
+                    <button onClick={saveSiteDomain} disabled={siteBusy} className="text-[12px] px-3 py-2 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: siteBusy ? 0.5 : 1 }}>{(siteInfo.siteDomain || '') === siteDraft.trim().toLowerCase() ? 'Saved' : 'Save'}</button>
+                  </div>
+                </Field>
+                {siteInfo.siteDomain && <div className="text-[11px] mt-1.5" style={{ color: CD.green }}>Connected: <b style={{ fontFamily: 'Space Mono, monospace' }}>{siteInfo.siteDomain}</b> serves your site the moment DNS points here.</div>}
+                {siteMsg && <div className="text-[11px] mt-1.5" style={{ color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag }}>{siteMsg}</div>}
+              </div>
+            );
+          })()}
           <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>FINTRAC reporting identity</div>
             <div className="text-[11px] mb-3" style={{ color: CD.mute }}>Set once per business when you enrol in the FINTRAC Web Reporting System (FWR). These pre-fill Section 1 of every LCTR / EFTR — the desk never asks for them again.</div>

@@ -7,6 +7,7 @@
    only the FIRST-BOOT bootstrap for a brand-new database and never
    touches existing accounts.
    ============================================================ */
+import { and, eq, isNull } from "drizzle-orm";
 import { createDb, schema } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
 
@@ -24,7 +25,12 @@ export const DEMO = {
 export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
   const passwordHash = await hashPassword(DEMO.password);
 
-  await db.insert(schema.tenants).values({ id: DEMO.tenantId, name: "York FX" }).onConflictDoNothing();
+  await db.insert(schema.tenants).values({ id: DEMO.tenantId, name: "York FX", siteSlug: "yorkfx" }).onConflictDoNothing();
+  // existing databases predate the hosted-site column — claim the slug once
+  await db
+    .update(schema.tenants)
+    .set({ siteSlug: "yorkfx" })
+    .where(and(eq(schema.tenants.id, DEMO.tenantId), isNull(schema.tenants.siteSlug)));
   await db
     .insert(schema.legalEntities)
     .values({ id: DEMO.legalEntityId, tenantId: DEMO.tenantId, name: "York Currency Exchange Inc.", msbNumber: "M12345678", jurisdiction: "FINTRAC" })

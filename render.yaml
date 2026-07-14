@@ -11,6 +11,13 @@
 #   RESET_STAFF_PASSWORD — break-glass, normally UNSET. "staffId:newpassword"
 #                   resets that one account at boot (audited, temporary
 #                   password). Remove it right after signing back in.
+#
+# Hosted customer sites: each customer's storefront serves at /sites/<slug>
+# (York FX: /sites/yorkfx). When a customer hands off their domain, the owner
+# records it in the OS (Settings → Business profile → Your public site), the
+# customer points DNS (CNAME/ALIAS) at this service, AND the domain must be
+# added under Settings → Custom Domains in the Render dashboard so Render
+# issues the TLS certificate. No code change needed.
 services:
   - type: web
     name: currencydesk

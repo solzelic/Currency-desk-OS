@@ -11,6 +11,7 @@ import { createDb, schema } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
 import { buildApp } from "./app.js";
 import { syncMarketRates } from "./rates/market.js";
+import { refreshSiteDomains } from "./sites.js";
 import { hashPassword } from "./auth/password.js";
 import { revokeAllSessions } from "./auth/sessions.js";
 import { audit } from "./audit.js";
@@ -59,6 +60,9 @@ if (process.env.RESET_STAFF_PASSWORD) {
 }
 
 const app = await buildApp(handle.db);
+// custom-domain → site map: buildApp loads it once; keep it fresh so a
+// domain recorded on another instance (or straight in the DB) takes effect
+setInterval(() => void refreshSiteDomains(handle.db).catch(() => {}), 60 * 1000).unref();
 const port = Number(process.env.PORT ?? 8787);
 // bind all interfaces in production (Render/Railway route external traffic);
 // loopback-only in dev

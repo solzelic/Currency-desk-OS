@@ -17,10 +17,16 @@ import { registerStaffRoutes } from "./routes/staff.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
+import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
 
 export async function buildApp(db: Db): Promise<FastifyInstance> {
-  const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== "test",
+    // a customer domain pointed at us serves that customer's hosted site
+    rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
+  });
   await app.register(cookie);
+  await refreshSiteDomains(db);
 
   app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));
   registerAuthRoutes(app, db);
@@ -37,6 +43,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     //   production (Render): STATIC_DIR=../dist → frontend.html (vite build)
     //   prototype mode (npm run dev:prototype): STATIC_DIR=.. STATIC_INDEX="CurrencyDesk OS.html"
     const indexFile = process.env.STATIC_INDEX ?? "frontend.html";
+    await registerSiteRoutes(app, staticDir);
     await app.register(fastifyStatic, { root: staticDir, index: false });
     app.get("/", (_req, reply) => reply.sendFile(indexFile));
     app.setNotFoundHandler((req, reply) => {
