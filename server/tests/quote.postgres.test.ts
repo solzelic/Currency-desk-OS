@@ -322,4 +322,18 @@ postgres("quote service against real PostgreSQL", () => {
     ).toBe("3");
     expect(first.json().receipt.lines.join(" ")).toContain(made.outputAmount);
   });
+  it("atomically deduplicates simultaneous quote posts", async () => {
+    const made = (await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: body })).json();
+    const cookies = await cookie();
+    const responses = await Promise.all(["same-key", "same-key"].map((idempotencyKey) => app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies, payload: { idempotencyKey } })));
+    expect([201, 409]).toContain(responses[0]!.statusCode);
+    expect([201, 409]).toContain(responses[1]!.statusCode);
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
+    expect((await pool.query("SELECT count(*) FROM ledger_journal_entries")).rows[0].count).toBe("4");
+    expect((await pool.query("SELECT count(*) FROM ledger_till_movements")).rows[0].count).toBe("3");
+    expect((await pool.query("SELECT count(*) FROM ledger_audit_events")).rows[0].count).toBe("1");
+    const quote = await pool.query("SELECT status,posted_transaction_id FROM quotes WHERE quote_id=$1", [made.quoteId]);
+    expect(quote.rows[0]).toMatchObject({ status: "posted" });
+    expect(quote.rows[0].posted_transaction_id).toBeTruthy();
+  });
 });
