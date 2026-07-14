@@ -9,8 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { runMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -157,8 +156,7 @@ export async function createDb(): Promise<DbHandle> {
       await pool.query(ENUM_DDL);
     }
     await pool.query(DDL);
-    await pool.query(await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"));
-    await pool.query(await readFile(resolve(process.cwd(), "src/db/migrations/002_quote_service.sql"), "utf8"));
+    await runMigrations(pool);
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }
