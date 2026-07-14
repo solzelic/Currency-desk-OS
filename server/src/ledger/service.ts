@@ -130,13 +130,20 @@ export class LedgerService {
         override.rows[0]?.overridden_output_amount ?? row.output_amount;
       const expectedSpread =
         override.rows[0]?.overridden_spread_cad ?? row.spread_cad;
+      const sameDecimal = (left: string, right: string, places: number) =>
+        new Decimal(left).toDecimalPlaces(places).eq(new Decimal(right).toDecimalPlaces(places));
       if (
+        quote.quoteId !== row.quote_id ||
         row.customer_id !== quote.customerId ||
-        row.input_amount !== quote.inputAmount ||
-        expectedOutput !== quote.outputAmount ||
-        expectedRate !== quote.customerRate ||
-        expectedSpread !== quote.spreadCad ||
-        row.rate_board_publication_id !== quote.rateBoardPublicationId
+        row.from_currency !== quote.from || row.to_currency !== quote.to ||
+        !sameDecimal(row.input_amount, quote.inputAmount, 2) ||
+        !sameDecimal(expectedOutput, quote.outputAmount, 2) ||
+        !sameDecimal(row.market_mid, quote.marketMid, 12) ||
+        !sameDecimal(expectedRate, quote.customerRate, 12) ||
+        !sameDecimal(row.fee_cad, quote.feeCad, 2) ||
+        !sameDecimal(expectedSpread, quote.spreadCad, 2) ||
+        row.rate_board_publication_id !== quote.rateBoardPublicationId ||
+        (row.market_snapshot_id ?? null) !== (quote.marketSnapshotId ?? null)
       )
         throw new LedgerError(
           "QUOTE_MISMATCH",
