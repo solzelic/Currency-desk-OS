@@ -144,6 +144,7 @@
       // flow so the prototype still works from a static server.
       setErr('Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)');
       let mustChange = false;
+      let srvPlan = null;   // the tenant's purchased tier, from the server
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
@@ -154,6 +155,7 @@
         if (res && res.ok) {
           const data = await res.json().catch(() => null);
           mustChange = !!(data && data.user && data.user.mustChangePassword);
+          srvPlan = (data && data.user && data.user.plan) || null;
           // the server vouches for this person even when this device's local
           // directory doesn't know them yet (account created on another
           // terminal) — adopt a local record so the OS can route them
@@ -166,7 +168,7 @@
       if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
       setErr('');
       // a manager-issued temporary password must be replaced before the desk opens
-      onNext(rec, mustChange ? { current: p } : null);
+      onNext(rec, mustChange ? { current: p } : null, srvPlan);
     };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
@@ -1092,7 +1094,7 @@
       return id === 'rates'; // basic — rate board only
     };
 
-    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec, temp) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
     if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={() => { setPwTemp(null); setStage('otp'); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
     if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }

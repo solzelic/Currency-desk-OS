@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
@@ -21,7 +22,7 @@ const postBody = z.object({
   sourceOfFunds: z.string().trim().max(500),
 }).refine((value) => value.from !== value.to, { message: "Currencies must differ.", path: ["to"] });
 const reverseBody = z.object({ idempotencyKey: z.string().min(1).max(200), reason: z.string().trim().min(1).max(1000) });
-type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" };
+type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
@@ -31,6 +32,9 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!user) return { kind: "unauthenticated" };
+    // tier gate: the ledger is a Pro/Premium app — a basic tenant only has
+    // the rate board, so its sessions can't post to the book
+    if ((await tenantPlan(db, user.tenantId)) === "basic") return { kind: "plan_denied" };
     const header = req.headers["x-workspace-id"];
     if (Array.isArray(header)) return { kind: "scope_denied" };
     const candidates = await db.select().from(schema.workspaces).where(and(
@@ -58,6 +62,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const current = await resolveActor(req);
       if (current.kind === "unauthenticated") return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      if (current.kind === "plan_denied") return reply.code(403).send({ code: "PLAN_NOT_ENTITLED", message: "The ledger is a Pro feature — upgrade the plan to post transactions." });
       if (current.kind === "scope_denied") return reply.code(403).send({ code: "SCOPE_DENIED" });
       return reply.code(201).send(await service.post(current.actor, parsed.data));
     } catch (error) { return failure(reply, error); }
@@ -69,6 +74,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const current = await resolveActor(req);
       if (current.kind === "unauthenticated") return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      if (current.kind === "plan_denied") return reply.code(403).send({ code: "PLAN_NOT_ENTITLED", message: "The ledger is a Pro feature — upgrade the plan to post transactions." });
       if (current.kind === "scope_denied") return reply.code(403).send({ code: "SCOPE_DENIED" });
       return reply.code(201).send(await service.reverse(current.actor, (req.params as { transactionId: string }).transactionId, parsed.data.idempotencyKey, parsed.data.reason));
     } catch (error) { return failure(reply, error); }

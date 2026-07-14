@@ -19,8 +19,14 @@ export const staffRole = pgEnum("staff_role", [
 export const tenants = pgTable("tenants", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  // purchased tier — decides which apps the OS unlocks and which APIs the
+  // server serves. basic = rate board + live rates on the customer's site.
+  plan: text("plan").notNull().default("premium"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type TenantPlan = "basic" | "pro" | "premium";
+export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
 
 export const legalEntities = pgTable(
   "legal_entities",

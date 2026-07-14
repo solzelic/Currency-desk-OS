@@ -30,8 +30,10 @@ const DDL = `
 CREATE TABLE IF NOT EXISTS tenants (
   id text PRIMARY KEY,
   name text NOT NULL,
+  plan text NOT NULL DEFAULT 'premium',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'premium';
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),

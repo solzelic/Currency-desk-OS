@@ -152,6 +152,25 @@
       const sid = (code || '').trim(); if (!sid || !srvStaff || !srvStaff[sid]) return;
       srvCall('PATCH', '/api/staff/' + encodeURIComponent(sid), { active }).then(srvReload).catch(() => {});
     };
+    const [planMsg, setPlanMsg] = useState('');
+    // the purchased tier lives on the TENANT — switching plans writes to the
+    // server (administrator only) so every device and sign-in agrees
+    const pickPlan = (id) => {
+      const prev = settings.billingPlan || 'premium';
+      if (prev === id) return;
+      set('billingPlan', id, `plan ${id}`);
+      setPlanMsg('');
+      if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
+      fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ plan: id }) })
+        .then(r => {
+          if (r.ok) return;
+          set('billingPlan', prev, 'plan change reverted');
+          setPlanMsg(r.status === 401 || r.status === 403
+            ? 'Only the owner account can change the plan \u2014 ask them to switch it.'
+            : 'The plan change didn\u2019t reach the server (' + r.status + ') \u2014 try again.');
+        })
+        .catch(() => { /* no backend \u2014 offline demo keeps the local switch */ });
+    };
     const changeMyPassword = async () => {
       if (!pwForm) return;
       if (pwForm.a.length < 8) { setPwForm(f => ({ ...f, msg: 'New password needs at least 8 characters.' })); return; }
@@ -464,7 +483,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Row title="Billing cycle" desc="Pay yearly and skip a couple of months — Pro & Premium get 2 months free, Basic 1."><Seg value={cycle} onPick={v => set('billingCycle', v, `cycle ${v}`)} opts={[['monthly', 'Monthly'], ['annual', 'Annual']]} /></Row>
             <div className="grid grid-cols-3 gap-2.5 my-4">
               {PLANS.map(pl => { const on = plan === pl.id; return (
-                <button key={pl.id} onClick={() => set('billingPlan', pl.id, `plan ${pl.id}`)} className="text-left p-3.5 relative flex flex-col" style={{ border: `1.5px solid ${on ? CD.ink : (pl.best ? CD.brass : CD.line)}`, borderRadius: 13, background: on ? 'var(--cd-chip)' : CD.panel }}>
+                <button key={pl.id} onClick={() => pickPlan(pl.id)} className="text-left p-3.5 relative flex flex-col" style={{ border: `1.5px solid ${on ? CD.ink : (pl.best ? CD.brass : CD.line)}`, borderRadius: 13, background: on ? 'var(--cd-chip)' : CD.panel }}>
                   {pl.best && <span className="absolute" style={{ top: -9, right: 12, background: CD.brass, color: 'var(--cd-on-ink)', fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '2px 7px', borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BEST VALUE</span>}
                   <div className="flex items-center justify-between"><span className="text-[14px] font-bold" style={{ color: CD.ink }}>{pl.name}</span>{on ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> CURRENT</span> : null}</div>
                   <div className="mt-1"><span className="text-xl font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{fmt(price(pl), 'CAD')}</span><span className="text-[11px]" style={{ color: CD.mute }}>/{cycle === 'annual' ? 'yr' : 'mo'}</span></div>
@@ -476,6 +495,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <div className="mt-2.5 text-center text-[11px] font-semibold py-1.5" style={on ? { color: CD.mute } : { background: pl.best ? CD.ink : 'transparent', color: pl.best ? 'var(--cd-on-ink)' : CD.ink, border: pl.best ? 'none' : `1px solid ${CD.line}`, borderRadius: 8 }}>{on ? 'Your plan' : 'Switch to ' + pl.name}</div>
                 </button>); })}
             </div>
+            {planMsg && <div className="text-[11.5px] mb-3 px-3 py-2" style={{ color: CD.flag, background: CD.flagSoft, borderRadius: 8 }}>{planMsg}</div>}
             <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Usage this period</div>
             <div className="grid grid-cols-3 gap-2 mb-4">
               {[['Locations', locs], ['Tills', tills], ['Staff seats', seats]].map(([l, v], i) => (<div key={i} className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-xl font-bold mt-0.5" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}

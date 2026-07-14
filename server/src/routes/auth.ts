@@ -17,6 +17,7 @@ import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { createSession, resolveSession, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { tenantPlan } from "./tenant.js";
 
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -79,6 +80,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         branchId: user.branchId,
         authorizedBranchIds: user.authorizedBranchIds,
         mustChangePassword: user.mustChangePassword,
+        plan: await tenantPlan(db, user.tenantId),
       },
     };
   });
@@ -133,6 +135,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         branchId: who.branchId,
         authorizedBranchIds: who.authorizedBranchIds,
         mustChangePassword: who.mustChangePassword,
+        plan: await tenantPlan(db, who.tenantId),
       },
     };
   });

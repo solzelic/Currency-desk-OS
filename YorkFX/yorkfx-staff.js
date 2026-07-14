@@ -111,18 +111,36 @@
     showApp();
   }
 
-  // single sign-on: inside the OS (or any page with a live backend session)
-  // the board opens without asking again
+  // the rate board lives INSIDE CurrencyDesk OS. Embedded (the OS iframe) it
+  // opens via single sign-on; reached standalone while the backend is up, it
+  // routes through the one OS door instead of offering its own sign-in. With
+  // no backend at all (static demo, file://) the offline sign-in stays.
+  var EMBEDDED = window.self !== window.top || /(\?|&|#)embed/.test(window.location.search + window.location.hash);
+  var BACKEND = false;   // set once /api/auth/me answers — any HTTP status
+  function showOsDoor() {
+    var form = document.getElementById('signinForm');
+    if (!form || !form.parentElement) return;
+    form.parentElement.innerHTML = '<h1>One door for the whole desk</h1>' +
+      '<div class="si-sub">CurrencyDesk \u00b7 back office</div>' +
+      '<div style="font-size:13px; line-height:1.6; color:var(--mute); margin:14px 0 18px;">The rate board now lives inside <b style="color:var(--ink)">CurrencyDesk OS</b> \u2014 sign in there and it\u2019s the first app in the dock.</div>' +
+      '<a class="si-go" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;" href="/">Open CurrencyDesk OS \u2192</a>';
+  }
   (function autoAuth() {
-    if (isAuthed() || window.location.protocol === 'file:' || typeof fetch !== 'function') return;
+    if (window.location.protocol === 'file:' || typeof fetch !== 'function') return;
     fetch('/api/auth/me', { credentials: 'same-origin' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.user) enterAs(d.user.id); })
-      .catch(function () {});
+      .then(function (r) {
+        BACKEND = true;
+        if (r.ok) { return r.json().then(function (d) { if (d && d.user && !isAuthed()) enterAs(d.user.id); }); }
+        // backend up, no OS session: standalone visitors go through the OS
+        // door; embedded, the OS lock screen already owns authentication
+        if (!EMBEDDED && !isAuthed()) showOsDoor();
+      })
+      .catch(function () { /* no backend \u2014 static demo keeps its own sign-in */ });
   })();
 
   document.getElementById('signinForm').addEventListener('submit', function (e) {
     e.preventDefault();
+    if (BACKEND && !EMBEDDED) { showOsDoor(); return; }
     var err = document.getElementById('signinError');
     var pw = document.getElementById('pw').value.trim();
     var user = document.getElementById('user').value.trim();
