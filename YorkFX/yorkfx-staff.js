@@ -92,7 +92,6 @@
   /* ====================== AUTH ====================== */
   var signin = document.getElementById('signin');
   var dash = document.getElementById('dash');
-  var signoutBtn = document.getElementById('signout');
 
   function isAuthed() { return sessionStorage.getItem(KEY_AUTH) === '1'; }
 
@@ -100,7 +99,6 @@
     var authed = isAuthed();
     signin.hidden = authed;
     dash.hidden = !authed;
-    signoutBtn.style.display = authed ? '' : 'none';
     if (authed) { buildTable(); refresh(); }
   }
 
@@ -159,13 +157,6 @@
       err.textContent = '';
       enterAs(user);
     });
-  });
-
-  signoutBtn.addEventListener('click', function () {
-    sessionStorage.removeItem(KEY_AUTH);
-    document.getElementById('pw').value = '';
-    showApp();
-    window.scrollTo({ top: 0 });
   });
 
   /* ====================== EDITOR DOM ====================== */
@@ -803,52 +794,5 @@
     document.addEventListener('click', function (e) { if (!pop.hidden && !pop.contains(e.target)) pop.hidden = true; });
   })();
 
-  // ---- setup tour: first visit per browser, replayable from ↻ TOUR ----
-  (function tour() {
-    var KEY_TOUR = 'cdos_tour_rateboard_done';
-    var root = document.getElementById('tour');
-    if (!root) return;
-    var cards = Array.prototype.slice.call(root.querySelectorAll('.tour-card'));
-    var step = 1;
-    function showStep(n) {
-      step = n;
-      cards.forEach(function (c) { c.hidden = c.dataset.step !== String(n); });
-    }
-    function openTour() {
-      // live numbers inside the tour, so it teaches with today's rates
-      try {
-        var r = draft.rows.USD;
-        if (r) {
-          var sl = document.getElementById('tourSpotLine');
-          if (sl) sl.innerHTML = 'USD spot <b style="color: var(--ink);">' + fmtMid(r.mid) + '</b> \u00b7 arrives hourly, automatically';
-          var ml = document.getElementById('tourMathLine');
-          if (ml) ml.innerHTML = fmtMid(r.mid) + ' spot \u2192 we buy <b style="color: var(--ink);">' + fmtMid(r.mid * (1 - draft.buyMargin)) + '</b> \u00b7 we sell <b style="color: var(--ink);">' + fmtMid(r.mid * (1 + draft.sellMargin)) + '</b>';
-        }
-      } catch (e) {}
-      showStep(1);
-      root.hidden = false;
-    }
-    function closeTour() {
-      root.hidden = true;
-      try { localStorage.setItem(KEY_TOUR, '1'); } catch (e) {}
-    }
-    root.addEventListener('click', function (e) {
-      if (e.target.closest('[data-tour-next]')) { showStep(Math.min(4, step + 1)); return; }
-      if (e.target.closest('[data-tour-finish]')) { closeTour(); return; }
-      if (e.target.closest('[data-tour-skip]')) { closeTour(); return; }
-    });
-    var replay = document.getElementById('tourBtn');
-    if (replay) replay.addEventListener('click', openTour);
-    // first visit: show once the dashboard is actually on screen
-    var seen = null; try { seen = localStorage.getItem(KEY_TOUR); } catch (e) {}
-    if (!seen) {
-      var tries = 0;
-      var t = setInterval(function () {
-        tries++;
-        if (isAuthed() && !dash.hidden) { clearInterval(t); openTour(); }
-        else if (tries > 40) { clearInterval(t); }
-      }, 250);
-    }
-  })();
 
 })();

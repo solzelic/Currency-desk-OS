@@ -41,7 +41,9 @@
   .thead { font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
   .stepbtn { display: grid; place-items: center; width: 30px; height: 30px; background: #fff; border: 1px solid var(--line); border-radius: 8px; font-family: var(--m); font-size: 14px; cursor: pointer; }
   .stepbtn:hover { background: rgba(23,20,15,0.05); }
-  .rowgrid { display: grid; grid-template-columns: 26px 1.35fr minmax(120px,150px) 84px 132px 140px 128px 30px; gap: 12px; align-items: center; }
+  .rowgrid { display: grid; grid-template-columns: 26px minmax(150px,1.35fr) minmax(120px,150px) 84px 132px 140px 128px 30px; gap: 12px; align-items: center; }
+  /* when the window is narrower than the columns, the table scrolls sideways instead of overlapping */
+  #edTable { overflow-x: auto; }
 
   /* row inputs */
   .mid-input { width: 118px; height: 40px; box-sizing: border-box; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-family: var(--m); font-size: 14.5px; font-weight: 700; box-shadow: inset 0 1px 3px rgba(23,20,15,0.06); text-align: center; color: var(--ink); }
@@ -71,7 +73,7 @@
 
   /* signin (brand skin, same contract) */
   #signin { min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
-  #signin[hidden], #dash[hidden], #feedPop[hidden], #addMenu[hidden], #tour[hidden] { display: none; }
+  #signin[hidden], #dash[hidden], #feedPop[hidden], #addMenu[hidden] { display: none; }
   .si-card { width: 380px; max-width: 92vw; background: #FDFCFA; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 40px 90px -30px rgba(23,20,15,0.5); padding: 30px 30px 26px; box-sizing: border-box; }
   .si-card h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 4px; }
   .si-sub { font-family: var(--m); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); margin-bottom: 20px; }
@@ -117,26 +119,16 @@
   #publishBtn.arming { background: #C2452D; }
   #publishBtn.done { background: var(--green-live); }
 
-  /* tour */
-  #tour { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; }
-  #tour .veil { position: absolute; inset: 0; background: rgba(23,20,15,0.42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
-  .tour-card { position: relative; width: 450px; max-width: calc(100vw - 48px); box-sizing: border-box; background: #FDFCFA; border-radius: 18px; box-shadow: 0 40px 90px -20px rgba(23,20,15,0.6); padding: 26px 28px 22px; animation: cdWinIn 0.4s cubic-bezier(0.2,0.8,0.2,1) both; }
-  .tour-card[hidden] { display: none; }
-  .tour-eyebrow { font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.18em; color: var(--primary); }
-  .tour-skip { font-family: var(--m); font-size: 9.5px; color: var(--faint); cursor: pointer; }
-  .tour-skip:hover { color: var(--ink); }
-  .tour-stage { height: 150px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; display: grid; place-items: center; margin: 16px 0 18px; padding: 0 22px; box-sizing: border-box; }
-  .tour-card h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 8px; }
-  .tour-card p { font-size: 13px; line-height: 1.6; color: var(--mute); margin: 0 0 20px; }
-  .tour-dots { display: flex; gap: 6px; } .tour-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--line); } .tour-dots span.on { background: var(--ink); }
-  .tour-next { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--ink); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; cursor: pointer; border: 0; }
-  .tour-next:hover { filter: brightness(1.25); }
-  .tour-next.go { background: var(--primary); box-shadow: 0 6px 16px rgba(29,107,69,0.3); }
-  .tour-next.go:hover { background: var(--primary-deep); filter: none; }
 
   #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #F7F4ED; font-family: var(--m); font-size: 11px; padding: 11px 18px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 300; max-width: 80vw; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   @media (max-width: 1100px) { #rail { display: none; } #dash > div { grid-template-columns: 1fr !important; } }
+  @media (max-width: 960px) {
+    #dash { padding: 20px 16px 24px !important; }
+  }
+  @media (max-width: 620px) {
+    #dash h1 { font-size: 26px !important; }
+  }
 </style>
 </head>
 <body>
@@ -168,7 +160,7 @@
           <h1 style="font-weight: 800; font-size: 34px; letter-spacing: -0.02em; margin: 0;">Today's rates</h1>
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); margin-top: 8px;">The one place your rates live — set them here, the site follows</div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 1 auto; min-width: 0;">
           <span style="position: relative; display: inline-block;">
             <button id="feedBar" type="button" class="chip" style="font-weight: 700; letter-spacing: 0.06em; color: var(--ink); cursor: pointer;">
               <span class="fdot" style="width: 7px; height: 7px; border-radius: 50%; background: var(--green-live); animation: cdAiPulse 2.2s ease-out infinite;"></span>
@@ -210,8 +202,6 @@
             <svg class="ic-closed" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             <span class="lock-label">LOCK RATES</span>
           </button>
-          <button id="tourBtn" type="button" title="Replay setup tour" style="display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px dashed rgba(23,20,15,0.25); border-radius: 10px; padding: 9px 12px; font-family: var(--m); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); cursor: pointer;">↻ TOUR</button>
-          <button id="signout" type="button" class="chip" style="cursor: pointer;">Sign out</button>
         </div>
       </div>
 
@@ -317,76 +307,6 @@
 
 <!-- legacy provider select (kept for the JS contract; the popover is the visible UI) -->
 <select id="rateProvider" hidden aria-hidden="true"></select>
-
-<!-- ===== setup tour (4 steps, from the brand design) ===== -->
-<div id="tour" hidden>
-  <div class="veil" data-tour-skip></div>
-  <div class="tour-card" data-step="1">
-    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 1 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
-    <div class="tour-stage">
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
-        <span style="display: inline-flex; align-items: center; gap: 9px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 11px 17px; font-family: var(--m); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; box-shadow: 0 6px 18px -8px rgba(23,20,15,0.25);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--green-live); animation: cdAiPulse 2.2s ease-out infinite;"></span>FEED LIVE · OPEN EXCHANGE RATES</span>
-        <span id="tourSpotLine" style="font-family: var(--m); font-size: 10.5px; color: var(--mute);">USD spot streams in every hour</span>
-      </div>
-    </div>
-    <h2>Your rates start at spot</h2>
-    <p>Live market rates stream in from your provider every hour. You never type a rate again — the feed does that part for you.</p>
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-      <span class="tour-dots"><span class="on"></span><span></span><span></span><span></span></span>
-      <button class="tour-next" data-tour-next type="button">NEXT →</button>
-    </div>
-  </div>
-  <div class="tour-card" data-step="2" hidden>
-    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 2 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
-    <div class="tour-stage">
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 13px;">
-        <div style="display: flex; gap: 22px;">
-          <span style="display: inline-flex; align-items: center; gap: 6px;"><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">−</span><span style="display: grid; place-items: center; min-width: 58px; height: 30px; background: var(--soft); border-radius: 8px; font-family: var(--m); font-size: 13px; font-weight: 700;">1.5%</span><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">+</span></span>
-          <span style="display: inline-flex; align-items: center; gap: 6px;"><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">−</span><span style="display: grid; place-items: center; min-width: 58px; height: 30px; background: var(--soft); border-radius: 8px; font-family: var(--m); font-size: 13px; font-weight: 700;">1.6%</span><span class="stepbtn" style="width: 26px; height: 26px; font-size: 13px;">+</span></span>
-        </div>
-        <span id="tourMathLine" style="font-family: var(--m); font-size: 10.5px; color: var(--mute);">spot → we buy · we sell, computed for you</span>
-      </div>
-    </div>
-    <h2>Your margins do the math</h2>
-    <p>Set how far under and over spot you trade — once. Every buy and sell price on the board follows automatically. You can also type any We&nbsp;Buy or We&nbsp;Sell price directly — the margin adjusts itself.</p>
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-      <span class="tour-dots"><span></span><span class="on"></span><span></span><span></span></span>
-      <button class="tour-next" data-tour-next type="button">NEXT →</button>
-    </div>
-  </div>
-  <div class="tour-card" data-step="3" hidden>
-    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 3 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
-    <div class="tour-stage">
-      <div style="width: 100%; display: flex; flex-direction: column; gap: 7px;">
-        <div style="display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; box-shadow: 0 4px 12px -6px rgba(23,20,15,0.2);"><span style="color: rgba(23,20,15,0.3); font-size: 12px; letter-spacing: 2px;">⠿</span><span style="font-size: 13px;">🇺🇸</span><span style="font-family: var(--m); font-size: 11px; font-weight: 700; flex: 1;">USD</span><span class="tg on" style="font-size: 8px; padding: 5px 9px;"><span style="width: 5px; height: 5px; border-radius: 50%; background: var(--green-live);"></span>ON BOARD</span></div>
-        <div style="display: flex; align-items: center; gap: 10px;"><span style="flex: 1; border-top: 1.5px dashed rgba(29,107,69,0.45);"></span><span style="font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.12em; color: var(--primary);">TOP SIX · YOUR HOMEPAGE</span><span style="flex: 1; border-top: 1.5px dashed rgba(29,107,69,0.45);"></span></div>
-        <div style="display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; opacity: 0.55;"><span style="color: rgba(23,20,15,0.3); font-size: 12px; letter-spacing: 2px;">⠿</span><span style="font-size: 13px; filter: grayscale(1);">🇸🇦</span><span style="font-family: var(--m); font-size: 11px; font-weight: 700; flex: 1;">SAR</span><span class="tg off" style="font-size: 8px; padding: 5px 11px;">HIDDEN</span></div>
-      </div>
-    </div>
-    <h2>Arrange it like your window</h2>
-    <p>Drag rows into the order your customers look for. The top six show on your homepage — switch any currency off the board without losing it.</p>
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-      <span class="tour-dots"><span></span><span></span><span class="on"></span><span></span></span>
-      <button class="tour-next" data-tour-next type="button">NEXT →</button>
-    </div>
-  </div>
-  <div class="tour-card" data-step="4" hidden>
-    <div style="display: flex; align-items: center; justify-content: space-between;"><span class="tour-eyebrow">SETUP · STEP 4 OF 4</span><span class="tour-skip" data-tour-skip>Skip tour</span></div>
-    <div class="tour-stage">
-      <div style="display: flex; align-items: center; gap: 14px;">
-        <span style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; background: var(--primary); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; box-shadow: 0 6px 16px rgba(29,107,69,0.35);"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>PUBLISH TO SITE</span>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
-        <span style="display: inline-flex; flex-direction: column; gap: 4px; background: #17140F; border-radius: 10px; padding: 11px 15px;"><span style="font-family: var(--m); font-size: 8px; letter-spacing: 0.18em; color: #F7F4ED;">YOUR SITE</span><span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 8px; font-weight: 700; letter-spacing: 0.1em; color: #2EA36B;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2EA36B;"></span>UPDATED JUST NOW</span></span>
-      </div>
-    </div>
-    <h2>Publish — the site follows</h2>
-    <p>One tap replaces the rates on your website and window boards, instantly. No more editing the site by hand — this board is the only place rates live.</p>
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-      <span class="tour-dots"><span></span><span></span><span></span><span class="on"></span></span>
-      <button class="tour-next go" data-tour-finish type="button">OPEN THE BOARD ✓</button>
-    </div>
-  </div>
-</div>
 
 <div id="toast"></div>
 
