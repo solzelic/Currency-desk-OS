@@ -169,7 +169,7 @@ postgres("quote service against real PostgreSQL", () => {
           method: "POST",
           url: `/api/quotes/${made.quoteId}/post`,
           cookies: await cookie(),
-          payload: { idempotencyKey: "expired" },
+          payload: { idempotencyKey: "expired", purpose: "Personal travel", sourceOfFunds: "Employment income" },
         })
       ).statusCode,
     ).toBe(422);
@@ -196,7 +196,7 @@ postgres("quote service against real PostgreSQL", () => {
           method: "POST",
           url: `/api/quotes/${cancelled.quoteId}/post`,
           cookies: await cookie(),
-          payload: { idempotencyKey: "cancelled" },
+          payload: { idempotencyKey: "cancelled", purpose: "Personal travel", sourceOfFunds: "Employment income" },
         })
       ).statusCode,
     ).toBe(422);
@@ -291,13 +291,13 @@ postgres("quote service against real PostgreSQL", () => {
       method: "POST",
       url: `/api/quotes/${made.quoteId}/post`,
       cookies: await cookie(),
-      payload: { idempotencyKey: "quote-post" },
+      payload: { idempotencyKey: "quote-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
     });
     const second = await app.inject({
       method: "POST",
       url: `/api/quotes/${made.quoteId}/post`,
       cookies: await cookie(),
-      payload: { idempotencyKey: "quote-post" },
+      payload: { idempotencyKey: "quote-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
     });
     expect(first.statusCode).toBe(201);
     expect(second.json().transactionId).toBe(first.json().transactionId);
@@ -325,7 +325,7 @@ postgres("quote service against real PostgreSQL", () => {
   it("atomically deduplicates simultaneous quote posts", async () => {
     const made = (await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: body })).json();
     const cookies = await cookie();
-    const responses = await Promise.all(["same-key", "same-key"].map((idempotencyKey) => app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies, payload: { idempotencyKey } })));
+    const responses = await Promise.all(["same-key", "same-key"].map((idempotencyKey) => app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies, payload: { idempotencyKey, purpose: "Personal travel", sourceOfFunds: "Employment income" } })));
     expect([201, 409]).toContain(responses[0]!.statusCode);
     expect([201, 409]).toContain(responses[1]!.statusCode);
     expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");

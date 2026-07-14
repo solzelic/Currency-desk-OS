@@ -41,6 +41,8 @@ export type FrozenQuote = {
   spreadCad: string;
   rateBoardPublicationId: string;
   marketSnapshotId: string | null;
+  purpose: string;
+  sourceOfFunds: string;
 };
 export class LedgerError extends Error {
   constructor(
@@ -116,6 +118,8 @@ export class LedgerService {
           "Quote is outside the active scope.",
         );
       const row = authoritativeQuote.rows[0];
+      if ((row.from_currency === "CAD") === (row.to_currency === "CAD") || (quote.from === "CAD") === (quote.to === "CAD"))
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
       if (row.status !== "active")
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(row.expires_at).getTime() <= Date.now())
@@ -268,8 +272,8 @@ export class LedgerService {
           fixed(rate, 12),
           fixed(fee),
           fixed(spread),
-          `Quote ${quote.quoteId}`,
-          "Quote service",
+          quote.purpose,
+          quote.sourceOfFunds,
           now,
         ],
       );

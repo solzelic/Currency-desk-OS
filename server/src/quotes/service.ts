@@ -133,6 +133,8 @@ export class QuoteService {
       await this.principal(client, actor, "quote:create");
       if (request.from === request.to)
         throw new LedgerError("INVALID_REQUEST", "Currencies must differ.");
+      if ((request.from === "CAD") === (request.to === "CAD"))
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
       const customer = await client.query(
         "SELECT 1 FROM ledger_customers WHERE customer_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5",
         [request.customerId, ...scope(actor).slice(0, 4)],
@@ -414,7 +416,7 @@ export class QuoteService {
       client.release();
     }
   }
-  async post(actor: LedgerActor, quoteId: string, idempotencyKey: string) {
+  async post(actor: LedgerActor, quoteId: string, idempotencyKey: string, purpose: string, sourceOfFunds: string) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -460,6 +462,8 @@ export class QuoteService {
           spreadCad: value.spreadCad,
           rateBoardPublicationId: q.rate_board_publication_id,
           marketSnapshotId: q.market_snapshot_id,
+          purpose,
+          sourceOfFunds,
         } as FrozenQuote,
         idempotencyKey,
       );
