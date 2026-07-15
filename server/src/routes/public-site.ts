@@ -143,9 +143,11 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     if (!ref) return reply.code(503).send({ error: "try_again" });
 
     const expiresAt = new Date(Date.now() + HOLD_MINUTES * 60 * 1000);
+    // opt-out line on the initiating text keeps A2P 10DLC compliant; Twilio
+    // auto-handles the STOP keyword, so no unsubscribe list to maintain here
     const smsText =
       `${t.name}: ${fmtAmount(b.amount, b.from)} → ${fmtAmount(receive, b.to)}. ` +
-      `Rate held for ${HOLD_MINUTES} min (until ${fmtTime(expiresAt)}). Ref ${ref} — show this text at the desk.`;
+      `Rate held for ${HOLD_MINUTES} min (until ${fmtTime(expiresAt)}). Ref ${ref} — show this text at the desk. Reply STOP to opt out.`;
     const smsStatus = await sendSms(phone, smsText);
 
     await db.insert(schema.rateQuotes).values({

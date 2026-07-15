@@ -83,6 +83,7 @@ describe("SMS rate holds", () => {
     const row = (await handle.db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, q.ref)))[0]!;
     expect(row.smsText).toContain(q.ref);
     expect(row.smsText).toContain("held for 30 min");
+    expect(row.smsText).toContain("Reply STOP to opt out");
   });
 
   it("confirming a held quote flips it and refuses after expiry", async () => {
