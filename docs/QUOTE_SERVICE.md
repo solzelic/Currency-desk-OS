@@ -6,6 +6,10 @@ session scope, loads the newest published board in that exact branch, and
 returns decimal-string quote terms with publication and market-snapshot
 lineage. Raw browser rates are never accepted.
 
+The current Canadian pilot accepts an exchange only when CAD is exactly one
+leg. This is a pilot configuration, not a universal product rule; a future
+jurisdiction-pack migration will make home currency legal-entity specific.
+
 Direction semantics: `customer_buy_foreign` means CAD to foreign currency and
 uses the board's **We Sell** margin. `customer_sell_foreign` means foreign
 currency to CAD and uses **We Buy**. `customerRate` is always output units per
@@ -25,9 +29,18 @@ the configured deviation. The original quote rate and market mid are retained;
 the override record stores the changed rate, output, spread, actor, timestamp,
 and reason.
 
-Posting verifies the active, unexpired quote and calls the ledger with frozen
-terms. The ledger re-reads the scoped quote, verifies its status and terms,
-creates the transaction and receipt atomically, and marks the quote posted.
+Posting requires non-empty `purpose` and `sourceOfFunds` (maximum 500
+characters each) in addition to an idempotency key. It verifies the active,
+unexpired quote and calls the ledger with frozen terms. The ledger re-reads the
+scoped quote, Decimal-compares every financial and lineage term, creates the
+transaction, journal, till movements, audit event, receipt response, and quote
+status transition atomically.
+
+For this Canadian pilot, `feeCad` is separate CAD tender, not part of the
+exchange input. The journal records it as a dedicated `till:CAD` debit and
+`revenue:fee` credit. Quote-originated transactions permanently retain quote
+ID, market mid, publication ID, snapshot ID, source type, and optional override
+ID; later board publications cannot alter that history.
 
 Stable failures include `AUTHENTICATION_REQUIRED`, `SCOPE_DENIED`,
 `AUTHORIZATION_DENIED`, `INVALID_REQUEST`, `RATE_NOT_AVAILABLE`,

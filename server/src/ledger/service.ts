@@ -41,6 +41,8 @@ export type FrozenQuote = {
   spreadCad: string;
   rateBoardPublicationId: string;
   marketSnapshotId: string | null;
+  rateSourceType: "market_sync" | "manual" | "seed";
+  quoteOverrideId: string | null;
   purpose: string;
   sourceOfFunds: string;
 };
@@ -118,14 +120,14 @@ export class LedgerService {
           "Quote is outside the active scope.",
         );
       const row = authoritativeQuote.rows[0];
-      if ((row.from_currency === "CAD") === (row.to_currency === "CAD") || (quote.from === "CAD") === (quote.to === "CAD"))
+      if ((row.from_currency === "CAD") === (row.to_currency === "CAD"))
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
       if (row.status !== "active")
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(row.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
       const override = await client.query(
-        "SELECT overridden_customer_rate,overridden_output_amount,overridden_spread_cad FROM quote_overrides WHERE quote_id=$1 ORDER BY created_at DESC LIMIT 1",
+        "SELECT override_id,overridden_customer_rate,overridden_output_amount,overridden_spread_cad FROM quote_overrides WHERE quote_id=$1 ORDER BY created_at DESC LIMIT 1",
         [quote.quoteId],
       );
       const expectedRate =
@@ -147,12 +149,16 @@ export class LedgerService {
         !sameDecimal(row.fee_cad, quote.feeCad, 2) ||
         !sameDecimal(expectedSpread, quote.spreadCad, 2) ||
         row.rate_board_publication_id !== quote.rateBoardPublicationId ||
-        (row.market_snapshot_id ?? null) !== (quote.marketSnapshotId ?? null)
+        (row.market_snapshot_id ?? null) !== (quote.marketSnapshotId ?? null) ||
+        row.rate_source_type !== quote.rateSourceType ||
+        (override.rows[0]?.override_id ?? null) !== quote.quoteOverrideId
       )
         throw new LedgerError(
           "QUOTE_MISMATCH",
           "Frozen quote terms do not match authoritative record.",
         );
+      if ((quote.from === "CAD") === (quote.to === "CAD"))
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='quote-post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), idempotencyKey],
@@ -209,7 +215,8 @@ export class LedgerService {
           "Insufficient till liquidity.",
         );
       const journal = [
-        [`till:${quote.from}`, "debit", inputCad.add(fee)],
+        [`till:${quote.from}`, "debit", inputCad],
+        ["till:CAD", "debit", fee],
         [`till:${quote.to}`, "credit", outputCad],
         ["revenue:fx_spread", "credit", spread],
         ["revenue:fee", "credit", fee],
@@ -244,6 +251,8 @@ export class LedgerService {
         spreadCad: fixed(spread),
         rateBoardPublicationId: quote.rateBoardPublicationId,
         marketSnapshotId: quote.marketSnapshotId,
+        rateSourceType: quote.rateSourceType,
+        quoteOverrideId: quote.quoteOverrideId,
         receipt: {
           receiptId: `rcpt_${transactionId}`,
           lines: [
@@ -258,7 +267,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,posted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)",
         [
           transactionId,
           transactionRef,
@@ -274,6 +283,12 @@ export class LedgerService {
           fixed(spread),
           quote.purpose,
           quote.sourceOfFunds,
+          quote.quoteId,
+          fixed(mid, 12),
+          quote.rateBoardPublicationId,
+          quote.marketSnapshotId,
+          quote.rateSourceType,
+          quote.quoteOverrideId,
           now,
         ],
       );
@@ -351,6 +366,11 @@ export class LedgerService {
         "INVALID_REQUEST",
         "Idempotency key and distinct currencies are required.",
       );
+    if ((request.from === "CAD") === (request.to === "CAD"))
+      throw new LedgerError(
+        "UNSUPPORTED_CURRENCY_PAIR",
+        "CAD must be one side of an exchange.",
+      );
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
@@ -426,7 +446,8 @@ export class LedgerService {
         );
       // Product rule: feeCad is a separate CAD cash payment, never part of inputAmount.
       const journal = [
-        [`till:${request.from}`, "debit", inputCad.add(fee)],
+        [`till:${request.from}`, "debit", inputCad],
+        ["till:CAD", "debit", fee],
         [`till:${request.to}`, "credit", outputCad],
         ["revenue:fx_spread", "credit", spread],
         ["revenue:fee", "credit", fee],

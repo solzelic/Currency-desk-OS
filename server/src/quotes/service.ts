@@ -32,6 +32,11 @@ const scope = (a: LedgerActor) => [
   a.tillId,
 ];
 const fixed = (v: Decimal, p = 2) => v.toDecimalPlaces(p).toFixed(p);
+const complianceFact = (value: string, label: string) => {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > 500)
+    throw new LedgerError("INVALID_REQUEST", `${label} is required and must be at most 500 characters.`);
+  return value.trim();
+};
 
 export class QuoteService {
   constructor(
@@ -132,9 +137,20 @@ export class QuoteService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "quote:create");
       if (request.from === request.to)
-        throw new LedgerError("INVALID_REQUEST", "Currencies must differ.");
+        throw new LedgerError(
+          "UNSUPPORTED_CURRENCY_PAIR",
+          "An exchange must have exactly one CAD currency leg.",
+        );
       if ((request.from === "CAD") === (request.to === "CAD"))
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
+      if (
+        (request.direction === "customer_buy_foreign" && request.from !== "CAD") ||
+        (request.direction === "customer_sell_foreign" && request.to !== "CAD")
+      )
+        throw new LedgerError(
+          "INVALID_REQUEST",
+          "Transaction direction does not match the currency pair.",
+        );
       const customer = await client.query(
         "SELECT 1 FROM ledger_customers WHERE customer_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5",
         [request.customerId, ...scope(actor).slice(0, 4)],
@@ -417,6 +433,8 @@ export class QuoteService {
     }
   }
   async post(actor: LedgerActor, quoteId: string, idempotencyKey: string, purpose: string, sourceOfFunds: string) {
+    const validatedPurpose = complianceFact(purpose, "Purpose");
+    const validatedSourceOfFunds = complianceFact(sourceOfFunds, "Source of funds");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -462,8 +480,10 @@ export class QuoteService {
           spreadCad: value.spreadCad,
           rateBoardPublicationId: q.rate_board_publication_id,
           marketSnapshotId: q.market_snapshot_id,
-          purpose,
-          sourceOfFunds,
+          rateSourceType: q.rate_source_type,
+          quoteOverrideId: value.o?.override_id ?? null,
+          purpose: validatedPurpose,
+          sourceOfFunds: validatedSourceOfFunds,
         } as FrozenQuote,
         idempotencyKey,
       );

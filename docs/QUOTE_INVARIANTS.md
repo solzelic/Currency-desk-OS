@@ -13,6 +13,12 @@
   expiry, customer, permission, liquidity, idempotency, and balanced journal.
 - The current fee contract is separate CAD tender. It is explicit in receipt,
   till movements, and the CAD functional-currency journal.
+- A quote-originated transaction retains `quote_id`, `market_mid`, rate-board
+  publication and market-snapshot IDs, rate source type, and any override ID.
+  The posted transaction is append-only, so later board or quote changes cannot
+  change historical lineage.
+- The Canadian pilot requires exactly one CAD currency leg. This is documented
+  pilot behavior only; it is not a universal architecture rule.
 
 Current limitations: no live KYC provider or production market-data assurance;
 the newest market snapshot is associated when available but publication-to-
