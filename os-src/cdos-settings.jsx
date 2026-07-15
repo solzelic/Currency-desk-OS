@@ -26,6 +26,35 @@
 
   const inSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
 
+  /* ---------- shared controls (module scope) ----------
+     These MUST live at module scope, not inside SettingsView. Defined inline
+     they were rebuilt on every render, so React unmounted and remounted each
+     <input> on every keystroke — which stole focus after a single character.
+     Value-bearing controls read { settings, set, base } from SettingsCtx so
+     the call sites (<Inp k="bizName" />, etc.) stay unchanged. */
+  const SettingsCtx = React.createContext({ settings: {}, set: () => {}, base: 'CAD' });
+  const Sw = ({ on, click }) => (<button type="button" onClick={click} className="w-11 h-6 relative flex-none" style={{ background: on ? CD.ink : 'var(--cd-disabled)', borderRadius: 999, transition: 'background .15s', cursor: 'pointer' }}><span className="absolute top-0.5 w-5 h-5" style={{ left: on ? 22 : 2, background: 'var(--cd-panel)', borderRadius: 999, transition: 'left .15s' }} /></button>);
+  const Seg = ({ value, onPick, opts }) => (
+    <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
+      {opts.map(([v, label], i) => { const on = value === v; return (<button key={v} type="button" onClick={() => onPick(v)} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.lineSoft; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', fontFamily: 'Space Mono, monospace', letterSpacing: '0.02em', cursor: 'pointer', transition: 'background .12s' }}>{label}</button>); })}
+    </div>
+  );
+  const Row = ({ title, desc, children }) => (
+    <div className="flex items-center justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+      <div className="min-w-0"><div className="text-sm" style={{ color: CD.ink }}>{title}</div>{desc && <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{desc}</div>}</div>
+      <div className="flex-none">{children}</div>
+    </div>
+  );
+  const Field = ({ label, desc, children }) => (<label className="block"><div className="text-[11px] mb-1 flex items-center justify-between" style={{ color: CD.mute }}><span>{label}</span></div>{children}{desc && <div className="text-[10.5px] mt-1" style={{ color: CD.faint }}>{desc}</div>}</label>);
+  const SectionTitle = ({ icon, title, sub }) => (
+    <div className="flex items-start gap-3 mb-5 pb-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
+      {icon && <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 11 }}><Ic n={icon} s={18} c="var(--cd-on-ink)" /></span>}
+      <div className="min-w-0"><div className="text-[17px] font-bold leading-tight" style={{ color: CD.ink, letterSpacing: '-0.01em' }}>{title}</div>{sub && <div className="text-[11.5px] mt-1" style={{ color: CD.mute, maxWidth: 520 }}>{sub}</div>}</div>
+    </div>);
+  const Txt = ({ k, placeholder, w = 220 }) => { const { settings, set } = React.useContext(SettingsCtx); return <input value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, width: w }} />; };
+  const Money = ({ k }) => { const { settings, set, base } = React.useContext(SettingsCtx); return (<div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" value={settings[k] ?? ''} onChange={e => set(k, +e.target.value)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>); };
+  const Inp = ({ k, placeholder, type }) => { const { settings, set } = React.useContext(SettingsCtx); return <input type={type || 'text'} value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} />; };
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = (settings) => (settings.cards) || [
     { id: 'card_visa', num: '4242 4242 4242 4242', exp: '04/27', name: (settings.billingName || 'Jordan Masri'), postal: 'M5V 2T6', role: 'primary' },
@@ -176,23 +205,45 @@
     const [siteDraft, setSiteDraft] = useState('');
     const [siteMsg, setSiteMsg] = useState('');
     const [siteBusy, setSiteBusy] = useState(false);
+    const [pubMsg, setPubMsg] = useState('');
+    const [pubBusy, setPubBusy] = useState(false);
     useEffect(() => {
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', { credentials: 'same-origin' })
         .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d && d.tenant) { setSiteInfo(d.tenant); setSiteDraft(d.tenant.siteDomain || ''); } })
+        .then(d => {
+          if (!d || !d.tenant) return;
+          setSiteInfo(d.tenant);
+          setSiteDraft(d.tenant.siteDomain || '');
+          // adopt whatever this tenant already published so switching shops
+          // (York FX this week, another next week) shows THEIR live details,
+          // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
+          const cfg = d.tenant.siteConfig;
+          if (cfg) setSettings(s => {
+            const patch = {};
+            ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
+              const [src, dst] = pair.split(':');
+              if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
+            });
+            if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+            return Object.keys(patch).length ? { ...s, ...patch } : s;
+          });
+        })
         .catch(() => {});
     }, []);
-    const [pubHours, setPubHours] = useState([{ days: 'Mon\u2013Fri', hours: '9:30am\u20136:00pm' }, { days: 'Sat\u2013Sun & holidays', hours: '10:00am\u20135:00pm' }]);
-    const [pubMsg, setPubMsg] = useState('');
-    const [pubBusy, setPubBusy] = useState(false);
-    useEffect(() => { if (siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.hours) && siteInfo.siteConfig.hours.length) setPubHours(siteInfo.siteConfig.hours); }, [siteInfo && siteInfo.siteConfig && siteInfo.siteConfig.updatedAt]);
+    // business hours: a template until the shop edits them; the editor and the
+    // publisher both read this fallback so a fresh shop still ships sane hours
+    const HOURS_SEED = [{ days: 'Mon–Fri', hours: '9:30am–6:00pm' }, { days: 'Sat–Sun & holidays', hours: '10:00am–5:00pm' }];
+    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
+    const setHours = (next) => setSettings(s => ({ ...s, hours: next }));
+    // one source of truth: the same phone/email/address/hours the desk shows
+    // are what the public site publishes
     const publishSiteConfig = () => {
       setPubBusy(true); setPubMsg('');
       const body = { siteConfig: {
         phone: settings.bizPhone || '', email: settings.bizEmail || '',
         address: settings.bizAddress || '', city: settings.bizCity || '', region: settings.bizRegion || '', postal: settings.bizPostal || '',
-        hours: pubHours.filter(h => h.days.trim() && h.hours.trim()),
+        hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim()),
       } };
       fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
         .then(async r => {
@@ -303,28 +354,9 @@
     const removeTillF = (bId, tId) => setBranches && setBranches(list => list.map(b => b.id === bId ? { ...b, tills: (b.tills || []).length > 1 ? b.tills.filter(t => t.id !== tId) : b.tills } : b));
     const addTillF = (bId) => setBranches && setBranches(list => list.map(b => { if (b.id !== bId) return b; const n = (b.tills || []).length + 1; return { ...b, tills: [...(b.tills || []), { id: 't' + Date.now(), name: 'Till ' + n, teller: '', status: 'open', cash: { CAD: 0 } }] }; }));
 
-    /* ---------- shared controls ---------- */
-    const Sw = ({ on, click }) => (<button type="button" onClick={click} className="w-11 h-6 relative flex-none" style={{ background: on ? CD.ink : 'var(--cd-disabled)', borderRadius: 999, transition: 'background .15s', cursor: 'pointer' }}><span className="absolute top-0.5 w-5 h-5" style={{ left: on ? 22 : 2, background: 'var(--cd-panel)', borderRadius: 999, transition: 'left .15s' }} /></button>);
-    const Seg = ({ value, onPick, opts }) => (
-      <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
-        {opts.map(([v, label], i) => { const on = value === v; return (<button key={v} type="button" onClick={() => onPick(v)} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.lineSoft; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', fontFamily: 'Space Mono, monospace', letterSpacing: '0.02em', cursor: 'pointer', transition: 'background .12s' }}>{label}</button>); })}
-      </div>
-    );
-    const Row = ({ title, desc, children }) => (
-      <div className="flex items-center justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-        <div className="min-w-0"><div className="text-sm" style={{ color: CD.ink }}>{title}</div>{desc && <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{desc}</div>}</div>
-        <div className="flex-none">{children}</div>
-      </div>
-    );
-    const Txt = ({ k, placeholder, w = 220 }) => <input value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, width: w }} />;
-    const Money = ({ k }) => (<div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" value={settings[k] ?? ''} onChange={e => set(k, +e.target.value)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>);
-    const Field = ({ label, desc, children }) => (<label className="block"><div className="text-[11px] mb-1 flex items-center justify-between" style={{ color: CD.mute }}><span>{label}</span></div>{children}{desc && <div className="text-[10.5px] mt-1" style={{ color: CD.faint }}>{desc}</div>}</label>);
-    const Inp = ({ k, placeholder, type }) => <input type={type || 'text'} value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} />;
-    const SectionTitle = ({ icon, title, sub }) => (
-      <div className="flex items-start gap-3 mb-5 pb-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-        {icon && <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 11 }}><Ic n={icon} s={18} c="var(--cd-on-ink)" /></span>}
-        <div className="min-w-0"><div className="text-[17px] font-bold leading-tight" style={{ color: CD.ink, letterSpacing: '-0.01em' }}>{title}</div>{sub && <div className="text-[11.5px] mt-1" style={{ color: CD.mute, maxWidth: 520 }}>{sub}</div>}</div>
-      </div>);
+    /* shared controls live at module scope (stable identity → inputs keep
+       focus). Value-bearing ones read this via SettingsCtx, provided below. */
+    const ctxVal = { settings, set, base };
 
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
     const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
@@ -359,7 +391,7 @@
       ]],
     ] : [];
 
-    return (<div className="flex" style={{ height: '100%' }}>
+    return (<SettingsCtx.Provider value={ctxVal}><div className="flex" style={{ height: '100%' }}>
       {/* nav rail */}
       <div className="flex-none p-3 overflow-auto" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
         <button onClick={() => setTab('account')} className="w-full flex items-center gap-2.5 p-2 mb-3" style={{ borderRadius: 11, background: tab === 'account' ? CD.ink : CD.panel, border: `1px solid ${tab === 'account' ? CD.ink : CD.line}`, textAlign: 'left' }}>
@@ -1001,6 +1033,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             </div>
             <Field label="Country"><select value={settings.bizCountry || 'Canada'} onChange={e => set('bizCountry', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
           </div>
+
+          <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
+            <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Business hours</div>
+            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>When you're open. Shown on your public site's Visit page — each row is a set of days and the hours for it.</div>
+            {hoursList.map((h, i) => (
+              <div key={i} className="flex items-center gap-2 mb-1.5">
+                <input value={h.days || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[13px] px-2.5 py-2 outline-none" style={{ ...inSty, width: 190 }} />
+                <span className="text-[12px] flex-none" style={{ color: CD.faint }}>→</span>
+                <input value={h.hours || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={inSty} />
+                <button onClick={() => setHours(hoursList.filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 7, color: CD.faint }}><Ic n="trash" s={14} /></button>
+              </div>
+            ))}
+            <button onClick={() => setHours([...hoursList, { days: '', hours: '' }])} className="text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1" style={{ border: `1px dashed ${CD.line}`, borderRadius: 8, color: CD.mute }}><Ic n="plus" s={13} /> Add hours row</button>
+          </div>
+
           {siteInfo && siteInfo.siteSlug && (() => {
             const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
             return (
@@ -1020,20 +1067,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 </Field>
                 {siteInfo.siteDomain && <div className="text-[11px] mt-1.5" style={{ color: CD.green }}>Connected: <b style={{ fontFamily: 'Space Mono, monospace' }}>{siteInfo.siteDomain}</b> serves your site the moment DNS points here.</div>}
                 <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Contact & hours shown on the site</div>
-                  <div className="text-[10.5px] mb-2" style={{ color: CD.faint }}>Phone, email and address come from the business profile above. Set the hours here, then publish — the site updates immediately.</div>
-                  {pubHours.map((h, i) => (
-                    <div key={i} className="flex items-center gap-2 mb-1.5">
-                      <input value={h.days} onChange={ev => setPubHours(list => list.map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, width: 180 }} />
-                      <input value={h.hours} onChange={ev => setPubHours(list => list.map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={inSty} />
-                      <button onClick={() => setPubHours(list => list.filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 6, color: CD.faint }}>×</button>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-2 mt-2">
-                    <button onClick={() => setPubHours(list => [...list, { days: '', hours: '' }])} className="text-[11px] px-2.5 py-1.5" style={{ border: `1px dashed ${CD.line}`, borderRadius: 7, color: CD.mute }}>+ Add hours row</button>
-                    <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold ml-auto" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact & hours →</button>
+                  <div className="text-[11px] mb-1.5" style={{ color: CD.mute }}>Push contact &amp; hours to the site</div>
+                  <div className="text-[10.5px] mb-2.5" style={{ color: CD.faint }}>Publishes the phone, email, address and business hours from above — the site updates the moment you do.</div>
+                  <div className="p-2.5 mb-2.5 text-[11px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.mute, lineHeight: 1.7 }}>
+                    <div><b style={{ color: CD.ink }}>{settings.bizPhone || '—'}</b>{settings.bizEmail ? ' · ' + settings.bizEmail : ''}</div>
+                    {settings.bizAddress && <div>{settings.bizAddress}{settings.bizCity ? ', ' + settings.bizCity : ''}</div>}
+                    {hoursList.filter(h => h.days && h.hours).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
                   </div>
-                  {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <div className="text-[10.5px] mt-1.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</div>}
+                  <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact &amp; hours →</button>
+                  {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <span className="text-[10.5px] ml-2.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</span>}
                   {pubMsg && <div className="text-[11px] mt-1.5" style={{ color: pubMsg.startsWith('Published') ? CD.green : CD.flag }}>{pubMsg}</div>}
                 </div>
                 {siteMsg && <div className="text-[11px] mt-1.5" style={{ color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag }}>{siteMsg}</div>}
@@ -1351,7 +1393,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           </div>
         </div>
       )}
-    </div>);
+    </div></SettingsCtx.Provider>);
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, { SettingsView });
