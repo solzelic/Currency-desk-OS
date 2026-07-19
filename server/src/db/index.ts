@@ -9,8 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { runMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -132,6 +131,7 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   board_rows jsonb NOT NULL,
   board_order jsonb,
   published_by text,
+  market_snapshot_id text,
   published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);
@@ -156,7 +156,7 @@ export async function createDb(): Promise<DbHandle> {
       await pool.query(ENUM_DDL);
     }
     await pool.query(DDL);
-    await pool.query(await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"));
+    await runMigrations(pool);
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }

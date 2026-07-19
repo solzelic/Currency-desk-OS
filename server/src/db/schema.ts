@@ -149,6 +149,7 @@ export const rateBoards = pgTable(
     boardRows: jsonb("board_rows").$type<Record<string, RateBoardRow>>().notNull(),
     boardOrder: jsonb("board_order").$type<string[]>(),
     publishedBy: text("published_by"),
+    marketSnapshotId: text("market_snapshot_id"),
     publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("rate_boards_branch_idx").on(t.branchId, t.publishedAt)],
