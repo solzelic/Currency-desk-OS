@@ -22,6 +22,15 @@ vite.config.d.ts
 
 # Local OS/cache files
 Thumbs.db
+.thumbnail
+
+# macOS/iCloud duplicate-file artifacts ("file 2.ts", "file 3.json", …)
+* 2.*
+* 3.*
+
+# Runtime/dev clutter — never belongs in the repo
+uploads/
+screenshots/
 
 # Backend (server/)
 server/node_modules/

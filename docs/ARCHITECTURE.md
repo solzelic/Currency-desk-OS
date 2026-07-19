@@ -12,7 +12,6 @@ The prototype remains the design and product reference. The TypeScript app is th
 The original app is a buildless browser prototype:
 
 - `CurrencyDesk OS.html` is the development entry point.
-- `CurrencyDesk OS (standalone).html` is the demo export.
 - `os-src/*.jsx` files load in explicit order and extend `window.CDOS`.
 - `cdos-base.jsx` defines tokens, seed data, helpers, rates, and shared primitives.
 - `cdos-os.jsx` owns the shell, sign-in, window manager, app mounting, and localStorage state.

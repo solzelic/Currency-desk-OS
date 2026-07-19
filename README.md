@@ -1,42 +1,88 @@
 # CurrencyDesk OS
 
-CurrencyDesk OS is an operating system prototype for a currency-exchange and money-services desk. It covers the desk workflow around rates, transactions, customer/KYC files, compliance, till/vault cash, reports, branch operations, transfers, cheques, and a module store.
+The operating system for currency-exchange houses. One sign-in gives a desk its
+rate board, ledger, transfers, cheques, clients/KYC, compliance filings,
+till/vault cash, branches, and reports — and CurrencyDesk hosts each customer's
+public storefront (live rates, converter, SMS rate quotes) on their own domain.
 
-This repository now has two tracks:
+**Live:** https://currencydesk.onrender.com · hosted customer site at
+[`/sites/yorkfx/`](https://currencydesk.onrender.com/sites/yorkfx/)
 
-- **Preserved prototype:** the existing buildless React/Babel demo in the repository root and `os-src/`.
-- **Frontend foundation:** a new React and TypeScript app under `src/`, built to migrate the product into production-shaped code without disturbing the prototype.
+## Repository layout
 
-> **Security status:** This is not a production-compliant system. The browser persistence adapter is for synthetic demos only. Never store real KYC documents or production financial data in localStorage. See [Security and Compliance Foundation](docs/SECURITY_COMPLIANCE_FOUNDATION.md).
+| Path | What it is |
+| --- | --- |
+| `CurrencyDesk OS.html` + `os-src/` | The OS app served in production (buildless React, one `window.CDOS` global, files split by domain: `cdos-ledger.jsx`, `cdos-kyc.jsx`, …) |
+| `server/` | Fastify + Drizzle backend: auth & sessions, staff administration, tenants & plans, rate boards, hosted sites, SMS rate quotes, Postgres ledger |
+| `YorkFX/` | The hosted customer storefront (homepage, rates + converter, services, regulations, visit/quote) and the staff rate-board editor the OS embeds |
+| `src/`, `index.html`, `vite.config.ts` | The TypeScript/Vite production rebuild track (coexists with the prototype; CI runs its typecheck, tests, and build) |
+| `docs/` | Architecture, security/compliance foundation, threat model, ledger API, migration plan, product roadmap |
+| `design_handoff_kyc/` | KYC design handoff: architecture, brand tokens, motion spec |
+| `render.yaml` | Render Blueprint — auto-deploys `main` |
 
-## Current Prototype
+## Running locally
 
-Open the prototype through a static server:
+Backend + OS + hosted sites, one process:
 
 ```sh
-python3 -m http.server 8173
+cd server
+npm ci
+npm run dev:prototype        # http://127.0.0.1:8787
 ```
 
-Then visit:
+That serves the OS at `/`, the customer site at `/sites/yorkfx/`, and the API
+under `/api/*`. Locally the database is embedded (PGlite, `server/.pgdata`) and
+the seeded owner sign-in is `j.masri` / `yorkville`. In production, passwords
+are per-employee and managed inside the OS (Settings → Employees).
 
-- `http://127.0.0.1:8173/CurrencyDesk%20OS.html`
-- `http://127.0.0.1:8173/CurrencyDesk%20OS%20(standalone).html`
-
-Testing credentials are intentionally loose in the prototype: use any seeded staff ID, any password, and the prefilled `000000` 2FA code.
-
-## New Frontend App
-
-The TypeScript app coexists with the prototype. Once dependencies are installed:
+Server tests and typecheck:
 
 ```sh
-npm install
+cd server
+npm test
+npm run typecheck
+```
+
+Vite app (production rebuild track):
+
+```sh
+npm ci
 npm run dev
 npm run check
 ```
 
-The first vertical slice is:
+## Architecture in one paragraph
 
-Sign in -> open workspace -> select or create customer -> create currency exchange transaction -> run compliance checks -> post transaction -> generate receipt -> update ledger and till.
+The tenant is the unit of everything: staff sign in with per-employee
+credentials (scrypt hashes, opaque session cookies, append-only audit trail);
+the purchased **plan** (basic/pro/premium) gates which apps the OS unlocks and
+which APIs the server serves; the desk publishes a **rate board** the whole
+system prices from — the OS, the public site's currency board and converter,
+and SMS rate-hold quotes all read the same publication. Hosted sites serve at
+`/sites/<slug>` and, once a customer points DNS here, on their own domain via
+Host-header routing — no code change per customer.
+
+## Deployment
+
+Push to `main` → Render auto-deploys (`render.yaml`). One-time environment in
+the Render dashboard:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Neon Postgres connection string |
+| `OXR_APP_ID` | openexchangerates.org App ID (hourly market rates) |
+| `SEED_PASSWORD` | First-boot bootstrap password for a brand-new database only |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Set these and SMS quotes send for real; unset, the flow runs in simulated mode |
+| `RESET_STAFF_PASSWORD` | Break-glass only (`staffId:newpassword`), remove after use |
+
+Custom domains: record the customer's domain in the OS (Settings → Business
+profile → Your public site), have them point DNS (CNAME/ALIAS) at this service,
+and add the domain under Render → Custom Domains so TLS is issued.
+
+> **Security status:** the OS front end still persists demo desk data in
+> browser storage; do not store real KYC documents or production financial data
+> in it. Credentials, sessions, tenancy, rates, quotes, and the ledger are
+> server-side. See [docs/SECURITY_COMPLIANCE_FOUNDATION.md](docs/SECURITY_COMPLIANCE_FOUNDATION.md).
 
 ## Documentation
 
@@ -44,11 +90,7 @@ Sign in -> open workspace -> select or create customer -> create currency exchan
 - [Security and compliance foundation](docs/SECURITY_COMPLIANCE_FOUNDATION.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Development](docs/DEVELOPMENT.md)
+- [Ledger posting API](docs/LEDGER_POSTING_API.md) · [invariants](docs/LEDGER_POSTING_INVARIANTS.md)
 - [Migration plan](docs/MIGRATION.md)
-- [Repository audit](docs/REPOSITORY_AUDIT.md)
+- [Product roadmap](<docs/CurrencyDesk OS - Roadmap v2.html>)
 - [KYC developer handoff](design_handoff_kyc/README.md)
-- [Session brief](docs/SESSION_BRIEF.md)
-
-## Preservation Policy
-
-The root prototype files are the current demo artifact and should remain runnable throughout the migration. Do not modify `CurrencyDesk OS.html`, `CurrencyDesk OS (standalone).html`, or `os-src/` unless the work explicitly targets the prototype.

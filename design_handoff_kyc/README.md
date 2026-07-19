@@ -13,7 +13,6 @@ prototype**, not production code — see *Rebuild notes* below for what to keep 
 
 ```
 CurrencyDesk OS.html          ← entry point (dev; loads .jsx via Babel from CDN)
-CurrencyDesk OS (standalone).html  ← self-contained demo (all source inlined; open & run offline*)
 cdos-*.jsx                    ← the app, one file per domain (see §3)
 yorkfx-converter.js           ← live rate engine (reads the published/locked rate board)
 york-os.css, yorkfx.css       ← desk styling + design tokens
