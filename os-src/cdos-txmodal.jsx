@@ -12,8 +12,36 @@
   const { useState, useMemo, useRef, useEffect } = React;
   const {
     CD, Ic, CCY, THRESHOLD, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
-    priceDeal, spreadOf, CommitBtn
+    priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
+
+  /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
+  const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
+  const tgRead = () => { try { return JSON.parse(localStorage.getItem(TG_RKEY) || '[]') || []; } catch (e) { return []; } };
+  const tgDigits = (p) => (p || '').replace(/\D/g, '').slice(-10);
+  const tgContactName = (phone) => { try { const cs = JSON.parse(localStorage.getItem('cdos_tg_contacts_v2') || '[]') || []; const hit = cs.find(c => c.name && tgDigits(c.phone) === tgDigits(phone)); return hit ? hit.name : ''; } catch (e) { return ''; } };
+  function tgFind(refRaw) {
+    const norm = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const q = norm(refRaw);
+    if (!q) return { err: 'Enter the ref from their text.' };
+    const list = tgRead();
+    const digits = q.replace(/[^0-9]/g, '');
+    let r = list.find(x => norm(x.ref) === q);
+    if (!r && digits.length >= 2) r = list.find(x => norm(x.ref).endsWith(digits));
+    return r ? { r } : { err: 'No text quote matches that ref — the last digits are enough.' };
+  }
+  function tgRedeem(tqRef, ledgerRef) {
+    try {
+      const t = new Date().toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+      let phone = '';
+      const next = tgRead().map(x => x.ref === tqRef ? (phone = x.phone, { ...x, status: 'collected', ledgerRef, thread: [...(x.thread || []), { d: 'sys', t: 'Redeemed at the counter \u2192 ' + ledgerRef + ' \u00b7 ' + t }] }) : x);
+      localStorage.setItem(TG_RKEY, JSON.stringify(next));
+      const lg = (() => { try { return JSON.parse(localStorage.getItem(TG_LKEY) || '[]') || []; } catch (e) { return []; } })();
+      lg.unshift({ t: Date.now(), kind: 'System', dir: 'sys', to: phone, detail: tqRef + ' redeemed at the counter \u2192 ' + ledgerRef });
+      localStorage.setItem(TG_LKEY, JSON.stringify(lg.slice(0, 400)));
+      window.dispatchEvent(new Event('cdos_tg_sync'));
+    } catch (e) {}
+  }
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
@@ -319,6 +347,11 @@
     const [marginReason, setMarginReason] = useState('');
     const [memo, setMemo] = useState('');
     const [present, setPresent] = useState(false);
+    // Texts hold redemption — the ref the customer reads at the counter
+    const [tqIn, setTqIn] = useState('');
+    const [tq, setTq] = useState(null);
+    const [tqErr, setTqErr] = useState('');
+    const [tqOpen, setTqOpen] = useState(false);
 
     useEffect(() => { const h = (e) => { if (e.key === 'Escape' && !present) onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose, present]);
     useEffect(() => { if (!lock) return; const t = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(t); }, [lock]);
@@ -433,6 +466,31 @@
     const onAddNew = () => setAddFlow(true);
     const onClear = () => { setQuery(''); setCustomer(''); };
 
+    const applyTqWith = (val) => {
+      const { r, err } = tgFind(val);
+      if (err) { setTqErr(err); return; }
+      if (r.status === 'collected' || r.status === 'closed') { setTqErr(r.ref + (r.status === 'collected' ? ' was already collected' + (r.ledgerRef ? ' (' + r.ledgerRef + ')' : '') + '.' : ' is closed — no live quote.')); return; }
+      if (r.status === 'expired' || ((r.status === 'held' || r.status === 'verified') && r.holdUntil && r.holdUntil <= Date.now())) { setTqErr(r.ref + ' — the hold has expired. Re-quote from the Texts app, or price at today’s board.'); return; }
+      if (r.kind === 'order' && r.status !== 'order_arrived') { setTqErr(r.ref + ' is a currency order still in transit — redeem it once the stock arrives.'); return; }
+      if (r.status === 'new' || r.status === 'order_new') { setTqErr(r.ref + ' hasn’t been quoted yet — answer it in the Texts app first.'); return; }
+      if (CCY.indexOf(r.ccy) < 0) { setTqErr(r.ccy + ' isn’t on your board — price this one by hand.'); return; }
+      const held = (r.status === 'held' || r.status === 'verified') && r.rate > 0 && r.total > 0;
+      setInCcy('CAD'); setOutCcy(r.ccy);
+      if (held) { setInAmt(String(r.total)); setOverride(false); setManualRate(''); setLock({ rate: r.amount / r.total, until: r.holdUntil, ref: r.ref }); }
+      else { const est = Math.round(r.amount * sellUnitCad(r.ccy, settings) * 100) / 100; setInAmt(String(est)); setLock(null); setOverride(false); setManualRate(''); }
+      const nm = r.name || tgContactName(r.phone);
+      if (nm) { setCustomer(nm); setQuery(nm); }
+      setMemo(m => m || ('Texts ' + r.ref + ' · ' + r.phone));
+      setTq({ ref: r.ref, phone: r.phone, name: r.name, ccy: r.ccy, amount: r.amount, rate: r.rate, holdUntil: r.holdUntil, kind: r.kind, held });
+      setTqErr(''); setTqIn(''); setTqOpen(false);
+    };
+    const applyTq = () => applyTqWith(tqIn);
+    const clearTq = () => { setTq(null); setLock(null); setTqErr(''); setTqOpen(false); };
+    // hand-pricing usually means the customer is showing a texted quote — offer the ref box
+    useEffect(() => { if (override && !tq) setTqOpen(true); }, [override]);
+    // a ref handed over by the Texts app (Start transaction) — apply on mount
+    useEffect(() => { const p = window.__cdosTqPrefill; if (p) { window.__cdosTqPrefill = null; applyTqWith(String(p)); } }, []);
+
     const record = () => {
       if (!canSave) return;
       const seq = live.filter(r => r.date === TODAY).length + 1;
@@ -443,7 +501,7 @@
         thread: memo ? [{ ts: stamp(), user: me.name, text: memo }] : [], notes: memo };
       let tx;
       if (isExchange) {
-        tx = newTx({ ...base, inCcy, inAmt: amtN, rate: rateN, outCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, priced: override ? 'override' : (lockLive ? 'locked' : 'desk'), quoteRef: lockLive ? lockLive.ref : null, marginPct: +marginPct.toFixed(2), profitCad, lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null });
+        tx = newTx({ ...base, inCcy, inAmt: amtN, rate: rateN, outCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, priced: override ? 'override' : (lockLive ? 'locked' : 'desk'), quoteRef: tq ? tq.ref : (lockLive ? lockLive.ref : null), quotePhone: tq ? tq.phone : null, quoteVia: tq ? 'texts' : null, marginPct: +marginPct.toFixed(2), profitCad, lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null });
       } else if (isSend) {
         tx = newTx({ ...base, beneficiary: `${benName.trim()} · ${dest.country}`, inCcy: 'CAD', inAmt: amtN, rate: rateN, outCcy: payoutCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, marginPct: +marginPct.toFixed(2), profitCad, notes: purpose || memo });
       } else if (isReceive) {
@@ -473,6 +531,7 @@
         setCheques(listv => [{ id: 'c' + Date.now(), ref: cref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer || 'Walk-in (no client)', typeId: chequeType.id, typeLabel: chequeType.label, ccy: 'CAD', amount: amtN, feeCad: chequeFee, netCad: net, endorsed: endorsed, image: chequeImage, holdDays: chequeType.holdDays || 0, receivedDate: TODAY, holdUntil, status: 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cashed at the till · ${(chequeType.holdDays || 0) === 0 ? 'no hold' : chequeType.holdDays + '-day hold'}${chequeImage ? ' · image on file' : ''}` }], txId: tx.id, txRef: ref, createdBy: me.name }, ...(listv || [])]);
       }
       log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : 'CAD'}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
+      if (tq && isExchange) { tgRedeem(tq.ref, ref); log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone); }
       onDone && onDone(tx.id);
     };
 
@@ -526,13 +585,39 @@
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'locked' : 'tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : num(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(num(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : num(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(num(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
-                  <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                    {lockLive ? <button onClick={() => setLock(null)} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${CD.amber}`, color: CD.amber, borderRadius: 7 }}><Ic n="lock" s={12} c={CD.amber} /> Unlock</button>
-                      : <button onClick={lockRate} disabled={!(rateN > 0) || override} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${CD.line}`, color: (rateN > 0 && !override) ? CD.ink : CD.faint, borderRadius: 7 }}><Ic n="lock" s={12} /> Lock rate</button>}
+                  <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                    {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
+                      : <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#8A4B2F', fontFamily: 'Space Mono, monospace' }}><Ic n="smartphone" s={12} c="#8A4B2F" />Priced by {tq.ref}</span>}
                     <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(num(pricing.deskRate)); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Texts hold redemption — pops in from the Text quote button, or when hand-pricing */}
+              {isExchange && tq && (
+                <div className="flex items-center gap-2.5 px-3 py-2.5 tg-bub" style={{ background: '#F2E6DD', border: '1px solid #E0CCBE', borderRadius: 12 }}>
+                  <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: '50%', background: '#fff' }}><Ic n="smartphone" s={14} c="#8A4B2F" /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{tq.ref}<span className="font-normal" style={{ fontFamily: 'Archivo', color: CD.mute }}> · {tq.name || tq.phone}{tq.name ? ' · ' + tq.phone : ''}</span></div>
+                    <div className="text-[11px]" style={{ color: CD.mute }}>{tq.held ? (lockLive ? `Held rate applied — ${num(tq.amount)} ${tq.ccy} at the texted price. Posting marks it collected in Texts.` : 'The hold just expired — repriced at today’s board.') : 'Order pickup — today’s board rate applies. Posting marks it collected in Texts.'}</div>
+                  </div>
+                  <button onClick={clearTq} className="px-2.5 py-1.5 text-[11px] flex-none" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 7, background: 'transparent' }}>Detach</button>
+                </div>
+              )}
+              {isExchange && !tq && tqOpen && (
+                <div className="px-3 py-2.5 tg-bub" style={{ background: 'var(--cd-panel)', border: '1px dashed #E0CCBE', borderRadius: 12 }}>
+                  <div className="flex items-start gap-2 mb-2">
+                    <Ic n="smartphone" s={14} c="#8A4B2F" />
+                    <span className="text-[11px] flex-1 min-w-0" style={{ color: CD.mute }}><b style={{ color: CD.ink }}>The customer has a texted quote.</b> They asked your website for a rate and got it by SMS with a ref like TQ-1044. Enter it — their held rate, amounts and name fill in, and posting marks it collected.</span>
+                    <button onClick={() => { setTqOpen(false); setTqErr(''); }} title="Close" className="p-1 flex-none" style={{ borderRadius: 6 }}><span style={{ display: 'inline-flex', transform: 'rotate(45deg)' }}><Ic n="plus" s={13} c={CD.faint} /></span></button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input autoFocus value={tqIn} onChange={e => { setTqIn(e.target.value); setTqErr(''); }} onKeyDown={e => { if (e.key === 'Enter') applyTq(); }} placeholder="TQ-1044" className="text-[12.5px] px-2.5 py-1.5 outline-none flex-none" style={{ border: `1px solid ${tqErr ? CD.flag : CD.line}`, borderRadius: 7, fontFamily: 'Space Mono, monospace', width: 120, background: 'var(--cd-panel)', letterSpacing: '0.03em' }} />
+                    <button onClick={applyTq} disabled={!tqIn.trim()} className="tg-send px-3.5 py-1.5 text-[12px] font-semibold flex-none" style={{ background: tqIn.trim() ? CD.ink : CD.lineSoft, color: tqIn.trim() ? 'var(--cd-on-ink)' : CD.faint, borderRadius: 7 }}>Fill it in</button>
+                    <span className="text-[11px] flex-1 min-w-0 truncate" style={{ color: tqErr ? CD.flag : CD.faint }}>{tqErr || 'Any format works — the last digits are enough.'}</span>
                   </div>
                 </div>
               )}
