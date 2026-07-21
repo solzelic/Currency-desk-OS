@@ -169,6 +169,28 @@ export const marketRates = pgTable(
   (t) => [index("market_rates_fetched_idx").on(t.fetchedAt)],
 );
 
+/* Pending signups — a business is creating a desk but hasn't verified
+   their email yet. Held here (password already hashed, a hashed 6-digit
+   code with a 10-min expiry) so an abandoned signup never creates an
+   orphan tenant. On successful verification the tenant + owner are
+   created and the row is deleted. */
+export const pendingSignups = pgTable(
+  "pending_signups",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    businessName: text("business_name").notNull(),
+    ownerName: text("owner_name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    slug: text("slug").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: doublePrecision("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("pending_signups_email_idx").on(t.email)],
+);
+
 /* SMS rate-hold quotes — a site visitor asks for a rate by text; the
    server prices it off the newest published board and HOLDS it for 30
    minutes. Status walks held → confirmed | expired | cancelled; expiry

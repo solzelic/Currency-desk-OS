@@ -16,6 +16,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
+import { registerSignupRoutes } from "./routes/signup.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
@@ -31,6 +32,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
 
   app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));
   registerAuthRoutes(app, db);
+  registerSignupRoutes(app, db);
   registerStaffRoutes(app, db);
   registerTenantRoutes(app, db);
   registerPublicSiteRoutes(app, db);

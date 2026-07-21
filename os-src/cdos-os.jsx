@@ -131,7 +131,7 @@
      One door for the whole business (§04 of the Branch & Access Model spec):
      the staff ID resolves a real employee record, and role + assignments —
      not the person — decide where they land after 2FA. */
-  function Lock({ employees, onNext }) {
+  function Lock({ employees, onNext, onSignup }) {
     const [u, setU] = useState(''); const [p, setP] = useState(''); const [err, setErr] = useState('');
     const dir = (employees || []).filter(e => e.active !== false);
     const resolve = (raw) => { const q = raw.trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -181,6 +181,7 @@
         <div className="lock-err">{err}</div>
         <button className="go" type="submit">Continue →</button>
       </form>
+      {onSignup && <div style={{ textAlign: 'center', marginTop: 4, marginBottom: 14, fontSize: 12.5, color: 'var(--soft)' }}>New to CurrencyDesk? <button type="button" onClick={onSignup} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--ink)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button></div>}
       <div className="lock-hint" style={{ textAlign: 'left' }}>
         <div style={{ marginBottom: 7 }}>Staff directory — each ID routes to its own workspace:</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
@@ -226,6 +227,83 @@
       </form>
       <div className="lock-hint">Signed in as <b>{staffId}</b>. Changing the password signs out every other device on this account.</div>
       <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back</button>
+    </div></div>);
+  }
+
+  /* ====================== SIGN UP (create a new desk) ======================
+     A business creates its own tenant: details -> emailed 6-digit code ->
+     verify -> the server creates the tenant + owner and signs them in. */
+  function Signup({ onSent, onBack }) {
+    const [f, setF] = useState({ businessName: '', ownerName: '', email: '', password: '', slug: '' });
+    const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+    const set = (k, v) => setF(s => ({ ...s, [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
+    const submit = async (e) => {
+      e.preventDefault();
+      if (!f.businessName.trim() || !f.ownerName.trim()) { setErr('Enter your business and your name.'); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)) { setErr('Enter a valid email \u2014 we send a code to it.'); return; }
+      if (f.password.length < 8) { setErr('Pick a password of at least 8 characters.'); return; }
+      if (f.slug.length < 2) { setErr('Pick a desk address (letters, digits, hyphens).'); return; }
+      setBusy(true); setErr('Creating your desk\u2026');
+      try {
+        const res = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(f) });
+        const d = await res.json().catch(() => null);
+        if (!res.ok) { setErr((d && d.detail) || ('Couldn\u2019t start signup (' + res.status + ').')); setBusy(false); return; }
+        setErr(''); onSent(f.email, f.businessName);
+      } catch (_) { setErr('Network error \u2014 try again.'); setBusy(false); }
+    };
+    return (<div id="lock"><div className="lock-card">
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Create your desk</span></div>
+      <h1>Start your exchange desk</h1>
+      <div className="station">A few details and it’s yours — we’ll email a code to verify it.</div>
+      <form onSubmit={submit}>
+        <div><div className="lbl">Business name</div><input value={f.businessName} onChange={e => set('businessName', e.target.value)} placeholder="Maple Currency Exchange" autoFocus /></div>
+        <div><div className="lbl">Your name</div><input value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" autoComplete="name" /></div>
+        <div><div className="lbl">Work email</div><input type="email" value={f.email} onChange={e => set('email', e.target.value)} placeholder="you@business.com" autoComplete="email" /></div>
+        <div><div className="lbl">Password</div><input type="password" value={f.password} onChange={e => set('password', e.target.value)} placeholder="at least 8 characters" autoComplete="new-password" /></div>
+        <div><div className="lbl">Desk address</div><input value={f.slug} onChange={e => set('slug', e.target.value)} placeholder="maplefx" style={{ fontFamily: 'var(--f-mono)' }} /><div style={{ fontSize: 10.5, color: 'var(--faint)', marginTop: 3 }}>{(f.slug || 'yourshop')}.currencydesk — where your desk lives</div></div>
+        <div className="lock-err">{err}</div>
+        <button className="go" type="submit" disabled={busy} style={{ opacity: busy ? 0.5 : 1 }}>Send my code →</button>
+      </form>
+      <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back to sign-in</button>
+    </div></div>);
+  }
+
+  function VerifySignup({ email, onVerified, onBack }) {
+    const [code, setCode] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [note, setNote] = useState('');
+    const submit = async (e) => {
+      e.preventDefault();
+      if (code.trim().length < 4) { setErr('Enter the code from your email.'); return; }
+      setBusy(true); setErr('Checking\u2026');
+      try {
+        const res = await fetch('/api/signup/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email, code: code.trim() }) });
+        const d = await res.json().catch(() => null);
+        if (!res.ok) { setErr((d && d.detail) || ('That code didn\u2019t work (' + res.status + ').')); setBusy(false); return; }
+        setErr(''); onVerified(d);
+      } catch (_) { setErr('Network error \u2014 try again.'); setBusy(false); }
+    };
+    const resend = async () => { setNote('Sending\u2026'); try { await fetch('/api/signup/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email }) }); setNote('A new code is on its way.'); } catch (_) { setNote('Couldn\u2019t resend \u2014 try again.'); } };
+    return (<div id="lock"><div className="lock-card">
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Verify your email</span></div>
+      <h1>Enter your code</h1>
+      <div className="station">We emailed a 6-digit code to <b style={{ color: 'var(--ink)' }}>{email}</b>. It expires in 10 minutes.</div>
+      <form onSubmit={submit}>
+        <div><input value={code} onChange={e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus style={{ textAlign: 'center', letterSpacing: '0.4em', fontFamily: 'var(--f-mono)', fontSize: 22 }} /></div>
+        <div className="lock-err">{err}</div>
+        <button className="go" type="submit" disabled={busy} style={{ opacity: busy ? 0.5 : 1 }}>Verify &amp; open my desk →</button>
+      </form>
+      <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--soft)' }}>Didn’t get it? <button type="button" onClick={resend} style={{ background: 'none', border: 'none', color: 'var(--ink)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Resend code</button>{note && <span style={{ marginLeft: 6, color: 'var(--faint)' }}>{note}</span>}</div>
+      <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back</button>
+    </div></div>);
+  }
+
+  function DeskCreated({ desk, onEnter }) {
+    const t = (desk && desk.tenant) || {};
+    return (<div id="lock"><div className="lock-card" style={{ textAlign: 'center' }}>
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Welcome aboard</span></div>
+      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--green-soft, #dcefe4)', display: 'grid', placeItems: 'center', margin: '6px auto 14px' }}><Ic n="check" s={26} c="var(--green, #1f8a4c)" /></div>
+      <h1 style={{ textAlign: 'center' }}>Your desk is ready</h1>
+      <div className="station" style={{ textAlign: 'center' }}><b style={{ color: 'var(--ink)' }}>{t.name || 'Your desk'}</b> is created and you’re signed in as the owner. Your address is <b style={{ color: 'var(--ink)', fontFamily: 'var(--f-mono)' }}>{t.slug}</b>.</div>
+      <button className="go" onClick={onEnter} style={{ width: '100%' }}>Enter CurrencyDesk →</button>
     </div></div>);
   }
 
@@ -431,6 +509,8 @@
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
+    const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
+    const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [me, setMe] = useState(STAFF[0]);
 
     // №02 (Roadmap v2): the book + client roster persist like every other store.
@@ -1095,7 +1175,17 @@
       return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
 
-    if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onSignup={() => setStage('signup')} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'signup') return <Signup onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
+    if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
+    if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={() => {
+      // adopt the new owner into the local directory and route in (per-tenant
+      // data lands with Phase B; today this opens the OS as the owner)
+      const u = (newDesk && newDesk.user) || {};
+      const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
+      setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
+      setUser(rec.code); setAuthRec(rec); routeAfterAuth(rec);
+    }} />;
     if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={() => { setPwTemp(null); setStage('otp'); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
     if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }

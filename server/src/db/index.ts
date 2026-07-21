@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS rate_quotes (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_quotes_tenant_idx ON rate_quotes(tenant_id, created_at);
+CREATE TABLE IF NOT EXISTS pending_signups (
+  id text PRIMARY KEY,
+  email text NOT NULL,
+  business_name text NOT NULL,
+  owner_name text NOT NULL,
+  password_hash text NOT NULL,
+  slug text NOT NULL,
+  code_hash text NOT NULL,
+  attempts double precision NOT NULL DEFAULT 0,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pending_signups_email_idx ON pending_signups(email);
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
