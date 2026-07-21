@@ -146,7 +146,6 @@
       setErr('Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)');
       let mustChange = false;
       let srvPlan = null;   // the tenant's purchased tier, from the server
-      let srvUser = null;   // the server user record — carries the tenantId
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
@@ -158,7 +157,6 @@
           const data = await res.json().catch(() => null);
           mustChange = !!(data && data.user && data.user.mustChangePassword);
           srvPlan = (data && data.user && data.user.plan) || null;
-          srvUser = (data && data.user) || null;
           // the server vouches for this person even when this device's local
           // directory doesn't know them yet (account created on another
           // terminal) — adopt a local record so the OS can route them
@@ -171,7 +169,7 @@
       if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
       setErr('');
       // a manager-issued temporary password must be replaced before the desk opens
-      onNext(rec, mustChange ? { current: p } : null, srvPlan, srvUser);
+      onNext(rec, mustChange ? { current: p } : null, srvPlan);
     };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
@@ -232,141 +230,41 @@
     </div></div>);
   }
 
-  /* ====================== GUIDED ONBOARDING ======================
-     The official 4-phase setup: Business -> Money -> Rules -> Launch.
-     Collects the desk's regulator, identity, plan and compliance rules,
-     then creates the tenant (POST /api/signup) and emails a code. */
-  function OnboardWizard({ onBack, onSent }) {
-    const ACC = '#1D6B45';
-    const REG = [
-      { c: 'Canada', flag: '🇨🇦', reg: 'FINTRAC', cur: 'CAD', th: 10000 },
-      { c: 'United States', flag: '🇺🇸', reg: 'FinCEN', cur: 'USD', th: 10000 },
-      { c: 'United Kingdom', flag: '🇬🇧', reg: 'HMRC', cur: 'GBP', th: 0 },
-      { c: 'Australia', flag: '🇦🇺', reg: 'AUSTRAC', cur: 'AUD', th: 10000 },
-      { c: 'United Arab Emirates', flag: '🇦🇪', reg: 'CBUAE', cur: 'AED', th: 0 },
-      { c: 'European Union', flag: '🇪🇺', reg: 'National FIU', cur: 'EUR', th: 0 },
-      { c: 'Somewhere else', flag: '🌐', reg: 'your regulator', cur: 'USD', th: 10000 },
-    ];
-    const PLANS = [
-      { id: 'basic', name: 'Basic', price: 199, tag: 'Live rate board + customer Texts' },
-      { id: 'pro', name: 'Pro', price: 499, tag: 'The full platform — ledger, transfers, compliance' },
-      { id: 'premium', name: 'Premium', price: 749, tag: 'Everything, plus the AI desk assistant' },
-    ];
-    const THRESH = [
-      { v: 10000, t: 'Only at 10,000', d: 'The legal minimum — nothing extra.' },
-      { v: 5000, t: 'At 5,000', d: 'A cautious middle ground.' },
-      { v: 3000, t: 'At 3,000', d: 'Careful — ID on most larger deals.' },
-      { v: 1000, t: 'At 1,000', d: 'Strictest — ID on almost every deal.' },
-    ];
-    const PHASES = ['Business', 'Money', 'Rules', 'Launch'];
-    const STEP_PHASE = [0, 0, 0, 1, 2, 3];
-    const [step, setStep] = useState(0);
-    const [d, setD] = useState({ country: '', businessName: '', ownerName: '', email: '', password: '', slug: '', msbNumber: '', plan: 'pro', idThreshold: 10000 });
+  /* ====================== SIGN UP (create a new desk) ======================
+     A business creates its own tenant: details -> emailed 6-digit code ->
+     verify -> the server creates the tenant + owner and signs them in. */
+  function Signup({ onSent, onBack }) {
+    const [f, setF] = useState({ businessName: '', ownerName: '', email: '', password: '', slug: '' });
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-    const set = (k, v) => setD(s => ({ ...s, [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
-    const reg = REG.find(r => r.c === d.country) || {};
-    const canNext = () => {
-      if (step === 0) return !!d.country;
-      if (step === 1) return d.businessName.trim().length > 0;
-      if (step === 2) return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email) && d.password.length >= 8 && d.slug.length >= 2 && !!d.ownerName.trim();
-      if (step === 3) return !!d.plan;
-      if (step === 4) return d.idThreshold > 0;
-      return true;
-    };
-    const back = () => { setErr(''); step === 0 ? onBack() : setStep(s => s - 1); };
-    const advance = () => {
-      if (!canNext()) { setErr(step === 2 ? 'Fill in your name, a valid email, an 8+ character password and a desk address.' : 'Pick an option to continue.'); return; }
-      setErr('');
-      if (step === 0 && reg.th) set('idThreshold', reg.th);
-      if (step < 5) setStep(s => s + 1); else create();
-    };
-    const create = async () => {
-      setBusy(true); setErr('Creating your desk…');
-      const body = { businessName: d.businessName, ownerName: d.ownerName, email: d.email, password: d.password, slug: d.slug,
-        onboarding: { country: d.country, regulator: reg.reg, homeCurrency: reg.cur, msbNumber: d.msbNumber, plan: d.plan, idThreshold: d.idThreshold } };
+    const set = (k, v) => setF(s => ({ ...s, [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
+    const submit = async (e) => {
+      e.preventDefault();
+      if (!f.businessName.trim() || !f.ownerName.trim()) { setErr('Enter your business and your name.'); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)) { setErr('Enter a valid email \u2014 we send a code to it.'); return; }
+      if (f.password.length < 8) { setErr('Pick a password of at least 8 characters.'); return; }
+      if (f.slug.length < 2) { setErr('Pick a desk address (letters, digits, hyphens).'); return; }
+      setBusy(true); setErr('Creating your desk\u2026');
       try {
-        const res = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
-        const j = await res.json().catch(() => null);
-        if (!res.ok) { setErr((j && j.detail) || ('Couldn’t create your desk (' + res.status + ').')); setBusy(false); return; }
-        setErr(''); onSent(d.email);
-      } catch (_) { setErr('Network error — try again.'); setBusy(false); }
+        const res = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(f) });
+        const d = await res.json().catch(() => null);
+        if (!res.ok) { setErr((d && d.detail) || ('Couldn\u2019t start signup (' + res.status + ').')); setBusy(false); return; }
+        setErr(''); onSent(f.email, f.businessName);
+      } catch (_) { setErr('Network error \u2014 try again.'); setBusy(false); }
     };
-    const inSty = { border: `1px solid var(--hair)`, borderRadius: 9, background: 'var(--cd-panel, #fff)' };
-    const optRow = (on, main, sub, onClick, left) => (
-      <button type="button" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '13px 15px', marginBottom: 8, borderRadius: 12, cursor: 'pointer', background: on ? 'var(--green-soft, #dcefe4)' : 'var(--cd-panel, #fff)', border: `1.5px solid ${on ? ACC : 'var(--hair)'}` }}>
-        {left != null && <span style={{ fontSize: 20, flex: 'none', width: 26, textAlign: 'center' }}>{left}</span>}
-        <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{main}</span>{sub && <span style={{ display: 'block', fontSize: 12, color: 'var(--mute)', marginTop: 1 }}>{sub}</span>}</span>
-        {on ? <Ic n="check" s={17} c={ACC} /> : <span style={{ width: 17, height: 17, borderRadius: '50%', border: `1.5px solid var(--hair)`, flex: 'none' }} />}
-      </button>
-    );
-    const field = (label, k, ph, type) => (
-      <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: 'var(--mute)', marginBottom: 4 }}>{label}</div>
-        <input type={type || 'text'} value={d[k]} onChange={e => set(k, e.target.value)} placeholder={ph} style={{ ...inSty, width: '100%', padding: '9px 11px', fontSize: 14, outline: 'none', fontFamily: k === 'slug' || k === 'msbNumber' ? 'var(--f-mono)' : 'inherit' }} /></div>
-    );
-    return (<div id="lock"><div className="lock-card" style={{ width: 460, maxWidth: 'calc(100vw - 40px)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ fontFamily: 'var(--f-mono)', fontWeight: 800, fontSize: 15, color: 'var(--ink)' }}>CurrencyDesk</span>
-        <span style={{ marginLeft: 'auto', fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '0.14em', color: 'var(--faint)', border: `1px solid var(--hair)`, borderRadius: 6, padding: '3px 8px' }}>SETUP</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-        <button type="button" onClick={back} title="Back" style={{ background: 'none', border: `1px solid var(--hair)`, borderRadius: 8, width: 28, height: 28, display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--mute)', flex: 'none' }}><Ic n="arrowleft" s={13} c="currentColor" /></button>
-        {PHASES.map((ph, i) => { const done = i < STEP_PHASE[step]; const cur = i === STEP_PHASE[step]; return (
-          <span key={ph} style={{ flex: 1 }}><span style={{ display: 'block', fontFamily: 'var(--f-mono)', fontSize: 8.5, letterSpacing: '0.1em', color: (done || cur) ? ACC : 'var(--faint)', marginBottom: 4 }}>{ph.toUpperCase()}</span><span style={{ display: 'block', height: 3, borderRadius: 3, background: done ? ACC : cur ? ACC : 'var(--hair)', opacity: cur ? 0.5 : 1 }} /></span>); })}
-      </div>
-
-      {step === 0 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>WHERE YOU OPERATE</div>
-        <h1 style={{ marginBottom: 6 }}>Which country are you licensed in?</h1>
-        <div className="station" style={{ marginBottom: 14 }}>This sets your regulator, home currency and reporting thresholds — so the desk fits your rules.</div>
-        {REG.map(r => optRow(d.country === r.c, r.c, r.reg + ' · home currency ' + r.cur, () => set('country', r.c), r.flag))}
-      </div>)}
-
-      {step === 1 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>YOUR BUSINESS</div>
-        <h1 style={{ marginBottom: 6 }}>Tell us about your desk</h1>
-        <div className="station" style={{ marginBottom: 14 }}>Your legal name and registration go on receipts and reports.</div>
-        {field('Business name', 'businessName', 'Maple Currency Exchange')}
-        {field(reg.reg ? (reg.reg + ' registration number') : 'MSB registration number', 'msbNumber', 'M21-0000000')}
-      </div>)}
-
-      {step === 2 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>YOUR ACCOUNT</div>
-        <h1 style={{ marginBottom: 6 }}>Create your owner login</h1>
-        <div className="station" style={{ marginBottom: 14 }}>You’ll verify this email with a code, then it’s your sign-in.</div>
-        {field('Your name', 'ownerName', 'Dana Kim')}
-        {field('Work email', 'email', 'you@business.com', 'email')}
-        {field('Password', 'password', 'at least 8 characters', 'password')}
-        {field('Desk address', 'slug', 'maplefx')}
-        <div style={{ fontSize: 10.5, color: 'var(--faint)', marginTop: -6 }}>{(d.slug || 'yourshop')}.currencydesk — where your desk lives</div>
-      </div>)}
-
-      {step === 3 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>YOUR PLAN</div>
-        <h1 style={{ marginBottom: 6 }}>Pick a plan</h1>
-        <div className="station" style={{ marginBottom: 14 }}>Start free — no card today. You won’t be charged during your trial.</div>
-        {PLANS.map(pl => optRow(d.plan === pl.id, pl.name + ' · $' + pl.price + '/mo', pl.tag, () => set('plan', pl.id)))}
-      </div>)}
-
-      {step === 4 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>YOUR RULES</div>
-        <h1 style={{ marginBottom: 6 }}>When should the desk ask for ID?</h1>
-        <div className="station" style={{ marginBottom: 14 }}>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</div>
-        {THRESH.map(x => optRow(d.idThreshold === x.v, x.t + ' ' + (reg.cur || 'CAD'), x.d, () => set('idThreshold', x.v)))}
-      </div>)}
-
-      {step === 5 && (<div>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>LAUNCH</div>
-        <h1 style={{ marginBottom: 6 }}>Ready to open {d.businessName || 'your desk'}?</h1>
-        <div className="station" style={{ marginBottom: 14 }}>We’ll email a code to <b style={{ color: 'var(--ink)' }}>{d.email}</b> to verify it, then your desk is live.</div>
-        <div style={{ ...inSty, padding: '12px 14px', fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.7 }}>
-          <div><b style={{ color: 'var(--ink)' }}>{d.country}</b> · {reg.reg} · {reg.cur}</div>
-          <div>{d.plan.charAt(0).toUpperCase() + d.plan.slice(1)} plan · free trial · ID at {Number(d.idThreshold).toLocaleString()} {reg.cur}</div>
-          <div>{(d.slug || 'yourshop')}.currencydesk</div>
-        </div>
-      </div>)}
-
-      {err && <div className="lock-err" style={{ marginTop: 12 }}>{err}</div>}
-      <button className="go" onClick={advance} disabled={busy} style={{ width: '100%', marginTop: 16, background: ACC, opacity: busy ? 0.5 : 1 }}>{step < 5 ? 'Continue →' : 'Create my desk →'}</button>
+    return (<div id="lock"><div className="lock-card">
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Create your desk</span></div>
+      <h1>Start your exchange desk</h1>
+      <div className="station">A few details and it’s yours — we’ll email a code to verify it.</div>
+      <form onSubmit={submit}>
+        <div><div className="lbl">Business name</div><input value={f.businessName} onChange={e => set('businessName', e.target.value)} placeholder="Maple Currency Exchange" autoFocus /></div>
+        <div><div className="lbl">Your name</div><input value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" autoComplete="name" /></div>
+        <div><div className="lbl">Work email</div><input type="email" value={f.email} onChange={e => set('email', e.target.value)} placeholder="you@business.com" autoComplete="email" /></div>
+        <div><div className="lbl">Password</div><input type="password" value={f.password} onChange={e => set('password', e.target.value)} placeholder="at least 8 characters" autoComplete="new-password" /></div>
+        <div><div className="lbl">Desk address</div><input value={f.slug} onChange={e => set('slug', e.target.value)} placeholder="maplefx" style={{ fontFamily: 'var(--f-mono)' }} /><div style={{ fontSize: 10.5, color: 'var(--faint)', marginTop: 3 }}>{(f.slug || 'yourshop')}.currencydesk — where your desk lives</div></div>
+        <div className="lock-err">{err}</div>
+        <button className="go" type="submit" disabled={busy} style={{ opacity: busy ? 0.5 : 1 }}>Send my code →</button>
+      </form>
+      <button className="lock-back" onClick={onBack}><Ic n="arrowleft" s={13} c="currentColor" /> Back to sign-in</button>
     </div></div>);
   }
 
@@ -613,9 +511,6 @@
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
-    const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
-    const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
-    const hydratedRef = useRef(false);              // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
 
     // №02 (Roadmap v2): the book + client roster persist like every other store.
@@ -1256,104 +1151,13 @@
       log('Day opened', 'New trading day — book unlocked');
     };
 
-    // ---- Per-tenant persistence (Phase B) --------------------------------
-    // Re-apply the top-level stores from localStorage after the persistence
-    // bridge has hydrated it. Sub-apps mount later and read localStorage on
-    // their own, so only the always-mounted stores need reseating here.
-    const reseatFromStorage = () => {
-      const rd = (k, f) => { try { const v = localStorage.getItem(k); return v == null ? f : JSON.parse(v); } catch (e) { return f; } };
-      setRows(rd('cdos_rows_v1', []));
-      setClients(rd('cdos_clients_v1', {}));
-      const svS = rd('cdos_settings', null);
-      if (svS) setSettings(s => ({ ...s, ...svS, billingPlan: s.billingPlan || svS.billingPlan }));
-      const svP = rd('cdos_perms', null); if (svP) setPerms(svP);
-      setBaseline(rd('cdos_baseline_v1', window.CDOS.defaultBaseline()));
-      setReceipts(rd('cdos_receipts_v1', window.CDOS.defaultReceipts()));
-      const svB = rd(_ST.SKEY, null); if (Array.isArray(svB) && svB.length) setBranches(svB);
-      setBranchMoves(rd(_ST.MKEY, []));
-      const svSt = rd('cdos_station_v1', null); if (svSt && svSt.branchId) setStation(svSt);
-      setSubs(rd('cdos_submissions_v1', {}));
-      setTimeout(() => { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1' })); } catch (e) {} }, 0);
-    };
-    // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
-    // the onboarding answers: business identity, home currency, ID threshold,
-    // one branch named for the business, the owner as the sole employee.
-    const freshDeskSlate = () => {
-      const su = srvUserRef.current || srvUser;
-      const t = (newDesk && newDesk.tenant) || {};
-      const setup = t.setup || (su && su.setup) || {};
-      const ownerName = (su && su.name) || (newDesk && newDesk.user && newDesk.user.name) || 'Owner';
-      const ownerId = (su && su.id) || (newDesk && newDesk.user && newDesk.user.id) || ownerName;
-      const bizName = t.name || settings.bizName || 'Your Desk';
-      const homeCcy = setup.homeCurrency || 'CAD';
-      const threshold = typeof setup.idThreshold === 'number' ? setup.idThreshold : 10000;
-      const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, pin: '0000', requirePin: true, caps: {}, apps: null, branches: '*', home: null };
-      const nextSettings = { ...settings,
-        bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
-        bizPhone: '', bizEmail: ownerId, bizAddress: setup.address || '', bizCity: setup.city || '', bizRegion: setup.region || '', bizPostal: setup.postal || '',
-        baseCurrency: homeCcy, threshold: threshold, idRequiredOver: Math.min(3000, threshold),
-        receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
-        employees: [owner] };
-      // a fresh desk holds NO cash — zero every vault/till balance and clear the
-      // posted teller/live operator, so nothing reads as York's demo float
-      const zero = (obj) => { const o = {}; Object.keys(obj || {}).forEach(k => o[k] = 0); return o; };
-      let oneBranches = null, oneStation = null;
-      try {
-        const b0 = _ST.defaultBranches()[0];
-        const t0 = (b0.tills || [])[0] || {};
-        const branch = { ...b0, name: bizName + ' — Main', code: 'MAIN', city: setup.city || setup.address || '', status: 'open', main: true, dealsToday: 0, volToday: 0,
-          vault: zero(b0.vault),
-          tills: [{ ...t0, name: 'Till 1', teller: '', operator: '', status: 'open', cash: zero(t0.cash) }] };
-        oneBranches = [branch];
-        oneStation = { branchId: branch.id, tillId: (branch.tills[0] || {}).id };
-      } catch (e) {}
-      // opening position starts at zero units (keep the cost/rate map for display)
-      const emptyBaseline = (() => { const b = window.CDOS.defaultBaseline(); return { ...b, units: zero(b.units) }; })();
-      // write every persisted key synchronously so the first snapshot is complete
-      try {
-        localStorage.setItem('cdos_rows_v1', '[]');
-        localStorage.setItem('cdos_clients_v1', '{}');
-        localStorage.setItem('cdos_settings', JSON.stringify(nextSettings));
-        localStorage.setItem('cdos_baseline_v1', JSON.stringify(emptyBaseline));
-        localStorage.setItem('cdos_receipts_v1', '[]');
-        localStorage.setItem('cdos_submissions_v1', '{}');
-        if (oneBranches) localStorage.setItem(_ST.SKEY, JSON.stringify(oneBranches));
-        if (oneStation) localStorage.setItem('cdos_station_v1', JSON.stringify(oneStation));
-        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
-      } catch (e) {}
-      // mirror into React state so the desktop shows the clean desk immediately
-      setRows([]); setClients({}); setSettings(nextSettings);
-      setBaseline(emptyBaseline); setReceipts([]); setSubs({}); setBranchMoves([]);
-      if (oneBranches) setBranches(oneBranches);
-      if (oneStation) setStation(oneStation);
-    };
-    // Load (or initialize) this tenant's saved desk. Runs once per sign-in.
-    const hydrateTenant = async () => {
-      if (hydratedRef.current) return;
-      const su = srvUserRef.current || srvUser;
-      const tid = su && su.tenantId;
-      // No server tenant, or the seeded demo tenant → run on the front-end demo
-      // (localStorage) exactly as before. York FX stays the pristine showcase;
-      // real per-tenant persistence is for businesses that sign up.
-      if (!tid || tid === 'tnt-yorkfx') { hydratedRef.current = true; return; }
-      hydratedRef.current = true;
-      let status = 'offline';
-      try { status = await window.CDOS_PERSIST.begin(tid); } catch (e) {}
-      if (status === 'restored') reseatFromStorage();
-      else if (status === 'empty') freshDeskSlate();
-      if (status !== 'offline') window.CDOS_PERSIST.startAutosave();
-    };
-
-    async function enterDesktop() {
-      await hydrateTenant();
+    function enterDesktop() {
       try { sessionStorage.setItem(AUTH_KEY, '1'); sessionStorage.setItem('yorkfx_staff_user', user || 'staff'); } catch (e) {}
       setStage('desktop');
       setTimeout(() => { openApp(planAllows('ledger') ? 'ledger' : 'rates'); }, 60);
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
-      try { window.CDOS_PERSIST.end(); } catch (e) {}
-      hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
       setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.operator === me.name ? { ...t, operator: '' } : t) })));
       setWins([]); setStage('lock');
@@ -1371,20 +1175,19 @@
       return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
 
-    if (stage === 'lock') return <Lock employees={settings.employees || []} onSignup={() => setStage('signup')} onNext={(rec, temp, srvPlan, srvUser) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); srvUserRef.current = srvUser || null; setSrvUser(srvUser || null); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
-    if (stage === 'signup') return <OnboardWizard onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onSignup={() => setStage('signup')} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'signup') return <Signup onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
     if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
-    if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={async () => {
-      // adopt the new owner locally, then hydrate their brand-new (clean) desk
-      // from the server before routing in — so the OS opens as THEIR instance.
+    if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={() => {
+      // adopt the new owner into the local directory and route in (per-tenant
+      // data lands with Phase B; today this opens the OS as the owner)
       const u = (newDesk && newDesk.user) || {};
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
-      srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null); setUser(rec.code); setAuthRec(rec);
-      await hydrateTenant(); routeAfterAuth(rec);
+      setUser(rec.code); setAuthRec(rec); routeAfterAuth(rec);
     }} />;
     if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={() => { setPwTemp(null); setStage('otp'); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
-    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={async () => { await hydrateTenant(); routeAfterAuth(authRec); }} />;
+    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
     if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('otp')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
 
