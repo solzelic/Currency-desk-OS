@@ -111,6 +111,7 @@
     clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     bars:'<line x1="4" x2="4" y1="20" y2="10"/><line x1="10" x2="10" y1="20" y2="4"/><line x1="16" x2="16" y1="20" y2="13"/><line x1="2" x2="22" y1="20" y2="20"/>',
     rateboard:'<g transform="translate(-2.16 -2.16) scale(1.18)" stroke-width="1.7"><rect x="3" y="3.5" width="18" height="13" rx="1.5" stroke="#17140F"/><path d="M9 20.5 L10.8 16.5 M15 20.5 L13.2 16.5" stroke="#17140F"/><path d="M6.5 13 V10.5 M10.2 13 V11.2 M13.8 13 V10" stroke="#17140F"/><path d="M6.5 8.5 L10.2 7 L13.8 8 L17.5 5.8" stroke="#1D6B45"/></g>',
+    telegraphbubble:'<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><path d="M6.5 4.5 H17.5 A3 3 0 0 1 20.5 7.5 V12 A3 3 0 0 1 17.5 15 H10.5 L6.5 19 L8 15 H6.5 A3 3 0 0 1 3.5 12 V7.5 A3 3 0 0 1 6.5 4.5 Z" stroke="#17140F"/><path d="M8 9.75 H8.02 M12 9.75 H12.02 M16 9.75 H16.02" stroke="#1D6B45"/></g>',
     minus:'<path d="M5 12h14"/>',
     grip:'<line x1="4" x2="20" y1="8" y2="8"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="16" y2="16"/>',
     grid4:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -542,7 +543,7 @@
     rates: '#274B8E', ledger: '#1D6B45', transfers: '#1F7269', cheques: '#8F6410',
     clients: '#3C3B78', compliance: '#6B2E54', dashboard: '#17140F', assistant: '#17140F',
     till: '#17140F', vault: '#17140F', branches: '#17140F', audit: '#17140F',
-    calc: '#17140F', loan: '#17140F', tagged: '#17140F', settings: '#17140F', store: '#17140F', reports: '#46506B', pricing: '#274B8E'
+    calc: '#17140F', loan: '#17140F', tagged: '#17140F', settings: '#17140F', store: '#17140F', reports: '#46506B', pricing: '#274B8E', telegraph: '#8A4B2F'
   };
 
   /* ---- shared commit button: press → flash green + lock → fire a beat later.

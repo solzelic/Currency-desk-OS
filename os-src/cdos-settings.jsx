@@ -375,6 +375,7 @@
         ['payment', 'Payment methods', 'card'],
       ]],
       ['App settings', [
+        ['texts', 'Texts · SMS', 'smartphone'],
         ['ledger', 'Ledger', 'scroll'],
         ['clients', 'Clients · KYC', 'users'],
         ['till', 'Cash drawer', 'wallet'],
@@ -672,6 +673,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <div className="flex items-center gap-1.5 text-[11px] mt-3" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> Card details are stored securely with our payments provider — we only keep the brand and last four digits.</div>
           </div>);
         })()}
+
+        {tab === 'texts' && (<div>
+          <SectionTitle icon="smartphone" title="Texts · SMS" sub="Your dedicated number, connected websites and messaging defaults — the Texts app runs on these." />
+          {window.CDOS.TextsSettings ? React.createElement(window.CDOS.TextsSettings) : <div className="text-[12px]" style={{ color: CD.mute }}>The Texts app is not loaded.</div>}
+        </div>)}
 
         {tab === 'ledger' && (<div>
           <SectionTitle icon="scroll" title="Ledger" sub="Defaults for the deal ledger, and bulk-import historical or external transactions from a spreadsheet." />

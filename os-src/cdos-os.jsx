@@ -10,11 +10,12 @@
     CD, Ic, STAFF, ROLE_CAPS, ROLE_SCOPE, seedRows, seedClients, perCadLive, crossRate, TODAY, fmt,
     computeFlags, computeAlerts, publishedBook, applyBook, bookSig,
     Ledger, Clients, Dashboard, TillDrawer, Audit, SettingsView, Calc, ReceiptModal, Tagged,
-    Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing
+    Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Telegraph
   } = window.CDOS;
 
   const APPMETA = {
     rates:     { title: 'Rate Board',      icon: 'rateboard', w: 1060, h: 660 },
+    telegraph: { title: 'Texts',           icon: 'telegraphbubble', w: 1120, h: 700 },
     ledger:    { title: 'Ledger',          icon: 'ledgerbook', w: 1040, h: 600 },
     transfers: { title: 'Transfers',       icon: 'transferarrows', w: 1040, h: 660 },
     cheques:   { title: 'Cheques',         icon: 'cheque', w: 940, h: 640 },
@@ -33,7 +34,7 @@
     tagged:    { title: 'Tagged',          icon: 'taggedbookmark', w: 720, h: 560 },
     settings:  { title: 'Settings',        icon: 'gearsettings',   w: 640,  h: 520 }
   };
-  const APP_ORDER = ['rates', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
+  const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
   // the storefront opens as a window
   APPMETA.store = { title: 'Store', icon: 'storefront', w: 860, h: 640 };
   const AUTH_KEY = 'yorkfx_staff_auth';
@@ -1091,7 +1092,7 @@
       if (id === 'settings' || id === 'store') return true;
       if (activePlan === 'premium') return true;
       if (activePlan === 'pro') return id !== 'assistant';
-      return id === 'rates'; // basic — rate board only
+      return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
 
     if (stage === 'lock') return <Lock employees={settings.employees || []} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
@@ -1154,6 +1155,7 @@
     function renderApp(id) {
       switch (baseApp(id)) {
         case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling }} />
           : <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling }} />;
