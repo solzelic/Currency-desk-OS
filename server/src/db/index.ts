@@ -39,6 +39,7 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'premium
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_slug text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -64,11 +65,15 @@ CREATE TABLE IF NOT EXISTS pending_signups (
   owner_name text NOT NULL,
   password_hash text NOT NULL,
   slug text NOT NULL,
+  onboarding jsonb,
   code_hash text NOT NULL,
   attempts double precision NOT NULL DEFAULT 0,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- existing databases already have pending_signups without the guided-onboarding
+-- blob; CREATE TABLE IF NOT EXISTS is a no-op there, so add the column explicitly
+ALTER TABLE pending_signups ADD COLUMN IF NOT EXISTS onboarding jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS pending_signups_email_idx ON pending_signups(email);
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,

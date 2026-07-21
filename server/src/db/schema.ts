@@ -30,6 +30,10 @@ export const tenants = pgTable("tenants", {
   // public storefront content the OS publishes: contact + hours the site
   // hydrates from — one source of truth for every shop we host
   siteConfig: jsonb("site_config").$type<SiteConfig>(),
+  // onboarding answers captured at signup: regulator/country, home currency,
+  // MSB number, address, compliance thresholds. The OS reads these as the
+  // desk's starting configuration (fully consumed in Phase B).
+  setup: jsonb("setup").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -183,6 +187,7 @@ export const pendingSignups = pgTable(
     ownerName: text("owner_name").notNull(),
     passwordHash: text("password_hash").notNull(),
     slug: text("slug").notNull(),
+    onboarding: jsonb("onboarding").$type<Record<string, unknown>>(),
     codeHash: text("code_hash").notNull(),
     attempts: doublePrecision("attempts").notNull().default(0),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

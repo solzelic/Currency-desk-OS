@@ -74,6 +74,21 @@ describe("signup", () => {
     expect(login.json().user).toMatchObject({ id: "dana@maplefx.ca", tenantId: "tnt-maplefx", role: "administrator" });
   });
 
+  it("carries the guided-onboarding config onto the new tenant", async () => {
+    const onboarding = { country: "Canada", regulator: "FINTRAC", homeCurrency: "CAD", msbNumber: "M99-1234567", plan: "pro" as const, idThreshold: 5000 };
+    const su = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Aspen FX", ownerName: "Sam Lee", email: "sam@aspenfx.ca", password: "a-strong-pass", slug: "aspenfx", onboarding } });
+    expect(su.statusCode).toBe(201);
+    const code = codeFromLog();
+    const ok = await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "sam@aspenfx.ca", code } });
+    expect(ok.statusCode).toBe(201);
+
+    const t = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-aspenfx")))[0]!;
+    expect(t.plan).toBe("pro");
+    expect(t.setup).toMatchObject({ regulator: "FINTRAC", idThreshold: 5000, msbNumber: "M99-1234567" });
+    const le = await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-aspenfx"));
+    expect(le[0]!.msbNumber).toBe("M99-1234567");
+  });
+
   it("rejects a taken slug and a reserved slug", async () => {
     const taken = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Other", ownerName: "X", email: "x@other.ca", password: "a-strong-pass", slug: "yorkfx" } });
     expect(taken.statusCode).toBe(409); // yorkfx is the seeded tenant

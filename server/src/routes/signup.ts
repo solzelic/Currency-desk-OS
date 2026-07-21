@@ -35,12 +35,30 @@ const slugShape = z
   .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, "slug: lowercase letters, digits and hyphens");
 const emailShape = z.string().trim().toLowerCase().email().max(160);
 
+// the guided-onboarding answers (all optional): regulator/country, home
+// currency, MSB number + address, chosen plan, compliance ID threshold.
+const onboardingShape = z
+  .object({
+    country: z.string().max(60).optional(),
+    regulator: z.string().max(60).optional(),
+    homeCurrency: z.string().max(8).optional(),
+    msbNumber: z.string().max(60).optional(),
+    address: z.string().max(160).optional(),
+    city: z.string().max(80).optional(),
+    region: z.string().max(40).optional(),
+    postal: z.string().max(16).optional(),
+    plan: z.enum(["basic", "pro", "premium"]).optional(),
+    idThreshold: z.number().nonnegative().max(1_000_000).optional(),
+  })
+  .passthrough();
+
 const signupBody = z.object({
   businessName: z.string().trim().min(1).max(120),
   ownerName: z.string().trim().min(1).max(120),
   email: emailShape,
   password: z.string().min(8, "password: at least 8 characters").max(512),
   slug: slugShape,
+  onboarding: onboardingShape.optional(),
 });
 const verifyBody = z.object({ email: emailShape, code: z.string().trim().min(4).max(10) });
 const resendBody = z.object({ email: emailShape });
@@ -102,6 +120,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
       ownerName: b.ownerName,
       passwordHash,
       slug: b.slug,
+      onboarding: b.onboarding ?? null,
       codeHash: "", // set by issueCode
       attempts: 0,
       expiresAt: new Date(Date.now() + CODE_TTL_MS),
@@ -109,7 +128,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     // one pending per email — replace any prior attempt
     await db.insert(schema.pendingSignups).values(row).onConflictDoUpdate({
       target: schema.pendingSignups.email,
-      set: { businessName: row.businessName, ownerName: row.ownerName, passwordHash, slug: row.slug },
+      set: { businessName: row.businessName, ownerName: row.ownerName, passwordHash, slug: row.slug, onboarding: row.onboarding },
     });
     await issueCode(b.email, b.businessName);
     return reply.code(201).send({ ok: true, email: b.email });
@@ -143,12 +162,17 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     // got taken between signup and verify.
     if (await slugTaken(db, p.slug, email)) return reply.code(409).send({ error: "slug_taken", detail: "That desk address was just taken — pick another." });
 
+    const onb = (p.onboarding ?? {}) as Record<string, unknown>;
+    const chosenPlan = typeof onb.plan === "string" && ["basic", "pro", "premium"].includes(onb.plan) ? (onb.plan as string) : "trial";
+    const regulator = typeof onb.regulator === "string" && onb.regulator ? onb.regulator : "FINTRAC";
+    const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
+
     const tenantId = "tnt-" + p.slug;
     const legalEntityId = "le-" + p.slug;
     const branchId = "br-" + p.slug + "-main";
     const workspaceId = "ws-" + p.slug + "-till-01";
-    await db.insert(schema.tenants).values({ id: tenantId, name: p.businessName, plan: "trial", siteSlug: p.slug }).onConflictDoNothing();
-    await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: p.businessName, jurisdiction: "FINTRAC" }).onConflictDoNothing();
+    await db.insert(schema.tenants).values({ id: tenantId, name: p.businessName, plan: chosenPlan, siteSlug: p.slug, setup: p.onboarding ?? null }).onConflictDoNothing();
+    await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: p.businessName, msbNumber, jurisdiction: regulator }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
     await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
     const ownerId = `${tenantId}:${email}`;
