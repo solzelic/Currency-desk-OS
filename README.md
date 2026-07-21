@@ -73,6 +73,7 @@ the Render dashboard:
 | `OXR_APP_ID` | openexchangerates.org App ID (hourly market rates) |
 | `SEED_PASSWORD` | First-boot bootstrap password for a brand-new database only |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Set these and SMS quotes send for real; unset, the flow runs in simulated mode |
+| `TWILIO_MESSAGING_SERVICE_SID` | Optional. For A2P 10DLC, set this (`MG…`) to send through a campaign-linked Messaging Service; it takes precedence over `TWILIO_FROM` |
 | `RESET_STAFF_PASSWORD` | Break-glass only (`staffId:newpassword`), remove after use |
 
 Custom domains: record the customer's domain in the OS (Settings → Business

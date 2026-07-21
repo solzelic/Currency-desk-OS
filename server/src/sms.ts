@@ -14,10 +14,17 @@ export async function sendSms(to: string, body: string): Promise<SmsStatus> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from) {
+  // A2P 10DLC traffic delivers through a Messaging Service that's linked to
+  // your registered campaign — prefer it when set. A raw From number still
+  // works for accounts/countries that don't require 10DLC.
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  if (!sid || !token || (!from && !messagingServiceSid)) {
     console.log(`[sms simulated] to=${to} :: ${body}`);
     return "simulated";
   }
+  const params = new URLSearchParams({ To: to, Body: body });
+  if (messagingServiceSid) params.set("MessagingServiceSid", messagingServiceSid);
+  else params.set("From", from!);
   try {
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: "POST",
@@ -25,7 +32,7 @@ export async function sendSms(to: string, body: string): Promise<SmsStatus> {
         authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
         "content-type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ To: to, From: from, Body: body }),
+      body: params,
     });
     if (!res.ok) {
       console.error(`[sms failed] ${res.status} ${await res.text().catch(() => "")}`);
