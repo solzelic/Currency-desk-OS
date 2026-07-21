@@ -80,11 +80,19 @@
         if (!res.ok) { say(esc((res.d && res.d.detail) || 'Couldn’t get a quote — try again or call the desk.'), 'err'); return; }
         var q = res.d.quote;
         form.querySelectorAll('input, select, button[type="submit"]').forEach(function (el) { el.closest('.two') ? el.closest('.two').style.display = 'none' : el.style.display = 'none'; });
+        // be honest about the text: sent vs preview vs failed. On a real send
+        // failure (unverified number, carrier filtering) the rate is still held —
+        // tell them to use the ref at the desk rather than claiming a text went out.
+        var deskPhone = (SITE && SITE.phone) ? ' or call ' + esc(SITE.phone) : '';
+        var smsLine =
+          q.smsStatus === 'sent' ? ' We’ve texted the details to ' + esc(q.phone) + '.'
+          : q.smsStatus === 'simulated' ? ' (SMS preview — texting goes live soon.)'
+          : ' We couldn’t text you just now — show ref <b>' + esc(q.ref) + '</b> at the desk' + deskPhone + '.';
         say(
           '<div style="border:1px solid rgba(0,0,0,0.14); border-radius:12px; padding:16px 18px; font-size:14px; line-height:1.65;">' +
             '<div style="font-size:11px; letter-spacing:0.1em; text-transform:uppercase; opacity:0.6;">Rate held · ref ' + esc(q.ref) + '</div>' +
             '<div style="font-size:20px; font-weight:800; margin:6px 0 2px;">' + fmt(q.amount, q.from) + ' → ' + fmt(q.receive, q.to) + '</div>' +
-            '<div>Held for you until <b>' + until(q.expiresAt) + '</b>.' + (q.smsStatus === 'simulated' ? ' (SMS preview — texting goes live soon.)' : ' We’ve texted the details to ' + esc(q.phone) + '.') + '</div>' +
+            '<div>Held for you until <b>' + until(q.expiresAt) + '</b>.' + smsLine + '</div>' +
             '<button type="button" id="quoteConfirm" class="btn btn-solid" style="margin-top:12px;">I’m coming — set it aside</button>' +
             '<div id="quoteConfirmNote" style="margin-top:8px;"></div>' +
           '</div>'
