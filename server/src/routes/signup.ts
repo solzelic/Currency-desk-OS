@@ -200,7 +200,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const plan = await tenantPlan(db, tenantId);
     return reply.code(201).send({
       user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: false, plan },
-      tenant: { id: tenantId, name: p.businessName, slug: p.slug, plan },
+      tenant: { id: tenantId, name: p.businessName, slug: p.slug, plan, setup: p.onboarding ?? null },
     });
   });
 }

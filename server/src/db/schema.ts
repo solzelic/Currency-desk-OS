@@ -37,6 +37,19 @@ export const tenants = pgTable("tenants", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/* Per-tenant OS working state — one JSON snapshot per desk. The buildless
+   OS keeps its live state (rate board, ledger rows, clients, till counts,
+   settings, texts…) in ~30 browser keys; this is the server-authoritative
+   copy so a desk is REAL and durable: it hydrates from here on sign-in and
+   writes back (debounced) as things change, isolated per tenant. Relational
+   promotion of individual apps (ledger→book, texts→quotes) layers on later. */
+export const tenantState = pgTable("tenant_state", {
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  state: jsonb("state").$type<Record<string, unknown>>().notNull().default({}),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export interface SiteConfig {
   phone?: string;
   email?: string;

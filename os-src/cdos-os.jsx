@@ -146,6 +146,7 @@
       setErr('Checking\u2026 (first sign-in of the day can take ~30s while the server wakes)');
       let mustChange = false;
       let srvPlan = null;   // the tenant's purchased tier, from the server
+      let srvUser = null;   // the server user record — carries the tenantId
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
@@ -157,6 +158,7 @@
           const data = await res.json().catch(() => null);
           mustChange = !!(data && data.user && data.user.mustChangePassword);
           srvPlan = (data && data.user && data.user.plan) || null;
+          srvUser = (data && data.user) || null;
           // the server vouches for this person even when this device's local
           // directory doesn't know them yet (account created on another
           // terminal) — adopt a local record so the OS can route them
@@ -169,7 +171,7 @@
       if (!rec) { setErr('No staff record for that ID — pick one from the directory below.'); return; }
       setErr('');
       // a manager-issued temporary password must be replaced before the desk opens
-      onNext(rec, mustChange ? { current: p } : null, srvPlan);
+      onNext(rec, mustChange ? { current: p } : null, srvPlan, srvUser);
     };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Operating System</span></div>
@@ -611,6 +613,9 @@
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
+    const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
+    const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
+    const hydratedRef = useRef(false);              // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
 
     // №02 (Roadmap v2): the book + client roster persist like every other store.
@@ -1251,13 +1256,104 @@
       log('Day opened', 'New trading day — book unlocked');
     };
 
-    function enterDesktop() {
+    // ---- Per-tenant persistence (Phase B) --------------------------------
+    // Re-apply the top-level stores from localStorage after the persistence
+    // bridge has hydrated it. Sub-apps mount later and read localStorage on
+    // their own, so only the always-mounted stores need reseating here.
+    const reseatFromStorage = () => {
+      const rd = (k, f) => { try { const v = localStorage.getItem(k); return v == null ? f : JSON.parse(v); } catch (e) { return f; } };
+      setRows(rd('cdos_rows_v1', []));
+      setClients(rd('cdos_clients_v1', {}));
+      const svS = rd('cdos_settings', null);
+      if (svS) setSettings(s => ({ ...s, ...svS, billingPlan: s.billingPlan || svS.billingPlan }));
+      const svP = rd('cdos_perms', null); if (svP) setPerms(svP);
+      setBaseline(rd('cdos_baseline_v1', window.CDOS.defaultBaseline()));
+      setReceipts(rd('cdos_receipts_v1', window.CDOS.defaultReceipts()));
+      const svB = rd(_ST.SKEY, null); if (Array.isArray(svB) && svB.length) setBranches(svB);
+      setBranchMoves(rd(_ST.MKEY, []));
+      const svSt = rd('cdos_station_v1', null); if (svSt && svSt.branchId) setStation(svSt);
+      setSubs(rd('cdos_submissions_v1', {}));
+      setTimeout(() => { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1' })); } catch (e) {} }, 0);
+    };
+    // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
+    // the onboarding answers: business identity, home currency, ID threshold,
+    // one branch named for the business, the owner as the sole employee.
+    const freshDeskSlate = () => {
+      const su = srvUserRef.current || srvUser;
+      const t = (newDesk && newDesk.tenant) || {};
+      const setup = t.setup || (su && su.setup) || {};
+      const ownerName = (su && su.name) || (newDesk && newDesk.user && newDesk.user.name) || 'Owner';
+      const ownerId = (su && su.id) || (newDesk && newDesk.user && newDesk.user.id) || ownerName;
+      const bizName = t.name || settings.bizName || 'Your Desk';
+      const homeCcy = setup.homeCurrency || 'CAD';
+      const threshold = typeof setup.idThreshold === 'number' ? setup.idThreshold : 10000;
+      const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, pin: '0000', requirePin: true, caps: {}, apps: null, branches: '*', home: null };
+      const nextSettings = { ...settings,
+        bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
+        bizPhone: '', bizEmail: ownerId, bizAddress: setup.address || '', bizCity: setup.city || '', bizRegion: setup.region || '', bizPostal: setup.postal || '',
+        baseCurrency: homeCcy, threshold: threshold, idRequiredOver: Math.min(3000, threshold),
+        receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
+        employees: [owner] };
+      // a fresh desk holds NO cash — zero every vault/till balance and clear the
+      // posted teller/live operator, so nothing reads as York's demo float
+      const zero = (obj) => { const o = {}; Object.keys(obj || {}).forEach(k => o[k] = 0); return o; };
+      let oneBranches = null, oneStation = null;
+      try {
+        const b0 = _ST.defaultBranches()[0];
+        const t0 = (b0.tills || [])[0] || {};
+        const branch = { ...b0, name: bizName + ' — Main', code: 'MAIN', city: setup.city || setup.address || '', status: 'open', main: true, dealsToday: 0, volToday: 0,
+          vault: zero(b0.vault),
+          tills: [{ ...t0, name: 'Till 1', teller: '', operator: '', status: 'open', cash: zero(t0.cash) }] };
+        oneBranches = [branch];
+        oneStation = { branchId: branch.id, tillId: (branch.tills[0] || {}).id };
+      } catch (e) {}
+      // opening position starts at zero units (keep the cost/rate map for display)
+      const emptyBaseline = (() => { const b = window.CDOS.defaultBaseline(); return { ...b, units: zero(b.units) }; })();
+      // write every persisted key synchronously so the first snapshot is complete
+      try {
+        localStorage.setItem('cdos_rows_v1', '[]');
+        localStorage.setItem('cdos_clients_v1', '{}');
+        localStorage.setItem('cdos_settings', JSON.stringify(nextSettings));
+        localStorage.setItem('cdos_baseline_v1', JSON.stringify(emptyBaseline));
+        localStorage.setItem('cdos_receipts_v1', '[]');
+        localStorage.setItem('cdos_submissions_v1', '{}');
+        if (oneBranches) localStorage.setItem(_ST.SKEY, JSON.stringify(oneBranches));
+        if (oneStation) localStorage.setItem('cdos_station_v1', JSON.stringify(oneStation));
+        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+      } catch (e) {}
+      // mirror into React state so the desktop shows the clean desk immediately
+      setRows([]); setClients({}); setSettings(nextSettings);
+      setBaseline(emptyBaseline); setReceipts([]); setSubs({}); setBranchMoves([]);
+      if (oneBranches) setBranches(oneBranches);
+      if (oneStation) setStation(oneStation);
+    };
+    // Load (or initialize) this tenant's saved desk. Runs once per sign-in.
+    const hydrateTenant = async () => {
+      if (hydratedRef.current) return;
+      const su = srvUserRef.current || srvUser;
+      const tid = su && su.tenantId;
+      // No server tenant, or the seeded demo tenant → run on the front-end demo
+      // (localStorage) exactly as before. York FX stays the pristine showcase;
+      // real per-tenant persistence is for businesses that sign up.
+      if (!tid || tid === 'tnt-yorkfx') { hydratedRef.current = true; return; }
+      hydratedRef.current = true;
+      let status = 'offline';
+      try { status = await window.CDOS_PERSIST.begin(tid); } catch (e) {}
+      if (status === 'restored') reseatFromStorage();
+      else if (status === 'empty') freshDeskSlate();
+      if (status !== 'offline') window.CDOS_PERSIST.startAutosave();
+    };
+
+    async function enterDesktop() {
+      await hydrateTenant();
       try { sessionStorage.setItem(AUTH_KEY, '1'); sessionStorage.setItem('yorkfx_staff_user', user || 'staff'); } catch (e) {}
       setStage('desktop');
       setTimeout(() => { openApp(planAllows('ledger') ? 'ledger' : 'rates'); }, 60);
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+      try { window.CDOS_PERSIST.end(); } catch (e) {}
+      hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
       setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.operator === me.name ? { ...t, operator: '' } : t) })));
       setWins([]); setStage('lock');
@@ -1275,19 +1371,20 @@
       return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
 
-    if (stage === 'lock') return <Lock employees={settings.employees || []} onSignup={() => setStage('signup')} onNext={(rec, temp, srvPlan) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
+    if (stage === 'lock') return <Lock employees={settings.employees || []} onSignup={() => setStage('signup')} onNext={(rec, temp, srvPlan, srvUser) => { if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] })); if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan })); srvUserRef.current = srvUser || null; setSrvUser(srvUser || null); setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage(temp ? 'setpass' : 'otp'); }} />;
     if (stage === 'signup') return <OnboardWizard onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
     if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
-    if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={() => {
-      // adopt the new owner into the local directory and route in (per-tenant
-      // data lands with Phase B; today this opens the OS as the owner)
+    if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={async () => {
+      // adopt the new owner locally, then hydrate their brand-new (clean) desk
+      // from the server before routing in — so the OS opens as THEIR instance.
       const u = (newDesk && newDesk.user) || {};
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
-      setUser(rec.code); setAuthRec(rec); routeAfterAuth(rec);
+      srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null); setUser(rec.code); setAuthRec(rec);
+      await hydrateTenant(); routeAfterAuth(rec);
     }} />;
     if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={() => { setPwTemp(null); setStage('otp'); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
-    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={() => routeAfterAuth(authRec)} />;
+    if (stage === 'otp') return <Otp user={user} onBack={() => setStage('lock')} onVerify={async () => { await hydrateTenant(); routeAfterAuth(authRec); }} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
     if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('otp')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
 

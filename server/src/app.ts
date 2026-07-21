@@ -15,6 +15,7 @@ import type { Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
+import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerRatesRoutes } from "./routes/rates.js";
@@ -35,6 +36,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerSignupRoutes(app, db);
   registerStaffRoutes(app, db);
   registerTenantRoutes(app, db);
+  registerTenantStateRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
