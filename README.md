@@ -74,6 +74,7 @@ the Render dashboard:
 | `SEED_PASSWORD` | First-boot bootstrap password for a brand-new database only |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Set these and SMS quotes send for real; unset, the flow runs in simulated mode |
 | `TWILIO_MESSAGING_SERVICE_SID` | Optional. For A2P 10DLC, set this (`MG…`) to send through a campaign-linked Messaging Service; it takes precedence over `TWILIO_FROM` |
+| `TWILIO_WHATSAPP_FROM` | Optional. Set to a WhatsApp sender (e.g. `whatsapp:+14155238886`, the Twilio sandbox) to deliver quotes over WhatsApp instead of SMS; takes precedence over the SMS senders |
 | `RESET_STAFF_PASSWORD` | Break-glass only (`staffId:newpassword`), remove after use |
 
 Custom domains: record the customer's domain in the OS (Settings → Business

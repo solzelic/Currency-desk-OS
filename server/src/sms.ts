@@ -18,13 +18,25 @@ export async function sendSms(to: string, body: string): Promise<SmsStatus> {
   // your registered campaign — prefer it when set. A raw From number still
   // works for accounts/countries that don't require 10DLC.
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-  if (!sid || !token || (!from && !messagingServiceSid)) {
+  // WhatsApp: set TWILIO_WHATSAPP_FROM (e.g. "whatsapp:+14155238886", the
+  // Twilio sandbox number). When set, quotes go out over WhatsApp instead of
+  // SMS — the sandbox delivers instantly (recipients join it once), which is
+  // the fastest way to see the flow work end to end before SMS A2P clears.
+  const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM;
+  if (!sid || !token || (!from && !messagingServiceSid && !whatsappFrom)) {
     console.log(`[sms simulated] to=${to} :: ${body}`);
     return "simulated";
   }
-  const params = new URLSearchParams({ To: to, Body: body });
-  if (messagingServiceSid) params.set("MessagingServiceSid", messagingServiceSid);
-  else params.set("From", from!);
+  const wa = (n: string) => (n.startsWith("whatsapp:") ? n : `whatsapp:${n}`);
+  const params = new URLSearchParams({ Body: body });
+  if (whatsappFrom) {
+    params.set("To", wa(to));
+    params.set("From", wa(whatsappFrom));
+  } else {
+    params.set("To", to);
+    if (messagingServiceSid) params.set("MessagingServiceSid", messagingServiceSid);
+    else params.set("From", from!);
+  }
   try {
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: "POST",
