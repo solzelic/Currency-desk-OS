@@ -111,6 +111,36 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
   return id;
 }
 
+/** Milliseconds since the newest snapshot, or Infinity if none exists.
+    The clock lives in the database, so it survives process restarts. */
+export async function msSinceLastPull(db: Db): Promise<number> {
+  const last = await db
+    .select({ fetchedAt: schema.marketRates.fetchedAt })
+    .from(schema.marketRates)
+    .orderBy(desc(schema.marketRates.fetchedAt))
+    .limit(1);
+  return last[0] ? Date.now() - last[0].fetchedAt.getTime() : Number.POSITIVE_INFINITY;
+}
+
+/** Sync only if the newest snapshot is older than `minGapMs`. The freshness
+    gate is read from the database (not process memory), so a service that
+    cold-starts many times a day — e.g. a Render free-tier instance waking
+    from sleep — still pulls the provider at most once per gap instead of
+    once per boot. Never throws. */
+export async function syncMarketRatesIfStale(
+  db: Db,
+  branchId: string,
+  minGapMs: number,
+  fetcher: () => Promise<MarketPull> = fetchMarketRates,
+): Promise<{ ok: boolean; skipped: boolean; detail: string }> {
+  const ageMs = await msSinceLastPull(db);
+  if (ageMs < minGapMs) {
+    return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago` };
+  }
+  const r = await syncMarketRates(db, branchId, fetcher);
+  return { ...r, skipped: false };
+}
+
 /** One sync cycle: pull → snapshot → auto-publish. Never throws. */
 export async function syncMarketRates(db: Db, branchId: string, fetcher: () => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
   try {

@@ -1,10 +1,10 @@
 /* Market-rate sync tests — injected fetcher, no network. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { createDb, type DbHandle } from "../src/db/index.js";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { normalizePerCad, syncMarketRates, type MarketPull } from "../src/rates/market.js";
+import { normalizePerCad, syncMarketRates, syncMarketRatesIfStale, type MarketPull } from "../src/rates/market.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -70,5 +70,43 @@ describe("market rates", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("provider exploded");
+  });
+
+  it("gates on snapshot age: repeated boots within the gap don't re-pull", async () => {
+    const before = (await handle.db.select().from(schema.marketRates)).length;
+    let calls = 0;
+    const feed = async (): Promise<MarketPull> => {
+      calls += 1;
+      return { provider: "gate-feed", providerTimestamp: null, mids: { USD: 1.4, EUR: 1.6 } };
+    };
+    const gateMs = 60 * 60 * 1000; // one hour
+
+    // first call pulls (a snapshot exists from earlier tests, but far in the
+    // "past" of this test only if stale) — force a fresh one, then re-check
+    const first = await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, feed);
+    expect(first.skipped).toBe(false);
+    expect(calls).toBe(1);
+
+    // three more "cold-start boots" inside the hour — all skip, no provider call
+    for (let i = 0; i < 3; i++) {
+      const again = await syncMarketRatesIfStale(handle.db, DEMO.branchId, gateMs, feed);
+      expect(again.skipped).toBe(true);
+    }
+    expect(calls).toBe(1); // still one provider hit across four boots
+
+    const after = (await handle.db.select().from(schema.marketRates)).length;
+    expect(after).toBe(before + 1); // exactly one new snapshot, not four
+  });
+
+  it("pulls again once the snapshot ages past the gap", async () => {
+    let calls = 0;
+    const feed = async (): Promise<MarketPull> => {
+      calls += 1;
+      return { provider: "age-feed", providerTimestamp: null, mids: { USD: 1.41 } };
+    };
+    // gate of 0ms means the newest snapshot is always "stale" → always pulls
+    await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, feed);
+    await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, feed);
+    expect(calls).toBe(2);
   });
 });
