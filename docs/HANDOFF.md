@@ -1,6 +1,20 @@
 # CurrencyDesk OS — Session Handoff
 
-_Last updated: 2026-07-22. Status: **LIVE on the web.**_
+_Last updated: 2026-07-22. Status: **LIVE on the web** at https://www.currencydeskos.com_
+
+> **This file is the source of truth for where the project stands. Keep it
+> updated at the end of every working session.**
+
+## ▶ To continue in a new session — paste this as your first message
+
+> "Read `docs/HANDOFF.md` in this repo — it's the current source of truth for
+> CurrencyDesk OS, which is now LIVE at www.currencydeskos.com. Confirm the live
+> status (`curl -s https://www.currencydeskos.com/api/health`), then let's work
+> through the 'Next 10 things' list starting at #1. Update `docs/HANDOFF.md`
+> before we finish."
+
+A fresh session also has Claude's project memory (repo layout, deploy, gotchas).
+First moves: `cd server && npm test` (expect 69 passing) and skim §4 + §6 below.
 
 ## 1. What this is
 
@@ -89,10 +103,13 @@ retention protocol; operator bootstrap login. Shipped in commit `444560c`.
    but Rate board, Texts, Reports, KYC, and Cheques/Transfers still show the
    York demo seed for a fresh desk (their seed logic re-fills when empty). Make
    each app's seed tenant-aware so a brand-new desk is empty everywhere.
-5. **Nicer CurrencyDesk-ID scheme.** Replace plain slugs/emails as the identity
-   with a proper ID like `CD-YORK-0042` (per the sign-in design). Owner asked
-   for "better than numbers." Decide the scheme, generate on signup, show it in
-   admin + sign-in.
+5. **⭐ Nicer CurrencyDesk-ID scheme (OWNER PRIORITY — do early).** Replace plain
+   slugs/emails as the identity with a proper human ID like `CD-YORK-0042` (the
+   sign-in design already shows this format). Plan: pick the format
+   (`CD-<DESKCODE>-<NNNN>`, desk code from the business, sequential number);
+   generate + store it on signup (`staff_users` / a new column); accept it at
+   sign-in alongside email; surface it in the admin dashboard and the sign-in
+   recognition chip. Owner explicitly wants this "right away."
 6. **Multi-tenant login polish.** Confirm a returning signed-up owner (a non-York
    tenant) logs in cleanly; the A4 station picker still briefly shows York's
    branches; stop the global York seed leaking into real tenants.
