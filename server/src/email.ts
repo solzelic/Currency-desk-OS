@@ -53,6 +53,22 @@ export function codeMatches(input: string, storedHash: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/* The sign-in code email — a returning user proving it's them on login. */
+export function loginCodeEmail(code: string, name?: string): { subject: string; text: string; html: string } {
+  const subject = `${code} is your CurrencyDesk sign-in code`;
+  const text =
+    `${name ? name + ", enter" : "Enter"} this code to finish signing in to CurrencyDesk: ${code}.\n\n` +
+    `It expires in 10 minutes. If you didn't just try to sign in, someone may have your password — change it.`;
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${name ? name + ", enter" : "Enter"} this code to finish signing in:</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:34px;font-weight:700;letter-spacing:.28em;margin:20px 0;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${code}</div>` +
+    `<div style="font-size:13px;color:#8a8a8a">Expires in 10 minutes. If this wasn't you, someone may have your password — change it.</div>` +
+    `</div>`;
+  return { subject, text, html };
+}
+
 /* The verification email. Plain + a minimal branded HTML. */
 export function verificationEmail(code: string, businessName: string): { subject: string; text: string; html: string } {
   const subject = `${code} is your CurrencyDesk verification code`;

@@ -34,6 +34,9 @@ export const tenants = pgTable("tenants", {
   // MSB number, address, compliance thresholds. The OS reads these as the
   // desk's starting configuration (fully consumed in Phase B).
   setup: jsonb("setup").$type<Record<string, unknown>>(),
+  // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
+  // people can't sign in. Reversible.
+  suspended: boolean("suspended").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

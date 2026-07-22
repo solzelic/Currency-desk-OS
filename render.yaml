@@ -41,3 +41,15 @@ services:
         sync: false
       - key: SEED_PASSWORD
         sync: false
+      # transactional email (signup verification codes) — Resend. Set both in
+      # the Render dashboard; until they're set, codes are logged, not emailed.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # comma-separated emails allowed into the cross-tenant Admin Console
+      - key: PLATFORM_ADMIN_EMAILS
+        sync: false
+      # first-run operator login "email:password"; remove after signing in
+      - key: PLATFORM_ADMIN_BOOTSTRAP
+        sync: false

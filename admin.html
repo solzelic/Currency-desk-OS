@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CurrencyDesk — Control</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:#0a0a0b; --panel:#141416; --card:#161618; --sidebar:#0c0c0d; --hover:rgba(255,255,255,0.045);
+    --line:rgba(255,255,255,0.08); --line2:rgba(255,255,255,0.055);
+    --text:#ececee; --mute:#8b8b93; --faint:#5c5c64;
+    --green:#34d399; --amber:#f5b544; --red:#f87171; --purple:#a78bfa; --blue:#60a5fa; --accent:#f5c542;
+    --f:'Archivo',system-ui,sans-serif; --m:'Space Mono',monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { font-family:var(--f); color:var(--text); background:var(--bg); -webkit-font-smoothing:antialiased; }
+  #root { height:100%; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.09); border-radius:8px; border:2px solid var(--bg); }
+  button { font-family:inherit; }
+  input, select { font-family:inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+const MONO = "var(--m)";
+
+// ---- helpers ----
+const api = async (path, opts) => {
+  const r = await fetch(path, Object.assign({ credentials: 'same-origin', headers: { 'content-type': 'application/json' } }, opts || {}));
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw { status: r.status, body };
+  return body;
+};
+const initialsOf = (n) => (n || '?').split(/[ .@]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+const hueOf = (s) => { let h = 0; for (let i = 0; i < (s || '').length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
+const fmtDay = (s) => { try { return new Date(s).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return s; } };
+const fmtWhen = (s) => { try { return new Date(s).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); } catch (e) { return s; } };
+const PLAN_TONE = { trial: 'amber', basic: 'mute', pro: 'green', premium: 'purple' };
+const STATUS_TONE = { active: 'green', trial: 'amber', suspended: 'red' };
+const toneColor = (t) => ({ green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', purple: 'var(--purple)', blue: 'var(--blue)', mute: 'var(--mute)' }[t] || 'var(--mute)');
+
+function Mark({ w = 26 }) {
+  const h = w * 0.7;
+  return (<svg viewBox="0 0 200 140" width={w} height={h} style={{ display: 'block' }}>
+    <mask id="cdm"><rect width="200" height="140" fill="#fff" /><rect x="60" y="64.5" width="92" height="11" fill="#000" /></mask>
+    <g mask="url(#cdm)"><circle cx="60" cy="70" r="48" fill="#fff" /><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#fff" /></g>
+    <circle cx="112" cy="70" r="6.5" fill="var(--green)" />
+  </svg>);
+}
+function Avatar({ name, size = 26 }) {
+  const hue = hueOf(name);
+  return <span style={{ width: size, height: size, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center',
+    fontSize: size * 0.4, fontWeight: 700, color: '#fff', background: 'hsl(' + hue + ',42%,42%)' }}>{initialsOf(name)}</span>;
+}
+function Pill({ tone, dot, children }) {
+  const c = toneColor(tone);
+  return (<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: c,
+    background: 'color-mix(in srgb,' + c + ' 15%, transparent)', border: '1px solid color-mix(in srgb,' + c + ' 30%, transparent)', borderRadius: 7, padding: '3px 9px', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
+    {dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: c }} />}{children}</span>);
+}
+const dot = (c) => <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flex: 'none' }} />;
+
+// ===================== LOGIN =====================
+function Login({ onIn }) {
+  const [step, setStep] = useState('pw');   // pw | code
+  const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [code, setCode] = useState('');
+  const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [masked, setMasked] = useState('');
+  const submitPw = async (e) => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try {
+      const d = await api('/api/auth/login/start', { method: 'POST', body: JSON.stringify({ staffId: email.trim().toLowerCase(), password: pw }) });
+      if (d.needsCode) { setMasked(d.maskedEmail || ''); setStep('code'); setBusy(false); }
+      else { await afterAuth(); }
+    } catch (x) { setBusy(false); setErr(x.status === 401 ? 'Wrong email or password.' : x.status === 403 ? 'That desk is suspended.' : 'Sign-in error — try again.'); }
+  };
+  const submitCode = async (e) => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try { await api('/api/auth/login/verify', { method: 'POST', body: JSON.stringify({ staffId: email.trim().toLowerCase(), code: code.trim() }) }); await afterAuth(); }
+    catch (x) { setBusy(false); setErr(x.status === 401 ? 'That code isn’t right.' : 'Verification error — try again.'); }
+  };
+  const afterAuth = async () => {
+    try { const me = await api('/api/admin/me'); if (me.isAdmin) { onIn(); return; } setBusy(false); setErr('This account isn’t a platform admin.'); }
+    catch (x) { setBusy(false); setErr('Signed in, but not authorized here.'); }
+  };
+  const inSty = { width: '100%', padding: '11px 13px', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontSize: 14, outline: 'none' };
+  const btn = { width: '100%', padding: '11px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', marginTop: 4 };
+  return (<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+    <div style={{ width: 380, maxWidth: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 22 }}>
+        <Mark w={30} /><span style={{ fontWeight: 800, fontSize: 20 }}>CurrencyDesk</span>
+        <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.16em', color: 'var(--faint)', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 7px' }}>CONTROL</span>
+      </div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 16, padding: '26px 26px' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 4px' }}>{step === 'pw' ? 'Sign in' : 'Check your email'}</h1>
+        <p style={{ fontSize: 13, color: 'var(--mute)', margin: '0 0 18px' }}>{step === 'pw' ? 'Platform admin access only.' : 'We sent a 6-digit code to ' + masked + '.'}</p>
+        {step === 'pw' ? (
+          <form onSubmit={submitPw} style={{ display: 'grid', gap: 11 }}>
+            <input style={inSty} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@currencydeskos.com" autoFocus autoComplete="username" />
+            <input style={inSty} type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" autoComplete="current-password" />
+            {err && <div style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
+            <button style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy}>{busy ? 'Checking…' : 'Continue'}</button>
+          </form>
+        ) : (
+          <form onSubmit={submitCode} style={{ display: 'grid', gap: 11 }}>
+            <input style={{ ...inSty, textAlign: 'center', fontFamily: MONO, fontSize: 20, letterSpacing: '0.3em' }} value={code} onChange={e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" autoFocus />
+            {err && <div style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
+            <button style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy}>{busy ? 'Verifying…' : 'Verify & enter'}</button>
+            <button type="button" onClick={() => { setStep('pw'); setCode(''); setErr(''); }} style={{ background: 'none', border: 'none', color: 'var(--mute)', fontSize: 12.5, cursor: 'pointer' }}>← Back</button>
+          </form>
+        )}
+      </div>
+    </div>
+  </div>);
+}
+
+// ===================== SIDEBAR =====================
+function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFilter, tab, setTab, onCreate }) {
+  const navItem = (id, label, count) => (
+    <button onClick={() => setTab(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9,
+      border: 'none', cursor: 'pointer', background: tab === id ? 'var(--hover)' : 'transparent', color: tab === id ? 'var(--text)' : 'var(--mute)', fontSize: 14, fontWeight: tab === id ? 600 : 500 }}>
+      <span style={{ flex: 1 }}>{label}</span>{count != null && <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{count}</span>}
+    </button>
+  );
+  const section = (t) => <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', color: 'var(--faint)', margin: '20px 11px 8px', textTransform: 'uppercase' }}>{t}</div>;
+  const filterRow = (label, c, active, onClick, n) => (
+    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '7px 11px', borderRadius: 8, border: 'none', cursor: 'pointer', background: active ? 'var(--hover)' : 'transparent', color: active ? 'var(--text)' : 'var(--mute)', fontSize: 13 }}>
+      {dot(c)}<span style={{ flex: 1, textTransform: 'capitalize' }}>{label}</span>{n != null && <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{n}</span>}
+    </button>
+  );
+  return (<div style={{ width: 248, flex: 'none', background: 'var(--sidebar)', borderRight: '1px solid var(--line)', height: '100vh', overflow: 'auto', padding: '18px 12px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '4px 8px 16px' }}>
+      <span style={{ width: 34, height: 34, borderRadius: 9, background: '#1c1c20', display: 'grid', placeItems: 'center', flex: 'none' }}><Mark w={20} /></span>
+      <span><span style={{ display: 'block', fontWeight: 700, fontSize: 14.5 }}>CurrencyDesk</span><span style={{ display: 'block', fontSize: 12, color: 'var(--mute)' }}>Platform control</span></span>
+    </div>
+    {navItem('desks', 'Desks', counts.desks)}
+    {navItem('activity', 'Activity', null)}
+    <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
+      <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> New desk
+    </button>
+    {section('Status')}
+    {filterRow('All', 'var(--mute)', statusFilter === 'all', () => setStatusFilter('all'), counts.desks)}
+    {filterRow('Active', 'var(--green)', statusFilter === 'active', () => setStatusFilter('active'), counts.active)}
+    {filterRow('Trial', 'var(--amber)', statusFilter === 'trial', () => setStatusFilter('trial'), counts.trial)}
+    {filterRow('Suspended', 'var(--red)', statusFilter === 'suspended', () => setStatusFilter('suspended'), counts.suspended)}
+    {section('Plans')}
+    {filterRow('All plans', 'var(--mute)', planFilter === 'all', () => setPlanFilter('all'))}
+    {filterRow('Basic', 'var(--mute)', planFilter === 'basic', () => setPlanFilter('basic'))}
+    {filterRow('Pro', 'var(--green)', planFilter === 'pro', () => setPlanFilter('pro'))}
+    {filterRow('Premium', 'var(--purple)', planFilter === 'premium', () => setPlanFilter('premium'))}
+    <div style={{ flex: 1 }} />
+    <a href="/" style={{ display: 'block', padding: '9px 11px', color: 'var(--faint)', fontSize: 12.5, textDecoration: 'none' }}>← Back to the OS</a>
+  </div>);
+}
+
+// ===================== STAT ROW =====================
+function StatRow({ ov }) {
+  if (!ov) return null;
+  const tiles = [
+    { k: 'Desks', v: ov.totals.desks, c: 'var(--text)' },
+    { k: 'Active', v: ov.byStatus.active, c: 'var(--green)' },
+    { k: 'On trial', v: ov.byStatus.trial, c: 'var(--amber)' },
+    { k: 'Suspended', v: ov.byStatus.suspended, c: 'var(--red)' },
+    { k: 'New · 7 days', v: ov.totals.recent7, c: 'var(--blue)' },
+    { k: 'People', v: ov.totals.people, c: 'var(--purple)' },
+  ];
+  return (<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 18 }}>
+    {tiles.map(t => (<div key={t.k} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '13px 15px' }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.08em', color: 'var(--mute)', textTransform: 'uppercase', marginBottom: 5 }}>{t.k}</div>
+      <div style={{ fontSize: 25, fontWeight: 800, color: t.c, lineHeight: 1 }}>{t.v}</div>
+    </div>))}
+  </div>);
+}
+
+// ===================== DETAIL DRAWER + ACTIONS =====================
+function Drawer({ id, onClose, onChanged }) {
+  const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState('');
+  const [confirmName, setConfirmName] = useState(''); const [ack, setAck] = useState(false);
+  const load = () => { setD(null); api('/api/admin/tenants/' + encodeURIComponent(id)).then(setD).catch(() => setErr('Could not load')); };
+  useEffect(load, [id]);
+  const t = d && d.tenant; const setup = (t && t.setup) || {};
+  const suspended = t && t.suspended;
+  const act = async (fn, label) => { setBusy(label); setErr(''); try { await fn(); onChanged(); load(); } catch (x) { setErr((x.body && x.body.detail) || 'Action failed'); } setBusy(''); };
+  const setPlan = (plan) => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ plan }) }), 'plan');
+  const toggleSuspend = () => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ suspended: !suspended }) }), 'suspend');
+  const del = () => act(async () => { await api('/api/admin/tenants/' + id, { method: 'DELETE' }); onClose(); }, 'delete');
+  const row = (k, v) => v ? (<div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}><span style={{ color: 'var(--mute)' }}>{k}</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{v}</span></div>) : null;
+  const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: 'pointer' }, extra || {});
+  return (<div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} />
+    <div style={{ position: 'relative', width: 440, maxWidth: '100%', height: '100%', background: 'var(--panel)', borderLeft: '1px solid var(--line)', overflow: 'auto' }}>
+      <div style={{ position: 'sticky', top: 0, background: 'var(--panel)', borderBottom: '1px solid var(--line)', padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 11 }}>
+        <button onClick={onClose} style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', fontSize: 16 }}>×</button>
+        <span style={{ fontWeight: 800, fontSize: 16 }}>{t ? t.name : (err || 'Loading…')}</span>
+        {t && <Pill tone={suspended ? 'red' : (t.plan === 'trial' ? 'amber' : 'green')} dot>{suspended ? 'Suspended' : (t.plan === 'trial' ? 'Trial' : 'Active')}</Pill>}
+      </div>
+      {d && (<div style={{ padding: '18px 20px' }}>
+        {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
+        <div style={{ marginBottom: 20 }}>
+          {row('Desk address', t.slug)}
+          {row('Tenant ID', t.id)}
+          {row('Plan', t.plan)}
+          {row('Country', setup.country)}
+          {row('Regulator', setup.regulator || (d.legalEntities[0] && d.legalEntities[0].jurisdiction))}
+          {row('MSB number', setup.msbNumber || (d.legalEntities[0] && d.legalEntities[0].msbNumber))}
+          {row('Joined', fmtWhen(t.createdAt))}
+        </div>
+        {/* actions */}
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 10, textTransform: 'uppercase' }}>Plan</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {['basic', 'pro', 'premium'].map(p => <button key={p} onClick={() => setPlan(p)} disabled={busy === 'plan'} style={btn(t.plan === p ? 'var(--hover)' : 'transparent', t.plan === p ? 'var(--text)' : 'var(--mute)', { textTransform: 'capitalize', borderColor: t.plan === p ? 'var(--line)' : 'var(--line2)' })}>{p}</button>)}
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 10, textTransform: 'uppercase' }}>Access</div>
+        <button onClick={toggleSuspend} disabled={busy === 'suspend'} style={btn(suspended ? 'color-mix(in srgb,var(--green) 14%,transparent)' : 'color-mix(in srgb,var(--amber) 14%,transparent)', suspended ? 'var(--green)' : 'var(--amber)', { width: '100%', marginBottom: 22, borderColor: 'var(--line2)' })}>
+          {busy === 'suspend' ? '…' : suspended ? '↑ Unblock this desk' : '⏸ Block / suspend this desk'}
+        </button>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 8, textTransform: 'uppercase' }}>People ({d.staff.length})</div>
+        <div style={{ marginBottom: 22 }}>
+          {d.staff.map(s => (<div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+            <Avatar name={s.name} size={28} /><span style={{ flex: 1 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{s.name}</span><span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--mute)' }}>{s.staffId}</span></span>
+            <Pill tone={s.role === 'administrator' ? 'purple' : 'mute'}>{s.role.replace('_', ' ')}</Pill>
+          </div>))}
+        </div>
+        {/* retention + gated deletion */}
+        <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 15, background: 'var(--card)' }}>
+          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 8, textTransform: 'uppercase' }}>Retention</div>
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
+            Desks are <b style={{ color: 'var(--text)' }}>suspended, not deleted</b> — records must be kept for <b style={{ color: 'var(--text)' }}>6 years</b> (FINTRAC). Blocking a desk takes it offline while keeping every record on file.{!suspended && ' To permanently delete a desk, block it first.'}
+          </div>
+          {suspended && (<div style={{ borderTop: '1px solid var(--line2)', marginTop: 12, paddingTop: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>Permanently delete — last resort</div>
+            <label style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--mute)', marginBottom: 10, cursor: 'pointer', lineHeight: 1.45 }}>
+              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} style={{ marginTop: 2, flex: 'none' }} />
+              <span>I understand this destroys {t.name}'s data and records we're required to keep for 6 years, and it cannot be undone.</span>
+            </label>
+            <input value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder={'type ' + t.slug + ' to confirm'} style={{ width: '100%', padding: '9px 11px', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--text)', fontSize: 13, fontFamily: MONO, marginBottom: 9, outline: 'none' }} />
+            <button onClick={del} disabled={!ack || confirmName !== t.slug || busy === 'delete'} style={{ width: '100%', padding: '10px', borderRadius: 9, border: 'none', cursor: (ack && confirmName === t.slug) ? 'pointer' : 'not-allowed', background: (ack && confirmName === t.slug) ? 'var(--red)' : 'rgba(248,113,113,0.18)', color: (ack && confirmName === t.slug) ? '#fff' : 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 13 }}>{busy === 'delete' ? 'Deleting…' : 'Delete permanently'}</button>
+          </div>)}
+        </div>
+      </div>)}
+    </div>
+  </div>);
+}
+
+// ===================== CREATE MODAL =====================
+function CreateModal({ onClose, onCreated }) {
+  const [f, setF] = useState({ businessName: '', ownerName: '', ownerEmail: '', slug: '', plan: 'trial', password: '' });
+  const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF(s => Object.assign({}, s, { [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('');
+    try { await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(f) }); onCreated(); onClose(); }
+    catch (x) { setBusy(false); setErr((x.body && x.body.detail) || 'Could not create'); }
+  };
+  const inSty = { width: '100%', padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontSize: 13.5, outline: 'none' };
+  const lbl = { fontSize: 11.5, color: 'var(--mute)', marginBottom: 5, display: 'block' };
+  return (<div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+    <form onClick={e => e.stopPropagation()} onSubmit={submit} style={{ width: 440, maxWidth: '100%', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 16, padding: '22px 24px', display: 'grid', gap: 12 }}>
+      <div style={{ fontSize: 17, fontWeight: 800 }}>Create a desk</div>
+      <div><span style={lbl}>Business name</span><input style={inSty} value={f.businessName} onChange={e => set('businessName', e.target.value)} placeholder="Maple Currency Exchange" autoFocus /></div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><span style={lbl}>Owner name</span><input style={inSty} value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" /></div>
+        <div style={{ flex: 1 }}><span style={lbl}>Desk address</span><input style={{ ...inSty, fontFamily: MONO }} value={f.slug} onChange={e => set('slug', e.target.value)} placeholder="maplefx" /></div>
+      </div>
+      <div><span style={lbl}>Owner email</span><input style={inSty} type="email" value={f.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} placeholder="owner@business.com" /></div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><span style={lbl}>Plan</span><select style={inSty} value={f.plan} onChange={e => set('plan', e.target.value)}><option value="trial">Trial</option><option value="basic">Basic</option><option value="pro">Pro</option><option value="premium">Premium</option></select></div>
+        <div style={{ flex: 1 }}><span style={lbl}>Temp password</span><input style={inSty} value={f.password} onChange={e => set('password', e.target.value)} placeholder="8+ characters" /></div>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--faint)' }}>The owner must change this password on first sign-in.</div>
+      {err && <div style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+        <button style={{ flex: 2, padding: '10px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', cursor: 'pointer', fontWeight: 700, opacity: busy ? 0.6 : 1 }} disabled={busy}>{busy ? 'Creating…' : 'Create desk'}</button>
+      </div>
+    </form>
+  </div>);
+}
+
+// ===================== APP =====================
+function App() {
+  const [phase, setPhase] = useState('loading'); // loading | login | ready
+  const [tenants, setTenants] = useState([]);
+  const [ov, setOv] = useState(null);
+  const [audit, setAudit] = useState(null);
+  const [tab, setTab] = useState('desks');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [planFilter, setPlanFilter] = useState('all');
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState('joined');
+  const [sel, setSel] = useState(null);
+  const [creating, setCreating] = useState(false);
+
+  const loadAll = async () => {
+    const [t, o] = await Promise.all([api('/api/admin/tenants'), api('/api/admin/overview').catch(() => null)]);
+    setTenants(t.tenants); setOv(o);
+  };
+  const boot = async () => {
+    try { const me = await api('/api/admin/me'); if (!me.isAdmin) { setPhase('login'); return; } await loadAll(); setPhase('ready'); }
+    catch (x) { setPhase('login'); }
+  };
+  useEffect(() => { boot(); }, []);
+  useEffect(() => { if (tab === 'activity' && !audit) api('/api/admin/audit?limit=150').then(r => setAudit(r.events)).catch(() => setAudit([])); }, [tab]);
+
+  if (phase === 'loading') return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+  if (phase === 'login') return <Login onIn={() => { setPhase('loading'); boot(); }} />;
+
+  const counts = { desks: tenants.length, active: tenants.filter(t => t.status === 'active').length, trial: tenants.filter(t => t.status === 'trial').length, suspended: tenants.filter(t => t.status === 'suspended').length };
+  let rows = tenants.filter(t => (statusFilter === 'all' || t.status === statusFilter) && (planFilter === 'all' || t.plan === planFilter));
+  const s = q.trim().toLowerCase();
+  if (s) rows = rows.filter(t => [t.name, t.slug, t.owner && t.owner.name, t.owner && t.owner.staffId, t.country].some(v => (v || '').toLowerCase().includes(s)));
+  rows = rows.slice().sort((a, b) => {
+    if (sort === 'name') return (a.name || '').localeCompare(b.name || '');
+    if (sort === 'plan') return (a.plan || '').localeCompare(b.plan || '');
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+
+  const th = { textAlign: 'left', fontSize: 11, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 16px 10px', fontWeight: 600 };
+  const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
+  const ctrl = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, color: 'var(--mute)' };
+
+  return (<div style={{ display: 'flex', minHeight: '100vh' }}>
+    <Sidebar counts={counts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} planFilter={planFilter} setPlanFilter={setPlanFilter} tab={tab} setTab={setTab} onCreate={() => setCreating(true)} />
+    <div style={{ flex: 1, minWidth: 0, height: '100vh', overflow: 'auto', padding: '24px 30px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{tab === 'desks' ? 'Desks' : 'Activity'}</h1>
+        <Pill tone="green" dot>Live</Pill>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+          <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ New desk</button>
+        </div>
+      </div>
+
+      {tab === 'desks' && (<div>
+        <StatRow ov={ov} />
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search desks, owners, email…" style={{ flex: 1, minWidth: 220, padding: '9px 14px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontSize: 13.5, outline: 'none' }} />
+          <label style={ctrl}>Sort <select value={sort} onChange={e => setSort(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}><option value="joined">Newest</option><option value="name">Name</option><option value="plan">Plan</option></select></label>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead><tr>
+              <th style={{ ...th, paddingTop: 14 }}>Desk</th><th style={th}>Status</th><th style={th}>Plan</th><th style={th}>Owner</th><th style={th}>People</th><th style={th}>Country</th><th style={th}>Joined</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(t => (<tr key={t.id} onClick={() => setSel(t.id)} style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--hover)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <td style={td}><div style={{ fontWeight: 600 }}>{t.name}</div><div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{t.slug}</div></td>
+                <td style={td}><Pill tone={STATUS_TONE[t.status]} dot>{t.status}</Pill></td>
+                <td style={td}><Pill tone={PLAN_TONE[t.plan]}>{t.plan}</Pill></td>
+                <td style={td}>{t.owner ? <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Avatar name={t.owner.name} /><span><span style={{ display: 'block' }}>{t.owner.name}</span><span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{t.owner.staffId}</span></span></span> : <span style={{ color: 'var(--faint)' }}>—</span>}</td>
+                <td style={{ ...td, fontFamily: MONO, color: 'var(--mute)' }}>{t.staffCount}</td>
+                <td style={{ ...td, color: 'var(--mute)' }}>{t.country || '—'}</td>
+                <td style={{ ...td, fontFamily: MONO, fontSize: 12.5, color: 'var(--mute)' }}>{fmtDay(t.createdAt)}</td>
+              </tr>))}
+              {rows.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--faint)', padding: 40 }}>No desks match.</td></tr>}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>)}
+
+      {tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
+        {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}
+        {audit && audit.map(e => (<div key={e.id} style={{ display: 'flex', gap: 14, alignItems: 'baseline', padding: '11px 0', borderBottom: '1px solid var(--line2)' }}>
+          <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', width: 130, flex: 'none' }}>{fmtWhen(e.at)}</span>
+          <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, width: 190, flex: 'none', color: e.action.indexOf('deleted') >= 0 || e.action.indexOf('suspend') >= 0 ? 'var(--amber)' : 'var(--text)' }}>{e.action}</span>
+          <span style={{ fontSize: 13, flex: 1 }}>{e.tenantName}{e.actorId && <span style={{ color: 'var(--faint)' }}> · {e.actorId}</span>}</span>
+        </div>))}
+        {audit && audit.length === 0 && <div style={{ padding: 20, color: 'var(--faint)' }}>No activity yet.</div>}
+      </div>)}
+    </div>
+    {sel && <Drawer id={sel} onClose={() => setSel(null)} onChanged={loadAll} />}
+    {creating && <CreateModal onClose={() => setCreating(false)} onCreated={loadAll} />}
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -16,6 +16,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerRatesRoutes } from "./routes/rates.js";
@@ -37,6 +38,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerStaffRoutes(app, db);
   registerTenantRoutes(app, db);
   registerTenantStateRoutes(app, db);
+  registerAdminRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -52,6 +54,11 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     await registerSiteRoutes(app, staticDir);
     await app.register(fastifyStatic, { root: staticDir, index: false });
     app.get("/", (_req, reply) => reply.sendFile(indexFile));
+    // the platform control panel — served whether prod ships the vite build or
+    // the prototype, as long as admin.html is in the static dir (repo root)
+    if (existsSync(path.join(staticDir, "admin.html"))) {
+      app.get("/admin", (_req, reply) => reply.sendFile("admin.html"));
+    }
     app.setNotFoundHandler((req, reply) => {
       if (req.method === "GET" && !req.url.startsWith("/api/")) {
         return reply.sendFile(indexFile);

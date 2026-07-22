@@ -18,6 +18,7 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { createSession, resolveSession, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { tenantPlan } from "./tenant.js";
+import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail } from "../email.js";
 
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -31,6 +32,20 @@ const changePasswordBody = z.object({
   currentPassword: z.string().min(1).max(512),
   newPassword: z.string().min(8, "password: at least 8 characters").max(512),
 });
+const verifyLoginBody = z.object({
+  staffId: z.string().min(1).max(120),
+  code: z.string().trim().min(4).max(10),
+  tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
+});
+
+const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
+// short-lived in-memory sign-in challenges — a restart just asks the user to
+// sign in again, and Render runs one instance. key = staff user id.
+const loginChallenges = new Map<string, { codeHash: string; expiresAt: number; attempts: number }>();
+const CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const CHALLENGE_MAX_ATTEMPTS = 5;
+const maskEmail = (e: string) => { const [u, d] = e.split("@"); return ((u && u[0]) || "") + "••••@" + (d || ""); };
+const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
 
 export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   const cookieOpts = {
@@ -38,6 +53,11 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
+  };
+  // a platform-suspended desk can't sign in
+  const tenantSuspended = async (tenantId: string) => {
+    const r = await db.select({ s: schema.tenants.suspended }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1);
+    return !!r[0]?.s;
   };
 
   app.post("/api/auth/login", async (req, reply) => {
@@ -65,6 +85,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       }
       return reply.code(401).send({ error: "invalid_credentials" });
     }
+    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
 
     const { token, expiresAt } = await createSession(db, user.id);
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
@@ -83,6 +104,82 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         plan: await tenantPlan(db, user.tenantId),
       },
     };
+  });
+
+  // shared response shape for a signed-in user
+  const userPayload = async (user: typeof schema.staffUsers.$inferSelect) => ({
+    id: user.staffId,
+    name: user.name,
+    role: user.role,
+    tenantId: user.tenantId,
+    legalEntityId: user.legalEntityId,
+    branchId: user.branchId,
+    authorizedBranchIds: user.authorizedBranchIds,
+    mustChangePassword: user.mustChangePassword,
+    plan: await tenantPlan(db, user.tenantId),
+  });
+  // resolve a staff user by staff id — an email identity is globally unique so
+  // it resolves the tenant on its own; a plain staff id is scoped by tenant.
+  async function findLoginUser(staffId: string, tenantId: string) {
+    if (isEmail(staffId)) {
+      const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId)).limit(2);
+      if (rows.length === 1) return rows[0];
+      if (rows.length > 1) return rows.find((r) => r.tenantId === tenantId) ?? rows[0];
+      return undefined;
+    }
+    const rows = await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.staffId, staffId))).limit(1);
+    return rows[0];
+  }
+
+  // Step 1 of an email-verified sign-in: prove the password, then email a code.
+  // Users without an email on file (e.g. seeded staff ids) sign in on the
+  // password alone — there's nowhere to send a code.
+  app.post("/api/auth/login/start", async (req, reply) => {
+    const parsed = loginBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { staffId, password, tenantId } = parsed.data;
+    const user = await findLoginUser(staffId, tenantId);
+    const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+    if (!user || !user.active || !ok) {
+      if (user) await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login_failed" });
+      return reply.code(401).send({ error: "invalid_credentials" });
+    }
+    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+    const recipient = isEmail(user.staffId) ? user.staffId : null;
+    if (!recipient) {
+      // no address to verify — password is the only factor
+      const { token, expiresAt } = await createSession(db, user.id);
+      await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
+      reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+      return { ok: true, needsCode: false, user: await userPayload(user) };
+    }
+    const code = makeCode();
+    loginChallenges.set(user.id, { codeHash: hashCode(code), expiresAt: Date.now() + CHALLENGE_TTL_MS, attempts: 0 });
+    const mail = loginCodeEmail(code, user.name);
+    await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html });
+    return { ok: true, needsCode: true, maskedEmail: maskEmail(recipient), user: { id: user.staffId, name: user.name, role: user.role, tenantId: user.tenantId, mustChangePassword: user.mustChangePassword } };
+  });
+
+  // Step 2: the emailed code grants the session.
+  app.post("/api/auth/login/verify", async (req, reply) => {
+    const parsed = verifyLoginBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { staffId, code, tenantId } = parsed.data;
+    const user = await findLoginUser(staffId, tenantId);
+    if (!user) return reply.code(401).send({ error: "invalid_credentials" });
+    const ch = loginChallenges.get(user.id);
+    if (!ch) return reply.code(410).send({ error: "no_challenge", detail: "Start sign-in again." });
+    if (ch.expiresAt < Date.now()) { loginChallenges.delete(user.id); return reply.code(410).send({ error: "expired", detail: "That code expired — sign in again." }); }
+    if (ch.attempts >= CHALLENGE_MAX_ATTEMPTS) { loginChallenges.delete(user.id); return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries — sign in again." }); }
+    if (!codeMatches(code, ch.codeHash)) {
+      ch.attempts += 1;
+      return reply.code(401).send({ error: "wrong_code", detail: "That code isn't right — check your email." });
+    }
+    loginChallenges.delete(user.id);
+    const { token, expiresAt } = await createSession(db, user.id);
+    await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
+    reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    return { user: await userPayload(user) };
   });
 
   app.post("/api/auth/change-password", async (req, reply) => {

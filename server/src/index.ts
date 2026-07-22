@@ -59,6 +59,20 @@ if (process.env.RESET_STAFF_PASSWORD) {
   }
 }
 
+// platform-admin bootstrap: PLATFORM_ADMIN_BOOTSTRAP="email:password" ensures
+// an operator account exists so you can reach /admin on a fresh deploy.
+if (process.env.PLATFORM_ADMIN_BOOTSTRAP) {
+  const [email, ...rest] = process.env.PLATFORM_ADMIN_BOOTSTRAP.split(":");
+  const password = rest.join(":");
+  if (email && password) {
+    const { ensurePlatformAdmin } = await import("./admin-bootstrap.js");
+    await ensurePlatformAdmin(handle.db, email.trim().toLowerCase(), password);
+    console.warn(`[platform-admin] bootstrapped ${email.trim().toLowerCase()} — sign in at /admin, then REMOVE PLATFORM_ADMIN_BOOTSTRAP`);
+  } else {
+    console.warn("[platform-admin] PLATFORM_ADMIN_BOOTSTRAP malformed — expected email:password");
+  }
+}
+
 const app = await buildApp(handle.db);
 // custom-domain → site map: buildApp loads it once; keep it fresh so a
 // domain recorded on another instance (or straight in the DB) takes effect
