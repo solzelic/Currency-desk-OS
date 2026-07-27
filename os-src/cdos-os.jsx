@@ -972,6 +972,43 @@
 
     useEffect(() => { const t = setInterval(() => { setClock(new Date()); }, 1000); return () => clearInterval(t); }, []);
 
+    /* The desk is only signed in if the SERVER says so. Without this the shell
+       restores from saved state and looks signed in while the session cookie is
+       long gone — so the header greets you by name and then every app that asks
+       the server is refused. The embedded Rate Board hit exactly that and put a
+       second sign-in box inside the desk.
+
+       So: ask the server on boot, whenever the tab comes back, and when an app
+       reports it was refused. If there is no session, go back to the lock
+       screen — one door, one sign-in. A network failure is not an answer and
+       must not lock anyone out of a desk they are working at. */
+    useEffect(() => {
+      let alive = true;
+      const relock = () => {
+        if (!alive) return;
+        setStage(cur => (cur === 'lock' || cur === 'signup' || cur === 'verify' || cur === 'otp' ? cur : 'lock'));
+      };
+      const check = () => {
+        if (typeof fetch !== 'function') return;
+        fetch('/api/auth/me', { credentials: 'same-origin' })
+          .then(r => { if (r.status === 401) relock(); })
+          .catch(() => {});   // offline: leave the desk alone
+      };
+      const onFocus = () => { if (document.visibilityState === 'visible') check(); };
+      const onMessage = (e) => {
+        if (e.origin !== window.location.origin) return;
+        if (e.data && e.data.type === 'cdos:session-expired') relock();
+      };
+      check();
+      document.addEventListener('visibilitychange', onFocus);
+      window.addEventListener('message', onMessage);
+      return () => {
+        alive = false;
+        document.removeEventListener('visibilitychange', onFocus);
+        window.removeEventListener('message', onMessage);
+      };
+    }, []);
+
     // react to the staff Rate Board republishing (storage events fire from the
     // embedded board iframe) and to an external lock toggle
     useEffect(() => {

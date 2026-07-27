@@ -123,22 +123,40 @@
       '<div style="font-size:13px; line-height:1.6; color:var(--mute); margin:14px 0 18px;">The rate board now lives inside <b style="color:var(--ink)">CurrencyDesk OS</b> \u2014 sign in there and it\u2019s the first app in the dock.</div>' +
       '<a class="si-go" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;" href="/">Open CurrencyDesk OS \u2192</a>';
   }
+  // Embedded with no desk session. A password box here would be a second door
+  // into the same building - say what happened instead, and hand it back to the
+  // shell, which owns signing in and re-locks on this message.
+  function showSessionEnded() {
+    var form = document.getElementById('signinForm');
+    if (form && form.parentElement) {
+      form.parentElement.innerHTML = '<h1>Your desk session ended</h1>' +
+        '<div class="si-sub">CurrencyDesk · back office</div>' +
+        '<div style="font-size:13px; line-height:1.6; color:var(--mute); margin:14px 0 0;">Sign in on the desk again and the rate board comes back with it — the board never needs a password of its own.</div>';
+    }
+    try { window.parent.postMessage({ type: 'cdos:session-expired', app: 'rates' }, window.location.origin); } catch (e) {}
+  }
   (function autoAuth() {
     if (window.location.protocol === 'file:' || typeof fetch !== 'function') return;
     fetch('/api/auth/me', { credentials: 'same-origin' })
       .then(function (r) {
         BACKEND = true;
         if (r.ok) { return r.json().then(function (d) { if (d && d.user && !isAuthed()) enterAs(d.user.id); }); }
-        // backend up, no OS session: standalone visitors go through the OS
-        // door; embedded, the OS lock screen already owns authentication
-        if (!EMBEDDED && !isAuthed()) showOsDoor();
+        // Backend up, no desk session. Clear any sessionStorage flag left by an
+        // earlier session first: it is not a credential, and leaving it set
+        // shows an editor the server would refuse to publish for.
+        sessionStorage.removeItem(KEY_AUTH);
+        showApp();
+        if (EMBEDDED) showSessionEnded();
+        else showOsDoor();
       })
       .catch(function () { /* no backend \u2014 static demo keeps its own sign-in */ });
   })();
 
   document.getElementById('signinForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    if (BACKEND && !EMBEDDED) { showOsDoor(); return; }
+    // With a backend reachable, the desk's session is the only way in. The
+    // form below exists for the offline demo and must never post credentials.
+    if (BACKEND) { if (EMBEDDED) showSessionEnded(); else showOsDoor(); return; }
     var err = document.getElementById('signinError');
     var pw = document.getElementById('pw').value.trim();
     var user = document.getElementById('user').value.trim();
