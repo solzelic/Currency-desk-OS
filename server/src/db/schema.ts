@@ -212,6 +212,26 @@ export const pendingSignups = pgTable(
   (t) => [uniqueIndex("pending_signups_email_idx").on(t.email)],
 );
 
+/* What the public site sends us: an application for early access, or a
+   note from the contact page. Neither belongs to a tenant — the sender
+   doesn't have one yet — so this table sits outside tenancy. The
+   reference is what the site shows the sender to quote back at us. */
+export const enquiries = pgTable(
+  "enquiries",
+  {
+    id: text("id").primaryKey(),
+    reference: text("reference").notNull(),
+    kind: text("kind").$type<EnquiryKind>().notNull(),
+    email: text("email").notNull(),
+    name: text("name"),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("enquiries_reference_idx").on(t.reference), index("enquiries_kind_idx").on(t.kind, t.createdAt)],
+);
+export type EnquiryKind = "early_access" | "contact";
+
 /* SMS rate-hold quotes — a site visitor asks for a rate by text; the
    server prices it off the newest published board and HOLDS it for 30
    minutes. Status walks held → confirmed | expired | cancelled; expiry

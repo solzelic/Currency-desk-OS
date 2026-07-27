@@ -30,6 +30,52 @@ Deployed at **https://www.currencydeskos.com** (Render auto-deploys on push to
 `currencydeskos.com` 301-redirects to `www`).
 
 Working end-to-end, in production:
+- **Public site (NEW)** — the marketing site is the front door at **`/`**; the OS
+  moved to **`/app`** (`/app/*` 301s back to `/app` so its root-relative assets
+  resolve). It is the real Claude Design work ("More trades. Less paperwork."),
+  built from the design sources in `design/site/` by `scripts/build-site.mjs`.
+  The build keeps the design's own runtime (`support.js`, which resolves the
+  `{{ }}` bindings) and makes each page stand alone: React vendored under
+  `web/vendor/`, fonts self-hosted under `web/fonts/`, nothing fetched from a
+  CDN. Verified with **every external request blocked** — 0 externals, 0
+  unresolved bindings, no console errors, no horizontal overflow, desktop and
+  phone. Routing is driven by `SITE_INDEX` (default `web/index.html`); drop it
+  and the OS takes the root back.
+
+  **Two designs, not one responsive page.** The desktop layout has no mobile
+  breakpoints and the phone layout is a separate document, so `/` picks by
+  user-agent (`Vary: User-Agent`) and both stay addressable: `/m` phone, `/d`
+  desktop. Routes: `/` · `/m` · `/d` · `/faq` · `/compliance` · `/contact` ·
+  `/legal` · `/signup` · `/login` · `/app`.
+
+  **Applying ≠ opening a desk.** `/signup` is the design's Early Access
+  application — eight steps ending in a Founding Operator certificate. It does
+  not create anything; an accepted operator still builds their desk in the OS's
+  own wizard at `/app?signup=1`. The application and the contact form both
+  `POST /api/enquiries`, which stores the message (`enquiries` table) and mails
+  everyone in `PLATFORM_ADMIN_EMAILS`. Both were dead ends in the design —
+  they showed a made-up reference and sent nothing.
+
+  > **To update the site:** replace the page in `design/site/` and run
+  > `node scripts/build-site.mjs`. Never hand-edit `web/` — it is generated.
+  > A page the design links to but hasn't delivered falls back to the matching
+  > front-page section; drop the `.dc.html` in, add its `PAGES` entry, rerun,
+  > and both the page and every link to it appear. Photos and fonts are
+  > committed and only change on a re-export
+  > (`node scripts/extract-design-assets.mjs <export.html>`).
+  > **The build patches the design's runtime** in one place: `support.js`
+  > forwards only `prevProps` to `componentDidUpdate`, so a page written to
+  > React's contract (`prevState.step !== this.state.step`) threw on every
+  > update. It now gets the logic's previous state. Anchors are asserted, so a
+  > re-export that moves them fails the build rather than losing the fix.
+  > **Known gaps:** the **Add-ons export is truncated** — it stops mid-document
+  > with no `</x-dc>` and no logic block, so its `{{ items }}` have no data;
+  > it is left out and its links fall back to `#pricing` until re-exported.
+  > ~4.6 MB of design photography is served unoptimised (worth converting to
+  > WebP). The phone design has no sign-in of its own, so the build injects one
+  > into its footer nav (its header is full at 390px — a second action there
+  > costs the wordmark). And the designed Sign In page under the design's
+  > `app/` folder has not arrived, so `/login` is the OS's existing screen.
 - **Signup** — the 4-phase onboarding wizard (Business → Money → Rules → Launch),
   with a real emailed verification code. A new desk is created as a real,
   isolated, server-saved instance.
@@ -48,7 +94,8 @@ Working end-to-end, in production:
 - **Admin control panel:** `https://www.currencydeskos.com/admin`
   - Login: `admin@currencydeskos.com` / `12345` (TEMPORARY — see task #1)
   - A 2FA code emails to the `admin@currencydeskos.com` Google Workspace inbox.
-- **Demo desk (the OS itself):** `https://www.currencydeskos.com` — the seeded
+- **Public site:** `https://www.currencydeskos.com` — the marketing front door.
+- **Demo desk (the OS itself):** `https://www.currencydeskos.com/app` — the seeded
   "York FX" desk; staff sign-in e.g. `j.masri` (password = `SEED_PASSWORD`).
 - **Local dev:** `cd server && npm run dev:prototype` → http://localhost:8787.
   Tests: `cd server && npm test` (currently 69 passing).

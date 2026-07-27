@@ -33,8 +33,13 @@ services:
         value: production
       - key: STATIC_DIR
         value: ..
+      # the OS itself — served at /app
       - key: STATIC_INDEX
         value: CurrencyDesk OS.html
+      # the public marketing site — the front door at /. Remove this (or the
+      # file) and the OS takes the root again.
+      - key: SITE_INDEX
+        value: web/index.html
       - key: DATABASE_URL
         sync: false
       - key: OXR_APP_ID

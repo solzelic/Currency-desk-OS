@@ -13,6 +13,26 @@
     Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Telegraph, SignIn, LockDesk, Handover
   } = window.CDOS;
 
+  /* How the public site hands off into the product. The marketing front door
+     serves at "/" and sends people here two ways: "/signup" opens the new-desk
+     wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
+     are served the same file as "/app", which still accepts "?signup=1" and
+     "#signup" so older links keep working. */
+  const ENTRY = (function () {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const plan = q.get('plan');
+      const path = String(window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
+      return {
+        signup: path === '/signup' || q.get('signup') !== null ||
+                String(window.location.hash || '').toLowerCase() === '#signup',
+        plan: ['basic', 'pro', 'premium'].indexOf(plan) >= 0 ? plan : null,
+      };
+    } catch (e) {
+      return { signup: false, plan: null };
+    }
+  })();
+
   const APPMETA = {
     rates:     { title: 'Rate Board',      icon: 'rateboard', w: 1060, h: 660 },
     telegraph: { title: 'Texts',           icon: 'telegraphbubble', w: 1120, h: 700 },
@@ -236,7 +256,7 @@
      The official 4-phase setup: Business -> Money -> Rules -> Launch.
      Collects the desk's regulator, identity, plan and compliance rules,
      then creates the tenant (POST /api/signup) and emails a code. */
-  function OnboardWizard({ onBack, onSent }) {
+  function OnboardWizard({ onBack, onSent, plan }) {
     const ACC = '#1D6B45';
     const REG = [
       { c: 'Canada', flag: '🇨🇦', reg: 'FINTRAC', cur: 'CAD', th: 10000 },
@@ -271,7 +291,7 @@
       return (stepsIn.indexOf(step) + 1) / stepsIn.length;
     };
     const [step, setStep] = useState(0);
-    const [d, setD] = useState({ country: '', businessName: '', ownerName: '', email: '', password: '', slug: '', msbNumber: '', plan: 'pro', idThreshold: 10000 });
+    const [d, setD] = useState({ country: '', businessName: '', ownerName: '', email: '', password: '', slug: '', msbNumber: '', plan: plan || 'pro', idThreshold: 10000 });
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
     const set = (k, v) => setD(s => ({ ...s, [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
     const reg = REG.find(r => r.c === d.country) || {};
@@ -627,7 +647,7 @@
 
   /* ====================== ROOT ====================== */
   function App() {
-    const [stage, setStage] = useState('lock');
+    const [stage, setStage] = useState(ENTRY.signup ? 'signup' : 'lock');
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
@@ -1410,7 +1430,7 @@
         await hydrateTenant(); routeAfterAuth(rec);
       }}
     />;
-    if (stage === 'signup') return <OnboardWizard onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
+    if (stage === 'signup') return <OnboardWizard plan={ENTRY.plan} onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
     if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
     if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={async () => {
       // adopt the new owner locally, then hydrate their brand-new (clean) desk

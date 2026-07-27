@@ -88,10 +88,92 @@ describe("domain door: DNS handoff", () => {
     expect(api.json().service).toBe("currencydesk-server");
   });
 
-  it("the CurrencyDesk host itself is untouched — the OS still serves at /", async () => {
-    const res = await app.inject({ method: "GET", url: "/", headers: { host: "currencydesk.onrender.com" } });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("CurrencyDesk OS");
+  it("the CurrencyDesk host itself serves the public site at / and the OS at /app", async () => {
+    const site = await app.inject({ method: "GET", url: "/", headers: { host: "currencydesk.onrender.com" } });
+    expect(site.statusCode).toBe(200);
+    expect(site.body).toContain("more trades, less paperwork");
+
+    const os = await app.inject({ method: "GET", url: "/app", headers: { host: "currencydesk.onrender.com" } });
+    expect(os.statusCode).toBe(200);
+    expect(os.body).toContain("CurrencyDesk OS");
+
+    // deep links collapse onto /app so the OS's root-relative assets resolve
+    const deep = await app.inject({ method: "GET", url: "/app/anything", headers: { host: "currencydesk.onrender.com" } });
+    expect(deep.statusCode).toBe(301);
+    expect(deep.headers.location).toBe("/app");
+  });
+});
+
+/* The marketing site is two designs — a desktop page with no mobile
+   breakpoints and a phone page that is its own document — plus the two
+   doors into the product. */
+describe("the public site", () => {
+  const canonical = (body: string) => /rel="canonical" href="[^"]*?([^/"]*)"/.exec(body)?.[1] ?? "";
+
+  it("gives a phone the phone design and everyone else the desktop one", async () => {
+    const phone = await app.inject({
+      method: "GET", url: "/",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari/604.1" },
+    });
+    expect(phone.statusCode).toBe(200);
+    expect(canonical(phone.body)).toBe("m");
+
+    const laptop = await app.inject({
+      method: "GET", url: "/",
+      headers: { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120 Safari/537.36" },
+    });
+    expect(canonical(laptop.body)).toBe("");
+
+    // a cache in front of us must not hand one audience the other's layout
+    expect(phone.headers.vary).toBe("User-Agent");
+  });
+
+  it("addresses each layout directly, so a wrong guess is correctable", async () => {
+    expect(canonical((await app.inject({ method: "GET", url: "/m" })).body)).toBe("m");
+    expect(canonical((await app.inject({ method: "GET", url: "/d" })).body)).toBe("");
+  });
+
+  it("serves every page the design has delivered", async () => {
+    const pages: [string, string][] = [
+      ["/legal", "Privacy Policy and Terms of Service"],
+      ["/faq", "Everything a shop asks before it switches"],
+      ["/contact", "Talk to the people building it"],
+      ["/compliance", "Compliance"],
+    ];
+    for (const [url, expected] of pages) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.body, url).toContain(expected);
+    }
+  });
+
+  it("falls back to the front page for a design we do not have yet", async () => {
+    // no Add-ons page — its links point at #pricing on the front page, and
+    // the route stays unclaimed rather than 200-ing an empty shell
+    const res = await app.inject({ method: "GET", url: "/add-ons" });
+    expect(res.body).toContain("more trades, less paperwork");
+  });
+
+  it("sends applicants to the design's Early Access page and members to the OS", async () => {
+    const apply = await app.inject({ method: "GET", url: "/signup" });
+    expect(apply.statusCode).toBe(200);
+    expect(apply.body).toContain("Become a Founding Operator");
+
+    const login = await app.inject({ method: "GET", url: "/login" });
+    expect(login.statusCode).toBe(200);
+    expect(login.body).toContain("CurrencyDesk OS");
+
+    // an accepted operator still creates their desk from the OS's own wizard
+    const wizard = await app.inject({ method: "GET", url: "/app?signup=1" });
+    expect(wizard.statusCode).toBe(200);
+    expect(wizard.body).toContain("CurrencyDesk OS");
+  });
+
+  it("leaves no link pointing at a design file", async () => {
+    for (const url of ["/", "/m", "/legal", "/faq", "/contact", "/compliance", "/signup"]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.body, url).not.toContain(".dc.html");
+    }
   });
 
   it("disconnecting the domain (null) stops the rewrite", async () => {
@@ -100,7 +182,7 @@ describe("domain door: DNS handoff", () => {
     expect(off.statusCode).toBe(200);
     expect(off.json().tenant.siteDomain).toBeNull();
     const res = await app.inject({ method: "GET", url: "/", headers: { host: "yorkfx.ca" } });
-    // no mapping → falls through to the default shell, not the storefront
-    expect(res.body).toContain("CurrencyDesk OS");
+    // no mapping → falls through to the CurrencyDesk front door, not the storefront
+    expect(res.body).toContain("more trades, less paperwork");
   });
 });
