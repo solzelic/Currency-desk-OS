@@ -118,6 +118,11 @@ export const staffUsers = pgTable(
     // home branch; may be authorized into others
     branchId: text("branch_id").notNull().references(() => branches.id),
     staffId: text("staff_id").notNull(),
+    /* The human identifier a person quotes to us and signs in with:
+       CD-YORK-0042. Unique across the platform, so support can act on it
+       without first asking which desk. Null until issued — every account
+       created before the scheme existed keeps working on its staff id. */
+    cdId: text("cd_id"),
     name: text("name").notNull(),
     role: staffRole("role").notNull(),
     authorizedBranchIds: jsonb("authorized_branch_ids").$type<string[]>().notNull().default([]),
@@ -129,7 +134,7 @@ export const staffUsers = pgTable(
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId)],
+  (t) => [uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId), uniqueIndex("staff_cd_id_idx").on(t.cdId)],
 );
 
 export const sessions = pgTable(

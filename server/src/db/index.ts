@@ -152,6 +152,10 @@ CREATE TABLE IF NOT EXISTS staff_users (
 CREATE UNIQUE INDEX IF NOT EXISTS staff_tenant_staffid_idx ON staff_users(tenant_id, staff_id);
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS password_updated_at timestamptz;
+-- the human identifier a person quotes to support and signs in with. Unique
+-- where set; Postgres allows many NULLs, so accounts predating it keep working.
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS cd_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS staff_cd_id_idx ON staff_users(cd_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

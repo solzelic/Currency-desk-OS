@@ -14,10 +14,11 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPassword } from "../auth/password.js";
+import { issueCdId } from "../auth/cdid.js";
 import { audit } from "../audit.js";
-import { sendEmail, inviteEmail, type EmailStatus } from "../email.js";
+import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -55,6 +56,16 @@ function platformAdmins(): Set<string> {
 const PLATFORM_TENANT = "tnt-platform";
 const isPlatformAdmin = (email: string | undefined): boolean =>
   !!email && platformAdmins().has(email.toLowerCase());
+
+/* Readable aloud and hard to mistype: no vowels to form a word by accident,
+   no characters that look like each other down a phone line. */
+function tempPassword(): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = new Uint8Array(14);
+  globalThis.crypto.getRandomValues(bytes);
+  const body = [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
+  return `${body.slice(0, 5)}-${body.slice(5, 10)}-${body.slice(10)}`;
+}
 
 /* The desk's working book lives in its saved state as a bag of JSON strings,
    one per thing the OS keeps. Read the few that answer "how is this customer
@@ -180,7 +191,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (!t) return reply.code(404).send({ error: "not_found" });
     const entities = await db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, id));
     const staff = await db
-      .select({ id: schema.staffUsers.id, staffId: schema.staffUsers.staffId, name: schema.staffUsers.name, role: schema.staffUsers.role, active: schema.staffUsers.active, createdAt: schema.staffUsers.createdAt })
+      .select({ id: schema.staffUsers.id, staffId: schema.staffUsers.staffId, cdId: schema.staffUsers.cdId, name: schema.staffUsers.name, role: schema.staffUsers.role, active: schema.staffUsers.active, createdAt: schema.staffUsers.createdAt })
       .from(schema.staffUsers)
       .where(eq(schema.staffUsers.tenantId, id));
     const audit = await db.select().from(schema.auditEvents).where(eq(schema.auditEvents.tenantId, id)).orderBy(desc(schema.auditEvents.at)).limit(50);
@@ -346,6 +357,110 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       });
     }
     return { ok: true, ...(invited ? { invite: invited } : {}) };
+  });
+
+  /* ---- one person -------------------------------------------------------
+     Support acts on people, not just desks: someone leaves, someone's laptop
+     goes missing, someone can't get in. */
+  app.get<{ Params: { id: string } }>("/api/admin/staff/:id", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+    const tenant = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, p.tenantId)).limit(1))[0];
+    const sessions = await db.select().from(schema.sessions).where(eq(schema.sessions.userId, p.id));
+    const now = Date.now();
+    const live = sessions.filter((s) => !s.revokedAt && new Date(s.expiresAt).getTime() > now);
+    const events = (await db.select().from(schema.auditEvents).where(eq(schema.auditEvents.tenantId, p.tenantId)).orderBy(desc(schema.auditEvents.at)).limit(200))
+      .filter((e) => e.actorId === p.id)
+      .slice(0, 25);
+    const lastSignIn = sessions.length
+      ? sessions.map((s) => new Date(s.createdAt).getTime()).sort((a, b) => b - a)[0]
+      : null;
+    return {
+      person: {
+        id: p.id, staffId: p.staffId, cdId: p.cdId, name: p.name, role: p.role, active: p.active,
+        mustChangePassword: p.mustChangePassword, passwordUpdatedAt: p.passwordUpdatedAt,
+        createdAt: p.createdAt, tenantId: p.tenantId, branchId: p.branchId,
+        authorizedBranchIds: p.authorizedBranchIds,
+      },
+      desk: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.siteSlug, suspended: tenant.suspended } : null,
+      sessions: { live: live.length, lastSignInAt: lastSignIn ? new Date(lastSignIn).toISOString() : null },
+      events,
+    };
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/admin/staff/:id", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "active is required" });
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+
+    await db.update(schema.staffUsers).set({ active: parsed.data.active }).where(eq(schema.staffUsers.id, p.id));
+    /* Blocking somebody has to take effect now, not when their cookie happens
+       to expire — that is the whole reason to reach for it. */
+    if (!parsed.data.active) await revokeAllSessions(db, p.id);
+    await audit(db, {
+      tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,
+      action: parsed.data.active ? "admin.person_unblocked" : "admin.person_blocked",
+      detail: { staffId: p.staffId, name: p.name },
+    });
+    return { ok: true };
+  });
+
+  /* Reset a password the way support actually does it: issue a temporary one,
+     force a change at next sign-in, sign every device out, and email it. The
+     operator never sees it, so it cannot be read back out of this panel. */
+  app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-password", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+
+    const temp = tempPassword();
+    await db
+      .update(schema.staffUsers)
+      .set({ passwordHash: await hashPassword(temp), mustChangePassword: true, passwordUpdatedAt: new Date() })
+      .where(eq(schema.staffUsers.id, p.id));
+    await revokeAllSessions(db, p.id);
+
+    let delivered: EmailStatus | "no_address" = "no_address";
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.staffId)) {
+      const mail = tempPasswordEmail({ name: p.name, tempPassword: temp, signInId: p.cdId || p.staffId });
+      delivered = await sendEmail(p.staffId, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+    }
+    await audit(db, {
+      tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,
+      action: "admin.password_reset", detail: { staffId: p.staffId, delivered },
+    });
+    /* Only hand the password back when there was no address to send it to —
+       otherwise the operator would have a copy of a live credential. */
+    return { ok: true, delivered, ...(delivered === "no_address" ? { tempPassword: temp } : {}) };
+  });
+
+  // issue a CurrencyDesk ID, or replace one that has been given out too widely
+  app.post<{ Params: { id: string } }>("/api/admin/staff/:id/cd-id", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+
+    const previous = p.cdId;
+    const cdId = await issueCdId(db, p.tenantId);
+    await db.update(schema.staffUsers).set({ cdId }).where(eq(schema.staffUsers.id, p.id));
+
+    let delivered: EmailStatus | "no_address" = "no_address";
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.staffId)) {
+      const mail = cdIdEmail({ name: p.name, cdId, replaced: !!previous });
+      delivered = await sendEmail(p.staffId, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+    }
+    await audit(db, {
+      tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,
+      action: previous ? "admin.cd_id_reissued" : "admin.cd_id_issued",
+      detail: { staffId: p.staffId, from: previous, to: cdId, delivered },
+    });
+    return { ok: true, cdId, previous, delivered };
   });
 
   // block/unblock a desk, or change its plan

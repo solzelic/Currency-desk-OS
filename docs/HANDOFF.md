@@ -104,6 +104,19 @@ Working end-to-end, in production:
   team, plan and block/delete — and a link back to the application it came
   from. Moving an applicant to **invited emails them** their reference and the
   link to build the desk; the panel reports whether that email actually sent.
+
+  **People have pages too** — `/admin#/people/<id>`, opened from the desk's
+  team list. That is where support acts: **block** someone (signs them out
+  everywhere at once and refuses new sign-ins, records untouched), **reset
+  their password** (temporary one, every device signed out, must-change forced,
+  emailed if there is an address — handed to the operator only when there is
+  not), and **issue or reissue their CurrencyDesk ID**. Everything is audited.
+
+  **The CurrencyDesk ID is real** (`server/src/auth/cdid.ts`): `CD-YORK-0042`,
+  unique platform-wide, numbers running per desk and never reused, so an old ID
+  in an email thread can never resolve to a different person. Sign-in accepts
+  it **without a tenantId** — that is the point of it. It is issued on demand;
+  accounts predating the scheme keep signing in on their staff id.
 - **Per-tenant persistence** — each desk's working state is saved server-side
   (`tenant_state`), isolated per tenant.
 

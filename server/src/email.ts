@@ -95,6 +95,42 @@ export function inviteEmail(opts: { name?: string | null; reference: string; ori
   return { subject, text, html };
 }
 
+/* Support reset somebody's password. They get a temporary one and have to
+   pick their own before the desk opens. */
+export function tempPasswordEmail(o: { name: string; tempPassword: string; signInId: string }): { subject: string; text: string; html: string } {
+  const subject = "Your CurrencyDesk password was reset";
+  const text =
+    `${o.name}, we reset your password at your request.\n\n` +
+    `Sign in as ${o.signInId} with this temporary password: ${o.tempPassword}\n\n` +
+    `You will be asked to pick your own straight away, and every device that was signed in has been signed out. ` +
+    `If you did not ask for this, reply to this email now.`;
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${o.name}, we reset your password. Sign in as <b style="color:#0a0a0a">${o.signInId}</b> with this temporary password:</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:26px;font-weight:700;letter-spacing:.12em;margin:20px 0;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${o.tempPassword}</div>` +
+    `<div style="font-size:13px;color:#8a8a8a;line-height:1.6">You will pick your own straight away. Every signed-in device has been signed out. If you did not ask for this, reply now.</div>` +
+    `</div>`;
+  return { subject, text, html };
+}
+
+/* Their CurrencyDesk ID — issued, or replaced because the old one got about. */
+export function cdIdEmail(o: { name: string; cdId: string; replaced: boolean }): { subject: string; text: string; html: string } {
+  const subject = o.replaced ? "Your new CurrencyDesk ID" : "Your CurrencyDesk ID";
+  const text =
+    `${o.name}, your CurrencyDesk ID is ${o.cdId}.\n\n` +
+    `Sign in with it, and quote it whenever you write to us.` +
+    (o.replaced ? `\n\nThis replaces your previous ID, which no longer works.` : "");
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${o.name}, this is your CurrencyDesk ID. Sign in with it, and quote it whenever you write to us.</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:28px;font-weight:700;letter-spacing:.14em;margin:20px 0;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${o.cdId}</div>` +
+    (o.replaced ? `<div style="font-size:13px;color:#8a8a8a">This replaces your previous ID, which no longer works.</div>` : "") +
+    `</div>`;
+  return { subject, text, html };
+}
+
 /* The verification email. Plain + a minimal branded HTML. */
 export function verificationEmail(code: string, businessName: string): { subject: string; text: string; html: string } {
   const subject = `${code} is your CurrencyDesk verification code`;

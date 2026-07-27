@@ -310,7 +310,7 @@ const goto = (h) => { window.location.hash = h; };
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
   const tab = parts[0] || 'desks';
-  const known = ['desks', 'applications', 'messages', 'activity'];
+  const known = ['desks', 'applications', 'messages', 'activity', 'people'];
   return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
 }
 
@@ -450,12 +450,13 @@ function DeskPage({ id, onChanged }) {
         </Card>
 
         <Card title={'People (' + d.staff.length + ')'}>
-          {d.staff.map(s => (<div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+          {d.staff.map(s => (<button key={s.id} onClick={() => goto('#/people/' + s.id)}
+            style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '7px 0', background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}>
             <Avatar name={s.name} size={28} />
-            <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-              <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.staffId}</span></span>
+            <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{s.name}{s.active === false && <span style={{ color: 'var(--red)', fontWeight: 500 }}> · blocked</span>}</span>
+              <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.cdId || s.staffId}</span></span>
             <Pill tone={s.role === 'administrator' ? 'purple' : 'mute'}>{s.role.replace('_', ' ')}</Pill>
-          </div>))}
+          </button>))}
         </Card>
 
         <Card title="Plan">
@@ -481,6 +482,109 @@ function DeskPage({ id, onChanged }) {
               style={{ width: '100%', padding: 10, borderRadius: 9, border: 'none', cursor: (ack && confirmName === t.slug) ? 'pointer' : 'not-allowed', background: (ack && confirmName === t.slug) ? 'var(--red)' : 'rgba(248,113,113,0.18)', color: (ack && confirmName === t.slug) ? '#fff' : 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 13 }}>
               {busy === 'delete' ? 'Deleting…' : 'Delete permanently'}</button>
           </div>)}
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
+// ===================== PERSON PAGE =====================
+// Support acts on people. Someone leaves, someone's laptop goes missing,
+// someone can't get in — all of that is done from here.
+function PersonPage({ id, onChanged }) {
+  const [d, setD] = useState(null); const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(''); const [flash, setFlash] = useState(null);
+  const load = () => api('/api/admin/staff/' + encodeURIComponent(id)).then(setD).catch(() => setErr('Could not load this person.'));
+  useEffect(() => { setD(null); setErr(''); setFlash(null); load(); }, [id]);
+
+  if (err) return <div style={{ color: 'var(--red)', padding: 20 }}>{err}</div>;
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const p = d.person, desk = d.desk;
+  const sent = (s) => s === 'sent' ? 'and emailed to them' : s === 'simulated' ? 'and the email is simulated here' : s === 'failed' ? 'but the email did not send' : 'but they have no email on file';
+  const run = async (label, path, body, done) => {
+    setBusy(label); setFlash(null);
+    try {
+      // the shared api() always sets a JSON content-type, and Fastify rejects
+      // that with no body — so an action with nothing to say still says {}
+      const r = await api(path, { method: body ? 'PATCH' : 'POST', body: JSON.stringify(body || {}) });
+      setFlash(done(r));
+      await load(); onChanged && onChanged();
+    } catch (x) { setFlash({ tone: 'red', text: (x.body && x.body.detail) || 'That did not work.' }); }
+    setBusy('');
+  };
+  const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }, extra || {});
+
+  return (<div>
+    <PageHead back={desk ? desk.name : 'Desks'} backTo={desk ? '#/desks/' + desk.id : '#/desks'}
+      title={p.name} sub={p.staffId + '  ·  joined ' + fmtDay(p.createdAt)}
+      pills={<><Pill tone={p.active ? 'green' : 'red'} dot>{p.active ? 'Active' : 'Blocked'}</Pill><Pill tone={p.role === 'administrator' ? 'purple' : 'mute'}>{p.role.replace('_', ' ')}</Pill>{p.mustChangePassword && <Pill tone="amber">Must change password</Pill>}</>}
+      actions={<a href={'mailto:' + p.staffId} style={{ ...btn('transparent', 'var(--text)'), textDecoration: 'none' }}>Email them</a>} />
+
+    {flash && <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 10, fontSize: 13, lineHeight: 1.55,
+      background: 'color-mix(in srgb,' + toneColor(flash.tone || 'blue') + ' 12%,transparent)', border: '1px solid color-mix(in srgb,' + toneColor(flash.tone || 'blue') + ' 30%,transparent)' }}>
+      {flash.text}
+      {flash.code && <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 700, letterSpacing: '0.08em', marginTop: 8 }}>{flash.code}</div>}
+    </div>}
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(300px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="CurrencyDesk ID">
+          {p.cdId
+            ? <div style={{ fontFamily: MONO, fontSize: 26, fontWeight: 700, letterSpacing: '0.1em' }}>{p.cdId}</div>
+            : <div style={{ fontSize: 13.5, color: 'var(--mute)', lineHeight: 1.55 }}>None yet — they sign in as <b style={{ color: 'var(--text)' }}>{p.staffId}</b>.</div>}
+          <div style={{ fontSize: 12.5, color: 'var(--faint)', marginTop: 10, lineHeight: 1.55 }}>
+            What they read out when they ring, and what they can sign in with. {p.cdId ? 'Issuing a new one retires this one immediately.' : 'Issuing one does not take away their current sign-in.'}
+          </div>
+          <button disabled={!!busy} onClick={() => run('cdid', '/api/admin/staff/' + p.id + '/cd-id', null,
+            (r) => ({ tone: 'green', text: (r.previous ? 'New ID issued — the old one no longer works, ' : 'ID issued, ') + sent(r.delivered) + '.', code: r.cdId }))}
+            style={{ ...btn(p.cdId ? 'transparent' : 'var(--text)', p.cdId ? 'var(--text)' : '#111'), marginTop: 12 }}>
+            {busy === 'cdid' ? 'Issuing…' : p.cdId ? 'Issue a new ID' : 'Issue an ID'}</button>
+        </Card>
+
+        <Card title={'Their activity (' + d.events.length + ')'} pad={0}>
+          <div style={{ padding: '4px 16px', maxHeight: 300, overflow: 'auto' }}>
+            {d.events.map(e => (<div key={e.id} style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 0', borderBottom: '1px solid var(--line2)' }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)', width: 120, flex: 'none' }}>{fmtWhen(e.at)}</span>
+              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700 }}>{e.action}</span>
+            </div>))}
+            {d.events.length === 0 && <div style={{ padding: 20, color: 'var(--faint)' }}>Nothing recorded yet.</div>}
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="Account">
+          {kv('Signs in as', p.staffId)}
+          {kv('Desk', desk ? <button onClick={() => goto('#/desks/' + desk.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', cursor: 'pointer', padding: 0, fontSize: 13, fontWeight: 600 }}>{desk.name}</button> : null)}
+          {kv('Role', p.role.replace('_', ' '))}
+          {kv('Signed in now', d.sessions.live > 0 ? d.sessions.live + ' device' + (d.sessions.live === 1 ? '' : 's') : 'no')}
+          {kv('Last sign-in', d.sessions.lastSignInAt ? fmtWhen(d.sessions.lastSignInAt) : 'never')}
+          {kv('Password set', p.passwordUpdatedAt ? fmtWhen(p.passwordUpdatedAt) : 'at signup')}
+        </Card>
+
+        <Card title="Can't get in">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+            Issues a temporary password, signs every device out, and makes them pick their own before the desk opens.
+          </div>
+          <button disabled={!!busy} onClick={() => run('reset', '/api/admin/staff/' + p.id + '/reset-password', null,
+            (r) => r.tempPassword
+              ? { tone: 'amber', text: 'Password reset. They have no email on file, so read this to them — it is shown once.', code: r.tempPassword }
+              : { tone: 'green', text: 'Password reset ' + sent(r.delivered) + '. Every device has been signed out.' })}
+            style={{ ...btn('transparent', 'var(--text)'), width: '100%' }}>
+            {busy === 'reset' ? 'Resetting…' : 'Reset their password'}</button>
+        </Card>
+
+        <Card title="Access">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+            {p.active
+              ? 'Blocking signs them out everywhere at once and refuses any new sign-in. Their records stay exactly as they are.'
+              : 'They are blocked: signed out everywhere and unable to sign in.'}
+          </div>
+          <button disabled={!!busy} onClick={() => run('block', '/api/admin/staff/' + p.id, { active: !p.active },
+            () => ({ tone: p.active ? 'amber' : 'green', text: p.active ? p.name + ' is blocked and signed out everywhere.' : p.name + ' can sign in again.' }))}
+            style={{ ...btn(p.active ? 'color-mix(in srgb,var(--red) 14%,transparent)' : 'color-mix(in srgb,var(--green) 14%,transparent)', p.active ? 'var(--red)' : 'var(--green)'), width: '100%' }}>
+            {busy === 'block' ? '…' : p.active ? 'Block this person' : 'Unblock this person'}</button>
         </Card>
       </div>
     </div>
@@ -642,6 +746,8 @@ function App() {
 
       {route.id && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
+        : tab === 'people'
+        ? <PersonPage id={route.id} onChanged={loadAll} />
         : <ApplicationPage id={route.id} onChanged={loadAll} />)}
 
       {!route.id && tab === 'desks' && (<div>
