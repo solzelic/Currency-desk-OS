@@ -87,6 +87,21 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     }
     if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
 
+    /* Anyone whose staff id is an email gets a code sent to it, and that code
+       is the second factor. This endpoint predates it and grants a session on
+       the password alone — so left open it is a way to walk straight past the
+       code. Refuse them here; /api/auth/login/start is the door.
+
+       Staff ids that are not addresses keep working: there is nowhere to send
+       a code, so the password is the only factor either way, and login/start
+       treats them identically. */
+    if (isEmail(user.staffId)) {
+      return reply.code(403).send({
+        error: "code_required",
+        detail: "This account signs in with an emailed code. Start at /api/auth/login/start.",
+      });
+    }
+
     const { token, expiresAt } = await createSession(db, user.id);
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
 

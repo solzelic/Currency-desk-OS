@@ -67,4 +67,28 @@ describe("email-verified login", () => {
     const bad = await app.inject({ method: "POST", url: "/api/auth/login/start", payload: { staffId: "sam@twofa.ca", password: "nope" } });
     expect(bad.statusCode).toBe(401);
   });
+
+  /* The password-only endpoint predates the code step. Left open it was a way
+     round it: the right password alone returned a session for an account whose
+     second factor is an emailed code. */
+  it("the old password-only endpoint cannot be used to skip the code", async () => {
+    const bypass = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "sam@twofa.ca", password: "a-strong-pass", tenantId: "tnt-twofa" },
+    });
+    expect(bypass.statusCode).toBe(403);
+    expect(bypass.json().error).toBe("code_required");
+    expect(cookieOf(bypass)).toBeUndefined();
+  });
+
+  it("but staff with no email still sign in there, since a code was never possible", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "m.costa", password: "yorkville", tenantId: "tnt-yorkfx" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cookieOf(res)).toBeTruthy();
+  });
 });

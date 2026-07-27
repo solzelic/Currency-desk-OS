@@ -22,9 +22,10 @@ beforeAll(async () => {
 afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
 beforeEach(() => { logged = []; });
 
+// the signup code and the sign-in code are worded differently; take either
 const codeFromLog = (): string => {
   const line = [...logged].reverse().find((l) => l.includes("[email simulated]"));
-  const m = line?.match(/is your CurrencyDesk verification code/) ? line.match(/(\d{6}) is your/) : line?.match(/code is (\d{6})/);
+  const m = line?.match(/(\d{6}) is your/) ?? line?.match(/code is (\d{6})/);
   if (!m) throw new Error("no code in log: " + JSON.stringify(logged));
   return m[1]!;
 };
@@ -69,7 +70,13 @@ describe("signup", () => {
   });
 
   it("the new owner can then log in to THEIR tenant", async () => {
-    const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId: "dana@maplefx.ca", password: "a-strong-pass", tenantId: "tnt-maplefx" } });
+    // the owner's staff id is their email, so signing in means the code step —
+    // the password alone is not a way in
+    const start = await app.inject({ method: "POST", url: "/api/auth/login/start", payload: { staffId: "dana@maplefx.ca", password: "a-strong-pass" } });
+    expect(start.statusCode).toBe(200);
+    expect(start.json()).toMatchObject({ needsCode: true });
+
+    const login = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "dana@maplefx.ca", code: codeFromLog() } });
     expect(login.statusCode).toBe(200);
     expect(login.json().user).toMatchObject({ id: "dana@maplefx.ca", tenantId: "tnt-maplefx", role: "administrator" });
   });
