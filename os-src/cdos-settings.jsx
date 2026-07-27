@@ -102,20 +102,49 @@
 
   // 4-digit transaction PIN. Changing it verifies the current PIN first, then
   // takes the new PIN twice — the standard change-PIN flow.
-  function PinSetter({ hasPin, current, onSave }) {
+  /* Your own till PIN. The old version compared your current PIN against a
+     copy sitting in the browser — so the check could be skipped and the PIN
+     read. It is set on the server now: this screen only collects digits and
+     reports what the server says. */
+  function PinSetter({ hasPin: hasPinProp, onSave }) {
     const [open, setOpen] = useState(false);
     const [cur, setCur] = useState('');
     const [a, setA] = useState('');
     const [b, setB] = useState('');
     const [err, setErr] = useState('');
     const [done, setDone] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [hasPin, setHasPin] = useState(!!hasPinProp);
+    useEffect(() => {
+      let alive = true;
+      fetch('/api/staff/pin', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(r => { if (alive && r) setHasPin(!!r.hasPin); })
+        .catch(() => {});
+      return () => { alive = false; };
+    }, []);
     const clean = (v) => (v || '').replace(/\D/g, '').slice(0, 4);
     const close = () => { setOpen(false); setCur(''); setA(''); setB(''); setErr(''); };
-    const save = () => {
-      if (hasPin && cur !== String(current == null ? '0000' : current)) { setErr('Your current PIN isn’t right.'); return; }
+    const save = async () => {
       if (a.length !== 4) { setErr('New PIN must be 4 digits.'); return; }
       if (a !== b) { setErr('The two new PINs don’t match.'); return; }
-      onSave(a); setOpen(false); setCur(''); setA(''); setB(''); setErr('');
+      if (hasPin && cur.length !== 4) { setErr('Enter your current PIN.'); return; }
+      setBusy(true); setErr('');
+      try {
+        const res = await fetch('/api/staff/pin', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify(hasPin ? { pin: a, currentPin: cur } : { pin: a }),
+        });
+        if (!res.ok) {
+          setBusy(false);
+          if (res.status === 401) { setErr('Your current PIN isn’t right.'); return; }
+          if (res.status === 429) { setErr('Too many wrong tries — wait a few minutes.'); return; }
+          setErr('That didn’t save. Try again.'); return;
+        }
+      } catch (e) { setBusy(false); setErr('No connection — the PIN was not changed.'); return; }
+      setBusy(false); setHasPin(true);
+      onSave && onSave();
+      setOpen(false); setCur(''); setA(''); setB(''); setErr('');
       setDone(true); setTimeout(() => setDone(false), 1800);
     };
     const fld = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8, width: 128, letterSpacing: '0.4em', textAlign: 'center', fontFamily: 'Space Mono, monospace', fontSize: 15, padding: '8px 10px', outline: 'none' };
@@ -136,7 +165,7 @@
         {err && <div className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}
         <div className="flex items-center justify-end gap-2 mt-3">
           <button onClick={close} className="text-[12px] px-3 py-2" style={{ color: CD.mute }}>Cancel</button>
-          <button onClick={save} className="text-[12px] px-3.5 py-2 font-semibold text-white flex items-center gap-1.5" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="check" s={13} c="var(--cd-on-ink)" /> Save PIN</button>
+          <button disabled={busy} onClick={save} className="text-[12px] px-3.5 py-2 font-semibold text-white flex items-center gap-1.5" style={{ background: CD.ink, borderRadius: 8, opacity: busy ? 0.5 : 1 }}><Ic n="check" s={13} c="var(--cd-on-ink)" /> {busy ? 'Saving…' : 'Save PIN'}</button>
         </div>
       </div>
     );
@@ -152,7 +181,8 @@
     // nav search — filters the settings rail by label + per-tab keywords
     const [navQ, setNavQ] = useState('');
     const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
-    const [revealPin, setRevealPin] = useState({});   // owner-revealed PINs by employee id
+    // a PIN the owner has just issued, shown once so it can be read out
+    const [newPin, setNewPin] = useState({});         // employee id → { pin } | { err }
     // ---- server sign-in accounts (per-employee credentials) ----
     const [srvStaff, setSrvStaff] = useState(null);       // staffId → server account
     const [srvState, setSrvState] = useState('loading');  // loading | ok | offline | forbidden
@@ -339,7 +369,8 @@
     const setProf = (k, v) => setSettings(s => ({ ...s, staff: { ...(s.staff || {}), [me.name]: { ...((s.staff || {})[me.name] || {}), [k]: v } } }));
     // the signed-in user's own account record — holds their transaction PIN
     const myEmp = (settings.employees || []).find(e => e.name === me.name) || null;
-    const setMyPin = (pin) => { setSettings(s => ({ ...s, employees: (s.employees || []).map(e => e.name === me.name ? { ...e, pin } : e) })); log('Transaction PIN', pin ? 'PIN set' : 'PIN cleared'); };
+    // the PIN itself is set on the server; this only writes the line in the log
+    const setMyPin = () => log('Transaction PIN', 'PIN set');
 
     const set = (k, v, note) => { setSettings(s => ({ ...s, [k]: v })); if (note) log('Setting changed', note); };
     const toggleSet = (k, label) => { setSettings(s => ({ ...s, [k]: !s[k] })); log('Setting changed', `${label} · ${!settings[k] ? 'on' : 'off'}`); };
@@ -467,7 +498,7 @@
             <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>A 4-digit PIN for quick in-app checks (switching accounts, taking a till, voiding). Separate from your sign-in password. Everyone starts at 0000.</div></div>
-              <div className="flex-1 flex justify-end">{myEmp ? <PinSetter hasPin={!!myEmp.pin} current={myEmp.pin} onSave={setMyPin} /> : <span className="text-[11px]" style={{ color: CD.faint }}>Available once your account is set up</span>}</div>
+              <div className="flex-1 flex justify-end">{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[11px]" style={{ color: CD.faint }}>Available once your account is set up</span>}</div>
             </div>
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>What you type at the staff sign-in. Only you know it — changing it signs out your other devices.</div></div>
@@ -972,11 +1003,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   </div>
                 );
               })()}
-            <Row title="Transaction PIN" desc="The 4-digit PIN this person enters to sign in and confirm sensitive actions. Everyone starts at 0000."><span className="flex items-center gap-2.5">
-                <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{revealPin[e.id] ? (e.pin || '0000') : '••••'}</span>
-                <button onClick={() => setRevealPin(m => ({ ...m, [e.id]: !m[e.id] }))} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.mute }}>{revealPin[e.id] ? 'Hide' : 'Reveal'}</button>
-                <button onClick={() => setEmp(e.id, { pin: '0000' }, `${e.name} · PIN reset to 0000`)} className="text-[11px] px-2 py-1" style={{ color: CD.flag }}>Reset</button>
+            {/* The PIN is held on the server, hashed — nobody can read it back,
+                not even here. Forgotten means reissued: one fresh code, shown
+                once, which also clears any lockout. */}
+            <Row title="Transaction PIN" desc="The 4-digit PIN this person enters to take a till, switch accounts and confirm sensitive actions. It can’t be looked up — issue a new one if they’ve forgotten it.">
+              <span className="flex items-center gap-2.5">
+                {newPin[e.id] && newPin[e.id].pin
+                  ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newPin[e.id].pin}</span>
+                  : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
+                <button onClick={async () => {
+                  setNewPin(m => ({ ...m, [e.id]: null }));
+                  try {
+                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+                    setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
+                    log('Transaction PIN', `${e.name} · new PIN issued`);
+                  } catch (x) { setNewPin(m => ({ ...m, [e.id]: { err: String(x.message || x) } })); }
+                }} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Issue a new PIN</button>
+                {newPin[e.id] && newPin[e.id].err && <span className="text-[11px]" style={{ color: CD.flag }}>{newPin[e.id].err}</span>}
               </span></Row>
+            {newPin[e.id] && newPin[e.id].pin && <div className="text-[11px] -mt-1 mb-1" style={{ color: CD.mute }}>Read this to {e.name} now — it is shown once and cannot be looked up again.</div>}
               <Row title="Require PIN" desc="When on, this person enters their PIN to switch to their account, take a till, and void a deal."><Sw on={e.requirePin !== false} click={() => setEmp(e.id, { requirePin: e.requirePin === false }, `${e.name} · PIN ${e.requirePin === false ? 'required' : 'optional'}`)} /></Row>
 
               <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>

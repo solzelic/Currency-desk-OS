@@ -696,11 +696,15 @@
         receiptHeader: 'York Currency Exchange', receiptFooter: 'Thank you — keep for your records',
         receiptDisclaimer: 'All sales final. Rates as quoted at time of transaction.', showLogoOnReceipt: true, showMsbOnReceipt: true,
       };
-      try { const raw = localStorage.getItem('cdos_settings'); const merged = raw ? { ...def, ...JSON.parse(raw) } : def; if (merged.deskName === 'Front Desk 01') merged.deskName = 'Desk 1'; if (!merged.employees || !merged.employees.length) merged.employees = STAFF.map(s => ({ id: 'e_' + s.name.replace(/[^A-Za-z]/g, ''), name: s.name, role: s.role, email: '', phone: '', code: s.staffId || s.name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''), active: true, pin: '0000', requirePin: true, caps: { ...(ROLE_CAPS[s.role] || {}) }, apps: null, branches: s.branches, home: s.home }));
+      try { const raw = localStorage.getItem('cdos_settings'); const merged = raw ? { ...def, ...JSON.parse(raw) } : def; if (merged.deskName === 'Front Desk 01') merged.deskName = 'Desk 1'; if (!merged.employees || !merged.employees.length) merged.employees = STAFF.map(s => ({ id: 'e_' + s.name.replace(/[^A-Za-z]/g, ''), name: s.name, role: s.role, email: '', phone: '', code: s.staffId || s.name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''), active: true, requirePin: true, caps: { ...(ROLE_CAPS[s.role] || {}) }, apps: null, branches: s.branches, home: s.home }));
       // migration: employees saved before the Branch & Access Model gain assignments (spec §06)
       merged.employees = merged.employees.map(e => { if (e.branches !== undefined) { if (Array.isArray(e.branches)) { const fb = e.branches.filter(id => id !== 'b03' && id !== 'b04'); if (fb.length !== e.branches.length) return { ...e, branches: fb, home: (e.home === 'b03' || e.home === 'b04') ? (fb[0] || null) : e.home }; } return e; } const seed = STAFF.find(s => s.name === e.name); if (e.role === 'Owner') return { ...e, branches: '*', home: null }; return { ...e, branches: seed ? seed.branches : ['b01'], home: seed ? seed.home : 'b01' }; });
-      // every account carries a 4-digit transaction PIN (defaults to 0000) and a require-PIN flag
-      merged.employees = merged.employees.map(e => ({ ...e, pin: e.pin || '0000', requirePin: e.requirePin !== false }));
+      /* PINs are not kept here any more — they live on the staff record,
+         hashed, and only the server says whether one is right. Settings saved
+         before that carry a plaintext `pin`; drop it on the way in, the same
+         way the server drops it on the way up. What stays is the flag for
+         whether this account is asked for one at all. */
+      merged.employees = merged.employees.map(({ pin, ...e }) => ({ ...e, requirePin: e.requirePin !== false }));
       return merged; } catch (e) { return def; }
     });
     const [perms, setPerms] = useState(() => {
@@ -946,10 +950,13 @@
       log('Signed in as', `${s.name} · ${s.role}`);
     };
     /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
-    const pinOf = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return (e && e.pin) || '0000'; };
+    /* PINs are checked by the server. This is only the offline fallback the
+       gate falls back to when it cannot reach it — and when a desk's PINs have
+       not been set there yet, which is the shipped default of 0000. */
+    const pinOf = () => '0000';
     const reqPin = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return e ? e.requirePin !== false : true; };
     const askPin = (opts) => setPinGate(opts);
-    const switchTo = (s) => { setAcctMenu(false); if (s.name === me.name) return; const need = settings.pinOnSwitch !== false && s.requirePin !== false; if (need) askPin({ title: 'Switch account', sub: 'Enter ' + s.name + '’s PIN to continue', name: s.name, expected: s.pin || '0000', onOk: () => applyRole(s) }); else applyRole(s); };
+    const switchTo = (s) => { setAcctMenu(false); if (s.name === me.name) return; const need = settings.pinOnSwitch !== false && s.requirePin !== false; if (need) askPin({ title: 'Switch account', sub: 'Enter ' + s.name + '’s PIN to continue', name: s.name, staffId: s.code, expected: s.pin || '0000', onOk: () => applyRole(s) }); else applyRole(s); };
     const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, expected: pinOf(me.name), onOk: fn }); else fn(); };
 
     /* Routing per §04 of the Branch & Access Model spec — a pure function of
@@ -1366,7 +1373,7 @@
       const bizName = t.name || settings.bizName || 'Your Desk';
       const homeCcy = setup.homeCurrency || 'CAD';
       const threshold = typeof setup.idThreshold === 'number' ? setup.idThreshold : 10000;
-      const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, pin: '0000', requirePin: true, caps: {}, apps: null, branches: '*', home: null };
+      const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: setup.address || '', bizCity: setup.city || '', bizRegion: setup.region || '', bizPostal: setup.postal || '',

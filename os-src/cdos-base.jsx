@@ -607,7 +607,7 @@
   /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
      A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
      physical keyboard works too. ---- */
-  function PinPrompt({ title, sub, name, expected, onOk, onCancel }) {
+  function PinPrompt({ title, sub, name, staffId, expected, onOk, onCancel }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
@@ -616,8 +616,25 @@
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) { const s = document.createElement('style'); s.id = 'cdos-pin-kf'; s.textContent = '@keyframes cdosPinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}'; document.head.appendChild(s); }
     }, []);
-    const fail = () => { setErr('Incorrect PIN'); setShake(true); setTimeout(() => setShake(false), 420); setTimeout(() => { setPin(''); }, 260); };
-    const submit = (val) => { if (val === exp) { onOk && onOk(); } else { fail(); } };
+    const fail = (msg) => { setErr(msg || 'Incorrect PIN'); setShake(true); setTimeout(() => setShake(false), 420); setTimeout(() => { setPin(''); }, 260); };
+    /* The server decides. Holding the expected PIN in the browser and
+       comparing it here made this gate decorative — it could be read out of
+       devtools, or stepped over entirely. A desk whose PINs have not been set
+       on the server yet answers 409, and only then do we fall back to the old
+       local check so nothing breaks mid-migration. */
+    const submit = async (val) => {
+      try {
+        const res = await fetch('/api/staff/pin/verify', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify(staffId ? { staffId: staffId, pin: val } : { pin: val }),
+        });
+        if (res.ok) { onOk && onOk(); return; }
+        if (res.status === 429) { fail('Too many tries — wait a few minutes'); return; }
+        if (res.status === 401) { fail(); return; }
+        if (res.status !== 409) { fail('Could not check that PIN'); return; }
+      } catch (e) { /* offline: the local check is all there is */ }
+      if (val === exp) { onOk && onOk(); } else { fail(); }
+    };
     const press = (dgt) => { setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
     const back = () => { setErr(''); setPin(p => p.slice(0, -1)); };
     React.useEffect(() => {

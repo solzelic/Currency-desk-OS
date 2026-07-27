@@ -4,6 +4,7 @@
      POST   /api/staff                     → create an employee sign-in
      PATCH  /api/staff/:staffId            → name / role / active
      POST   /api/staff/:staffId/password   → reset to a temporary password
+     POST   /api/staff/:staffId/pin        → issue a new till PIN
 
    Authorization is role-ranked: branch managers and administrators
    manage the roster; a manager can only touch accounts that rank
@@ -22,6 +23,7 @@ import type { Db } from "../db/index.js";
 import { hashPassword } from "../auth/password.js";
 import { resolveSession, revokeAllSessions, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { clearPinAttempts, generatePin, hashPin } from "./pin.js";
 
 export const ROLE_RANK: Record<SessionUser["role"], number> = {
   teller: 1,
@@ -209,5 +211,35 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
       detail: { staffId: target.staffId },
     });
     return { ok: true, mustChangePassword: true };
+  });
+
+  /* A teller who has forgotten their till PIN, or leaned on the keypad until
+     it shut, is standing at the counter with a customer. The owner fixes that
+     here rather than ringing support: a fresh PIN, read out once. It is
+     returned in the clear because that is the only way it reaches somebody
+     who has no email — it is never stored that way, and never readable
+     again. Resetting also clears the lockout, which is the point. */
+  app.post("/api/staff/:staffId/pin", async (req, reply) => {
+    const who = await requireManager(req, reply);
+    if (!who) return;
+    const { staffId } = req.params as { staffId: string };
+    const target = await findTarget(who.tenantId, staffId);
+    if (!target) return reply.code(404).send({ error: "not_found" });
+    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours" });
+    // your own PIN changes via /api/staff/pin, which asks for the current one
+    if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin" });
+
+    const pin = generatePin();
+    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, target.id));
+    clearPinAttempts(target.id);
+    await audit(db, {
+      tenantId: who.tenantId,
+      legalEntityId: who.legalEntityId,
+      branchId: target.branchId,
+      actorId: who.id,
+      action: "staff.pin_reset",
+      detail: { staffId: target.staffId },
+    });
+    return { ok: true, pin };
   });
 }

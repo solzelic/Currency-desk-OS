@@ -131,6 +131,11 @@ export const staffUsers = pgTable(
     // forced to pick their own at next sign-in
     mustChangePassword: boolean("must_change_password").notNull().default(false),
     passwordUpdatedAt: timestamp("password_updated_at", { withTimezone: true }),
+    /* The 4-digit code that confirms it is really them before they take a
+       drawer, switch accounts or void a ticket. Hashed like a password: it is
+       short, so it is worth nobody — including us — being able to read it. */
+    pinHash: text("pin_hash"),
+    pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -912,7 +912,6 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const isVoid = row.status === 'void';
     // a void can require the operator's transaction PIN
     const _emp = (settings.employees || []).find(x => x.name === me.name);
-    const _myPin = (_emp && _emp.pin) || '0000';
     const voidNeedsPin = settings.pinOnVoid !== false && (!_emp || _emp.requirePin !== false);
     const patch = (fn, action, detail) => { setRows(rs => rs.map(r => r.id === row.id ? fn(r) : r)); log(action, `${row.ref} · ${detail}`); };
 
@@ -984,7 +983,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             <button onClick={() => setVoiding(false)} className="p-2 flex-none"><Ic n="x" s={15} c={CD.mute} /></button>
           </div>
         )}
-        {pinAsk && window.CDOS.PinPrompt && <window.CDOS.PinPrompt title="Confirm void" sub="Enter your PIN to void this record" name={me.name} expected={_myPin} onOk={() => { setPinAsk(false); doVoid(); }} onCancel={() => setPinAsk(false)} />}
+        {pinAsk && window.CDOS.PinPrompt && <window.CDOS.PinPrompt title="Confirm void" sub="Enter your PIN to void this record" name={me.name} onOk={() => { setPinAsk(false); doVoid(); }} onCancel={() => setPinAsk(false)} />}
         <div className="flex-1 overflow-auto">
           <div className="mx-auto w-full px-5 py-6 space-y-5" style={{ maxWidth: 760 }}>
             {isVoid && (<div className="p-3 text-[12px]" style={{ background: row.correctedTo ? CD.amberSoft : CD.lineSoft, borderRadius: 10, color: CD.ink }}><b>{row.correctedTo ? 'Corrected & voided' : 'Voided'}</b> by {row.voidBy} · {row.voidAt}<div style={{ color: CD.mute }}>Reason: {row.voidReason}</div>{row.correctedTo && <div className="mt-1 font-medium" style={{ color: 'var(--cd-brass-text)' }}>Replaced by <span style={{ fontFamily: 'Space Mono, monospace' }}>{row.correctedTo}</span> — the corrected record.</div>}</div>)}

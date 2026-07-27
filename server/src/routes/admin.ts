@@ -17,6 +17,7 @@ import type { Db } from "../db/index.js";
 import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
+import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { tenantPlan } from "./tenant.js";
@@ -382,6 +383,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         mustChangePassword: p.mustChangePassword, passwordUpdatedAt: p.passwordUpdatedAt,
         createdAt: p.createdAt, tenantId: p.tenantId, branchId: p.branchId,
         authorizedBranchIds: p.authorizedBranchIds,
+        // the PIN itself is never readable — only whether one exists, when it
+        // was set, and whether the keypad is currently shut against them
+        hasPin: !!p.pinHash, pinSetAt: p.pinSetAt, pinLockedUntil: pinLockedUntil(p.id),
       },
       desk: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.siteSlug, suspended: tenant.suspended } : null,
       sessions: { live: live.length, lastSignInAt: lastSignIn ? new Date(lastSignIn).toISOString() : null },
@@ -437,6 +441,26 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     /* Only hand the password back when there was no address to send it to —
        otherwise the operator would have a copy of a live credential. */
     return { ok: true, delivered, ...(delivered === "no_address" ? { tempPassword: temp } : {}) };
+  });
+
+  /* Reset somebody's till PIN. Handed back to the operator, because the
+     person who needs it is almost always on the phone and tellers rarely have
+     an email address — and a PIN is a local confirmation, not a credential
+     that opens the desk on its own. */
+  app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-pin", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+
+    const pin = generatePin();
+    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, p.id));
+    clearPinAttempts(p.id);
+    await audit(db, {
+      tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,
+      action: "admin.pin_reset", detail: { staffId: p.staffId },
+    });
+    return { ok: true, pin };
   });
 
   // issue a CurrencyDesk ID, or replace one that has been given out too widely
