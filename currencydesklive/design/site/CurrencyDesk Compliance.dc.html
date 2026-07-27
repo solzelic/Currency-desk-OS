@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&amp;family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600&amp;display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #E7E3DA; }
+    a { color: #1D6B45; text-decoration: none; }
+    a:hover { color: #17140F; }
+    button { font-family: inherit; cursor: pointer; }
+    html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
+
+    @media (max-width: 720px) {
+      [style*="max-width: 1200px"], [style*="max-width: 1240px"], [style*="max-width: 1120px"], [style*="max-width: 1060px"], [style*="max-width: 900px"] { padding-left: 18px !important; padding-right: 18px !important; }
+      [style*="grid-template-columns: repeat(2"], [style*="grid-template-columns: repeat(3"], [style*="grid-template-columns: repeat(4"], [style*="grid-template-columns: 1fr 1fr"], [style*="grid-template-columns: minmax(0, 1fr) auto"] { grid-template-columns: minmax(0, 1fr) !important; }
+      img, svg, image-slot { max-width: 100%; }
+      [style*="height: 66px"] { height: 58px !important; padding-left: 16px !important; padding-right: 16px !important; gap: 12px !important; }
+      [style*="height: 66px"] svg[viewBox="0 0 200 140"] { width: 32px !important; height: 22px !important; }
+      [style*="height: 66px"] [style*="font-size: 15.5px"] { font-size: 11.5px !important; }
+      [style*="height: 66px"] [style*="font-size: 7.5px"] { font-size: 6.5px !important; }
+      [style*="height: 66px"] a[style*="font-size: 13.5px"] { font-size: 12.5px !important; }
+      [style*="height: 66px"] [style*="gap: 11px"] { gap: 8px !important; }
+      [style*="scroll-snap-type"] { scroll-snap-type: none !important; }
+      [style*="scroll-margin-top: 67px"] { scroll-margin-top: 58px !important; }
+      [style*="scroll-snap-align"] { scroll-snap-align: none !important; scroll-snap-stop: normal !important; min-height: 0 !important; height: auto !important; }
+      [style*="grid-template-columns: 1.3fr"], [style*="grid-template-columns: 0.82fr"], [style*="grid-template-columns: minmax(0, 0.68fr)"] { grid-template-columns: minmax(0, 1fr) !important; }
+      [style*="grid-template-columns: repeat(auto-fill"] { grid-template-columns: minmax(0, 1fr) !important; }
+    }
+  </style>
+</helmet>
+
+<div style="--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --paper: #F4F0E6; --paper2: #EFEAE0; --panel: #FBF9F4; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.05); --hair: rgba(23,20,15,0.08); --mute: #5C554C; --faint: #9A938A; --green: #1D6B45; --green-deep: #17583A; --green-bright: #2EA36B; --green-soft: #E4EFE7; --brass: #A9791C; --brass-soft: #F3E7CE; --clay: #C2452D; --violet: #7A5C9E; --glass: saturate(160%) blur(20px); position: relative; font-family: var(--f); color: var(--ink); background: #E7E3DA; overflow-x: clip;">
+
+  <!-- NAV -->
+  <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.8); border-bottom: 1px solid var(--line);">
+    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: flex; align-items: center; gap: 14px;">
+      <a href="CurrencyDesk Site.dc.html" style="display: inline-flex; align-items: center; gap: 11px; color: var(--ink);">
+        <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
+        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+      </a>
+      <div style="flex: 1;"></div>
+      <a href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink);" style-hover="color: var(--green);">← Back to site</a>
+      <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 17px; background: var(--green); color: #fff; border-radius: 10px; font-family: var(--m); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Get early access</a>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div style="max-width: 1200px; margin: 0 auto; padding: 84px 28px 30px;">
+    <div style="text-align: center;">
+      <div style="display: inline-flex; align-items: center; gap: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--green-deep); font-weight: 600; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.22); border-radius: 999px; padding: 7px 15px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Compliance &amp; security</div>
+      <h1 style="font-family: var(--serif); font-weight: 400; font-size: 68px; line-height: 0.98; letter-spacing: -0.02em; margin: 22px auto 0; max-width: 900px; text-wrap: balance;">Every rule your desk answers to, already handled.</h1>
+      <p style="font-size: 17px; line-height: 1.62; color: var(--mute); margin: 22px auto 0; max-width: 640px; text-wrap: pretty;">CurrencyDesk maps your regulator's obligations onto the desk itself: every deal logged, every threshold watched, every report drafted from the record. Live for Canada today, and built to travel. Below is exactly what we cover, how it works, and where each rule comes from.</p>
+      <div aria-hidden="true" style="width: 74px; height: 1px; background: var(--line); margin: 34px auto 0;"></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin: 36px auto 0; max-width: 1060px;">
+      <div>
+        <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600; padding-bottom: 11px; border-bottom: 1px solid var(--line);">The desk</div>
+        <p style="font-size: 14px; line-height: 1.65; color: var(--mute); margin: 13px 0 0;">CurrencyDesk OS is the counter itself: you quote a rate, take the deal, and the ticket, the client and the cash position all move together. There is no separate compliance system to reconcile at the end of the day, because the deal record <em style="font-style: normal; color: var(--ink);">is</em> the compliance record.</p>
+      </div>
+      <div>
+        <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600; padding-bottom: 11px; border-bottom: 1px solid var(--line);">The rulebook</div>
+        <p style="font-size: 14px; line-height: 1.65; color: var(--mute); margin: 13px 0 0;">Your registration decides which obligations load — thresholds, aggregation windows, filing deadlines and report formats. The desk checks each one while the customer is still standing there, then drafts the report from the record and keeps the evidence for the retention period.</p>
+      </div>
+      <div>
+        <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600; padding-bottom: 11px; border-bottom: 1px solid var(--line);">KYC, included</div>
+        <p style="font-size: 14px; line-height: 1.65; color: var(--mute); margin: 13px 0 0;">Identity checks run from your client's own phone: a link, a document scan, a liveness selfie, your approval. The result files against the client and is reused on every future visit — no photocopier, no binder. <a href="#kyc" style="color: var(--green); border-bottom: 1px solid rgba(29,107,69,0.35);">See KYC pricing</a>.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 32px;">
+      <sc-for list="{{ navChips }}" as="c" hint-placeholder-count="10">
+        <a href="{{ c.href }}" style="{{ c.style }}">{{ c.label }}</a>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--hair); font-family: var(--m); font-size: 10.5px; letter-spacing: 0.04em; color: var(--faint); text-align: center;">
+      <span style="display: inline-flex; align-items: center; gap: 7px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Rulebook last reviewed {{ lastReviewed }}</span>
+      <span style="color: var(--line);">·</span>
+      <span>Each jurisdiction below carries its own review date and official source</span>
+      <span style="color: var(--line);">·</span>
+      <span>Summaries, not legal advice</span>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <div style="background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 58px 28px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; flex-wrap: wrap;">
+        <div>
+          <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600;">How it works</div>
+          <h2 style="font-family: var(--serif); font-weight: 400; font-size: 42px; line-height: 1.02; letter-spacing: -0.015em; margin: 12px 0 0; max-width: 620px;">The rulebook runs at the till, not in a binder.</h2>
+        </div>
+        <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 0; max-width: 400px;">The same four steps run in every jurisdiction. Only the rulebook changes.</p>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 34px;">
+        <sc-for list="{{ howSteps }}" as="h" hint-placeholder-count="4">
+          <div data-reveal="{{ h.reveal }}" style="border: 1px solid var(--line); border-radius: 18px; background: var(--panel); padding: 22px 22px 24px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+              <span style="width: 38px; height: 38px; border-radius: 11px; background: var(--green-soft); display: grid; place-items: center; flex: none;">{{ h.icon }}</span>
+              <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.12em; color: var(--faint);">{{ h.n }}</span>
+            </div>
+            <div style="font-size: 15.5px; font-weight: 700; margin-top: 15px; letter-spacing: -0.005em;">{{ h.title }}</div>
+            <div style="font-size: 13px; color: var(--mute); line-height: 1.55; margin-top: 7px;">{{ h.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- COVERAGE BOARD -->
+  <div style="max-width: 1200px; margin: 0 auto; padding: 58px 28px 10px;">
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+      <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.05; letter-spacing: -0.015em; margin: 0;">Coverage at a glance</h2>
+      <span style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);">{{ coverageNote }}</span>
+    </div>
+    <div data-reveal="0.04" style="margin-top: 20px; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--panel);">
+      <div style="display: grid; grid-template-columns: 1.3fr 1.5fr 0.8fr 0.8fr 0.9fr; gap: 12px; padding: 13px 20px; background: var(--soft); border-bottom: 1px solid var(--line); font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); font-weight: 600;">
+        <span>Jurisdiction</span><span>Supervisor</span><span>Reports</span><span>Retention</span><span>Status</span>
+      </div>
+      <sc-for list="{{ coverage }}" as="c" hint-placeholder-count="10">
+        <a href="{{ c.href }}" style="{{ c.rowStyle }}">
+          <span style="display: flex; align-items: center; gap: 9px; min-width: 0;"><span style="{{ c.dotStyle }}"></span><b style="font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ c.country }}</b></span>
+          <span style="font-family: var(--m); font-size: 11.5px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ c.tag }}</span>
+          <span style="font-family: var(--m); font-size: 11.5px; color: var(--mute);">{{ c.count }}</span>
+          <span style="font-family: var(--m); font-size: 11.5px; color: var(--mute);">{{ c.retention }}</span>
+          <span style="{{ c.statusStyle }}">{{ c.status }}</span>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- JURISDICTION DETAIL BLOCKS -->
+  <div style="max-width: 1200px; margin: 0 auto; padding: 26px 28px 20px; display: flex; flex-direction: column; gap: 20px;">
+    <sc-for list="{{ jurs }}" as="j" hint-placeholder-count="4">
+      <div id="{{ j.id }}" data-reveal="0" style="scroll-margin-top: 84px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 16px; padding: 22px 28px; border-bottom: 1px solid var(--hair); background: var(--soft); flex-wrap: wrap;">
+          <span style="{{ j.emblemStyle }}">{{ j.emblem }}</span>
+          <div style="flex: 1; min-width: 220px;">
+            <div style="display: flex; align-items: center; gap: 11px; flex-wrap: wrap;"><span style="font-family: var(--serif); font-size: 26px; line-height: 1;">{{ j.country }}</span><span style="{{ j.statusStyle }}">{{ j.status }}</span></div>
+            <div style="font-size: 13.5px; color: var(--mute); margin-top: 6px;">{{ j.tag }} · {{ j.regulator }}</div>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 9px; flex: none;">
+            <a href="{{ j.official }}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 7px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; color: var(--green-deep); border: 1px solid rgba(29,107,69,0.28); border-radius: 999px; padding: 8px 13px;" style-hover="background: var(--green); color: #fff; border-color: var(--green);">Official source<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"></path></svg></a>
+            <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.04em; color: var(--faint);">Reviewed {{ j.updated }}</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 0;">
+          <div style="padding: 24px 28px 26px; border-right: 1px solid var(--hair);">
+            <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600;">What we do</div>
+            <p style="font-size: 14px; line-height: 1.6; color: var(--mute); margin: 10px 0 0;">{{ j.whatWeDo }}</p>
+
+            <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600; margin-top: 22px;">How it works here</div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+              <sc-for list="{{ j.how }}" as="h" hint-placeholder-count="3">
+                <div style="display: flex; align-items: flex-start; gap: 11px;">
+                  <span style="width: 21px; height: 21px; border-radius: 50%; background: var(--green-soft); color: var(--green-deep); display: grid; place-items: center; flex: none; font-family: var(--m); font-size: 10px; font-weight: 600; margin-top: 1px;">{{ h.n }}</span>
+                  <span style="font-size: 13px; line-height: 1.5; color: var(--ink);">{{ h.t }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0; margin-top: 22px; border-top: 1px solid var(--hair);">
+              <sc-for list="{{ j.facts }}" as="f" hint-placeholder-count="3">
+                <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--hair);">
+                  <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); flex: none;">{{ f.k }}</span>
+                  <span style="font-size: 12.5px; color: var(--ink); text-align: right; line-height: 1.4;">{{ f.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="padding: 24px 28px 26px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 14px;">
+              <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Obligations we carry</div>
+              <span style="font-family: var(--m); font-size: 10px; color: var(--faint);">{{ j.countLabel }}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 11px;">
+              <sc-for list="{{ j.rules }}" as="r" hint-placeholder-count="6">
+                <div style="{{ r.cardStyle }}">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <span style="{{ r.chipStyle }}">{{ r.icon }}</span>
+                    <span style="{{ r.tagStyle }}">{{ r.tag }}</span>
+                  </div>
+                  <b style="display: block; font-size: 14px; font-weight: 600; line-height: 1.28; margin-top: 12px; color: var(--ink); letter-spacing: -0.005em;">{{ r.name }}</b>
+                  <span style="display: block; font-size: 12.5px; color: var(--mute); line-height: 1.45; margin-top: 5px;">{{ r.spec }}</span>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid var(--hair);">
+                    <span style="{{ r.dotStyle }}"></span>
+                    <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);">{{ r.when }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- KYC -->
+  <!-- KYC — ONE PAGE -->
+  <div id="kyc" style="scroll-snap-align: start; scroll-snap-stop: always; scroll-margin-top: 67px; min-height: calc(100vh - 67px); box-sizing: border-box; display: flex; align-items: center; position: relative; background: linear-gradient(180deg, #EDE6DB, #E6DDCE); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden;">
+    <div aria-hidden="true" style="position: absolute; inset: 0; opacity: 0.45; background-image: radial-gradient(rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: 30px 30px; pointer-events: none;"></div>
+    <div style="position: relative; width: 100%; max-width: 1240px; margin: 0 auto; padding: 60px 28px 44px; box-sizing: border-box;">
+
+      
+
+      <div data-reveal="0" style="flex: none; max-width: 720px; width: 712px; height: 240px">
+        <div style="display: inline-flex; align-items: center; gap: 9px; font-family: var(--m); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600; background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.25); border-radius: 999px; padding: 6px 14px;">Add-on · Client KYC</div>
+        <h2 style="font-family: var(--serif); font-weight: 400; font-size: 50px; line-height: 1.0; letter-spacing: -0.018em; margin: 15px 0 0; text-wrap: pretty;">Two minutes on their phone. Yours for a year.</h2>
+        <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 12px 0 0; max-width: 660px;">Verification runs from the deal screen, and every check is matched against the CurrencyDesk network before you commit.</p>
+      </div><div style="display: grid; grid-template-columns: minmax(0, 0.68fr) minmax(0, 1.32fr); gap: 38px; margin-top: 24px; align-items: start;">
+
+        <div data-reveal="0.06" style="display: flex; flex-direction: column;">
+          <div style="flex: none; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">How it runs</div>
+          <div style="flex: none; display: flex; flex-direction: column; margin-top: 8px; position: relative;">
+            <sc-for list="{{ kycFlow }}" as="f" hint-placeholder-count="4">
+              <div style="display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid rgba(23,20,15,0.09);">
+                <span style="width: 27px; height: 27px; border-radius: 8px; background: var(--green-soft); display: grid; place-items: center; flex: none;">{{ f.icon }}</span>
+                <span style="flex: 1; min-width: 0;">
+                  <b style="display: block; font-size: 13px; font-weight: 600; line-height: 1.25;">{{ f.title }}</b>
+                  <span style="display: block; font-size: 11.5px; color: var(--mute); line-height: 1.45; margin-top: 3px;">{{ f.body }}</span>
+                </span>
+                <span style="flex: none; font-family: var(--m); font-size: 9px; letter-spacing: 0.04em; color: var(--faint); padding-top: 4px;">{{ f.meta }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 20px;">
+            <span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600; margin-right: 2px;">Badge id's<br></span>
+            <sc-for list="{{ kycLadder }}" as="l" hint-placeholder-count="3">
+              <span style="{{ l.badgeStyle }}">{{ l.badge }}</span>
+            </sc-for>
+          </div>
+        </div>
+
+        <div data-reveal="0.12" style="display: flex; flex-direction: column;">
+          <div style="flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 14px;">
+            <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Pricing · per completed check</div>
+            <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.04em; color: var(--faint);">{{ autoHint }}</span>
+          </div>
+
+          <div style="flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+            <sc-for list="{{ kycTiers }}" as="t" hint-placeholder-count="3">
+              <button type="button" onClick="{{ t.onClick }}" style="{{ t.wrap }}">
+                <span style="display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; height: 34px;">
+                  <span style="{{ t.nameStyle }}">{{ t.name }}</span>
+                  <span style="{{ t.ribbonStyle }}">{{ t.ribbon }}</span>
+                </span>
+                <span style="display: flex; align-items: baseline; gap: 5px; margin-top: 9px;">
+                  <span style="{{ t.priceStyle }}">{{ t.price }}</span>
+                  <span style="font-family: var(--m); font-size: 9.5px; color: var(--faint); white-space: nowrap;">{{ t.unit }}</span>
+                </span>
+                <span style="display: block; font-size: 11.5px; color: var(--mute); line-height: 1.4; margin-top: 8px; min-height: 32px;">{{ t.oneLiner }}</span>
+                <span style="{{ t.barTrack }}"><span data-bar="{{ t.i }}" style="{{ t.barFill }}"></span></span>
+              </button>
+            </sc-for>
+          </div>
+
+          <div data-kycdetail="" style="min-height: 248px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 20px 22px; margin-top: 12px; box-sizing: border-box; will-change: transform;">
+            <div style="flex: none; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: baseline; gap: 10px;">
+                <b style="font-size: 17px; font-weight: 800;">{{ detailName }}</b>
+                <span style="font-family: var(--m); font-size: 10.5px; color: var(--faint);">{{ detailPrice }}</span>
+              </div>
+              <span style="{{ detailBadgeStyle }}">{{ detailBadge }}</span>
+            </div>
+            <p style="flex: none; font-size: 13px; line-height: 1.6; color: var(--mute); margin: 11px 0 0;">{{ detailBlurb }}</p>
+            <div style="flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 9px 20px; align-content: start; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--hair);">
+              <sc-for list="{{ detailIncludes }}" as="d" hint-placeholder-count="4">
+                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                  <span style="{{ d.mark }}"></span>
+                  <span style="font-size: 12px; line-height: 1.4; color: var(--ink);">{{ d.t }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--hair);">
+              <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); line-height: 1.4;">For {{ detailPersona }}</span>
+              <a href="CurrencyDesk Early Access.dc.html" style="flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 11px 17px; background: var(--green); color: #fff; border-radius: 10px; font-family: var(--m); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; white-space: nowrap;" style-hover="background: var(--green-deep); color: #fff;">{{ detailCta }}<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+            </div>
+          </div>
+
+          <p style="flex: none; font-size: 10.5px; line-height: 1.5; color: var(--faint); margin: 10px 0 0;"><b style="font-weight: 600; color: var(--mute);">How $3.99 stays $3.99:</b> re-screens price against a file you already verified — lists are re-run, documents are not. A lapsed clock re-verifies at the Verified rate. Multi-branch desks get a blended rate — ask us. All prices in USD; final per-check cost varies by verification provider and by the client's region.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODULARITY -->
+  <div style="max-width: 1200px; margin: 0 auto; padding: 66px 28px;">
+    <div style="text-align: center; max-width: 720px; margin: 0 auto;">
+      <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Modular by design</div>
+      <h2 style="font-family: var(--serif); font-weight: 400; font-size: 46px; line-height: 1.02; letter-spacing: -0.015em; margin: 12px 0 0;">Your desk, your providers.</h2>
+      <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 16px auto 0; max-width: 580px;">The desk is built in parts. Change your KYC provider, your rates feed, or how you report — without changing how your shop runs. No lock-in, ever.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px;">
+      <sc-for list="{{ modules }}" as="m" hint-placeholder-count="3">
+        <div style="border: 1px solid var(--line); border-radius: 18px; background: var(--panel); padding: 24px 26px;">
+          <span style="width: 40px; height: 40px; border-radius: 11px; background: var(--green-soft); display: grid; place-items: center;">{{ m.icon }}</span>
+          <div style="font-size: 16px; font-weight: 800; margin-top: 15px;">{{ m.title }}</div>
+          <div style="font-size: 13px; color: var(--mute); line-height: 1.55; margin-top: 7px;">{{ m.body }}</div>
+          <div style="font-family: var(--m); font-size: 10.5px; color: var(--green-deep); margin-top: 13px; letter-spacing: 0.02em;">{{ m.options }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div style="max-width: 1200px; margin: 0 auto; padding: 20px 28px 80px;">
+    <div style="border-radius: 24px; overflow: hidden; background: linear-gradient(150deg, var(--green-deep), #123f2b); color: #F1EEE8; position: relative; padding: 56px 52px; text-align: center;">
+      <div aria-hidden="true" style="position: absolute; top: -30%; right: -6%; width: 460px; height: 460px; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06) 0 1.5px, transparent 1.5px 11px); opacity: 0.55;"></div>
+      <div style="position: relative;">
+        <h2 style="font-family: var(--serif); font-weight: 400; font-size: 44px; line-height: 1.02; letter-spacing: -0.015em; margin: 0; max-width: 640px; margin-inline: auto;">Compliance you never have to think about.</h2>
+        <p style="font-size: 15px; line-height: 1.6; color: #cfe3d6; margin: 16px auto 0; max-width: 480px;">Join the first 100 desks. We'll study your setup and map your rules before we ever talk.</p>
+        <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; margin-top: 26px; padding: 15px 26px; background: #fff; color: var(--green-deep); border-radius: 13px; font-size: 15px; font-weight: 700;" style-hover="background: #F1EEE8; color: var(--green-deep);">Get early access<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+      </div>
+    </div>
+    <div style="text-align: center; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.06em; color: var(--faint); margin-top: 26px;">CurrencyDesk OS · Compliance overview · Not legal advice — obligations vary; we help you meet them.</div>
+  </div>
+
+  <div style="border-top: 1px solid var(--line); background: rgba(255,255,255,0.5);">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 34px 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
+      <span style="font-family: var(--m); font-size: 10.5px; color: var(--faint);">currencydeskos.com · © 2026 CurrencyDesk</span>
+      <span style="display: inline-flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+        <a href="CurrencyDesk Site.dc.html" style="font-size: 13px; color: var(--mute);">Back to site</a>
+        <a href="CurrencyDesk FAQ.dc.html" style="font-size: 13px; color: var(--mute);">Questions</a>
+        <a href="CurrencyDesk Contact.dc.html" style="font-size: 13px; color: var(--mute);">Contact us</a>
+        <a href="CurrencyDesk Legal.dc.html" style="font-size: 13px; color: var(--mute);">Privacy &amp; Terms</a>
+        <span style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);">On the record</span>
+      </span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1200, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  ICONS = {
+    institution: '<path d="M4 21h16M5 21V11M9.5 21V11M14.5 21V11M19 21V11M3.5 11h17L12 4.5 3.5 11z"/>',
+    swap: '<path d="M7 4v13M7 4L4 7.5M7 4l3 3.5M17 20V7M17 20l-3-3.5M17 20l3-3.5"/>',
+    board: '<path d="M4 20V10M9 20V4M14 20v-6M19 20V8"/>',
+    idcard: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M13 10h5M13 13.5h4M5.5 15.6c.5-1.2 1.6-1.9 3-1.9s2.5.7 3 1.9"/>',
+    till: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10.5h18M7 14.5h4"/>',
+    shield: '<path d="M12 3l7 3v6c0 4-3 6.6-7 9-4-2.4-7-5-7-9V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.5 2"/>',
+    archive: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13.5h4"/>'
+  };
+  CATS = {
+    threshold: { color:'#1D6B45', icon:'till' },
+    suspicious: { color:'#C2452D', icon:'shield' },
+    timing: { color:'#5B6B78', icon:'clock' },
+    records: { color:'#6F5293', icon:'archive' },
+    screening: { color:'#A9791C', icon:'idcard' },
+    licence: { color:'#17140F', icon:'institution' },
+    transfer: { color:'#5B6B78', icon:'swap' }
+  };
+  hexA(hex, al) { const h = hex.replace('#',''); const n = parseInt(h.length===3 ? h.split('').map(function(c){return c+c;}).join('') : h, 16); return 'rgba(' + ((n>>16)&255) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + al + ')'; }
+  ic(name, size, color, sw) {
+    return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: color || '#fff', strokeWidth: sw || 2, strokeLinecap: 'round', strokeLinejoin: 'round', dangerouslySetInnerHTML: { __html: this.ICONS[name] || '' } });
+  }
+
+  JURS = [
+    { id:'fintrac', tag:'FINTRAC', country:'Canada', regulator:'Financial Transactions & Reports Analysis Centre', status:'Live', kind:'live', color:'#1D6B45', soft:'rgba(29,107,69,0.1)', official:'https://fintrac-canafe.canada.ca', updated:'24 Jul 2026', retention:'5 years',
+      supervisor:'FINTRAC, with Finance Canada directives and provincial MSB registration',
+      deadline:'LCTR, LVCTR and EFTR within 5 business days · STR as soon as practicable',
+      whatWeDo:'Canada is our home rulebook. Every ticket you write is scored against FINTRAC thresholds as you write it — cash, virtual currency and international wires alike. Reports are assembled from the deal record, queued for your approval, and the evidence behind them is sealed for five years.',
+      how:[{n:'1',t:'You take the deal at the till exactly as you do today.'},{n:'2',t:'The desk watches thresholds, 24-hour aggregation and sanctions lists in real time.'},{n:'3',t:'Reports are drafted for your review, filed on time, and archived with the ticket.'}],
+      rules:[
+        {name:'LCTR — Large Cash Transaction Report', spec:'Cash in or out at or above $10,000, filed for you.', tag:'Live', cat:'threshold', when:'At the till'},
+        {name:'LVCTR — Large Virtual Currency Report', spec:'The same $10,000 threshold applied to crypto legs.', tag:'Live', cat:'crypto', when:'At the till'},
+        {name:'EFTR — Electronic Funds Transfer Report', spec:'International transfers of $10,000 or more, in or out.', tag:'Live', cat:'transfer', when:'On transfer'},
+        {name:'STR — Suspicious Transaction Report', spec:'Drafted from the deal record for you to review.', tag:'Live', cat:'suspicious', when:'On review'},
+        {name:'24-hour aggregation rule', spec:'Related deals combined across a rolling day.', tag:'Live', cat:'timing', when:'Rolling'},
+        {name:'5-year record retention', spec:'Every ticket, ID and receipt, immutable.', tag:'Live', cat:'records', when:'After the deal'},
+        {name:'Sanctions & ministerial directives', spec:'Screened before the money moves.', tag:'Live', cat:'screening', when:'Before the deal'}
+      ] },
+    { id:'fincen', tag:'FinCEN', country:'United States', regulator:'Financial Crimes Enforcement Network', status:'Coming soon', kind:'soon', color:'#5B6B78', soft:'rgba(91,107,120,0.12)', official:'https://www.fincen.gov', updated:'18 Jul 2026', retention:'5 years',
+      supervisor:'FinCEN and OFAC, plus state money-transmitter regulators',
+      deadline:'CTR within 15 days · SAR within 30 days',
+      whatWeDo:'The US is next. The same reporting engine maps onto FinCEN obligations for money services businesses, with OFAC screening on every client and state licensing tracked alongside your federal registration.',
+      how:[{n:'1',t:'Register once; the desk tracks your FinCEN and state licence renewals.'},{n:'2',t:'Cash and transfer thresholds are watched per business day.'},{n:'3',t:'CTRs and SARs are drafted from the record and filed within the deadline.'}],
+      rules:[
+        {name:'CTR — Currency Transaction Report', spec:'Cash above $10,000 in a business day.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'SAR — Suspicious Activity Report', spec:'Assisted drafting from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'MSB registration & renewal', spec:'FinCEN Form 107, tracked and renewed.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'Travel Rule', spec:'Originator and beneficiary details above $3,000.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'OFAC sanctions screening', spec:'Checked against consolidated lists.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client files and transaction records kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'hmrc', tag:'HMRC', country:'United Kingdom', regulator:'His Majesty\u2019s Revenue & Customs', status:'Coming soon', kind:'soon', color:'#A9791C', soft:'rgba(169,121,28,0.13)', official:'https://www.gov.uk/government/organisations/hm-revenue-customs', updated:'11 Jul 2026', retention:'5 years',
+      supervisor:'HMRC for MSB supervision, the NCA for SARs and OFSI for sanctions',
+      deadline:'SAR as soon as practicable after suspicion',
+      whatWeDo:'On the roadmap for UK money services businesses: HMRC registration kept current, MLR 2017 controls documented, and suspicious activity routed to the NCA with the deal record attached.',
+      how:[{n:'1',t:'Your HMRC registration and fit-and-proper checks are tracked.'},{n:'2',t:'Risk assessment and controls live next to the deals they govern.'},{n:'3',t:'SARs are drafted for the NCA and records retained five years.'}],
+      rules:[
+        {name:'MSB registration', spec:'HMRC supervision, kept current.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'MLR 2017 controls', spec:'Risk assessment and written policies.', tag:'Planned', cat:'screening', when:'Ongoing'},
+        {name:'SAR to the NCA', spec:'Assisted drafting and submission route.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'OFSI sanctions screening', spec:'UK consolidated list on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client files kept after the relationship ends.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'amla', tag:'AMLA / EU', country:'European Union', regulator:'National FIUs, with the EU Anti-Money Laundering Authority', status:'Coming soon', kind:'soon', color:'#33578F', soft:'rgba(51,87,143,0.11)', official:'https://finance.ec.europa.eu', updated:'03 Jul 2026', retention:'5 years',
+      supervisor:'Your national supervisor and FIU, with AMLA phasing in',
+      deadline:'Set by your national FIU',
+      whatWeDo:'One rulebook, twenty-seven filings. As the EU package phases in we map the harmonised obligations — cash limits, transfer-of-funds data and reporting — onto whichever national FIU you answer to.',
+      how:[{n:'1',t:'Pick your member state; the desk loads that FIU\u2019s formats.'},{n:'2',t:'Cash limits and payer/payee data are enforced at the point of sale.'},{n:'3',t:'Reports are drafted in the national format and records kept five years.'}],
+      rules:[
+        {name:'Cash payment limit', spec:'Harmonised €10,000 ceiling on cash.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'STR to your national FIU', spec:'Drafted in the local format.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Transfer of funds data', spec:'Payer and payee details travel with the transfer.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'EU sanctions screening', spec:'Consolidated list on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'austrac', tag:'AUSTRAC', country:'Australia', regulator:'Australian Transaction Reports & Analysis Centre', status:'Coming soon', kind:'soon', color:'#C2452D', soft:'rgba(194,69,45,0.1)', official:'https://www.austrac.gov.au', updated:'27 Jun 2026', retention:'7 years',
+      supervisor:'AUSTRAC, with ASIC for financial services licensing',
+      deadline:'TTR and IFTI within 10 business days · SMR within 3 business days',
+      whatWeDo:'Planned for Australian remitters and exchange providers: threshold and international transfer reporting generated from the deal, with your AML/CTF program maintained alongside it.',
+      how:[{n:'1',t:'Enrol with AUSTRAC; the desk holds your Part A and B program.'},{n:'2',t:'Cash and transfer triggers are detected as the deal is written.'},{n:'3',t:'TTRs, IFTIs and SMRs are drafted and records kept seven years.'}],
+      rules:[
+        {name:'TTR — Threshold Transaction Report', spec:'Cash at or above A$10,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'IFTI — International Funds Transfer', spec:'Reported on every instruction in or out.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'SMR — Suspicious Matter Report', spec:'Assisted drafting from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'AML/CTF program', spec:'Part A and B, maintained with the desk.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'7-year record retention', spec:'Transaction and identity records kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'fiu-ind', tag:'FIU-IND', country:'India', regulator:'Financial Intelligence Unit — India', status:'Coming soon', kind:'soon', color:'#B4682A', soft:'rgba(180,104,42,0.11)', official:'https://fiuindia.gov.in', updated:'20 Jun 2026', retention:'5 years',
+      supervisor:'FIU-IND under the PMLA, with the RBI for authorised dealers',
+      deadline:'CTR and cross-border reports monthly · STR within 7 working days',
+      whatWeDo:'Planned for Indian authorised dealers and money changers: PMLA reporting to FIU-IND with RBI KYC norms applied at the counter, including monthly cash and cross-border summaries.',
+      how:[{n:'1',t:'KYC follows the RBI Master Direction at onboarding.'},{n:'2',t:'Cash and cross-border wires accumulate against monthly thresholds.'},{n:'3',t:'CTRs, CBWTRs and STRs are drafted for FIU-IND on schedule.'}],
+      rules:[
+        {name:'CTR — Cash Transaction Report', spec:'Cash at or above ₹10 lakh in a month.', tag:'Planned', cat:'threshold', when:'Rolling'},
+        {name:'STR — Suspicious Transaction Report', spec:'Assisted drafting under the PMLA.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'CBWTR — Cross-border wires', spec:'Inbound and outbound transfer reporting.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'RBI KYC norms', spec:'Master Direction checks at onboarding.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'PMLA retention on every client file.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'cbuae', tag:'CBUAE', country:'UAE', regulator:'Central Bank of the UAE', status:'Coming soon', kind:'soon', color:'#6F5293', soft:'rgba(111,82,147,0.11)', official:'https://www.centralbank.ae', updated:'13 Jun 2026', retention:'5 years',
+      supervisor:'CBUAE, with the UAE Financial Intelligence Unit via goAML',
+      deadline:'STR filed immediately on suspicion',
+      whatWeDo:'Planned for UAE exchange houses: goAML reporting to the Financial Intelligence Unit against the CBUAE rulebook, with UN and local list screening on every client.',
+      how:[{n:'1',t:'Client screening runs against UNSC and local terrorist lists.'},{n:'2',t:'Cash thresholds are watched per deal at the counter.'},{n:'3',t:'Reports are prepared for goAML and records kept five years.'}],
+      rules:[
+        {name:'STR via goAML', spec:'Filed to the UAE FIU from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Cash threshold reporting', spec:'Deals at or above AED 55,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Sanctions screening', spec:'UNSC consolidated and local lists.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'AML/CFT program', spec:'Maintained to the CBUAE rulebook.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'amlc', tag:'AMLC', country:'Philippines', regulator:'Anti-Money Laundering Council', status:'Coming soon', kind:'soon', color:'#0E7C7B', soft:'rgba(14,124,123,0.1)', official:'https://www.amlc.gov.ph', updated:'06 Jun 2026', retention:'5 years',
+      supervisor:'AMLC, with BSP registration for FX dealers and remittance agents',
+      deadline:'CTR and STR within 5 working days',
+      whatWeDo:'Planned for Philippine money changers and remittance agents: BSP registration tracked, covered transactions detected at the counter, and reports prepared for the AMLC.',
+      how:[{n:'1',t:'Your BSP registration and branch list are kept current.'},{n:'2',t:'Covered and suspicious transactions are flagged as written.'},{n:'3',t:'CTRs and STRs are drafted for the AMLC within five working days.'}],
+      rules:[
+        {name:'CTR — Covered Transaction Report', spec:'Cash above ₱500,000 in a banking day.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'STR — Suspicious Transaction Report', spec:'Drafted for AMLC submission.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'BSP registration', spec:'Money changer and remittance agent status.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'Sanctions screening', spec:'UNSC and local designations.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'mas', tag:'MAS', country:'Singapore', regulator:'Monetary Authority of Singapore', status:'Coming soon', kind:'soon', color:'#8A3F6B', soft:'rgba(138,63,107,0.1)', official:'https://www.mas.gov.sg', updated:'30 May 2026', retention:'5 years',
+      supervisor:'MAS, with the STRO receiving suspicious transaction reports',
+      deadline:'STR as soon as reasonably practicable',
+      whatWeDo:'Planned for Singapore payment service providers: your Payment Services Act licence class tracked, travel-rule data captured on transfers, and STRs routed to the STRO.',
+      how:[{n:'1',t:'Your PS Act licence class sets which rules load.'},{n:'2',t:'Transfer data and screening run at the point of sale.'},{n:'3',t:'STRs are prepared for the STRO and records kept five years.'}],
+      rules:[
+        {name:'Payment services licence', spec:'PS Act class tracked and reported.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'STR to the STRO', spec:'Drafted from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Transfer information', spec:'Originator and beneficiary data on transfers.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'Sanctions screening', spec:'MAS and UNSC lists on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] },
+    { id:'c-ed', tag:'C&ED', country:'Hong Kong', regulator:'Customs & Excise Department', status:'Coming soon', kind:'soon', color:'#4A6B2F', soft:'rgba(74,107,47,0.1)', official:'https://www.customs.gov.hk', updated:'23 May 2026', retention:'Per AMLO',
+      supervisor:'Customs & Excise for money service operators, JFIU for reports',
+      deadline:'STR on suspicion, without delay',
+      whatWeDo:'Planned for Hong Kong money service operators: your MSO licence tracked, customer due diligence triggered at the occasional-transaction threshold, and reports routed to the JFIU.',
+      how:[{n:'1',t:'Your MSO licence and premises list are kept current.'},{n:'2',t:'Due diligence triggers at the occasional-transaction threshold.'},{n:'3',t:'Suspicious transaction reports are drafted for the JFIU.'}],
+      rules:[
+        {name:'MSO licence', spec:'Customs & Excise licensed operator status.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'STR to the JFIU', spec:'Drafted from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Occasional transaction CDD', spec:'Due diligence at HK$120,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Sanctions screening', spec:'UNSC designations on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Record retention', spec:'Kept in line with the AMLO.', tag:'Planned', cat:'records', when:'After the deal'}
+      ] }
+  ];
+
+  componentDidMount() {
+    this.initReveal(); this.armAuto();
+    setTimeout(() => { this.initReveal(); this.armAuto(); }, 400);
+    if (location.hash) {
+      const jump = () => {
+        const t = document.getElementById(location.hash.slice(1));
+        if (t) window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY - 67, behavior: 'auto' });
+      };
+      setTimeout(jump, 60); setTimeout(jump, 500);
+    }
+  }
+  componentWillUnmount() { if (this._rio) this._rio.disconnect(); if (this._kio) this._kio.disconnect(); this.stopAuto(); }
+  initReveal() {
+    let reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    if (reduce) return;
+    const els = Array.from(document.querySelectorAll('[data-reveal]')).filter((el) => !el.hasAttribute('data-revealed'));
+    if (!els.length) return;
+    if (!this._rio) {
+      this._rio = new IntersectionObserver((ents) => {
+        ents.forEach((e) => {
+          if (!e.isIntersecting) return;
+          const el = e.target;
+          el.style.transitionDelay = (parseFloat(el.getAttribute('data-reveal')) || 0) + 's';
+          el.style.opacity = '1'; el.style.transform = 'none';
+          this._rio.unobserve(el);
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+    }
+    els.forEach((el) => {
+      el.setAttribute('data-revealed', '');
+      const r = el.getBoundingClientRect();
+      const seen = r.top < window.innerHeight * 0.9 && r.bottom > 0;
+      if (seen) return;
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'opacity .62s cubic-bezier(.2,.85,.25,1), transform .72s cubic-bezier(.2,.85,.25,1)';
+      this._rio.observe(el);
+    });
+  }
+  TIERS = [
+    { name:'Re-screen', ribbon:'', price:'$3.99', unit:'/ re-screen', color:'#5C554C', soft:'rgba(23,20,15,0.06)',
+      oneLiner:'Upkeep on a file you already verified.',
+      badge:'Badge unchanged', badgeOn:false,
+      blurb:'Maintenance, not a new verification. We re-run the lists against the file you already paid for — sanctions, PEP and the CurrencyDesk network — so a returning client stays clean without paying for document checks twice.',
+      includes:['Sanctions and PEP lists re-run','CurrencyDesk Network check','Checked against the existing file','Keeps the annual clock honest'],
+      persona:'returning clients already on file', cta:'Add to a file' },
+    { name:'Verified', ribbon:'Most popular', price:'$8.99', unit:'/ verification', color:'#1D6B45', soft:'var(--green-soft)',
+      oneLiner:'Full KYC on a new client.',
+      badge:'Turns the badge green', badgeOn:true,
+      blurb:'The standard check at the counter. Your client scans their ID from their own phone, we authenticate the document, cross-check the databases and screen sanctions and PEP lists — then the file turns green and holds for twelve months.',
+      includes:['ID document authentication','Database cross-check','Sanctions and PEP screening','CurrencyDesk Network check'],
+      persona:'every new client at the counter', cta:'Start verifying' },
+    { name:'Verified Plus', ribbon:'Best protection', price:'$14.99', unit:'/ deep file', color:'#A9791C', soft:'var(--brass-soft)',
+      oneLiner:'A file that defends itself.',
+      badge:'Green badge + deep file', badgeOn:true,
+      blurb:'Everything in Verified, plus the evidence you want when a regulator or a bank asks why you took the deal: a face matched to the document, adverse media, contact-risk signals and an enhanced due diligence report you can hand over as-is.',
+      includes:['Biometric liveness face-match','Adverse media screening','Phone and email risk signals','Audit-ready EDD report'],
+      persona:'high-value deals and higher-risk clients', cta:'Open a deep file' }
+  ];
+  state = { tier: 1, auto: false };
+  DWELL = 5200;
+  pickTier = (i) => { this.holdAuto(); this.setState({ tier: i }); };
+  holdAuto() { this._held = true; this.stopAuto(); if (this.state.auto) this.setState({ auto: false }); }
+  startAuto() {
+    if (this._auto || this._held) return;
+    let reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    if (reduce) return;
+    this._auto = setInterval(() => this.setState((s) => ({ tier: (s.tier + 1) % this.TIERS.length })), this.DWELL);
+    this.setState({ auto: true }, () => this.runBar());
+  }
+  stopAuto() { if (this._auto) { clearInterval(this._auto); this._auto = null; } this.runBar(); }
+  armAuto() {
+    const el = document.getElementById('kyc');
+    if (!el || this._kio) return;
+    el.addEventListener('pointerdown', () => this.holdAuto());
+    this._kio = new IntersectionObserver((ents) => {
+      ents.forEach((e) => { if (e.isIntersecting) { this.startAuto(); } else { this.stopAuto(); } });
+    }, { threshold: 0.4 });
+    this._kio.observe(el);
+  }
+  runBar() {
+    const bars = document.querySelectorAll('[data-bar]');
+    bars.forEach((b) => { b.style.transition = 'none'; b.style.width = '0%'; });
+    if (!this._auto) return;
+    const b = document.querySelector('[data-bar="' + this.state.tier + '"]');
+    if (!b) return;
+    void b.offsetWidth;
+    b.style.transition = 'width ' + (this.DWELL / 1000) + 's linear';
+    b.style.width = '100%';
+  }
+  componentDidUpdate() {
+    if (this._pTier === this.state.tier) return;
+    this._pTier = this.state.tier;
+    this.runBar();
+    let reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    const el = document.querySelector('[data-kycdetail]');
+    if (!el || reduce) return;
+    el.style.transition = 'none'; el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
+    void el.offsetWidth;
+    el.style.transition = 'opacity .38s ease, transform .48s cubic-bezier(.2,.85,.25,1)';
+    el.style.opacity = '1'; el.style.transform = 'none';
+  }
+  renderVals() {
+    const tagStyle = (kind) => 'flex:none;font-family:var(--m);font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;border-radius:999px;padding:3px 9px;height:fit-content;' + (kind === 'live' ? 'color:var(--green-deep);background:rgba(29,107,69,0.12);' : 'color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);');
+    const statusStyle = (kind) => kind === 'live'
+      ? 'display:inline-flex;align-items:center;gap:5px;font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--green-deep);background:rgba(29,107,69,0.14);border-radius:999px;padding:4px 10px;'
+      : 'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);border-radius:999px;padding:4px 10px;';
+    const live = this.JURS.filter(j => j.kind === 'live').length;
+    const reports = this.JURS.reduce((n, j) => n + j.rules.length, 0);
+    return {
+      lastReviewed: '24 July 2026',
+      coverageNote: live + ' live · ' + (this.JURS.length - live) + ' on the roadmap',
+      howReveal: true,
+      howSteps: [
+        { reveal: '0.04', n: '01', icon: this.ic('institution', 19, '#1D6B45', 2), title: 'We read your licence', body: 'Tell us where you are registered and which permissions you hold. That decides the rulebook — not a setting you have to maintain.' },
+        { reveal: '0.1', n: '02', icon: this.ic('board', 19, '#1D6B45', 2), title: 'The rulebook loads', body: 'Thresholds, deadlines and report formats for your regulator are applied to the desk, in your currency and your language of business.' },
+        { reveal: '0.16', n: '03', icon: this.ic('till', 19, '#1D6B45', 2), title: 'Every deal is scored', body: 'As you write a ticket the desk checks thresholds, aggregation windows and sanctions lists, and tells you before the money moves.' },
+        { reveal: '0.22', n: '04', icon: this.ic('archive', 19, '#1D6B45', 2), title: 'Reports file themselves', body: 'Reports are drafted from the record, held for your approval, submitted on time and archived with the ticket for the retention period.' }
+      ],
+      navChips: this.JURS.map((j, i) => ({
+        href: '#' + j.id, label: j.tag + ' · ' + j.country,
+        style: 'font-family:var(--m);font-size:11px;letter-spacing:0.04em;border-radius:999px;padding:9px 15px;white-space:nowrap;' + (j.kind === 'live' ? 'color:var(--green-deep);background:var(--green-soft);border:1px solid rgba(29,107,69,0.22);' : 'color:var(--ink);background:var(--soft);border:1px solid var(--line);')
+      })).concat([{ href: '#kyc', label: 'Client KYC', style: 'font-family:var(--m);font-size:11px;letter-spacing:0.04em;border-radius:999px;padding:9px 15px;white-space:nowrap;color:var(--ink);background:var(--soft);border:1px solid var(--line);' }]),
+      coverage: this.JURS.map(j => ({
+        href: '#' + j.id, country: j.country, tag: j.tag, count: j.rules.length + ' reports', retention: j.retention, status: j.kind === 'live' ? 'Live' : 'Soon',
+        rowStyle: 'display:grid;grid-template-columns:1.3fr 1.5fr 0.8fr 0.8fr 0.9fr;gap:12px;align-items:center;padding:13px 20px;border-bottom:1px solid var(--hair);color:var(--ink);transition:background .2s;',
+        dotStyle: 'width:7px;height:7px;border-radius:50%;flex:none;background:' + (j.kind === 'live' ? 'var(--green-bright)' : 'rgba(23,20,15,0.18)') + ';',
+        statusStyle: j.kind === 'live'
+          ? 'justify-self:start;font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--green-deep);background:rgba(29,107,69,0.12);border-radius:999px;padding:4px 10px;'
+          : 'justify-self:start;font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);border-radius:999px;padding:4px 10px;'
+      })),
+      jurs: this.JURS.map(j => ({
+        id: j.id, tag: j.tag, country: j.country, regulator: j.regulator, status: j.status, official: j.official,
+        updated: j.updated, whatWeDo: j.whatWeDo, how: j.how,
+        countLabel: j.rules.length + ' tracked',
+        facts: [{ k: 'Supervisor', v: j.supervisor }, { k: 'Filing deadline', v: j.deadline }, { k: 'Retention', v: j.retention }],
+        emblem: this.ic('institution', 24, j.color, 1.7),
+        emblemStyle: 'width:54px;height:54px;border-radius:50%;display:grid;place-items:center;flex:none;border:1.5px solid ' + j.color + ';background:' + j.soft + ';',
+        statusStyle: statusStyle(j.kind),
+        rules: j.rules.map(r => {
+          const c = this.CATS[r.cat] || this.CATS.threshold;
+          return { name: r.name, spec: r.spec, tag: r.tag, when: r.when, tagStyle: tagStyle(j.kind),
+            icon: this.ic(c.icon, 16, c.color, 1.9),
+            chipStyle: 'width:31px;height:31px;border-radius:9px;display:grid;place-items:center;flex:none;background:' + this.hexA(c.color, 0.1) + ';',
+            dotStyle: 'width:6px;height:6px;border-radius:50%;flex:none;background:' + c.color + ';',
+            cardStyle: 'border:1px solid var(--line);border-radius:14px;background:#FFFFFF;padding:15px 16px;box-shadow:0 1px 2px rgba(23,20,15,0.04);' };
+        })
+      })),
+      kycSteps: [
+        { n: '1', t: 'Send a verification link by text or email.' },
+        { n: '2', t: 'The client scans ID and takes a liveness selfie.' },
+        { n: '3', t: 'You approve from the desk — filed to the client record.' }
+      ],
+      autoHint: this.state.auto ? 'Auto-advancing · click to hold' : 'Click a tier for detail',
+      detailName: this.TIERS[this.state.tier].name,
+      detailPrice: this.TIERS[this.state.tier].price + ' ' + this.TIERS[this.state.tier].unit,
+      detailBlurb: this.TIERS[this.state.tier].blurb,
+      detailPersona: this.TIERS[this.state.tier].persona,
+      detailCta: this.TIERS[this.state.tier].cta,
+      detailBadge: this.TIERS[this.state.tier].badge,
+      detailBadgeStyle: 'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;border-radius:999px;padding:5px 11px;white-space:nowrap;' + (this.TIERS[this.state.tier].badgeOn ? 'color:#fff;background:var(--green);' : 'color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);'),
+      detailIncludes: this.TIERS[this.state.tier].includes.map((t) => ({ t: t, mark: 'width:5px;height:5px;border-radius:50%;flex:none;margin-top:6px;background:' + this.TIERS[this.state.tier].color + ';' })),
+      kycFlow: [
+        { n:'01', icon: this.ic('idcard', 19, '#1D6B45', 2), title:'Send the link', body:'Text or email a secure link straight from the deal screen. No app to install, no appointment.', meta:'From the desk', reveal:'0.04' },
+        { n:'02', icon: this.ic('shield', 19, '#1D6B45', 2), title:'They verify', body:'The client scans their ID and takes a liveness selfie on their own phone, in about two minutes.', meta:'On their phone', reveal:'0.1' },
+        { n:'03', icon: this.ic('clock', 19, '#1D6B45', 2), title:'You approve', body:'The result arrives with document, list and network signals attached. One look, one tap.', meta:'Under a minute', reveal:'0.16' },
+        { n:'04', icon: this.ic('archive', 19, '#1D6B45', 2), title:'Badge and clock', body:'The file attaches to the client, turns the badge green and starts a twelve-month re-verify clock.', meta:'Good for a year', reveal:'0.22' }
+      ],
+      kycTiers: this.TIERS.map((t, i) => {
+        const on = i === this.state.tier;
+        return {
+          name: t.name, ribbon: t.ribbon, price: t.price, unit: t.unit, oneLiner: t.oneLiner,
+          i: i, onClick: () => this.pickTier(i),
+          wrap: 'appearance:none;font:inherit;color:inherit;cursor:pointer;text-align:left;display:flex;flex-direction:column;border-radius:14px;padding:12px 14px 14px;box-sizing:border-box;transition:background .25s,border-color .25s,box-shadow .25s,transform .25s;' + (on ? 'background:var(--panel);border:1.5px solid ' + t.color + ';box-shadow:0 18px 34px -26px ' + t.color + ';transform:translateY(-2px);' : 'background:rgba(251,249,244,0.55);border:1px solid var(--line);'),
+          nameStyle: 'font-size:13.5px;font-weight:800;line-height:1.2;color:' + (on ? t.color : 'var(--ink)') + ';',
+          priceStyle: 'font-family:var(--serif);font-size:27px;line-height:1;color:' + (on ? t.color : 'var(--ink)') + ';',
+          barTrack: 'display:block;height:2px;border-radius:2px;margin-top:11px;overflow:hidden;background:' + (on && this.state.auto ? 'rgba(23,20,15,0.1)' : 'transparent') + ';',
+          barFill: 'display:block;height:100%;width:0%;border-radius:2px;background:' + t.color + ';',
+          ribbonStyle: t.ribbon ? 'font-family:var(--m);font-size:8px;letter-spacing:0.07em;text-transform:uppercase;font-weight:600;border-radius:999px;padding:3px 8px;white-space:nowrap;' + (on ? 'color:#fff;background:' + t.color + ';' : 'color:' + t.color + ';background:' + t.soft + ';') : 'display:none;'
+        };
+      }),
+      kycLadder: [
+        { badge:'Unverified', note:'New client, nothing on file yet.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);border-radius:999px;padding:5px 11px;flex:none;' },
+        { badge:'Verified', note:'Green badge, good for a year.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#fff;background:var(--green);border-radius:999px;padding:5px 11px;flex:none;' },
+        { badge:'Verified Plus', note:'Deep file behind the badge for scrutiny.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--brass);background:var(--brass-soft);border:1px solid rgba(169,121,28,0.35);border-radius:999px;padding:5px 11px;flex:none;' }
+      ],
+      modules: [
+        { icon: this.ic('idcard', 19, '#1D6B45', 2), title: 'KYC provider', body: 'Use ours, or bring Onfido, Persona or another. Same desk, your choice of engine.', options: 'Onfido · Persona · Bring your own' },
+        { icon: this.ic('board', 19, '#1D6B45', 2), title: 'Rates feed', body: 'Pull the market mid from your bank or a market-data feed, then add your own spread.', options: 'Bank feed · Market data · Manual' },
+        { icon: this.ic('swap', 19, '#1D6B45', 2), title: 'Reporting', body: 'File to the regulator, export clean CSV for your accountant, or push to your own systems by API.', options: 'Regulator · CSV · API' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

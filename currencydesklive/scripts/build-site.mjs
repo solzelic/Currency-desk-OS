@@ -1,0 +1,296 @@
+#!/usr/bin/env node
+/* ============================================================
+   Build the public site: design/site/*.dc.html  →  web/*.html
+
+     node scripts/build-site.mjs
+
+   The design pages are Claude Design documents — ordinary markup
+   plus {{ }} bindings, driven at runtime by the design's own
+   dc-runtime (design/site/support.js). We keep that runtime
+   rather than compiling the bindings away, so a re-export from
+   the designer is a file copy, not a porting exercise.
+
+   The build's job is to make those pages stand on their own:
+     · React comes from web/vendor/, never unpkg
+     · fonts come from web/fonts/, never fonts.googleapis.com
+     · links to design pages become real routes on this server
+     · each page gets a title, description and social card
+
+   Binary assets (photographs, illustrations, fonts) are produced
+   once by scripts/extract-design-assets.mjs and committed; this
+   build reuses them and fails loudly if they are missing.
+   ============================================================ */
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from "node:fs";
+import path from "node:path";
+
+const ROOT = path.resolve(import.meta.dirname, "..");
+const SRC = path.join(ROOT, "design", "site");
+const OUT = path.join(ROOT, "web");
+const SITE_ORIGIN = "https://www.currencydeskos.com";
+
+/* ---------------------------------------------------------------
+   The pages the design links to, and where each one lives here.
+
+   `out` is the file we generate; `route` is what links become.
+   A page the designer has not sent yet falls back to `anchor` —
+   the section of the front page that covers the same ground — so
+   no link is ever dead. Drop the .dc.html into design/site and
+   re-run: it builds, and every link to it retargets automatically.
+
+   Sign In and Early Access are deliberately NOT built as pages.
+   They are the entrances to the product, so they route into the
+   real OS — a static copy would look right and do nothing.
+   --------------------------------------------------------------- */
+const PAGES = {
+  "CurrencyDesk Site":         { out: "index.html",  route: "/",  home: true,
+    title: "CurrencyDesk — more trades, less paperwork",
+    description: "One desk for the whole shop: live rates, till and ledger, clients and KYC, and your regulator's rulebook carried for you. Live in Canada." },
+  "CurrencyDesk Mobile":       { out: "mobile.html", route: "/m", home: true, noindex: true,
+    title: "CurrencyDesk — more trades, less paperwork",
+    description: "One desk for the whole shop — rates, till, ledger, clients and compliance.",
+    /* The mobile design has no way in for someone who already has a desk: its
+       header offers Early access and nothing else, and at 390px that header is
+       already full — a second action there costs the wordmark. So Sign in goes
+       in the footer nav, which is a two-column list with room to spare. Move it
+       to the header once the design makes space for it. */
+    inject: [[
+      ">Privacy &amp; Terms</a>",
+      ">Privacy &amp; Terms</a>\n      " +
+        '<a href="/login" style="font-size: 13.5px; color: var(--mute);">Sign in</a>',
+    ]] },
+  "CurrencyDesk Legal":        { out: "legal.html",  route: "/legal", anchor: "#company",
+    title: "Privacy Policy and Terms of Service — CurrencyDesk",
+    description: "Both documents in full, on one page. What we collect, what we do with it, and the terms your desk runs under." },
+  "CurrencyDesk FAQ":          { out: "faq.html",    route: "/faq", anchor: "#faq",
+    title: "Your questions, answered — CurrencyDesk",
+    description: "What CurrencyDesk costs, what it runs on, how long setup takes, and when it reaches your country." },
+  "CurrencyDesk Compliance":   { out: "compliance.html", route: "/compliance", anchor: "#compliance",
+    title: "Compliance — CurrencyDesk",
+    description: "Your regulator's rulebook loads first: thresholds watched, reports prepared, records kept." },
+  "CurrencyDesk Contact":      { out: "contact.html", route: "/contact", anchor: "#company",
+    title: "Contact — CurrencyDesk",
+    description: "Talk to the people building the desk. No ticket queue, no phone tree.",
+    /* The design ends the form with a made-up reference and a promise of a
+       reply. Send it first, and show the reference the server recorded. */
+    inject: [[
+      "    const n = Math.floor(1000 + Math.random() * 8999);\n" +
+        "    this.setState({ sent: true, ref: 'CD-' + n });",
+      "    const s = this.state;\n" +
+        "    this.setState({ sent: true, ref: 'sending…' });\n" +
+        "    sendEnquiry('contact', s.email, s.name, {\n" +
+        "      topic: s.topic, shop: s.shop, city: s.city, message: s.msg, newsletter: s.news,\n" +
+        "    }).then((ref) => this.setState({ ref: ref || 'not sent — please email hello@currencydeskos.com' }));",
+    ]] },
+  "CurrencyDesk Add-ons":      { out: "add-ons.html", route: "/add-ons", anchor: "#pricing",
+    title: "Add-ons — CurrencyDesk",
+    description: "Extras that bolt onto the desk, priced on their own." },
+  "CurrencyDesk Early Access": { out: "early-access.html", route: "/signup", anchor: "/signup",
+    title: "Become a Founding Operator — CurrencyDesk",
+    description: "Apply for early access: founding pricing held for the life of the account, and a direct line to the people building the desk.",
+    /* The last step congratulates the applicant. Nothing had been sent —
+       record the application at the moment the design says it is done.
+       Its header "Sign in" is a placeholder href too; give it the door. */
+    inject: [[
+      '<a href="#" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
+      '<a href="/login" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
+    ], [
+      "if (this.state.step === 7) { setTimeout(() => this.startMemberCount(), 800); }",
+      "if (this.state.step === 7) {\n        setTimeout(() => this.startMemberCount(), 800);\n" +
+        "        const s = this.state;\n" +
+        "        sendEnquiry('early_access', s.email, s.name, {\n" +
+        "          workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,\n" +
+        "          jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,\n" +
+        "          branches: s.branches, runningOn: s.stack, timeline: s.timeline,\n" +
+        "        }).then((ref) => {\n" +
+        "          if (!ref) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
+        "        });\n      }",
+    ]] },
+  // the way back in — always the live route, never a page. A designed sign-in
+  // should restyle the OS's real one, not sit in front of it doing nothing.
+  "CurrencyDesk Sign In":      { route: "/login", product: true },
+};
+
+/* Both public forms post here. Defined once, injected into the pages that
+   need it: the design's own logic calls it and shows what comes back, so a
+   failure surfaces as a missing reference rather than a false success. */
+const ENQUIRY_HELPER = `<script>
+window.sendEnquiry = function (kind, email, name, details) {
+  return fetch('/api/enquiries', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind: kind, email: email, name: name || undefined, details: details }),
+  })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+    .then(function (j) { return j.reference; })
+    .catch(function (e) { console.error('[enquiry] not sent:', e); return ''; });
+};
+</script>
+`;
+
+/* dc-runtime asks for React at runtime; cdnScriptFor() consults
+   window.__resources first, so pointing those URLs at local copies keeps
+   the page working with no network at all. (Babel is only fetched for
+   x-import'ed JSX, which no page uses — if one ever does, it will fail
+   visibly rather than quietly reaching for a CDN.) */
+const CDN = {
+  "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "/web/vendor/react.production.min.js",
+  "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "/web/vendor/react-dom.production.min.js",
+};
+
+const VENDOR = [
+  ["react/umd/react.production.min.js", "react.production.min.js"],
+  ["react-dom/umd/react-dom.production.min.js", "react-dom.production.min.js"],
+];
+
+/* the design's logo mark, as the tab icon */
+const FAVICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140">' +
+  '<rect width="200" height="140" fill="#E7E3DA"/>' +
+  '<circle cx="60" cy="70" r="48" fill="#17140F"/>' +
+  '<path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"/>' +
+  '<rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"/>' +
+  '<circle cx="112" cy="70" r="6.5" fill="#1D6B45"/></svg>';
+
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/* ---- preflight ------------------------------------------------ */
+if (!existsSync(SRC)) throw new Error(`no design sources at ${SRC}`);
+for (const dir of ["photos", "assets", "fonts"]) {
+  const p = path.join(OUT, dir);
+  if (!existsSync(p) || readdirSync(p).length === 0) {
+    throw new Error(`web/${dir} is empty — run scripts/extract-design-assets.mjs <export.html> first`);
+  }
+}
+
+const present = new Set(
+  readdirSync(SRC).filter((f) => f.endsWith(".dc.html")).map((f) => f.replace(/\.dc\.html$/, "")),
+);
+for (const name of present) {
+  if (!PAGES[name]) throw new Error(`design/site/${name}.dc.html has no entry in PAGES — add one`);
+}
+
+/* where a link to <design page> should point today */
+const routeOf = (name) => {
+  const p = PAGES[name];
+  if (p.product || present.has(name)) return p.route;
+  return p.anchor ?? p.route;
+};
+
+mkdirSync(path.join(OUT, "vendor"), { recursive: true });
+for (const [from, to] of VENDOR) {
+  copyFileSync(path.join(ROOT, "node_modules", from), path.join(OUT, "vendor", to));
+}
+copyFileSync(path.join(SRC, "image-slot.js"), path.join(OUT, "image-slot.js"));
+writeFileSync(path.join(OUT, "support.js"), patchRuntime(readFileSync(path.join(SRC, "support.js"), "utf8")));
+
+/* ---------------------------------------------------------------
+   One fix to the design's runtime.
+
+   React calls componentDidUpdate(prevProps, prevState); the runtime
+   forwards only prevProps, so a page written to React's contract —
+   `if (prevState.step !== this.state.step)` — throws on every update
+   and loses everything that hook was doing. (The Early Access wizard
+   uses it for step focus, for guessing the workspace from the domain,
+   and for the members counter.) The wrapper's own React state is just
+   a version counter, so the logic's previous state has to be kept as
+   it is replaced, then handed over.
+
+   Asserted line by line: a re-export that changes any of this fails
+   the build instead of quietly dropping the fix.
+   --------------------------------------------------------------- */
+function patchRuntime(js) {
+  const edits = [
+    // remember the state we are replacing
+    [
+      '        this.logic.state = { ...prev, ...patch };\n',
+      '        this.logic.state = { ...prev, ...patch };\n        this.__prevLogicState = prev;\n',
+    ],
+    // and hand it to the author's hook, as React would
+    [
+      '            this.logic.componentDidUpdate(prevProps);\n',
+      '            this.logic.componentDidUpdate(prevProps, this.__prevLogicState || this.logic.state);\n',
+    ],
+  ];
+  for (const [from, to] of edits) {
+    if (!js.includes(from)) throw new Error(`support.js: runtime patch anchor not found — ${from.trim()}`);
+    js = js.replace(from, to);
+  }
+  return js;
+}
+
+/* ---- pages ---------------------------------------------------- */
+const built = [];
+for (const name of present) {
+  const page = PAGES[name];
+  if (page.product) continue;            // entrances are routes, not pages
+  let html = readFileSync(path.join(SRC, `${name}.dc.html`), "utf8");
+
+  // runtime + assets move under /web/, so every page resolves them the
+  // same way regardless of the route it is served at
+  html = html
+    .replace(/(["'])\.\/support\.js\1/g, "$1/web/support.js$1")
+    .replace(/(["'])\.\/image-slot\.js\1/g, "$1/web/image-slot.js$1")
+    .replace(/\.\.\/photos\//g, "/web/photos/")
+    .replace(/\.\.\/assets\//g, "/web/assets/");
+
+  // self-hosted fonts, in place of the Google stylesheet + preconnects
+  html = html.replace(
+    /\s*<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com"[^>]*>\s*<link href="https:\/\/fonts\.googleapis\.com\/css2[^"]*"[^>]*>/,
+    '\n  <link rel="stylesheet" href="/web/fonts/fonts.css">',
+  );
+
+  // design page links → live routes
+  for (const other of Object.keys(PAGES)) {
+    const to = routeOf(other);
+    // the design references the product's own pages as ../app/<name>.dc.html
+    for (const from of [`../app/${other}.dc.html`, `${other}.dc.html`]) {
+      html = html.split(from).join(to);
+    }
+  }
+  // a link built as "<page>#<section>" collapses when <page> resolved to
+  // an on-page anchor — "#compliance#fintrac" is not a place
+  html = html.replace(/(href=")(#[a-z0-9-]+)#[a-z0-9-]+(")/gi, "$1$2$3");
+  html = html.replace(/'(#[a-z0-9-]+)#'\s*\+\s*[^,\n]+?\.replace\(\/\[\^a-z0-9\]\+\/g,\s*'-'\)/gi, "'$1'");
+
+  for (const [from, to] of page.inject ?? []) {
+    if (!html.includes(from)) throw new Error(`${name}: injection anchor not found — ${from}`);
+    html = html.replace(from, to);
+  }
+
+  // local React, declared before the runtime reads it — and, for the pages
+  // whose forms now reach the server, the one call that gets them there
+  const resources = `<script>window.__resources = ${JSON.stringify(CDN)};</script>\n`;
+  const helper = html.includes("sendEnquiry(") ? ENQUIRY_HELPER : "";
+  html = html.replace('<script src="/web/support.js">', resources + helper + '<script src="/web/support.js">');
+
+  const head =
+    `<title>${esc(page.title)}</title>\n` +
+    `<meta name="description" content="${esc(page.description)}">\n` +
+    `<link rel="canonical" href="${SITE_ORIGIN}${page.route}">\n` +
+    (page.noindex ? '<meta name="robots" content="noindex,follow">\n' : "") +
+    `<meta property="og:type" content="website">\n` +
+    `<meta property="og:site_name" content="CurrencyDesk">\n` +
+    `<meta property="og:title" content="${esc(page.title)}">\n` +
+    `<meta property="og:description" content="${esc(page.description)}">\n` +
+    `<meta property="og:url" content="${SITE_ORIGIN}${page.route}">\n` +
+    `<meta property="og:image" content="${SITE_ORIGIN}/web/photos/rate-board-storefront.jpg">\n` +
+    `<meta name="twitter:card" content="summary_large_image">\n` +
+    `<meta name="theme-color" content="#E7E3DA">\n` +
+    `<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(FAVICON)}">\n`;
+  html = html.replace("</head>", head + "</head>");
+
+  writeFileSync(path.join(OUT, page.out), html);
+  built.push(`${page.out.padEnd(16)} ${page.route}`);
+}
+
+/* ---- report --------------------------------------------------- */
+const pending = Object.entries(PAGES)
+  .filter(([n, p]) => !p.product && !present.has(n))
+  .map(([n, p]) => `${n} → falls back to ${p.anchor}`);
+
+console.log(`built ${built.length} page(s):`);
+for (const b of built) console.log("  " + b);
+if (pending.length) {
+  console.log("\nnot yet designed (links fall back to a front-page section):");
+  for (const p of pending) console.log("  " + p);
+}
