@@ -225,12 +225,32 @@ export const enquiries = pgTable(
     email: text("email").notNull(),
     name: text("name"),
     details: jsonb("details").$type<Record<string, unknown>>(),
+    /* Where this application has got to. An application is not a message in
+       an inbox — it is a thing an operator works, so the row carries its own
+       progress rather than leaving it in somebody's head. */
+    status: text("status").$type<EnquiryStatus>().notNull().default("new"),
+    notes: text("notes"),
+    /* The desk this application became. Set when a signup completes against
+       the same address — the join that turns two unrelated lists into a
+       funnel you can actually measure. */
+    tenantId: text("tenant_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by"),
     handledAt: timestamp("handled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("enquiries_reference_idx").on(t.reference), index("enquiries_kind_idx").on(t.kind, t.createdAt)],
+  (t) => [
+    uniqueIndex("enquiries_reference_idx").on(t.reference),
+    index("enquiries_kind_idx").on(t.kind, t.createdAt),
+    index("enquiries_status_idx").on(t.status),
+    index("enquiries_email_idx").on(t.email),
+  ],
 );
 export type EnquiryKind = "early_access" | "contact";
+/* new → reviewing → invited → accepted, or declined at any point. "accepted"
+   is not set by hand: it is what a completed signup means. */
+export type EnquiryStatus = "new" | "reviewing" | "invited" | "accepted" | "declined";
+export const ENQUIRY_STATUSES: EnquiryStatus[] = ["new", "reviewing", "invited", "accepted", "declined"];
 
 /* SMS rate-hold quotes — a site visitor asks for a rate by text; the
    server prices it off the newest published board and HOLDS it for 30

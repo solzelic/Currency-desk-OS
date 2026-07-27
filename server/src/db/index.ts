@@ -83,11 +83,24 @@ CREATE TABLE IF NOT EXISTS enquiries (
   email text NOT NULL,
   name text,
   details jsonb,
+  status text NOT NULL DEFAULT 'new',
+  notes text,
+  tenant_id text,
+  decided_at timestamptz,
+  decided_by text,
   handled_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- an enquiry carries its own progress; existing rows predate these columns
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'new';
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS notes text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS tenant_id text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS decided_at timestamptz;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS decided_by text;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
+CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
+CREATE INDEX IF NOT EXISTS enquiries_email_idx ON enquiries(email);
 CREATE TABLE IF NOT EXISTS tenant_state (
   tenant_id text PRIMARY KEY REFERENCES tenants(id),
   state jsonb NOT NULL DEFAULT '{}',

@@ -11,7 +11,7 @@
    staff id is their email (email-as-identity).
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
@@ -192,6 +192,26 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
 
     await audit(db, { tenantId, legalEntityId, branchId, actorId: ownerId, action: "tenant.created", detail: { via: "signup", slug: p.slug, email } });
+
+    /* Close the loop on any early-access application from this address. This
+       is the join that makes the funnel a funnel: without it the control panel
+       shows applications and desks as two unrelated lists and can never say
+       which application became which desk. Best-effort — a desk is real
+       whether or not it started as an application. */
+    try {
+      await db
+        .update(schema.enquiries)
+        .set({ status: "accepted", tenantId, decidedAt: new Date(), decidedBy: "signup" })
+        .where(
+          and(
+            eq(schema.enquiries.email, email),
+            eq(schema.enquiries.kind, "early_access"),
+            notInArray(schema.enquiries.status, ["accepted", "declined"]),
+          ),
+        );
+    } catch {
+      /* the application record is bookkeeping; never let it fail a signup */
+    }
 
     const { token, expiresAt } = await createSession(db, ownerId);
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });

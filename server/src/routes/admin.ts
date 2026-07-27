@@ -20,6 +20,12 @@ import { audit } from "../audit.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
+const patchEnquiryBody = z
+  .object({
+    status: z.enum(["new", "reviewing", "invited", "accepted", "declined"]).optional(),
+    notes: z.string().max(4000).optional(),
+  })
+  .refine((b) => b.status !== undefined || b.notes !== undefined, { message: "nothing to change" });
 const patchTenantBody = z
   .object({ plan: PLAN.optional(), suspended: z.boolean().optional() })
   .refine((b) => b.plan !== undefined || b.suspended !== undefined, { message: "nothing to change" });
@@ -150,7 +156,92 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       if (t.createdAt && new Date(t.createdAt).getTime() > weekAgo) recent7++;
     }
     const recentActivity = await db.select().from(schema.auditEvents).orderBy(desc(schema.auditEvents.at)).limit(8);
-    return { totals: { desks: tenants.length, people: staff.length, recent7 }, byStatus, byPlan, recentActivity };
+
+    /* The funnel ahead of those desks. "waiting" is the number that should
+       drive someone to open this page: applications nobody has answered. */
+    const apps = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "early_access");
+    const byAppStatus: Record<string, number> = {};
+    for (const s of schema.ENQUIRY_STATUSES) byAppStatus[s] = 0;
+    for (const a of apps) byAppStatus[a.status] = (byAppStatus[a.status] || 0) + 1;
+    const messages = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "contact");
+
+    return {
+      totals: { desks: tenants.length, people: staff.length, recent7 },
+      byStatus,
+      byPlan,
+      recentActivity,
+      funnel: {
+        applications: apps.length,
+        waiting: (byAppStatus.new ?? 0) + (byAppStatus.reviewing ?? 0),
+        byStatus: byAppStatus,
+        messages: messages.length,
+        unread: messages.filter((m) => m.status === "new").length,
+      },
+    };
+  });
+
+  /* ---- the funnel ahead of the desks -----------------------------------
+     Every early-access application and contact message, and the operator's
+     progress on each. Read the list, open one, move it along. */
+  app.get<{ Querystring: { kind?: string; status?: string } }>("/api/admin/enquiries", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    const { kind, status } = req.query;
+    let rows = await db.select().from(schema.enquiries).orderBy(desc(schema.enquiries.createdAt));
+    if (kind === "early_access" || kind === "contact") rows = rows.filter((r) => r.kind === kind);
+    if (status && status !== "all") rows = rows.filter((r) => r.status === status);
+
+    // an accepted application points at a real desk; carry its name so the
+    // list can say what the application became without a second round trip
+    const ids = [...new Set(rows.map((r) => r.tenantId).filter(Boolean))] as string[];
+    const names = new Map<string, string>();
+    if (ids.length) {
+      for (const t of await db.select().from(schema.tenants).where(inArray(schema.tenants.id, ids))) {
+        names.set(t.id, t.name);
+      }
+    }
+    return {
+      enquiries: rows.map((r) => ({ ...r, tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null })),
+    };
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/admin/enquiries/:id", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const parsed = patchEnquiryBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    /* "accepted" means a desk exists, which only a completed signup can make
+       true. Letting it be set by hand would put a lie in the funnel. */
+    if (parsed.data.status === "accepted") {
+      return reply.code(400).send({
+        error: "not_settable",
+        detail: "An application becomes accepted when the desk is created, not by hand.",
+      });
+    }
+
+    const set: Record<string, unknown> = {};
+    if (parsed.data.status !== undefined) {
+      set.status = parsed.data.status;
+      set.decidedAt = new Date();
+      set.decidedBy = who.staffId;
+      if (parsed.data.status !== "new") set.handledAt = row.handledAt ?? new Date();
+    }
+    if (parsed.data.notes !== undefined) set.notes = parsed.data.notes;
+    await db.update(schema.enquiries).set(set).where(eq(schema.enquiries.id, req.params.id));
+
+    if (parsed.data.status !== undefined) {
+      await audit(db, {
+        tenantId: row.tenantId ?? PLATFORM_TENANT,
+        legalEntityId: "-",
+        branchId: "-",
+        actorId: who.id,
+        action: "admin.enquiry_status",
+        detail: { reference: row.reference, from: row.status, to: parsed.data.status },
+      });
+    }
+    return { ok: true };
   });
 
   // block/unblock a desk, or change its plan

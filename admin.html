@@ -144,6 +144,8 @@ function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFil
       <span><span style={{ display: 'block', fontWeight: 700, fontSize: 14.5 }}>CurrencyDesk</span><span style={{ display: 'block', fontSize: 12, color: 'var(--mute)' }}>Platform control</span></span>
     </div>
     {navItem('desks', 'Desks', counts.desks)}
+    {navItem('applications', 'Early access', counts.waiting || null)}
+    {navItem('messages', 'Messages', counts.unread || null)}
     {navItem('activity', 'Activity', null)}
     <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
       <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> New desk
@@ -287,6 +289,143 @@ function CreateModal({ onClose, onCreated }) {
   </div>);
 }
 
+// ===================== PIPELINE =====================
+// Everything the public site sends us. An application is not a message in an
+// inbox — it is a thing somebody works — so this reads as a pipeline: what
+// stage each one is at, what the applicant told us, and what it became.
+const TAB_TITLE = { desks: 'Desks', applications: 'Early access', messages: 'Messages', activity: 'Activity' };
+const STAGE_TONE = { new: 'blue', reviewing: 'amber', invited: 'purple', accepted: 'green', declined: 'mute' };
+const STAGES = ['new', 'reviewing', 'invited', 'accepted', 'declined'];
+// stages an operator can set; "accepted" is what a created desk means
+const SETTABLE = ['new', 'reviewing', 'invited', 'declined'];
+const DETAIL_LABELS = {
+  workspace: 'Workspace', website: 'Website', jurisdiction: 'Jurisdiction', role: 'Their role',
+  employees: 'Team size', monthlyVolume: 'Monthly volume', branches: 'Locations',
+  runningOn: 'Running on today', timeline: 'Wants to be live', topic: 'About', shop: 'Shop',
+  city: 'City', message: 'Message', newsletter: 'Wants updates',
+};
+
+function Pipeline({ kind, title, blurb, onCounts }) {
+  const [rows, setRows] = useState(null);
+  const [stage, setStage] = useState('all');
+  const [sel, setSel] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  const load = async () => {
+    const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({ enquiries: [] }));
+    setRows(r.enquiries);
+    if (onCounts) onCounts(r.enquiries);
+  };
+  useEffect(() => { load(); }, [kind]);
+
+  const selected = rows && sel ? rows.find(r => r.id === sel) : null;
+  useEffect(() => { setNote(selected ? (selected.notes || '') : ''); }, [sel]);
+
+  const move = async (to) => {
+    if (!selected || busy) return;
+    setBusy(true);
+    try { await api('/api/admin/enquiries/' + selected.id, { method: 'PATCH', body: JSON.stringify({ status: to }) }); await load(); }
+    catch (e) { alert((e.body && e.body.detail) || 'Could not update'); }
+    finally { setBusy(false); }
+  };
+  const saveNote = async () => {
+    if (!selected || busy) return;
+    setBusy(true);
+    try { await api('/api/admin/enquiries/' + selected.id, { method: 'PATCH', body: JSON.stringify({ notes: note }) }); await load(); }
+    catch (e) { alert((e.body && e.body.detail) || 'Could not save'); }
+    finally { setBusy(false); }
+  };
+
+  if (!rows) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const counts = STAGES.reduce((a, s) => (a[s] = rows.filter(r => r.status === s).length, a), {});
+  const shown = stage === 'all' ? rows : rows.filter(r => r.status === stage);
+  const th = { textAlign: 'left', fontSize: 11, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 16px 10px', fontWeight: 600 };
+  const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
+  const chip = (id, label, n) => (
+    <button key={id} onClick={() => setStage(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: stage === id ? 700 : 500,
+      border: '1px solid ' + (stage === id ? 'var(--text)' : 'var(--line)'), background: stage === id ? 'var(--hover)' : 'var(--card)', color: stage === id ? 'var(--text)' : 'var(--mute)', textTransform: 'capitalize' }}>
+      {label}<span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{n}</span>
+    </button>
+  );
+
+  return (<div>
+    <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>{blurb}</p>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      {chip('all', 'Everything', rows.length)}
+      {STAGES.map(s => chip(s, s, counts[s]))}
+    </div>
+
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, minWidth: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+          <thead><tr>
+            <th style={{ ...th, paddingTop: 14 }}>{kind === 'early_access' ? 'Applicant' : 'From'}</th>
+            <th style={th}>Stage</th><th style={th}>{kind === 'early_access' ? 'Wants' : 'About'}</th><th style={th}>Became</th><th style={th}>Received</th>
+          </tr></thead>
+          <tbody>
+            {shown.map(r => (<tr key={r.id} onClick={() => setSel(r.id)} style={{ cursor: 'pointer', background: sel === r.id ? 'var(--hover)' : 'transparent' }}>
+              <td style={td}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Avatar name={r.name || r.email} />
+                  <span><span style={{ display: 'block', fontWeight: 600 }}>{r.name || '—'}</span>
+                  <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{r.email}</span></span></span>
+              </td>
+              <td style={td}><Pill tone={STAGE_TONE[r.status]} dot>{r.status}</Pill></td>
+              <td style={{ ...td, color: 'var(--mute)', fontSize: 13 }}>{(r.details && (r.details.workspace || r.details.topic)) || '—'}</td>
+              <td style={td}>{r.tenantName ? <Pill tone="green">{r.tenantName}</Pill> : <span style={{ color: 'var(--faint)' }}>—</span>}</td>
+              <td style={{ ...td, fontFamily: MONO, fontSize: 12.5, color: 'var(--mute)' }}>{fmtDay(r.createdAt)}</td>
+            </tr>))}
+            {shown.length === 0 && <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--faint)', padding: 40 }}>
+              {rows.length === 0 ? 'Nothing has come in yet.' : 'Nothing at this stage.'}</td></tr>}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      {selected && (<div style={{ width: 340, flex: 'none', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{selected.name || selected.email}</span>
+          <button onClick={() => setSel(null)} style={{ background: 'none', border: 'none', color: 'var(--faint)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginTop: 2 }}>{selected.reference}</div>
+        <a href={'mailto:' + selected.email} style={{ display: 'block', fontSize: 13, marginTop: 8, color: 'var(--blue)' }}>{selected.email}</a>
+
+        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {Object.entries(selected.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+              <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--faint)', width: 108, flex: 'none' }}>{DETAIL_LABELS[k] || k}</span>
+              <span style={{ fontSize: 13, flex: 1, whiteSpace: 'pre-wrap' }}>{String(v)}</span>
+            </div>))}
+        </div>
+
+        {selected.tenantName && (<div style={{ marginTop: 16, padding: '10px 12px', borderRadius: 10, background: 'color-mix(in srgb, var(--green) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--green) 30%, transparent)', fontSize: 13 }}>
+          Became <b>{selected.tenantName}</b>
+        </div>)}
+
+        <div style={{ marginTop: 18, borderTop: '1px solid var(--line2)', paddingTop: 14 }}>
+          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>Move to</div>
+          {selected.status === 'accepted'
+            ? <div style={{ fontSize: 12.5, color: 'var(--mute)' }}>Their desk exists — this one is done.</div>
+            : (<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {SETTABLE.filter(s => s !== selected.status).map(s => (
+                  <button key={s} disabled={busy} onClick={() => move(s)} style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, cursor: busy ? 'default' : 'pointer', textTransform: 'capitalize' }}>{s}</button>))}
+              </div>)}
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>Notes</div>
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="What you learned, what you promised…"
+            style={{ width: '100%', padding: 10, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
+          <button disabled={busy || note === (selected.notes || '')} onClick={saveNote}
+            style={{ marginTop: 8, padding: '8px 14px', borderRadius: 9, border: 'none', background: note === (selected.notes || '') ? 'var(--line)' : 'var(--text)', color: note === (selected.notes || '') ? 'var(--faint)' : '#111', fontWeight: 700, fontSize: 12.5, cursor: busy || note === (selected.notes || '') ? 'default' : 'pointer' }}>Save note</button>
+        </div>
+      </div>)}
+    </div>
+  </div>);
+}
+
 // ===================== APP =====================
 function App() {
   const [phase, setPhase] = useState('loading'); // loading | login | ready
@@ -315,7 +454,15 @@ function App() {
   if (phase === 'loading') return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
   if (phase === 'login') return <Login onIn={() => { setPhase('loading'); boot(); }} />;
 
-  const counts = { desks: tenants.length, active: tenants.filter(t => t.status === 'active').length, trial: tenants.filter(t => t.status === 'trial').length, suspended: tenants.filter(t => t.status === 'suspended').length };
+  const counts = {
+    desks: tenants.length,
+    active: tenants.filter(t => t.status === 'active').length,
+    trial: tenants.filter(t => t.status === 'trial').length,
+    suspended: tenants.filter(t => t.status === 'suspended').length,
+    // what is sitting on somebody — the number worth a badge in the nav
+    waiting: ov && ov.funnel ? ov.funnel.waiting : 0,
+    unread: ov && ov.funnel ? ov.funnel.unread : 0,
+  };
   let rows = tenants.filter(t => (statusFilter === 'all' || t.status === statusFilter) && (planFilter === 'all' || t.plan === planFilter));
   const s = q.trim().toLowerCase();
   if (s) rows = rows.filter(t => [t.name, t.slug, t.owner && t.owner.name, t.owner && t.owner.staffId, t.country].some(v => (v || '').toLowerCase().includes(s)));
@@ -333,7 +480,7 @@ function App() {
     <Sidebar counts={counts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} planFilter={planFilter} setPlanFilter={setPlanFilter} tab={tab} setTab={setTab} onCreate={() => setCreating(true)} />
     <div style={{ flex: 1, minWidth: 0, height: '100vh', overflow: 'auto', padding: '24px 30px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{tab === 'desks' ? 'Desks' : 'Activity'}</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{TAB_TITLE[tab] || 'Desks'}</h1>
         <Pill tone="green" dot>Live</Pill>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
           <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ New desk</button>
@@ -368,6 +515,12 @@ function App() {
           </div>
         </div>
       </div>)}
+
+      {tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()}
+        blurb="Every application from the site, and where you have got to with it. An application becomes accepted when that person creates their desk — not by hand — so this list and the desk list always agree." />}
+
+      {tab === 'messages' && <Pipeline kind="contact" onCounts={() => loadAll()}
+        blurb="Notes sent from the contact page. Each one was promised a reply within a business day." />}
 
       {tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
         {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}

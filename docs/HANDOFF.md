@@ -86,6 +86,15 @@ Working end-to-end, in production:
 - **Platform admin control panel** at **`/admin`** — dark dashboard: KPIs, desk
   table with status/plan filters, detail drawer, and actions: **block/suspend,
   change plan, create a desk, and (gated) delete**. Its own 2FA login.
+- **The early-access funnel (NEW)** — the public site's two forms feed
+  `enquiries`, and the panel has **Early access** and **Messages** tabs that
+  work them. An application carries its own progress —
+  `new → reviewing → invited → accepted`, or `declined` — with operator notes,
+  an audited stage change, and every answer the applicant gave.
+  **`accepted` is not settable by hand**: a completed signup against the same
+  address sets it and stamps the `tenantId`, which is the join that makes the
+  funnel measurable rather than two unrelated lists. The nav badges count what
+  is sitting unanswered.
 - **Per-tenant persistence** — each desk's working state is saved server-side
   (`tenant_state`), isolated per tenant.
 
