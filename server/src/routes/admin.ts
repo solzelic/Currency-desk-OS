@@ -17,6 +17,7 @@ import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPassword } from "../auth/password.js";
 import { audit } from "../audit.js";
+import { sendEmail, inviteEmail, type EmailStatus } from "../email.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -54,6 +55,69 @@ function platformAdmins(): Set<string> {
 const PLATFORM_TENANT = "tnt-platform";
 const isPlatformAdmin = (email: string | undefined): boolean =>
   !!email && platformAdmins().has(email.toLowerCase());
+
+/* The desk's working book lives in its saved state as a bag of JSON strings,
+   one per thing the OS keeps. Read the few that answer "how is this customer
+   actually doing", and never let a malformed blob take the page down — a
+   support screen that 500s when a customer rings is worse than one with a
+   gap in it. */
+type DeskSnapshot = {
+  recentTransactions: Record<string, unknown>[];
+  book: { transactions: number; volumeCad: number; feesCad: number; clients: number; lastTradeAt: string | null };
+  deskSettings: { name: string | null; branches: number; currencies: number } | null;
+};
+async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
+  const empty: DeskSnapshot = {
+    recentTransactions: [],
+    book: { transactions: 0, volumeCad: 0, feesCad: 0, clients: 0, lastTradeAt: null },
+    deskSettings: null,
+  };
+  const row = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, tenantId)).limit(1))[0];
+  const state = (row?.state ?? null) as Record<string, string> | null;
+  if (!state) return empty;
+
+  const read = <T,>(key: string, fallback: T): T => {
+    try {
+      const raw = state[key];
+      return raw == null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const rows = read<Record<string, unknown>[]>("cdos_rows_v1", []).filter((r) => r && typeof r === "object");
+  const when = (r: Record<string, unknown>) => `${r.date ?? ""} ${r.time ?? ""}`.trim();
+  const byNewest = [...rows].sort((a, b) => when(b).localeCompare(when(a)));
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+  // only the fields a support conversation needs — the rest of a ticket
+  // (compliance threads, tags, notes) is the customer's to see, not ours
+  const recentTransactions = byNewest.slice(0, 5).map((r) => ({
+    ref: r.ref ?? null, date: r.date ?? null, time: r.time ?? null, type: r.type ?? null,
+    inCcy: r.inCcy ?? null, inAmt: num(r.inAmt), outCcy: r.outCcy ?? null, outAmt: num(r.outAmt),
+    fee: num(r.fee), teller: r.teller ?? null, status: r.status ?? null,
+  }));
+
+  const settings = read<Record<string, unknown>>("cdos_settings", {});
+  const branches = read<unknown[]>("cdos_branches_v1", []);
+  const board = read<Record<string, unknown>>("yorkfx_rates_v1", {});
+
+  return {
+    recentTransactions,
+    book: {
+      transactions: rows.length,
+      volumeCad: Math.round(rows.reduce((s, r) => s + num(r.inAmt), 0)),
+      feesCad: Math.round(rows.reduce((s, r) => s + num(r.fee), 0)),
+      clients: read<unknown[]>("cdos_clients_v1", []).length,
+      lastTradeAt: byNewest[0] ? when(byNewest[0]) || null : null,
+    },
+    deskSettings: {
+      name: typeof settings.deskName === "string" ? settings.deskName : null,
+      branches: Array.isArray(branches) ? branches.length : 0,
+      currencies: board && typeof board === "object" ? Object.keys(board).length : 0,
+    },
+  };
+}
 
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
@@ -121,12 +185,41 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.staffUsers.tenantId, id));
     const audit = await db.select().from(schema.auditEvents).where(eq(schema.auditEvents.tenantId, id)).orderBy(desc(schema.auditEvents.at)).limit(50);
     const plan = await tenantPlan(db, id);
+
+    /* Everything you want in front of you when this customer rings up. The
+       desk keeps its working book in its saved state, so that is where the
+       trading picture comes from; the relational tables carry who they are. */
+    const desk = await deskSnapshot(db, id);
+
+    /* Where they came from. A desk that started as an early-access
+       application can show it, which is the whole point of stamping the
+       tenant on the application when the signup completes. */
+    const application =
+      (await db.select().from(schema.enquiries).where(eq(schema.enquiries.tenantId, id)).limit(1))[0] ?? null;
+
     return {
       tenant: { id: t.id, name: t.name, slug: t.siteSlug, plan: t.plan, entitledPlan: plan, suspended: t.suspended, siteDomain: t.siteDomain, setup: t.setup ?? null, createdAt: t.createdAt },
       legalEntities: entities,
       staff,
       audit,
+      ...desk,
+      application,
     };
+  });
+
+  // one application, for its own page
+  app.get<{ Params: { id: string } }>("/api/admin/enquiries/:id", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    const tenant = row.tenantId
+      ? ((await db.select().from(schema.tenants).where(eq(schema.tenants.id, row.tenantId)).limit(1))[0] ?? null)
+      : null;
+    // anything else this address has sent us, so the history is in one place
+    const alsoFrom = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, row.email)))
+      .filter((e) => e.id !== row.id)
+      .map((e) => ({ id: e.id, kind: e.kind, reference: e.reference, status: e.status, createdAt: e.createdAt }));
+    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (req, reply) => {
@@ -231,6 +324,17 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (parsed.data.notes !== undefined) set.notes = parsed.data.notes;
     await db.update(schema.enquiries).set(set).where(eq(schema.enquiries.id, req.params.id));
 
+    /* Inviting someone is the one stage change the applicant hears about, so
+       it is the one that sends. Best-effort: the stage is already saved, and
+       a mail outage must not silently roll it back — the operator can see it
+       failed and send again. */
+    let invited: EmailStatus | null = null;
+    if (parsed.data.status === "invited" && row.status !== "invited") {
+      const origin = (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
+      const mail = inviteEmail({ name: row.name, reference: row.reference, origin });
+      invited = await sendEmail(row.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+    }
+
     if (parsed.data.status !== undefined) {
       await audit(db, {
         tenantId: row.tenantId ?? PLATFORM_TENANT,
@@ -238,10 +342,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         branchId: "-",
         actorId: who.id,
         action: "admin.enquiry_status",
-        detail: { reference: row.reference, from: row.status, to: parsed.data.status },
+        detail: { reference: row.reference, from: row.status, to: parsed.data.status, ...(invited ? { invite: invited } : {}) },
       });
     }
-    return { ok: true };
+    return { ok: true, ...(invited ? { invite: invited } : {}) };
   });
 
   // block/unblock a desk, or change its plan

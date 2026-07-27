@@ -95,6 +95,15 @@ Working end-to-end, in production:
   address sets it and stamps the `tenantId`, which is the join that makes the
   funnel measurable rather than two unrelated lists. The nav badges count what
   is sitting unanswered.
+
+  **Every record has its own page**, at its own URL — `/admin#/desks/<id>` and
+  `/admin#/applications/<id>` — bookmarkable and reloadable, which a drawer
+  never was. A desk page is the support screen: the trading picture from its
+  saved book (transactions, volume, fees, clients, last trade), its **last five
+  transactions**, recent activity, owner, business and regulator details, the
+  team, plan and block/delete — and a link back to the application it came
+  from. Moving an applicant to **invited emails them** their reference and the
+  link to build the desk; the panel reports whether that email actually sent.
 - **Per-tenant persistence** — each desk's working state is saved server-side
   (`tenant_state`), isolated per tenant.
 

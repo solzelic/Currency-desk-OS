@@ -69,6 +69,32 @@ export function loginCodeEmail(code: string, name?: string): { subject: string; 
   return { subject, text, html };
 }
 
+/* The invitation. What an accepted applicant gets when an operator moves
+   them to "invited": their reference, and the one link that starts the desk.
+   Deliberately short — the next thing they should do is create it. */
+export function inviteEmail(opts: { name?: string | null; reference: string; origin: string }): { subject: string; text: string; html: string } {
+  const who = opts.name ? `${opts.name}, you` : "You";
+  const link = `${opts.origin}/signup`;
+  const subject = "You're in — set up your CurrencyDesk";
+  const text =
+    `${who}'re through to the Founding Operator group.\n\n` +
+    `Your reference is ${opts.reference} — keep it, and quote it if you ever write to us.\n\n` +
+    `Set your desk up here: ${link}\n\n` +
+    `It takes a few minutes: your business details, then a code to your email, and the desk is yours. ` +
+    `Reply to this email if anything is in your way.`;
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${who}'re through to the Founding Operator group.</div>` +
+    `<div style="margin:20px 0;padding:14px 16px;background:#f4f3f0;border-radius:12px">` +
+    `<div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a">Your reference</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:22px;font-weight:700;letter-spacing:.12em;margin-top:4px">${opts.reference}</div></div>` +
+    `<a href="${link}" style="display:block;text-align:center;padding:14px;background:#1D6B45;color:#fff;border-radius:12px;font-weight:700;text-decoration:none;font-size:14px">Set up your desk</a>` +
+    `<div style="font-size:13px;color:#8a8a8a;margin-top:16px;line-height:1.6">A few minutes: your business details, then a code to your email. Reply to this if anything is in your way.</div>` +
+    `</div>`;
+  return { subject, text, html };
+}
+
 /* The verification email. Plain + a minimal branded HTML. */
 export function verificationEmail(code: string, businessName: string): { subject: string; text: string; html: string } {
   const subject = `${code} is your CurrencyDesk verification code`;

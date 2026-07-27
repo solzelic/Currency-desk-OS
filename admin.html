@@ -184,76 +184,6 @@ function StatRow({ ov }) {
   </div>);
 }
 
-// ===================== DETAIL DRAWER + ACTIONS =====================
-function Drawer({ id, onClose, onChanged }) {
-  const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState('');
-  const [confirmName, setConfirmName] = useState(''); const [ack, setAck] = useState(false);
-  const load = () => { setD(null); api('/api/admin/tenants/' + encodeURIComponent(id)).then(setD).catch(() => setErr('Could not load')); };
-  useEffect(load, [id]);
-  const t = d && d.tenant; const setup = (t && t.setup) || {};
-  const suspended = t && t.suspended;
-  const act = async (fn, label) => { setBusy(label); setErr(''); try { await fn(); onChanged(); load(); } catch (x) { setErr((x.body && x.body.detail) || 'Action failed'); } setBusy(''); };
-  const setPlan = (plan) => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ plan }) }), 'plan');
-  const toggleSuspend = () => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ suspended: !suspended }) }), 'suspend');
-  const del = () => act(async () => { await api('/api/admin/tenants/' + id, { method: 'DELETE' }); onClose(); }, 'delete');
-  const row = (k, v) => v ? (<div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}><span style={{ color: 'var(--mute)' }}>{k}</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{v}</span></div>) : null;
-  const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: 'pointer' }, extra || {});
-  return (<div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
-    <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} />
-    <div style={{ position: 'relative', width: 440, maxWidth: '100%', height: '100%', background: 'var(--panel)', borderLeft: '1px solid var(--line)', overflow: 'auto' }}>
-      <div style={{ position: 'sticky', top: 0, background: 'var(--panel)', borderBottom: '1px solid var(--line)', padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 11 }}>
-        <button onClick={onClose} style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', fontSize: 16 }}>×</button>
-        <span style={{ fontWeight: 800, fontSize: 16 }}>{t ? t.name : (err || 'Loading…')}</span>
-        {t && <Pill tone={suspended ? 'red' : (t.plan === 'trial' ? 'amber' : 'green')} dot>{suspended ? 'Suspended' : (t.plan === 'trial' ? 'Trial' : 'Active')}</Pill>}
-      </div>
-      {d && (<div style={{ padding: '18px 20px' }}>
-        {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
-        <div style={{ marginBottom: 20 }}>
-          {row('Desk address', t.slug)}
-          {row('Tenant ID', t.id)}
-          {row('Plan', t.plan)}
-          {row('Country', setup.country)}
-          {row('Regulator', setup.regulator || (d.legalEntities[0] && d.legalEntities[0].jurisdiction))}
-          {row('MSB number', setup.msbNumber || (d.legalEntities[0] && d.legalEntities[0].msbNumber))}
-          {row('Joined', fmtWhen(t.createdAt))}
-        </div>
-        {/* actions */}
-        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 10, textTransform: 'uppercase' }}>Plan</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-          {['basic', 'pro', 'premium'].map(p => <button key={p} onClick={() => setPlan(p)} disabled={busy === 'plan'} style={btn(t.plan === p ? 'var(--hover)' : 'transparent', t.plan === p ? 'var(--text)' : 'var(--mute)', { textTransform: 'capitalize', borderColor: t.plan === p ? 'var(--line)' : 'var(--line2)' })}>{p}</button>)}
-        </div>
-        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 10, textTransform: 'uppercase' }}>Access</div>
-        <button onClick={toggleSuspend} disabled={busy === 'suspend'} style={btn(suspended ? 'color-mix(in srgb,var(--green) 14%,transparent)' : 'color-mix(in srgb,var(--amber) 14%,transparent)', suspended ? 'var(--green)' : 'var(--amber)', { width: '100%', marginBottom: 22, borderColor: 'var(--line2)' })}>
-          {busy === 'suspend' ? '…' : suspended ? '↑ Unblock this desk' : '⏸ Block / suspend this desk'}
-        </button>
-        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 8, textTransform: 'uppercase' }}>People ({d.staff.length})</div>
-        <div style={{ marginBottom: 22 }}>
-          {d.staff.map(s => (<div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-            <Avatar name={s.name} size={28} /><span style={{ flex: 1 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{s.name}</span><span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--mute)' }}>{s.staffId}</span></span>
-            <Pill tone={s.role === 'administrator' ? 'purple' : 'mute'}>{s.role.replace('_', ' ')}</Pill>
-          </div>))}
-        </div>
-        {/* retention + gated deletion */}
-        <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 15, background: 'var(--card)' }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: 'var(--faint)', marginBottom: 8, textTransform: 'uppercase' }}>Retention</div>
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
-            Desks are <b style={{ color: 'var(--text)' }}>suspended, not deleted</b> — records must be kept for <b style={{ color: 'var(--text)' }}>6 years</b> (FINTRAC). Blocking a desk takes it offline while keeping every record on file.{!suspended && ' To permanently delete a desk, block it first.'}
-          </div>
-          {suspended && (<div style={{ borderTop: '1px solid var(--line2)', marginTop: 12, paddingTop: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>Permanently delete — last resort</div>
-            <label style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--mute)', marginBottom: 10, cursor: 'pointer', lineHeight: 1.45 }}>
-              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} style={{ marginTop: 2, flex: 'none' }} />
-              <span>I understand this destroys {t.name}'s data and records we're required to keep for 6 years, and it cannot be undone.</span>
-            </label>
-            <input value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder={'type ' + t.slug + ' to confirm'} style={{ width: '100%', padding: '9px 11px', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--text)', fontSize: 13, fontFamily: MONO, marginBottom: 9, outline: 'none' }} />
-            <button onClick={del} disabled={!ack || confirmName !== t.slug || busy === 'delete'} style={{ width: '100%', padding: '10px', borderRadius: 9, border: 'none', cursor: (ack && confirmName === t.slug) ? 'pointer' : 'not-allowed', background: (ack && confirmName === t.slug) ? 'var(--red)' : 'rgba(248,113,113,0.18)', color: (ack && confirmName === t.slug) ? '#fff' : 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 13 }}>{busy === 'delete' ? 'Deleting…' : 'Delete permanently'}</button>
-          </div>)}
-        </div>
-      </div>)}
-    </div>
-  </div>);
-}
-
 // ===================== CREATE MODAL =====================
 function CreateModal({ onClose, onCreated }) {
   const [f, setF] = useState({ businessName: '', ownerName: '', ownerEmail: '', slug: '', plan: 'trial', password: '' });
@@ -308,9 +238,6 @@ const DETAIL_LABELS = {
 function Pipeline({ kind, title, blurb, onCounts }) {
   const [rows, setRows] = useState(null);
   const [stage, setStage] = useState('all');
-  const [sel, setSel] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState('');
 
   const load = async () => {
     const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({ enquiries: [] }));
@@ -318,24 +245,6 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     if (onCounts) onCounts(r.enquiries);
   };
   useEffect(() => { load(); }, [kind]);
-
-  const selected = rows && sel ? rows.find(r => r.id === sel) : null;
-  useEffect(() => { setNote(selected ? (selected.notes || '') : ''); }, [sel]);
-
-  const move = async (to) => {
-    if (!selected || busy) return;
-    setBusy(true);
-    try { await api('/api/admin/enquiries/' + selected.id, { method: 'PATCH', body: JSON.stringify({ status: to }) }); await load(); }
-    catch (e) { alert((e.body && e.body.detail) || 'Could not update'); }
-    finally { setBusy(false); }
-  };
-  const saveNote = async () => {
-    if (!selected || busy) return;
-    setBusy(true);
-    try { await api('/api/admin/enquiries/' + selected.id, { method: 'PATCH', body: JSON.stringify({ notes: note }) }); await load(); }
-    catch (e) { alert((e.body && e.body.detail) || 'Could not save'); }
-    finally { setBusy(false); }
-  };
 
   if (!rows) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
 
@@ -366,7 +275,7 @@ function Pipeline({ kind, title, blurb, onCounts }) {
             <th style={th}>Stage</th><th style={th}>{kind === 'early_access' ? 'Wants' : 'About'}</th><th style={th}>Became</th><th style={th}>Received</th>
           </tr></thead>
           <tbody>
-            {shown.map(r => (<tr key={r.id} onClick={() => setSel(r.id)} style={{ cursor: 'pointer', background: sel === r.id ? 'var(--hover)' : 'transparent' }}>
+            {shown.map(r => (<tr key={r.id} onClick={() => goto('#/' + (kind === 'early_access' ? 'applications' : 'messages') + '/' + r.id)} style={{ cursor: 'pointer' }}>
               <td style={td}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Avatar name={r.name || r.email} />
                   <span><span style={{ display: 'block', fontWeight: 600 }}>{r.name || '—'}</span>
@@ -384,44 +293,282 @@ function Pipeline({ kind, title, blurb, onCounts }) {
         </div>
       </div>
 
-      {selected && (<div style={{ width: 340, flex: 'none', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ fontWeight: 700, fontSize: 15 }}>{selected.name || selected.email}</span>
-          <button onClick={() => setSel(null)} style={{ background: 'none', border: 'none', color: 'var(--faint)', cursor: 'pointer', fontSize: 16 }}>×</button>
-        </div>
-        <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginTop: 2 }}>{selected.reference}</div>
-        <a href={'mailto:' + selected.email} style={{ display: 'block', fontSize: 13, marginTop: 8, color: 'var(--blue)' }}>{selected.email}</a>
+    </div>
+  </div>);
+}
 
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {Object.entries(selected.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--faint)', width: 108, flex: 'none' }}>{DETAIL_LABELS[k] || k}</span>
-              <span style={{ fontSize: 13, flex: 1, whiteSpace: 'pre-wrap' }}>{String(v)}</span>
+// ===================== SHARED PAGE FURNITURE =====================
+const money = (n, ccy) => {
+  const v = Number(n) || 0;
+  const s = v.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return ccy ? s + ' ' + ccy : s;
+};
+const K = (n) => { const v = Number(n) || 0; return v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : v >= 1000 ? Math.round(v / 1000) + 'k' : String(v); };
+const goto = (h) => { window.location.hash = h; };
+/* Records get their own URL. #/desks/tnt-x and #/applications/<id> are pages
+   you can bookmark, reload and paste to someone — which a drawer never was. */
+function parseHash(h) {
+  const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
+  const tab = parts[0] || 'desks';
+  const known = ['desks', 'applications', 'messages', 'activity'];
+  return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
+}
+
+function PageHead({ back, backTo, title, sub, pills, actions }) {
+  return (<div style={{ marginBottom: 22 }}>
+    <button onClick={() => goto(backTo)} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 13, padding: 0, marginBottom: 12 }}>← {back}</button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>{title}</h1>
+      {pills}
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>{actions}</div>
+    </div>
+    {sub && <div style={{ fontFamily: MONO, fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>{sub}</div>}
+  </div>);
+}
+function Card({ title, children, pad = 16 }) {
+  return (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+    {title && <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>{title}</div>}
+    <div style={{ padding: pad }}>{children}</div>
+  </div>);
+}
+function Tiles({ items }) {
+  return (<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 18 }}>
+    {items.map(t => (<div key={t.k} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '13px 15px' }}>
+      <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>{t.k}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, marginTop: 5, color: t.c || 'var(--text)' }}>{t.v}</div>
+      {t.sub && <div style={{ fontSize: 11.5, color: 'var(--mute)', marginTop: 2 }}>{t.sub}</div>}
+    </div>))}
+  </div>);
+}
+const kv = (k, v) => v == null || v === '' ? null : (
+  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}>
+    <span style={{ color: 'var(--mute)', flex: 'none' }}>{k}</span><span style={{ fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span></div>);
+
+// ===================== DESK PAGE =====================
+// The page you open when a customer rings. Who they are, how the desk is
+// doing, what they last did, and the levers — on one screen.
+function DeskPage({ id, onChanged }) {
+  const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState('');
+  const [confirmName, setConfirmName] = useState(''); const [ack, setAck] = useState(false);
+  const load = () => { api('/api/admin/tenants/' + encodeURIComponent(id)).then(setD).catch(() => setErr('Could not load this desk.')); };
+  useEffect(() => { setD(null); setErr(''); load(); }, [id]);
+
+  if (err) return <div style={{ color: 'var(--red)', padding: 20 }}>{err}</div>;
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const t = d.tenant, setup = t.setup || {}, le = d.legalEntities[0] || {};
+  const owner = d.staff.find(s => s.role === 'administrator');
+  const suspended = t.suspended, book = d.book || {}, ds = d.deskSettings || {};
+  const act = async (fn, label) => { setBusy(label); setErr(''); try { await fn(); onChanged && onChanged(); load(); } catch (x) { setErr((x.body && x.body.detail) || 'Action failed'); } setBusy(''); };
+  const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: 'pointer' }, extra || {});
+  const td = { padding: '11px 14px', borderTop: '1px solid var(--line2)', fontSize: 13, verticalAlign: 'middle' };
+  const th = { textAlign: 'left', fontSize: 10, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 14px 9px', fontWeight: 600, fontFamily: MONO };
+
+  return (<div>
+    <PageHead back="All desks" backTo="#/desks" title={t.name}
+      sub={t.slug + '  ·  ' + t.id + '  ·  joined ' + fmtDay(t.createdAt)}
+      pills={<><Pill tone={suspended ? 'red' : (t.plan === 'trial' ? 'amber' : 'green')} dot>{suspended ? 'Suspended' : (t.plan === 'trial' ? 'Trial' : 'Active')}</Pill><Pill tone={PLAN_TONE[t.plan]}>{t.plan}</Pill></>}
+      actions={<>
+        {owner && <a href={'mailto:' + owner.staffId} style={{ ...btn('transparent', 'var(--text)'), textDecoration: 'none' }}>Email owner</a>}
+        <button onClick={() => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ suspended: !suspended }) }), 'suspend')} disabled={busy === 'suspend'}
+          style={btn(suspended ? 'color-mix(in srgb,var(--green) 14%,transparent)' : 'color-mix(in srgb,var(--amber) 14%,transparent)', suspended ? 'var(--green)' : 'var(--amber)')}>
+          {busy === 'suspend' ? '…' : suspended ? 'Unblock' : 'Block'}</button>
+      </>} />
+
+    <Tiles items={[
+      { k: 'Transactions', v: book.transactions || 0 },
+      { k: 'Volume in', v: '$' + K(book.volumeCad), sub: 'CAD, all time' },
+      { k: 'Fees earned', v: '$' + K(book.feesCad), c: 'var(--green)' },
+      { k: 'Clients', v: book.clients || 0 },
+      { k: 'People', v: d.staff.length },
+      { k: 'Last trade', v: book.lastTradeAt ? String(book.lastTradeAt).slice(0, 10) : '—', c: book.lastTradeAt ? 'var(--text)' : 'var(--faint)' },
+    ]} />
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.7fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>Last five transactions</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+              <thead><tr><th style={{ ...th, paddingTop: 13 }}>Ref</th><th style={th}>When</th><th style={th}>Type</th><th style={th}>In</th><th style={th}>Out</th><th style={th}>Fee</th><th style={th}>Teller</th></tr></thead>
+              <tbody>
+                {(d.recentTransactions || []).map((r, i) => (<tr key={r.ref || i}>
+                  <td style={{ ...td, fontFamily: MONO, fontSize: 12 }}>{r.ref || '—'}</td>
+                  <td style={{ ...td, color: 'var(--mute)', fontFamily: MONO, fontSize: 12 }}>{r.date} {r.time}</td>
+                  <td style={{ ...td, color: 'var(--mute)' }}>{r.type || '—'}</td>
+                  <td style={td}>{money(r.inAmt, r.inCcy)}</td>
+                  <td style={{ ...td, color: 'var(--green)' }}>{money(r.outAmt, r.outCcy)}</td>
+                  <td style={{ ...td, fontFamily: MONO, fontSize: 12 }}>{money(r.fee)}</td>
+                  <td style={{ ...td, color: 'var(--mute)' }}>{r.teller || '—'}</td>
+                </tr>))}
+                {(!d.recentTransactions || d.recentTransactions.length === 0) &&
+                  <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--faint)', padding: 34 }}>This desk hasn't written a ticket yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <Card title={'Recent activity'} pad={0}>
+          <div style={{ padding: '4px 16px', maxHeight: 320, overflow: 'auto' }}>
+            {d.audit.slice(0, 20).map(e => (<div key={e.id} style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 0', borderBottom: '1px solid var(--line2)' }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)', width: 120, flex: 'none' }}>{fmtWhen(e.at)}</span>
+              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, flex: 1 }}>{e.action}</span>
+              <span style={{ fontSize: 12, color: 'var(--mute)' }}>{e.actorId}</span>
             </div>))}
-        </div>
+            {d.audit.length === 0 && <div style={{ padding: 20, color: 'var(--faint)' }}>Nothing yet.</div>}
+          </div>
+        </Card>
+      </div>
 
-        {selected.tenantName && (<div style={{ marginTop: 16, padding: '10px 12px', borderRadius: 10, background: 'color-mix(in srgb, var(--green) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--green) 30%, transparent)', fontSize: 13 }}>
-          Became <b>{selected.tenantName}</b>
-        </div>)}
+      <div style={{ display: 'grid', gap: 16 }}>
+        {owner && (<Card title="Owner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
+            <Avatar name={owner.name} size={38} />
+            <span><span style={{ display: 'block', fontWeight: 700 }}>{owner.name}</span>
+              <a href={'mailto:' + owner.staffId} style={{ display: 'block', fontFamily: MONO, fontSize: 11.5, color: 'var(--blue)' }}>{owner.staffId}</a></span>
+          </div>
+          {kv('Signed up', fmtDay(owner.createdAt))}
+        </Card>)}
 
-        <div style={{ marginTop: 18, borderTop: '1px solid var(--line2)', paddingTop: 14 }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>Move to</div>
-          {selected.status === 'accepted'
-            ? <div style={{ fontSize: 12.5, color: 'var(--mute)' }}>Their desk exists — this one is done.</div>
-            : (<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {SETTABLE.filter(s => s !== selected.status).map(s => (
-                  <button key={s} disabled={busy} onClick={() => move(s)} style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, cursor: busy ? 'default' : 'pointer', textTransform: 'capitalize' }}>{s}</button>))}
+        {d.application && (<Card title="Came from">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+            <span><span style={{ display: 'block', fontFamily: MONO, fontSize: 12.5, fontWeight: 700 }}>{d.application.reference}</span>
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>applied {fmtDay(d.application.createdAt)}</span></span>
+            <button onClick={() => goto('#/applications/' + d.application.id)} style={btn('transparent', 'var(--text)', { fontSize: 12 })}>Open</button>
+          </div>
+        </Card>)}
+
+        <Card title="Business">
+          {kv('Desk address', t.slug)}
+          {kv('Public site', t.siteDomain)}
+          {kv('Country', setup.country)}
+          {kv('Regulator', setup.regulator || le.jurisdiction)}
+          {kv('MSB number', setup.msbNumber || le.msbNumber)}
+          {kv('Legal entity', le.name)}
+          {kv('Branches', ds.branches || null)}
+          {kv('Currencies priced', ds.currencies || null)}
+        </Card>
+
+        <Card title={'People (' + d.staff.length + ')'}>
+          {d.staff.map(s => (<div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+            <Avatar name={s.name} size={28} />
+            <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{s.name}</span>
+              <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.staffId}</span></span>
+            <Pill tone={s.role === 'administrator' ? 'purple' : 'mute'}>{s.role.replace('_', ' ')}</Pill>
+          </div>))}
+        </Card>
+
+        <Card title="Plan">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['basic', 'pro', 'premium'].map(p => <button key={p} onClick={() => act(() => api('/api/admin/tenants/' + id, { method: 'PATCH', body: JSON.stringify({ plan: p }) }), 'plan')} disabled={busy === 'plan'}
+              style={btn(t.plan === p ? 'var(--hover)' : 'transparent', t.plan === p ? 'var(--text)' : 'var(--mute)', { textTransform: 'capitalize', fontSize: 12.5 })}>{p}</button>)}
+          </div>
+        </Card>
+
+        <Card title="Retention">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
+            Desks are <b style={{ color: 'var(--text)' }}>suspended, not deleted</b> — records must be kept <b style={{ color: 'var(--text)' }}>6 years</b> (FINTRAC). Blocking takes a desk offline and keeps every record.{!suspended && ' To delete, block it first.'}
+          </div>
+          {suspended && (<div style={{ borderTop: '1px solid var(--line2)', marginTop: 12, paddingTop: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>Permanently delete — last resort</div>
+            <label style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--mute)', marginBottom: 10, cursor: 'pointer', lineHeight: 1.45 }}>
+              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} style={{ marginTop: 2, flex: 'none' }} />
+              <span>I understand this destroys {t.name}'s records we are required to keep for 6 years, and cannot be undone.</span></label>
+            <input value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder={'type ' + t.slug + ' to confirm'}
+              style={{ width: '100%', padding: '9px 11px', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--text)', fontSize: 13, fontFamily: MONO, marginBottom: 9, outline: 'none', boxSizing: 'border-box' }} />
+            <button onClick={() => act(async () => { await api('/api/admin/tenants/' + id, { method: 'DELETE' }); goto('#/desks'); }, 'delete')}
+              disabled={!ack || confirmName !== t.slug || busy === 'delete'}
+              style={{ width: '100%', padding: 10, borderRadius: 9, border: 'none', cursor: (ack && confirmName === t.slug) ? 'pointer' : 'not-allowed', background: (ack && confirmName === t.slug) ? 'var(--red)' : 'rgba(248,113,113,0.18)', color: (ack && confirmName === t.slug) ? '#fff' : 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 13 }}>
+              {busy === 'delete' ? 'Deleting…' : 'Delete permanently'}</button>
+          </div>)}
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
+// ===================== APPLICATION PAGE =====================
+function ApplicationPage({ id, onChanged }) {
+  const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(''); const [flash, setFlash] = useState('');
+  const load = () => api('/api/admin/enquiries/' + encodeURIComponent(id)).then(r => { setD(r); setNote(r.enquiry.notes || ''); }).catch(() => setErr('Could not load this application.'));
+  useEffect(() => { setD(null); setErr(''); load(); }, [id]);
+
+  if (err) return <div style={{ color: 'var(--red)', padding: 20 }}>{err}</div>;
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const e = d.enquiry;
+  const isApp = e.kind === 'early_access';
+  const save = async (body, label) => {
+    setBusy(true); setFlash('');
+    try {
+      const r = await api('/api/admin/enquiries/' + e.id, { method: 'PATCH', body: JSON.stringify(body) });
+      if (r && r.invite) setFlash(r.invite === 'failed' ? 'Stage saved, but the invitation email did not send.' : r.invite === 'simulated' ? 'Invited. Email is simulated here — it will send for real once Resend is configured.' : 'Invited, and the invitation is on its way.');
+      else if (label) setFlash(label);
+      await load(); onChanged && onChanged();
+    } catch (x) { setFlash((x.body && x.body.detail) || 'Could not save.'); }
+    setBusy(false);
+  };
+  const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }, extra || {});
+
+  return (<div>
+    <PageHead back={isApp ? 'Early access' : 'Messages'} backTo={isApp ? '#/applications' : '#/messages'}
+      title={e.name || e.email} sub={e.reference + '  ·  received ' + fmtWhen(e.createdAt)}
+      pills={<Pill tone={STAGE_TONE[e.status]} dot>{e.status}</Pill>}
+      actions={<a href={'mailto:' + e.email} style={{ ...btn('transparent', 'var(--text)'), textDecoration: 'none' }}>Reply by email</a>} />
+
+    {flash && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13, background: 'color-mix(in srgb,var(--blue) 12%,transparent)', border: '1px solid color-mix(in srgb,var(--blue) 30%,transparent)' }}>{flash}</div>}
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title={isApp ? 'What they told us' : 'Their message'}>
+          {kv('Email', <a href={'mailto:' + e.email} style={{ color: 'var(--blue)' }}>{e.email}</a>)}
+          {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v)))}
+        </Card>
+
+        <Card title="Your notes">
+          <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={6} placeholder="What you learned on the call, what you promised, anything the next person needs…"
+            style={{ width: '100%', padding: 11, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
+          <button disabled={busy || note === (e.notes || '')} onClick={() => save({ notes: note }, 'Note saved.')}
+            style={{ marginTop: 9, padding: '9px 16px', borderRadius: 9, border: 'none', background: note === (e.notes || '') ? 'var(--line)' : 'var(--text)', color: note === (e.notes || '') ? 'var(--faint)' : '#111', fontWeight: 700, fontSize: 13, cursor: busy || note === (e.notes || '') ? 'default' : 'pointer' }}>Save note</button>
+        </Card>
+      </div>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="Move this along">
+          {e.status === 'accepted'
+            ? <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.55 }}>They built their desk — this one is done.</div>
+            : (<div>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                  {SETTABLE.filter(s => s !== e.status).map(s => (
+                    <button key={s} disabled={busy} onClick={() => save({ status: s }, 'Moved to ' + s + '.')} style={btn(s === 'invited' ? 'color-mix(in srgb,var(--purple) 16%,transparent)' : 'transparent', s === 'invited' ? 'var(--purple)' : 'var(--text)', { textTransform: 'capitalize', fontSize: 12.5 })}>{s}</button>))}
+                </div>
+                {isApp && <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>Inviting emails them their reference and the link to set the desk up. Accepted happens on its own when they finish.</div>}
               </div>)}
-        </div>
+        </Card>
 
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>Notes</div>
-          <textarea value={note} onChange={e => setNote(e.target.value)} rows={4} placeholder="What you learned, what you promised…"
-            style={{ width: '100%', padding: 10, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
-          <button disabled={busy || note === (selected.notes || '')} onClick={saveNote}
-            style={{ marginTop: 8, padding: '8px 14px', borderRadius: 9, border: 'none', background: note === (selected.notes || '') ? 'var(--line)' : 'var(--text)', color: note === (selected.notes || '') ? 'var(--faint)' : '#111', fontWeight: 700, fontSize: 12.5, cursor: busy || note === (selected.notes || '') ? 'default' : 'pointer' }}>Save note</button>
-        </div>
-      </div>)}
+        <Card title="History">
+          {kv('Received', fmtWhen(e.createdAt))}
+          {kv('First answered', e.handledAt ? fmtWhen(e.handledAt) : null)}
+          {kv('Last moved', e.decidedAt ? fmtWhen(e.decidedAt) : null)}
+          {kv('By', e.decidedBy)}
+        </Card>
+
+        {e.tenantName && (<Card title="Became">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ fontWeight: 700 }}>{e.tenantName}</span>
+            <button onClick={() => goto('#/desks/' + e.tenantId)} style={btn('transparent', 'var(--text)', { fontSize: 12 })}>Open desk</button>
+          </div>
+        </Card>)}
+
+        {d.alsoFrom.length > 0 && (<Card title={'Also from this address (' + d.alsoFrom.length + ')'}>
+          {d.alsoFrom.map(o => (<button key={o.id} onClick={() => goto('#/applications/' + o.id)} style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', background: 'none', border: 'none', borderBottom: '1px solid var(--line2)', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}>
+            <span><span style={{ display: 'block', fontFamily: MONO, fontSize: 12 }}>{o.reference}</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--faint)' }}>{o.kind === 'early_access' ? 'application' : 'message'} · {fmtDay(o.createdAt)}</span></span>
+            <Pill tone={STAGE_TONE[o.status]}>{o.status}</Pill>
+          </button>))}
+        </Card>)}
+      </div>
     </div>
   </div>);
 }
@@ -432,12 +579,18 @@ function App() {
   const [tenants, setTenants] = useState([]);
   const [ov, setOv] = useState(null);
   const [audit, setAudit] = useState(null);
-  const [tab, setTab] = useState('desks');
+  const [route, setRoute] = useState(() => parseHash(window.location.hash));
+  useEffect(() => {
+    const on = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const tab = route.tab;
+  const setTab = (t) => goto('#/' + t);
   const [statusFilter, setStatusFilter] = useState('all');
   const [planFilter, setPlanFilter] = useState('all');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('joined');
-  const [sel, setSel] = useState(null);
   const [creating, setCreating] = useState(false);
 
   const loadAll = async () => {
@@ -479,15 +632,19 @@ function App() {
   return (<div style={{ display: 'flex', minHeight: '100vh' }}>
     <Sidebar counts={counts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} planFilter={planFilter} setPlanFilter={setPlanFilter} tab={tab} setTab={setTab} onCreate={() => setCreating(true)} />
     <div style={{ flex: 1, minWidth: 0, height: '100vh', overflow: 'auto', padding: '24px 30px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      {!route.id && <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{TAB_TITLE[tab] || 'Desks'}</h1>
         <Pill tone="green" dot>Live</Pill>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
           <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ New desk</button>
         </div>
-      </div>
+      </div>}
 
-      {tab === 'desks' && (<div>
+      {route.id && (tab === 'desks'
+        ? <DeskPage id={route.id} onChanged={loadAll} />
+        : <ApplicationPage id={route.id} onChanged={loadAll} />)}
+
+      {!route.id && tab === 'desks' && (<div>
         <StatRow ov={ov} />
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search desks, owners, email…" style={{ flex: 1, minWidth: 220, padding: '9px 14px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontSize: 13.5, outline: 'none' }} />
@@ -500,7 +657,7 @@ function App() {
               <th style={{ ...th, paddingTop: 14 }}>Desk</th><th style={th}>Status</th><th style={th}>Plan</th><th style={th}>Owner</th><th style={th}>People</th><th style={th}>Country</th><th style={th}>Joined</th>
             </tr></thead>
             <tbody>
-              {rows.map(t => (<tr key={t.id} onClick={() => setSel(t.id)} style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--hover)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {rows.map(t => (<tr key={t.id} onClick={() => goto('#/desks/' + t.id)} style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--hover)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <td style={td}><div style={{ fontWeight: 600 }}>{t.name}</div><div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{t.slug}</div></td>
                 <td style={td}><Pill tone={STATUS_TONE[t.status]} dot>{t.status}</Pill></td>
                 <td style={td}><Pill tone={PLAN_TONE[t.plan]}>{t.plan}</Pill></td>
@@ -516,13 +673,13 @@ function App() {
         </div>
       </div>)}
 
-      {tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()}
+      {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()}
         blurb="Every application from the site, and where you have got to with it. An application becomes accepted when that person creates their desk — not by hand — so this list and the desk list always agree." />}
 
-      {tab === 'messages' && <Pipeline kind="contact" onCounts={() => loadAll()}
+      {!route.id && tab === 'messages' && <Pipeline kind="contact" onCounts={() => loadAll()}
         blurb="Notes sent from the contact page. Each one was promised a reply within a business day." />}
 
-      {tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
+      {!route.id && tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
         {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}
         {audit && audit.map(e => (<div key={e.id} style={{ display: 'flex', gap: 14, alignItems: 'baseline', padding: '11px 0', borderBottom: '1px solid var(--line2)' }}>
           <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', width: 130, flex: 'none' }}>{fmtWhen(e.at)}</span>
@@ -532,7 +689,6 @@ function App() {
         {audit && audit.length === 0 && <div style={{ padding: 20, color: 'var(--faint)' }}>No activity yet.</div>}
       </div>)}
     </div>
-    {sel && <Drawer id={sel} onClose={() => setSel(null)} onChanged={loadAll} />}
     {creating && <CreateModal onClose={() => setCreating(false)} onCreated={loadAll} />}
   </div>);
 }
