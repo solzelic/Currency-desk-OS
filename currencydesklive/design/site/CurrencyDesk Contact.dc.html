@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&amp;family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600&amp;display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #E7E3DA; }
+    * { box-sizing: border-box; }
+    ::selection { background: #1D6B45; color: #F7F4ED; }
+    input::placeholder, textarea::placeholder { color: #9A938A; opacity: 1; }
+    a { color: #1D6B45; text-decoration: none; }
+    a:hover { color: #17583A; }
+    button { font-family: inherit; }
+    @keyframes cdLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.5); } 70% { box-shadow: 0 0 0 7px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
+    @keyframes cdRiseIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; } }
+
+    @media (max-width: 720px) {
+      [style*="max-width: 1200px"], [style*="max-width: 1240px"], [style*="max-width: 1120px"], [style*="max-width: 1060px"], [style*="max-width: 900px"] { padding-left: 18px !important; padding-right: 18px !important; }
+      [style*="grid-template-columns: repeat(2"], [style*="grid-template-columns: repeat(3"], [style*="grid-template-columns: repeat(4"], [style*="grid-template-columns: 1fr 1fr"], [style*="grid-template-columns: minmax(0, 1fr) auto"] { grid-template-columns: minmax(0, 1fr) !important; }
+      img, svg, image-slot { max-width: 100%; }
+      [style*="height: 66px"] { height: 58px !important; padding-left: 16px !important; padding-right: 16px !important; gap: 12px !important; }
+      [style*="height: 66px"] svg[viewBox="0 0 200 140"] { width: 32px !important; height: 22px !important; }
+      [style*="height: 66px"] [style*="font-size: 15.5px"] { font-size: 11.5px !important; }
+      [style*="height: 66px"] [style*="font-size: 7.5px"] { font-size: 6.5px !important; }
+      [style*="height: 66px"] a[style*="font-size: 13.5px"] { font-size: 12.5px !important; }
+      [style*="height: 66px"] [style*="gap: 11px"] { gap: 8px !important; }
+    }
+  </style>
+</helmet>
+
+<div style="--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --paper: #F4F0E6; --paper2: #EFEAE0; --panel: #FBF9F4; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.05); --hair: rgba(23,20,15,0.08); --mute: #5C554C; --faint: #9A938A; --green: #1D6B45; --green-deep: #17583A; --green-bright: #2EA36B; --green-soft: #E4EFE7; --brass: #A9791C; --glass: saturate(160%) blur(22px); position: relative; font-family: var(--f); color: var(--ink); background-color: #E7E3DA; overflow-x: clip;">
+
+  <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.8); border-bottom: 1px solid var(--line);">
+    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: flex; align-items: center; gap: 14px;">
+      <a href="CurrencyDesk Site.dc.html" style="display: inline-flex; align-items: center; gap: 11px; color: var(--ink);">
+        <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
+        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+      </a>
+      <div style="flex: 1;"></div>
+      <a href="CurrencyDesk FAQ.dc.html" style="font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Questions</a>
+      <a href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-left: 14px;" style-hover="color: var(--green);">Back to site</a>
+    </div>
+  </div>
+
+  <div style="max-width: 760px; margin: 0 auto; padding: 84px 28px 0; text-align: center;">
+    <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Contact</div>
+    <h1 style="font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 5vw, 70px); line-height: 0.99; letter-spacing: -0.022em; margin: 16px 0 0; text-wrap: pretty;">Talk to the people building it.</h1>
+    <p style="font-size: 16.5px; line-height: 1.62; color: var(--mute); margin: 18px auto 0; max-width: 480px;">No ticket queue, no phone tree. Write what you need and you'll get a straight answer — usually the same day.</p>
+  </div>
+
+  <div style="max-width: 760px; margin: 0 auto; padding: 34px 28px 0;">
+    <div style="position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 34px 70px -40px rgba(23,20,15,0.4); overflow: hidden;">
+      <div style="{{ formStyle }}">
+        <div style="padding: 24px 30px 20px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+          <div style="font-family: var(--serif); font-size: 24px; line-height: 1.1; letter-spacing: -0.01em;">Send us a note</div>
+          <span style="display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 6px 11px; border-radius: 999px; background: var(--green-soft); font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-deep); font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 1.9s infinite;"></span>Replying today</span>
+        </div>
+
+        <div style="padding: 24px 30px 28px;">
+          <div style="position: relative; z-index: 5;">
+            <span style="display: block; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">What is this about?</span>
+            <button type="button" onClick="{{ onTopicToggle }}" style="{{ topicField }}">
+              <span style="width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--green-bright);"></span>
+              <span style="flex: 1; min-width: 0; text-align: left; font-size: 14px; font-weight: 600; color: var(--ink);">{{ topic }}</span>
+              <span style="{{ topicChev }}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"></path></svg></span>
+            </button>
+            <div style="{{ topicPanel }}">
+              <sc-for list="{{ topics }}" as="t" hint-placeholder-count="9">
+                <button type="button" onClick="{{ t.onClick }}" style="{{ t.style }}"><span style="{{ t.dot }}"></span>{{ t.name }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px;">
+            <label style="display: block;">
+              <span style="display: block; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Your name</span>
+              <input type="text" value="{{ vName }}" onInput="{{ onName }}" placeholder="Amir Rostami" style="width: 100%; margin-top: 7px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; color: var(--ink); outline: none;" style-focus="border-color: var(--green);">
+            </label>
+            <label style="display: block;">
+              <span style="display: block; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Shop name</span>
+              <input type="text" value="{{ vShop }}" onInput="{{ onShop }}" placeholder="Yorkville Currency" style="width: 100%; margin-top: 7px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; color: var(--ink); outline: none;" style-focus="border-color: var(--green);">
+            </label>
+            <label style="display: block;">
+              <span style="display: block; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Email</span>
+              <input type="email" value="{{ vEmail }}" onInput="{{ onEmail }}" placeholder="you@yourshop.com" style="width: 100%; margin-top: 7px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; color: var(--ink); outline: none;" style-focus="border-color: var(--green);">
+            </label>
+            <label style="display: block;">
+              <span style="display: block; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">City &amp; country</span>
+              <input type="text" value="{{ vCity }}" onInput="{{ onCity }}" placeholder="Toronto, Canada" style="width: 100%; margin-top: 7px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; color: var(--ink); outline: none;" style-focus="border-color: var(--green);">
+            </label>
+          </div>
+
+          <label style="display: block; margin-top: 14px;">
+            <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Your message<span style="letter-spacing: 0.06em; text-transform: none;">{{ countLabel }}</span></span>
+            <textarea rows="5" value="{{ vMsg }}" onInput="{{ onMsg }}" placeholder="Tell us about your shop — how many tellers, which currencies, what is breaking today." style="width: 100%; margin-top: 7px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; line-height: 1.55; color: var(--ink); outline: none; resize: vertical;" style-focus="border-color: var(--green);"></textarea>
+          </label>
+
+          <button type="button" onClick="{{ onSend }}" style="{{ sendStyle }}">{{ sendLabel }}<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+          <button type="button" onClick="{{ onNews }}" style="{{ newsRow }}">
+            <span style="{{ newsBox }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="{{ newsTick }}"><path d="M4 12.5l5 5L20 6.5"></path></svg></span>
+            <span style="flex: 1; min-width: 0; text-align: left;">
+              <span style="display: block; font-size: 13px; font-weight: 600; color: var(--ink);">Keep me posted</span>
+              <span style="display: block; font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 2px;">{{ newsNote }}</span>
+            </span>
+          </button>
+          <div style="font-family: var(--m); font-size: 10px; color: var(--faint); margin-top: 12px; text-align: center;">No follow-up sequence. Just a reply.</div>
+        </div>
+      </div>
+
+      <div style="{{ sentStyle }}">
+        <div style="padding: 56px 40px 60px; text-align: center;">
+          <div style="width: 62px; height: 62px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.2);">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1D6B45" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+          </div>
+          <div style="font-family: var(--serif); font-size: 30px; line-height: 1.1; letter-spacing: -0.015em; margin-top: 20px;">Message received.</div>
+          <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 12px auto 0; max-width: 340px;">We've got it. Expect a reply within one business day — keep the reference below if you need to follow up.</p>
+          <div style="display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-family: var(--m); font-size: 10.5px; color: var(--mute);">Reference<b style="color: var(--ink); font-weight: 600; letter-spacing: 0.06em;">{{ ref }}</b></div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 26px;">
+            <a href="CurrencyDesk Site.dc.html" style="padding: 12px 20px; border-radius: 11px; background: var(--green); color: #fff; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;" style-hover="background: var(--green-deep); color: #fff;">Back to site</a>
+            <button type="button" onClick="{{ onAgain }}" style="appearance: none; cursor: pointer; padding: 12px 20px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--ink);" style-hover="border-color: var(--green); color: var(--green);">Send another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;">
+      <div style="background: var(--panel); padding: 17px 20px;">
+        <div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Or email us</div>
+        <a href="mailto:hello@currencydeskos.com" style="display: block; font-size: 13.5px; font-weight: 600; margin-top: 6px; color: var(--ink);" style-hover="color: var(--green);">hello@currencydeskos.com</a>
+      </div>
+      <div style="background: var(--panel); padding: 17px 20px;">
+        <div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Compliance</div>
+        <a href="mailto:compliance@currencydeskos.com" style="display: block; font-size: 13.5px; font-weight: 600; margin-top: 6px; color: var(--ink);" style-hover="color: var(--green);">compliance@currencydeskos.com</a>
+      </div>
+    </div>
+
+    <p style="font-size: 12.5px; line-height: 1.6; color: var(--faint); margin: 16px auto 0; max-width: 480px; text-align: center;">Please don't send client identification, ID scans or transaction records by email. If you need to share records with us, ask and we'll open a secure channel.</p>
+  </div>
+
+  <div style="max-width: 760px; margin: 0 auto; padding: 44px 28px 0; text-align: center;">
+    <div style="padding-top: 26px; border-top: 1px solid var(--line); font-size: 14px; color: var(--mute);">Looking for an answer right now? <a href="CurrencyDesk FAQ.dc.html" style="color: var(--green); font-weight: 600; border-bottom: 1px solid rgba(29,107,69,0.32);" style-hover="color: var(--green-deep); border-bottom-color: var(--green);">Your questions, answered</a>.</div>
+  </div>
+
+  <div style="margin-top: 72px; border-top: 1px solid var(--line); background: rgba(255,255,255,0.5);">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 34px 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
+      <span style="font-family: var(--m); font-size: 10.5px; color: var(--faint);">currencydeskos.com · © 2026 CurrencyDesk</span>
+      <span style="display: inline-flex; align-items: center; gap: 20px;">
+        <a href="CurrencyDesk FAQ.dc.html" style="font-size: 13px; color: var(--mute);">Questions</a>
+        <a href="CurrencyDesk Compliance.dc.html" style="font-size: 13px; color: var(--mute);">Compliance details</a>
+        <a href="CurrencyDesk Legal.dc.html" style="font-size: 13px; color: var(--mute);">Privacy &amp; Terms</a><span style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);">On the record</span>
+      </span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  state = { topic: 'Early access', name: '', shop: '', email: '', city: '', msg: '', news: true, topicOpen: false, sent: false, ref: '' };
+
+  pick = (t) => () => this.setState({ topic: t, topicOpen: false });
+  onTopicToggle = () => this.setState(st => ({ topicOpen: !st.topicOpen }));
+  toggleNews = () => this.setState(st => ({ news: !st.news }));
+  set = (k) => (e) => { const v = e.target.value; this.setState({ [k]: v }); };
+  onSend = () => {
+    if (!this.ready()) return;
+    const n = Math.floor(1000 + Math.random() * 8999);
+    this.setState({ sent: true, ref: 'CD-' + n });
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
+  };
+  onAgain = () => this.setState({ sent: false, name: '', shop: '', email: '', city: '', msg: '', ref: '' });
+  ready() {
+    const s = this.state;
+    return s.name.trim().length > 1 && s.email.indexOf('@') > 0 && s.msg.trim().length > 9;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const ok = this.ready();
+    const topics = ['Early access', 'Book a walkthrough', 'Pricing', 'Compliance', 'Moving my records', 'Multiple locations', 'My country', 'Partnership', 'Something else'].map(name => {
+      const on = s.topic === name;
+      return {
+        name: name, onClick: this.pick(name),
+        style: 'appearance:none;cursor:pointer;font:inherit;display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 11px;border:0;border-radius:9px;font-size:13px;font-weight:' + (on ? '700' : '500') + ';background:' + (on ? 'var(--green-soft)' : 'transparent') + ';color:' + (on ? 'var(--green-deep)' : 'var(--mute)') + ';transition:background .2s ease,color .2s ease;',
+        dot: 'width:5px;height:5px;border-radius:50%;flex:none;background:' + (on ? 'var(--green-bright)' : 'rgba(23,20,15,0.18)') + ';transition:background .2s ease;'
+      };
+    });
+    return {
+      topics: topics,
+      vName: s.name, vShop: s.shop, vEmail: s.email, vCity: s.city, vMsg: s.msg,
+      onName: this.set('name'), onShop: this.set('shop'), onEmail: this.set('email'), onCity: this.set('city'), onMsg: this.set('msg'),
+      onSend: this.onSend, onAgain: this.onAgain,
+      ref: s.ref,
+      countLabel: s.msg.length > 0 ? (s.msg.length + ' characters') : 'A sentence is plenty',
+      sendLabel: ok ? 'Send message' : 'Fill in name, email and message',
+      sendStyle: 'appearance:none;font:inherit;width:100%;margin-top:20px;padding:15px;border:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--m);font-size:11.5px;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;transition:background .3s ease,opacity .3s ease;cursor:' + (ok ? 'pointer' : 'not-allowed') + ';background:' + (ok ? 'var(--green)' : 'rgba(23,20,15,0.09)') + ';color:' + (ok ? '#fff' : 'var(--faint)') + ';box-shadow:' + (ok ? '0 14px 30px -14px rgba(29,107,69,0.6)' : 'none') + ';',
+      topic: s.topic,
+      onTopicToggle: this.onTopicToggle,
+      topicField: 'appearance:none;font:inherit;cursor:pointer;width:100%;margin-top:7px;display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:10px;background:#fff;border:1px solid ' + (s.topicOpen ? 'var(--green)' : 'var(--line)') + ';transition:border-color .25s ease;',
+      topicChev: 'flex:none;display:grid;place-items:center;color:' + (s.topicOpen ? 'var(--green)' : 'var(--faint)') + ';transform:rotate(' + (s.topicOpen ? '180deg' : '0deg') + ');transition:transform .32s cubic-bezier(.2,.8,.2,1),color .25s ease;',
+      topicPanel: 'position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;display:' + (s.topicOpen ? 'grid' : 'none') + ';grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 22px 44px -22px rgba(23,20,15,0.45);animation:cdRiseIn .22s ease;',
+      onNews: this.toggleNews,
+      newsNote: s.news ? 'The occasional update on CurrencyDesk. Unsubscribe any time.' : 'You will only hear back about this message.',
+      newsRow: 'appearance:none;font:inherit;cursor:pointer;width:100%;margin-top:16px;display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border-radius:12px;text-align:left;border:1px solid ' + (s.news ? 'rgba(29,107,69,0.35)' : 'var(--line)') + ';background:' + (s.news ? 'var(--green-soft)' : '#fff') + ';transition:border-color .25s ease,background .25s ease;',
+      newsBox: 'flex:none;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;margin-top:1px;border:1px solid ' + (s.news ? 'var(--green)' : 'var(--line)') + ';background:' + (s.news ? 'var(--green)' : '#fff') + ';color:#fff;transition:border-color .25s ease,background .25s ease;',
+      newsTick: 'opacity:' + (s.news ? '1' : '0') + ';transition:opacity .2s ease;',
+      formStyle: s.sent ? 'display:none;' : 'display:block;',
+      sentStyle: s.sent ? 'display:block;animation:cdRiseIn .5s cubic-bezier(.2,.8,.2,1);' : 'display:none;'
+    };
+  }
+}
+</script>
+</body>
+</html>

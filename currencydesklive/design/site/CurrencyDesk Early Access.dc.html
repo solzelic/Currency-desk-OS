@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&amp;family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600&amp;display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body { background: #F1ECE1; font-family: 'Schibsted Grotesk', system-ui, sans-serif; color: #17140F; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+    a { color: #1D6B45; text-decoration: none; }
+    a:hover { color: #17140F; }
+    ::selection { background: #1D6B45; color: #F7F4ED; }
+    input { font-family: inherit; }
+    button { font-family: inherit; cursor: pointer; }
+    @keyframes cdCurtainOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; transform: scale(1.035); } }
+    @keyframes cdCurtainRule { 0% { width: 0; opacity: 0; } 100% { width: 188px; opacity: 1; } }
+    @keyframes cdCurtainUp { 0% { opacity: 0; transform: translateY(11px); } 100% { opacity: 1; transform: none; } }
+    @keyframes cdStamp { 0% { opacity: 0; transform: scale(2.15) rotate(-31deg); } 52% { opacity: 1; } 74% { transform: scale(0.945) rotate(-7deg); } 100% { opacity: 1; transform: scale(1) rotate(-9deg); } }
+    @keyframes cdStampRing { 0% { opacity: 0; transform: scale(0.86); } 14% { opacity: 0.55; } 100% { opacity: 0; transform: scale(2); } }
+    @keyframes cdCardIn { from { opacity: 0; transform: translateY(22px) scale(0.985); } to { opacity: 1; transform: none; } }
+    @keyframes cdRosette { to { transform: rotate(360deg); } }
+    @keyframes cdDrift { 0% { transform: translate(0,0); } 100% { transform: translate(40px,26px); } }
+    @keyframes cdFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-11px); } }
+    @keyframes cdReveal { 0% { opacity: 0; transform: perspective(1300px) rotateX(26deg) translateY(70px) scale(0.9); } 60% { opacity: 1; } 100% { opacity: 1; transform: perspective(1300px) rotateX(0deg) translateY(0) scale(1); } }
+    @keyframes cdSeal { 0% { opacity: 0; transform: rotate(-34deg) scale(1.9); } 60% { opacity: 1; } 100% { opacity: 1; transform: rotate(-9deg) scale(1); } }
+    @keyframes cdShimmer { 0% { transform: translateX(-170%) skewX(-16deg); } 55%,100% { transform: translateX(340%) skewX(-16deg); } }
+    @keyframes cdPulse { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.5); } 70% { box-shadow: 0 0 0 8px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
+    @keyframes cdToast { from { opacity: 0; transform: translate(-50%,12px); } to { opacity: 1; transform: translate(-50%,0); } }
+    @keyframes cdCaret { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    @keyframes cdIconIn { 0% { opacity: 0; transform: scale(0.6) rotate(-12deg); } 100% { opacity: 1; transform: scale(1) rotate(0deg); } }
+    @keyframes cdHalo { 0%,100% { opacity: 0.45; transform: scale(1); } 50% { opacity: 1; transform: scale(1.09); } }
+    @keyframes cdFill { from { width: 0; } to { width: 64%; } }
+    @keyframes cdUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes cdBar { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+    @keyframes cdBurst { 0% { opacity: 0; transform: scale(0.55); } 45% { opacity: 1; } 100% { opacity: 0.5; transform: scale(1); } }
+    @keyframes cdTickPop { 0% { transform: scale(1); } 40% { transform: scale(1.28); } 100% { transform: scale(1); } }
+    @keyframes cdTicketIn { 0% { opacity: 0; transform: perspective(1400px) rotateY(-40deg) rotateX(9deg) translateY(64px) scale(0.86); } 55% { opacity: 1; } 72% { transform: perspective(1400px) rotateY(6deg) rotateX(-2deg) translateY(0) scale(1.035); } 100% { opacity: 1; transform: perspective(1400px) rotateY(0deg) rotateX(0deg) translateY(0) scale(1); } }
+    @keyframes cdSpot { 0% { opacity: 0; transform: scale(0.7); } 100% { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; } }
+
+    @media (max-width: 720px) {
+      [style*="max-width: 1200px"], [style*="max-width: 1240px"], [style*="max-width: 1120px"], [style*="max-width: 1060px"], [style*="max-width: 900px"] { padding-left: 18px !important; padding-right: 18px !important; }
+      [style*="grid-template-columns: repeat(2"], [style*="grid-template-columns: repeat(3"], [style*="grid-template-columns: repeat(4"], [style*="grid-template-columns: 1fr 1fr"], [style*="grid-template-columns: minmax(0, 1fr) auto"] { grid-template-columns: minmax(0, 1fr) !important; }
+      img, svg, image-slot { max-width: 100%; }
+      [style*="min-height: 100vh"] { min-height: 0 !important; }
+    }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 100%; height: 100vh; overflow: hidden; display: flex; flex-direction: column;">
+
+  <!-- arrival curtain -->
+  <div data-curtain="true" aria-hidden="true" style="position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: radial-gradient(120% 90% at 50% 30%, #FBF8F1 0%, #F1ECE1 56%, #E7E1D4 100%); animation: cdCurtainOut 760ms cubic-bezier(0.7,0,0.3,1) 1180ms forwards;">
+    <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+      <div style="opacity: 0; animation: cdCurtainUp 620ms cubic-bezier(0.2,0.8,0.2,1) 90ms forwards;">
+        <svg viewBox="0 0 200 140" width="52" height="36"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#F1ECE1"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
+      </div>
+      <div style="height: 1px; width: 0; margin: 20px 0; background: linear-gradient(90deg, transparent, rgba(23,20,15,0.3), transparent); animation: cdCurtainRule 720ms cubic-bezier(0.2,0.8,0.2,1) 380ms forwards;"></div>
+      <div style="opacity: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: #6E6656; animation: cdCurtainUp 560ms ease-out 560ms forwards;">Opening the register</div>
+      <div style="position: relative; margin-top: 30px; width: 82px; height: 82px;">
+        <div style="position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid #1D6B45; opacity: 0; animation: cdStampRing 900ms ease-out 940ms forwards;"></div>
+        <div style="position: absolute; inset: 0; opacity: 0; animation: cdStamp 680ms cubic-bezier(0.25,1.4,0.4,1) 880ms forwards;">
+          <svg viewBox="0 0 100 100" width="82" height="82">
+            <circle cx="50" cy="50" r="48" fill="none" stroke="#1D6B45" stroke-width="1.4"></circle>
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#A9791C" stroke-width="0.7" stroke-dasharray="1.6 2.6"></circle>
+            <text x="50" y="42" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="7" font-weight="600" letter-spacing="1.4" fill="#1D6B45">EARLY</text>
+            <text x="50" y="53" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="7" font-weight="600" letter-spacing="1.4" fill="#1D6B45">ACCESS</text>
+            <line x1="30" y1="60" x2="70" y2="60" stroke="#A9791C" stroke-width="0.8"></line>
+            <text x="50" y="70" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="5.4" letter-spacing="1" fill="#A9791C">MMXXVI</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- base + evolving wash + texture -->
+  <div aria-hidden="true" style="position: fixed; inset: 0; background: radial-gradient(120% 90% at 50% -10%, #FBF8F1 0%, #F1ECE1 52%, #E7E1D4 100%);"></div>
+  <div aria-hidden="true" style="position: fixed; inset: 0; background: {{ washColor }}; transition: background 1.1s cubic-bezier(0.4,0,0.2,1);"></div>
+  <div aria-hidden="true" style="position: fixed; inset: 0; background-image: radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.7px); background-size: 26px 26px; opacity: 0.55;"></div>
+  <div aria-hidden="true" style="position: fixed; top: 50%; left: 50%; width: 1200px; height: 1200px; margin: -600px 0 0 -600px; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(29,107,69,0.05) 0 1.5px, transparent 1.5px 13px); opacity: 0.5; animation: cdRosette 150s linear infinite;"></div>
+  <div aria-hidden="true" style="position: fixed; bottom: -180px; right: -140px; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgba(169,121,28,0.14), transparent 66%); filter: blur(30px); animation: cdDrift 30s ease-in-out infinite alternate;"></div>
+
+  <!-- finale dark showcase -->
+  <div aria-hidden="true" style="position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: {{ darkOn }}; transition: opacity 0.85s cubic-bezier(0.4,0,0.2,1); background: radial-gradient(120% 100% at 50% 40%, #191308 0%, #0C0A06 58%, #040302 100%);"></div>
+
+  <!-- top bar -->
+  <div style="position: relative; flex: none; z-index: 5; display: flex; align-items: center; gap: 16px; padding: 16px 34px;">
+    <a href="CurrencyDesk Site.dc.html" title="Back to the main site" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: {{ headText }}; transition: color 0.5s ease, opacity 0.2s ease;" style-hover="opacity: 0.6;">
+      <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="{{ markMain }}"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="{{ markMain }}"></path><rect x="60" y="64.5" width="92" height="11" fill="{{ markGap }}"></rect><circle cx="112" cy="70" r="6.5" fill="#2EA36B"></circle></svg>
+      <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+    </a>
+    <div style="flex: 1;"></div>
+    <a href="#" style="font-size: 13.5px; font-weight: 700; color: {{ headText }}; transition: color 0.5s ease;">Sign in</a>
+  </div>
+
+  <!-- stage -->
+  <div style="position: relative; flex: 1 1 auto; min-height: 0; z-index: 3; display: flex;">
+   <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: safe center; align-items: center; padding: 18px 24px; box-sizing: border-box; overflow-y: auto;">
+
+    <!-- ============ FORM ============ -->
+    <sc-if value="{{ isForm }}" hint-placeholder-val="{{ true }}">
+    <div style="width: 100%; max-width: 540px;">
+      <div style="position: relative; background: linear-gradient(180deg, #FCFAF5, #F6F1E7); border: 1px solid #17140F; border-radius: 22px; box-shadow: 0 40px 90px -46px rgba(23,20,15,0.55), inset 0 1px 0 rgba(255,255,255,0.7); padding: 40px 40px 34px; overflow: hidden;">
+        <div aria-hidden="true" style="position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, #1D6B45, #A9791C, #C2452D, #1D6B45); background-size: 200% 100%; animation: cdBar 9s linear infinite;"></div>
+        <div aria-hidden="true" style="position: absolute; top: -130px; right: -120px; width: 340px; height: 340px; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(29,107,69,0.06) 0 1.5px, transparent 1.5px 11px); opacity: 0.75; animation: cdRosette 70s linear infinite;"></div>
+        <div aria-hidden="true" style="position: absolute; bottom: -150px; left: -110px; width: 320px; height: 320px; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(169,121,28,0.05) 0 1.5px, transparent 1.5px 12px); opacity: 0.6; animation: cdRosette 110s linear infinite reverse;"></div>
+
+        <!-- step 0 · email -->
+        <sc-if value="{{ s0 }}" hint-placeholder-val="{{ true }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+            <div style="position: relative; width: 56px; height: 56px; flex: none;">
+              <div aria-hidden="true" style="position: absolute; inset: -7px; border-radius: 21px; background: radial-gradient(circle, rgba(46,163,107,0.28), transparent 70%); animation: cdHalo 3.4s ease-in-out infinite;"></div>
+              <div style="position: relative; width: 56px; height: 56px; border-radius: 16px; background: #17140F; display: grid; place-items: center; overflow: hidden; box-shadow: 0 12px 26px -10px rgba(23,20,15,0.6); animation: cdIconIn 0.75s cubic-bezier(0.2,0.9,0.3,1) both, cdFloat 6s ease-in-out 0.9s infinite;">
+                <svg viewBox="0 0 200 140" width="36" height="25"><circle cx="60" cy="70" r="48" fill="#F1ECE1"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#F1ECE1"></path><rect x="60" y="64.5" width="92" height="11" fill="#17140F"></rect><circle cx="112" cy="70" r="6.5" fill="#2EA36B"></circle></svg>
+                <div aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden;"><div style="position: absolute; top: 0; bottom: 0; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.24), transparent); animation: cdShimmer 4.6s ease-in-out 1.5s infinite;"></div></div>
+              </div>
+            </div>
+            <div style="text-align: right; padding-top: 3px;">
+              <div style="display: inline-flex; align-items: center; gap: 7px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.13em; color: #17583A; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2EA36B; animation: cdPulse 2s infinite;"></span>COHORT Nº 001 · CANADA</div>
+              <div style="width: 176px; margin: 10px 0 0 auto; height: 5px; border-radius: 3px; background: #E7DFCF; overflow: hidden;"><div style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill 1.7s cubic-bezier(0.3,0.9,0.3,1) 0.5s both;"></div></div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #9C948A; margin-top: 6px;">64 / 100 desks claimed</div>
+            </div>
+          </div>
+          <h1 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 42px; line-height: 1.02; letter-spacing: -0.01em; margin: 24px 0 0; animation: cdUp 0.6s ease 0.15s both;">Run the whole exchange<br>on one desk.</h1>
+          <p style="font-size: 15px; line-height: 1.55; color: #6B6459; margin: 14px 0 0; animation: cdUp 0.6s ease 0.25s both;">We're opening the desk to a first cohort of serious operators. Apply in ninety seconds — we'll reserve your workspace on the spot.</p>
+          <div style="margin-top: 26px; animation: cdUp 0.6s ease 0.35s both;">
+            <label style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #9C948A; font-weight: 600;">WORK EMAIL</label>
+            <input ref="{{ ref0 }}" value="{{ email }}" onInput="{{ onEmail }}" onKeyDown="{{ onKey }}" placeholder="you@yourexchange.com" type="email" style="width: 100%; box-sizing: border-box; margin-top: 8px; padding: 15px 18px; font-size: 16.5px; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none;" style-focus="border-color: #1D6B45; box-shadow: 0 0 0 4px rgba(29,107,69,0.13);">
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- step 1 · domain -->
+        <sc-if value="{{ s1 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(29,107,69,0.1); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1D6B45" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">What are you running today?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">Share your site and we'll study your setup before we talk — so day one, we already speak your business.</p>
+          <div style="margin-top: 22px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; padding: 0 16px;" style-focus="border-color:#1D6B45;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: #9C948A;">https://</span>
+            <input ref="{{ ref1 }}" value="{{ domain }}" onInput="{{ onDomain }}" onKeyDown="{{ onKey }}" placeholder="yourexchange.com" style="flex: 1; padding: 15px 6px; font-size: 16.5px; color: #17140F; background: transparent; border: none; outline: none;">
+          </div>
+          <button type="button" onClick="{{ skipWebsite }}" style="margin-top: 16px; background: none; border: none; padding: 0; font-family: 'Schibsted Grotesk', sans-serif; font-size: 13.5px; font-weight: 600; color: #6B6459; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: color 0.2s ease;" style-hover="color: #17140F;">I don't have a website yet<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 2px;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+        </div>
+        </sc-if>
+
+        <!-- step 2 · reserve workspace -->
+        <sc-if value="{{ s2 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(169,121,28,0.14); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#A9791C" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M8 4v16"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">Reserve your desk.</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">This becomes your private home on CurrencyDesk. It's yours the moment you apply.</p>
+          <div style="margin-top: 22px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; overflow: hidden;" style-focus="border-color:#A9791C;">
+            <input ref="{{ ref2 }}" value="{{ workspace }}" onInput="{{ onWorkspace }}" onKeyDown="{{ onKey }}" placeholder="yourshop" style="flex: 1; min-width: 0; padding: 15px 18px; font-size: 16.5px; font-weight: 600; color: #17140F; background: transparent; border: none; outline: none;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #6B6459; background: #EFE8DA; padding: 15px 16px; white-space: nowrap;">.currencydeskos.com</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #17583A;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #2EA36B; animation: cdPulse 2s infinite;"></span>{{ workspaceFull }} is available</div>
+        </div>
+        </sc-if>
+
+        <!-- step 3 · volume + branches -->
+        <sc-if value="{{ s3 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(29,107,69,0.1); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1D6B45" stroke-width="1.8"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">How much do you move a month?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">Ballpark is perfect — it shapes how we build your desk from day one.</p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
+            <sc-for list="{{ volumeOpts }}" as="opt" hint-placeholder-count="4">
+              <button type="button" onClick="{{ opt.onClick }}" style="{{ opt.style }}"><span style="font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">{{ opt.label }}</span><span style="{{ opt.subStyle }}">{{ opt.sub }}</span></button>
+            </sc-for>
+          </div>
+          <div style="height: 1px; background: #E4DCCD; margin: 22px 0 16px;"></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #9C948A; font-weight: 600;">LOCATIONS</span>
+            <div style="display: flex; background: #F1EADD; border: 1px solid #E0D8C9; border-radius: 11px; padding: 3px; gap: 3px;">
+              <sc-for list="{{ branchOpts }}" as="opt" hint-placeholder-count="2">
+                <button type="button" onClick="{{ opt.onClick }}" style="{{ opt.style }}">{{ opt.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- step 4 · compliance today -->
+        <sc-if value="{{ s4 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(194,69,45,0.1); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#C2452D" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"></path><path d="M9 12l2 2 4-4"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">How do you run compliance today?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">No wrong answer. It tells us what to migrate you off — and how fast.</p>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
+            <sc-for list="{{ stackOpts }}" as="opt" hint-placeholder-count="5">
+              <button type="button" onClick="{{ opt.onClick }}" style="{{ opt.style }}"><span>{{ opt.label }}</span><span style="{{ opt.tick }}">✓</span></button>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- step 5 · timeline -->
+        <sc-if value="{{ s5 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(90,63,128,0.13); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#5A3F80" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 2"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">When do you want to be live?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">Be honest — it just tells us how hard to lean in for you.</p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
+            <sc-for list="{{ timelineOpts }}" as="opt" hint-placeholder-count="4">
+              <button type="button" onClick="{{ opt.onClick }}" style="{{ opt.style }}"><span style="font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">{{ opt.label }}</span><span style="{{ opt.subStyle }}">{{ opt.sub }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- step 6 · name -->
+        <sc-if value="{{ s6 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(29,107,69,0.1); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1D6B45" stroke-width="1.8"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">Who's running the desk?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">Last thing — your name goes on your Founding Operator card.</p>
+          <div style="margin-top: 20px;">
+            <input ref="{{ ref6 }}" value="{{ name }}" onInput="{{ onName }}" onKeyDown="{{ onKey }}" placeholder="Your name" style="width: 100%; box-sizing: border-box; padding: 15px 18px; font-size: 16.5px; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none;" style-focus="border-color: #1D6B45; box-shadow: 0 0 0 4px rgba(29,107,69,0.13);">
+          </div>
+          <div style="margin: 18px 0 0; display: flex; align-items: center; gap: 10px;">
+            <div style="height: 1px; flex: 1; background: #E7DFCF;"></div>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.14em; color: #B3AA9C;">A COUPLE QUICK DETAILS</span>
+            <div style="height: 1px; flex: 1; background: #E7DFCF;"></div>
+          </div>
+          <div style="position: relative; margin-top: 14px;">
+            <select value="{{ role }}" onChange="{{ onRole }}" style="width: 100%; box-sizing: border-box; padding: 13px 38px 13px 16px; font-size: 15px; font-family: 'Schibsted Grotesk', sans-serif; color: #17140F; background: #FBF8F1; border: 1px solid #E4DCCD; border-radius: 12px; outline: none; appearance: none; -webkit-appearance: none; cursor: pointer;" style-focus="border-color: #1D6B45; background: #FFFDF8;">
+              <option value="" disabled>Which best describes your role?</option>
+              <option value="Owner / Founder">Owner / Founder</option>
+              <option value="General Manager">General Manager</option>
+              <option value="Operations lead">Operations lead</option>
+              <option value="Compliance officer">Compliance officer</option>
+              <option value="Teller / Front desk">Teller / Front desk</option>
+              <option value="Other">Other</option>
+            </select>
+            <span aria-hidden="true" style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #6B6459; display: flex;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg></span>
+          </div>
+          <div style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #9C948A; font-weight: 600;">TEAM SIZE</span>
+            <div style="display: flex; flex: 1; max-width: 320px; background: #F1EADD; border: 1px solid #E0D8C9; border-radius: 11px; padding: 3px; gap: 3px;">
+              <sc-for list="{{ employeeOpts }}" as="opt" hint-placeholder-count="4">
+                <button type="button" onClick="{{ opt.onClick }}" style="{{ opt.style }}">{{ opt.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- action button -->
+        <button type="button" onClick="{{ next }}" style="{{ nextStyle }}" style-active="transform: translateY(1px);">{{ nextLabel }}<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 9px;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+
+        <div style="display: flex; align-items: center; justify-content: center; margin-top: 18px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em; color: #9C948A;">
+          <span>{{ stepCount }}</span>
+        </div>
+        <p style="text-align: center; font-size: 11.5px; line-height: 1.55; color: #9C948A; margin: 14px auto 0; max-width: 380px;">By applying you agree to our <a href="CurrencyDesk Legal.dc.html#terms" style="color: #1D6B45; font-weight: 600;">Terms</a> and <a href="CurrencyDesk Legal.dc.html#privacy" style="color: #1D6B45; font-weight: 600;">Privacy Policy</a>. No card required, and we never sell your data.</p>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ FOUNDING OPERATOR TICKET ============ -->
+    <sc-if value="{{ s7 }}">
+    <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 8px 0 4px;">
+      <div aria-hidden="true" style="position: absolute; top: 118px; left: 50%; width: 560px; height: 560px; margin-left: -280px; border-radius: 50%; background: radial-gradient(circle, rgba(233,200,120,0.3), rgba(46,163,107,0.08) 46%, transparent 66%); filter: blur(26px); animation: cdSpot 1.1s ease-out 0.2s both; pointer-events: none;"></div>
+
+      <div style="animation: cdTicketIn 1.15s cubic-bezier(0.16,0.9,0.28,1) both;">
+        <div style="animation: cdFloat 6.5s ease-in-out 1.2s infinite;">
+          <div style="filter: drop-shadow(0 42px 60px rgba(0,0,0,0.6));">
+            <div ref="{{ cardRef }}" onMouseMove="{{ onCardMove }}" onMouseLeave="{{ onCardLeave }}" style="{{ cardStyle }}">
+            <div style="position: absolute; inset: 0;">
+
+              <div aria-hidden="true" style="position: absolute; inset: 0; border-radius: 20px; background: repeating-radial-gradient(circle at 50% 30%, rgba(58,42,8,0.09) 0 1px, transparent 1px 9px); opacity: 0.7;"></div>
+              <div aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; border-radius: 20px;"><div style="position: absolute; top: 0; bottom: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); animation: cdShimmer 5s ease-in-out 1.2s infinite;"></div></div>
+
+              <!-- tear notches + perforation -->
+              <div aria-hidden="true" style="position: absolute; left: -9px; top: 66%; width: 18px; height: 18px; border-radius: 50%; background: #0C0A06;"></div>
+              <div aria-hidden="true" style="position: absolute; right: -9px; top: 66%; width: 18px; height: 18px; border-radius: 50%; background: #0C0A06;"></div>
+              <div aria-hidden="true" style="position: absolute; left: 14px; right: 14px; top: 66%; margin-top: 8px; height: 0; border-top: 1.5px dashed rgba(58,42,8,0.4);"></div>
+
+              <!-- seal -->
+              <div style="position: absolute; top: -17px; right: -15px; transform: rotate(10deg); z-index: 3; animation: cdSeal 0.7s cubic-bezier(0.2,0.9,0.3,1) 0.8s both;">
+                <div style="width: 66px; height: 66px; border-radius: 50%; background: #17583A; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-shadow: 0 8px 18px -6px rgba(0,0,0,0.6), 0 0 0 3px #E9C877, inset 0 1px 0 rgba(255,255,255,0.3);">
+                  <span style="font-family: 'Instrument Serif', serif; font-size: 20px; line-height: 0.95; color: #F4E7C4; animation: cdTickPop 0.14s ease;">{{ memberNo }}</span>
+                  <span style="font-family: 'IBM Plex Mono', monospace; font-size: 6.5px; letter-spacing: 0.18em; color: rgba(244,231,196,0.85);">CHARTER</span>
+                </div>
+              </div>
+
+              <!-- main -->
+              <div style="position: relative; z-index: 2; padding: 40px 24px 0; display: flex; flex-direction: column; align-items: center;">
+                <div style="font-family: 'Instrument Serif', serif; font-style: italic; font-size: 27px; line-height: 1.02; color: #2E2107; text-align: center;">{{ cardName }}</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.24em; color: rgba(46,33,7,0.72); margin-top: 7px;">· FOUNDING OPERATOR ·</div>
+                <div style="position: relative; width: 92px; height: 92px; margin: 20px 0 18px; display: grid; place-items: center;">
+                  <div aria-hidden="true" style="position: absolute; inset: 0; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(58,42,8,0.14) 0 1px, transparent 1px 6px);"></div>
+                  <svg viewBox="0 0 200 140" width="70" height="49" style="filter: drop-shadow(0 1px 0 rgba(255,255,255,0.4));"><circle cx="60" cy="70" r="48" fill="#2E2107"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#2E2107"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7C06B"></rect><circle cx="112" cy="70" r="6.5" fill="#17583A"></circle></svg>
+                </div>
+              </div>
+
+              <!-- stub -->
+              <div style="position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 0 22px 20px; box-sizing: border-box;">
+                <div aria-hidden="true" style="height: 22px; margin-bottom: 12px; background: repeating-linear-gradient(90deg, rgba(46,33,7,0.82) 0 1.5px, transparent 1.5px 4px); opacity: 0.5; border-radius: 1px;"></div>
+                <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+                  <div style="text-align: left;">
+                    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 7px; letter-spacing: 0.14em; color: rgba(46,33,7,0.7);">ON THE RECORD SINCE</div>
+                    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2E2107; margin-top: 3px;">{{ joinDate }}</div>
+                    <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; color: rgba(46,33,7,0.82); margin-top: 6px;">{{ workspaceFull }}</div>
+                  </div>
+                  <div style="font-family: 'IBM Plex Mono', monospace; font-size: 8px; font-weight: 600; letter-spacing: 0.1em; color: #2E2107; text-align: right; line-height: 1.5;">{{ jurLabel }}<br>{{ memberNo }}</div>
+                </div>
+              </div>
+            </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; animation: cdUp 0.6s ease 0.9s both;">
+        <div style="font-family: 'Instrument Serif', serif; font-size: 26px; line-height: 1.1; color: #FCFAF5;">You're next in line.</div>
+        <div style="font-size: 13px; color: rgba(252,250,245,0.66); margin-top: 6px; max-width: 460px;">Your Founding Operator invite will be sent out shortly.</div>
+      </div>
+
+      <div style="width: 100%; max-width: 440px; display: flex; align-items: center; justify-content: center; gap: 10px; animation: cdUp 0.6s ease 1.05s both;">
+        <button type="button" onClick="{{ download }}" style="display: inline-flex; align-items: center; gap: 9px; height: 44px; padding: 0 20px; flex: none; background: linear-gradient(135deg, #F4D98A, #C99A34); color: #2E2107; border: none; border-radius: 999px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.05em; font-weight: 600; box-shadow: 0 12px 26px -10px rgba(233,200,120,0.6);" style-active="transform: translateY(1px);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"></path></svg>Download certificate</button>
+        <button type="button" onClick="{{ share }}" title="Share" style="width: 44px; height: 44px; flex: none; display: grid; place-items: center; background: rgba(252,250,245,0.08); color: #FCFAF5; border: 1px solid rgba(252,250,245,0.28); border-radius: 50%; transition: background 0.2s ease;" style-hover="background: rgba(252,250,245,0.16);" style-active="transform: translateY(1px);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"></path></svg></button>
+        <a href="CurrencyDesk Site.dc.html" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; flex: none; background: rgba(252,250,245,0.08); color: rgba(252,250,245,0.86); border: 1px solid rgba(252,250,245,0.28); border-radius: 999px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; transition: background 0.2s ease, color 0.2s ease;" style-hover="background: rgba(252,250,245,0.16); color: #FCFAF5;" style-active="transform: translateY(1px);">Back to the site<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+      </div>
+    </div>
+    </sc-if>
+   </div>
+  </div>
+
+  <!-- bottom pager (form only) -->
+  <sc-if value="{{ isForm }}" hint-placeholder-val="{{ true }}">
+  <div style="position: relative; flex: none; z-index: 5; margin: 0 auto 24px; display: flex; align-items: center; gap: 16px;">
+    <button type="button" onClick="{{ back }}" style="{{ backStyle }}"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></button>
+    <div style="display: flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.6); border: 1px solid #E0D8C9; border-radius: 999px; padding: 9px 15px;">
+      <sc-for list="{{ pager }}" as="dot" hint-placeholder-count="7">
+        <span style="{{ dot.style }}"></span>
+      </sc-for>
+    </div>
+    <button type="button" onClick="{{ next }}" style="{{ fwdStyle }}"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+  </div>
+  </sc-if>
+
+  <!-- toast -->
+  <sc-if value="{{ hasToast }}">
+  <div style="position: fixed; bottom: 32px; left: 50%; z-index: 20; background: #17140F; color: #F1ECE1; padding: 12px 20px; border-radius: 12px; font-size: 13.5px; font-weight: 500; box-shadow: 0 20px 44px -20px rgba(0,0,0,0.6); animation: cdToast 0.35s ease both;">{{ toast }}</div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      step: 0, email: '', domain: '', workspace: '', volume: null,
+      branches: 'single', stack: null, timeline: null, name: '', role: '', employees: null, jur: 'CA', seed: 0, toast: '', noWebsite: false, memberCount: 42
+    };
+    this.ref0 = React.createRef();
+    this.ref1 = React.createRef();
+    this.ref2 = React.createRef();
+    this.ref6 = React.createRef();
+    this.cardRef = React.createRef();
+    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'ref2', 6: 'ref6' };
+    this.themes = [
+      { rarity: 'CHARTER', pct: '1 OF 500', c1: '#1D6B45', c2: '#8A5E12', seal: '#F1ECE1', sealText: '#17583A' },
+      { rarity: 'SUPER RARE', pct: 'TOP 3%', c1: '#0F4A30', c2: '#2EA36B', seal: '#F1ECE1', sealText: '#0F4A30' },
+      { rarity: 'RARE', pct: 'TOP 12%', c1: '#8A5E12', c2: '#E0A15C', seal: '#17140F', sealText: '#8A5E12' },
+      { rarity: 'HERITAGE', pct: 'TOP 30%', c1: '#5A3F80', c2: '#2EA36B', seal: '#F1ECE1', sealText: '#5A3F80' },
+      { rarity: 'FOUNDING', pct: 'Nº 0007', c1: '#17583A', c2: '#A9791C', seal: '#F1ECE1', sealText: '#17583A' }
+    ];
+  }
+
+  set = (k) => (e) => this.setState({ [k]: e.target.value });
+  pick = (k, v) => () => this.setState({ [k]: v });
+  setJur = (j) => () => this.setState({ jur: j });
+  skipWebsite = () => this.setState((s) => ({ noWebsite: true, domain: '', step: Math.min(s.step + 1, 7) }));
+
+  canNext() {
+    const s = this.state;
+    switch (s.step) {
+      case 0: return /.+@.+\..+/.test(s.email);
+      case 1: return s.noWebsite || s.domain.trim().length > 2;
+      case 2: return s.workspace.trim().length > 1;
+      case 3: return !!s.volume;
+      case 4: return !!s.stack;
+      case 5: return !!s.timeline;
+      case 6: return s.name.trim().length > 1 && !!s.role && !!s.employees;
+      default: return true;
+    }
+  }
+
+  next = () => {
+    if (this.state.step < 7 && !this.canNext()) {
+      const rk = this._refByStep[this.state.step];
+      if (rk && this[rk].current) this[rk].current.focus();
+      return;
+    }
+    this.setState((s) => ({ step: Math.min(s.step + 1, 7) }));
+  };
+  back = () => this.setState((s) => ({ step: Math.max(s.step - 1, 0) }));
+  onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.next(); } };
+  shuffle = () => this.setState((s) => ({ seed: s.seed + 1 }));
+  startMemberCount = () => {
+    clearInterval(this._mc);
+    const target = this._target || (this._target = 38 + Math.floor(Math.random() * 27));
+    const from = Math.max(1, target - 6);
+    this.setState({ memberCount: from });
+    this._mc = setInterval(() => {
+      this.setState((s) => {
+        if (s.memberCount >= target) { clearInterval(this._mc); return null; }
+        return { memberCount: s.memberCount + 1 };
+      });
+    }, 150);
+  };
+
+  flashToast(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._tt);
+    this._tt = setTimeout(() => this.setState({ toast: '' }), 2600);
+  }
+    download = async () => {
+    try {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      const W = 1240, H = 1754, c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const x = c.getContext('2d');
+      const cx = W / 2;
+      const no = 'Nº ' + String(this.state.memberCount).padStart(4, '0');
+      const name = (this.state.name.trim() || 'Founding Operator');
+      const ws = this._workspaceFull();
+
+      x.fillStyle = '#FBF7EC'; x.fillRect(0, 0, W, H);
+      for (let i = 0; i < 34000; i++) { x.fillStyle = 'rgba(23,20,15,' + (Math.random() * 0.022) + ')'; x.fillRect(Math.random() * W, Math.random() * H, 1.6, 1.6); }
+      x.strokeStyle = '#17583A'; x.lineWidth = 5; x.strokeRect(56, 56, W - 112, H - 112);
+      x.strokeStyle = 'rgba(169,121,28,0.62)'; x.lineWidth = 1.6; x.strokeRect(76, 76, W - 152, H - 152);
+
+      x.textAlign = 'center';
+      x.fillStyle = '#17140F'; x.font = '800 44px "Schibsted Grotesk", sans-serif';
+      x.save(); x.translate(cx, 208);
+      const wm = 'CURRENCYDESK'; let tw = 0;
+      for (const ch of wm) tw += x.measureText(ch).width + 5;
+      let cxp = -tw / 2;
+      for (const ch of wm) { x.fillText(ch, cxp + x.measureText(ch).width / 2, 0); cxp += x.measureText(ch).width + 5; }
+      x.restore();
+      x.fillStyle = '#1D6B45'; x.font = '600 20px "IBM Plex Mono", monospace';
+      x.fillText('O S', cx, 246);
+
+      x.strokeStyle = 'rgba(23,20,15,0.16)'; x.lineWidth = 1.4;
+      x.beginPath(); x.moveTo(210, 300); x.lineTo(W - 210, 300); x.stroke();
+
+      x.fillStyle = '#A9791C'; x.font = '600 22px "IBM Plex Mono", monospace';
+      x.fillText('C E R T I F I C A T E   O F   E A R L Y   A C C E S S', cx, 372);
+
+      x.fillStyle = '#5C554C'; x.font = '28px "Schibsted Grotesk", sans-serif';
+      x.fillText('This certifies that', cx, 470);
+      x.fillStyle = '#17140F'; x.font = 'italic 96px "Instrument Serif", serif';
+      x.fillText(name, cx, 580);
+      x.fillStyle = '#5C554C'; x.font = '28px "Schibsted Grotesk", sans-serif';
+      x.fillText('is among the first one hundred operators', cx, 648);
+      x.fillText('to run their counter on CurrencyDesk.', cx, 692);
+
+      const sy = 900, R = 132;
+      const g = x.createRadialGradient(cx - 40, sy - 46, 12, cx, sy, R);
+      g.addColorStop(0, '#2EA36B'); g.addColorStop(0.5, '#1D6B45'); g.addColorStop(1, '#12482F');
+      x.beginPath(); x.arc(cx, sy, R, 0, Math.PI * 2); x.fillStyle = g; x.fill();
+      x.lineWidth = 7; x.strokeStyle = '#E9C877'; x.stroke();
+      x.beginPath(); x.arc(cx, sy, R - 22, 0, Math.PI * 2);
+      x.setLineDash([5, 8]); x.lineWidth = 2; x.strokeStyle = 'rgba(246,235,208,0.68)'; x.stroke(); x.setLineDash([]);
+      x.fillStyle = '#F6EBD0'; x.font = 'italic 74px "Instrument Serif", serif';
+      x.fillText(no, cx, sy + 12);
+      x.font = '600 17px "IBM Plex Mono", monospace'; x.fillStyle = 'rgba(246,235,208,0.86)';
+      x.fillText('O F   1 0 0', cx, sy + 56);
+
+      x.fillStyle = '#5C554C'; x.font = '600 20px "IBM Plex Mono", monospace';
+      x.fillText('P L A C E   I N   L I N E', cx, sy + 190);
+
+      const by = 1330, cw = 300;
+      const cols = [['ON THE RECORD SINCE', this._joinDate()], ['WORKSPACE', ws], ['JURISDICTION', this._jurName()]];
+      cols.forEach((col, i) => {
+        const px = cx + (i - 1) * cw;
+        x.strokeStyle = 'rgba(23,20,15,0.14)'; x.lineWidth = 1.2;
+        x.beginPath(); x.moveTo(px - cw / 2 + 26, by - 44); x.lineTo(px + cw / 2 - 26, by - 44); x.stroke();
+        x.fillStyle = '#9A938A'; x.font = '600 15px "IBM Plex Mono", monospace';
+        x.fillText(col[0], px, by);
+        x.fillStyle = '#17140F'; x.font = '600 24px "IBM Plex Mono", monospace';
+        const val = col[1].length > 20 ? col[1].slice(0, 19) + '…' : col[1];
+        x.fillText(val, px, by + 40);
+      });
+
+      x.fillStyle = '#17140F'; x.font = 'italic 46px "Instrument Serif", serif';
+      x.fillText('Founding rate, held for life.', cx, 1552);
+      x.fillStyle = '#9A938A'; x.font = '600 17px "IBM Plex Mono", monospace';
+      x.fillText('C U R R E N C Y D E S K O S . C O M   ·   O N   T H E   R E C O R D', cx, 1622);
+
+      const a = document.createElement('a');
+      a.download = 'CurrencyDesk-Founding-Operator-' + String(this.state.memberCount).padStart(4, '0') + '.png';
+      a.href = c.toDataURL('image/png');
+      a.click();
+      this.flashToast('Certificate ' + no + ' downloaded.');
+    } catch (err) { this.flashToast('Could not build the certificate — try again.'); }
+  };
+  share = () => {
+    const url = 'https://' + this._workspaceFull();
+    if (navigator.share) { navigator.share({ title: 'CurrencyDesk OS', text: 'My Founding Operator desk', url: url }).catch(() => {}); }
+    else { try { navigator.clipboard && navigator.clipboard.writeText(url); } catch (e) {} this.flashToast('Link copied — ' + this._workspaceFull()); }
+  };
+
+  onCardMove = (e) => {
+    const el = this.cardRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = 'rotateY(' + (px * 12).toFixed(2) + 'deg) rotateX(' + (-py * 12).toFixed(2) + 'deg)';
+  };
+  onCardLeave = () => { const el = this.cardRef.current; if (el) el.style.transform = 'rotateY(0deg) rotateX(0deg)'; };
+
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.step !== this.state.step) {
+      if (this.state.step === 2 && !this.state.workspace && this.state.domain) {
+        const guess = this.state.domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('.')[0].replace(/[^a-z0-9-]/g, '');
+        if (guess) this.setState({ workspace: guess });
+      }
+      const rk = this._refByStep[this.state.step];
+      if (rk && this[rk] && this[rk].current) {
+        const el = this[rk].current;
+        setTimeout(() => { try { el.focus(); } catch (e) {} }, 60);
+      }
+      if (this.state.step === 7) { setTimeout(() => this.startMemberCount(), 800); }
+    }
+  }
+  componentDidMount() {
+    setTimeout(() => { if (this.ref0.current) this.ref0.current.focus(); }, 1500);
+    const c = document.querySelector('[data-curtain]');
+    if (c) {
+      const kill = () => { c.style.transition = 'opacity 0.32s ease'; c.style.opacity = '0'; setTimeout(() => { c.style.display = 'none'; }, 340); };
+      this._curtainT = setTimeout(() => { c.style.display = 'none'; }, 2100);
+      c.addEventListener('click', kill);
+      window.addEventListener('keydown', kill, { once: true });
+      try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) c.style.display = 'none'; } catch (e) {}
+    }
+  }
+  componentWillUnmount() { clearTimeout(this._tt); clearInterval(this._mc); clearTimeout(this._curtainT); }
+
+  _workspaceFull() {
+    const w = (this.state.workspace || 'yourdesk').trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || 'yourdesk';
+    return w + '.currencydeskos.com';
+  }
+
+  chipStyle(active, accent) {
+    return {
+      padding: '12px 18px', borderRadius: '11px', fontSize: '14.5px', fontWeight: 600,
+      fontFamily: "'Schibsted Grotesk', sans-serif", cursor: 'pointer',
+      transition: 'transform 0.14s ease, background 0.14s ease, border-color 0.14s ease',
+      border: active ? '1.5px solid ' + accent : '1.5px solid #DDD5C6',
+      background: active ? accent : '#FFFDF8',
+      color: active ? '#FCFAF5' : '#17140F',
+      transform: active ? 'translateY(-1px)' : 'none',
+      boxShadow: active ? '0 8px 18px -8px ' + accent : 'none'
+    };
+  }
+  rowStyle(active, accent) {
+    return Object.assign(this.chipStyle(active, accent), {
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left'
+    });
+  }
+  tierStyle(active, accent) {
+    return {
+      display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3px',
+      padding: '14px 16px', borderRadius: '13px', cursor: 'pointer', textAlign: 'left',
+      fontFamily: "'Schibsted Grotesk', sans-serif",
+      transition: 'transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease',
+      border: active ? '1.5px solid ' + accent : '1.5px solid #DDD5C6',
+      background: active ? accent : '#FFFDF8',
+      color: active ? '#FCFAF5' : '#17140F',
+      transform: active ? 'translateY(-2px)' : 'none',
+      boxShadow: active ? '0 12px 24px -10px ' + accent : '0 1px 0 rgba(23,20,15,0.03)'
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const step = s.step;
+    const can = this.canNext();
+    const washes = [
+      'rgba(29,107,69,0)', 'rgba(29,107,69,0.05)', 'rgba(169,121,28,0.07)',
+      'rgba(29,107,69,0.08)', 'rgba(194,69,45,0.06)', 'rgba(90,63,128,0.06)', 'rgba(29,107,69,0.1)', 'rgba(29,107,69,0.14)'
+    ];
+    const volumeData = [
+      { v: 'Under $500K', sub: 'Getting established' },
+      { v: '$500K – $2M', sub: 'Growing steadily' },
+      { v: '$2M – $10M', sub: 'Serious volume' },
+      { v: '$10M+', sub: 'High-volume desk' }
+    ];
+    const volumeOpts = volumeData.map(({ v, sub }) => ({
+      label: v, sub, onClick: this.pick('volume', v),
+      style: this.tierStyle(s.volume === v, '#1D6B45'),
+      subStyle: { fontSize: '11px', fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.02em', color: s.volume === v ? 'rgba(252,250,245,0.82)' : '#9C948A' }
+    }));
+    const branches = [{ k: 'single', l: 'Single shop' }, { k: 'multi', l: 'Multi-branch' }];
+    const segStyle = (active) => ({
+      padding: '8px 15px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+      fontFamily: "'Schibsted Grotesk', sans-serif", fontSize: '13px', fontWeight: 600,
+      background: active ? '#17140F' : 'transparent', color: active ? '#F1ECE1' : '#6B6459', transition: 'all 0.2s ease'
+    });
+    const branchOpts = branches.map((b) => ({
+      label: b.l, onClick: this.pick('branches', b.k), style: segStyle(s.branches === b.k)
+    }));
+    const segFlexStyle = (active) => ({
+      flex: 1, textAlign: 'center', padding: '8px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+      fontFamily: "'Schibsted Grotesk', sans-serif", fontSize: '13px', fontWeight: 600,
+      background: active ? '#17140F' : 'transparent', color: active ? '#F1ECE1' : '#6B6459', transition: 'all 0.2s ease'
+    });
+    const employeeOpts = ['1', '2–5', '6–20', '20+'].map((e) => ({
+      label: e, onClick: this.pick('employees', e), style: segFlexStyle(s.employees === e)
+    }));
+    const stacks = ['Spreadsheets & manual logs', 'Legacy MSB software', 'A patchwork of apps', 'Outsourced to a firm', 'Nothing formal yet'];
+    const stackOpts = stacks.map((v) => ({
+      label: v, onClick: this.pick('stack', v), style: this.rowStyle(s.stack === v, '#C2452D'),
+      tick: { opacity: s.stack === v ? 1 : 0, color: '#FCFAF5', fontWeight: 700, transition: 'opacity 0.15s ease' }
+    }));
+    const timelineData = [
+      { v: 'As soon as possible', sub: "We're ready now" },
+      { v: 'This quarter', sub: 'Actively planning' },
+      { v: 'Next 6 months', sub: 'On the roadmap' },
+      { v: 'Just exploring', sub: 'Seeing what fits' }
+    ];
+    const timelineOpts = timelineData.map(({ v, sub }) => ({
+      label: v, sub, onClick: this.pick('timeline', v),
+      style: this.tierStyle(s.timeline === v, '#5A3F80'),
+      subStyle: { fontSize: '11px', fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.02em', color: s.timeline === v ? 'rgba(252,250,245,0.82)' : '#9C948A' }
+    }));
+
+    const nextLabels = ['Apply for early access', 'Continue', 'Reserve it', 'Continue', 'Continue', 'Continue', 'Claim my membership'];
+    const nextStyle = {
+      display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', boxSizing: 'border-box',
+      marginTop: '26px', padding: '16px 22px', borderRadius: '13px', border: 'none',
+      background: '#17140F', color: '#FCFAF5', fontFamily: "'IBM Plex Mono', monospace",
+      fontSize: '13px', fontWeight: 600, letterSpacing: '0.06em', cursor: 'pointer',
+      opacity: can ? 1 : 0.4, transition: 'opacity 0.2s ease, transform 0.12s ease',
+      boxShadow: '0 16px 32px -14px rgba(23,20,15,0.55)'
+    };
+
+    const circle = (enabled) => ({
+      width: '44px', height: '44px', display: 'grid', placeItems: 'center', borderRadius: '50%',
+      background: 'rgba(255,255,255,0.7)', border: '1px solid #E0D8C9', color: '#17140F',
+      cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, transition: 'opacity 0.2s ease'
+    });
+
+    const pager = [0, 1, 2, 3, 4, 5, 6].map((i) => ({
+      style: {
+        height: '6px', borderRadius: '3px', transition: 'all 0.3s ease',
+        width: i === step ? '26px' : '6px',
+        background: i === step ? '#17140F' : (i < step ? '#1D6B45' : '#CFC6B5')
+      }
+    }));
+
+    const jurPill = (on) => ({
+      padding: '6px 12px', borderRadius: '999px', border: 'none', cursor: 'pointer',
+      fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px', fontWeight: 600, letterSpacing: '0.04em',
+      background: on ? '#17140F' : 'transparent', color: on ? '#F1ECE1' : '#6B6459', transition: 'all 0.2s ease'
+    });
+
+    const dark = step === 7;
+    const cardStyle = {
+      position: 'relative', width: '286px', height: '432px', borderRadius: '20px',
+      background: 'linear-gradient(158deg, #F6DE96 0%, #D3A231 18%, #F7E6AC 38%, #C08E22 58%, #EAC974 80%, #CE9E38 100%)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.65), inset 0 0 0 1.5px rgba(255,255,255,0.28), inset 0 -3px 8px rgba(58,42,8,0.28)',
+      transition: 'transform 0.25s ease', transformStyle: 'preserve-3d', willChange: 'transform'
+    };
+
+    return {
+      washColor: washes[step],
+      isForm: step < 7,
+      s0: step === 0, s1: step === 1, s2: step === 2, s3: step === 3, s4: step === 4, s5: step === 5, s6: step === 6, s7: step === 7,
+      email: s.email, onEmail: this.set('email'), ref0: this.ref0,
+      domain: s.domain, onDomain: this.set('domain'), ref1: this.ref1, skipWebsite: this.skipWebsite,
+      workspace: s.workspace, onWorkspace: this.set('workspace'), ref2: this.ref2, workspaceFull: this._workspaceFull(),
+      volumeOpts, branchOpts, stackOpts, timelineOpts,
+      name: s.name, onName: this.set('name'), ref6: this.ref6,
+      role: s.role, onRole: this.set('role'), employeeOpts,
+      onKey: this.onKey,
+      next: this.next, back: this.back,
+      nextLabel: nextLabels[step] || 'Continue', nextStyle,
+      stepCount: 'Step ' + Math.min(step + 1, 7) + ' of 7',
+      backStyle: circle(step > 0), fwdStyle: circle(can),
+      pager,
+      headText: dark ? '#F4E7C4' : '#17140F',
+      markMain: dark ? '#F4E7C4' : '#17140F',
+      markGap: dark ? '#0C0A06' : '#F1ECE1',
+      osColor: dark ? 'rgba(244,231,196,0.6)' : '#9C948A',
+      osBorder: dark ? 'rgba(244,231,196,0.28)' : '#D9D2C4',
+      darkOn: dark ? 1 : 0,
+      cardRef: this.cardRef, onCardMove: this.onCardMove, onCardLeave: this.onCardLeave,
+      cardStyle,
+      cardName: (s.name.trim() || 'Founding Operator'),
+      memberNo: 'Nº ' + String(s.memberCount).padStart(4, '0'),
+      jurLabel: this._jurName().toUpperCase(),
+      joinDate: this._joinDate(),
+      download: this.download, share: this.share,
+      hasToast: !!s.toast, toast: s.toast
+    };
+  }
+
+  _jurName() {
+    const m = { CA: 'Canada', US: 'United States', GB: 'United Kingdom', AU: 'Australia', IN: 'India', AE: 'UAE' };
+    return m[this.state.jur] || 'Canada';
+  }
+  _joinDate() {
+    const d = new Date();
+    const m = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    return String(d.getDate()).padStart(2, '0') + ' ' + m[d.getMonth()] + ' ' + d.getFullYear();
+  }
+}
+</script>
+</body>
+</html>
