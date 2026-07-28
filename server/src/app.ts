@@ -160,6 +160,12 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
           app.get(route, (_req, reply) => reply.sendFile(file));
         }
       }
+      /* The invite link reads like an address rather than a query string:
+         currencydeskos.com/onboarding/CD-A3V5ZE. The page pulls the code off
+         the path itself, so every one of these serves the same file. */
+      if (existsSync(path.join(staticDir, SITE_PAGES["/onboarding"]))) {
+        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
+      }
     }
     // the platform control panel — served whether prod ships the vite build or
     // the prototype, as long as admin.html is in the static dir (repo root)

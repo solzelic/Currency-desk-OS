@@ -78,7 +78,7 @@ export function inviteEmail(opts: { name?: string | null; reference: string; ori
      never type it. NOT /signup — that is the application they have already
      filled in, and sending an accepted operator back to it is the one thing
      this email must not do. */
-  const link = `${opts.origin}/onboarding?code=${encodeURIComponent(opts.reference)}`;
+  const link = `${opts.origin}/onboarding/${encodeURIComponent(opts.reference)}`;
   const subject = "You're in — set up your CurrencyDesk";
   const text =
     `${who}'re through to the Founding Operator group.\n\n` +
