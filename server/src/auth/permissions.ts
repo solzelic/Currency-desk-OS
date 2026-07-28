@@ -5,16 +5,20 @@ export type BackendPermission =
   | "quote:view"
   | "quote:cancel"
   | "quote:post"
+  | "customer:view"
+  | "customer:write"
+  | "ledger:view"
+  | "till:initialize"
   | "rates:change"
   | "rates:override";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
-  teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post"],
-  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse"],
-  compliance_officer: ["quote:view"],
-  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "rates:change", "rates:override"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "rates:change", "rates:override"],
-  auditor: ["quote:view"],
+  teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view"],
+  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize"],
+  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view"],
+  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "rates:change", "rates:override"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "rates:change", "rates:override"],
+  auditor: ["quote:view", "customer:view", "ledger:view"],
 };
 
 export function hasBackendPermission(role: string, permission: BackendPermission) {
