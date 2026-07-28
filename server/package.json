@@ -8,11 +8,11 @@
     "dev:prototype": "STATIC_DIR=.. STATIC_INDEX='CurrencyDesk OS.html' tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "seed": "tsx src/seed.ts",
     "ledger:migrate": "tsx src/ledger/migrate.ts",
     "ledger:seed": "tsx src/ledger/seed.ts",
-    "test:ledger:postgres": "vitest run tests/ledger.postgres.test.ts tests/ledger.routes.postgres.test.ts"
+    "test:ledger:postgres": "vitest run --no-file-parallelism tests/ledger.postgres.test.ts tests/ledger.routes.postgres.test.ts tests/quote.postgres.test.ts"
   },
   "engines": {
     "node": ">=22"

@@ -109,4 +109,15 @@ describe("market rates", () => {
     await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, feed);
     expect(calls).toBe(2);
   });
+
+  it("does not inherit another branch's board settings", async () => {
+    await handle.db.insert(schema.branches).values({ id: "br-other", tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, name: "Other" });
+    await handle.db.insert(schema.rateBoards).values({ id: "other-board", tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: "br-other", buyMargin: 0.07, sellMargin: 0.08, boardRows: { USD: { mid: 1.2, spread: 0.06, show: false } }, boardOrder: ["USD"], publishedBy: "other" });
+    await syncMarketRates(handle.db, "br-other", async () => ({ provider: "branch-test", providerTimestamp: null, mids: { USD: 1.4 } }));
+    const current = (await handle.db.select().from(schema.rateBoards)).filter((board) => board.branchId === "br-other");
+    const newest = current.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())[0]!;
+    expect(newest.buyMargin).toBeCloseTo(0.07);
+    expect(newest.boardRows.USD?.spread).toBeCloseTo(0.06);
+    expect(newest.boardRows.USD?.show).toBe(false);
+  });
 });

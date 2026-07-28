@@ -57,6 +57,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   }
 
   app.post("/api/ledger/exchanges", async (req, reply) => {
+    if (process.env.NODE_ENV === "production" || process.env.STAGING === "true") return reply.code(410).send({ code: "QUOTE_REQUIRED" });
     const parsed = postBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
