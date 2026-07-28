@@ -4,6 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js":"/web/vendor/react.production.min.js","https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js":"/web/vendor/react-dom.production.min.js"};</script>
+<script>
+window.claimedCount = fetch('/api/site/early-access')
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+  .catch(function (e) { console.error('[early-access] count unavailable:', e); return null; });
+window.claimedCount.then(function (d) {
+  if (!d) return;
+  // the progress bars are drawn at a fixed width, and one of them ANIMATES to
+  // that width — so the real figure has to reach the keyframe too, which it
+  // does through the custom property the keyframe now ends on
+  var pct = Math.min(100, Math.round((d.claimed / (d.cap || 100)) * 100)) + '%';
+  var apply = function () {
+    var fill = function (attr, value) {
+      var nodes = document.querySelectorAll('[' + attr + ']');
+      // only write when it differs, or the observer below sees its own edits
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].textContent !== String(value)) nodes[i].textContent = String(value);
+      }
+    };
+    fill('data-cd-claimed', d.claimed);
+    fill('data-cd-cap', d.cap);
+    var bars = document.querySelectorAll('[data-cd-bar]');
+    for (var i = 0; i < bars.length; i++) {
+      if (bars[i].style.getPropertyValue('--cd-fill') === pct) continue;
+      bars[i].style.setProperty('--cd-fill', pct);
+      bars[i].style.width = pct;
+    }
+  };
+  apply();
+  /* These numbers sit inside dc-runtime components, which re-render and put
+     the design's own 64 back. Rather than teach each design about the count,
+     write it again whenever the page changes underneath us. */
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+});
+</script>
 <script src="/web/support.js"></script>
 <title>CurrencyDesk — more trades, less paperwork</title>
 <meta name="description" content="One desk for the whole shop — rates, till, ledger, clients and compliance.">
@@ -95,7 +131,7 @@
       <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px;">
         <a href="#pricing" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: rgba(251,249,244,0.72);">See pricing</a>
         <span style="width: 3px; height: 3px; border-radius: 50%; background: rgba(251,249,244,0.3);"></span>
-        <span style="font-family: var(--m); font-size: 10.5px; color: rgba(251,249,244,0.48);">64 of 100 desks claimed</span>
+        <span style="font-family: var(--m); font-size: 10.5px; color: rgba(251,249,244,0.48);"><span data-cd-claimed>64</span> of <span data-cd-cap>100</span> desks claimed</span>
       </div>
     </div>
   </div>
@@ -246,8 +282,8 @@
         <p style="font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,0.88); margin: 12px 0 0;">Reserve your workspace and lock founding pricing. Ninety seconds — no card, no commitment.</p>
         <a href="/signup" style="display: flex; align-items: center; justify-content: center; gap: 9px; height: 52px; margin-top: 20px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;">Get early access<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
         <div style="display: flex; align-items: center; gap: 10px; margin-top: 14px;">
-          <div style="flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 999px; overflow: hidden;"><div style="height: 100%; width: 64%; background: #fff; border-radius: 999px;"></div></div>
-          <span style="font-family: var(--m); font-size: 10.5px; color: rgba(255,255,255,0.84);"><b style="color: #fff;">64</b> / 100 claimed</span>
+          <div style="flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 999px; overflow: hidden;"><div data-cd-bar style="height: 100%; width: 64%; background: #fff; border-radius: 999px;"></div></div>
+          <span style="font-family: var(--m); font-size: 10.5px; color: rgba(255,255,255,0.84);"><b style="color: #fff;" data-cd-claimed>64</b> / <span data-cd-cap>100</span> claimed</span>
         </div>
       </div>
     </div>

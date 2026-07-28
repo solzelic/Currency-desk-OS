@@ -18,6 +18,7 @@ import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessi
 import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
 import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
+import { forgetClaimedCount } from "./early-access.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { tenantPlan } from "./tenant.js";
@@ -326,6 +327,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       });
     }
 
+    // declining hands the place back to the site's "N of 100 claimed"
+    if (parsed.data.status !== undefined && parsed.data.status !== row.status) forgetClaimedCount();
+
     const set: Record<string, unknown> = {};
     if (parsed.data.status !== undefined) {
       set.status = parsed.data.status;
@@ -386,6 +390,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         // the PIN itself is never readable — only whether one exists, when it
         // was set, and whether the keypad is currently shut against them
         hasPin: !!p.pinHash, pinSetAt: p.pinSetAt, pinLockedUntil: pinLockedUntil(p.id),
+        pinMustChange: p.pinMustChange,
       },
       desk: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.siteSlug, suspended: tenant.suspended } : null,
       sessions: { live: live.length, lastSignInAt: lastSignIn ? new Date(lastSignIn).toISOString() : null },
@@ -454,7 +459,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (!p) return reply.code(404).send({ error: "not_found" });
 
     const pin = generatePin();
-    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, p.id));
+    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date(), pinMustChange: true }).where(eq(schema.staffUsers.id, p.id));
     clearPinAttempts(p.id);
     await audit(db, {
       tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,

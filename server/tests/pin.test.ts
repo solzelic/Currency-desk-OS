@@ -191,7 +191,7 @@ describe("PINs are checked by the server", () => {
     expect(mine.statusCode).toBe(200);
     expect(mine.json().hasPin).toBe(true);
     // whether, and when — never the code itself, nor its hash
-    expect(Object.keys(mine.json()).sort()).toEqual(["hasPin", "setAt"]);
+    expect(Object.keys(mine.json()).sort()).toEqual(["hasPin", "mustChange", "setAt"]);
     expect((await app.inject({ method: "GET", url: "/api/staff/pin" })).statusCode).toBe(401);
   });
 
@@ -207,6 +207,55 @@ describe("PINs are checked by the server", () => {
     expect(page.json().person.hasPin).toBe(true);
     expect(page.json().person.pinLockedUntil).toBeTruthy();
     expect(page.body).not.toContain(pin);
+  });
+
+  it("you can get back in on your own, with the password the owner doesn't have", async () => {
+    const costa = await staffRow("m.costa");
+    await app.inject({ method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: adminCookie });
+
+    // a wrong password is not a way in
+    const wrongPw = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "not-it", pin: "7412" } });
+    expect(wrongPw.statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "7412" } })).statusCode).toBe(401);
+
+    // the right one is — without anybody having to be told the new PIN
+    const ok = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "yorkville", pin: "7412" } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).not.toContain("7412");
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "7412" } })).statusCode).toBe(200);
+  });
+
+  it("a PIN somebody else issued is marked temporary until its owner picks their own", async () => {
+    const singh = await staffRow("a.singh");
+    const issued = (await app.inject({ method: "POST", url: `/api/admin/staff/${singh.id}/reset-pin`, cookies: adminCookie })).json().pin as string;
+    const singhCookie = cookieOf(await signIn("a.singh"));
+
+    // support read it out, so support knows it — the desk must be able to say so
+    expect((await staffRow("a.singh")).pinMustChange).toBe(true);
+    expect((await app.inject({ method: "GET", url: "/api/staff/pin", cookies: singhCookie })).json().mustChange).toBe(true);
+    // the gate still opens — nobody is stranded mid-deal — but it says to fix it
+    const opened = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: issued } });
+    expect(opened.statusCode).toBe(200);
+    expect(opened.json().mustChange).toBe(true);
+
+    await app.inject({ method: "POST", url: "/api/staff/pin", cookies: singhCookie, payload: { pin: "6053", currentPin: issued } });
+    expect((await staffRow("a.singh")).pinMustChange).toBe(false);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: "6053" } })).json().mustChange).toBe(false);
+  });
+
+  it("the forgot-my-PIN door is not a quieter way to stand at the keypad", async () => {
+    const haddad = await staffRow("r.haddad");
+    await app.inject({ method: "POST", url: `/api/admin/staff/${haddad.id}/reset-pin`, cookies: adminCookie });
+    const haddadCookie = cookieOf(await signIn("r.haddad"));
+
+    // wrong passwords here count against the same lockout as wrong PINs
+    for (let i = 0; i < 5; i++) {
+      await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: haddadCookie, payload: { password: "guess", pin: "1470" } });
+    }
+    const locked = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: haddadCookie, payload: { password: "yorkville", pin: "1470" } });
+    expect(locked.statusCode).toBe(429);
+    // and the keypad it guards is shut too, not just this door
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: haddadCookie, payload: { pin: "1470" } })).statusCode).toBe(429);
   });
 
   it("refuses anything that is not four digits, and anyone without a session", async () => {

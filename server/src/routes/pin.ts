@@ -4,6 +4,17 @@
 
      POST /api/staff/pin/verify   { staffId?, pin }  → { ok }
      POST /api/staff/pin          { pin, currentPin? }  → set your own
+     POST /api/staff/pin/reset    { password, pin }     → forgot it
+
+   A PIN is personal — it is how the ledger knows a drawer was taken by
+   YOU. So forgetting it must not mean asking the owner for one, because
+   then the owner knows it too and can act as you. Anyone signed in can
+   prove themselves with their sign-in password and choose a new PIN that
+   nobody else ever sees.
+
+   A PIN somebody else issued is marked must-change for the same reason:
+   it is a way back in, not an identity, and it stops being shared
+   knowledge the moment its owner picks their own.
 
    The desk used to hold the expected PIN in the browser and compare it
    there, which made the gate decorative: anyone with devtools could read
@@ -29,6 +40,7 @@ import { audit } from "../audit.js";
 const PIN = z.string().regex(/^\d{4}$/, "pin: four digits");
 const verifyBody = z.object({ staffId: z.string().min(1).max(120).optional(), pin: PIN });
 const setBody = z.object({ pin: PIN, currentPin: PIN.optional() });
+const resetBody = z.object({ password: z.string().min(1).max(512), pin: PIN });
 
 const MAX_TRIES = 5;
 const LOCK_MS = 5 * 60 * 1000;
@@ -99,7 +111,9 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     }
     if (await verifyPassword(parsed.data.pin, target.pinHash)) {
       clearPinAttempts(target.id);
-      return { ok: true };
+      // the gate opens either way; the desk uses this to ask them to pick
+      // their own afterwards rather than interrupting a customer mid-deal
+      return { ok: true, mustChange: target.pinMustChange };
     }
     const after = recordFailure(target.id);
     await audit(db, {
@@ -116,7 +130,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
-    return { hasPin: !!me.pinHash, setAt: me.pinSetAt ?? null };
+    return { hasPin: !!me.pinHash, setAt: me.pinSetAt ?? null, mustChange: me.pinMustChange };
   });
 
   // set your own — proving the current one if you already have one
@@ -136,11 +150,49 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
         return reply.code(401).send({ error: "wrong_pin" });
       }
     }
-    await db.update(schema.staffUsers).set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, me.id));
+    await db.update(schema.staffUsers)
+      .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
+      .where(eq(schema.staffUsers.id, me.id));
     clearPinAttempts(me.id);
     await audit(db, {
       tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
       actorId: me.id, action: "pin.set",
+    });
+    return { ok: true };
+  });
+
+  /* Forgot it. Your sign-in password is something the owner does not have,
+     so it is the right thing to prove here — it lets you back in without
+     anyone else ever learning the PIN you end up with.
+
+     Wrong passwords count against the same lockout as wrong PINs: this is
+     the one door left when the keypad is shut, so it cannot be a quieter
+     way to stand at that keypad. */
+  app.post("/api/staff/pin/reset", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const parsed = resetBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+
+    const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
+    if (!me) return reply.code(404).send({ error: "not_found" });
+    if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
+    if (!(await verifyPassword(parsed.data.password, me.passwordHash))) {
+      recordFailure(me.id);
+      await audit(db, {
+        tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
+        actorId: me.id, action: "pin.reset_failed",
+      });
+      return reply.code(401).send({ error: "wrong_password", detail: "That is not your sign-in password." });
+    }
+
+    await db.update(schema.staffUsers)
+      .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
+      .where(eq(schema.staffUsers.id, me.id));
+    clearPinAttempts(me.id);
+    await audit(db, {
+      tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
+      actorId: me.id, action: "pin.self_reset",
     });
     return { ok: true };
   });

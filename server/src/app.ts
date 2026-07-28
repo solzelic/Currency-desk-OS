@@ -20,6 +20,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
+import { registerEarlyAccessRoutes } from "./routes/early-access.js";
 import { registerPinRoutes } from "./routes/pin.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
@@ -60,6 +61,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerAuthRoutes(app, db);
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);
+  registerEarlyAccessRoutes(app, db);
   registerPinRoutes(app, db);
   registerStaffRoutes(app, db);
   registerTenantRoutes(app, db);

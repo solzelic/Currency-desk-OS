@@ -579,9 +579,11 @@ function PersonPage({ id, onChanged }) {
           <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
             {p.pinLockedUntil
               ? <span style={{ color: 'var(--amber)' }}><b>The keypad is shut</b> after too many wrong tries — until {fmtWhen(p.pinLockedUntil)}. Resetting the PIN opens it again straight away.</span>
-              : p.hasPin
-                ? <>Four digits, asked for at the till, when switching accounts and when voiding. Set {fmtWhen(p.pinSetAt)}. Nobody can read it back — a reset is the only way in.</>
-                : <>No PIN set. Until there is one the desk falls back to its own check, which anyone can see. Issue one.</>}
+              : p.pinMustChange
+                ? <span style={{ color: 'var(--amber)' }}><b>Still the one we issued</b> ({fmtWhen(p.pinSetAt)}) — so whoever read it out knows it. They set their own from Settings, or reset it themselves with their password.</span>
+                : p.hasPin
+                  ? <>Four digits, asked for at the till, when switching accounts and when voiding. They chose it {fmtWhen(p.pinSetAt)}. Nobody can read it back — not even us.</>
+                  : <>No PIN set. Until there is one the desk falls back to its own check, which anyone can see. Issue one.</>}
           </div>
           <button disabled={!!busy} onClick={() => run('pin', '/api/admin/staff/' + p.id + '/reset-pin', null,
             (r) => ({ tone: 'amber', text: 'New PIN. Read it to them — it is shown once and cannot be looked up again.', code: r.pin }))}

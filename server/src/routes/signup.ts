@@ -11,6 +11,7 @@
    staff id is their email (email-as-identity).
    ============================================================ */
 import type { FastifyInstance } from "fastify";
+import { forgetClaimedCount } from "./early-access.js";
 import { and, eq, notInArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -171,6 +172,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const legalEntityId = "le-" + p.slug;
     const branchId = "br-" + p.slug + "-main";
     const workspaceId = "ws-" + p.slug + "-till-01";
+    forgetClaimedCount();
     await db.insert(schema.tenants).values({ id: tenantId, name: p.businessName, plan: chosenPlan, siteSlug: p.slug, setup: p.onboarding ?? null }).onConflictDoNothing();
     await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: p.businessName, msbNumber, jurisdiction: regulator }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();

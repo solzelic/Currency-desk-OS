@@ -115,54 +115,67 @@
     const [done, setDone] = useState(false);
     const [busy, setBusy] = useState(false);
     const [hasPin, setHasPin] = useState(!!hasPinProp);
-    useEffect(() => {
-      let alive = true;
-      fetch('/api/staff/pin', { credentials: 'same-origin' })
-        .then(r => r.ok ? r.json() : null)
-        .then(r => { if (alive && r) setHasPin(!!r.hasPin); })
-        .catch(() => {});
-      return () => { alive = false; };
-    }, []);
+    const [mustChange, setMustChange] = useState(false);
+    // forgotten it: prove yourself with your sign-in password instead of the
+    // PIN you can't remember, so nobody has to be told a new one
+    const [forgot, setForgot] = useState(false);
+    const [pw, setPw] = useState('');
+    const load = () => fetch('/api/staff/pin', { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : null)
+      .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); } })
+      .catch(() => {});
+    useEffect(() => { let alive = true; load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, []);
     const clean = (v) => (v || '').replace(/\D/g, '').slice(0, 4);
-    const close = () => { setOpen(false); setCur(''); setA(''); setB(''); setErr(''); };
+    const close = () => { setOpen(false); setForgot(false); setCur(''); setPw(''); setA(''); setB(''); setErr(''); };
     const save = async () => {
       if (a.length !== 4) { setErr('New PIN must be 4 digits.'); return; }
       if (a !== b) { setErr('The two new PINs don’t match.'); return; }
-      if (hasPin && cur.length !== 4) { setErr('Enter your current PIN.'); return; }
+      if (hasPin && !forgot && cur.length !== 4) { setErr('Enter your current PIN.'); return; }
+      if (hasPin && forgot && !pw) { setErr('Enter your sign-in password.'); return; }
       setBusy(true); setErr('');
       try {
-        const res = await fetch('/api/staff/pin', {
+        const res = await fetch(forgot ? '/api/staff/pin/reset' : '/api/staff/pin', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
-          body: JSON.stringify(hasPin ? { pin: a, currentPin: cur } : { pin: a }),
+          body: JSON.stringify(forgot ? { pin: a, password: pw } : (hasPin ? { pin: a, currentPin: cur } : { pin: a })),
         });
         if (!res.ok) {
           setBusy(false);
-          if (res.status === 401) { setErr('Your current PIN isn’t right.'); return; }
+          if (res.status === 401) { setErr(forgot ? 'That’s not your sign-in password.' : 'Your current PIN isn’t right.'); return; }
           if (res.status === 429) { setErr('Too many wrong tries — wait a few minutes.'); return; }
           setErr('That didn’t save. Try again.'); return;
         }
       } catch (e) { setBusy(false); setErr('No connection — the PIN was not changed.'); return; }
-      setBusy(false); setHasPin(true);
+      setBusy(false); setHasPin(true); setMustChange(false);
       onSave && onSave();
-      setOpen(false); setCur(''); setA(''); setB(''); setErr('');
+      close();
       setDone(true); setTimeout(() => setDone(false), 1800);
     };
     const fld = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8, width: 128, letterSpacing: '0.4em', textAlign: 'center', fontFamily: 'Space Mono, monospace', fontSize: 15, padding: '8px 10px', outline: 'none' };
-    if (!open) return (
-      <div className="flex items-center gap-2">
-        <span className="text-[12px] flex items-center gap-1.5" style={{ color: done ? CD.green : (hasPin ? CD.green : CD.mute) }}><Ic n={(done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={done ? CD.green : (hasPin ? CD.green : CD.faint)} />{done ? 'PIN updated' : (hasPin ? 'PIN set' : 'No PIN yet')}</span>
-        <button onClick={() => { setDone(false); setOpen(true); }} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
-      </div>
-    );
+    if (!open) {
+      /* A PIN somebody else issued is a way back in, not an identity — say so
+         plainly until they've picked their own. */
+      const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you — pick your own' : hasPin ? 'PIN set' : 'No PIN yet';
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] flex items-center gap-1.5" style={{ color: tone }}><Ic n={mustChange ? 'alert' : (done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.faint} />{label}</span>
+          <button onClick={() => { setDone(false); setOpen(true); }} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${mustChange ? CD.amber : CD.line}`, borderRadius: 8, color: CD.ink }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
+        </div>
+      );
+    }
     return (
       <div className="p-3.5" style={{ border: `1px solid ${CD.ink}`, borderRadius: 12, background: 'var(--cd-panel)', width: 300 }}>
-        <div className="text-[10px] uppercase tracking-widest mb-2.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{hasPin ? 'Change your PIN' : 'Set your PIN'}</div>
+        <div className="text-[10px] uppercase tracking-widest mb-2.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{forgot ? 'Reset your PIN' : hasPin ? 'Change your PIN' : 'Set your PIN'}</div>
+        {forgot && <div className="text-[11px] mb-2.5" style={{ color: CD.mute, lineHeight: 1.5 }}>Your sign-in password proves it’s you. The new PIN is yours alone — nobody here is told it.</div>}
         <div className="flex flex-col gap-2">
-          {hasPin && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
+          {hasPin && !forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
+          {hasPin && forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Your password</span><input value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} type="password" autoComplete="current-password" placeholder="••••••••" autoFocus style={{ ...fld, letterSpacing: 'normal', width: 150 }} /></label>}
           <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input value={a} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
           <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Confirm new PIN</span><input value={b} onChange={e => { setB(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" style={fld} /></label>
         </div>
         {err && <div className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}
+        {hasPin && <button onClick={() => { setForgot(f => !f); setErr(''); setCur(''); setPw(''); }} className="text-[11px] mt-2" style={{ color: CD.mute, textDecoration: 'underline' }}>
+          {forgot ? 'I remember it after all' : 'I’ve forgotten my PIN'}</button>}
         <div className="flex items-center justify-end gap-2 mt-3">
           <button onClick={close} className="text-[12px] px-3 py-2" style={{ color: CD.mute }}>Cancel</button>
           <button disabled={busy} onClick={save} className="text-[12px] px-3.5 py-2 font-semibold text-white flex items-center gap-1.5" style={{ background: CD.ink, borderRadius: 8, opacity: busy ? 0.5 : 1 }}><Ic n="check" s={13} c="var(--cd-on-ink)" /> {busy ? 'Saving…' : 'Save PIN'}</button>

@@ -156,6 +156,7 @@ ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS password_updated_at timestamptz
 -- the browser downloads whole — see routes/tenantState.ts for the migration.
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_hash text;
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_set_at timestamptz;
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_must_change boolean NOT NULL DEFAULT false;
 -- the human identifier a person quotes to support and signs in with. Unique
 -- where set; Postgres allows many NULLs, so accounts predating it keep working.
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS cd_id text;

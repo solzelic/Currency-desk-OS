@@ -230,7 +230,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin" });
 
     const pin = generatePin();
-    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, target.id));
+    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date(), pinMustChange: true }).where(eq(schema.staffUsers.id, target.id));
     clearPinAttempts(target.id);
     await audit(db, {
       tenantId: who.tenantId,

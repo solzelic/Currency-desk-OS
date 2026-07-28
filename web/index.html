@@ -4,6 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js":"/web/vendor/react.production.min.js","https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js":"/web/vendor/react-dom.production.min.js"};</script>
+<script>
+window.claimedCount = fetch('/api/site/early-access')
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+  .catch(function (e) { console.error('[early-access] count unavailable:', e); return null; });
+window.claimedCount.then(function (d) {
+  if (!d) return;
+  // the progress bars are drawn at a fixed width, and one of them ANIMATES to
+  // that width — so the real figure has to reach the keyframe too, which it
+  // does through the custom property the keyframe now ends on
+  var pct = Math.min(100, Math.round((d.claimed / (d.cap || 100)) * 100)) + '%';
+  var apply = function () {
+    var fill = function (attr, value) {
+      var nodes = document.querySelectorAll('[' + attr + ']');
+      // only write when it differs, or the observer below sees its own edits
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].textContent !== String(value)) nodes[i].textContent = String(value);
+      }
+    };
+    fill('data-cd-claimed', d.claimed);
+    fill('data-cd-cap', d.cap);
+    var bars = document.querySelectorAll('[data-cd-bar]');
+    for (var i = 0; i < bars.length; i++) {
+      if (bars[i].style.getPropertyValue('--cd-fill') === pct) continue;
+      bars[i].style.setProperty('--cd-fill', pct);
+      bars[i].style.width = pct;
+    }
+  };
+  apply();
+  /* These numbers sit inside dc-runtime components, which re-render and put
+     the design's own 64 back. Rather than teach each design about the count,
+     write it again whenever the page changes underneath us. */
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+});
+</script>
 <script src="/web/support.js"></script>
 <title>CurrencyDesk — more trades, less paperwork</title>
 <meta name="description" content="One desk for the whole shop: live rates, till and ledger, clients and KYC, and your regulator's rulebook carried for you. Live in Canada.">
@@ -542,7 +578,7 @@
           <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.9); margin: 16px 0 0; max-width: 450px;">Reserve your workspace, lock founding pricing, and get your charter card. Ninety seconds — no card, no commitment.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px;">
             <a href="/signup" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
-            <div style="font-family: var(--m); font-size: 11px; color: rgba(255,255,255,0.82);"><span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / 100 desks claimed</div>
+            <div style="font-family: var(--m); font-size: 11px; color: rgba(255,255,255,0.82);"><span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / {{ claimedCap }} desks claimed</div>
           </div>
           <div style="height: 5px; width: 260px; max-width: 100%; background: rgba(255,255,255,0.2); border-radius: 999px; margin-top: 16px; overflow: hidden;"><div style="height: 100%; width: {{ claimedPct }}; background: #fff; border-radius: 999px; transition: width 0.4s ease;"></div></div>
         </div>
@@ -779,7 +815,7 @@ class Component extends DCLogic {
     ];
   }
 
-  state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0, feat: 0, featTick: 0, detail: null, panel: 0, till: 0, jur: 0, ruleN: 0, faq: 0 };
+  state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0, cap: 100, feat: 0, featTick: 0, detail: null, panel: 0, till: 0, jur: 0, ruleN: 0, faq: 0 };
   clk() { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0'); }
 
   componentDidMount() {
@@ -797,8 +833,12 @@ class Component extends DCLogic {
       this._ro = new ResizeObserver(() => { if (this._fitApply) try { this._fitApply(); } catch (e) {} });
       this._ro.observe(document.documentElement);
     }
-    if (reduce) { this.setState({ claimed: 64 }); return; }
-    this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= 64) clearInterval(this._cc); return { claimed: Math.min(n, 64) }; }), 26);
+    window.claimedCount.then(d => {
+      const target = d ? d.claimed : 64;
+      this.setState({ cap: d ? d.cap : 100 });
+      if (reduce || target <= 0) { this.setState({ claimed: target }); return; }
+      this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= target) clearInterval(this._cc); return { claimed: Math.min(n, target) }; }), Math.max(12, Math.round(1650 / target)));
+    });
   }
   INIT_STEPS = ['initReveal', 'initExit', 'initCard3d', 'signOffInit', 'fixNav', 'startFeature', 'startHero', 'scrubInit', 'scrubStory', 'tillInit', 'jurInit', 'fitFeatures'];
   runInit() {
@@ -1330,7 +1370,8 @@ class Component extends DCLogic {
         { icon: this.ic('chat', 16, '#1D6B45', 2), title: 'Business texting', body: 'Message customers when their money\u2019s ready.' },
         { icon: this.ic('till', 16, '#1D6B45', 2), title: 'Reserve & set aside', body: 'Let people put currency aside for pickup.' }
       ],
-      claimed: s.claimed, claimedPct: s.claimed + '%',
+      claimed: s.claimed, claimedCap: s.cap || 100,
+      claimedPct: Math.min(100, Math.round((s.claimed / (s.cap || 100)) * 100)) + '%',
       features, activeTitle: defs[s.feat].title,
       panels: this.storyDefs().map((o, i) => ({ slot: o.slot, ph: o.ph, src: o.src || '', hasImg: !!o.src, noImg: !o.src, kicker: o.kicker, caption: o.caption, layerStyle: 'position:absolute;inset:0;overflow:hidden;transition:opacity .6s ease, visibility .6s linear;' + (i === s.panel ? 'opacity:1;visibility:visible;z-index:2;' : 'opacity:0;visibility:hidden;z-index:1;pointer-events:none;') })),
       panelNum: String(s.panel + 1).padStart(2, '0'),

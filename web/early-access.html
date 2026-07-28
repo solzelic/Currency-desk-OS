@@ -16,6 +16,42 @@ window.sendEnquiry = function (kind, email, name, details) {
     .catch(function (e) { console.error('[enquiry] not sent:', e); return ''; });
 };
 </script>
+<script>
+window.claimedCount = fetch('/api/site/early-access')
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+  .catch(function (e) { console.error('[early-access] count unavailable:', e); return null; });
+window.claimedCount.then(function (d) {
+  if (!d) return;
+  // the progress bars are drawn at a fixed width, and one of them ANIMATES to
+  // that width — so the real figure has to reach the keyframe too, which it
+  // does through the custom property the keyframe now ends on
+  var pct = Math.min(100, Math.round((d.claimed / (d.cap || 100)) * 100)) + '%';
+  var apply = function () {
+    var fill = function (attr, value) {
+      var nodes = document.querySelectorAll('[' + attr + ']');
+      // only write when it differs, or the observer below sees its own edits
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].textContent !== String(value)) nodes[i].textContent = String(value);
+      }
+    };
+    fill('data-cd-claimed', d.claimed);
+    fill('data-cd-cap', d.cap);
+    var bars = document.querySelectorAll('[data-cd-bar]');
+    for (var i = 0; i < bars.length; i++) {
+      if (bars[i].style.getPropertyValue('--cd-fill') === pct) continue;
+      bars[i].style.setProperty('--cd-fill', pct);
+      bars[i].style.width = pct;
+    }
+  };
+  apply();
+  /* These numbers sit inside dc-runtime components, which re-render and put
+     the design's own 64 back. Rather than teach each design about the count,
+     write it again whenever the page changes underneath us. */
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+});
+</script>
 <script src="/web/support.js"></script>
 <title>Become a Founding Operator — CurrencyDesk</title>
 <meta name="description" content="Apply for early access: founding pricing held for the life of the account, and a direct line to the people building the desk.">
@@ -59,7 +95,7 @@ window.sendEnquiry = function (kind, email, name, details) {
     @keyframes cdCaret { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
     @keyframes cdIconIn { 0% { opacity: 0; transform: scale(0.6) rotate(-12deg); } 100% { opacity: 1; transform: scale(1) rotate(0deg); } }
     @keyframes cdHalo { 0%,100% { opacity: 0.45; transform: scale(1); } 50% { opacity: 1; transform: scale(1.09); } }
-    @keyframes cdFill { from { width: 0; } to { width: 64%; } }
+    @keyframes cdFill { from { width: 0; } to { width: var(--cd-fill, 64%); } }
     @keyframes cdUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
     @keyframes cdBar { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
     @keyframes cdBurst { 0% { opacity: 0; transform: scale(0.55); } 45% { opacity: 1; } 100% { opacity: 0.5; transform: scale(1); } }
@@ -148,8 +184,8 @@ window.sendEnquiry = function (kind, email, name, details) {
             </div>
             <div style="text-align: right; padding-top: 3px;">
               <div style="display: inline-flex; align-items: center; gap: 7px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.13em; color: #17583A; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2EA36B; animation: cdPulse 2s infinite;"></span>COHORT Nº 001 · CANADA</div>
-              <div style="width: 176px; margin: 10px 0 0 auto; height: 5px; border-radius: 3px; background: #E7DFCF; overflow: hidden;"><div style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill 1.7s cubic-bezier(0.3,0.9,0.3,1) 0.5s both;"></div></div>
-              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #9C948A; margin-top: 6px;">64 / 100 desks claimed</div>
+              <div style="width: 176px; margin: 10px 0 0 auto; height: 5px; border-radius: 3px; background: #E7DFCF; overflow: hidden;"><div data-cd-bar style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill 1.7s cubic-bezier(0.3,0.9,0.3,1) 0.5s both;"></div></div>
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #9C948A; margin-top: 6px;"><span data-cd-claimed>64</span> / <span data-cd-cap>100</span> desks claimed</div>
             </div>
           </div>
           <h1 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 42px; line-height: 1.02; letter-spacing: -0.01em; margin: 24px 0 0; animation: cdUp 0.6s ease 0.15s both;">Run the whole exchange<br>on one desk.</h1>

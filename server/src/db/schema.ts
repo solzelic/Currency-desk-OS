@@ -136,6 +136,10 @@ export const staffUsers = pgTable(
        short, so it is worth nobody — including us — being able to read it. */
     pinHash: text("pin_hash"),
     pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
+    /* True while the PIN on file is one somebody else issued. A PIN the owner
+       read out is known by the owner, so it is a way in, not an identity —
+       the person picks their own and this clears. */
+    pinMustChange: boolean("pin_must_change").notNull().default(false),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

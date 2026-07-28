@@ -21,6 +21,7 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { sendEmail } from "../email.js";
+import { forgetClaimedCount } from "./early-access.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
    very different questions and both will keep changing in design; what
@@ -77,6 +78,8 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     }
 
     const reference = makeReference();
+    // the site's "N of 100 claimed" counts this row — show it straight away
+    forgetClaimedCount();
     await db.insert(schema.enquiries).values({
       id: randomUUID(),
       reference,

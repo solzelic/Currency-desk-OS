@@ -44,7 +44,32 @@ const SITE_ORIGIN = "https://www.currencydeskos.com";
 const PAGES = {
   "CurrencyDesk Site":         { out: "index.html",  route: "/",  home: true,
     title: "CurrencyDesk — more trades, less paperwork",
-    description: "One desk for the whole shop: live rates, till and ledger, clients and KYC, and your regulator's rulebook carried for you. Live in Canada." },
+    description: "One desk for the whole shop: live rates, till and ledger, clients and KYC, and your regulator's rulebook carried for you. Live in Canada.",
+    /* The hero counter ticks up to the number of desks claimed. The design
+       animates to a fixed 64; wait for the real figure and animate to that,
+       and hold the design's number if the call fails so the hero never shows
+       a zero it doesn't mean. The bar reads out of the cohort size rather
+       than assuming it is 100. */
+    inject: [[
+      "    if (reduce) { this.setState({ claimed: 64 }); return; }\n" +
+        "    this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= 64) clearInterval(this._cc); return { claimed: Math.min(n, 64) }; }), 26);",
+      "    window.claimedCount.then(d => {\n" +
+        "      const target = d ? d.claimed : 64;\n" +
+        "      this.setState({ cap: d ? d.cap : 100 });\n" +
+        "      if (reduce || target <= 0) { this.setState({ claimed: target }); return; }\n" +
+        "      this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= target) clearInterval(this._cc); return { claimed: Math.min(n, target) }; }), Math.max(12, Math.round(1650 / target)));\n" +
+        "    });",
+    ], [
+      "      claimed: s.claimed, claimedPct: s.claimed + '%',",
+      "      claimed: s.claimed, claimedCap: s.cap || 100,\n" +
+        "      claimedPct: Math.min(100, Math.round((s.claimed / (s.cap || 100)) * 100)) + '%',",
+    ], [
+      "state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0,",
+      "state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0, cap: 100,",
+    ], [
+      '<span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / 100 desks claimed',
+      '<span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / {{ claimedCap }} desks claimed',
+    ]] },
   "CurrencyDesk Mobile":       { out: "mobile.html", route: "/m", home: true, noindex: true,
     title: "CurrencyDesk — more trades, less paperwork",
     description: "One desk for the whole shop — rates, till, ledger, clients and compliance.",
@@ -57,6 +82,16 @@ const PAGES = {
       ">Privacy &amp; Terms</a>",
       ">Privacy &amp; Terms</a>\n      " +
         '<a href="/login" style="font-size: 13.5px; color: var(--mute);">Sign in</a>',
+    ], [
+      // the same live count as the front page, in both places it appears
+      ">64 of 100 desks claimed</span>",
+      "><span data-cd-claimed>64</span> of <span data-cd-cap>100</span> desks claimed</span>",
+    ], [
+      'border-radius: 999px; overflow: hidden;"><div style="height: 100%; width: 64%; background: #fff;',
+      'border-radius: 999px; overflow: hidden;"><div data-cd-bar style="height: 100%; width: 64%; background: #fff;',
+    ], [
+      '<b style="color: #fff;">64</b> / 100 claimed',
+      '<b style="color: #fff;" data-cd-claimed>64</b> / <span data-cd-cap>100</span> claimed',
     ]] },
   "CurrencyDesk Legal":        { out: "legal.html",  route: "/legal", anchor: "#company",
     title: "Privacy Policy and Terms of Service — CurrencyDesk",
@@ -104,6 +139,17 @@ const PAGES = {
         "        }).then((ref) => {\n" +
         "          if (!ref) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
         "        });\n      }",
+    ], [
+      // the cohort meter, live. The bar ANIMATES to its width, so the keyframe
+      // has to end on the real figure too — hence the custom property.
+      "@keyframes cdFill { from { width: 0; } to { width: 64%; } }",
+      "@keyframes cdFill { from { width: 0; } to { width: var(--cd-fill, 64%); } }",
+    ], [
+      '<div style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill',
+      '<div data-cd-bar style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill',
+    ], [
+      ">64 / 100 desks claimed</div>",
+      "><span data-cd-claimed>64</span> / <span data-cd-cap>100</span> desks claimed</div>",
     ]] },
   // the way back in — always the live route, never a page. A designed sign-in
   // should restyle the OS's real one, not sit in front of it doing nothing.
@@ -124,6 +170,53 @@ window.sendEnquiry = function (kind, email, name, details) {
     .then(function (j) { return j.reference; })
     .catch(function (e) { console.error('[enquiry] not sent:', e); return ''; });
 };
+</script>
+`;
+
+/* "64 of 100 desks claimed" was the number the design happened to be drawn
+   with, baked into three pages. It is counted server-side now and read here,
+   so it moves when somebody applies.
+
+   Two ways to use it: any element carrying data-cd-claimed / data-cd-cap has
+   its text filled in, and window.claimedCount is the promise, for the front
+   page whose counter animates up to the figure. Every path leaves the number
+   the page shipped with untouched if the call fails — a stale count reads
+   better than a blank space where the social proof was. */
+const CLAIMED_HELPER = `<script>
+window.claimedCount = fetch('/api/site/early-access')
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+  .catch(function (e) { console.error('[early-access] count unavailable:', e); return null; });
+window.claimedCount.then(function (d) {
+  if (!d) return;
+  // the progress bars are drawn at a fixed width, and one of them ANIMATES to
+  // that width — so the real figure has to reach the keyframe too, which it
+  // does through the custom property the keyframe now ends on
+  var pct = Math.min(100, Math.round((d.claimed / (d.cap || 100)) * 100)) + '%';
+  var apply = function () {
+    var fill = function (attr, value) {
+      var nodes = document.querySelectorAll('[' + attr + ']');
+      // only write when it differs, or the observer below sees its own edits
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].textContent !== String(value)) nodes[i].textContent = String(value);
+      }
+    };
+    fill('data-cd-claimed', d.claimed);
+    fill('data-cd-cap', d.cap);
+    var bars = document.querySelectorAll('[data-cd-bar]');
+    for (var i = 0; i < bars.length; i++) {
+      if (bars[i].style.getPropertyValue('--cd-fill') === pct) continue;
+      bars[i].style.setProperty('--cd-fill', pct);
+      bars[i].style.width = pct;
+    }
+  };
+  apply();
+  /* These numbers sit inside dc-runtime components, which re-render and put
+     the design's own 64 back. Rather than teach each design about the count,
+     write it again whenever the page changes underneath us. */
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+});
 </script>
 `;
 
@@ -261,7 +354,8 @@ for (const name of present) {
   // whose forms now reach the server, the one call that gets them there
   const resources = `<script>window.__resources = ${JSON.stringify(CDN)};</script>\n`;
   const helper = html.includes("sendEnquiry(") ? ENQUIRY_HELPER : "";
-  html = html.replace('<script src="/web/support.js">', resources + helper + '<script src="/web/support.js">');
+  const counter = /data-cd-(claimed|cap)|claimedCount/.test(html) ? CLAIMED_HELPER : "";
+  html = html.replace('<script src="/web/support.js">', resources + helper + counter + '<script src="/web/support.js">');
 
   const head =
     `<title>${esc(page.title)}</title>\n` +
