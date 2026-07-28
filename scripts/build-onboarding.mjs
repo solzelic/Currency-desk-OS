@@ -15,7 +15,7 @@
    fails loudly rather than quietly shipping a page that has stopped
    saving.
    ============================================================ */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,6 +83,16 @@ const EDITS = [
       "});",
   ],
 ];
+
+/* The design is dropped in by hand, so it may simply not be here yet. Say so
+   and stop — a missing design is a thing to go and fetch, not a broken build.
+   app.ts only serves /onboarding when the compiled page exists, so nothing
+   ships a stale flow in the meantime. */
+if (!existsSync(SRC)) {
+  console.log("no CurrencyDesk Onboarding.html in the repo root — nothing to build.");
+  console.log("drop the design there and run this again.");
+  process.exit(0);
+}
 
 let html = readFileSync(SRC, "utf8");
 for (const [from, to] of EDITS) {
