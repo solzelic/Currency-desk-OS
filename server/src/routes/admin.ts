@@ -56,7 +56,7 @@ function platformAdmins(): Set<string> {
 }
 // the operator's own tenant is not a customer desk — hide it from the lists
 const PLATFORM_TENANT = "tnt-platform";
-const isPlatformAdmin = (email: string | undefined): boolean =>
+export const isPlatformAdmin = (email: string | undefined): boolean =>
   !!email && platformAdmins().has(email.toLowerCase());
 
 /* Readable aloud and hard to mistype: no vowels to form a word by accident,

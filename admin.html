@@ -347,6 +347,113 @@ const kv = (k, v) => v == null || v === '' ? null : (
 // ===================== DESK PAGE =====================
 // The page you open when a customer rings. Who they are, how the desk is
 // doing, what they last did, and the levers — on one screen.
+// ===================== OPENING A DESK =====================
+/* The same list the owner works through in the OS, dark, and driveable from
+   here — so setting a shop up at their counter and them doing it from the
+   invite email are one process against one record, not two that drift.
+
+   Every step says who did it. A desk we set up and one the owner did alone
+   are different things, and six months from now somebody will need to know
+   which this was. */
+function Onboarding({ tenantId }) {
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState(null);       // step id whose note box is open
+  const [note, setNote] = useState('');
+  const base = '/api/admin/desks/' + encodeURIComponent(tenantId) + '/onboarding';
+  const load = () => api(base).then(setD).catch(() => setErr('Could not load this desk’s setup.'));
+  useEffect(() => { setD(null); setErr(''); load(); }, [tenantId]);
+
+  if (err) return <Card title="Opening this desk"><div style={{ color: 'var(--red)', fontSize: 13 }}>{err}</div></Card>;
+  if (!d) return <Card title="Opening this desk"><div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12 }}>Loading…</div></Card>;
+
+  const run = async (path, body, label) => {
+    setBusy(label); setErr('');
+    try { setD(await api(path, { method: 'POST', body: JSON.stringify(body || {}) })); setOpen(null); setNote(''); }
+    catch (x) { setErr((x.body && x.body.detail) || 'That didn’t work.'); }
+    setBusy('');
+  };
+  const p = d.progress;
+  const pct = Math.round((p.done / p.total) * 100);
+  const live = !!d.launchedAt;
+
+  return (<Card title={live ? 'Open for business' : 'Opening this desk'}>
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+      <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--mute)' }}>
+        {live ? 'Launched ' + fmtWhen(d.launchedAt) : p.requiredDone + ' of ' + p.requiredTotal + ' required steps done'}
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 12, color: live ? 'var(--green)' : 'var(--faint)' }}>{pct}%</span>
+    </div>
+    <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 16 }}>
+      <div style={{ height: '100%', width: pct + '%', background: live ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
+    </div>
+
+    {d.phases.map(ph => {
+      const steps = d.steps.filter(s => s.phase === ph.id);
+      if (!steps.length) return null;
+      return (<div key={ph.id} style={{ marginBottom: 14 }}>
+        <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 7 }}>{ph.title}</div>
+        {steps.map(s => {
+          const st = s.state;
+          const done = st && st.done;
+          const mine = done && st.by === 'operator';
+          return (<div key={s.id} style={{ borderTop: '1px solid var(--line2)', padding: '10px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', marginTop: 2, display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700,
+                border: '1px solid ' + (done ? 'transparent' : 'var(--line)'), background: done ? 'var(--green)' : 'transparent', color: '#0b0b0b' }}>{done ? '✓' : ''}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  {s.title}
+                  {!s.requiredToLaunch && <Pill tone="mute">optional</Pill>}
+                  {s.who === 'customer' && <Pill tone="purple">theirs to do</Pill>}
+                  {done && <Pill tone={mine ? 'blue' : 'green'}>{mine ? 'you did this' : 'they did this'}</Pill>}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.5, marginTop: 3 }}>{s.blurb}</div>
+                {done && <div style={{ fontSize: 11, color: 'var(--faint)', fontFamily: MONO, marginTop: 4 }}>
+                  {fmtWhen(st.at)} · {st.actorId}{st.note ? ' · ' + st.note : ''}
+                </div>}
+                {open === s.id && (<div style={{ marginTop: 8 }}>
+                  <input value={note} onChange={e => setNote(e.target.value)} autoFocus
+                    placeholder={s.kind === 'upload' ? 'What did you see? e.g. MSB cert sighted in person' : s.kind === 'payment' ? 'How did they pay? e.g. e-transfer, invoice 004' : 'Note (optional)'}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel2, #141414)', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button onClick={() => { setOpen(null); setNote(''); }} style={{ padding: '6px 11px', borderRadius: 8, border: 'none', background: 'none', color: 'var(--mute)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                    <button disabled={!!busy} onClick={() => run(base + '/' + s.id, { note: note || undefined }, s.id)}
+                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      {busy === s.id ? 'Saving…' : 'Mark done'}</button>
+                  </div>
+                </div>)}
+              </div>
+              {open !== s.id && (<button disabled={!!busy || (s.who === 'customer' && !done)}
+                onClick={() => done ? run(base + '/' + s.id + '/undo', null, s.id) : setOpen(s.id)}
+                title={s.who === 'customer' && !done ? 'Only the owner can do this one' : ''}
+                style={{ flex: 'none', padding: '5px 10px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent',
+                  color: done ? 'var(--mute)' : (s.who === 'customer' ? 'var(--faint)' : 'var(--text)'), fontSize: 11.5, fontWeight: 600,
+                  cursor: (s.who === 'customer' && !done) ? 'not-allowed' : 'pointer', opacity: (s.who === 'customer' && !done) ? 0.45 : 1 }}>
+                {busy === s.id ? '…' : done ? 'Reopen' : 'Do it'}</button>)}
+            </div>
+          </div>);
+        })}
+      </div>);
+    })}
+
+    {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
+    {!live && (<>
+      <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.5, margin: '4px 0 10px' }}>
+        {p.canLaunch
+          ? 'Everything required is done. Launching opens the desk for business.'
+          : 'Still outstanding: ' + p.blocking.join(', ') + '.'}
+      </div>
+      <button disabled={!p.canLaunch || !!busy} onClick={() => run(base + '/launch', null, 'launch')}
+        style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
+          background: p.canLaunch ? 'var(--green)' : 'transparent', color: p.canLaunch ? '#0b0b0b' : 'var(--faint)',
+          cursor: p.canLaunch ? 'pointer' : 'not-allowed' }}>
+        {busy === 'launch' ? 'Opening…' : 'Launch this desk'}</button>
+    </>)}
+  </Card>);
+}
+
 function DeskPage({ id, onChanged }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState('');
   const [confirmName, setConfirmName] = useState(''); const [ack, setAck] = useState(false);
@@ -421,6 +528,8 @@ function DeskPage({ id, onChanged }) {
       </div>
 
       <div style={{ display: 'grid', gap: 16 }}>
+        <Onboarding tenantId={t.id} />
+
         {owner && (<Card title="Owner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
             <Avatar name={owner.name} size={38} />

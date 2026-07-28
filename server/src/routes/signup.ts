@@ -22,6 +22,7 @@ import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
 import { tenantPlan } from "./tenant.js";
+import { seedFromSignup } from "./onboarding.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -220,6 +221,11 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
       passwordUpdatedAt: new Date(),
     }).onConflictDoNothing();
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
+
+    /* Start the desk's opening record, with what the wizard already asked
+       carried over — so the checklist does not re-ask questions they have
+       just answered, and the panel can see how far along they are. */
+    await seedFromSignup(db, tenantId, ownerId, (p.onboarding ?? null) as Record<string, unknown> | null);
 
     await audit(db, { tenantId, legalEntityId, branchId, actorId: ownerId, action: "tenant.created", detail: { via: "signup", slug: p.slug, email } });
 

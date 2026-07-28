@@ -67,6 +67,26 @@ export interface SiteConfig {
 export type TenantPlan = "basic" | "pro" | "premium";
 export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
 
+/* How far a desk is through opening, and who did each part.
+
+   Setup used to be a single pass through a wizard: answers landed in
+   tenants.setup and that was that. It could not be resumed, could not be
+   done WITH a customer, and could not say what a desk was still missing.
+   This is the record both surfaces work against — the owner's wizard and
+   the platform team's dark panel — so either can pick up where the other
+   stopped. See src/onboarding/steps.ts for what the steps are. */
+export const deskOnboarding = pgTable("desk_onboarding", {
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  // stepId → { done, at, by, actorId, data }
+  steps: jsonb("steps").$type<Record<string, unknown>>().notNull().default({}),
+  // set once every required step is done and somebody presses launch; until
+  // then the desk exists but is not open for business
+  launchedAt: timestamp("launched_at", { withTimezone: true }),
+  launchedBy: text("launched_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const legalEntities = pgTable(
   "legal_entities",
   {
