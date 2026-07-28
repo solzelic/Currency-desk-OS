@@ -8,6 +8,7 @@
    touches existing accounts.
    ============================================================ */
 import { and, eq, isNull } from "drizzle-orm";
+import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
 
@@ -24,6 +25,9 @@ export const DEMO = {
 
 export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
   const passwordHash = await hashPassword(DEMO.password);
+
+  // the rehearsal application, always present so onboarding can be practised
+  await seedWalkthrough(db);
 
   await db.insert(schema.tenants).values({ id: DEMO.tenantId, name: "York FX", siteSlug: "yorkfx" }).onConflictDoNothing();
   // existing databases predate the hosted-site column — claim the slug once

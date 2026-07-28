@@ -276,6 +276,12 @@ export const enquiries = pgTable(
        applicant was turned down. Null for contact messages, which are not
        claims on a place. */
     charterNo: integer("charter_no"),
+    /* The walkthrough. One permanent application the platform team can open
+       any time to practise onboarding end to end. It is a real row with a
+       real reference, because a rehearsal against a special case rehearses
+       the special case — but it is kept out of every count, or the site
+       would tell visitors a place had gone when none had. */
+    isDemo: boolean("is_demo").notNull().default(false),
     /* The desk this application became. Set when a signup completes against
        the same address — the join that turns two unrelated lists into a
        funnel you can actually measure. */

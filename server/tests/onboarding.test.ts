@@ -178,3 +178,81 @@ describe("driving it from the reference they already hold", () => {
     expect((await app.inject({ method: "GET", url: "/api/admin/onboarding/CD-NOTREAL", cookies: adminCookie })).statusCode).toBe(404);
   });
 });
+
+/* The walkthrough. Onboarding is a thing you do TO somebody, so the only way
+   to practise used to be inventing a customer and living with the mess. */
+describe("the walkthrough", () => {
+  const W = "CD-WALKTHRU";
+  const open = () => app.inject({ method: "GET", url: `/api/admin/onboarding/${W}`, cookies: adminCookie });
+
+  it("is always there, with a properly-formed reference", async () => {
+    const res = await open();
+    expect(res.statusCode).toBe(200);
+    const d = res.json();
+    expect(d.application.reference).toBe(W);
+    expect(d.application.isWalkthrough).toBe(true);
+    // the same alphabet as every real reference: nothing that misreads down
+    // a phone line, so practising rehearses the real thing
+    expect(W).toMatch(/^CD-[2-9A-HJ-NP-Z]+$/);
+    expect(d.application.status).toBe("invited");
+  });
+
+  it("arrives half-answered, like a real one does", async () => {
+    const d = (await open()).json();
+    expect(fieldOf(d, "ownerName").source).toBe("application");
+    expect(fieldOf(d, "slug")).toMatchObject({ value: "harbourfx", source: "application" });
+    expect(fieldOf(d, "regulator")).toMatchObject({ value: "FINTRAC", source: "derived" });
+    // and still has real work left, or it rehearses nothing
+    expect(d.ready.ok).toBe(false);
+    expect(d.ready.missing).toContain("msbNumber");
+  });
+
+  it("counts towards nothing — not the site's tally, not the funnel", async () => {
+    const before = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json().claimed;
+    await open();  // creating its record must not move anything either
+    const after = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json();
+    expect(after.claimed).toBe(before);
+
+    const ov = (await app.inject({ method: "GET", url: "/api/admin/overview", cookies: adminCookie })).json();
+    const real = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: adminCookie })).json().enquiries;
+    // it is visible in the list — you have to be able to find it — but it is
+    // not counted among the applications waiting for an answer
+    expect(real.some((e: { reference: string }) => e.reference === W)).toBe(true);
+    expect(ov.funnel.applications).toBe(real.filter((e: { reference: string }) => e.reference !== W).length);
+    // and it never took a founding place
+    expect((await open()).json().application.charterNo).toBeNull();
+  });
+
+  it("runs the whole way and stops before leaving a real desk behind", async () => {
+    const patch = (stepId: string, answers: Record<string, unknown>) =>
+      app.inject({ method: "PATCH", url: `/api/admin/onboarding/${W}`, cookies: adminCookie, payload: { stepId, answers } as Record<string, unknown> });
+    await patch("business", { businessName: "Harbour FX" });
+    await patch("registration", { msbNumber: "M20-7654321", address: "9 Queens Quay", city: "Toronto" });
+    await patch("plan", { plan: "premium" });
+    await patch("trading", { currencies: "USD, EUR, GBP" });
+    // the one step a real operator cannot answer — but there is no real owner
+    // here, and a rehearsal that cannot reach the ending rehearses nothing
+    expect((await patch("password", { password: "rehearsal-only" })).statusCode).toBe(200);
+
+    const done = await app.inject({ method: "POST", url: `/api/admin/onboarding/${W}/create`, cookies: adminCookie });
+    expect(done.statusCode).toBe(200);
+    expect(done.json().walkthrough).toBe(true);
+    expect(done.json().detail).toContain("No desk was created");
+    const desks = await handle.db.select().from((await import("../src/db/index.js")).schema.tenants);
+    expect(desks.some((t) => t.siteSlug === "harbourfx")).toBe(false);
+  });
+
+  it("starts over, so the next run begins where the last one did", async () => {
+    const res = await app.inject({ method: "POST", url: `/api/admin/onboarding/${W}/reset`, cookies: adminCookie });
+    expect(res.statusCode).toBe(200);
+    expect(fieldOf(res.json(), "businessName").value).toBeNull();
+    // what the application told us survives — that is not progress, it is them
+    expect(fieldOf(res.json(), "ownerName").source).toBe("application");
+  });
+
+  it("is the only thing that can be reset — a real applicant's answers are not", async () => {
+    const res = await app.inject({ method: "POST", url: `/api/admin/onboarding/${ref}/reset`, cookies: adminCookie });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("not_the_walkthrough");
+  });
+});

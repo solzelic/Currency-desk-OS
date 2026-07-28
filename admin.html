@@ -616,6 +616,8 @@ function PersonPage({ id, onChanged }) {
    you go so it can be put down and picked up from either side. */
 // NB: the prop is `reference`, not `ref` — React intercepts `ref` on a
 // function component and it would never arrive.
+const WALKTHROUGH = 'CD-WALKTHRU';
+
 function OnboardingPage({ reference: startRef }) {
   const [ref, setRef] = useState(startRef || '');
   const [typed, setTyped] = useState(startRef || '');
@@ -656,6 +658,12 @@ function OnboardingPage({ reference: startRef }) {
     } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
     setBusy(false);
   };
+  const reset = async () => {
+    setBusy(true); setErr('');
+    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/reset', { method: 'POST', body: JSON.stringify({}) })); setDraft({}); }
+    catch (x) { setErr((x.body && x.body.detail) || 'Could not reset.'); }
+    setBusy(false);
+  };
   const finish = async () => {
     setBusy(true); setErr('');
     try { const r = await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/create', { method: 'POST', body: JSON.stringify({}) }); setD(x => ({ ...x, handoff: r.handoff })); }
@@ -682,6 +690,21 @@ function OnboardingPage({ reference: startRef }) {
         {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10 }}>{err}</div>}
         {ref && !err && !d && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12, marginTop: 10 }}>Loading…</div>}
       </Card>
+
+      {/* Onboarding is a thing you do TO somebody, so it is hard to rehearse.
+          This one is always here and can be reset. */}
+      <div style={{ marginTop: 14 }}>
+        <Card title="Just want a run-through?">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+            <b style={{ color: 'var(--text)', fontFamily: MONO }}>{WALKTHROUGH}</b> is a permanent application you can open any
+            time and run start to finish. It goes through exactly the same code a real one does, counts towards nothing,
+            and never leaves a desk behind.
+          </div>
+          <button onClick={() => { setTyped(WALKTHROUGH); setRef(WALKTHROUGH); goto('#/onboarding/' + WALKTHROUGH); }}
+            style={{ padding: '9px 15px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Open the walkthrough</button>
+        </Card>
+      </div>
     </div>
   </div>);
 
@@ -689,9 +712,13 @@ function OnboardingPage({ reference: startRef }) {
   const pct = Math.round((d.done / d.total) * 100);
   return (<div>
     <PageHead back="Onboarding" backTo="#/onboarding" title={a.name || a.email}
-      sub={a.reference + '  ·  charter Nº ' + String(a.charterNo || 0).padStart(4, '0') + '  ·  applied ' + fmtDay(a.appliedAt)}
-      pills={<><Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
-        <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>} />
+      sub={a.reference + (a.charterNo ? '  ·  charter Nº ' + String(a.charterNo).padStart(4, '0') : '') + '  ·  applied ' + fmtDay(a.appliedAt)}
+      pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
+        <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
+        <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>}
+      actions={a.isWalkthrough
+        ? <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>
+        : null} />
 
     <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
       <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />

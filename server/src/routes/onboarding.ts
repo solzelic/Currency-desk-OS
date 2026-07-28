@@ -29,6 +29,7 @@ import {
   PHASES, STEPS, canCreateDesk, fromApplication, resolve, stepById, stepProgress,
   type Answers,
 } from "../onboarding/flow.js";
+import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
 
 const patchBody = z.object({
   stepId: z.string().min(1).max(60),
@@ -65,6 +66,7 @@ function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.o
     application: {
       reference: app.reference, charterNo: app.charterNo, email: app.email,
       name: app.name, status: app.status, appliedAt: app.createdAt,
+      isWalkthrough: app.isDemo,
       // everything they told us that the flow does NOT ask again — the
       // operator wants to see it while they are on the phone
       told: app.details ?? {},
@@ -114,8 +116,12 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
     const step = stepById(parsed.data.stepId);
     if (!step) return reply.code(404).send({ error: "no_such_step" });
     /* A password we chose is not their password. The operator can fill in
-       everything else on their behalf, but not this. */
-    if (step.who === "customer") {
+       everything else on their behalf, but not this.
+
+       The walkthrough is the exception, and only because the rule exists to
+       protect a real person who is not there: letting it stop at this step
+       would mean the one thing you cannot rehearse is the ending. */
+    if (step.who === "customer" && !application.isDemo) {
       return reply.code(403).send({ error: "customer_only", detail: `"${step.title}" is the owner's to do — send them their link.` });
     }
     // only fields this step actually declares, so a client cannot write
@@ -176,6 +182,16 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
     }
     if (!ready.ok) return reply.code(409).send({ error: "not_ready", detail: "Still needed: " + ready.missing.join(", "), missing: ready.missing });
 
+    /* A rehearsal must not leave a real shop behind. Everything up to here
+       ran the same code a real one does — which is the point — and this is
+       the one place the walkthrough stops. */
+    if (application.isDemo) {
+      return reply.code(200).send({
+        ok: true, walkthrough: true,
+        detail: "That is the whole flow. No desk was created — this is the walkthrough. Reset it to run again.",
+      });
+    }
+
     await audit(db, {
       tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id,
       action: "onboarding.ready", detail: { reference: application.reference },
@@ -195,5 +211,21 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
         },
       },
     };
+  });
+
+  /* Put the walkthrough back to how it arrives, so it can be run again. Only
+     the walkthrough: a reset that could wipe a real applicant's answers is a
+     button nobody should have. */
+  app.post("/api/admin/onboarding/:ref/reset", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const { ref } = req.params as { ref: string };
+    const application = await findApplication(db, ref);
+    if (!application) return reply.code(404).send({ error: "no_such_reference" });
+    if (!application.isDemo) {
+      return reply.code(403).send({ error: "not_the_walkthrough", detail: "Only " + WALKTHROUGH_REF + " can be reset." });
+    }
+    await resetWalkthrough(db);
+    return present(application, await loadOrCreate(db, application.id));
   });
 }

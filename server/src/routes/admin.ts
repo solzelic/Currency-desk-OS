@@ -265,11 +265,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
     /* The funnel ahead of those desks. "waiting" is the number that should
        drive someone to open this page: applications nobody has answered. */
-    const apps = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "early_access");
+    // the walkthrough is a rehearsal, not a lead — it belongs in no total
+    const apps = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "early_access" && !e.isDemo);
     const byAppStatus: Record<string, number> = {};
     for (const s of schema.ENQUIRY_STATUSES) byAppStatus[s] = 0;
     for (const a of apps) byAppStatus[a.status] = (byAppStatus[a.status] || 0) + 1;
-    const messages = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "contact");
+    const messages = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "contact" && !e.isDemo);
 
     return {
       totals: { desks: tenants.length, people: staff.length, recent7 },

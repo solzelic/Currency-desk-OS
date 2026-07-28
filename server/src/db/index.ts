@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS enquiries (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS charter_no integer;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS is_demo boolean NOT NULL DEFAULT false;
 -- an enquiry carries its own progress; existing rows predate these columns
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'new';
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS notes text;
