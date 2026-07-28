@@ -31,6 +31,11 @@ const patchBody = z.object({
   answers: z.record(z.string().max(60), z.unknown()),
 });
 
+const stateBody = z.object({
+  at: z.number().int().min(0).max(64),
+  data: z.record(z.string().max(60), z.unknown()),
+});
+
 const normalizeRef = (s: string) => s.trim().toUpperCase().replace(/\s+/g, "");
 
 /* Guessing a code has to be pointless. Failures are what we count — somebody
@@ -164,5 +169,59 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
         },
       },
     };
+  });
+
+  /* The designed flow keeps its own shape — the 24 screens in
+     CurrencyDesk Onboarding.html, with their own field names. We store that
+     blob as it is rather than translating it: the design owns what it asks,
+     and a mapping layer in the middle is a thing that silently goes stale
+     every time a screen changes.
+
+       GET → what they have so far, seeded from their application
+       PUT → the whole state, debounced by the page
+
+     `at` is the screen they are on, so it reopens where they stopped. */
+  app.get<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
+    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+    const a = await find(req.params.ref);
+    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const row = await loadOrCreate(a.id);
+    const saved = (row.answers ?? {}) as Record<string, unknown>;
+    const d = (saved.__flow ?? {}) as Record<string, unknown>;
+    const details = (a.details ?? {}) as Record<string, unknown>;
+    /* Nothing they have already told us gets asked again. Only fills a blank —
+       an answer they have since changed is theirs, not ours to overwrite. */
+    const seeded: Record<string, unknown> = { ...d };
+    const seed = (k: string, v: unknown) => { if (v && !seeded[k]) seeded[k] = v; };
+    seed("ownerName", a.name);
+    seed("ownerEmail", a.email);
+    seed("country", details.jurisdiction);
+    seed("website", details.website === "none yet" ? "" : details.website);
+    if (typeof details.workspace === "string") seed("operatingName", "");
+    return {
+      at: typeof saved.__at === "number" ? saved.__at : 0,
+      data: seeded,
+      application: { reference: a.reference, name: a.name, email: a.email, told: details },
+    };
+  });
+
+  app.put<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
+    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+    const a = await find(req.params.ref);
+    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const parsed = stateBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const row = await loadOrCreate(a.id);
+    const answers = { ...((row.answers ?? {}) as Record<string, unknown>) };
+    /* The card is the one thing we will not hold. It goes to Stripe from the
+       browser and never through here — a saved PAN is a liability nobody
+       asked us to take on. */
+    const d = { ...parsed.data.data };
+    for (const k of ["cardNum", "cardCvc", "cardExp", "card2Num", "card2Cvc", "card2Exp", "ownerPass"]) delete d[k];
+    answers.__flow = d;
+    answers.__at = parsed.data.at;
+    const touched = { ...((row.touched ?? {}) as Record<string, string>), flow: "customer" };
+    await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, a.id));
+    return { ok: true };
   });
 }
