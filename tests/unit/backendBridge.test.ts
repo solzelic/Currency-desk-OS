@@ -7,6 +7,8 @@ type BackendBridge = {
   syncCustomer(name: string, record: Record<string, unknown>): Promise<Record<string, unknown>>;
   createQuote(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   reverseTransaction(transactionId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  loadTillBalances(): Promise<Record<string, unknown>>;
+  getTransactionReceipt(transactionId: string): Promise<Record<string, unknown>>;
   transactionToRow(transaction: Record<string, unknown>, customerName: string): Record<string, unknown>;
   mergeRows(existing: Record<string, unknown>[], serverRows: Record<string, unknown>[]): Record<string, unknown>[];
 };
@@ -101,6 +103,10 @@ describe("browser backend bridge", () => {
       spreadCad: "1.00",
       purpose: "Travel",
       sourceOfFunds: "Savings",
+      thirdParty: true,
+      thirdPartyName: "Jane Beneficial Owner",
+      complianceCapturedBy: "user_1",
+      complianceCapturedAt: "2026-07-28T14:04:00.000Z",
       postedAt: "2026-07-28T14:05:00.000Z",
       reversal: null,
     }, "Alex Smith");
@@ -113,11 +119,38 @@ describe("browser backend bridge", () => {
       status: "posted",
       inAmt: 100,
       outAmt: 72,
-      capture: { purpose: "Travel", source: "Savings" },
+      capture: {
+        purpose: "Travel",
+        source: "Savings",
+        thirdParty: true,
+        thirdPartyName: "Jane Beneficial Owner",
+        by: "user_1",
+      },
     });
     expect(backend.mergeRows([
       { id: "old", serverTransactionId: "tx_1" },
       { id: "local" },
     ], [row])).toEqual([row, { id: "local" }]);
+  });
+
+  it("reads authoritative till balances and receipts", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ tillId: "till_1", balances: { CAD: "1000.00" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ receiptId: "rcpt_tx_1", transactionId: "tx_1" }),
+      });
+    const backend = loadBridge(fetchMock);
+
+    await expect(backend.loadTillBalances()).resolves.toMatchObject({
+      balances: { CAD: "1000.00" },
+    });
+    await expect(backend.getTransactionReceipt("tx/1")).resolves.toMatchObject({
+      receiptId: "rcpt_tx_1",
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/ledger/transactions/tx%2F1/receipt");
   });
 });

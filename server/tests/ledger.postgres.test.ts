@@ -32,7 +32,18 @@ postgres("real PostgreSQL ledger posting", () => {
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: url });
     service = new LedgerService(pool);
-    await pool.query(await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"));
+    await pool.query(
+      await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"),
+    );
+    await pool.query(
+      await readFile(
+        resolve(
+          process.cwd(),
+          "src/db/migrations/005_transaction_compliance_capture.sql",
+        ),
+        "utf8",
+      ),
+    );
   });
   afterAll(async () => pool.end());
   beforeEach(reset);

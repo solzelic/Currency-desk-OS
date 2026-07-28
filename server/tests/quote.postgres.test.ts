@@ -305,7 +305,10 @@ postgres("quote service against real PostgreSQL", () => {
       method: "POST",
       url: `/api/quotes/${made.quoteId}/post`,
       cookies: await cookie(),
-      payload: postBody("quote-post"),
+      payload: postBody("quote-post", {
+        thirdParty: true,
+        thirdPartyName: "Jane Beneficial Owner",
+      }),
     });
     const second = await app.inject({
       method: "POST",
@@ -316,7 +319,7 @@ postgres("quote service against real PostgreSQL", () => {
     expect(first.statusCode).toBe(201);
     expect(second.json().transactionId).toBe(first.json().transactionId);
     const tx = await pool.query(
-      "SELECT output_amount,rate,fee_cad,spread_cad,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,purpose,source_of_funds FROM ledger_transactions WHERE transaction_id=$1",
+      "SELECT output_amount,rate,fee_cad,spread_cad,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at FROM ledger_transactions WHERE transaction_id=$1",
       [first.json().transactionId],
     );
     expect(tx.rowCount).toBe(1);
@@ -333,7 +336,11 @@ postgres("quote service against real PostgreSQL", () => {
       quote_override_id: null,
       purpose: "Personal travel",
       source_of_funds: "Employment income",
+      third_party: true,
+      third_party_name: "Jane Beneficial Owner",
+      compliance_captured_by: `${DEMO.tenantId}:m.costa`,
     });
+    expect(tx.rows[0].compliance_captured_at).toBeInstanceOf(Date);
     expect(
       (
         await pool.query(

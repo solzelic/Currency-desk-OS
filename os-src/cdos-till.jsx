@@ -158,9 +158,31 @@
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    const [serverBalances, setServerBalances] = useState(null);
+    const [serverBalanceError, setServerBalanceError] = useState('');
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) {
+        setServerBalances(null);
+        setServerBalanceError('');
+        return;
+      }
+      let active = true;
+      window.CDOS.Backend.loadTillBalances()
+        .then(result => {
+          if (!active) return;
+          setServerBalances(result.balances || {});
+          setServerBalanceError('');
+        })
+        .catch(error => {
+          if (!active) return;
+          setServerBalances(null);
+          setServerBalanceError(error.message || 'Server balances unavailable');
+        });
+      return () => { active = false; };
+    }, [serverBacked, station && station.tillId]);
     // switch tills at THIS location only (same logic as the header) — change store = sign out
     const [tillMenu, setTillMenu] = useState(false);
     const tillMenuRef = useRef(null);
@@ -254,7 +276,10 @@
     // expected float per currency — DERIVED from the one shared source of truth
     // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
     // Identical to the figure the Vault shows because both call position().
-    const expectedOf = (c) => window.CDOS.holdings(c, allRows, baseline, receipts);
+    const serverBalancesReady = !serverBacked || serverBalances !== null;
+    const expectedOf = (c) => serverBacked
+      ? (serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : 0)
+      : window.CDOS.holdings(c, allRows, baseline, receipts);
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = (c) => {
       try {
@@ -292,7 +317,7 @@
     const offOf = (r) => r.variance != null && Math.abs(cadOf(r.variance, r.c)) > tolCad + 0.005;
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
-    const closeBlocked = !!(settings && settings.requireCountOnClose) && countedN < recon.length;
+    const closeBlocked = !serverBalancesReady || ((serverBacked || !!(settings && settings.requireCountOnClose)) && countedN < recon.length);
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     const totalExpCad = recon.reduce((s, r) => s + cadOf(r.expected, r.c), 0);
     const totalCountCad = recon.reduce((s, r) => s + (r.counted != null ? cadOf(r.counted, r.c) : 0), 0);
@@ -339,6 +364,7 @@
               </div>)}
             </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span>· Day {day && day.num || 1}{day && day.closed ? ' · closed' : ''} · {countedCcys.length} drawer(s) counted</span>
+            {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
           </div></div>
           <div className="flex items-center gap-1.5 flex-none ml-auto">
             {(() => {
@@ -495,14 +521,14 @@
           </div>
         </div>) : (<div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>Opening comes from the vault · expected = opening + today's deals · counted is your physical count · {countedN} of {recon.length} counted</div></div>
+            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
           </div>
           <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
-            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title="Issued by the vault — not editable here" className="inline-flex items-center gap-1">Opening · vault <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
+            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-                <td className="px-3 py-2 text-right" title="What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{num((baseline && baseline.units && baseline.units[r.c]) || 0)}</td>
+                <td className="px-3 py-2 text-right" title={serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'Server ledger' : num((baseline && baseline.units && baseline.units[r.c]) || 0)}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(r.expected)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : '— never'}</td>
                 <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
@@ -511,13 +537,13 @@
           </div>
           <div className="flex items-center gap-3 mt-3">
             {canCloseDay
-              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? 'Count every drawer first — required in Settings › Cash drawer' : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
+              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}
-            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: CD.mute }}>Count all {recon.length} drawers before closing</span>}
+            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : CD.mute }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : `Count all ${recon.length} drawers before closing`}</span>}
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length} drawer(s) off</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: CD.green }}>All counted drawers balanced</span>}
           </div>
-          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>One direction only: the vault issues your <b>opening</b> (locked here — floats move at the vault), the day's deals produce <b>expected</b>, your physical count is <b>counted</b>, and <b>variance</b> = counted − expected — it lands on the operator. Closing locks the ledger until the next day is opened.</p>
+          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>{serverBacked ? <>The server ledger is the source of <b>expected</b> cash, including posted exchanges and reversals.</> : <>The vault issues your <b>opening</b> and the day's deals produce <b>expected</b>.</>} Your physical count is <b>counted</b>, and <b>variance</b> = counted − expected — it lands on the operator. Closing locks the ledger until the next day is opened.</p>
         </div>))}
 
         {/* ===== HISTORY ===== */}

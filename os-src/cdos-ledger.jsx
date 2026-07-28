@@ -1335,6 +1335,18 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const serverRows = await window.CDOS.Backend.loadLedger();
       setRows(current => window.CDOS.Backend.mergeRows(current, serverRows));
     };
+    const openReceipt = async (row) => {
+      if (!(serverBacked && row.serverTransactionId && window.CDOS.Backend)) {
+        setReceipt(row);
+        return;
+      }
+      try {
+        const serverReceipt = await window.CDOS.Backend.getTransactionReceipt(row.serverTransactionId);
+        setReceipt({ ...row, serverReceipt });
+      } catch (error) {
+        log && log('Receipt fetch failed', error.message || 'Authoritative receipt unavailable');
+      }
+    };
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) return;
       let active = true;
@@ -1688,7 +1700,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </div>
 
       {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
-      {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={setReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
+      {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={openReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
       {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
     </div>);
   }

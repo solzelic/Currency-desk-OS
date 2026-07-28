@@ -25,7 +25,12 @@ const postBody = z.object({
   feeCad: monetary("0"),
   purpose: z.string().trim().max(500),
   sourceOfFunds: z.string().trim().max(500),
-}).refine((value) => value.from !== value.to, { message: "Currencies must differ.", path: ["to"] });
+  thirdParty: z.boolean().default(false),
+  thirdPartyName: z.string().trim().max(200).optional(),
+})
+  .refine((value) => value.from !== value.to, { message: "Currencies must differ.", path: ["to"] })
+  .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
+  .refine((value) => value.thirdParty || !value.thirdPartyName, { message: "Third-party name requires third-party status.", path: ["thirdPartyName"] });
 const reverseBody = z.object({ idempotencyKey: z.string().min(1).max(200), reason: z.string().trim().min(1).max(1000) });
 const customerBody = z.object({
   externalRef: z.string().trim().min(1).max(200).optional(),
@@ -218,6 +223,22 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return actor
         ? reply.send(
             await provisioning.listTransactions(actor, parsed.data.limit),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/transactions/:transactionId/receipt", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(
+            await provisioning.transactionReceipt(
+              actor,
+              (req.params as { transactionId: string }).transactionId,
+            ),
           )
         : undefined;
     } catch (error) {

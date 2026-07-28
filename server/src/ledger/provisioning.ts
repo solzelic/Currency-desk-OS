@@ -280,6 +280,12 @@ export class LedgerProvisioningService {
           spreadCad: row.spread_cad,
           purpose: row.purpose,
           sourceOfFunds: row.source_of_funds,
+          thirdParty: row.third_party ?? false,
+          thirdPartyName: row.third_party_name ?? null,
+          complianceCapturedBy: row.compliance_captured_by ?? row.actor_id,
+          complianceCapturedAt: new Date(
+            row.compliance_captured_at ?? row.posted_at,
+          ).toISOString(),
           rateBoardPublicationId: row.rate_board_publication_id ?? null,
           marketSnapshotId: row.market_snapshot_id ?? null,
           rateSourceType: row.rate_source_type ?? null,
@@ -293,6 +299,51 @@ export class LedgerProvisioningService {
               }
             : null,
         })),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async transactionReceipt(actor: LedgerActor, transactionId: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "ledger:view");
+      const result = await client.query(
+        `SELECT t.*,c.name AS customer_name
+           FROM ledger_transactions t
+           JOIN ledger_customers c ON c.customer_id=t.customer_id
+          WHERE t.transaction_id=$1 AND t.tenant_id=$2
+            AND t.legal_entity_id=$3 AND t.branch_id=$4
+            AND t.workspace_id=$5 AND t.till_id=$6`,
+        [transactionId, ...scope(actor)],
+      );
+      if (!result.rowCount) {
+        throw new LedgerError(
+          "TRANSACTION_NOT_FOUND",
+          "Transaction not found.",
+        );
+      }
+      const row = result.rows[0];
+      await client.query("COMMIT");
+      return {
+        receiptId: `rcpt_${row.transaction_id}`,
+        transactionId: row.transaction_id,
+        transactionRef: row.transaction_ref,
+        postedAt: new Date(row.posted_at).toISOString(),
+        lines: [
+          "CurrencyDesk OS",
+          `Receipt ${row.transaction_ref}`,
+          `Customer: ${row.customer_name}`,
+          ...(row.quote_id ? [`Quote: ${row.quote_id}`] : []),
+          `Paid exchange: ${row.input_amount} ${row.from_currency.trim()}`,
+          `Fee paid separately: CAD ${row.fee_cad}`,
+          `Received: ${row.output_amount} ${row.to_currency.trim()}`,
+        ],
       };
     } catch (error) {
       await client.query("ROLLBACK");

@@ -540,8 +540,10 @@
           idempotencyKey: `web:${serverQuote.quoteId}`,
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
+          thirdParty: !!cap.thirdParty,
+          thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
         });
-        const row = window.CDOS.Backend.transactionToRow(posted, customer, { purpose: purpose.trim(), sourceOfFunds: cap.source.trim() });
+        const row = window.CDOS.Backend.transactionToRow(posted, customer, { purpose: purpose.trim(), sourceOfFunds: cap.source.trim(), thirdParty: !!cap.thirdParty, thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : '' });
         setRows(current => window.CDOS.Backend.mergeRows(current, [row]));
         log('Transaction recorded', `${posted.transactionRef} · Exchange · ${customer} · ${posted.inputAmount} ${posted.from} · server ledger`);
         if (tq) { tgRedeem(tq.ref, posted.transactionRef); log('Text quote redeemed', tq.ref + ' → ' + posted.transactionRef + ' · ' + tq.phone); }

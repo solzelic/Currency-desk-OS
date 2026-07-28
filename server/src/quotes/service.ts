@@ -432,9 +432,14 @@ export class QuoteService {
       client.release();
     }
   }
-  async post(actor: LedgerActor, quoteId: string, idempotencyKey: string, purpose: string, sourceOfFunds: string) {
+  async post(actor: LedgerActor, quoteId: string, idempotencyKey: string, purpose: string, sourceOfFunds: string, thirdParty = false, thirdPartyName?: string) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
     const validatedSourceOfFunds = complianceFact(sourceOfFunds, "Source of funds");
+    const validatedThirdPartyName = thirdParty
+      ? complianceFact(thirdPartyName || "", "Third-party name")
+      : null;
+    if (!thirdParty && thirdPartyName?.trim())
+      throw new LedgerError("INVALID_REQUEST", "Third-party name requires third-party status.");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -484,6 +489,8 @@ export class QuoteService {
           quoteOverrideId: value.o?.override_id ?? null,
           purpose: validatedPurpose,
           sourceOfFunds: validatedSourceOfFunds,
+          thirdParty,
+          thirdPartyName: validatedThirdPartyName,
         } as FrozenQuote,
         idempotencyKey,
       );

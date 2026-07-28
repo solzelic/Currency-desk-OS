@@ -22,6 +22,8 @@ const post = {
   feeCad: "4.00",
   purpose: "Travel",
   sourceOfFunds: "Cash",
+  thirdParty: true,
+  thirdPartyName: "Family Member",
 };
 
 async function cookie(staffId = "a.singh") {
@@ -85,6 +87,10 @@ async function resetLedger() {
 
 postgres("ledger HTTP routes against real PostgreSQL", () => {
   beforeAll(async () => {
+    process.env.DATABASE_URL = url;
+    const real = await createDb();
+    await real.close();
+    delete process.env.DATABASE_URL;
     process.env.PGLITE_MEMORY = "1";
     process.env.LEDGER_DATABASE_URL = url;
     pool = new pg.Pool({ connectionString: url });
@@ -320,11 +326,24 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(ledger.json().transactions).toHaveLength(1);
     expect(ledger.json().transactions[0]).toMatchObject({
       transactionId: posted.json().transactionId,
+      thirdParty: true,
+      thirdPartyName: "Family Member",
       reversal: {
         reversalId: reversed.json().reversalId,
         reason: "Correction",
       },
     });
+    const receipt = await app.inject({
+      method: "GET",
+      url: `/api/ledger/transactions/${posted.json().transactionId}/receipt`,
+      cookies: teller,
+    });
+    expect(receipt.statusCode).toBe(200);
+    expect(receipt.json()).toMatchObject({
+      transactionId: posted.json().transactionId,
+      transactionRef: posted.json().transactionRef,
+    });
+    expect(receipt.json().lines.join(" ")).toContain("Demo Customer");
   });
 
   it("deduplicates posting and derives authorization from the staff record", async () => {

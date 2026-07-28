@@ -92,8 +92,10 @@
       capture: {
         purpose: transaction.purpose || compliance.purpose || "",
         source: transaction.sourceOfFunds || compliance.sourceOfFunds || "",
-        thirdParty: false,
-        thirdPartyName: "",
+        thirdParty: transaction.thirdParty == null ? !!compliance.thirdParty : !!transaction.thirdParty,
+        thirdPartyName: transaction.thirdPartyName || compliance.thirdPartyName || "",
+        by: transaction.complianceCapturedBy || transaction.actorId || "",
+        at: transaction.complianceCapturedAt || transaction.postedAt,
       },
       notes: transaction.purpose || compliance.purpose || "",
       teller: transaction.actorId || "",
@@ -153,6 +155,12 @@
       },
       transactionToRow: transactionToRow,
       loadLedger: loadLedger,
+      loadTillBalances: function () {
+        return request("/api/ledger/till-balances");
+      },
+      getTransactionReceipt: function (transactionId) {
+        return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/receipt");
+      },
       mergeRows: mergeRows,
       asMoney: asMoney,
     },
