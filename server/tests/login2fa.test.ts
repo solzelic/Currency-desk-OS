@@ -13,6 +13,9 @@ let logged: string[] = [];
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
   process.env.SEED_PASSWORD = "yorkville";
+  // the owner below is a fixture; early access being invite-only is tested
+  // in funnel.test.ts, not here
+  process.env.EARLY_ACCESS_OPEN = "1";
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { logged.push(a.join(" ")); });
   handle = await createDb();
   await seed(handle.db);
@@ -21,7 +24,7 @@ beforeAll(async () => {
   await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "TwoFA FX", ownerName: "Sam Twofa", email: "sam@twofa.ca", password: "a-strong-pass", slug: "twofa" } });
   await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "sam@twofa.ca", code: codeFromLog() } });
 });
-afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
+afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); delete process.env.EARLY_ACCESS_OPEN; });
 beforeEach(() => { logged = []; });
 
 function codeFromLog(): string {

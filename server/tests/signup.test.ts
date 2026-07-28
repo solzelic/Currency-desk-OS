@@ -14,12 +14,16 @@ let logged: string[] = [];
 // capture the simulated-email log line so we can read the code
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
+  /* This file is about the signup mechanics — the OTP, the tenant, slug
+     collisions. Early access being invite-only is a separate rule, covered
+     in funnel.test.ts; open the door so it does not mask these. */
+  process.env.EARLY_ACCESS_OPEN = "1";
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { logged.push(a.join(" ")); });
   handle = await createDb();
   await seed(handle.db);
   app = await buildApp(handle.db);
 });
-afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
+afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); delete process.env.EARLY_ACCESS_OPEN; });
 beforeEach(() => { logged = []; });
 
 // the signup code and the sign-in code are worded differently; take either

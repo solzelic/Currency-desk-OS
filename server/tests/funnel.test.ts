@@ -108,6 +108,10 @@ describe("the early-access funnel", () => {
 
   it("creating the desk is what closes the application, and links the two", async () => {
     await apply("dana@newdesk.example");
+    // the invite is the gate now, so an application has to be invited before
+    // its operator can open a desk
+    const dana = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.email, "dana@newdesk.example")))[0]!;
+    await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${dana.id}`, cookies: adminCookie, payload: { status: "invited" } });
     await app.inject({
       method: "POST",
       url: "/api/signup",
@@ -126,14 +130,44 @@ describe("the early-access funnel", () => {
     expect(shown.tenantName).toBe("New Desk FX");
   });
 
-  it("a desk that never applied still gets created", async () => {
-    await app.inject({
+  /* This used to read "a desk that never applied still gets created". The site
+     promises a first cohort of a hundred places you apply for, and a wizard
+     anyone could reach made that decoration — so the door is shut unless the
+     operator has invited the address. */
+  it("nobody opens a desk without being invited to", async () => {
+    const walkIn = await app.inject({
       method: "POST",
       url: "/api/signup",
       payload: { businessName: "Walk In FX", ownerName: "Sam Lee", email: "sam@walkin.example", password: "a-strong-pass", slug: "walkin" },
     });
-    const done = await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "sam@walkin.example", code: codeFromLog() } });
-    expect(done.statusCode).toBe(201);
+    expect(walkIn.statusCode).toBe(403);
+    expect(walkIn.json().error).toBe("not_invited");
+
+    // applying is not being invited — the operator still decides
+    await apply("sam@walkin.example");
+    expect((await app.inject({
+      method: "POST", url: "/api/signup",
+      payload: { businessName: "Walk In FX", ownerName: "Sam Lee", email: "sam@walkin.example", password: "a-strong-pass", slug: "walkin" },
+    })).statusCode).toBe(403);
+
+    const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.email, "sam@walkin.example")))[0]!;
+    await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${row.id}`, cookies: adminCookie, payload: { status: "invited" } });
+    const nowOk = await app.inject({
+      method: "POST", url: "/api/signup",
+      payload: { businessName: "Walk In FX", ownerName: "Sam Lee", email: "sam@walkin.example", password: "a-strong-pass", slug: "walkin" },
+    });
+    expect(nowOk.statusCode).toBe(201);
+    expect((await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "sam@walkin.example", code: codeFromLog() } })).statusCode).toBe(201);
+  });
+
+  it("opens to everyone when early access is over", async () => {
+    process.env.EARLY_ACCESS_OPEN = "1";
+    const res = await app.inject({
+      method: "POST", url: "/api/signup",
+      payload: { businessName: "Later FX", ownerName: "Pat Ng", email: "pat@later.example", password: "a-strong-pass", slug: "laterfx" },
+    });
+    expect(res.statusCode).toBe(201);
+    delete process.env.EARLY_ACCESS_OPEN;
   });
 
   it("none of this is reachable without being a platform admin", async () => {

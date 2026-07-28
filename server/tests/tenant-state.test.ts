@@ -12,13 +12,17 @@ let logged: string[] = [];
 
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
+  // signup is a fixture here, not the subject — early access is invite-only
+  // (see routes/signup.ts), so open the door rather than staging an invite
+  process.env.EARLY_ACCESS_OPEN = "1";
   process.env.SEED_PASSWORD = "yorkville";
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { logged.push(a.join(" ")); });
   handle = await createDb();
   await seed(handle.db);
   app = await buildApp(handle.db);
 });
-afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
+afterAll(async () => {  delete process.env.EARLY_ACCESS_OPEN;
+ await app.close(); await handle.close(); vi.restoreAllMocks(); });
 beforeEach(() => { logged = []; });
 
 const codeFromLog = (): string => {

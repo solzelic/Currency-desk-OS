@@ -53,6 +53,26 @@ const onboardingShape = z
   })
   .passthrough();
 
+/* Who is allowed to open a desk.
+
+   The site says early access, a first cohort, a hundred places — and until
+   now anyone who found the wizard's URL could create a desk anyway, which
+   made all of that decoration. A desk is created only for an address the
+   operator has actually invited from the control panel.
+
+   The invite is the gate, and pressing "invited" on an application is what
+   opens it — no separate token to mint, expire or lose, and the applicant's
+   own email address is the key. An address we already accepted can come back
+   too: a signup abandoned halfway must not lock somebody out of their place.
+
+   EARLY_ACCESS_OPEN=1 takes the gate off for general availability. Platform
+   admins are unaffected — they create desks directly from the panel. */
+async function isInvited(db: Db, email: string): Promise<boolean> {
+  if (process.env.EARLY_ACCESS_OPEN === "1") return true;
+  const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, email));
+  return rows.some((r) => r.kind === "early_access" && (r.status === "invited" || r.status === "accepted"));
+}
+
 const signupBody = z.object({
   businessName: z.string().trim().min(1).max(120),
   ownerName: z.string().trim().min(1).max(120),
@@ -111,6 +131,14 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (await emailInUse(db, b.email)) {
       // don't reveal account existence in an obvious way, but block the collision
       return reply.code(409).send({ error: "email_in_use", detail: "That email already has a desk — sign in instead." });
+    }
+    /* After the collision checks, so somebody who already has a desk is told
+       to sign in rather than that they were never invited. */
+    if (!(await isInvited(db, b.email))) {
+      return reply.code(403).send({
+        error: "not_invited",
+        detail: "Early access is invite-only right now. Apply at /signup and we'll be in touch.",
+      });
     }
 
     const passwordHash = await hashPassword(b.password);

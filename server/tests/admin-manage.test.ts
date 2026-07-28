@@ -14,6 +14,9 @@ let admin = "";
 
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
+  // signup is a fixture here, not the subject — early access is invite-only
+  // (see routes/signup.ts), so open the door rather than staging an invite
+  process.env.EARLY_ACCESS_OPEN = "1";
   process.env.SEED_PASSWORD = "yorkville";
   process.env.PLATFORM_ADMIN_EMAILS = "j.masri";
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { logged.push(a.join(" ")); });
@@ -26,7 +29,8 @@ beforeAll(async () => {
   await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Zephyr FX", ownerName: "Zoe", email: "zoe@zephyr.ca", password: "a-strong-pass", slug: "zephyr", onboarding: { plan: "pro" } } });
   await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "zoe@zephyr.ca", code: codeFromLog() } });
 });
-afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
+afterAll(async () => {  delete process.env.EARLY_ACCESS_OPEN;
+ await app.close(); await handle.close(); vi.restoreAllMocks(); });
 beforeEach(() => { logged = []; });
 function codeFromLog(): string { const l = [...logged].reverse().find((x) => x.includes("[email simulated]")); const m = l?.match(/(\d{6}) is your/); if (!m) throw new Error("no code"); return m[1]!; }
 const H = { headers: { cookie: "" } };
