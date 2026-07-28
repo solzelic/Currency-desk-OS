@@ -67,6 +67,71 @@ export interface SiteConfig {
 export type TenantPlan = "basic" | "pro" | "premium";
 export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
 
+/* Stripe is the commercial system of record. These projections contain only
+   identifiers and billing state needed to operate CurrencyDesk — never card
+   data, billing addresses, or raw webhook payloads. */
+export const stripeCustomers = pgTable(
+  "stripe_customers",
+  {
+    tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("stripe_customers_customer_idx").on(t.stripeCustomerId)],
+);
+
+export const stripeSubscriptions = pgTable(
+  "stripe_subscriptions",
+  {
+    stripeSubscriptionId: text("stripe_subscription_id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    priceId: text("price_id"),
+    plan: text("plan").$type<TenantPlan>(),
+    status: text("status").notNull(),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("stripe_subscriptions_tenant_idx").on(t.tenantId, t.updatedAt)],
+);
+
+export const stripeInvoices = pgTable(
+  "stripe_invoices",
+  {
+    stripeInvoiceId: text("stripe_invoice_id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    status: text("status"),
+    currency: text("currency"),
+    amountDue: integer("amount_due"),
+    amountPaid: integer("amount_paid"),
+    tax: integer("tax"),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    invoicePdf: text("invoice_pdf"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("stripe_invoices_tenant_idx").on(t.tenantId, t.updatedAt)],
+);
+
+export const stripeEvents = pgTable(
+  "stripe_events",
+  {
+    stripeEventId: text("stripe_event_id").primaryKey(),
+    type: text("type").notNull(),
+    objectId: text("object_id"),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    livemode: boolean("livemode").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (t) => [index("stripe_events_tenant_idx").on(t.tenantId, t.receivedAt)],
+);
+
 /* Opening a desk, in progress.
 
    Keyed on the APPLICATION, not on a tenant — because the whole point is

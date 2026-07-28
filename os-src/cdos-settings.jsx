@@ -225,23 +225,35 @@
       srvCall('PATCH', '/api/staff/' + encodeURIComponent(sid), { active }).then(srvReload).catch(() => {});
     };
     const [planMsg, setPlanMsg] = useState('');
-    // the purchased tier lives on the TENANT — switching plans writes to the
-    // server (administrator only) so every device and sign-in agrees
-    const pickPlan = (id) => {
-      const prev = settings.billingPlan || 'premium';
-      if (prev === id) return;
-      set('billingPlan', id, `plan ${id}`);
+    // Stripe is the commercial system of record. Card details never touch
+    // CurrencyDesk; selecting a plan opens Stripe-hosted Checkout instead.
+    const pickPlan = async (id) => {
+      if ((settings.billingPlan || 'premium') === id) return;
       setPlanMsg('');
-      if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
-      fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ plan: id }) })
-        .then(r => {
-          if (r.ok) return;
-          set('billingPlan', prev, 'plan change reverted');
-          setPlanMsg(r.status === 401 || r.status === 403
-            ? 'Only the owner account can change the plan \u2014 ask them to switch it.'
-            : 'The plan change didn\u2019t reach the server (' + r.status + ') \u2014 try again.');
-        })
-        .catch(() => { /* no backend \u2014 offline demo keeps the local switch */ });
+      if (typeof fetch !== 'function' || window.location.protocol === 'file:') { setPlanMsg('Billing is available in the hosted CurrencyDesk app.'); return; }
+      try {
+        const res = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ plan: id, cycle: (settings.billingCycle || 'monthly'), idempotencyKey: crypto.randomUUID() }) });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.url) throw new Error((data && (data.detail || data.error)) || ('HTTP ' + res.status));
+        window.location.assign(data.url);
+      } catch (err) {
+        setPlanMsg(err && err.message === 'billing_not_configured'
+          ? 'Billing is being configured. Please contact CurrencyDesk support to change plans.'
+          : 'Could not open secure checkout. Please try again or contact CurrencyDesk support.');
+      }
+    };
+    const openBillingPortal = async () => {
+      setPlanMsg('');
+      try {
+        const res = await fetch('/api/billing/portal', { method: 'POST', credentials: 'same-origin' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.url) throw new Error((data && (data.detail || data.error)) || ('HTTP ' + res.status));
+        window.location.assign(data.url);
+      } catch (err) {
+        setPlanMsg(err && err.message === 'no_billing_customer'
+          ? 'Choose a plan first to begin secure billing setup.'
+          : 'Could not open the secure billing portal. Please try again or contact CurrencyDesk support.');
+      }
     };
     // ---- hosted public site (server-side tenant: slug + custom domain) ----
     const [siteInfo, setSiteInfo] = useState(null);    // { siteSlug, siteDomain } | null = unavailable
@@ -553,11 +565,10 @@
           const cycle = settings.billingCycle || 'monthly';
           const price = (pl) => pl == null ? null : (cycle === 'annual' ? pl.price * (12 - pl.freeMonths) : pl.price);
           const cur = PLANS.find(p => p.id === plan) || PLANS[2];
-          const cards = seedCards(settings); const primaryCard = cards.find(c => c.role === 'primary') || cards[0];
           const seats = (window.CDOS.STAFF || []).length;
           const locs = (branches || []).length;
           const tills = (branches || []).reduce((s, b) => s + ((b.tills || []).length), 0);
-          const INV = [['INV-2026-06', '2026-06-01'], ['INV-2026-05', '2026-05-01'], ['INV-2026-04', '2026-04-01']];
+          const INV = [];
           const invPDF = (ref, date) => {
             const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
             const biz = settings.operatingName || settings.bizName || 'CurrencyDesk';
@@ -650,18 +661,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </div>); })()}
 
             <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Payment</div>
-            <button onClick={() => setTab('payment')} className="w-full flex items-center gap-3 p-3 mb-4 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
-              <span className="grid place-items-center flex-none" style={{ width: 40, height: 27, borderRadius: 5, background: CARD_GRAD[cardBrand(primaryCard.num)] }}><Ic n="card" s={14} c="var(--cd-on-ink)" /></span>
-              <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>{cardBrand(primaryCard.num)} ···· {cardLast4(primaryCard.num)} <span className="text-[9px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>PRIMARY</span></div><div className="text-[11px]" style={{ color: CD.mute }}>{cards.length} card{cards.length === 1 ? '' : 's'} on file{cards.find(c => c.role === 'backup') ? ' · backup set' : ''}</div></div>
+            <button onClick={openBillingPortal} className="w-full flex items-center gap-3 p-3 mb-4 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
+              <span className="grid place-items-center flex-none" style={{ width: 40, height: 27, borderRadius: 5, background: CD.ink }}><Ic n="lock" s={14} c="var(--cd-on-ink)" /></span>
+              <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Secure billing <span className="text-[9px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>STRIPE</span></div><div className="text-[11px]" style={{ color: CD.mute }}>Payment methods and invoices are managed in Stripe</div></div>
               <span className="flex items-center gap-1 text-[12px] font-medium flex-none" style={{ color: CD.ink }}>Manage <Ic n="chev" s={13} c={CD.mute} /></span>
             </button>
-            <div className="text-[10px] uppercase tracking-widest mb-1 mt-4" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Recent invoices</div>
-            <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-              {INV.map(([ref, date], i) => (<div key={ref} className="flex items-center justify-between px-3 py-2.5" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none' }}><div><div className="text-[12.5px] font-medium" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{ref}</div><div className="text-[11px]" style={{ color: CD.mute }}>{date} · {fmt(cur.price, 'CAD')}</div></div><button onClick={() => invPDF(ref, date)} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-on-ink)' }}><Ic n="download" s={13} /> PDF</button></div>))}
-            </div>
+            <div className="text-[11px] mt-4" style={{ color: CD.mute }}>Invoices, receipts and tax details are available from the secure Stripe billing portal.</div>
           </div>); })()}
 
         {tab === 'payment' && (() => {
+          return (<div>
+            <SectionTitle icon="card" title="Payment methods" sub="Payment methods, invoices and subscription changes are securely managed by Stripe." />
+            <div className="p-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
+              <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Secure billing portal</div>
+              <p className="text-[12px] mt-1.5" style={{ color: CD.mute }}>CurrencyDesk never collects or stores card numbers, CVCs or billing addresses. Stripe securely manages your payment methods, tax invoices and subscription.</p>
+              <button onClick={openBillingPortal} className="mt-3 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="card" s={15} c="var(--cd-on-ink)" /> Manage billing in Stripe</button>
+            </div>
+          </div>);
+          /* Retired local mock. Stripe-hosted Checkout and Customer Portal
+             are the only production payment surfaces. */
           const cards = seedCards(settings);
           const setCards = (fn) => setSettings(s => ({ ...s, cards: fn(s.cards || seedCards(s)) }));
           const setRole = (id, role) => { setCards(list => list.map(c => c.id === id ? { ...c, role } : (c.role === role ? { ...c, role: undefined } : c))); log('Card updated', role + ' card set'); };
@@ -715,7 +733,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Billing contact</div>
             <Row title="Billing email" desc="Invoices and receipts are sent here."><input value={settings.billingEmail || ''} onChange={e => set('billingEmail', e.target.value)} placeholder={settings.bizEmail || 'billing@business.com'} className="text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, width: 220 }} /></Row>
             <div className="flex items-center gap-1.5 text-[11px] mt-3" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> Card details are stored securely with our payments provider — we only keep the brand and last four digits.</div>
-          </div>);
+          </div>); */
         })()}
 
         {tab === 'texts' && (<div>

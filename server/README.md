@@ -112,3 +112,12 @@ market-mid, source-type, and override lineage.
    hydrate its ledger from server reads instead of writing local rows.
 3. Add production market-data assurance, monitoring, backups, and an approved
    override/compliance policy.
+
+## Stripe billing
+
+Subscriptions use Stripe-hosted Checkout, Stripe Tax and the Stripe Customer
+Portal; card details never reach this server. Signed webhooks project Stripe
+customers, subscriptions and invoices into the local database, and only a
+paid Stripe invoice updates a paid tenant plan. See
+[`docs/STRIPE_BILLING.md`](../docs/STRIPE_BILLING.md) for the required test and
+live dashboard setup.

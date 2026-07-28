@@ -37,13 +37,12 @@ const siteConfigShape = z.object({
 
 const patchBody = z
   .object({
-    plan: z.enum(["basic", "pro", "premium"]).optional(),
     // the customer's own domain for their hosted site; null disconnects it
     siteDomain: domainShape.nullable().optional(),
     // storefront contact + hours, published from the OS
     siteConfig: siteConfigShape.optional(),
   })
-  .refine((b) => b.plan !== undefined || b.siteDomain !== undefined || b.siteConfig !== undefined, { message: "empty patch" });
+  .refine((b) => b.siteDomain !== undefined || b.siteConfig !== undefined, { message: "empty patch" });
 
 export async function tenantPlan(db: Db, tenantId: string): Promise<TenantPlan> {
   const rows = await db.select({ plan: schema.tenants.plan }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1);
@@ -74,11 +73,12 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = patchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    // plan & domain are commercial decisions — administrator only; the
-    // storefront's contact/hours can be kept current by a branch manager
+    // Stripe webhooks are the sole source of paid-plan entitlements. The
+    // storefront's domain remains an administrator decision; its contact and
+    // hours can be kept current by a branch manager.
     const isAdmin = who.role === "administrator";
     const isManager = isAdmin || who.role === "branch_manager";
-    if ((parsed.data.plan !== undefined || parsed.data.siteDomain !== undefined) && !isAdmin) {
+    if (parsed.data.siteDomain !== undefined && !isAdmin) {
       return reply.code(403).send({ error: "forbidden" });
     }
     if (parsed.data.siteConfig !== undefined && !isManager) {
@@ -86,14 +86,6 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
     }
 
     const scope = { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id };
-
-    if (parsed.data.plan !== undefined) {
-      const before = await tenantPlan(db, who.tenantId);
-      if (before !== parsed.data.plan) {
-        await db.update(schema.tenants).set({ plan: parsed.data.plan }).where(eq(schema.tenants.id, who.tenantId));
-        await audit(db, { ...scope, action: "tenant.plan_changed", detail: { from: before, to: parsed.data.plan } });
-      }
-    }
 
     if (parsed.data.siteDomain !== undefined) {
       const domain = parsed.data.siteDomain === null ? null : parsed.data.siteDomain.toLowerCase().replace(/^www\./, "");
