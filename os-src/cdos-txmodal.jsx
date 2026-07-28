@@ -299,7 +299,7 @@
   /* =====================================================================
      MAIN
   ===================================================================== */
-  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques }) {
+  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => { const s = new Set(Object.keys(clients)); live.forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, live]);
 
@@ -352,6 +352,9 @@
     const [tq, setTq] = useState(null);
     const [tqErr, setTqErr] = useState('');
     const [tqOpen, setTqOpen] = useState(false);
+    const [serverQuote, setServerQuote] = useState(null);
+    const [serverBusy, setServerBusy] = useState(false);
+    const [serverError, setServerError] = useState('');
 
     useEffect(() => { const h = (e) => { if (e.key === 'Escape' && !present) onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose, present]);
     useEffect(() => { if (!lock) return; const t = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(t); }, [lock]);
@@ -376,6 +379,10 @@
       : null;
     const pricing = useMemo(() => priceArgs ? priceDeal(priceArgs) : { rate: 1, outAmt: amtN, midRate: null, marginCad: 0, side: null, midCadIn: amtN, deskRate: 1, outAmtRaw: amtN }, [JSON.stringify(priceArgs), rateVersion]);
     const rateN = pricing.rate;
+    useEffect(() => {
+      setServerQuote(null);
+      setServerError('');
+    }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
 
     // cheque fee/hold from shared schedule
     const _K = window.CDOS._cheques;
@@ -448,6 +455,10 @@
       const capOk = purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim());
       reqs.push({ key: 'cap', ok: capOk, warn: !capOk, label: `${regime.largeCode} details captured`, sub: !capOk ? 'Purpose, source of funds & third-party — fill below' : 'Pre-fills the filing in Compliance' });
     }
+    if (serverBacked && isExchange && !single) {
+      const serverFactsOk = purpose.trim() && cap.source.trim();
+      reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
+    }
     if (needOverride) reqs.push({ key: 'mgn', ok: marginAck && marginReason.trim(), warn: true, label: 'Below-floor margin — needs a reason', sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below' });
 
     const hardReqs = reqs.filter(r => !r.soft);
@@ -490,6 +501,62 @@
     useEffect(() => { if (override && !tq) setTqOpen(true); }, [override]);
     // a ref handed over by the Texts app (Start transaction) — apply on mount
     useEffect(() => { const p = window.__cdosTqPrefill; if (p) { window.__cdosTqPrefill = null; applyTqWith(String(p)); } }, []);
+
+    const getServerQuote = async () => {
+      if (!canSave || !window.CDOS.Backend) return;
+      setServerBusy(true);
+      setServerError('');
+      try {
+        const synced = await window.CDOS.Backend.syncCustomer(customer, rec);
+        setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
+        let quote = await window.CDOS.Backend.createQuote({
+          customerId: synced.customerId,
+          from: inCcy,
+          to: outCcy,
+          inputAmount: window.CDOS.Backend.asMoney(amtN),
+          feeCad: window.CDOS.Backend.asMoney(feeN),
+          direction: inCcy === 'CAD' ? 'customer_buy_foreign' : 'customer_sell_foreign',
+        });
+        if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
+          quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
+            customerRate: String(rateN),
+            reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : lockLive ? `Rate lock ${lockLive.ref || ''}`.trim() : 'Manual counter rate'),
+          });
+        }
+        setServerQuote(quote);
+      } catch (error) {
+        setServerError(error.message || 'The server quote could not be created.');
+      } finally {
+        setServerBusy(false);
+      }
+    };
+
+    const postServerQuote = async () => {
+      if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
+      setServerBusy(true);
+      setServerError('');
+      try {
+        const posted = await window.CDOS.Backend.postQuote(serverQuote.quoteId, {
+          idempotencyKey: `web:${serverQuote.quoteId}`,
+          purpose: purpose.trim(),
+          sourceOfFunds: cap.source.trim(),
+        });
+        const row = window.CDOS.Backend.transactionToRow(posted, customer, { purpose: purpose.trim(), sourceOfFunds: cap.source.trim() });
+        setRows(current => window.CDOS.Backend.mergeRows(current, [row]));
+        log('Transaction recorded', `${posted.transactionRef} · Exchange · ${customer} · ${posted.inputAmount} ${posted.from} · server ledger`);
+        if (tq) { tgRedeem(tq.ref, posted.transactionRef); log('Text quote redeemed', tq.ref + ' → ' + posted.transactionRef + ' · ' + tq.phone); }
+        if (onServerPosted) {
+          try { await onServerPosted(); }
+          catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The posted transaction will refresh on the next ledger open'); }
+        }
+        onDone && onDone(row.id);
+      } catch (error) {
+        if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
+        setServerError(error.message || 'The transaction was not posted.');
+      } finally {
+        setServerBusy(false);
+      }
+    };
 
     const record = () => {
       if (!canSave) return;
@@ -725,6 +792,15 @@
                 </div>
               )}
 
+              {serverBacked && isExchange && !single && (
+                <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+                  <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
+                  <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                </div>
+              )}
+
               {/* below-floor margin override */}
               {needOverride && (
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
@@ -791,7 +867,15 @@
               {/* rail footer actions */}
               <div className="flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
                 {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
-                <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />
+                {serverBacked && isExchange ? <>
+                  {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
+                    Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>}
+                  {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
+                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
+                    <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
+                  </button>
+                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
                 <button onClick={onClose} className="w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>

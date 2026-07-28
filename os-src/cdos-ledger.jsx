@@ -1289,7 +1289,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   /* =====================================================================
      LEDGER — immutable record list
   ===================================================================== */
-  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR }) {
+  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
     const [q, setQ] = useState('');
     const [tf, setTf] = useState('All');
@@ -1300,6 +1300,19 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [breakdown, setBreakdown] = useState(null);   // 'volume' | 'fees' | null
     const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
     const [helpOpen, setHelpOpen] = useState(false);
+    const refreshServerLedger = async () => {
+      if (!serverBacked || !window.CDOS.Backend) return;
+      const serverRows = await window.CDOS.Backend.loadLedger();
+      setRows(current => window.CDOS.Backend.mergeRows(current, serverRows));
+    };
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) return;
+      let active = true;
+      window.CDOS.Backend.loadLedger()
+        .then(serverRows => { if (active) setRows(current => window.CDOS.Backend.mergeRows(current, serverRows)); })
+        .catch(error => { if (active) log && log('Ledger sync failed', error.message || 'Server ledger unavailable'); });
+      return () => { active = false; };
+    }, [serverBacked]);
     const searchWrap = useRef(null);
     useEffect(() => { if (!helpOpen) return; const h = (e) => { if (searchWrap.current && !searchWrap.current.contains(e.target)) setHelpOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [helpOpen]);
     const toggleSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' || key === 'payin' || key === 'payout' || key === 'fee' ? 'desc' : 'asc' });
@@ -1644,7 +1657,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </>)}
       </div>
 
-      {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
+      {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
       {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients }} onClose={() => setDetailId(null)} onReceipt={setReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
       {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
     </div>);
