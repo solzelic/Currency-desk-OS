@@ -74,10 +74,11 @@ export function loginCodeEmail(code: string, name?: string): { subject: string; 
    Deliberately short — the next thing they should do is create it. */
 export function inviteEmail(opts: { name?: string | null; reference: string; origin: string }): { subject: string; text: string; html: string } {
   const who = opts.name ? `${opts.name}, you` : "You";
-  /* The OS's new-desk wizard, NOT /signup — that is the early-access
-     application, the form they have already filled in. Sending an accepted
-     operator back to it is the one thing this email must not do. */
-  const link = `${opts.origin}/app?signup=1`;
+  /* Straight into setup, with their code already in the link so most people
+     never type it. NOT /signup — that is the application they have already
+     filled in, and sending an accepted operator back to it is the one thing
+     this email must not do. */
+  const link = `${opts.origin}/onboarding?code=${encodeURIComponent(opts.reference)}`;
   const subject = "You're in — set up your CurrencyDesk";
   const text =
     `${who}'re through to the Founding Operator group.\n\n` +

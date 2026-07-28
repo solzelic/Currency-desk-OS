@@ -18,6 +18,7 @@ import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
+import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
@@ -42,6 +43,8 @@ const SITE_PAGES = {
   // leads to. Applying is not the same as opening a desk: an accepted
   // operator creates theirs from the OS's own wizard, at /app?signup=1.
   "/signup": "web/early-access.html",
+  // where the invite email lands: type your code, walk the setup
+  "/onboarding": "web/onboarding.html",
 } as const satisfies Record<string, string>;
 
 /* Phones and small tablets get the phone design. Deliberately coarse: the
@@ -92,6 +95,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerTenantStateRoutes(app, db);
   registerAdminRoutes(app, db);
   registerOnboardingRoutes(app, db, isPlatformAdmin);
+  registerPublicOnboardingRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;

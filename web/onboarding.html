@@ -1,0 +1,361 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up your desk — CurrencyDesk</title>
+<meta name="robots" content="noindex,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:ital,wght@0,400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Built to the Early Access design: same ground, same card, same chrome.
+     A customer walks out of that flow and into this one, so it must not
+     feel like a different product. */
+  html,body{margin:0;height:100%}
+  body{background:#F1ECE1;font-family:'Schibsted Grotesk',system-ui,sans-serif;color:#17140F;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:#1D6B45;text-decoration:none}
+  a:hover{color:#17140F}
+  ::selection{background:#1D6B45;color:#F7F4ED}
+  input,select,button{font-family:inherit}
+  button{cursor:pointer}
+  :focus-visible{outline:2px solid #1D6B45;outline-offset:2px}
+
+  @keyframes cdCardIn{from{opacity:0;transform:translateY(22px) scale(.985)}to{opacity:1;transform:none}}
+  @keyframes cdUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes cdBar{0%{background-position:0 0}100%{background-position:-200% 0}}
+  @keyframes cdRosette{to{transform:rotate(360deg)}}
+  @keyframes cdHalo{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.09)}}
+  @keyframes cdIconIn{0%{opacity:0;transform:scale(.6) rotate(-12deg)}100%{opacity:1;transform:none}}
+  @keyframes cdFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-11px)}}
+  @keyframes cdShimmer{0%{transform:translateX(-170%) skewX(-16deg)}55%,100%{transform:translateX(340%) skewX(-16deg)}}
+  @keyframes cdPulse{0%{box-shadow:0 0 0 0 rgba(46,163,107,.5)}70%{box-shadow:0 0 0 8px rgba(46,163,107,0)}100%{box-shadow:0 0 0 0 rgba(46,163,107,0)}}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;animation-iteration-count:1!important}}
+
+  .page{position:relative;min-height:100%;display:flex;flex-direction:column}
+  .head{display:flex;align-items:center;gap:10px;padding:20px 26px;position:relative;z-index:4}
+  .wordmark{display:inline-flex;align-items:baseline}
+  .wordmark b{font-size:15.5px;font-weight:800;letter-spacing:.05em}
+  .wordmark i{font-family:'IBM Plex Mono',monospace;font-size:7.5px;font-weight:600;letter-spacing:.1em;color:#1D6B45;margin-left:4px;transform:translateY(-5.5px);font-style:normal}
+  .stage{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:10px 24px 44px;box-sizing:border-box}
+  .shell{width:100%;max-width:540px}
+  .card{position:relative;background:linear-gradient(180deg,#FCFAF5,#F6F1E7);border:1px solid #17140F;border-radius:22px;
+    box-shadow:0 40px 90px -46px rgba(23,20,15,.55),inset 0 1px 0 rgba(255,255,255,.7);padding:38px 38px 32px;overflow:hidden;
+    animation:cdCardIn .55s cubic-bezier(.2,.8,.2,1) both}
+  .card>.rule{position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#1D6B45,#A9791C,#C2452D,#1D6B45);background-size:200% 100%;animation:cdBar 9s linear infinite}
+  .card>.rosette{position:absolute;top:-130px;right:-120px;width:340px;height:340px;border-radius:50%;
+    background:repeating-radial-gradient(circle at 50% 50%,rgba(29,107,69,.06) 0 1.5px,transparent 1.5px 11px);opacity:.75;animation:cdRosette 70s linear infinite;pointer-events:none}
+  .inner{position:relative;z-index:2}
+
+  .glyphrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+  .glyph{position:relative;width:56px;height:56px;flex:none}
+  .glyph .halo{position:absolute;inset:-7px;border-radius:21px;background:radial-gradient(circle,rgba(46,163,107,.28),transparent 70%);animation:cdHalo 3.4s ease-in-out infinite}
+  .glyph .box{position:relative;width:56px;height:56px;border-radius:16px;background:#17140F;display:grid;place-items:center;overflow:hidden;
+    box-shadow:0 12px 26px -10px rgba(23,20,15,.6);animation:cdIconIn .75s cubic-bezier(.2,.9,.3,1) both,cdFloat 6s ease-in-out .9s infinite}
+  .glyph .sheen{position:absolute;inset:0;overflow:hidden}
+  .glyph .sheen>i{position:absolute;top:0;bottom:0;width:45%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);animation:cdShimmer 4.6s ease-in-out 1.5s infinite}
+  .cohort{text-align:right;padding-top:3px}
+  .cohort .tag{display:inline-flex;align-items:center;gap:7px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.13em;color:#17583A;font-weight:600}
+  .cohort .dot{width:6px;height:6px;border-radius:50%;background:#2EA36B;animation:cdPulse 2s infinite}
+  .cohort .meter{width:176px;margin:10px 0 0 auto;height:5px;border-radius:3px;background:#E7DFCF;overflow:hidden}
+  .cohort .meter>i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#1D6B45,#2EA36B);transition:width .6s cubic-bezier(.3,.9,.3,1)}
+  .cohort .cap{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:#9C948A;margin-top:6px}
+
+  h1{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:34px;line-height:1.05;margin:0;text-wrap:balance}
+  .lede{font-size:14px;line-height:1.55;color:#6B6459;margin:10px 0 0}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9C948A;margin-bottom:9px}
+
+  .fields{display:grid;gap:14px;margin-top:22px}
+  label.f{display:block}
+  .flab{display:flex;align-items:baseline;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+  .flab span{font-size:12px;font-weight:600;color:#6B6459}
+  .known{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#17583A;background:rgba(46,163,107,.13);border-radius:999px;padding:2px 7px;font-weight:600}
+  .fixed{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9C948A;background:#EFE9DC;border-radius:999px;padding:2px 7px;font-weight:600}
+  input,select{width:100%;box-sizing:border-box;padding:13px 14px;font-size:15px;border:1px solid #DCD3C2;border-radius:11px;background:#FFFDF8;color:#17140F;outline:none;transition:border-color .18s,box-shadow .18s}
+  input:focus,select:focus{border-color:#1D6B45;box-shadow:0 0 0 3px rgba(29,107,69,.14)}
+  input:disabled,select:disabled{background:#F2EDE2;color:#6B6459}
+  .hint{font-size:11.5px;color:#9C948A;margin-top:9px}
+  .suffix{display:flex;align-items:center;gap:0}
+  .suffix input{border-top-right-radius:0;border-bottom-right-radius:0}
+  .suffix b{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#9C948A;background:#EFE9DC;border:1px solid #DCD3C2;border-left:0;padding:13px 12px;border-radius:0 11px 11px 0;font-weight:500;white-space:nowrap}
+
+  .go{width:100%;margin-top:22px;display:inline-flex;align-items:center;justify-content:center;height:52px;border:0;border-radius:13px;
+    background:#17140F;color:#F7F4ED;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.05em;font-weight:600;
+    box-shadow:0 14px 30px -14px rgba(23,20,15,.7);transition:transform .12s,opacity .2s}
+  .go:active{transform:translateY(1px)}
+  .go[disabled]{background:#B8B0A2;box-shadow:none;cursor:not-allowed}
+  .go svg{margin-left:9px}
+  .ghost{background:none;border:0;color:#9C948A;font-size:12.5px;padding:8px}
+  .ghost:hover{color:#17140F}
+
+  .foot{display:flex;align-items:center;justify-content:center;margin-top:18px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;color:#9C948A}
+  .fineprint{text-align:center;font-size:11.5px;line-height:1.55;color:#9C948A;margin:14px auto 0;max-width:380px}
+  .err{font-size:12.5px;color:#C2452D;margin-top:12px}
+  .navrow{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:20px}
+  .dots{display:flex;gap:5px;align-items:center;background:#EFE9DC;border-radius:999px;padding:7px 12px}
+  .dots i{width:5px;height:5px;border-radius:50%;background:#CFC5B2;transition:all .25s}
+  .dots i.on{background:#1D6B45}
+  .dots i.now{width:22px;border-radius:3px;background:#17140F}
+  .round{width:40px;height:40px;border-radius:50%;border:1px solid #DCD3C2;background:#FFFDF8;display:grid;place-items:center;color:#17140F}
+  .round[disabled]{opacity:.4;cursor:not-allowed}
+  .hide{display:none!important}
+  .center{text-align:center}
+</style>
+
+<div class="page">
+  <div class="head">
+    <svg viewBox="0 0 200 140" width="46" height="32" aria-hidden="true"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#F1ECE1"></rect><circle cx="112" cy="70" r="6.5" fill="#2EA36B"></circle></svg>
+    <span class="wordmark"><b>CURRENCYDESK</b><i>OS</i></span>
+    <div style="flex:1"></div>
+    <a href="/login" style="font-size:13.5px;font-weight:700;color:#17140F">Sign in</a>
+  </div>
+
+  <div class="stage">
+    <div class="shell">
+      <div class="card">
+        <div class="rule" aria-hidden="true"></div>
+        <div class="rosette" aria-hidden="true"></div>
+        <div class="inner">
+
+          <div class="glyphrow">
+            <div class="glyph">
+              <div class="halo" aria-hidden="true"></div>
+              <div class="box">
+                <svg viewBox="0 0 200 140" width="36" height="25" aria-hidden="true"><circle cx="60" cy="70" r="48" fill="#F1ECE1"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#F1ECE1"></path><rect x="60" y="64.5" width="92" height="11" fill="#17140F"></rect><circle cx="112" cy="70" r="6.5" fill="#2EA36B"></circle></svg>
+                <div class="sheen" aria-hidden="true"><i></i></div>
+              </div>
+            </div>
+            <div class="cohort">
+              <div class="tag"><span class="dot"></span>COHORT Nº 001 · CANADA</div>
+              <div class="meter"><i id="meter" style="width:0%"></i></div>
+              <div class="cap"><span data-cd-claimed>—</span> / <span data-cd-cap>100</span> desks claimed</div>
+            </div>
+          </div>
+
+          <!-- the one screen: type your code -->
+          <section id="gate">
+            <div class="eyebrow">Set up your desk</div>
+            <h1>Enter your CurrencyDesk code.</h1>
+            <p class="lede">It's in the email we sent when your place was confirmed — six characters after <b style="font-family:'IBM Plex Mono',monospace">CD-</b>.</p>
+            <div class="fields">
+              <label class="f">
+                <span class="flab"><span>Your code</span></span>
+                <input id="code" placeholder="CD-A3V5ZE" autocomplete="one-time-code" spellcheck="false"
+                  style="font-family:'IBM Plex Mono',monospace;letter-spacing:.22em;text-transform:uppercase;font-size:19px;text-align:center;padding:16px 14px">
+              </label>
+            </div>
+            <button class="go" id="start">Start<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+            <div class="err hide" id="gateErr"></div>
+            <p class="fineprint">Lost the email? Write to <a href="mailto:hello@currencydeskos.com">hello@currencydeskos.com</a> and we'll send your code again.</p>
+          </section>
+
+          <!-- the walk-through itself -->
+          <section id="flow" class="hide">
+            <div class="eyebrow" id="phase">Business</div>
+            <h1 id="title">The business</h1>
+            <p class="lede" id="blurb"></p>
+            <div class="fields" id="fields"></div>
+            <button class="go" id="next">Continue<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+            <div class="err hide" id="flowErr"></div>
+            <div class="foot"><span id="count">Step 1 of 9</span></div>
+            <p class="fineprint">Saved as you go — close this and come back any time with the same code.</p>
+          </section>
+
+          <!-- done -->
+          <section id="done" class="hide center">
+            <div class="eyebrow">That's everything</div>
+            <h1 id="doneTitle">Your desk is ready to open.</h1>
+            <p class="lede" id="doneBlurb" style="margin-bottom:6px"></p>
+            <button class="go" id="finish">Open my desk<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+            <div class="err hide" id="doneErr"></div>
+          </section>
+
+        </div>
+      </div>
+
+      <div class="navrow" id="nav" style="display:none">
+        <button class="round" id="back" aria-label="Back"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"></path></svg></button>
+        <div class="dots" id="dots"></div>
+        <button class="round" id="fwd" aria-label="Forward"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  // the live cohort meter, same numbers the rest of the site shows
+  fetch("/api/site/early-access").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    if (!d) return;
+    var pct = Math.min(100, Math.round(d.claimed / (d.cap || 100) * 100));
+    document.querySelectorAll("[data-cd-claimed]").forEach(function (n) { n.textContent = d.claimed; });
+    document.querySelectorAll("[data-cd-cap]").forEach(function (n) { n.textContent = d.cap; });
+    $("meter").style.width = pct + "%";
+  }).catch(function () {});
+
+  var ref = "", state = null, at = 0, dirty = {};
+
+  function show(which) {
+    ["gate", "flow", "done"].forEach(function (s) { $(s).classList.toggle("hide", s !== which); });
+    $("nav").style.display = which === "flow" ? "flex" : "none";
+  }
+  function fail(el, msg) { var n = $(el); n.textContent = msg; n.classList.remove("hide"); }
+  function clear(el) { $(el).classList.add("hide"); }
+
+  function api(path, opts) {
+    return fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, opts || {}))
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); });
+  }
+
+  // first step that still wants something — where they left off
+  function firstUnfinished() {
+    for (var i = 0; i < state.steps.length; i++) if (!state.steps[i].done) return i;
+    return state.steps.length - 1;
+  }
+
+  function renderDots() {
+    var h = "";
+    state.steps.forEach(function (s, i) {
+      h += '<i class="' + (i === at ? "now" : s.done ? "on" : "") + '"></i>';
+    });
+    $("dots").innerHTML = h;
+    $("back").disabled = at === 0;
+    $("fwd").disabled = at >= state.steps.length - 1;
+  }
+
+  function renderStep() {
+    var s = state.steps[at];
+    $("phase").textContent = state.phases.filter(function (p) { return p.id === s.phase; })[0].title;
+    $("title").textContent = s.title;
+    $("blurb").textContent = s.blurb;
+    $("count").textContent = "Step " + (at + 1) + " of " + state.total;
+    clear("flowErr");
+    dirty = {};
+
+    var h = "";
+    if (!s.fields.length) {
+      h = '<p class="lede" style="margin-top:4px">'
+        + (s.kind === "payment"
+          ? "We'll take payment here once your details are checked. Nothing to do yet — carry on."
+          : "We'll ask for your registration certificate and ID here. Nothing to upload yet — carry on.")
+        + "</p>";
+    }
+    s.fields.forEach(function (f) {
+      var v = f.value == null ? "" : f.value;
+      var locked = !!f.derived;
+      h += '<label class="f"><span class="flab"><span>' + esc(f.label) + "</span>";
+      if (f.source === "application") h += '<span class="known">you told us this</span>';
+      if (f.source === "derived") h += '<span class="fixed">set by your regulator</span>';
+      h += "</span>";
+      if (f.type === "select") {
+        h += '<select data-f="' + f.id + '"' + (locked ? " disabled" : "") + '><option value="">Choose…</option>';
+        (f.options || []).forEach(function (o) {
+          h += '<option value="' + esc(o.value) + '"' + (String(v) === o.value ? " selected" : "") + ">" + esc(o.label) + "</option>";
+        });
+        h += "</select>";
+      } else if (f.id === "slug") {
+        h += '<span class="suffix"><input data-f="slug" value="' + esc(v) + '" spellcheck="false"><b>.currencydeskos.com</b></span>';
+      } else {
+        h += '<input data-f="' + esc(f.id) + '"' + (locked ? " disabled" : "")
+          + (f.type === "password" ? ' type="password" autocomplete="new-password"' : "")
+          + (f.type === "email" ? ' type="email" autocomplete="email"' : "")
+          + ' value="' + esc(v) + '"' + (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : "") + ">";
+      }
+      if (f.help) h += '<span class="hint">' + esc(f.help) + "</span>";
+      h += "</label>";
+    });
+    $("fields").innerHTML = h;
+    $("next").innerHTML = (at === state.steps.length - 1 ? "Finish" : "Continue")
+      + '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>';
+    renderDots();
+    var first = $("fields").querySelector("input:not([disabled]),select:not([disabled])");
+    if (first) first.focus();
+  }
+
+  $("fields").addEventListener("input", function (e) {
+    var f = e.target.getAttribute("data-f"); if (f) dirty[f] = e.target.value;
+  });
+  $("fields").addEventListener("change", function (e) {
+    var f = e.target.getAttribute("data-f"); if (f) dirty[f] = e.target.value;
+  });
+
+  function save() {
+    var s = state.steps[at];
+    if (!Object.keys(dirty).length) return Promise.resolve(true);
+    return api("/api/onboarding/" + encodeURIComponent(ref), { method: "PATCH", body: JSON.stringify({ stepId: s.id, answers: dirty }) })
+      .then(function (r) {
+        if (!r.ok) { fail("flowErr", (r.body && r.body.detail) || "That didn't save. Try again."); return false; }
+        state = r.body; dirty = {}; return true;
+      });
+  }
+
+  function advance() {
+    var s = state.steps[at];
+    save().then(function (okSaved) {
+      if (!okSaved) return;
+      var now = state.steps[at];
+      if (now.missing && now.missing.length) {
+        fail("flowErr", "Please fill in everything above before carrying on.");
+        return;
+      }
+      if (at < state.steps.length - 1) { at += 1; renderStep(); return; }
+      // last step — everything answered?
+      if (!state.ready.ok) {
+        var back = state.steps.map(function (x, i) { return x.done ? -1 : i; }).filter(function (i) { return i >= 0; })[0];
+        if (back >= 0) { at = back; renderStep(); fail("flowErr", "One more thing needed here."); return; }
+      }
+      finish();
+    });
+  }
+
+  function finish() {
+    $("doneBlurb").textContent = "We'll email a six-digit code to " + state.you.email + " to confirm it's you, and your desk opens.";
+    show("done");
+  }
+
+  $("next").addEventListener("click", advance);
+  $("back").addEventListener("click", function () { save().then(function () { if (at > 0) { at -= 1; renderStep(); } }); });
+  $("fwd").addEventListener("click", function () { save().then(function () { if (at < state.steps.length - 1) { at += 1; renderStep(); } }); });
+
+  $("finish").addEventListener("click", function () {
+    clear("doneErr");
+    $("finish").disabled = true;
+    api("/api/onboarding/" + encodeURIComponent(ref) + "/submit", { method: "POST", body: "{}" }).then(function (r) {
+      $("finish").disabled = false;
+      if (!r.ok) { fail("doneErr", (r.body && r.body.detail) || "Not quite ready yet."); return; }
+      if (r.body.walkthrough) { fail("doneErr", r.body.detail); return; }
+      return api("/api/signup", { method: "POST", body: JSON.stringify(r.body.signup) }).then(function (s) {
+        if (!s.ok) { fail("doneErr", (s.body && s.body.detail) || "We couldn't open the desk. Write to hello@currencydeskos.com."); return; }
+        $("doneTitle").textContent = "Check your email.";
+        $("doneBlurb").textContent = "We've sent a six-digit code to " + state.you.email + ". Enter it to finish and your desk is open.";
+        $("finish").textContent = "Enter the code →";
+        $("finish").onclick = function () { window.location.href = "/app?signup=1"; };
+      });
+    });
+  });
+
+  function open(code) {
+    code = String(code || "").trim().toUpperCase();
+    if (!code) { fail("gateErr", "Type the code from your email."); return; }
+    if (code.indexOf("CD-") !== 0) code = "CD-" + code;
+    clear("gateErr");
+    $("start").disabled = true;
+    api("/api/onboarding/" + encodeURIComponent(code)).then(function (r) {
+      $("start").disabled = false;
+      if (!r.ok) { fail("gateErr", (r.body && r.body.detail) || "We don't recognise that code."); return; }
+      ref = code; state = r.body;
+      try { history.replaceState(null, "", "/onboarding?code=" + encodeURIComponent(code)); } catch (e) {}
+      if (state.createdDesk) { window.location.href = "/login"; return; }
+      at = firstUnfinished();
+      show("flow"); renderStep();
+    });
+  }
+  $("start").addEventListener("click", function () { open($("code").value); });
+  $("code").addEventListener("keydown", function (e) { if (e.key === "Enter") open($("code").value); });
+
+  // the email's link carries the code, so most people never type it
+  var q = new URLSearchParams(window.location.search).get("code");
+  if (q) { $("code").value = q.toUpperCase(); open(q); } else { $("code").focus(); }
+})();
+</script>
