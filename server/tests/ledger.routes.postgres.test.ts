@@ -41,7 +41,7 @@ async function cookie(staffId = "a.singh") {
 
 async function resetLedger() {
   await pool.query(
-    "TRUNCATE quote_events,quote_overrides,quotes,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
+    "TRUNCATE quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
   );
   const scope = [
     DEMO.tenantId,
@@ -83,6 +83,13 @@ async function resetLedger() {
       [...scope, currency, value],
     );
   }
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('session-1',$1,$2,$3,$4,$5,1,current_date,'open',$1||':a.singh',now())`,
+    scope,
+  );
 }
 
 postgres("ledger HTTP routes against real PostgreSQL", () => {
@@ -298,6 +305,162 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         })
       ).statusCode,
     ).toBe(409);
+  });
+
+  it("records idempotent counts, moves cash, closes the till, and blocks posting", async () => {
+    const teller = await cookie();
+    const manager = await cookie("r.haddad");
+    const current = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: teller,
+    });
+    expect(current.statusCode).toBe(200);
+    expect(current.json().session).toMatchObject({
+      sessionId: "session-1",
+      status: "open",
+    });
+
+    const countPayload = {
+      idempotencyKey: "count-1",
+      counts: { CAD: "25000.00" },
+    };
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: countPayload,
+    });
+    expect(counted.statusCode).toBe(201);
+    expect(counted.json().latestCounts.CAD).toMatchObject({
+      expected: "25000.00",
+      counted: "25000.00",
+      variance: "0.00",
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: countPayload,
+    });
+    expect(
+      (await pool.query("SELECT count(*) FROM ledger_till_count_batches")).rows[0]
+        .count,
+    ).toBe("1");
+
+    const deniedMove = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-movements",
+      cookies: teller,
+      payload: {
+        idempotencyKey: "move-denied",
+        direction: "in",
+        currency: "CAD",
+        amount: "100.00",
+        counterpartyType: "vault",
+        counterpartyRef: "vault-1",
+        reason: "Issue float",
+      },
+    });
+    expect(deniedMove.statusCode).toBe(403);
+    const movePayload = {
+      idempotencyKey: "move-1",
+      direction: "in",
+      currency: "CAD",
+      amount: "100.00",
+      counterpartyType: "vault",
+      counterpartyRef: "vault-1",
+      reason: "Issue float",
+    };
+    const moved = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-movements",
+      cookies: manager,
+      payload: movePayload,
+    });
+    expect(moved.statusCode).toBe(201);
+    expect(moved.json().balances.CAD).toBe("25100.00");
+    const replayedMove = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-movements",
+      cookies: manager,
+      payload: movePayload,
+    });
+    expect(replayedMove.json().balances.CAD).toBe("25100.00");
+
+    const incomplete = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/session-1/close",
+      cookies: manager,
+      payload: {
+        idempotencyKey: "close-incomplete",
+        counts: { CAD: "25100.00" },
+        note: "Incomplete",
+      },
+    });
+    expect(incomplete.statusCode).toBe(422);
+    expect(incomplete.json().code).toBe("INCOMPLETE_TILL_COUNT");
+
+    const closed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/session-1/close",
+      cookies: manager,
+      payload: {
+        idempotencyKey: "close-1",
+        counts: {
+          CAD: "25090.00",
+          USD: "12000.00",
+          EUR: "7000.00",
+          GBP: "3500.00",
+        },
+        note: "Variance close",
+      },
+    });
+    expect(closed.statusCode).toBe(200);
+    expect(closed.json().session).toMatchObject({
+      sessionId: "session-1",
+      status: "closed",
+      closeNote: "Variance close",
+    });
+    expect(closed.json().latestCounts.CAD).toMatchObject({
+      expected: "25100.00",
+      counted: "25090.00",
+      variance: "-10.00",
+    });
+    expect(
+      (
+        await pool.query(
+          "SELECT available_amount FROM ledger_till_balances WHERE currency='CAD'",
+        )
+      ).rows[0].available_amount,
+    ).toBe("25090.00");
+    expect(
+      (await pool.query("SELECT count(*) FROM ledger_till_counts")).rows[0].count,
+    ).toBe("5");
+    await expect(
+      pool.query("UPDATE ledger_till_counts SET counted_amount=0"),
+    ).rejects.toThrow(/append-only ledger record/);
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies: teller,
+      payload: post,
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().code).toBe("TILL_NOT_OPEN");
+
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/open",
+      cookies: teller,
+      payload: {},
+    });
+    expect(opened.statusCode).toBe(201);
+    expect(opened.json().session).toMatchObject({
+      sessionNumber: 2,
+      status: "open",
+    });
   });
 
   it("posts, reads, and returns reversal state through HTTP", async () => {

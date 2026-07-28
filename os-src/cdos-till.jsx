@@ -162,27 +162,49 @@
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     const [serverBalances, setServerBalances] = useState(null);
+    const [serverSession, setServerSession] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
         setServerBalances(null);
+        setServerSession(null);
         setServerBalanceError('');
         return;
       }
       let active = true;
-      window.CDOS.Backend.loadTillBalances()
-        .then(result => {
+      Promise.all([
+        window.CDOS.Backend.loadTillBalances(),
+        window.CDOS.Backend.loadTillSession().then(result => result && result.session ? result : window.CDOS.Backend.openTillSession()),
+      ])
+        .then(([balanceResult, sessionResult]) => {
           if (!active) return;
-          setServerBalances(result.balances || {});
+          setServerBalances(balanceResult.balances || {});
+          setServerSession(sessionResult.session || null);
+          const latest = sessionResult.latestCounts || {};
+          if (sessionResult.session && sessionResult.session.status === 'open' && Object.keys(latest).length) {
+            const nextQuick = {}, nextMode = {}, nextAt = {}, nextSaved = {};
+            Object.entries(latest).forEach(([currency, record]) => {
+              nextQuick[currency] = String(record.counted);
+              nextMode[currency] = 'total';
+              const at = new Date(record.countedAt).getTime();
+              nextAt[currency] = at;
+              nextSaved[currency] = { amt: Number(record.counted), ts: at, by: record.actorId };
+            });
+            setQuick(current => ({ ...current, ...nextQuick }));
+            setMode(current => ({ ...current, ...nextMode }));
+            setCountedAt(current => ({ ...current, ...nextAt }));
+            setLastSaved(current => ({ ...current, ...nextSaved }));
+          }
           setServerBalanceError('');
         })
         .catch(error => {
           if (!active) return;
           setServerBalances(null);
+          setServerSession(null);
           setServerBalanceError(error.message || 'Server balances unavailable');
         });
       return () => { active = false; };
-    }, [serverBacked, station && station.tillId]);
+    }, [serverBacked, station && station.tillId, day && day.num]);
     // switch tills at THIS location only (same logic as the header) — change store = sign out
     const [tillMenu, setTillMenu] = useState(false);
     const tillMenuRef = useRef(null);
@@ -276,7 +298,7 @@
     // expected float per currency — DERIVED from the one shared source of truth
     // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
     // Identical to the figure the Vault shows because both call position().
-    const serverBalancesReady = !serverBacked || serverBalances !== null;
+    const serverBalancesReady = !serverBacked || (serverBalances !== null && serverSession !== null);
     const expectedOf = (c) => serverBacked
       ? (serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : 0)
       : window.CDOS.holdings(c, allRows, baseline, receipts);
@@ -294,10 +316,8 @@
     const dlist = DEN[ccy] || [];
     const bills = dlist.map((d, i) => ({ v: d[0], t: d[1], i })).filter(d => d.t === 'bill');
     const coins = dlist.map((d, i) => ({ v: d[0], t: d[1], i })).filter(d => d.t === 'coin');
-    const saveSnapshot = () => {
+    const persistLocalSnapshot = () => {
       const now = Date.now();
-      if (saved || now - saveLock.current < 1800) return;   // debounce: no accidental double-save
-      saveLock.current = now;
       const byCcy = {}; let grand = 0;
       countedCcys.forEach(c => { const t = ccyTotal(c); byCcy[c] = t; grand += cadOf(t, c); });
       const snap = { byCcy, grand: Math.round(grand), at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
@@ -308,6 +328,25 @@
       log && log('Drawer counted', `${fmt(grand, 'CAD')} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
       setSaved(true);
       savedTimer.current = setTimeout(() => setSaved(false), 1900);
+    };
+    const saveSnapshot = async () => {
+      const now = Date.now();
+      if (saved || now - saveLock.current < 1800 || !countedCcys.length) return;
+      saveLock.current = now;
+      if (serverBacked) {
+        try {
+          const result = await window.CDOS.Backend.saveTillCount({
+            idempotencyKey: `till-count-${serverSession.sessionId}-${now}`,
+            counts: Object.fromEntries(countedCcys.map(c => [c, ccyTotal(c).toFixed(2)])),
+          });
+          setServerSession(result.session);
+        } catch (error) {
+          log && log('Drawer count failed', error.message || 'Server rejected the count');
+          saveLock.current = 0;
+          return;
+        }
+      }
+      persistLocalSnapshot();
     };
 
     /* ---------------- RECONCILE / CLOSE TAB ---------------- */
@@ -322,23 +361,39 @@
     const totalExpCad = recon.reduce((s, r) => s + cadOf(r.expected, r.c), 0);
     const totalCountCad = recon.reduce((s, r) => s + (r.counted != null ? cadOf(r.counted, r.c) : 0), 0);
     const totalVarCad = recon.reduce((s, r) => s + (r.variance != null ? cadOf(r.variance, r.c) : 0), 0);
-    const doClose = () => {
+    const doClose = async () => {
       const offSumCad = offRows.reduce((s, r) => s + cadOf(r.variance, r.c), 0);
       // what the desk made today: fees + estimated FX spread, in CAD
       const spreadOf = (r) => { const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy); const d = mid - (+r.outAmt || 0); return d > 0 ? d / (perCadLive(r.outCcy) || 1) : 0; };
       const dayRows = rows.filter(r => r.date === TODAY);
       const earned = dayRows.reduce((s, r) => s + (+r.fee || 0) + spreadOf(r), 0);
-      onCloseDay && onCloseDay({ txns: dayRows.length, ccys: recon.length, counted: countedN, offCount: offRows.length, offSum: Math.round(offSumCad), grand: Math.round(grandCad), earned: Math.round(earned), note: offRows.length ? `${offRows.length} drawer(s) off · ${fmt(offSumCad, 'CAD')} net` : 'All counted drawers balanced' });
-      saveSnapshot();
+      const summary = { txns: dayRows.length, ccys: recon.length, counted: countedN, offCount: offRows.length, offSum: Math.round(offSumCad), grand: Math.round(grandCad), earned: Math.round(earned), note: offRows.length ? `${offRows.length} drawer(s) off · ${fmt(offSumCad, 'CAD')} net` : 'All counted drawers balanced' };
+      if (serverBacked) {
+        const result = await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
+          idempotencyKey: `till-close-${serverSession.sessionId}`,
+          counts: Object.fromEntries(recon.map(r => [r.c, Number(r.counted).toFixed(2)])),
+          note: summary.note,
+        });
+        setServerSession(result.session);
+      }
+      onCloseDay && onCloseDay(summary);
+      persistLocalSnapshot();
     };
     // first click opens a review modal; the irreversible commit lives in confirmAndClose
     const clickClose = () => { if (!canCloseDay || closing || busyRef.current || closeBlocked) return; setConfirmClose(true); };
-    const confirmAndClose = () => {
+    const confirmAndClose = async () => {
       if (closing || busyRef.current) return;
       busyRef.current = true;
       setConfirmClose(false);
       setClosing(true);
-      setTimeout(() => { doClose(); setClosing(false); busyRef.current = false; }, 540);
+      try {
+        await doClose();
+      } catch (error) {
+        log && log('Day close failed', error.message || 'Server rejected the till close');
+      } finally {
+        setClosing(false);
+        busyRef.current = false;
+      }
     };
 
     /* ---------------- HISTORY ---------------- */

@@ -8,6 +8,11 @@ type BackendBridge = {
   createQuote(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   reverseTransaction(transactionId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   loadTillBalances(): Promise<Record<string, unknown>>;
+  loadTillSession(): Promise<Record<string, unknown>>;
+  openTillSession(): Promise<Record<string, unknown>>;
+  saveTillCount(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  closeTillSession(sessionId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  moveTillCash(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   getTransactionReceipt(transactionId: string): Promise<Record<string, unknown>>;
   transactionToRow(transaction: Record<string, unknown>, customerName: string): Record<string, unknown>;
   mergeRows(existing: Record<string, unknown>[], serverRows: Record<string, unknown>[]): Record<string, unknown>[];
@@ -152,5 +157,42 @@ describe("browser backend bridge", () => {
       receiptId: "rcpt_tx_1",
     });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/ledger/transactions/tx%2F1/receipt");
+  });
+
+  it("opens, counts, closes, and moves cash through server till controls", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ session: { sessionId: "session/1" } }),
+    });
+    const backend = loadBridge(fetchMock);
+
+    await backend.loadTillSession();
+    await backend.openTillSession();
+    await backend.saveTillCount({
+      idempotencyKey: "count-1",
+      counts: { CAD: "1000.00" },
+    });
+    await backend.closeTillSession("session/1", {
+      idempotencyKey: "close-1",
+      counts: { CAD: "1000.00" },
+    });
+    await backend.moveTillCash({
+      idempotencyKey: "move-1",
+      direction: "in",
+      currency: "CAD",
+      amount: "100.00",
+      counterpartyType: "vault",
+      counterpartyRef: "vault-1",
+      reason: "Issue float",
+    });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/ledger/till-session",
+      "/api/ledger/till-sessions/open",
+      "/api/ledger/till-counts",
+      "/api/ledger/till-sessions/session%2F1/close",
+      "/api/ledger/till-movements",
+    ]);
+    expect(fetchMock.mock.calls.slice(1).every((call) => call[1].method === "POST")).toBe(true);
   });
 });

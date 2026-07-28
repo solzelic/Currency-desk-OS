@@ -30,6 +30,9 @@
         UNSUPPORTED_CURRENCY_PAIR: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
         QUOTE_EXPIRED: "The frozen quote expired. Request a new quote and confirm it again.",
         INSUFFICIENT_TILL_LIQUIDITY: "The till does not have enough currency to complete this exchange.",
+        TILL_NOT_OPEN: "Open the till before posting or recording cash activity.",
+        TILL_ALREADY_CLOSED: "This till session is already closed.",
+        INCOMPLETE_TILL_COUNT: "Count every server-backed currency before closing the till.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
         REVERSAL_ALREADY_EXISTS: "This transaction has already been reversed.",
       })[body.code] || "The ledger server rejected this request. Nothing was posted.");
@@ -157,6 +160,33 @@
       loadLedger: loadLedger,
       loadTillBalances: function () {
         return request("/api/ledger/till-balances");
+      },
+      loadTillSession: function () {
+        return request("/api/ledger/till-session");
+      },
+      openTillSession: function () {
+        return request("/api/ledger/till-sessions/open", {
+          method: "POST",
+          body: "{}",
+        });
+      },
+      saveTillCount: function (payload) {
+        return request("/api/ledger/till-counts", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      closeTillSession: function (sessionId, payload) {
+        return request("/api/ledger/till-sessions/" + encodeURIComponent(sessionId) + "/close", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      moveTillCash: function (payload) {
+        return request("/api/ledger/till-movements", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
       },
       getTransactionReceipt: function (transactionId) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/receipt");

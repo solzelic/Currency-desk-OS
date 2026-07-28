@@ -19,13 +19,14 @@ const request = {
 };
 
 async function reset() {
-  await pool.query("TRUNCATE ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE");
+  await pool.query("TRUNCATE ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE");
   await pool.query("INSERT INTO ledger_principals VALUES ('teller-1','tenant-1','le-1','branch-1','workspace-1','till-1','teller','[\"branch-1\"]'),('supervisor-1','tenant-1','le-1','branch-1','workspace-1','till-1','supervisor','[\"branch-1\"]')");
   await pool.query("INSERT INTO ledger_customers VALUES ('customer-1','tenant-1','le-1','branch-1','workspace-1','Customer','Normal','verified')");
   await pool.query("INSERT INTO ledger_rates VALUES ('tenant-1','le-1','branch-1','workspace-1','CAD',1),('tenant-1','le-1','branch-1','workspace-1','USD',0.731),('tenant-1','le-1','branch-1','workspace-1','EUR',0.676),('tenant-1','le-1','branch-1','workspace-1','GBP',0.581)");
   for (const [currency, value] of [["CAD", 25000], ["USD", 12000], ["EUR", 7000], ["GBP", 3500]]) {
     await pool.query("INSERT INTO ledger_till_balances VALUES ('tenant-1','le-1','branch-1','workspace-1','till-1',$1,$2)", [currency, value]);
   }
+  await pool.query("INSERT INTO ledger_till_sessions (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,session_number,business_date,status,opened_by,opened_at) VALUES ('session-1','tenant-1','le-1','branch-1','workspace-1','till-1',1,current_date,'open','teller-1',now())");
 }
 
 postgres("real PostgreSQL ledger posting", () => {
@@ -41,6 +42,12 @@ postgres("real PostgreSQL ledger posting", () => {
           process.cwd(),
           "src/db/migrations/005_transaction_compliance_capture.sql",
         ),
+        "utf8",
+      ),
+    );
+    await pool.query(
+      await readFile(
+        resolve(process.cwd(), "src/db/migrations/006_till_control.sql"),
         "utf8",
       ),
     );

@@ -780,7 +780,27 @@
       setBranches(list => list.map(x => x.id === b.id ? { ...x, vault: { ...(x.vault || {}), [ccy2]: (((x.vault || {})[ccy2]) || 0) + units } } : x));
       setBranchMoves(list => [{ id: 'm' + Date.now(), ref: 'RC-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + (list.filter(m => m.date === TODAY).length + 1).toString().padStart(2, '0'), kind: 'order', from: supplier || 'Wholesale order', to: b.code + ' · Vault', ccy: ccy2, amount: units, cadVal: +((ccy2 === 'CAD' ? units : units * (crossRate(ccy2, 'CAD') || 0))).toFixed(2), date: TODAY, by: me.name }, ...list]);
     };
-    const doOsMove = (payload) => {
+    const doOsMove = async (payload) => {
+      if (srvUser && window.CDOS.Backend) {
+        if (payload.kind === 'vault' || payload.fromB !== station.branchId || payload.tId !== station.tillId || !['CAD', 'USD', 'EUR', 'GBP'].includes(payload.ccy)) {
+          log('Cash movement blocked', 'Server-backed moves currently require the active till and a supported ledger currency');
+          return;
+        }
+        try {
+          await window.CDOS.Backend.moveTillCash({
+            idempotencyKey: `cash-move-${Date.now()}-${payload.kind}`,
+            direction: payload.kind === 'issue' ? 'in' : 'out',
+            currency: payload.ccy,
+            amount: Number(payload.amt).toFixed(2),
+            counterpartyType: 'vault',
+            counterpartyRef: `${payload.fromB}:vault`,
+            reason: `${payload.fromLabel} → ${payload.toLabel}`,
+          });
+        } catch (error) {
+          log('Cash movement failed', error.message || 'Server rejected the cash movement');
+          return;
+        }
+      }
       const r = _ST.applyMove(branches, branchMoves, payload, me.name);
       setBranches(r.branches); setBranchMoves(r.moves);
       log(r.verb, r.detail);
@@ -847,6 +867,28 @@
     // ---- day state (Day Close finalises the book) ----
     const [day, setDay] = useState(() => { try { const r = localStorage.getItem('cdos_day'); return r ? JSON.parse(r) : { closed: false, closedAt: null, closedBy: null, summary: null, num: 1 }; } catch (e) { return { closed: false, closedAt: null, closedBy: null, summary: null, num: 1 }; } });
     useEffect(() => { try { localStorage.setItem('cdos_day', JSON.stringify(day)); } catch (e) {} }, [day]);
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser || !station || !station.tillId || !window.CDOS.Backend) return;
+      let active = true;
+      const applySession = (result) => {
+        if (!active || !result || !result.session) return;
+        const session = result.session;
+        setDay(current => ({
+          ...current,
+          num: session.sessionNumber,
+          closed: session.status === 'closed',
+          closedAt: session.closedAt,
+          closedBy: session.closedBy,
+        }));
+      };
+      window.CDOS.Backend.loadTillSession()
+        .then(result => result && result.session ? result : window.CDOS.Backend.openTillSession())
+        .then(applySession)
+        .catch(error => {
+          if (active && error.code !== 'AUTHORIZATION_DENIED') log('Till session sync failed', error.message || 'Server till session unavailable');
+        });
+      return () => { active = false; };
+    }, [stage, srvUser, station && station.tillId]);
 
     // customizable dock: order + hidden + edit (jiggle) mode
     const [appOrder, setAppOrder] = useState(() => { try { const s = JSON.parse(localStorage.getItem('cdos_app_order')); if (Array.isArray(s)) return s; } catch (e) {} return APP_ORDER.slice(); });
@@ -1337,7 +1379,19 @@
       setDay(d => ({ ...d, closed: true, closedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), closedBy: me.name, summary }));
       log('Day closed', summary && summary.note ? summary.note : 'Drawer reconciled — book locked');
     };
-    const openNextDay = () => {
+    const openNextDay = async () => {
+      if (srvUser && window.CDOS.Backend) {
+        try {
+          const result = await window.CDOS.Backend.openTillSession();
+          const session = result.session;
+          setDay({ closed: false, closedAt: null, closedBy: null, summary: null, num: session.sessionNumber });
+          log('Day opened', `Server till session ${session.sessionNumber} — book unlocked`);
+          return;
+        } catch (error) {
+          log('Day open failed', error.message || 'Server till session unavailable');
+          return;
+        }
+      }
       setDay(d => ({ closed: false, closedAt: null, closedBy: null, summary: null, num: (d.num || 1) + 1 }));
       log('Day opened', 'New trading day — book unlocked');
     };

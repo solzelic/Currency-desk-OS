@@ -105,6 +105,28 @@ export class LedgerService {
       throw new LedgerError("AUTHORIZATION_DENIED", `Missing ${permission}.`);
   }
 
+  private async requireOpenTill(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+  ) {
+    const session = await client.query(
+      `SELECT status
+         FROM ledger_till_sessions
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+          AND workspace_id=$4 AND till_id=$5
+        ORDER BY session_number DESC
+        LIMIT 1
+        FOR SHARE`,
+      scope(actor),
+    );
+    if (!session.rowCount || session.rows[0].status !== "open") {
+      throw new LedgerError(
+        "TILL_NOT_OPEN",
+        "Open the till before posting transactions.",
+      );
+    }
+  }
+
   async postFrozenQuote(
     actor: LedgerActor,
     quote: FrozenQuote,
@@ -122,6 +144,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
+      await this.requireOpenTill(client, actor);
       const authoritativeQuote = await client.query(
         "SELECT * FROM quotes WHERE quote_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 FOR UPDATE",
         [quote.quoteId, ...scope(actor)],
@@ -399,6 +422,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
+      await this.requireOpenTill(client, actor);
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), request.idempotencyKey],

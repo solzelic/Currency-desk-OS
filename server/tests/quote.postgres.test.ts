@@ -42,7 +42,7 @@ async function cookie(staffId = "m.costa") {
 }
 async function reset() {
   await pool.query(
-    "TRUNCATE quote_events,quote_overrides,quotes,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals,rate_boards,market_rates CASCADE",
+    "TRUNCATE quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals,rate_boards,market_rates CASCADE",
   );
   const s = [
     DEMO.tenantId,
@@ -81,6 +81,13 @@ async function reset() {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [...s, c, v],
     );
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('session-1',$1,$2,$3,$4,$5,1,current_date,'open',$1||':m.costa',now())`,
+    s,
+  );
   await pool.query(
     "INSERT INTO market_rates (id,provider,mids,fetched_at) VALUES ('snap-1','test','{\"USD\":1.4,\"EUR\":1.5,\"GBP\":1.7}',now())",
   );
