@@ -48,6 +48,28 @@ const SITE_PAGES = {
 const isPhone = (ua: string | undefined): boolean =>
   !!ua && /iphone|ipod|android.*mobile|windows phone|blackberry|iemobile|opera mini/i.test(ua);
 
+/* STATIC_DIR is the repository root in the Render deployment so the prototype,
+   marketing site, and hosted storefront can share one process. Never expose
+   that root wholesale: it also contains server source, deployment config,
+   Git metadata, and local environment files. Keep the static plugin on a
+   small, explicit allow-list; route handlers below still serve the app shells
+   with reply.sendFile. */
+const isPublicAsset = (pathname: string): boolean => {
+  // Wildcard requests arrive with a leading slash; reply.sendFile receives a
+  // relative file path. Apply the same boundary to both paths.
+  const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return (
+    file === "/CurrencyDesk OS.html" ||
+    file === "/frontend.html" ||
+    file === "/admin.html" ||
+    file === "/yorkfx.css" ||
+    file === "/yorkfx-converter.js" ||
+    file.startsWith("/assets/") ||
+    file.startsWith("/os-src/") ||
+    file.startsWith("/web/")
+  );
+};
+
 export async function buildApp(db: Db): Promise<FastifyInstance> {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
@@ -92,7 +114,14 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     const hasMobile = hasSite && existsSync(path.join(staticDir, mobileFile));
 
     await registerSiteRoutes(app, staticDir);
-    await app.register(fastifyStatic, { root: staticDir, index: false });
+    await app.register(fastifyStatic, {
+      root: staticDir,
+      index: false,
+      dotfiles: "deny",
+      // Hosted storefront routes pass their own dedicated root to sendFile;
+      // this guard applies only to requests served from the repository root.
+      allowedPath: (pathname, root) => root !== staticDir || isPublicAsset(pathname),
+    });
     app.get("/", (req, reply) => {
       if (!hasMobile) return reply.sendFile(rootFile);
       // caches must not serve one layout to the other audience

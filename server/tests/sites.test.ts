@@ -110,6 +110,25 @@ describe("domain door: DNS handoff", () => {
 describe("the public site", () => {
   const canonical = (body: string) => /rel="canonical" href="[^"]*?([^/"]*)"/.exec(body)?.[1] ?? "";
 
+  it("keeps repository, server, and Git files outside the public static boundary", async () => {
+    const attempts = [
+      "/package.json",
+      "/render.yaml",
+      "/server/package.json",
+      "/server/src/auth/sessions.ts",
+      "/server/.env",
+      "/.git/HEAD",
+    ];
+
+    for (const url of attempts) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.payload).not.toContain("currencydesk-server");
+      expect(res.payload).not.toContain("opaque random tokens in an httpOnly cookie");
+      expect(res.payload).not.toContain("Render blueprint");
+      expect(res.payload).not.toMatch(/^ref: /m);
+    }
+  });
+
   it("gives a phone the phone design and everyone else the desktop one", async () => {
     const phone = await app.inject({
       method: "GET", url: "/",
