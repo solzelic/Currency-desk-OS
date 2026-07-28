@@ -67,22 +67,26 @@ export interface SiteConfig {
 export type TenantPlan = "basic" | "pro" | "premium";
 export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
 
-/* How far a desk is through opening, and who did each part.
+/* Opening a desk, in progress.
 
-   Setup used to be a single pass through a wizard: answers landed in
-   tenants.setup and that was that. It could not be resumed, could not be
-   done WITH a customer, and could not say what a desk was still missing.
-   This is the record both surfaces work against — the owner's wizard and
-   the platform team's dark panel — so either can pick up where the other
-   stopped. See src/onboarding/steps.ts for what the steps are. */
-export const deskOnboarding = pgTable("desk_onboarding", {
-  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
-  // stepId → { done, at, by, actorId, data }
-  steps: jsonb("steps").$type<Record<string, unknown>>().notNull().default({}),
-  // set once every required step is done and somebody presses launch; until
-  // then the desk exists but is not open for business
-  launchedAt: timestamp("launched_at", { withTimezone: true }),
-  launchedBy: text("launched_by"),
+   Keyed on the APPLICATION, not on a tenant — because the whole point is
+   that this happens BEFORE the desk exists. Somebody applies, we invite
+   them, and then either they work through it from their link or we sit
+   down and do it with them. The desk is created at the end, out of these
+   answers; tenantId is set at that moment and not before.
+
+   `answers` holds only what somebody actually typed. What the application
+   already told us, and what follows from it, is worked out on read (see
+   src/onboarding/flow.ts) so that changing the country moves the regulator
+   with it instead of leaving a stale copy nobody notices. */
+export const onboarding = pgTable("onboarding", {
+  enquiryId: text("enquiry_id").primaryKey(),
+  answers: jsonb("answers").$type<Record<string, unknown>>().notNull().default({}),
+  // stepId → who last touched it, so "did we do this or did they" survives
+  touched: jsonb("touched").$type<Record<string, unknown>>().notNull().default({}),
+  // steps with nothing to type: paperwork sighted, payment cleared
+  marks: jsonb("marks").$type<Record<string, unknown>>().notNull().default({}),
+  tenantId: text("tenant_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

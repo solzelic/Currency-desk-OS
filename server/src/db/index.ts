@@ -101,14 +101,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
 CREATE INDEX IF NOT EXISTS enquiries_email_idx ON enquiries(email);
-CREATE TABLE IF NOT EXISTS desk_onboarding (
-  tenant_id text PRIMARY KEY REFERENCES tenants(id),
-  steps jsonb NOT NULL DEFAULT '{}',
-  launched_at timestamptz,
-  launched_by text,
+CREATE TABLE IF NOT EXISTS onboarding (
+  enquiry_id text PRIMARY KEY,
+  answers jsonb NOT NULL DEFAULT '{}',
+  touched jsonb NOT NULL DEFAULT '{}',
+  marks jsonb NOT NULL DEFAULT '{}',
+  tenant_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+DROP TABLE IF EXISTS desk_onboarding;
 CREATE TABLE IF NOT EXISTS tenant_state (
   tenant_id text PRIMARY KEY REFERENCES tenants(id),
   state jsonb NOT NULL DEFAULT '{}',

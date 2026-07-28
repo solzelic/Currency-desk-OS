@@ -145,6 +145,7 @@ function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFil
     </div>
     {navItem('desks', 'Desks', counts.desks)}
     {navItem('applications', 'Early access', counts.waiting || null)}
+    {navItem('onboarding', 'Onboarding', null)}
     {navItem('messages', 'Messages', counts.unread || null)}
     {navItem('activity', 'Activity', null)}
     <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
@@ -223,7 +224,7 @@ function CreateModal({ onClose, onCreated }) {
 // Everything the public site sends us. An application is not a message in an
 // inbox — it is a thing somebody works — so this reads as a pipeline: what
 // stage each one is at, what the applicant told us, and what it became.
-const TAB_TITLE = { desks: 'Desks', applications: 'Early access', messages: 'Messages', activity: 'Activity' };
+const TAB_TITLE = { desks: 'Desks', applications: 'Early access', onboarding: 'Onboarding', messages: 'Messages', activity: 'Activity' };
 const STAGE_TONE = { new: 'blue', reviewing: 'amber', invited: 'purple', accepted: 'green', declined: 'mute' };
 const STAGES = ['new', 'reviewing', 'invited', 'accepted', 'declined'];
 // stages an operator can set; "accepted" is what a created desk means
@@ -310,7 +311,7 @@ const goto = (h) => { window.location.hash = h; };
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
   const tab = parts[0] || 'desks';
-  const known = ['desks', 'applications', 'messages', 'activity', 'people'];
+  const known = ['desks', 'applications', 'messages', 'activity', 'people', 'onboarding'];
   return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
 }
 
@@ -347,113 +348,6 @@ const kv = (k, v) => v == null || v === '' ? null : (
 // ===================== DESK PAGE =====================
 // The page you open when a customer rings. Who they are, how the desk is
 // doing, what they last did, and the levers — on one screen.
-// ===================== OPENING A DESK =====================
-/* The same list the owner works through in the OS, dark, and driveable from
-   here — so setting a shop up at their counter and them doing it from the
-   invite email are one process against one record, not two that drift.
-
-   Every step says who did it. A desk we set up and one the owner did alone
-   are different things, and six months from now somebody will need to know
-   which this was. */
-function Onboarding({ tenantId }) {
-  const [d, setD] = useState(null);
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
-  const [open, setOpen] = useState(null);       // step id whose note box is open
-  const [note, setNote] = useState('');
-  const base = '/api/admin/desks/' + encodeURIComponent(tenantId) + '/onboarding';
-  const load = () => api(base).then(setD).catch(() => setErr('Could not load this desk’s setup.'));
-  useEffect(() => { setD(null); setErr(''); load(); }, [tenantId]);
-
-  if (err) return <Card title="Opening this desk"><div style={{ color: 'var(--red)', fontSize: 13 }}>{err}</div></Card>;
-  if (!d) return <Card title="Opening this desk"><div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12 }}>Loading…</div></Card>;
-
-  const run = async (path, body, label) => {
-    setBusy(label); setErr('');
-    try { setD(await api(path, { method: 'POST', body: JSON.stringify(body || {}) })); setOpen(null); setNote(''); }
-    catch (x) { setErr((x.body && x.body.detail) || 'That didn’t work.'); }
-    setBusy('');
-  };
-  const p = d.progress;
-  const pct = Math.round((p.done / p.total) * 100);
-  const live = !!d.launchedAt;
-
-  return (<Card title={live ? 'Open for business' : 'Opening this desk'}>
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--mute)' }}>
-        {live ? 'Launched ' + fmtWhen(d.launchedAt) : p.requiredDone + ' of ' + p.requiredTotal + ' required steps done'}
-      </span>
-      <span style={{ fontFamily: MONO, fontSize: 12, color: live ? 'var(--green)' : 'var(--faint)' }}>{pct}%</span>
-    </div>
-    <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 16 }}>
-      <div style={{ height: '100%', width: pct + '%', background: live ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
-    </div>
-
-    {d.phases.map(ph => {
-      const steps = d.steps.filter(s => s.phase === ph.id);
-      if (!steps.length) return null;
-      return (<div key={ph.id} style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 7 }}>{ph.title}</div>
-        {steps.map(s => {
-          const st = s.state;
-          const done = st && st.done;
-          const mine = done && st.by === 'operator';
-          return (<div key={s.id} style={{ borderTop: '1px solid var(--line2)', padding: '10px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', marginTop: 2, display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700,
-                border: '1px solid ' + (done ? 'transparent' : 'var(--line)'), background: done ? 'var(--green)' : 'transparent', color: '#0b0b0b' }}>{done ? '✓' : ''}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                  {s.title}
-                  {!s.requiredToLaunch && <Pill tone="mute">optional</Pill>}
-                  {s.who === 'customer' && <Pill tone="purple">theirs to do</Pill>}
-                  {done && <Pill tone={mine ? 'blue' : 'green'}>{mine ? 'you did this' : 'they did this'}</Pill>}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.5, marginTop: 3 }}>{s.blurb}</div>
-                {done && <div style={{ fontSize: 11, color: 'var(--faint)', fontFamily: MONO, marginTop: 4 }}>
-                  {fmtWhen(st.at)} · {st.actorId}{st.note ? ' · ' + st.note : ''}
-                </div>}
-                {open === s.id && (<div style={{ marginTop: 8 }}>
-                  <input value={note} onChange={e => setNote(e.target.value)} autoFocus
-                    placeholder={s.kind === 'upload' ? 'What did you see? e.g. MSB cert sighted in person' : s.kind === 'payment' ? 'How did they pay? e.g. e-transfer, invoice 004' : 'Note (optional)'}
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel2, #141414)', color: 'var(--text)', fontSize: 12.5, outline: 'none' }} />
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button onClick={() => { setOpen(null); setNote(''); }} style={{ padding: '6px 11px', borderRadius: 8, border: 'none', background: 'none', color: 'var(--mute)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                    <button disabled={!!busy} onClick={() => run(base + '/' + s.id, { note: note || undefined }, s.id)}
-                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                      {busy === s.id ? 'Saving…' : 'Mark done'}</button>
-                  </div>
-                </div>)}
-              </div>
-              {open !== s.id && (<button disabled={!!busy || (s.who === 'customer' && !done)}
-                onClick={() => done ? run(base + '/' + s.id + '/undo', null, s.id) : setOpen(s.id)}
-                title={s.who === 'customer' && !done ? 'Only the owner can do this one' : ''}
-                style={{ flex: 'none', padding: '5px 10px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent',
-                  color: done ? 'var(--mute)' : (s.who === 'customer' ? 'var(--faint)' : 'var(--text)'), fontSize: 11.5, fontWeight: 600,
-                  cursor: (s.who === 'customer' && !done) ? 'not-allowed' : 'pointer', opacity: (s.who === 'customer' && !done) ? 0.45 : 1 }}>
-                {busy === s.id ? '…' : done ? 'Reopen' : 'Do it'}</button>)}
-            </div>
-          </div>);
-        })}
-      </div>);
-    })}
-
-    {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-    {!live && (<>
-      <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.5, margin: '4px 0 10px' }}>
-        {p.canLaunch
-          ? 'Everything required is done. Launching opens the desk for business.'
-          : 'Still outstanding: ' + p.blocking.join(', ') + '.'}
-      </div>
-      <button disabled={!p.canLaunch || !!busy} onClick={() => run(base + '/launch', null, 'launch')}
-        style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-          background: p.canLaunch ? 'var(--green)' : 'transparent', color: p.canLaunch ? '#0b0b0b' : 'var(--faint)',
-          cursor: p.canLaunch ? 'pointer' : 'not-allowed' }}>
-        {busy === 'launch' ? 'Opening…' : 'Launch this desk'}</button>
-    </>)}
-  </Card>);
-}
-
 function DeskPage({ id, onChanged }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState('');
   const [confirmName, setConfirmName] = useState(''); const [ack, setAck] = useState(false);
@@ -528,8 +422,6 @@ function DeskPage({ id, onChanged }) {
       </div>
 
       <div style={{ display: 'grid', gap: 16 }}>
-        <Onboarding tenantId={t.id} />
-
         {owner && (<Card title="Owner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
             <Avatar name={owner.name} size={38} />
@@ -717,6 +609,174 @@ function PersonPage({ id, onChanged }) {
 }
 
 // ===================== APPLICATION PAGE =====================
+// ===================== ONBOARDING =====================
+/* Type the reference they already hold and work the signup flow with them —
+   on the phone, or standing at their counter. It is the SAME flow they would
+   see, with everything their application already told us filled in, saving as
+   you go so it can be put down and picked up from either side. */
+// NB: the prop is `reference`, not `ref` — React intercepts `ref` on a
+// function component and it would never arrive.
+function OnboardingPage({ reference: startRef }) {
+  const [ref, setRef] = useState(startRef || '');
+  const [typed, setTyped] = useState(startRef || '');
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState({});      // fieldId → value being typed
+  const [saved, setSaved] = useState('');
+
+  const load = (r) => {
+    if (!r) return;
+    setErr(''); setD(null);
+    api('/api/admin/onboarding/' + encodeURIComponent(r))
+      .then(x => { setD(x); setDraft({}); })
+      .catch(e => setErr((e.body && e.body.detail) || 'No application with that reference.'));
+  };
+  useEffect(() => { if (ref) load(ref); }, [ref]);
+
+  const open = () => { const r = typed.trim().toUpperCase(); if (r) { setRef(r); goto('#/onboarding/' + encodeURIComponent(r)); } };
+
+  const save = async (step) => {
+    const mine = {};
+    step.fields.forEach(f => { if (f.id in draft) mine[f.id] = draft[f.id]; });
+    if (!Object.keys(mine).length) return;
+    setBusy(true); setErr('');
+    try {
+      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'PATCH', body: JSON.stringify({ stepId: step.id, answers: mine }) }));
+      setDraft(p => { const n = { ...p }; Object.keys(mine).forEach(k => delete n[k]); return n; });
+      setSaved(step.id); setTimeout(() => setSaved(''), 1600);
+    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
+    setBusy(false);
+  };
+  const mark = async (step, done) => {
+    setBusy(true); setErr('');
+    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'POST', body: JSON.stringify({}) })); } catch (e) {}
+    try {
+      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/mark', { method: 'POST', body: JSON.stringify({ stepId: step.id, done }) }));
+    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
+    setBusy(false);
+  };
+  const finish = async () => {
+    setBusy(true); setErr('');
+    try { const r = await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/create', { method: 'POST', body: JSON.stringify({}) }); setD(x => ({ ...x, handoff: r.handoff })); }
+    catch (x) { setErr((x.body && x.body.detail) || 'Not ready yet.'); }
+    setBusy(false);
+  };
+
+  const inSty = { width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', fontSize: 13.5, outline: 'none' };
+
+  if (!ref || err || !d) return (<div>
+    <PageHead back="Desks" backTo="#/desks" title="Onboarding"
+      sub="Open a desk with someone — type the reference from their application." />
+    <div style={{ maxWidth: 460 }}>
+      <Card title="Which application">
+        <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+          The reference on their charter card and in every email we’ve sent them.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === 'Enter' && open()}
+            placeholder="CD-A3V5ZE" autoFocus
+            style={{ ...inSty, fontFamily: MONO, letterSpacing: '0.12em', textTransform: 'uppercase' }} />
+          <button onClick={open} style={{ padding: '9px 16px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', fontWeight: 700, fontSize: 13, cursor: 'pointer', flex: 'none' }}>Open</button>
+        </div>
+        {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10 }}>{err}</div>}
+        {ref && !err && !d && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12, marginTop: 10 }}>Loading…</div>}
+      </Card>
+    </div>
+  </div>);
+
+  const a = d.application;
+  const pct = Math.round((d.done / d.total) * 100);
+  return (<div>
+    <PageHead back="Onboarding" backTo="#/onboarding" title={a.name || a.email}
+      sub={a.reference + '  ·  charter Nº ' + String(a.charterNo || 0).padStart(4, '0') + '  ·  applied ' + fmtDay(a.appliedAt)}
+      pills={<><Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
+        <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>} />
+
+    <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
+      <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 14 }}>
+        {d.phases.map(ph => {
+          const steps = d.steps.filter(s => s.phase === ph.id);
+          if (!steps.length) return null;
+          return (<div key={ph.id}>
+            <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--faint)', margin: '4px 0 8px' }}>{ph.title}</div>
+            {steps.map(s => (<div key={s.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: 16, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
+                <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700,
+                  border: '1px solid ' + (s.done ? 'transparent' : 'var(--line)'), background: s.done ? 'var(--green)' : 'transparent', color: '#0b0b0b' }}>{s.done ? '✓' : ''}</span>
+                <span style={{ fontSize: 14.5, fontWeight: 700 }}>{s.title}</span>
+                {s.who === 'customer' && <Pill tone="purple">theirs to do</Pill>}
+                {saved === s.id && <Pill tone="green">saved</Pill>}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginBottom: s.fields.length ? 12 : 10 }}>{s.blurb}</div>
+
+              {s.fields.length > 0 && (<div style={{ display: 'grid', gap: 10 }}>
+                {s.fields.map(f => {
+                  const v = f.id in draft ? draft[f.id] : (f.value == null ? '' : f.value);
+                  const locked = f.derived || s.who === 'customer';
+                  return (<label key={f.id} style={{ display: 'block' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--mute)', fontWeight: 600 }}>{f.label}</span>
+                      {f.source === 'application' && <Pill tone="blue">from their application</Pill>}
+                      {f.source === 'derived' && <Pill tone="mute">from {String(f.id === 'regulator' ? 'the country' : 'the regulator')}</Pill>}
+                      {f.required && f.value == null && <span style={{ fontSize: 11, color: 'var(--amber)' }}>needed</span>}
+                    </div>
+                    {f.type === 'select'
+                      ? <select disabled={locked} value={v} onChange={e => setDraft(p => ({ ...p, [f.id]: e.target.value }))} style={{ ...inSty, opacity: locked ? 0.6 : 1 }}>
+                          <option value="">—</option>
+                          {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      : <input disabled={locked} value={v} type={f.type === 'password' ? 'password' : 'text'}
+                          onChange={e => setDraft(p => ({ ...p, [f.id]: f.type === 'money' || f.type === 'number' ? Number(e.target.value) || '' : e.target.value }))}
+                          onKeyDown={e => e.key === 'Enter' && save(s)}
+                          placeholder={f.placeholder || ''} style={{ ...inSty, opacity: locked ? 0.6 : 1 }} />}
+                    {f.help && <div style={{ fontSize: 11, color: 'var(--faint)', marginTop: 3 }}>{f.help}</div>}
+                  </label>);
+                })}
+                {s.who !== 'customer' && (<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button disabled={busy || !s.fields.some(f => f.id in draft)} onClick={() => save(s)}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--line)', fontSize: 12.5, fontWeight: 700,
+                      background: s.fields.some(f => f.id in draft) ? 'var(--text)' : 'transparent',
+                      color: s.fields.some(f => f.id in draft) ? '#111' : 'var(--faint)',
+                      cursor: s.fields.some(f => f.id in draft) ? 'pointer' : 'default' }}>Save</button>
+                </div>)}
+              </div>)}
+
+              {s.fields.length === 0 && (<button disabled={busy} onClick={() => mark(s, !s.done)}
+                style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                {s.done ? 'Undo' : s.kind === 'payment' ? 'Mark paid' : 'Mark sighted'}</button>)}
+            </div>))}
+          </div>);
+        })}
+      </div>
+
+      <div style={{ display: 'grid', gap: 14, position: 'sticky', top: 20 }}>
+        <Card title="What they told us">
+          {kv('Email', a.email)}
+          {Object.entries(a.told || {}).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').toLowerCase(), String(v)))}
+        </Card>
+        <Card title="Build the desk">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+            {d.ready.ok ? 'Everything is answered. This creates the desk from exactly what is above.'
+              : d.ready.missing.length === 1 && d.ready.missing[0] === 'password'
+                ? 'Everything of ours is done — the owner sets their own password from their link.'
+                : 'Still needed: ' + d.ready.missing.join(', ') + '.'}
+          </div>
+          {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
+          <button disabled={busy} onClick={finish}
+            style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
+              background: d.ready.ok ? 'var(--green)' : 'transparent', color: d.ready.ok ? '#0b0b0b' : 'var(--text)', cursor: 'pointer' }}>
+            {busy ? 'Working…' : 'Create the desk'}</button>
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
 function ApplicationPage({ id, onChanged }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(''); const [flash, setFlash] = useState('');
@@ -869,7 +929,9 @@ function App() {
         </div>
       </div>}
 
-      {route.id && (tab === 'desks'
+      {tab === 'onboarding' && <OnboardingPage reference={route.id} />}
+
+      {route.id && tab !== 'onboarding' && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
         : tab === 'people'
         ? <PersonPage id={route.id} onChanged={loadAll} />

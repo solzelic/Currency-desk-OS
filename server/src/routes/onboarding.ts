@@ -1,25 +1,22 @@
 /* ============================================================
-   Opening a desk — one process, two doors.
+   Opening a desk — the signup flow, driveable from either end.
 
-   The owner's door (their own desk, from the OS):
-     GET  /api/onboarding                → the steps, and where they are
-     POST /api/onboarding/:stepId        → do one
-     POST /api/onboarding/:stepId/undo   → put one back
-     POST /api/onboarding/launch         → open for business
+     GET  /api/admin/onboarding/CD-A3V5ZE     → look one up by the
+            reference we already gave them, and start or resume it
+     GET  /api/admin/onboarding/:ref/flow     → the steps, prefilled
+     PATCH/api/admin/onboarding/:ref          → save answers as you type
+     POST /api/admin/onboarding/:ref/mark     → paperwork sighted, etc.
+     POST /api/admin/onboarding/:ref/create   → build the desk
 
-   The platform team's door (any desk, from the dark panel):
-     GET  /api/admin/desks/:tenantId/onboarding
-     POST /api/admin/desks/:tenantId/onboarding/:stepId
-     POST /api/admin/desks/:tenantId/onboarding/:stepId/undo
-     POST /api/admin/desks/:tenantId/onboarding/launch
+   The operator presses Onboarding, types the CD reference the applicant
+   already has, and works the SAME flow the applicant would — with what
+   they told us on the application already filled in. Answers save as
+   they go, so it can be put down and picked up by either side.
 
-   Same steps, same record, same rules. That is the point: a desk set up
-   in the shop on a Tuesday can be finished by its owner on Wednesday
-   night, and neither has to ask the other where they got to.
-
-   Every completed step records WHO did it — the customer, or us on their
-   behalf. A desk we set up and one the owner did alone are different
-   things, and the difference has to survive.
+   Nothing here re-asks a question that has an answer. That is the whole
+   design: the flow is one declaration (src/onboarding/flow.ts), the
+   answers are resolved from what somebody typed, then the application,
+   then what follows from the jurisdiction.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
@@ -29,192 +26,174 @@ import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import {
-  PHASES, STEPS, progressOf, stepById,
-  type OnboardingSteps, type StepState,
-} from "../onboarding/steps.js";
+  PHASES, STEPS, canCreateDesk, fromApplication, resolve, stepById, stepProgress,
+  type Answers,
+} from "../onboarding/flow.js";
 
-const completeBody = z.object({
-  data: z.record(z.string().max(60), z.unknown()).optional(),
-  note: z.string().max(2000).optional(),
+const patchBody = z.object({
+  stepId: z.string().min(1).max(60),
+  answers: z.record(z.string().max(60), z.unknown()),
 });
+const markBody = z.object({ stepId: z.string().min(1).max(60), done: z.boolean(), note: z.string().max(2000).optional() });
 
-/* A desk always has one of these, created on demand. Onboarding that only
-   exists once somebody has visited a screen is onboarding you cannot report
-   on — and "which of my customers is stuck" is the question this answers. */
-async function loadOrCreate(db: Db, tenantId: string) {
-  const rows = await db.select().from(schema.deskOnboarding).where(eq(schema.deskOnboarding.tenantId, tenantId)).limit(1);
+/* The reference an applicant already holds — CD-A3V5ZE, printed on their
+   charter card and in every email we have sent them. Typing that is how an
+   operator opens the right onboarding without hunting through a list. */
+const normalizeRef = (s: string) => s.trim().toUpperCase().replace(/\s+/g, "");
+
+async function findApplication(db: Db, ref: string) {
+  const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
+  const row = rows[0];
+  return row && row.kind === "early_access" ? row : undefined;
+}
+
+async function loadOrCreate(db: Db, enquiryId: string) {
+  const rows = await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, enquiryId)).limit(1);
   if (rows[0]) return rows[0];
-  await db.insert(schema.deskOnboarding).values({ tenantId, steps: {} }).onConflictDoNothing();
-  return (await db.select().from(schema.deskOnboarding).where(eq(schema.deskOnboarding.tenantId, tenantId)).limit(1))[0]!;
+  await db.insert(schema.onboarding).values({ enquiryId }).onConflictDoNothing();
+  return (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, enquiryId)).limit(1))[0]!;
 }
 
-/* What a desk that came through the public signup has already answered.
-   Those questions were asked once; asking them again would make the wizard
-   feel like it had not been listening. */
-export async function seedFromSignup(db: Db, tenantId: string, actorId: string, setup: Record<string, unknown> | null): Promise<void> {
-  const s = setup ?? {};
-  const now = new Date().toISOString();
-  const done = (data: Record<string, unknown>): StepState => ({ done: true, at: now, by: "customer", actorId, data });
-  const steps: OnboardingSteps = {};
-  if (s.country || s.regulator) steps.jurisdiction = done({ country: s.country ?? null, regulator: s.regulator ?? null });
-  if (s.address || s.city) steps.business = done({ address: s.address ?? null, city: s.city ?? null, region: s.region ?? null, postal: s.postal ?? null });
-  if (s.msbNumber) steps.registration = done({ msbNumber: s.msbNumber });
-  if (typeof s.idThreshold === "number") steps.thresholds = done({ idThreshold: s.idThreshold });
-  // the owner exists by definition — they just signed up
-  steps.owner = done({ via: "signup" });
-  await db.insert(schema.deskOnboarding).values({ tenantId, steps }).onConflictDoUpdate({
-    target: schema.deskOnboarding.tenantId,
-    set: { steps, updatedAt: new Date() },
-  });
-}
-
-const view = (row: typeof schema.deskOnboarding.$inferSelect) => {
-  const steps = (row.steps ?? {}) as OnboardingSteps;
+function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.onboarding.$inferSelect) {
+  const applied = fromApplication(app);
+  const entered = (row.answers ?? {}) as Answers;
+  const resolved = resolve(entered, applied);
+  const marks = (row.marks ?? {}) as Record<string, boolean>;
+  const progress = stepProgress(resolved, marks);
+  const ready = canCreateDesk(resolved);
   return {
+    application: {
+      reference: app.reference, charterNo: app.charterNo, email: app.email,
+      name: app.name, status: app.status, appliedAt: app.createdAt,
+      // everything they told us that the flow does NOT ask again — the
+      // operator wants to see it while they are on the phone
+      told: app.details ?? {},
+    },
     phases: PHASES,
-    steps: STEPS.map((s) => ({ ...s, state: steps[s.id] ?? null })),
-    progress: progressOf(steps),
-    launchedAt: row.launchedAt, launchedBy: row.launchedBy,
+    steps: STEPS.map((s) => ({
+      ...s,
+      fields: s.fields.map((f) => ({ ...f, ...resolved[f.id] })),
+      ...progress.find((p) => p.id === s.id)!,
+      touchedBy: ((row.touched ?? {}) as Record<string, string>)[s.id] ?? null,
+      mark: marks[s.id] ?? false,
+    })),
+    done: progress.filter((p) => p.done).length,
+    total: STEPS.length,
+    ready,
+    tenantId: row.tenantId,
     updatedAt: row.updatedAt,
   };
-};
-
-async function complete(
-  db: Db, tenantId: string, stepId: string, by: "customer" | "operator",
-  actor: SessionUser, body: { data?: Record<string, unknown>; note?: string },
-): Promise<{ error?: string; detail?: string; code?: number; row?: typeof schema.deskOnboarding.$inferSelect }> {
-  const spec = stepById(stepId);
-  if (!spec) return { code: 404, error: "no_such_step" };
-  /* Some things stop being true if somebody else does them. A password the
-     platform team chose is not the owner's password, however helpful the
-     intent — so those steps refuse, rather than quietly recording a lie. */
-  if (spec.who === "customer" && by === "operator") {
-    return { code: 403, error: "customer_only", detail: `"${spec.title}" has to be done by the owner themselves.` };
-  }
-  const row = await loadOrCreate(db, tenantId);
-  const steps = { ...((row.steps ?? {}) as OnboardingSteps) };
-  steps[stepId] = {
-    done: true, at: new Date().toISOString(), by, actorId: actor.id,
-    ...(body.data ? { data: body.data } : {}),
-    ...(body.note ? { note: body.note } : {}),
-  };
-  await db.update(schema.deskOnboarding).set({ steps, updatedAt: new Date() }).where(eq(schema.deskOnboarding.tenantId, tenantId));
-  await audit(db, {
-    tenantId, legalEntityId: actor.legalEntityId, branchId: actor.branchId, actorId: actor.id,
-    action: "onboarding.step_done", detail: { step: stepId, by },
-  });
-  return { row: (await db.select().from(schema.deskOnboarding).where(eq(schema.deskOnboarding.tenantId, tenantId)).limit(1))[0]! };
-}
-
-async function undo(db: Db, tenantId: string, stepId: string, actor: SessionUser) {
-  if (!stepById(stepId)) return { code: 404, error: "no_such_step" };
-  const row = await loadOrCreate(db, tenantId);
-  const steps = { ...((row.steps ?? {}) as OnboardingSteps) };
-  delete steps[stepId];
-  await db.update(schema.deskOnboarding).set({ steps, updatedAt: new Date() }).where(eq(schema.deskOnboarding.tenantId, tenantId));
-  await audit(db, {
-    tenantId, legalEntityId: actor.legalEntityId, branchId: actor.branchId, actorId: actor.id,
-    action: "onboarding.step_reopened", detail: { step: stepId },
-  });
-  return { row: (await db.select().from(schema.deskOnboarding).where(eq(schema.deskOnboarding.tenantId, tenantId)).limit(1))[0]! };
-}
-
-async function launch(db: Db, tenantId: string, actor: SessionUser) {
-  const row = await loadOrCreate(db, tenantId);
-  if (row.launchedAt) return { code: 409, error: "already_launched" };
-  const progress = progressOf((row.steps ?? {}) as OnboardingSteps);
-  /* The gate is the whole reason the list exists. A desk that opens with
-     paperwork outstanding is one we cannot answer for. */
-  if (!progress.canLaunch) {
-    return { code: 409, error: "not_ready", detail: "Still outstanding: " + progress.blocking.join(", "), blocking: progress.blocking };
-  }
-  const at = new Date();
-  await db.update(schema.deskOnboarding).set({ launchedAt: at, launchedBy: actor.id, updatedAt: at }).where(eq(schema.deskOnboarding.tenantId, tenantId));
-  await audit(db, {
-    tenantId, legalEntityId: actor.legalEntityId, branchId: actor.branchId, actorId: actor.id,
-    action: "onboarding.launched",
-  });
-  return { row: (await db.select().from(schema.deskOnboarding).where(eq(schema.deskOnboarding.tenantId, tenantId)).limit(1))[0]! };
 }
 
 export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatformAdmin: (email?: string) => boolean): void {
-  const me = async (req: { cookies: Record<string, string | undefined> }) => resolveSession(db, req.cookies[SESSION_COOKIE]);
-
-  // ---- the owner's own desk -------------------------------------------
-  app.get("/api/onboarding", async (req, reply) => {
-    const who = await me(req);
-    if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    return view(await loadOrCreate(db, who.tenantId));
-  });
-
-  app.post<{ Params: { stepId: string } }>("/api/onboarding/:stepId", async (req, reply) => {
-    const who = await me(req);
-    if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    const parsed = completeBody.safeParse(req.body ?? {});
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    const r = await complete(db, who.tenantId, req.params.stepId, "customer", who, parsed.data);
-    if (r.code) return reply.code(r.code).send({ error: r.error, detail: r.detail });
-    return view(r.row!);
-  });
-
-  app.post<{ Params: { stepId: string } }>("/api/onboarding/:stepId/undo", async (req, reply) => {
-    const who = await me(req);
-    if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    const r = await undo(db, who.tenantId, req.params.stepId, who);
-    if (r.code) return reply.code(r.code).send({ error: r.error });
-    return view(r.row!);
-  });
-
-  app.post("/api/onboarding/launch", async (req, reply) => {
-    const who = await me(req);
-    if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    const r = await launch(db, who.tenantId, who);
-    if (r.code) return reply.code(r.code).send({ error: r.error, detail: r.detail, blocking: r.blocking });
-    return view(r.row!);
-  });
-
-  // ---- the platform team, on any desk ---------------------------------
   const gate = async (req: any, reply: any): Promise<SessionUser | null> => {
-    const who = await me(req);
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) { reply.code(401).send({ error: "unauthenticated" }); return null; }
     if (!isPlatformAdmin(who.staffId)) { reply.code(403).send({ error: "forbidden", detail: "Platform admin only." }); return null; }
     return who;
   };
-  const deskExists = async (tenantId: string) =>
-    !!(await db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0];
 
-  app.get<{ Params: { tenantId: string } }>("/api/admin/desks/:tenantId/onboarding", async (req, reply) => {
+  /* Open one by the reference they already hold. Creates the record on first
+     look, so "start onboarding" and "carry on with it" are the same action —
+     there is no separate thing to remember to begin. */
+  app.get<{ Params: { ref: string } }>("/api/admin/onboarding/:ref", async (req, reply) => {
     if (!(await gate(req, reply))) return;
-    if (!(await deskExists(req.params.tenantId))) return reply.code(404).send({ error: "not_found" });
-    return view(await loadOrCreate(db, req.params.tenantId));
+    const application = await findApplication(db, req.params.ref);
+    if (!application) return reply.code(404).send({ error: "no_such_reference", detail: "No early-access application with that reference." });
+    return present(application, await loadOrCreate(db, application.id));
   });
 
-  app.post<{ Params: { tenantId: string; stepId: string } }>("/api/admin/desks/:tenantId/onboarding/:stepId", async (req, reply) => {
+  // save as they type — a flow you cannot put down is a flow people abandon
+  app.patch<{ Params: { ref: string } }>("/api/admin/onboarding/:ref", async (req, reply) => {
     const who = await gate(req, reply);
     if (!who) return;
-    if (!(await deskExists(req.params.tenantId))) return reply.code(404).send({ error: "not_found" });
-    const parsed = completeBody.safeParse(req.body ?? {});
+    const application = await findApplication(db, req.params.ref);
+    if (!application) return reply.code(404).send({ error: "no_such_reference" });
+    const parsed = patchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    const r = await complete(db, req.params.tenantId, req.params.stepId, "operator", who, parsed.data);
-    if (r.code) return reply.code(r.code).send({ error: r.error, detail: r.detail });
-    return view(r.row!);
+    const step = stepById(parsed.data.stepId);
+    if (!step) return reply.code(404).send({ error: "no_such_step" });
+    /* A password we chose is not their password. The operator can fill in
+       everything else on their behalf, but not this. */
+    if (step.who === "customer") {
+      return reply.code(403).send({ error: "customer_only", detail: `"${step.title}" is the owner's to do — send them their link.` });
+    }
+    // only fields this step actually declares, so a client cannot write
+    // anything it likes into the record
+    const allowed = new Set(step.fields.map((f) => f.id));
+    const row = await loadOrCreate(db, application.id);
+    const answers = { ...((row.answers ?? {}) as Answers) };
+    for (const [k, v] of Object.entries(parsed.data.answers)) {
+      if (!allowed.has(k)) continue;
+      if (v === null || v === "") delete answers[k];
+      else answers[k] = v;
+    }
+    const touched = { ...((row.touched ?? {}) as Record<string, string>), [step.id]: "operator" };
+    await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, application.id));
+    return present(application, (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, application.id)).limit(1))[0]!);
   });
 
-  app.post<{ Params: { tenantId: string; stepId: string } }>("/api/admin/desks/:tenantId/onboarding/:stepId/undo", async (req, reply) => {
+  // the steps with nothing to type: paperwork sighted, payment cleared
+  app.post<{ Params: { ref: string } }>("/api/admin/onboarding/:ref/mark", async (req, reply) => {
     const who = await gate(req, reply);
     if (!who) return;
-    if (!(await deskExists(req.params.tenantId))) return reply.code(404).send({ error: "not_found" });
-    const r = await undo(db, req.params.tenantId, req.params.stepId, who);
-    if (r.code) return reply.code(r.code).send({ error: r.error });
-    return view(r.row!);
+    const application = await findApplication(db, req.params.ref);
+    if (!application) return reply.code(404).send({ error: "no_such_reference" });
+    const parsed = markBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const step = stepById(parsed.data.stepId);
+    if (!step || step.fields.length) return reply.code(400).send({ error: "not_markable", detail: "That step is answered, not marked." });
+    const row = await loadOrCreate(db, application.id);
+    const marks = { ...((row.marks ?? {}) as Record<string, unknown>) };
+    if (parsed.data.done) marks[step.id] = parsed.data.note ?? true; else delete marks[step.id];
+    await db.update(schema.onboarding).set({ marks, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, application.id));
+    return present(application, (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, application.id)).limit(1))[0]!);
   });
 
-  app.post<{ Params: { tenantId: string } }>("/api/admin/desks/:tenantId/onboarding/launch", async (req, reply) => {
+  /* Build the desk out of the answers. This is the machine doing the work:
+     the operator does not retype anything into a second wizard, and what
+     opens is exactly what was agreed on the call. */
+  app.post<{ Params: { ref: string } }>("/api/admin/onboarding/:ref/create", async (req, reply) => {
     const who = await gate(req, reply);
     if (!who) return;
-    if (!(await deskExists(req.params.tenantId))) return reply.code(404).send({ error: "not_found" });
-    const r = await launch(db, req.params.tenantId, who);
-    if (r.code) return reply.code(r.code).send({ error: r.error, detail: r.detail, blocking: r.blocking });
-    return view(r.row!);
+    const application = await findApplication(db, req.params.ref);
+    if (!application) return reply.code(404).send({ error: "no_such_reference" });
+    const row = await loadOrCreate(db, application.id);
+    if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "This desk already exists.", tenantId: row.tenantId });
+
+    const resolved = resolve((row.answers ?? {}) as Answers, fromApplication(application));
+    const ready = canCreateDesk(resolved);
+    /* The password is the owner's, so we cannot finish this for them — but
+       only say that when it is genuinely the last thing. Telling an operator
+       "just waiting on them" while three of our own fields are still blank
+       sends them to chase a customer who is not the holdup. */
+    if (ready.missing.length === 1 && ready.missing[0] === "password") {
+      return reply.code(409).send({
+        error: "needs_owner",
+        detail: "Everything else is ready — the owner sets their own password from their link.",
+        missing: ready.missing,
+      });
+    }
+    if (!ready.ok) return reply.code(409).send({ error: "not_ready", detail: "Still needed: " + ready.missing.join(", "), missing: ready.missing });
+
+    await audit(db, {
+      tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id,
+      action: "onboarding.ready", detail: { reference: application.reference },
+    });
+    // handed to the existing signup path, which owns creating a desk
+    return {
+      ok: true,
+      handoff: {
+        businessName: resolved.businessName?.value, ownerName: resolved.ownerName?.value,
+        email: resolved.email?.value, slug: resolved.slug?.value,
+        onboarding: {
+          country: resolved.country?.value, regulator: resolved.regulator?.value,
+          homeCurrency: resolved.homeCurrency?.value, msbNumber: resolved.msbNumber?.value,
+          address: resolved.address?.value, city: resolved.city?.value,
+          region: resolved.region?.value, postal: resolved.postal?.value,
+          plan: resolved.plan?.value, idThreshold: resolved.idThreshold?.value,
+        },
+      },
+    };
   });
 }
