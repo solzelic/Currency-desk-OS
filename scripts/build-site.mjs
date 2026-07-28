@@ -130,15 +130,47 @@ const PAGES = {
       '<a href="/login" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
     ], [
       "if (this.state.step === 7) { setTimeout(() => this.startMemberCount(), 800); }",
-      "if (this.state.step === 7) {\n        setTimeout(() => this.startMemberCount(), 800);\n" +
+      "if (this.state.step === 7) {\n" +
         "        const s = this.state;\n" +
         "        sendEnquiry('early_access', s.email, s.name, {\n" +
         "          workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,\n" +
         "          jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,\n" +
         "          branches: s.branches, runningOn: s.stack, timeline: s.timeline,\n" +
-        "        }).then((ref) => {\n" +
-        "          if (!ref) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
+        "        }).then((r) => {\n" +
+        "          if (!r.reference) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
+        "          this._target = r.charterNo || null;\n" +
+        "          setTimeout(() => this.startMemberCount(), 800);\n" +
         "        });\n      }",
+    ], [
+      /* The card said a random number between 38 and 64 — so two operators
+         could be handed the same Nº on a thing that reads "on the record",
+         and nobody's was their real place in line. Wait for the number the
+         server assigned and count up to that. If the application did not
+         reach us the seal stays blank rather than inventing a place; the
+         toast above has already said so. */
+      "  startMemberCount = () => {\n" +
+        "    clearInterval(this._mc);\n" +
+        "    const target = this._target || (this._target = 38 + Math.floor(Math.random() * 27));\n" +
+        "    const from = Math.max(1, target - 6);",
+      "  startMemberCount = () => {\n" +
+        "    clearInterval(this._mc);\n" +
+        "    const target = this._target;\n" +
+        "    if (!target) { this.setState({ memberCount: null }); return; }\n" +
+        "    const from = Math.max(1, target - 6);",
+    ], [
+      "      memberNo: 'Nº ' + String(s.memberCount).padStart(4, '0'),",
+      "      memberNo: s.memberCount == null ? '' : 'Nº ' + String(s.memberCount).padStart(4, '0'),",
+    ], [
+      // no stale 42 on the seal while the real number is still in flight
+      "seed: 0, toast: '', noWebsite: false, memberCount: 42",
+      "seed: 0, toast: '', noWebsite: false, memberCount: null",
+    ], [
+      // the downloadable certificate carries the same number, or none
+      "      const no = 'Nº ' + String(this.state.memberCount).padStart(4, '0');",
+      "      const no = this.state.memberCount == null ? '' : 'Nº ' + String(this.state.memberCount).padStart(4, '0');",
+    ], [
+      "      a.download = 'CurrencyDesk-Founding-Operator-' + String(this.state.memberCount).padStart(4, '0') + '.png';",
+      "      a.download = 'CurrencyDesk-Founding-Operator' + (this.state.memberCount == null ? '' : '-' + String(this.state.memberCount).padStart(4, '0')) + '.png';",
     ], [
       // the cohort meter, live. The bar ANIMATES to its width, so the keyframe
       // has to end on the real figure too — hence the custom property.
@@ -167,8 +199,9 @@ window.sendEnquiry = function (kind, email, name, details) {
     body: JSON.stringify({ kind: kind, email: email, name: name || undefined, details: details }),
   })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-    .then(function (j) { return j.reference; })
-    .catch(function (e) { console.error('[enquiry] not sent:', e); return ''; });
+    // the whole reply: the reference to quote back, and — for an application —
+    // the charter number that goes on their card
+    .catch(function (e) { console.error('[enquiry] not sent:', e); return { reference: '', charterNo: null }; });
 };
 </script>
 `;
@@ -209,13 +242,21 @@ window.claimedCount.then(function (d) {
       bars[i].style.width = pct;
     }
   };
-  apply();
   /* These numbers sit inside dc-runtime components, which re-render and put
      the design's own 64 back. Rather than teach each design about the count,
-     write it again whenever the page changes underneath us. */
-  if (typeof MutationObserver === 'function') {
-    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
-  }
+     write it again whenever the page changes underneath us.
+
+     This script runs in the head, so the fetch can land before there is a
+     body to watch — wait for one, or the observer throws and takes the
+     count down with it. */
+  var start = function () {
+    apply();
+    if (typeof MutationObserver === 'function' && document.body) {
+      new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+  };
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start);
 });
 </script>
 `;

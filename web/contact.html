@@ -12,8 +12,9 @@ window.sendEnquiry = function (kind, email, name, details) {
     body: JSON.stringify({ kind: kind, email: email, name: name || undefined, details: details }),
   })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-    .then(function (j) { return j.reference; })
-    .catch(function (e) { console.error('[enquiry] not sent:', e); return ''; });
+    // the whole reply: the reference to quote back, and — for an application —
+    // the charter number that goes on their card
+    .catch(function (e) { console.error('[enquiry] not sent:', e); return { reference: '', charterNo: null }; });
 };
 </script>
 <script src="/web/support.js"></script>

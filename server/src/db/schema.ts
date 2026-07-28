@@ -5,7 +5,7 @@
    Staff roles are the same union as src/domain/types.ts StaffRole,
    so the two sides can never drift apart on authorization.
    ============================================================ */
-import { boolean, doublePrecision, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
   "teller",
@@ -244,6 +244,13 @@ export const enquiries = pgTable(
        progress rather than leaving it in somebody's head. */
     status: text("status").$type<EnquiryStatus>().notNull().default("new"),
     notes: text("notes"),
+    /* Their place in the founding cohort — the number printed on the charter
+       card they keep. Assigned once, when they apply, and never reused: the
+       card says "on the record", so two people must never hold Nº 0007, and
+       a number cannot come back to mean somebody else because an earlier
+       applicant was turned down. Null for contact messages, which are not
+       claims on a place. */
+    charterNo: integer("charter_no"),
     /* The desk this application became. Set when a signup completes against
        the same address — the join that turns two unrelated lists into a
        funnel you can actually measure. */

@@ -84,6 +84,41 @@ describe("desks claimed", () => {
     delete process.env.EARLY_ACCESS_CAP;
   });
 
+  it("hands each applicant their real place in line, not a random one", async () => {
+    // the card the page prints says "on the record", so the number on it has
+    // to mean something — it used to be 38 + random(27)
+    const a = (await apply("line-a@shop.ca")).json();
+    const b = (await apply("line-b@shop.ca")).json();
+    expect(b.charterNo).toBe(a.charterNo + 1);
+    expect(a.reference).toMatch(/^CD-[2-9A-HJ-NP-Z]{6}$/);
+  });
+
+  it("gives the same person the same number when they apply twice", async () => {
+    const first = (await apply("twice@shop.ca")).json();
+    const again = (await apply("twice@shop.ca")).json();
+    // otherwise re-applying quietly takes a second place in the cohort
+    expect(again.charterNo).toBe(first.charterNo);
+  });
+
+  it("never hands a declined applicant's number to somebody else", async () => {
+    const doomed = (await apply("declined@shop.ca")).json();
+    const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.email, "declined@shop.ca")).limit(1))[0]!;
+    await app.inject({
+      method: "PATCH", url: `/api/admin/enquiries/${row.id}`, cookies: adminCookie,
+      payload: { status: "declined" } as Record<string, unknown>,
+    });
+    // the place comes back, but the NUMBER does not — a card in somebody's
+    // drawer has to keep meaning them
+    const next = (await apply("after@shop.ca")).json();
+    expect(next.charterNo).toBe(doomed.charterNo + 1);
+  });
+
+  it("a contact message is not a claim on a place, so it gets no number", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/enquiries", payload: { kind: "contact", email: "hello@shop.ca", name: "Someone" } as Record<string, unknown> });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().charterNo).toBeNull();
+  });
+
   it("says how many, never who", async () => {
     const res = await app.inject({ method: "GET", url: "/api/site/early-access" });
     expect(res.statusCode).toBe(200);

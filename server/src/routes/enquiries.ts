@@ -17,6 +17,7 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -78,6 +79,30 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     }
 
     const reference = makeReference();
+    /* An applicant's place in the founding cohort, which they keep — it is
+       printed on the charter card the page hands them at the end.
+
+       The card used to show a random number between 38 and 64, so two people
+       could be handed the same Nº on a thing that says "on the record". It is
+       their real position now: the next one nobody has had.
+
+       Counted off the highest ever issued rather than off how many rows
+       exist, so a declined application does not hand its number to the next
+       applicant — the card in somebody's drawer has to keep meaning them.
+       And an address that applies twice keeps the number it was already
+       given rather than taking a second place in line. */
+    let charterNo: number | null = null;
+    if (kind === "early_access") {
+      const mine = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, email)))
+        .filter((e) => e.kind === "early_access" && e.charterNo != null);
+      if (mine.length) {
+        charterNo = Math.min(...mine.map((e) => e.charterNo!));
+      } else {
+        const issued = (await db.select({ n: schema.enquiries.charterNo }).from(schema.enquiries)).map((r) => r.n ?? 0);
+        charterNo = (issued.length ? Math.max(...issued) : 0) + 1;
+      }
+    }
+
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
     await db.insert(schema.enquiries).values({
@@ -87,6 +112,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       email,
       name: name ?? null,
       details: details ?? {},
+      charterNo,
     });
 
     // Tell the operators. Best-effort: the enquiry is already saved, so a
@@ -117,6 +143,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       );
     }
 
-    return reply.code(201).send({ ok: true, reference });
+    // charterNo is the number printed on their card; null for a message
+    return reply.code(201).send({ ok: true, reference, charterNo });
   });
 }
