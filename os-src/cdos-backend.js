@@ -30,6 +30,8 @@
         UNSUPPORTED_CURRENCY_PAIR: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
         QUOTE_EXPIRED: "The frozen quote expired. Request a new quote and confirm it again.",
         INSUFFICIENT_TILL_LIQUIDITY: "The till does not have enough currency to complete this exchange.",
+        REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
+        REVERSAL_ALREADY_EXISTS: "This transaction has already been reversed.",
       })[body.code] || "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
@@ -145,6 +147,9 @@
       },
       postQuote: function (quoteId, payload) {
         return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", body: JSON.stringify(payload) });
+      },
+      reverseTransaction: function (transactionId, payload) {
+        return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/reversal", { method: "POST", body: JSON.stringify(payload) });
       },
       transactionToRow: transactionToRow,
       loadLedger: loadLedger,

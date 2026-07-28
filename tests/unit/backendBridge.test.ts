@@ -6,6 +6,7 @@ type BackendBridge = {
   customerPayload(name: string, record: Record<string, unknown>): Record<string, unknown>;
   syncCustomer(name: string, record: Record<string, unknown>): Promise<Record<string, unknown>>;
   createQuote(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  reverseTransaction(transactionId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>;
   transactionToRow(transaction: Record<string, unknown>, customerName: string): Record<string, unknown>;
   mergeRows(existing: Record<string, unknown>[], serverRows: Record<string, unknown>[]): Record<string, unknown>[];
 };
@@ -59,6 +60,27 @@ describe("browser backend bridge", () => {
       status: 422,
       message: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
     });
+  });
+
+  it("posts an idempotent reversal to the authoritative transaction", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ reversalId: "rv_1", transactionId: "tx/1" }),
+    });
+    const backend = loadBridge(fetchMock);
+
+    await backend.reverseTransaction("tx/1", {
+      idempotencyKey: "web-reversal:tx/1",
+      reason: "Duplicate",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/ledger/transactions/tx%2F1/reversal", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: "web-reversal:tx/1",
+        reason: "Duplicate",
+      }),
+    }));
   });
 
   it("maps authoritative transactions into ledger rows without duplicating them", () => {

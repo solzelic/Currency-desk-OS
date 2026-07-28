@@ -898,7 +898,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     </Portal>);
   }
 
-  function TxDetail({ row, flag, settings, me, can, log, setRows, clients, onClose, onReceipt, onOpenClient, onFileLCTR }) {
+  function TxDetail({ row, flag, settings, me, can, log, setRows, clients, onClose, onReceipt, onOpenClient, onFileLCTR, serverBacked, onServerReversed }) {
     const [note, setNote] = useState('');
     const [voiding, setVoiding] = useState(false);
     const [pinAsk, setPinAsk] = useState(false);   // PIN gate before a void (Settings › Employees)
@@ -907,6 +907,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const filing = (() => { try { return (JSON.parse(localStorage.getItem('cdos_submissions_v1') || '{}') || {})['L-' + row.ref]; } catch (e) { return null; } })();
     const isFiled = filing && filing.status === 'submitted';
     const [voidReason, setVoidReason] = useState('');
+    const [voidBusy, setVoidBusy] = useState(false);
+    const [voidError, setVoidError] = useState('');
     const [shown, setShown] = useState(false);
     useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r); }, []);
     const isVoid = row.status === 'void';
@@ -934,7 +936,32 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         return u;
       }, 'Compliance cleared', `all items acknowledged by ${me.name}`);
     };
-    const doVoid = () => { if (!voidReason.trim()) return; patch(r => ({ ...r, status: 'void', voidReason: voidReason.trim(), voidBy: me.name, voidAt: stamp(), thread: [...(r.thread || []), { ts: stamp(), user: me.name, text: 'VOID — ' + voidReason.trim() }] }), 'Transaction voided', voidReason.trim().slice(0, 60)); setVoiding(false); };
+    const doVoid = async () => {
+      if (!voidReason.trim() || voidBusy) return;
+      if (!(serverBacked && row.serverTransactionId)) {
+        patch(r => ({ ...r, status: 'void', voidReason: voidReason.trim(), voidBy: me.name, voidAt: stamp(), thread: [...(r.thread || []), { ts: stamp(), user: me.name, text: 'VOID — ' + voidReason.trim() }] }), 'Transaction voided', voidReason.trim().slice(0, 60));
+        setVoiding(false);
+        return;
+      }
+      setVoidBusy(true);
+      setVoidError('');
+      try {
+        const reversal = await window.CDOS.Backend.reverseTransaction(row.serverTransactionId, {
+          idempotencyKey: `web-reversal:${row.serverTransactionId}`,
+          reason: voidReason.trim(),
+        });
+        patch(r => ({ ...r, status: 'void', voidReason: voidReason.trim(), voidBy: me.name, voidAt: reversal.postedAt, serverReversalId: reversal.reversalId, thread: [...(r.thread || []), { ts: reversal.postedAt, user: me.name, text: 'VOID — ' + voidReason.trim() }] }), 'Transaction reversed', voidReason.trim().slice(0, 60));
+        if (onServerReversed) {
+          try { await onServerReversed(); }
+          catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The reversal will refresh on the next ledger open'); }
+        }
+        setVoiding(false);
+      } catch (error) {
+        setVoidError(error.message || 'The transaction was not reversed.');
+      } finally {
+        setVoidBusy(false);
+      }
+    };
     const toggleTag = () => {
       if (row.tagged) patch(r => ({ ...r, tagged: false, tagInfo: null }), 'Tag removed', 'untagged');
       else patch(r => ({ ...r, tagged: true, tagInfo: { by: me.name, at: stamp(), note: '' } }), 'Transaction tagged', `flagged for follow-up by ${me.name}`);
@@ -968,7 +995,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           <div className="ml-auto flex items-center gap-1.5 flex-none">
             <button onClick={() => onReceipt(row)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="receipt" s={14} /> Receipt</button>
             <button onClick={toggleTag} title={row.tagged ? 'Remove tag' : 'Tag for follow-up'} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, background: row.tagged ? CD.green : 'transparent', border: `1px solid ${row.tagged ? CD.green : CD.line}` }}><Ic n="bookmark" s={15} c={row.tagged ? 'var(--cd-on-ink)' : CD.mute} /></button>
-            {!isVoid && can('canDelete') && !voiding && !correcting && <button onClick={() => setCorrecting(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="edit" s={14} /> Correct</button>}
+            {!isVoid && can('canDelete') && !voiding && !correcting && !row.serverTransactionId && <button onClick={() => setCorrecting(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="edit" s={14} /> Correct</button>}
             {!isVoid && can('canDelete') && !voiding && <button onClick={() => setVoiding(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ color: CD.flag, border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, borderRadius: 8 }}><Ic n="ban" s={14} /> Void</button>}
           </div>
         </div>
@@ -978,11 +1005,14 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             <span className="text-[12px] font-medium flex-none" style={{ color: CD.flag }}>Void reason</span>
             <input value={voidReason} onChange={e => setVoidReason(e.target.value)} autoFocus placeholder="Reason (required)…" className="flex-1 text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.flag}`, borderRadius: 8 }} />
             {voidNeedsPin
-              ? <button onClick={() => voidReason.trim() && setPinAsk(true)} disabled={!voidReason.trim()} className="text-[13px] font-semibold text-white" style={{ padding: '0.5rem 0.75rem', borderRadius: 8, background: voidReason.trim() ? CD.flag : 'var(--cd-disabled)', cursor: voidReason.trim() ? 'pointer' : 'not-allowed' }} title="Enter your PIN to void">Confirm void</button>
-              : <CommitBtn onCommit={doVoid} disabled={!voidReason.trim()} tone="danger" label="Confirm void" doneLabel="Voided" delay={420} style={{ padding: '0.5rem 0.75rem' }} title="Void this record" />}
+              ? <button onClick={() => voidReason.trim() && setPinAsk(true)} disabled={!voidReason.trim() || voidBusy} className="text-[13px] font-semibold text-white" style={{ padding: '0.5rem 0.75rem', borderRadius: 8, background: voidReason.trim() && !voidBusy ? CD.flag : 'var(--cd-disabled)', cursor: voidReason.trim() && !voidBusy ? 'pointer' : 'not-allowed' }} title="Enter your PIN to void">{voidBusy ? 'Reversing…' : 'Confirm void'}</button>
+              : serverBacked && row.serverTransactionId
+                ? <button onClick={doVoid} disabled={!voidReason.trim() || voidBusy} className="text-[13px] font-semibold text-white" style={{ padding: '0.5rem 0.75rem', borderRadius: 8, background: voidReason.trim() && !voidBusy ? CD.flag : 'var(--cd-disabled)' }}>{voidBusy ? 'Reversing…' : 'Confirm void'}</button>
+                : <CommitBtn onCommit={doVoid} disabled={!voidReason.trim()} tone="danger" label="Confirm void" doneLabel="Voided" delay={420} style={{ padding: '0.5rem 0.75rem' }} title="Void this record" />}
             <button onClick={() => setVoiding(false)} className="p-2 flex-none"><Ic n="x" s={15} c={CD.mute} /></button>
           </div>
         )}
+        {voidError && <div role="alert" className="px-5 py-2 text-[11px] flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderBottom: `1px solid ${CD.flag}` }}>{voidError}</div>}
         {pinAsk && window.CDOS.PinPrompt && <window.CDOS.PinPrompt title="Confirm void" sub="Enter your PIN to void this record" name={me.name} onOk={() => { setPinAsk(false); doVoid(); }} onCancel={() => setPinAsk(false)} />}
         <div className="flex-1 overflow-auto">
           <div className="mx-auto w-full px-5 py-6 space-y-5" style={{ maxWidth: 760 }}>
@@ -1658,7 +1688,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </div>
 
       {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
-      {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients }} onClose={() => setDetailId(null)} onReceipt={setReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
+      {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={setReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
       {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
     </div>);
   }
