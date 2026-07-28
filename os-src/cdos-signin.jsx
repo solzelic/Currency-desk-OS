@@ -109,6 +109,13 @@
 
     const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
     const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+    /* The prototype remains useful as a file/localhost demo, but a deployed
+       desk must never look signed in when its API is unavailable. In the live
+       product the server session is the identity, not browser state. */
+    const offlineDemoAllowed = () => {
+      const host = (window.location && window.location.hostname || '').toLowerCase();
+      return window.location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.local');
+    };
 
     // Step 1: prove the password. The server emails a code (email identities)
     // and we advance to the keypad; users with no email sign in immediately.
@@ -135,8 +142,13 @@
         if (data && data.needsCode === false) { onComplete(rec, srvPlan, u); return; } // password-only (no email on file)
         setCode(''); setStep('code');
       } catch (_) {
-        // no backend at all — keep the offline demo flowing through the code step
-        setBusy(false); setErr('');
+        // A static local prototype can still demonstrate the flow. A deployed
+        // desk must fail closed and wait for the authentication service.
+        setBusy(false);
+        if (!offlineDemoAllowed()) {
+          setErr('The sign-in service is unavailable. Check your connection and try again.');
+          return;
+        }
         if (!rec) { setErr('No staff record for that ID — pick one from the examples.'); return; }
         authRef.current = { rec, srvPlan: null, srvUser: null, staffId, demo: true };
         setCode(''); setStep('code');
