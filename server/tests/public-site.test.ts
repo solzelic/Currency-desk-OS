@@ -51,13 +51,13 @@ describe("published site config", () => {
     expect(actions).toContain("tenant.site_config_changed");
   });
 
-  it("a teller cannot publish site config; a manager cannot change plan or domain", async () => {
+  it("a teller cannot publish site config; browser users cannot change a paid plan directly", async () => {
     const teller = await login("m.costa");
     const denied = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(teller), payload: { siteConfig: { phone: "555" } } });
     expect(denied.statusCode).toBe(403);
     const mgr = await login("r.haddad");
     const deniedPlan = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(mgr), payload: { plan: "basic" } });
-    expect(deniedPlan.statusCode).toBe(403);
+    expect(deniedPlan.statusCode).toBe(400);
   });
 });
 

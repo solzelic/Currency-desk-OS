@@ -11,6 +11,10 @@
 #   RESET_STAFF_PASSWORD — break-glass, normally UNSET. "staffId:newpassword"
 #                   resets that one account at boot (audited, temporary
 #                   password). Remove it right after signing back in.
+#   STRIPE_SECRET_KEY — a newly rotated, restricted live Stripe secret key.
+#                   Never put it in this file, Git, or browser code.
+#   STRIPE_WEBHOOK_SECRET — signing secret for this service's Stripe webhook.
+#                   Create the endpoint only after both secrets are saved.
 #
 # Hosted customer sites: each customer's storefront serves at /sites/<slug>
 # (York FX: /sites/yorkfx). When a customer hands off their domain, the owner
@@ -62,3 +66,24 @@ services:
       # first-run operator login "email:password"; remove after signing in
       - key: PLATFORM_ADMIN_BOOTSTRAP
         sync: false
+      # Stripe Billing: hosted Checkout, Customer Portal, Tax and invoices.
+      # Price IDs are public identifiers; the two secrets above stay in the
+      # Render dashboard.  These values match the live CAD catalog.
+      - key: APP_BASE_URL
+        value: https://www.currencydeskos.com
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_BASIC_MONTHLY
+        value: price_1TyKwqAWdRTG9PX9XJTProS5
+      - key: STRIPE_PRICE_BASIC_ANNUAL
+        value: price_1TyKwuAWdRTG9PX9zjWCbog8
+      - key: STRIPE_PRICE_PRO_MONTHLY
+        value: price_1TyKwxAWdRTG9PX9MziwMtXA
+      - key: STRIPE_PRICE_PRO_ANNUAL
+        value: price_1TyKx0AWdRTG9PX9rPOU2sox
+      - key: STRIPE_PRICE_PREMIUM_MONTHLY
+        value: price_1TyKx4AWdRTG9PX9z6MyB8lT
+      - key: STRIPE_PRICE_PREMIUM_ANNUAL
+        value: price_1TyKx7AWdRTG9PX9CL2NjTPK

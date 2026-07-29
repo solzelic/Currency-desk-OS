@@ -3,6 +3,7 @@
    API plan-gates refuse what the tier doesn't include. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
@@ -44,22 +45,22 @@ describe("tenant plan", () => {
     expect(t.json().tenant).toMatchObject({ id: DEMO.tenantId, plan: "premium" });
   });
 
-  it("only an administrator can change the plan", async () => {
+  it("does not allow a browser session to self-assign a paid plan", async () => {
     const mgr = await login("r.haddad");
     const denied = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(mgr), payload: { plan: "basic" } });
-    expect(denied.statusCode).toBe(403);
+    expect(denied.statusCode).toBe(400);
 
     const admin = await login("j.masri");
-    const ok = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(admin), payload: { plan: "basic" } });
-    expect(ok.statusCode).toBe(200);
-    expect(ok.json().tenant.plan).toBe("basic");
-    const actions = (await handle.db.select().from(schema.auditEvents)).map((e) => e.action);
-    expect(actions).toContain("tenant.plan_changed");
+    const rejected = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(admin), payload: { plan: "basic" } });
+    expect(rejected.statusCode).toBe(400);
+    const tenant = await app.inject({ method: "GET", url: "/api/tenant", cookies: cookieOf(admin) });
+    expect(tenant.json().tenant.plan).toBe("premium");
   });
 
   it("a basic tenant is refused ledger posting but keeps the rate board", async () => {
     const admin = await login("j.masri");
     const cookies = cookieOf(admin);
+    await handle.db.update(schema.tenants).set({ plan: "basic" }).where(eq(schema.tenants.id, DEMO.tenantId));
 
     const post = await app.inject({
       method: "POST",
@@ -86,7 +87,7 @@ describe("tenant plan", () => {
   it("upgrading back to pro lifts the ledger gate", async () => {
     const admin = await login("j.masri");
     const cookies = cookieOf(admin);
-    await app.inject({ method: "PATCH", url: "/api/tenant", cookies, payload: { plan: "pro" } });
+    await handle.db.update(schema.tenants).set({ plan: "pro" }).where(eq(schema.tenants.id, DEMO.tenantId));
     const post = await app.inject({
       method: "POST",
       url: "/api/ledger/exchanges",
