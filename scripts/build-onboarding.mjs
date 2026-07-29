@@ -104,6 +104,16 @@ if (!existsSync(SRC)) {
 
 let html = readFileSync(SRC, "utf8");
 
+/* The exported onboarding design is a customer-facing order summary, so it
+   must never diverge from the Stripe catalog. Keep this compatibility patch
+   here until the next design export carries the $599 Full System price. */
+const LEGACY_FULL_SYSTEM_PRICE = "id:'full', name:'Full System', mo:499";
+const CURRENT_FULL_SYSTEM_PRICE = "id:'full', name:'Full System', mo:599";
+if (!html.includes(LEGACY_FULL_SYSTEM_PRICE) && !html.includes(CURRENT_FULL_SYSTEM_PRICE)) {
+  throw new Error("onboarding: Full System plan price anchor not found — verify the public price before building");
+}
+html = html.replace(LEGACY_FULL_SYSTEM_PRICE, CURRENT_FULL_SYSTEM_PRICE);
+
 if (!html.includes(`KEY = '${KEY}'`)) {
   throw new Error(`onboarding: the design's storage key is no longer '${KEY}' — update scripts/build-onboarding.mjs`);
 }
