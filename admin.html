@@ -272,15 +272,42 @@ const DETAIL_LABELS = {
 function Pipeline({ kind, title, blurb, onCounts }) {
   const [rows, setRows] = useState(null);
   const [stage, setStage] = useState('all');
+  /* Board or list. The board is for working the queue; the list is for
+     finding one person. Remembered, because an operator has a preference
+     and being asked again every morning is its own small insult. */
+  const [view, setView] = useState(() => { try { return localStorage.getItem('cdos_pipe_view') || 'board'; } catch (e) { return 'board'; } });
+  const [stages, setStages] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [note, setNote] = useState('');
 
   const load = async () => {
     const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({ enquiries: [] }));
     setRows(r.enquiries);
+    if (r.stages) setStages(r.stages);
     if (onCounts) onCounts(r.enquiries);
   };
   useEffect(() => { load(); }, [kind]);
+  const pick = (v) => { setView(v); try { localStorage.setItem('cdos_pipe_view', v); } catch (e) {} };
+
+  /* Moving a card is the same call the API makes from anywhere else, so the
+     email that belongs to a stage follows without the board knowing which
+     stages send anything. */
+  const move = async (r, to) => {
+    setBusy(r.id); setNote('');
+    try {
+      const res = await api('/api/admin/enquiries/' + r.id, { method: 'PATCH', body: JSON.stringify({ status: to }) });
+      const sent = res.email;
+      setNote((r.name || r.email) + ' → ' + to + (sent ? ' · email ' + sent : ''));
+      await load();
+    } catch (e) {
+      setNote((e.body && e.body.detail) || 'Could not move that one.');
+    }
+    setBusy(null);
+    setTimeout(() => setNote(''), 6000);
+  };
 
   if (!rows) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+  const BOARD = stages || STAGES.map(id => ({ id, title: id, blurb: '' }));
 
   const counts = STAGES.reduce((a, s) => (a[s] = rows.filter(r => r.status === s).length, a), {});
   const shown = stage === 'all' ? rows : rows.filter(r => r.status === stage);
@@ -293,14 +320,76 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     </button>
   );
 
+  /* A card. The same one on the board and, one day, anywhere else a single
+     application needs to be shown small. */
+  const card = (r) => {
+    const here = BOARD.findIndex(s => s.id === r.status);
+    const onward = BOARD.filter(s => s.id !== r.status && s.id !== 'accepted');
+    return (<div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, opacity: busy === r.id ? 0.5 : 1 }}>
+      <div onClick={() => goto('#/applications/' + r.id)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Avatar name={r.name || r.email} size={26} />
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{r.name || '—'}</span>
+            <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>
+          </span>
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)', marginTop: 8 }}>
+          {r.reference}{r.charterNo ? ' · Nº ' + String(r.charterNo).padStart(4, '0') : ''}
+        </div>
+        {/* The rehearsal sits in the same board as everyone else so it can be
+            found, and has to be unmistakable so nobody works it as a lead. */}
+        {r.isDemo && <div style={{ marginTop: 6 }}><Pill tone="purple">walkthrough</Pill></div>}
+        {(r.labels || []).length > 0 && (<div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+          {(r.labels || []).map(l => <Pill key={l} tone="blue">{l}</Pill>)}
+        </div>)}
+        {r.tenantName && <div style={{ marginTop: 8 }}><Pill tone="green">{r.tenantName}</Pill></div>}
+      </div>
+      {/* Where they can go from here — the server decides which moves are
+          legal, and 'Open' never appears because a desk opening is something
+          they do, not something we assert. */}
+      {onward.length > 0 && (<div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line2)' }}>
+        {onward.map(s => (<button key={s.id} disabled={busy === r.id} onClick={() => move(r, s.id)}
+          style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent',
+            color: BOARD.findIndex(x => x.id === s.id) > here ? 'var(--text)' : 'var(--mute)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+          {BOARD.findIndex(x => x.id === s.id) > here ? '→ ' : '← '}{s.title}</button>))}
+      </div>)}
+    </div>);
+  };
+
+  const toggle = (v, label) => (
+    <button key={v} onClick={() => pick(v)} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: view === v ? 700 : 500,
+      border: '1px solid ' + (view === v ? 'var(--text)' : 'var(--line)'), background: view === v ? 'var(--hover)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--mute)' }}>{label}</button>
+  );
+
   return (<div>
     <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>{blurb}</p>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-      {chip('all', 'Everything', rows.length)}
-      {STAGES.map(s => chip(s, s, counts[s]))}
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+      {view === 'list' && chip('all', 'Everything', rows.length)}
+      {view === 'list' && STAGES.map(s => chip(s, s, counts[s]))}
+      <span style={{ flex: 1 }} />
+      <div style={{ display: 'flex', gap: 6 }}>{toggle('board', 'Board')}{toggle('list', 'List')}</div>
     </div>
+    {note && <div style={{ marginBottom: 12, padding: '9px 13px', borderRadius: 9, background: 'var(--hover)', border: '1px solid var(--line)', fontSize: 13 }}>{note}</div>}
 
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+    {view === 'board' && (<div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
+      {BOARD.map(s => {
+        const inCol = rows.filter(r => r.status === s.id);
+        return (<div key={s.id} style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px 8px' }}>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>{s.title}</span>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{inCol.length}</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.45, padding: '0 2px 10px', minHeight: 30 }}>{s.blurb}</div>
+          <div style={{ display: 'grid', gap: 8, background: 'var(--line2)', borderRadius: 13, padding: 8, minHeight: 90 }}>
+            {inCol.map(card)}
+            {inCol.length === 0 && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
+          </div>
+        </div>);
+      })}
+    </div>)}
+
+    {view === 'list' && (<div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       <div style={{ flex: 1, minWidth: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
@@ -327,7 +416,7 @@ function Pipeline({ kind, title, blurb, onCounts }) {
         </div>
       </div>
 
-    </div>
+    </div>)}
   </div>);
 }
 
@@ -918,6 +1007,48 @@ function OnboardingPage({ reference: startRef }) {
   </div>);
 }
 
+/* Free-form on purpose. The moment you make an operator pick from a fixed
+   list you have to guess the list, and they will want one you did not think
+   of on their second day. What everyone has already used is offered back, so
+   the vocabulary converges without being imposed. */
+function LabelBox({ enquiry, onSaved }) {
+  const [labels, setLabels] = useState(enquiry.labels || []);
+  const [all, setAll] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setLabels(enquiry.labels || []); }, [enquiry.id, (enquiry.labels || []).join(',')]);
+  useEffect(() => { api('/api/admin/labels').then(r => setAll(r.labels || [])).catch(() => {}); }, []);
+
+  const put = async (next) => {
+    setBusy(true);
+    try { const r = await api('/api/admin/enquiries/' + enquiry.id + '/labels', { method: 'PUT', body: JSON.stringify({ labels: next }) });
+      setLabels(r.labels); onSaved && onSaved(); } catch (e) {}
+    setBusy(false);
+  };
+  const add = (l) => { const v = String(l || '').trim().toLowerCase(); if (!v || labels.includes(v)) return; setDraft(''); put([...labels, v]); };
+  const drop = (l) => put(labels.filter(x => x !== l));
+  const unused = all.filter(a => !labels.includes(a.label)).slice(0, 8);
+
+  return (<Card title="Labels">
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: labels.length ? 11 : 0 }}>
+      {labels.map(l => (<button key={l} disabled={busy} onClick={() => drop(l)} title="Remove"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          border: '1px solid color-mix(in srgb,var(--blue) 34%,transparent)', background: 'color-mix(in srgb,var(--blue) 13%,transparent)', color: 'var(--text)' }}>
+        {l}<span style={{ color: 'var(--faint)' }}>×</span></button>))}
+    </div>
+    <form onSubmit={ev => { ev.preventDefault(); add(draft); }} style={{ display: 'flex', gap: 8 }}>
+      <input value={draft} onChange={ev => setDraft(ev.target.value)} placeholder="high volume, toronto, referred…" maxLength={32}
+        style={{ flex: 1, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
+      <button disabled={busy || !draft.trim()} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: draft.trim() ? 'pointer' : 'default' }}>Add</button>
+    </form>
+    {unused.length > 0 && (<div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 10 }}>
+      <span style={{ fontSize: 11, color: 'var(--faint)', alignSelf: 'center' }}>Used before:</span>
+      {unused.map(a => (<button key={a.label} disabled={busy} onClick={() => add(a.label)}
+        style={{ padding: '3px 8px', borderRadius: 999, fontSize: 11.5, cursor: 'pointer', border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)' }}>{a.label}</button>))}
+    </div>)}
+  </Card>);
+}
+
 function ApplicationPage({ id, onChanged }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(''); const [flash, setFlash] = useState('');
@@ -956,6 +1087,11 @@ function ApplicationPage({ id, onChanged }) {
           {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v)))}
         </Card>
 
+        {/* Labels: what this application is LIKE. Kept apart from the stage,
+            which is where it IS — mixing the two is how you end up with a
+            stage called "high-volume-reviewing" and can automate neither. */}
+        {isApp && <LabelBox enquiry={e} onSaved={load} />}
+
         <Card title="Your notes">
           <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={6} placeholder="What you learned on the call, what you promised, anything the next person needs…"
             style={{ width: '100%', padding: 11, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
@@ -976,6 +1112,35 @@ function ApplicationPage({ id, onChanged }) {
                 {isApp && <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>Inviting emails them their reference and the link to set the desk up. Accepted happens on its own when they finish.</div>}
               </div>)}
         </Card>
+
+        {/* The code, while it is live.
+
+            Two different things get confused here. REVOKING is just moving
+            them out of Invited — the link stops opening anything the moment
+            they are not invited, so it needs no button of its own and the
+            one above already does it. ROTATING is the other case: the code
+            went somewhere it should not have and they need a different one.
+            Say which is which, because guessing wrong is either an angry
+            customer or a live code in the wrong hands. */}
+        {isApp && e.status === 'invited' && (<Card title="Their code">
+          <div style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: '0.08em', marginBottom: 8 }}>{e.reference}</div>
+          <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+            Live. This opens their setup. Moving them to <b style={{ color: 'var(--text)' }}>Reviewing</b> or <b style={{ color: 'var(--text)' }}>Declined</b> above
+            stops it working straight away — that is how you take a code back.
+          </div>
+          <button disabled={busy} onClick={async () => {
+            setBusy(true); setFlash('');
+            try {
+              const r = await api('/api/admin/enquiries/' + e.id + '/rotate', { method: 'POST', body: JSON.stringify({}) });
+              setFlash('New code ' + r.reference + '. The old one (' + r.was + ') is dead' + (r.email ? ', and the new one has been emailed.' : '.'));
+              await load(); onChanged && onChanged();
+            } catch (x) { setFlash((x.body && x.body.detail) || 'Could not issue a new code.'); }
+            setBusy(false);
+          }} style={btn('transparent', 'var(--text)', { fontSize: 12.5, width: '100%' })}>Issue a different code</button>
+          <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 8, lineHeight: 1.5 }}>
+            For when this one has been seen by someone it should not have. The old code stops working and they are emailed the new one.
+          </div>
+        </Card>)}
 
         <Card title="History">
           {kv('Received', fmtWhen(e.createdAt))}

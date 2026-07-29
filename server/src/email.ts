@@ -72,6 +72,29 @@ export function loginCodeEmail(code: string, name?: string): { subject: string; 
 /* The invitation. What an accepted applicant gets when an operator moves
    them to "invited": their reference, and the one link that starts the desk.
    Deliberately short — the next thing they should do is create it. */
+/* Somebody has picked their application up. Sent the moment they move into
+   review, because the gap between "we got it" and "you're in" is where an
+   applicant decides we are not serious — and it costs nothing to say so. */
+export function reviewEmail(opts: { name?: string | null }): { subject: string; text: string; html: string } {
+  const who = opts.name ? `${opts.name}, we` : "We";
+  const subject = "We're looking at your CurrencyDesk application";
+  const text =
+    `${who}'ve got your application and it's with us now.\n\n` +
+    `Someone will call you shortly to talk it through — no preparation needed, ` +
+    `we mostly want to hear how your desk runs today.\n\n` +
+    `If anything changes in the meantime, just reply to this email.`;
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${who}'ve got your application and it's with us now.</div>` +
+    `<div style="margin:20px 0;padding:14px 16px;background:#f4f3f0;border-radius:12px;font-size:14px;line-height:1.6;color:#444">` +
+    `Someone will call you shortly to talk it through. No preparation needed \u2014 we mostly want to hear how your desk runs today.` +
+    `</div>` +
+    `<div style="font-size:13px;color:#8a8a8a;line-height:1.6">If anything changes in the meantime, just reply to this email.</div>` +
+    `</div>`;
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: { name?: string | null; reference: string; origin: string }): { subject: string; text: string; html: string } {
   const who = opts.name ? `${opts.name}, you` : "You";
   /* Straight into setup, with their code already in the link so most people

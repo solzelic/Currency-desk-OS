@@ -353,6 +353,11 @@ export const enquiries = pgTable(
     tenantId: text("tenant_id"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decidedBy: text("decided_by"),
+    /* What an application is LIKE — "high volume", "toronto", "referred by
+       jordan". Many, unordered, and they drive nothing: status is the single
+       ordered value automation keys off, and mixing the two is how you end
+       up with a stage called "high-volume-reviewing". */
+    labels: jsonb("labels").$type<string[]>().notNull().default([]),
     handledAt: timestamp("handled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
