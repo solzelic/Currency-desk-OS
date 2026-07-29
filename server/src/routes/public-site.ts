@@ -140,6 +140,23 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
       publishedAt: board.publishedAt.getTime(),
       currencies: rates.length,
       rates,
+      /* The same shape the desk's own /api/rates returns, because the
+         storefront's converter already knows how to apply it — order,
+         hidden rows, per-currency overrides and all. Sending anything else
+         would mean a second code path on the page to keep in step.
+
+         I first withheld the margins here on the grounds that they are the
+         desk's business. That does not survive thinking about: buy and sell
+         are printed in the window, so the margin is two subtractions away
+         for anyone who wants it. Withholding it protected nothing and cost
+         the page its ordering and its hidden rows. */
+      board: {
+        buyMargin: board.buyMargin,
+        sellMargin: board.sellMargin,
+        rows,
+        order: board.boardOrder ?? undefined,
+        publishedAt: board.publishedAt.getTime(),
+      },
     };
   };
 
