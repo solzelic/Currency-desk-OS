@@ -66,7 +66,7 @@ services:
       # Price IDs are public identifiers; the two secrets above stay in the
       # Render dashboard.  These values match the live CAD catalog.
       - key: APP_BASE_URL
-        value: https://currencydeskos.com
+        value: https://www.currencydeskos.com
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
