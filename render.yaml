@@ -25,7 +25,11 @@ services:
     # free tier: $0, sleeps after ~15 idle minutes (~30s wake on next visit).
     # switch to "starter" ($7/mo) for always-on once customers rely on it.
     plan: free
-    buildCommand: cd server && npm ci
+    # The onboarding page is compiled from the design bundle in the repo root.
+    # It is committed too, but building it here means a deploy can never serve
+    # a page older than the design sitting next to it. No dependencies — it is
+    # plain node against node:fs.
+    buildCommand: node scripts/build-onboarding.mjs && cd server && npm ci
     startCommand: cd server && npm start
     healthCheckPath: /api/health
     envVars:
