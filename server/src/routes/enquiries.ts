@@ -45,7 +45,7 @@ const THROTTLE_MAX = 3;
 /* Human-quotable, hard to guess, and unique in practice: CD- plus six
    characters from an alphabet with no 0/O/1/I to misread over the phone. */
 const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-function makeReference(): string {
+export function makeReference(): string {
   const bytes = new Uint8Array(6);
   globalThis.crypto.getRandomValues(bytes);
   return "CD-" + [...bytes].map((b) => ALPHABET[b % ALPHABET.length]).join("");

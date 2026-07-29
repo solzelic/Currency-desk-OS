@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:onboarding && tsc -b && vite build",
+    "build:onboarding": "node scripts/build-onboarding.mjs",
     "typecheck": "tsc -b && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run --dir tests/unit",
     "test:e2e": "playwright test",

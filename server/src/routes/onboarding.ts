@@ -29,6 +29,7 @@ import {
   PHASES, STEPS, canCreateDesk, fromApplication, resolve, stepById, stepProgress,
   type Answers,
 } from "../onboarding/flow.js";
+import { specFromAnswers } from "../onboarding/provision.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
 
 const patchBody = z.object({
@@ -62,6 +63,7 @@ function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.o
   const marks = (row.marks ?? {}) as Record<string, boolean>;
   const progress = stepProgress(resolved, marks);
   const ready = canCreateDesk(resolved);
+  const filledBy = ((row.touched ?? {}) as Record<string, unknown>).__by as Record<string, string> | undefined;
   return {
     application: {
       reference: app.reference, charterNo: app.charterNo, email: app.email,
@@ -74,7 +76,7 @@ function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.o
     phases: PHASES,
     steps: STEPS.map((s) => ({
       ...s,
-      fields: s.fields.map((f) => ({ ...f, ...resolved[f.id] })),
+      fields: s.fields.map((f) => ({ ...f, ...resolved[f.id], filledBy: filledBy?.[f.id] ?? null })),
       ...progress.find((p) => p.id === s.id)!,
       touchedBy: ((row.touched ?? {}) as Record<string, string>)[s.id] ?? null,
       mark: marks[s.id] ?? false,
@@ -132,9 +134,17 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
     for (const [k, v] of Object.entries(parsed.data.answers)) {
       if (!allowed.has(k)) continue;
       if (v === null || v === "") delete answers[k];
+      /* The only way this is reached is the walkthrough, which has no real
+         owner — but a password in a jsonb column is a password in a jsonb
+         column. Record that one was set, not what it was. */
+      else if (k === "ownerPass") answers[k] = "set";
       else answers[k] = v;
     }
-    const touched = { ...((row.touched ?? {}) as Record<string, string>), [step.id]: "operator" };
+    const touched = { ...((row.touched ?? {}) as Record<string, unknown>), [step.id]: "operator" };
+    // the other half of the provenance the applicant's own screens record
+    const by = { ...((touched.__by ?? {}) as Record<string, string>) };
+    for (const k of Object.keys(parsed.data.answers)) if (allowed.has(k)) by[k] = "operator";
+    touched.__by = by;
     await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, application.id));
     return present(application, (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, application.id)).limit(1))[0]!);
   });
@@ -173,7 +183,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
        only say that when it is genuinely the last thing. Telling an operator
        "just waiting on them" while three of our own fields are still blank
        sends them to chase a customer who is not the holdup. */
-    if (ready.missing.length === 1 && ready.missing[0] === "password") {
+    if (ready.missing.length === 1 && ready.missing[0] === "ownerPass") {
       return reply.code(409).send({
         error: "needs_owner",
         detail: "Everything else is ready — the owner sets their own password from their link.",
@@ -196,19 +206,18 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
       tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id,
       action: "onboarding.ready", detail: { reference: application.reference },
     });
-    // handed to the existing signup path, which owns creating a desk
+    /* The same spec the applicant's own launch builds, from the same
+       answers. The operator sees exactly what would be created — and it is
+       built by the one function that creates it, so what is shown here
+       cannot drift from what actually opens. */
+    const spec = specFromAnswers(resolved, application);
     return {
       ok: true,
       handoff: {
-        businessName: resolved.businessName?.value, ownerName: resolved.ownerName?.value,
-        email: resolved.email?.value, slug: resolved.slug?.value,
-        onboarding: {
-          country: resolved.country?.value, regulator: resolved.regulator?.value,
-          homeCurrency: resolved.homeCurrency?.value, msbNumber: resolved.msbNumber?.value,
-          address: resolved.address?.value, city: resolved.city?.value,
-          region: resolved.region?.value, postal: resolved.postal?.value,
-          plan: resolved.plan?.value, idThreshold: resolved.idThreshold?.value,
-        },
+        businessName: spec.businessName, legalName: spec.legalName,
+        ownerName: spec.ownerName, email: spec.email, slug: spec.slug,
+        plan: spec.plan, team: spec.team.length,
+        onboarding: spec.setup,
       },
     };
   });
