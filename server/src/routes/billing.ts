@@ -49,6 +49,20 @@ async function tenantForCustomer(db: Db, stripeCustomerId: string | null): Promi
 async function ensureStripeCustomer(db: Db, config: StripeBillingConfig, tenantId: string, email: string | null, name: string): Promise<string> {
   const existing = await db.select().from(schema.stripeCustomers).where(eq(schema.stripeCustomers.tenantId, tenantId)).limit(1);
   if (existing[0]) return existing[0].stripeCustomerId;
+  /* Lifetime offers are issued as customer-restricted Stripe promotion codes.
+     Before creating a new customer, reuse a reserved customer for the same
+     owner email and record the tenant mapping. This keeps the offer locked to
+     its intended account instead of relying on a browser-visible code. */
+  if (email) {
+    const matches = await stripeClient(config).customers.list({ email, limit: 10 });
+    const reserved = matches.data.find((customer) => customer.metadata.currencydesk_entitlement === "lifetime_owner" || customer.metadata.currencydesk_entitlement === "lifetime_guest");
+    if (reserved) {
+      const now = new Date();
+      await db.insert(schema.stripeCustomers).values({ tenantId, stripeCustomerId: reserved.id, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({ target: schema.stripeCustomers.tenantId, set: { stripeCustomerId: reserved.id, updatedAt: now } });
+      return reserved.id;
+    }
+  }
   const customer = await stripeClient(config).customers.create({ email: email ?? undefined, name, metadata: { currencydesk_tenant_id: tenantId } }, { idempotencyKey: `currencydesk:customer:${tenantId}` });
   const now = new Date();
   await db.insert(schema.stripeCustomers).values({ tenantId, stripeCustomerId: customer.id, createdAt: now, updatedAt: now })
@@ -162,8 +176,13 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
     const session = await stripeClient(config).checkout.sessions.create({
       mode: "subscription", customer: customerId, client_reference_id: who.tenantId,
       line_items: [{ price, quantity: 1 }], automatic_tax: { enabled: true }, tax_id_collection: { enabled: true },
+      /* Founding offers can make the first three invoices $0. Stripe must
+         still collect a card now so normal monthly billing can start in month
+         four. Annual billing deliberately has no promo field: a repeating
+         three-month coupon would otherwise discount a full annual invoice. */
+      payment_method_collection: "always", allow_promotion_codes: parsed.data.cycle === "monthly",
       billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
-      allow_promotion_codes: true, metadata: { currencydesk_tenant_id: who.tenantId, currencydesk_plan: parsed.data.plan, currencydesk_cycle: parsed.data.cycle },
+      metadata: { currencydesk_tenant_id: who.tenantId, currencydesk_plan: parsed.data.plan, currencydesk_cycle: parsed.data.cycle },
       subscription_data: { metadata: { currencydesk_tenant_id: who.tenantId, currencydesk_plan: parsed.data.plan, currencydesk_cycle: parsed.data.cycle } },
       success_url: `${baseUrl}/app?billing=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/app?billing=cancelled`,

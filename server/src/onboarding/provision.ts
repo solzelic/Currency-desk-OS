@@ -28,7 +28,7 @@ import { JURISDICTION, type Resolved } from "./flow.js";
    paid for "the complete exchange desk" is the worse way to be wrong. */
 const PLAN_TIER: Record<string, "basic" | "pro" | "premium"> = {
   rates: "basic",
-  full: "premium",
+  full: "pro",
   ai: "premium",
 };
 
