@@ -455,6 +455,47 @@ function DeskPage({ id, onChanged }) {
       </div>
 
       <div style={{ display: 'grid', gap: 16 }}>
+        {/* Is their rate board actually on their website?
+
+            Three things have to be true and each can fail alone, which is why
+            this was so hard to answer by looking: there has to be a storefront
+            at their address, they have to have published a board, and a
+            visitor has to be able to reach it. Say it in one line, then show
+            the working. */}
+        {d.publicSite && (() => {
+          const p = d.publicSite;
+          const live = p.hosted && p.published;
+          const tone = live ? 'green' : p.hosted ? 'amber' : 'mute';
+          return (<Card title="Public rate board">
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 12 }}>
+              <span style={{ flex: 'none', width: 8, height: 8, borderRadius: 999, marginTop: 6,
+                background: live ? 'var(--green)' : p.hosted ? 'var(--amber)' : 'var(--line)' }} />
+              <span style={{ fontSize: 13, lineHeight: 1.5 }}>{p.status}</span>
+            </div>
+            {kv('Address', p.path
+              ? <a href={p.path} target="_blank" rel="noopener" style={{ fontFamily: MONO, fontSize: 12, color: 'var(--blue)' }}>{p.path}</a>
+              : '—')}
+            {p.domain && kv('Their domain', p.domain)}
+            {kv('Currencies shown', p.published ? String(p.currencies) : '—')}
+            {kv('Last published', p.publishedAt ? fmtWhen(p.publishedAt) : 'never')}
+            {p.publishedBy && kv('By', p.publishedBy)}
+            {/* The exact request a visitor's browser makes. When somebody
+                says "the site is wrong", this is the thing to open. */}
+            {p.ratesEndpoint && (<div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line2)' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--mute)', marginBottom: 6 }}>What a visitor's browser asks for</div>
+              <a href={p.ratesEndpoint} target="_blank" rel="noopener"
+                style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--blue)', wordBreak: 'break-all' }}>{p.ratesEndpoint}</a>
+            </div>)}
+            <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>
+              {tone === 'green'
+                ? 'Their site reads this board directly, so what a customer sees is what the desk is trading at.'
+                : tone === 'amber'
+                  ? 'Nothing will show on their site until somebody presses Publish on the rate board.'
+                  : 'A storefront has to be deployed for this address before rates can appear.'}
+            </div>
+          </Card>);
+        })()}
+
         {owner && (<Card title="Owner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
             <Avatar name={owner.name} size={38} />

@@ -76,3 +76,8 @@ export async function registerSiteRoutes(app: FastifyInstance, staticDir: string
     }
   }
 }
+
+/* Is a storefront actually deployed for this slug? A tenant can carry a site
+   address long before there is anything to serve at it, and "they have a
+   slug" is not the same claim as "a visitor sees a shop". */
+export const hasHostedSite = (slug: string | null | undefined): boolean => !!slug && slug in SITES;
