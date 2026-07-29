@@ -478,6 +478,16 @@ try {
 }
 if (typeof design !== "string") throw new Error("onboarding: the template parsed to a " + typeof design + ", not a string");
 
+/* The exported design is a customer-facing order summary, so it must never
+   diverge from Stripe's catalog. Keep this compatibility patch until the next
+   design export carries the $599 Full System price. */
+const LEGACY_FULL_SYSTEM_PRICE = "id:'full', name:'Full System', mo:499";
+const CURRENT_FULL_SYSTEM_PRICE = "id:'full', name:'Full System', mo:599";
+if (!design.includes(LEGACY_FULL_SYSTEM_PRICE) && !design.includes(CURRENT_FULL_SYSTEM_PRICE)) {
+  throw new Error("onboarding: Full System plan price anchor not found — verify the public price before building");
+}
+design = design.replace(LEGACY_FULL_SYSTEM_PRICE, CURRENT_FULL_SYSTEM_PRICE);
+
 const { patch, applied, out } = patcher(design);
 
 if (!design.includes(`KEY = '${KEY}'`)) {
@@ -711,6 +721,23 @@ patch(
   "the line under the go-live button — nowhere to say why it failed",
   "R.goLiveSub = (pOk ?",
   "R.goLiveSub = (window.__cdOnb && window.__cdOnb.err) ? window.__cdOnb.err : (pOk ?",
+);
+
+/* --- 9. Never honour a browser-only discount ---------------------
+   The exported design contains a prototype code that grants three months
+   free entirely in browser state. It has no redemption limit, expiry, Stripe
+   record, or invoice audit trail. Stripe Checkout is the only authority for
+   a real offer, so this screen must not claim a discount until that hosted
+   payment hand-off is wired. */
+patch(
+  "the browser-only founding code — it would grant a discount without Stripe",
+  "const pOk = pCode === 'FOUNDING100';",
+  "const pOk = false;",
+);
+patch(
+  "the browser-only promo message — it claimed a three-month offer was applied",
+  "R.promoMsg = pOk ? ('\\u2713 ' + pCode + ' applied — your first three months are on us.') : 'That code isn\\u2019t recognised. Check the invite email we sent you.';",
+  "R.promoMsg = 'Offers are applied securely at Stripe Checkout.';",
 );
 
 /* ------------------------------------------------------------------
