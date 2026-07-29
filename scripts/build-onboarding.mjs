@@ -234,6 +234,173 @@ const BRIDGE = `<script>
     },
   };
 
+  /* ----------------------------------------------------------------
+     Address lookup.
+
+     Attached from out here rather than built into the design, for the
+     same reason the save hook is: the bundle re-renders itself and a
+     dropdown living inside its tree would be torn down every keystroke.
+     This one hangs off document.body and follows the input.
+
+     The whole thing is inert unless the server says Google is
+     configured. Nothing appears, nothing is asked for, and the address
+     is typed by hand exactly as it is today.
+     ---------------------------------------------------------------- */
+  function address() {
+    var box = null, list = [], sel = -1, input = null, token = "", live = null, t, filling = false;
+
+    var newToken = function () {
+      token = "cd-" + Math.abs(Date.now() ^ (performance.now() * 1000 | 0)).toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    };
+    newToken();
+
+    /* The design's inputs are React-controlled, so assigning .value is
+       overwritten on the next render. Go through the native setter and
+       let React hear the event, the way a keystroke would. */
+    function setField(k, v) {
+      var el = document.querySelector('input[data-k="' + k + '"]');
+      if (!el || !v) return;
+      var d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+      d.set.call(el, v);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    /* Empty it, not just hide it. A hidden node is still a node: leave the
+       options in place and a screen reader keeps offering addresses that are
+       no longer on the screen. */
+    function hide() { if (box) { box.style.display = "none"; box.innerHTML = ""; } sel = -1; }
+
+    function place() {
+      if (!box || !input) return;
+      var r = input.getBoundingClientRect();
+      box.style.left = (r.left + window.scrollX) + "px";
+      box.style.top = (r.bottom + window.scrollY + 6) + "px";
+      box.style.width = r.width + "px";
+    }
+
+    function paint() {
+      if (!box) return;
+      if (!list.length) return hide();
+      box.innerHTML = "";
+      list.forEach(function (s, i) {
+        var row = document.createElement("button");
+        row.type = "button";
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", i === sel ? "true" : "false");
+        row.style.cssText =
+          "display:block;width:100%;text-align:left;padding:10px 13px;border:0;border-bottom:1px solid rgba(23,20,15,.07);" +
+          "background:" + (i === sel ? "rgba(29,107,69,.09)" : "transparent") + ";cursor:pointer;font-family:inherit;color:#17140f;";
+        row.innerHTML =
+          '<span style="display:block;font-size:14px;font-weight:600">' + esc(s.primary) + "</span>" +
+          '<span style="display:block;font-size:12px;color:#6e675b;margin-top:1px">' + esc(s.secondary) + "</span>";
+        row.addEventListener("mousedown", function (e) { e.preventDefault(); choose(i); });
+        row.addEventListener("mouseenter", function () { sel = i; paint(); });
+        box.appendChild(row);
+      });
+      box.style.display = "block";
+      place();
+    }
+
+    function esc(s) {
+      return String(s || "").replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+
+    function choose(i) {
+      var s = list[i];
+      if (!s) return;
+      hide();
+      list = [];
+      fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/places/details?id=" +
+            encodeURIComponent(s.id) + "&s=" + encodeURIComponent(token))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          var a = j && j.address;
+          /* Filling the street box dispatches the same event a keystroke
+             does — which is the point, it is how React hears us — so the
+             lookup would fire again on the address we just chose and open
+             the dropdown right back up underneath them. */
+          filling = true;
+          if (!a) { setField("street", s.primary); }
+          else {
+            setField("street", a.street || s.primary);
+            setField("city", a.city);
+            setField("region", a.region);
+            setField("postal", a.postal);
+            setField("country_addr", a.country);
+          }
+          setTimeout(function () { filling = false; }, 0);
+          clearTimeout(t);
+          hide();
+          if (!a) return;
+          newToken();   // that session is spent
+          var city = document.querySelector('input[data-k="city"]');
+          if (city && !a.city) city.focus();
+        })
+        .catch(function () { setField("street", s.primary); });
+    }
+
+    function ask(q) {
+      clearTimeout(t);
+      if (CD.places === false || !CD.code) return;
+      if (q.trim().length < 3) { list = []; hide(); return; }
+      t = setTimeout(function () {
+        var country = "";
+        try { country = (JSON.parse(localStorage.getItem(KEY)).data.country || ""); } catch (e) {}
+        fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/places/suggest?q=" +
+              encodeURIComponent(q) + "&country=" + encodeURIComponent(country) + "&s=" + encodeURIComponent(token))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j) return;
+            if (j.enabled === false) { CD.places = false; return; }   // stop asking
+            CD.places = true;
+            list = j.suggestions || [];
+            sel = -1;
+            paint();
+          })
+          .catch(function () {});
+      }, 220);
+    }
+
+    function attach(el) {
+      if (!el || el === input) return;
+      input = el;
+      if (!box) {
+        box = document.createElement("div");
+        box.setAttribute("role", "listbox");
+        box.style.cssText =
+          "position:absolute;z-index:99999;display:none;background:#fff;border:1px solid rgba(23,20,15,.14);" +
+          "border-radius:12px;overflow:hidden;box-shadow:0 18px 40px -16px rgba(23,20,15,.4);max-height:264px;overflow-y:auto;";
+        document.body.appendChild(box);
+        addEventListener("resize", place, true);
+        addEventListener("scroll", place, true);
+      }
+      el.addEventListener("input", function (e) { if (!filling) ask(e.target.value); });
+      el.addEventListener("blur", function () { setTimeout(hide, 160); });
+      el.addEventListener("keydown", function (e) {
+        if (box.style.display !== "block" || !list.length) return;
+        if (e.key === "ArrowDown") { e.preventDefault(); sel = (sel + 1) % list.length; paint(); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); sel = (sel - 1 + list.length) % list.length; paint(); }
+        else if (e.key === "Enter" && sel >= 0) { e.preventDefault(); e.stopPropagation(); choose(sel); }
+        else if (e.key === "Escape") { hide(); }
+      }, true);
+    }
+
+    /* The address screen comes and goes as they move through the flow. */
+    live = new MutationObserver(function () {
+      var el = document.querySelector('input[data-k="street"]');
+      if (el) attach(el);
+      else if (input) { input = null; hide(); }
+    });
+    addEventListener("DOMContentLoaded", function () {
+      live.observe(document.body, { childList: true, subtree: true });
+      var el = document.querySelector('input[data-k="street"]');
+      if (el) attach(el);
+    });
+  }
+  address();
+
   // before the bundle runs, so the first paint is already their desk
   if (CD.code) {
     try {
@@ -506,6 +673,26 @@ patch(
   "the account screen's subtitle — nowhere to explain a password that did not travel",
   "eyebrow:'Your account', q:'Set up the owner login.', help:'Everything below this account answers to it.",
   "eyebrow:'Your account', q:'Set up the owner login.', help:((window.__cdOnb && window.__cdOnb.passNote) ? window.__cdOnb.passNote + ' ' : '') + 'Everything below this account answers to it.",
+);
+
+/* --- 7d. Make the form fields addressable -------------------------
+   The generic field input renders with nothing on it but a placeholder,
+   so nothing outside the bundle can find "the street box" except by
+   matching English. Carry the design's own field key onto the element
+   and address lookup can attach to it by name. */
+patch(
+  "the generic field input — nothing identifies which field it is",
+  '<input style="{{ f.style }}" style-focus="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(29,107,69,0.14); background: #fff;" type="{{ f.type }}" value="{{ f.value }}" sc-camel-on-change="{{ f.onChange }}" placeholder="{{ f.ph }}" data-focus="{{ f.focus }}">',
+  '<input data-k="{{ f.k }}" autocomplete="{{ f.ac }}" style="{{ f.style }}" style-focus="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(29,107,69,0.14); background: #fff;" type="{{ f.type }}" value="{{ f.value }}" sc-camel-on-change="{{ f.onChange }}" placeholder="{{ f.ph }}" data-focus="{{ f.focus }}">',
+);
+patch(
+  "the field mapping — the key never reaches the element",
+  "value: d[f.key] || '', ph: f.ph || '', focus: f.focus ? 'true' : undefined,",
+  "value: d[f.key] || '', ph: f.ph || '', focus: f.focus ? 'true' : undefined, k: f.key,\n" +
+  "        /* Let the browser's own address fill help too. Ours only works\n" +
+  "           where Google does; theirs already knows this person. */\n" +
+  "        ac: ({ street:'address-line1', city:'address-level2', region:'address-level1', postal:'postal-code',\n" +
+  "              country_addr:'country-name', ownerName:'name', ownerEmail:'email', phone:'tel' })[f.key] || 'off',",
 );
 
 /* --- 8. Going live creates the desk -------------------------------
