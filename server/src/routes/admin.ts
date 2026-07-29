@@ -11,6 +11,7 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { desc, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -19,6 +20,7 @@ import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
 import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
 import { forgetClaimedCount } from "./early-access.js";
+import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { tenantPlan } from "./tenant.js";
@@ -33,6 +35,18 @@ const patchEnquiryBody = z
 const patchTenantBody = z
   .object({ plan: PLAN.optional(), suspended: z.boolean().optional() })
   .refine((b) => b.plan !== undefined || b.suspended !== undefined, { message: "nothing to change" });
+/* What an operator types to start somebody off: the same handful of things
+   the early-access form asks, and nothing the customer should be answering
+   themselves. No password here — theirs is set on their own screen. */
+const inviteBody = z.object({
+  ownerEmail: z.string().trim().toLowerCase().email().max(160),
+  ownerName: z.string().trim().min(1).max(120),
+  businessName: z.string().trim().max(120).optional(),
+  country: z.string().trim().max(4).optional(),
+  slug: z.string().trim().toLowerCase().max(40).regex(/^[a-z0-9-]*$/).optional(),
+  website: z.string().trim().max(160).optional(),
+});
+
 const createTenantBody = z.object({
   businessName: z.string().trim().min(1).max(120),
   ownerName: z.string().trim().min(1).max(120),
@@ -511,8 +525,82 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     return { ok: true };
   });
 
-  // create a desk by hand (e.g. onboarding a shop over the phone). The owner
-  // gets a temporary password they must change on first sign-in.
+  /* ---- start a desk -----------------------------------------------------
+     Adding a desk does not create a desk. It creates the INVITATION to one:
+     a reference, an onboarding record holding what we already know, and an
+     email with the link. The shop exists at the end of their setup, not the
+     start of ours — which is the only order in which the answers can be
+     theirs.
+
+     Everything the early-access form asks, an operator can type here on
+     somebody's behalf, so a shop signed up at the counter and a shop that
+     found the website arrive at exactly the same screen. */
+  app.post("/api/admin/onboarding/invite", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const parsed = inviteBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const b = parsed.data;
+
+    if ((await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, b.ownerEmail)).limit(1)).length) {
+      return reply.code(409).send({ error: "email_in_use", detail: "That email already owns a desk." });
+    }
+    /* One live invitation per address. Sending a second would put two
+       references in one inbox, and whichever they opened second would be the
+       one that loses their answers. */
+    const existing = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, b.ownerEmail)))
+      .find((e) => e.kind === "early_access" && (e.status === "invited" || e.status === "accepted"));
+
+    const origin = (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
+    const linkFor = (ref: string) => `${origin}/onboarding/${encodeURIComponent(ref)}`;
+    if (existing) {
+      const mail = inviteEmail({ name: existing.name, reference: existing.reference, origin });
+      const sent = await sendEmail(existing.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+      return {
+        ok: true, resent: true, reference: existing.reference, link: linkFor(existing.reference), invite: sent,
+        detail: "They already had an invitation — we sent that same link again rather than a second one.",
+      };
+    }
+
+    /* Their place in the founding cohort, the same way the site issues it:
+       the next one nobody has had. Counted off the highest ever issued so a
+       declined application never hands its number on. */
+    const issued = (await db.select({ n: schema.enquiries.charterNo }).from(schema.enquiries)).map((r) => r.n ?? 0);
+    const charterNo = (issued.length ? Math.max(...issued) : 0) + 1;
+    const reference = makeReference();
+    const id = randomUUID();
+
+    forgetClaimedCount();
+    await db.insert(schema.enquiries).values({
+      id, reference, kind: "early_access",
+      email: b.ownerEmail, name: b.ownerName,
+      details: {
+        workspace: b.slug ? `${b.slug}.currencydeskos.com` : undefined,
+        jurisdiction: b.country,
+        website: b.website || undefined,
+        businessName: b.businessName || undefined,
+        addedBy: who.staffId,
+      },
+      status: "invited", charterNo, decidedAt: new Date(), decidedBy: who.staffId,
+    });
+
+    /* Seed their setup with what we just typed, so the first screen they see
+       already knows the shop's name rather than asking for it again. */
+    if (b.businessName) {
+      await db.insert(schema.onboarding).values({ enquiryId: id, answers: { operatingName: b.businessName } }).onConflictDoNothing();
+    }
+
+    const mail = inviteEmail({ name: b.ownerName, reference, origin });
+    const sent = await sendEmail(b.ownerEmail, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+    await audit(db, {
+      tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.onboarding_invited", detail: { reference, email: b.ownerEmail, invite: sent },
+    });
+    return reply.code(201).send({ ok: true, reference, link: linkFor(reference), charterNo, invite: sent });
+  });
+
+  // create a desk by hand, skipping onboarding entirely. Kept for the cases
+  // that genuinely need it; the panel's "add a desk" invites instead.
   app.post("/api/admin/tenants", async (req, reply) => {
     const who = await gate(req, reply);
     if (!who) return;

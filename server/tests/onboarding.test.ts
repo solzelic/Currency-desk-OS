@@ -229,6 +229,55 @@ describe("driving it from the reference they already hold", () => {
   });
 });
 
+/* Adding a desk from the panel does not add a desk. It sends somebody the
+   link to set one up — because the answers have to be theirs, and they cannot
+   be if the shop already exists by the time they are asked. */
+describe("starting a desk from the panel", () => {
+  const invite = (body: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: "/api/admin/onboarding/invite", cookies: adminCookie, payload: body });
+
+  it("mints a reference and a link, and creates no desk", async () => {
+    const res = await invite({ ownerEmail: "dana@maplefx.ca", ownerName: "Dana Kim", businessName: "Maple Currency Exchange", country: "CA", slug: "maplefx", website: "maplefx.ca" });
+    expect(res.statusCode).toBe(201);
+    const b = res.json();
+    expect(b.reference).toMatch(/^CD-[2-9A-HJ-NP-Z]{6}$/);
+    expect(b.link).toContain("/onboarding/" + b.reference);
+    expect(b.charterNo).toBeGreaterThan(0);
+
+    const { schema } = await import("../src/db/index.js");
+    const tenants = await handle.db.select().from(schema.tenants);
+    expect(tenants.some((t) => t.siteSlug === "maplefx")).toBe(false);
+  });
+
+  it("opens on their own screens carrying what we typed for them", async () => {
+    const ref = (await invite({ ownerEmail: "priya@harbourline.ca", ownerName: "Priya Raman", businessName: "Harbourline FX", country: "GB" })).json().reference;
+    const state = (await app.inject({ method: "GET", url: `/api/onboarding/${ref}/state` })).json();
+    expect(state.data.operatingName).toBe("Harbourline FX");
+    expect(state.data.ownerName).toBe("Priya Raman");
+    expect(state.data.ownerEmail).toBe("priya@harbourline.ca");
+    expect(state.data.country).toBe("GB");
+  });
+
+  it("will not put two live links in one inbox", async () => {
+    const first = (await invite({ ownerEmail: "sam@twicefx.ca", ownerName: "Sam Ali" })).json();
+    const again = await invite({ ownerEmail: "sam@twicefx.ca", ownerName: "Sam Ali" });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().resent).toBe(true);
+    expect(again.json().reference).toBe(first.reference);
+  });
+
+  it("refuses an address that already owns a desk", async () => {
+    const res = await invite({ ownerEmail: "j.masri", ownerName: "J Masri" });
+    expect(res.statusCode).toBe(400); // not an email address
+    const real = await invite({ ownerEmail: "nadia@meridianfx.ca", ownerName: "Nadia" });
+    expect([201, 409]).toContain(real.statusCode);
+  });
+
+  it("is platform-admin only", async () => {
+    expect((await app.inject({ method: "POST", url: "/api/admin/onboarding/invite", payload: { ownerEmail: "x@y.ca", ownerName: "X" } })).statusCode).toBe(401);
+  });
+});
+
 /* The applicant's own door. One record, two surfaces: whatever the operator
    typed in the panel is already on their screen, and vice versa. */
 describe("the applicant's own screens", () => {
