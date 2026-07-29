@@ -104,6 +104,12 @@ const ON_ARRIVAL: Partial<Record<Stage, (a: Row, origin: string) => Mail>> = {
      nothing. Declining deserves a human reply, not an automated one. */
 };
 
+/* Which stages speak to the applicant. Exported so the communications
+   catalogue can be checked against it rather than kept in step by hand: a
+   stage that starts or stops sending should break that check, not surprise
+   somebody who thought they knew what a button did. */
+export const mailStages = (): Stage[] => Object.keys(ON_ARRIVAL) as Stage[];
+
 type Row = typeof schema.enquiries.$inferSelect;
 
 export interface Moved {

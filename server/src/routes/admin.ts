@@ -27,6 +27,8 @@ import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
+import { systemHealth } from "../platform/health.js";
+import { DISPATCHES, SILENT, delivery } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -591,6 +593,31 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      A customer paying a year up front hands over twelve months of cash today
      and earns one month of it. These are Stripe's cash and subscription
      numbers; accounting recognition is a different report. */
+  /* ---- is anything broken right now -------------------------------------
+     The screen you open when somebody says "it's not working". Every check
+     answers in one sentence and says where to go and fix it. */
+  app.get("/api/admin/health", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    return systemHealth(db);
+  });
+
+  /* ---- what we say to people --------------------------------------------
+     The catalogue of every email, what fires it, and whether sending is
+     live or simulated. Also the two stages that deliberately say nothing,
+     because an operator should not have to guess about silence. */
+  app.get("/api/admin/comms", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    return {
+      delivery: delivery(),
+      dispatches: DISPATCHES.map((d) => ({
+        id: d.id, title: d.title, audience: d.audience,
+        when: d.when, automatic: d.automatic, stage: d.stage ?? null,
+        sample: d.sample(),
+      })),
+      silent: SILENT,
+    };
+  });
+
   app.get("/api/admin/billing", async (req, reply) => {
     const who = await gate(req, reply, "billing:read");
     if (!who) return;

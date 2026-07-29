@@ -125,46 +125,57 @@ function Login({ onIn }) {
 }
 
 // ===================== SIDEBAR =====================
-function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFilter, tab, setTab, onCreate }) {
-  const navItem = (id, label, count) => (
-    <button onClick={() => setTab(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9,
-      border: 'none', cursor: 'pointer', background: tab === id ? 'var(--hover)' : 'transparent', color: tab === id ? 'var(--text)' : 'var(--mute)', fontSize: 14, fontWeight: tab === id ? 600 : 500 }}>
-      <span style={{ flex: 1 }}>{label}</span>{count != null && <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{count}</span>}
-    </button>
-  );
-  const section = (t) => <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', color: 'var(--faint)', margin: '20px 11px 8px', textTransform: 'uppercase' }}>{t}</div>;
-  const filterRow = (label, c, active, onClick, n) => (
-    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '7px 11px', borderRadius: 8, border: 'none', cursor: 'pointer', background: active ? 'var(--hover)' : 'transparent', color: active ? 'var(--text)' : 'var(--mute)', fontSize: 13 }}>
-      {dot(c)}<span style={{ flex: 1, textTransform: 'capitalize' }}>{label}</span>{n != null && <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{n}</span>}
-    </button>
-  );
-  return (<div style={{ width: 248, flex: 'none', background: 'var(--sidebar)', borderRight: '1px solid var(--line)', height: '100vh', overflow: 'auto', padding: '18px 12px', display: 'flex', flexDirection: 'column' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '4px 8px 16px' }}>
+function Cog({ s = 15 }) {
+  return (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>);
+}
+
+/* The nav is the PAGES table and nothing else. Counts are the numbers that
+   should make you click — things sitting on somebody — not totals for
+   their own sake, so a page with nothing waiting shows no badge at all.
+
+   The desk filters used to live down here, which meant Billing and
+   Settings both had a "Status: Active / Trial / Suspended" list attached
+   to them that did nothing. Filters belong to the list they filter. */
+function Sidebar({ counts, tab, health, onSettings }) {
+  const navItem = (p) => {
+    const n = p.count ? counts[p.count] : null;
+    const on = tab === p.id;
+    return (<button key={p.id} onClick={() => goto('#/' + p.id)} title={p.blurb}
+      style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9,
+        border: 'none', cursor: 'pointer', background: on ? 'var(--hover)' : 'transparent', color: on ? 'var(--text)' : 'var(--mute)', fontSize: 14, fontWeight: on ? 600 : 500 }}>
+      <span style={{ flex: 1 }}>{p.label}</span>
+      {/* Amber means somebody is waiting on you. A total — how many desks
+          exist — is just a number, and dressing it as an alert is how a
+          panel teaches you to stop reading its alerts. */}
+      {n ? (p.quiet
+        ? <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{n}</span>
+        : <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: '#111', background: 'var(--amber)', borderRadius: 20, padding: '1px 7px' }}>{n}</span>) : null}
+    </button>);
+  };
+  const tone = health && health.state !== 'ok' ? (health.state === 'down' ? 'var(--red)' : 'var(--amber)') : 'var(--green)';
+  return (<div style={{ width: 232, flex: 'none', background: 'var(--sidebar)', borderRight: '1px solid var(--line)', height: '100vh', overflow: 'auto', padding: '18px 12px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '4px 8px 18px' }}>
       <span style={{ width: 34, height: 34, borderRadius: 9, background: '#1c1c20', display: 'grid', placeItems: 'center', flex: 'none' }}><Mark w={20} /></span>
       <span><span style={{ display: 'block', fontWeight: 700, fontSize: 14.5 }}>CurrencyDesk</span><span style={{ display: 'block', fontSize: 12, color: 'var(--mute)' }}>Platform control</span></span>
     </div>
-    {navItem('desks', 'Desks', counts.desks)}
-    {navItem('applications', 'Early access', counts.waiting || null)}
-    {navItem('onboarding', 'Onboarding', null)}
-    {navItem('messages', 'Messages', counts.unread || null)}
-    {navItem('activity', 'Activity', null)}
-    {navItem('billing', 'Billing', null)}
-    {navItem('settings', 'Settings', null)}
-    <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
-      <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Start a desk
+    {PAGES.map(navItem)}
+    <div style={{ flex: 1, minHeight: 20 }} />
+    {/* Whether anything is broken, always in the corner of your eye, and
+        one click from the page that says what. */}
+    <button onClick={() => goto('#/overview')} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 11px', borderRadius: 9, border: 'none', background: 'transparent', color: 'var(--mute)', fontSize: 12.5, cursor: 'pointer' }}>
+      {dot(tone)}<span>{!health ? 'Checking…' : health.state === 'ok' ? 'All systems fine' : health.state === 'down' ? 'Something is down' : 'Needs a look'}</span>
     </button>
-    {section('Status')}
-    {filterRow('All', 'var(--mute)', statusFilter === 'all', () => setStatusFilter('all'), counts.desks)}
-    {filterRow('Active', 'var(--green)', statusFilter === 'active', () => setStatusFilter('active'), counts.active)}
-    {filterRow('Trial', 'var(--amber)', statusFilter === 'trial', () => setStatusFilter('trial'), counts.trial)}
-    {filterRow('Suspended', 'var(--red)', statusFilter === 'suspended', () => setStatusFilter('suspended'), counts.suspended)}
-    {section('Plans')}
-    {filterRow('All plans', 'var(--mute)', planFilter === 'all', () => setPlanFilter('all'))}
-    {filterRow('Basic', 'var(--mute)', planFilter === 'basic', () => setPlanFilter('basic'))}
-    {filterRow('Pro', 'var(--green)', planFilter === 'pro', () => setPlanFilter('pro'))}
-    {filterRow('Premium', 'var(--purple)', planFilter === 'premium', () => setPlanFilter('premium'))}
-    <div style={{ flex: 1 }} />
-    <a href="/" style={{ display: 'block', padding: '9px 11px', color: 'var(--faint)', fontSize: 12.5, textDecoration: 'none' }}>← Back to the OS</a>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, borderTop: '1px solid var(--line2)', paddingTop: 8 }}>
+      <button onClick={onSettings} title="Platform settings"
+        style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, textAlign: 'left', padding: '8px 11px', borderRadius: 9, border: 'none', cursor: 'pointer',
+          background: tab === 'settings' ? 'var(--hover)' : 'transparent', color: tab === 'settings' ? 'var(--text)' : 'var(--mute)', fontSize: 13 }}>
+        <Cog /> Settings
+      </button>
+      <a href="/" title="Back to the OS" style={{ padding: '8px 10px', color: 'var(--faint)', fontSize: 12.5, textDecoration: 'none' }}>↩</a>
+    </div>
   </div>);
 }
 
@@ -187,6 +198,130 @@ function StatRow({ ov }) {
   </div>);
 }
 
+// ===================== OVERVIEW =====================
+/* The page you open first, and the page you open when somebody says "it's
+   not working".
+
+   Ordered by what it is for: what is sitting on you, then whether anything
+   is broken, then how the business is doing. Numbers last on purpose — a
+   dashboard that leads with a revenue tile is a dashboard nobody opens on
+   a Tuesday, because there is nothing to DO with it. */
+const HEALTH_TONE = { ok: 'green', warn: 'amber', down: 'red', off: 'mute' };
+const HEALTH_WORD = { ok: 'Fine', warn: 'Look', down: 'Down', off: 'Not set up' };
+
+function OverviewPage({ ov, health, counts }) {
+  const f = (ov && ov.funnel) || {};
+  const [bill, setBill] = useState(null);
+  useEffect(() => { api('/api/admin/billing').then(setBill).catch(() => setBill(null)); }, []);
+
+  /* Only things a person can act on, and only when there are any. An
+     empty "needs you" list is the good outcome and should look like it,
+     not like a card that failed to load. */
+  const todo = [];
+  if (f.waiting) todo.push({ what: `${f.waiting} application${f.waiting === 1 ? '' : 's'} in review`, go: '#/applications', cta: 'Work the queue' });
+  if (f.unread) todo.push({ what: `${f.unread} unanswered message${f.unread === 1 ? '' : 's'}`, go: '#/inbox', cta: 'Read them' });
+  if (bill && bill.failedCount) todo.push({ what: `${bill.failedCount} failed payment${bill.failedCount === 1 ? '' : 's'}`, go: '#/billing', cta: 'Chase them' });
+  for (const c of (health ? health.checks : [])) {
+    if (c.state === 'down') todo.push({ what: c.detail, go: c.href || '#/overview', cta: 'Fix' });
+  }
+
+  return (<div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ background: todo.length ? 'var(--card)' : 'transparent', border: '1px solid ' + (todo.length ? 'var(--line)' : 'var(--line2)'), borderRadius: 14, padding: todo.length ? 6 : 18 }}>
+      {todo.length === 0 && <div style={{ color: 'var(--mute)', fontSize: 13.5 }}>Nothing is waiting on you. Applications are answered, messages are read, and every check is green.</div>}
+      {todo.map((t, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderTop: i ? '1px solid var(--line2)' : 'none' }}>
+        <span style={{ flex: 1, fontSize: 13.5 }}>{t.what}</span>
+        <button onClick={() => goto(t.go)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{t.cta}</button>
+      </div>))}
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
+      <Card title="Is anything broken">
+        {!health && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12 }}>Checking…</div>}
+        {health && health.checks.map(c => (<div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--line2)' }}>
+          <span style={{ width: 92, flex: 'none' }}><Pill tone={HEALTH_TONE[c.state]} dot>{HEALTH_WORD[c.state]}</Pill></span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{c.title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginTop: 2 }}>{c.detail}</span>
+            {c.fix && <span style={{ display: 'block', fontSize: 12, color: 'var(--faint)', marginTop: 3 }}>{c.fix}</span>}
+          </span>
+          {c.href && c.state !== 'ok' && <button onClick={() => goto(c.href)} style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)', fontSize: 11.5, cursor: 'pointer', flex: 'none' }}>Open</button>}
+        </div>))}
+      </Card>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="The business">
+          {kv('Desks', counts.desks)}
+          {kv('Paying', counts.active)}
+          {kv('On trial', counts.trial)}
+          {kv('Suspended', counts.suspended || '0')}
+          {kv('MRR', bill ? (bill.connected ? '$' + K((bill.mrrCents || 0) / 100) : 'Stripe not connected') : '…')}
+        </Card>
+        <Card title="The funnel">
+          {kv('Applications', f.applications)}
+          {kv('In review', f.byStatus ? f.byStatus.reviewing : null)}
+          {kv('On hold', f.byStatus ? f.byStatus.hold : null)}
+          {kv('Invited', f.byStatus ? f.byStatus.invited : null)}
+          {kv('Open desks', f.byStatus ? f.byStatus.accepted : null)}
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
+// ===================== EMAILS =====================
+/* What CurrencyDesk says to people, and whether it is actually saying it.
+
+   This page exists because the emails were written, worked, and were
+   invisible: no way to see what goes out, what fires it, or that sending
+   had quietly fallen back to writing to a log file. That last one is the
+   dangerous one at forty invitations. */
+function CommsPage() {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(null);
+  useEffect(() => { api('/api/admin/comms').then(setD).catch(() => setD({ error: true })); }, []);
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+  if (d.error) return <div style={{ padding: 20, color: 'var(--red)' }}>Could not load this.</div>;
+
+  const AUD = { applicant: 'Applicant', operator: 'Desk owner', staff: 'Their staff', platform: 'Us' };
+  return (<div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ padding: '13px 16px', borderRadius: 12, fontSize: 13, lineHeight: 1.6,
+      background: 'color-mix(in srgb,' + toneColor(d.delivery.live ? 'green' : 'amber') + ' 12%,transparent)',
+      border: '1px solid color-mix(in srgb,' + toneColor(d.delivery.live ? 'green' : 'amber') + ' 30%,transparent)' }}>
+      <b>{d.delivery.live ? 'Sending' : 'Not sending'}</b> — {d.delivery.detail}
+      {d.delivery.fix && <div style={{ color: 'var(--mute)', marginTop: 4 }}>{d.delivery.fix}</div>}
+    </div>
+
+    <Card title="What goes out" pad={0}>
+      {d.dispatches.map(x => (<div key={x.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+        <button onClick={() => setOpen(open === x.id ? null : x.id)} style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'left', padding: '13px 16px', background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{x.title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', marginTop: 2 }}>{x.when}</span>
+          </span>
+          <Pill tone="blue">{AUD[x.audience]}</Pill>
+          <Pill tone={x.automatic ? 'purple' : 'mute'}>{x.automatic ? 'automatic' : 'you send it'}</Pill>
+          <span style={{ color: 'var(--faint)', fontSize: 11 }}>{open === x.id ? '▲' : '▼'}</span>
+        </button>
+        {open === x.id && (<div style={{ padding: '0 16px 16px' }}>
+          <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>SUBJECT</div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 12 }}>{x.sample.subject}</div>
+          <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>BODY (sample)</div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: MONO, fontSize: 12, lineHeight: 1.6, color: 'var(--mute)', margin: 0, background: 'var(--sidebar)', padding: 13, borderRadius: 10 }}>{x.sample.text}</pre>
+        </div>)}
+      </div>))}
+    </Card>
+
+    {/* Silence is a decision here, so it is written down rather than left
+        to somebody wondering whether a send failed. */}
+    <Card title="Where we say nothing, on purpose">
+      {d.silent.map(s => (<div key={s.stage} style={{ display: 'flex', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}>
+        <span style={{ width: 90, flex: 'none', textTransform: 'capitalize', fontWeight: 600 }}>{s.stage}</span>
+        <span style={{ color: 'var(--mute)', lineHeight: 1.55 }}>{s.why}</span>
+      </div>))}
+    </Card>
+  </div>);
+}
+
 // ===================== START A DESK =====================
 /* Adding a desk does not create a desk. It sends somebody the link to set
    one up. We fill in the handful of things we already know — the same ones
@@ -198,6 +333,13 @@ function CreateModal({ onClose, onCreated }) {
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); const [copied, setCopied] = useState(false);
   const set = (k, v) => setF(s => Object.assign({}, s, { [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
+  // Escape closes it. Clicking the backdrop already did, and a dialog where
+  // one of the two ways out works is a dialog people feel stuck in.
+  useEffect(() => {
+    const on = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, []);
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('');
     try { const r = await api('/api/admin/onboarding/invite', { method: 'POST', body: JSON.stringify(f) }); setBusy(false); setDone(r); onCreated(); }
@@ -259,7 +401,45 @@ function CreateModal({ onClose, onCreated }) {
 // Everything the public site sends us. An application is not a message in an
 // inbox — it is a thing somebody works — so this reads as a pipeline: what
 // stage each one is at, what the applicant told us, and what it became.
-const TAB_TITLE = { desks: 'Desks', applications: 'Early access', onboarding: 'Onboarding', messages: 'Messages', activity: 'Activity', billing: 'Billing', settings: 'Platform settings' };
+/* ============================================================
+   THE PANEL, DECLARED IN ONE PLACE
+
+   Every page, in the order somebody works them, with the one thing that
+   page is for. This table is why the nav, the headings, the routes and
+   the buttons cannot disagree with each other — they are all read from
+   it.
+
+   `action` is the point. There used to be a single "Start a desk" button
+   pinned to the top of every screen, which is how you end up able to
+   start a desk from the billing page. An action belongs to the page it
+   makes sense on: you invite people from Applications, you bill people
+   from Billing, and Activity is a record so it has no action at all.
+   ============================================================ */
+const PAGES = [
+  { id: 'overview', label: 'Overview', title: 'Overview',
+    blurb: 'What needs you, what the business is doing, and whether anything is broken.' },
+  { id: 'applications', label: 'Applications', title: 'Applications', count: 'waiting',
+    blurb: 'Everyone who asked for a desk, and where you have got to with them. Approving sends their code and setup link.',
+    action: { label: 'Invite a desk', kind: 'invite' } },
+  { id: 'desks', label: 'Desks', title: 'Desks', count: 'desks', quiet: true,
+    blurb: 'The customers. Open one to see their storefront, their people and their plan.',
+    action: { label: 'Invite a desk', kind: 'invite' } },
+  { id: 'billing', label: 'Billing', title: 'Billing',
+    blurb: 'Subscriptions, invoices and what has actually been collected.',
+    action: { label: 'Send an invoice', kind: 'invoice' } },
+  { id: 'inbox', label: 'Inbox', title: 'Inbox', count: 'unread',
+    blurb: 'Notes from the contact page. Each one was promised a reply within a business day.' },
+  { id: 'comms', label: 'Emails', title: 'Emails',
+    blurb: 'Everything CurrencyDesk says to anybody — what goes out, what fires it, and whether it is really sending.' },
+  { id: 'activity', label: 'Activity', title: 'Activity',
+    blurb: 'Every change anybody made, in order. Six years of it, because that is what the rulebook asks for.' },
+];
+const PAGE = (id) => PAGES.find(p => p.id === id) || PAGES[0];
+/* Settings is not in the list on purpose — it is the cogwheel at the
+   bottom. You visit it when something needs configuring, not while you
+   are working, and putting it in the run of daily pages made it look
+   like one. */
+const SETTINGS = { id: 'settings', title: 'Platform settings', blurb: 'Who runs CurrencyDesk, and how it is wired up.' };
 const STAGE_TONE = { new: 'mute', reviewing: 'amber', hold: 'blue', invited: 'purple', accepted: 'green', declined: 'mute' };
 /* Only a fallback, for the moment before the server's own list arrives. The
    real columns — their titles, the verb on each button, and which moves are
@@ -274,7 +454,7 @@ const DETAIL_LABELS = {
   city: 'City', message: 'Message', newsletter: 'Wants updates',
 };
 
-function Pipeline({ kind, title, blurb, onCounts }) {
+function Pipeline({ kind, onCounts }) {
   const [rows, setRows] = useState(null);
   const [stage, setStage] = useState('all');
   /* Board or list. The board is for working the queue; the list is for
@@ -411,7 +591,6 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   );
 
   return (<div>
-    <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>{blurb}</p>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
       {view === 'list' && chip('all', 'Everything', rows.length)}
       {view === 'list' && columns.map(s => chip(s.id, s.title, counts[s.id]))}
@@ -715,9 +894,16 @@ const goto = (h) => { window.location.hash = h; };
    you can bookmark, reload and paste to someone — which a drawer never was. */
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
-  const tab = parts[0] || 'desks';
-  const known = ['desks', 'applications', 'messages', 'activity', 'people', 'onboarding', 'billing', 'settings'];
-  return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
+  let tab = parts[0] || 'overview';
+  /* Old links keep working. `messages` was renamed to `inbox`, and
+     `onboarding` stopped being a place you go — it is a thing you do to
+     one application, so it lives on that application's page now. Anything
+     already in somebody's history, or in an email we sent, still lands
+     somewhere sensible instead of on a blank screen. */
+  const MOVED = { messages: 'inbox', 'early-access': 'applications' };
+  if (MOVED[tab]) tab = MOVED[tab];
+  const known = PAGES.map(p => p.id).concat(['settings', 'people', 'onboarding']);
+  return { tab: known.indexOf(tab) >= 0 ? tab : 'overview', id: parts[1] ? decodeURIComponent(parts[1]) : null };
 }
 
 function PageHead({ back, backTo, title, sub, pills, actions }) {
@@ -1120,8 +1306,8 @@ function OnboardingPage({ reference: startRef }) {
   const inSty = { width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', fontSize: 13.5, outline: 'none' };
 
   if (!ref || err || !d) return (<div>
-    <PageHead back="Desks" backTo="#/desks" title="Onboarding"
-      sub="Open a desk with someone — type the reference from their application." />
+    <PageHead back="Applications" backTo="#/applications" title="Fill setup in with someone"
+      sub="Normally you reach this from their application. Type a reference to open one directly." />
     <div style={{ maxWidth: 460 }}>
       <Card title="Which application">
         <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
@@ -1157,7 +1343,7 @@ function OnboardingPage({ reference: startRef }) {
   const a = d.application;
   const pct = Math.round((d.done / d.total) * 100);
   return (<div>
-    <PageHead back="Onboarding" backTo="#/onboarding" title={a.name || a.email}
+    <PageHead back="Applications" backTo="#/applications" title={a.name || a.email}
       sub={a.reference + (a.charterNo ? '  ·  charter Nº ' + String(a.charterNo).padStart(4, '0') : '') + '  ·  applied ' + fmtDay(a.appliedAt)}
       pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
         <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
@@ -1362,7 +1548,7 @@ function ApplicationPage({ id, onChanged }) {
   const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }, extra || {});
 
   return (<div>
-    <PageHead back={isApp ? 'Early access' : 'Messages'} backTo={isApp ? '#/applications' : '#/messages'}
+    <PageHead back={isApp ? 'Applications' : 'Inbox'} backTo={isApp ? '#/applications' : '#/inbox'}
       title={e.name || e.email} sub={e.reference + '  ·  received ' + fmtWhen(e.createdAt)}
       pills={<Pill tone={STAGE_TONE[e.status]} dot>{stageTitle(stages, e.status)}</Pill>}
       actions={<a href={'mailto:' + e.email} style={{ ...btn('transparent', 'var(--text)'), textDecoration: 'none' }}>Reply by email</a>} />
@@ -1380,6 +1566,23 @@ function ApplicationPage({ id, onChanged }) {
             which is where it IS — mixing the two is how you end up with a
             stage called "high-volume-reviewing" and can automate neither. */}
         {isApp && <LabelBox enquiry={e} onSaved={load} />}
+
+        {/* Setup used to be its own section in the nav, which made it look
+            like a place you go rather than a thing you do with one person.
+            It belongs here, on them, and only once they can actually use
+            it — an invitation is what makes the link work. */}
+        {isApp && e.status === 'invited' && (<Card title="Their setup">
+          <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.6, marginBottom: 12 }}>
+            They can do this themselves from the link we emailed. Open it alongside them on a call if it
+            is quicker to fill in together — it is the same form and the same saved answers either way.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => goto('#/onboarding/' + encodeURIComponent(e.reference))}
+              style={btn('transparent', 'var(--text)', { fontSize: 12.5 })}>Fill it in with them</button>
+            <a href={'/onboarding/' + encodeURIComponent(e.reference)} target="_blank" rel="noopener"
+              style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), textDecoration: 'none' }}>See what they see ↗</a>
+          </div>
+        </Card>)}
 
         <Card title="Your notes">
           <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={6} placeholder="What you learned on the call, what you promised, anything the next person needs…"
@@ -1480,12 +1683,12 @@ function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   const tab = route.tab;
-  const setTab = (t) => goto('#/' + t);
   const [statusFilter, setStatusFilter] = useState('all');
   const [planFilter, setPlanFilter] = useState('all');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('joined');
   const [creating, setCreating] = useState(false);
+  const [health, setHealth] = useState(null);
 
   const loadAll = async () => {
     const [t, o] = await Promise.all([api('/api/admin/tenants'), api('/api/admin/overview').catch(() => null)]);
@@ -1497,6 +1700,18 @@ function App() {
   };
   useEffect(() => { boot(); }, []);
   useEffect(() => { if (tab === 'activity' && !audit) api('/api/admin/audit?limit=150').then(r => setAudit(r.events)).catch(() => setAudit([])); }, [tab]);
+  /* Health is checked once on the way in and then every couple of minutes,
+     because the point of the light in the corner is that you did not have
+     to go and ask. Failure to check is not itself reported as an outage —
+     that way lies a panel that cries wolf whenever a request is slow. */
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    let live = true;
+    const beat = () => api('/api/admin/health').then(h => { if (live) setHealth(h); }).catch(() => {});
+    beat();
+    const t = setInterval(beat, 120000);
+    return () => { live = false; clearInterval(t); };
+  }, [phase]);
 
   if (phase === 'loading') return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
   if (phase === 'login') return <Login onIn={() => { setPhase('loading'); boot(); }} />;
@@ -1523,20 +1738,42 @@ function App() {
   const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
   const ctrl = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, color: 'var(--mute)' };
 
+  /* The head of every page: its name, what it is for, and the one action
+     that belongs to it. Read from the PAGES table rather than written out
+     per page, which is what stopped "Start a desk" turning up on Billing. */
+  const page = tab === 'settings' ? SETTINGS : PAGE(tab);
+  const act = page.action;
+  const invoicing = act && act.kind === 'invoice';
+  // Stripe is not wired up yet. Say so on the button rather than offering
+  // an action that would quietly do nothing.
+  const stripeOn = !!(health && (health.checks.find(c => c.id === 'stripe') || {}).state === 'ok');
+  const doAction = () => { if (act.kind === 'invite') setCreating(true); else goto('#/billing'); };
+
   return (<div style={{ display: 'flex', minHeight: '100vh' }}>
-    <Sidebar counts={counts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} planFilter={planFilter} setPlanFilter={setPlanFilter} tab={tab} setTab={setTab} onCreate={() => setCreating(true)} />
+    <Sidebar counts={counts} tab={tab} health={health} onSettings={() => goto('#/settings')} />
     <div style={{ flex: 1, minWidth: 0, height: '100vh', overflow: 'auto', padding: '24px 30px' }}>
-      {!route.id && <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{TAB_TITLE[tab] || 'Desks'}</h1>
-        <Pill tone="green" dot>Live</Pill>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
-          <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ Start a desk</button>
+      {!route.id && <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{page.title}</h1>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+            {act && (<button onClick={doAction} disabled={invoicing && !stripeOn}
+              title={invoicing && !stripeOn ? 'Connect Stripe first — there is nothing to invoice through yet.' : ''}
+              style={{ padding: '9px 15px', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13,
+                background: invoicing && !stripeOn ? 'var(--line)' : 'var(--text)', color: invoicing && !stripeOn ? 'var(--faint)' : '#111',
+                cursor: invoicing && !stripeOn ? 'not-allowed' : 'pointer' }}>{act.label}</button>)}
+          </div>
         </div>
+        {page.blurb && <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '8px 0 0', maxWidth: 680, lineHeight: 1.55 }}>{page.blurb}</p>}
       </div>}
 
+      {!route.id && tab === 'overview' && <OverviewPage ov={ov} health={health} counts={counts} />}
+      {!route.id && tab === 'comms' && <CommsPage />}
+      {!route.id && tab === 'billing' && <BillingPage />}
+      {!route.id && tab === 'settings' && <SettingsPage />}
+
+      {/* Onboarding stopped being a section. The route still resolves, so a
+          bookmark or an old link opens the one application it was about. */}
       {tab === 'onboarding' && <OnboardingPage reference={route.id} />}
-      {tab === 'billing' && <BillingPage />}
-      {tab === 'settings' && <SettingsPage />}
 
       {route.id && tab !== 'onboarding' && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
@@ -1546,8 +1783,15 @@ function App() {
 
       {!route.id && tab === 'desks' && (<div>
         <StatRow ov={ov} />
+        {/* The filters live with the list they filter. They used to be in
+            the sidebar, which put a desk status filter on the billing page
+            and on settings, where it did nothing at all. */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search desks, owners, email…" style={{ flex: 1, minWidth: 220, padding: '9px 14px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontSize: 13.5, outline: 'none' }} />
+          <label style={ctrl}>Status <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+            <option value="all">All ({counts.desks})</option><option value="active">Active ({counts.active})</option><option value="trial">Trial ({counts.trial})</option><option value="suspended">Suspended ({counts.suspended})</option></select></label>
+          <label style={ctrl}>Plan <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+            <option value="all">All plans</option><option value="basic">Basic</option><option value="pro">Pro</option><option value="premium">Premium</option></select></label>
           <label style={ctrl}>Sort <select value={sort} onChange={e => setSort(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}><option value="joined">Newest</option><option value="name">Name</option><option value="plan">Plan</option></select></label>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
@@ -1573,11 +1817,9 @@ function App() {
         </div>
       </div>)}
 
-      {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()}
-        blurb="Every application from the site, and where you have got to with it. An application becomes accepted when that person creates their desk — not by hand — so this list and the desk list always agree." />}
+      {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()} />}
 
-      {!route.id && tab === 'messages' && <Pipeline kind="contact" onCounts={() => loadAll()}
-        blurb="Notes sent from the contact page. Each one was promised a reply within a business day." />}
+      {!route.id && tab === 'inbox' && <Pipeline kind="contact" onCounts={() => loadAll()} />}
 
       {!route.id && tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
         {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}
