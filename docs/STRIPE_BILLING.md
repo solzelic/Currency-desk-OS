@@ -12,9 +12,9 @@ management are Stripe-hosted.
 
    | CurrencyDesk plan | Required environment variables |
    | --- | --- |
-   | Basic | `STRIPE_PRICE_BASIC_MONTHLY`, `STRIPE_PRICE_BASIC_ANNUAL` |
-   | Pro | `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_ANNUAL` |
-   | Premium | `STRIPE_PRICE_PREMIUM_MONTHLY`, `STRIPE_PRICE_PREMIUM_ANNUAL` |
+   | Rates | `STRIPE_PRICE_BASIC_MONTHLY`, `STRIPE_PRICE_BASIC_ANNUAL` |
+   | Full System | `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_ANNUAL` |
+   | AI Bundle | `STRIPE_PRICE_PREMIUM_MONTHLY`, `STRIPE_PRICE_PREMIUM_ANNUAL` |
 
    Use immutable Price IDs (`price_…`), never client-supplied amounts. Make the
    annual prices reflect the final commercial discount before a customer uses
