@@ -360,10 +360,35 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     const row = await loadOrCreate(a.id);
     if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "Your desk is already open — sign in instead." });
 
-    const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...stripSecrets(parsed.data.data) };
+    const incoming = stripSecrets(parsed.data.data);
+    const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...incoming };
     delete answers.__flow; // the old shape, retired on first write
     answers.__at = parsed.data.at;
-    const touched = { ...((row.touched ?? {}) as Record<string, string>), flow: "customer" };
+
+    /* Where each answer came from. An operator looking at this record needs to
+       know which of it arrived through the customer's own screens — that is
+       the difference between "they told us this" and "confirm it with them".
+       Recorded per field, because a step is too coarse: half of one screen can
+       be ours from their application and half theirs.
+
+       Two things are deliberately NOT marked as theirs. A blank is not an
+       answer. And a value we seeded from their application is ours — the page
+       hands the whole blob back on every save, so without this every seeded
+       field would claim to have been typed on the spot. */
+    const prior = flowAnswers(row);
+    const seeded = fromApplication(a) as Record<string, unknown>;
+    const touched: Record<string, unknown> = { ...((row.touched ?? {}) as Record<string, unknown>), flow: "customer" };
+    const by = { ...((touched.__by ?? {}) as Record<string, string>) };
+    for (const [k, v] of Object.entries(incoming)) {
+      const isBlank =
+        v === null || v === undefined || v === "" ||
+        (Array.isArray(v) && v.length === 0) ||
+        (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0);
+      if (isBlank) { delete by[k]; continue; }
+      if (JSON.stringify(seeded[k]) === JSON.stringify(v)) { delete by[k]; continue; }
+      if (JSON.stringify(prior[k]) !== JSON.stringify(v)) by[k] = "customer";
+    }
+    touched.__by = by;
     await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, a.id));
     return { ok: true };
   });

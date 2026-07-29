@@ -257,6 +257,24 @@ describe("the applicant's own screens", () => {
     expect(fieldOf((await get()).json(), "spreadAll").value).toBe("1.8");
   });
 
+  it("records which surface each answer arrived through", async () => {
+    // the page hands the whole blob back on every save, including blanks and
+    // the values we seeded for them — neither of which is an answer of theirs
+    await put(7, { spreadAll: "1.8", sameSpread: true, elseReg: "", ownerName: "Alex Roy" });
+    const d = (await get()).json();
+    const field = (id: string) => {
+      for (const s of d.steps as { fields: { id: string; filledBy: string | null }[] }[]) {
+        const f = s.fields.find((x) => x.id === id);
+        if (f) return f;
+      }
+      throw new Error("no field " + id);
+    };
+    expect(field("spreadAll").filledBy).toBe("customer");   // came through their screens
+    expect(field("operatingName").filledBy).toBe("operator"); // we typed it in the panel
+    expect(field("elseReg").filledBy).toBeNull();            // a blank is not an answer
+    expect(field("ownerName").filledBy).toBeNull();          // seeded from their application
+  });
+
   it("never stores the card or the password, whatever the page sends", async () => {
     await put(15, { cardNum: "4242424242424242", cardCvc: "123", cardExp: "12/29", ownerPass: "hunter2", city: "Toronto" });
     const d = (await state()).json();

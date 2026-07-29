@@ -63,6 +63,7 @@ function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.o
   const marks = (row.marks ?? {}) as Record<string, boolean>;
   const progress = stepProgress(resolved, marks);
   const ready = canCreateDesk(resolved);
+  const filledBy = ((row.touched ?? {}) as Record<string, unknown>).__by as Record<string, string> | undefined;
   return {
     application: {
       reference: app.reference, charterNo: app.charterNo, email: app.email,
@@ -75,7 +76,7 @@ function present(app: typeof schema.enquiries.$inferSelect, row: typeof schema.o
     phases: PHASES,
     steps: STEPS.map((s) => ({
       ...s,
-      fields: s.fields.map((f) => ({ ...f, ...resolved[f.id] })),
+      fields: s.fields.map((f) => ({ ...f, ...resolved[f.id], filledBy: filledBy?.[f.id] ?? null })),
       ...progress.find((p) => p.id === s.id)!,
       touchedBy: ((row.touched ?? {}) as Record<string, string>)[s.id] ?? null,
       mark: marks[s.id] ?? false,
@@ -139,7 +140,11 @@ export function registerOnboardingRoutes(app: FastifyInstance, db: Db, isPlatfor
       else if (k === "ownerPass") answers[k] = "set";
       else answers[k] = v;
     }
-    const touched = { ...((row.touched ?? {}) as Record<string, string>), [step.id]: "operator" };
+    const touched = { ...((row.touched ?? {}) as Record<string, unknown>), [step.id]: "operator" };
+    // the other half of the provenance the applicant's own screens record
+    const by = { ...((touched.__by ?? {}) as Record<string, string>) };
+    for (const k of Object.keys(parsed.data.answers)) if (allowed.has(k)) by[k] = "operator";
+    touched.__by = by;
     await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, application.id));
     return present(application, (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, application.id)).limit(1))[0]!);
   });
