@@ -149,7 +149,7 @@ function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFil
     {navItem('messages', 'Messages', counts.unread || null)}
     {navItem('activity', 'Activity', null)}
     <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
-      <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> New desk
+      <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Start a desk
     </button>
     {section('Status')}
     {filterRow('All', 'var(--mute)', statusFilter === 'all', () => setStatusFilter('all'), counts.desks)}
@@ -185,37 +185,70 @@ function StatRow({ ov }) {
   </div>);
 }
 
-// ===================== CREATE MODAL =====================
+// ===================== START A DESK =====================
+/* Adding a desk does not create a desk. It sends somebody the link to set
+   one up. We fill in the handful of things we already know — the same ones
+   the early-access form asks — and everything else is theirs to answer on
+   their own screens. The desk exists at the end of that, not the start of
+   this. */
 function CreateModal({ onClose, onCreated }) {
-  const [f, setF] = useState({ businessName: '', ownerName: '', ownerEmail: '', slug: '', plan: 'trial', password: '' });
+  const [f, setF] = useState({ businessName: '', ownerName: '', ownerEmail: '', slug: '', country: 'CA', website: '' });
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null); const [copied, setCopied] = useState(false);
   const set = (k, v) => setF(s => Object.assign({}, s, { [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('');
-    try { await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify(f) }); onCreated(); onClose(); }
-    catch (x) { setBusy(false); setErr((x.body && x.body.detail) || 'Could not create'); }
+    try { const r = await api('/api/admin/onboarding/invite', { method: 'POST', body: JSON.stringify(f) }); setBusy(false); setDone(r); onCreated(); }
+    catch (x) { setBusy(false); setErr((x.body && x.body.detail) || 'Could not send that invitation'); }
   };
+  const copy = () => { try { navigator.clipboard.writeText(done.link); } catch (e) {} setCopied(true); setTimeout(() => setCopied(false), 1600); };
   const inSty = { width: '100%', padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontSize: 13.5, outline: 'none' };
   const lbl = { fontSize: 11.5, color: 'var(--mute)', marginBottom: 5, display: 'block' };
   return (<div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
     <form onClick={e => e.stopPropagation()} onSubmit={submit} style={{ width: 440, maxWidth: '100%', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 16, padding: '22px 24px', display: 'grid', gap: 12 }}>
-      <div style={{ fontSize: 17, fontWeight: 800 }}>Create a desk</div>
+      {done ? (<>
+        <div style={{ fontSize: 17, fontWeight: 800 }}>{done.resent ? 'They already had one' : 'Their setup link is ready'}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5 }}>
+          {done.resent
+            ? done.detail
+            : (done.invite === 'sent'
+                ? 'Emailed to ' + f.ownerEmail + '. They open it, answer the questions, and the desk opens at the end.'
+                : 'No mail provider is configured, so nothing was sent — pass this link on yourself.')}
+        </div>
+        <div><span style={lbl}>Reference</span>
+          <div style={{ ...inSty, fontFamily: MONO, letterSpacing: '0.1em', fontWeight: 700 }}>{done.reference}</div></div>
+        <div><span style={lbl}>Link</span>
+          <div style={{ ...inSty, fontFamily: MONO, fontSize: 12, wordBreak: 'break-all', lineHeight: 1.5 }}>{done.link}</div></div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+          <button type="button" onClick={copy} style={{ flex: 1, padding: '10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontWeight: 600 }}>{copied ? 'Copied' : 'Copy link'}</button>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', cursor: 'pointer', fontWeight: 700 }}>Done</button>
+        </div>
+      </>) : (<>
+      <div style={{ fontSize: 17, fontWeight: 800 }}>Start a desk</div>
+      <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5 }}>
+        This sends them a link to set their desk up. Fill in what you already know —
+        they answer the rest themselves, and the desk opens when they finish.
+      </div>
       <div><span style={lbl}>Business name</span><input style={inSty} value={f.businessName} onChange={e => set('businessName', e.target.value)} placeholder="Maple Currency Exchange" autoFocus /></div>
       <div style={{ display: 'flex', gap: 10 }}>
-        <div style={{ flex: 1 }}><span style={lbl}>Owner name</span><input style={inSty} value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" /></div>
+        <div style={{ flex: 1 }}><span style={lbl}>Owner name</span><input style={inSty} value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" required /></div>
         <div style={{ flex: 1 }}><span style={lbl}>Desk address</span><input style={{ ...inSty, fontFamily: MONO }} value={f.slug} onChange={e => set('slug', e.target.value)} placeholder="maplefx" /></div>
       </div>
-      <div><span style={lbl}>Owner email</span><input style={inSty} type="email" value={f.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} placeholder="owner@business.com" /></div>
+      <div><span style={lbl}>Owner email</span><input style={inSty} type="email" value={f.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} placeholder="owner@business.com" required /></div>
       <div style={{ display: 'flex', gap: 10 }}>
-        <div style={{ flex: 1 }}><span style={lbl}>Plan</span><select style={inSty} value={f.plan} onChange={e => set('plan', e.target.value)}><option value="trial">Trial</option><option value="basic">Basic</option><option value="pro">Pro</option><option value="premium">Premium</option></select></div>
-        <div style={{ flex: 1 }}><span style={lbl}>Temp password</span><input style={inSty} value={f.password} onChange={e => set('password', e.target.value)} placeholder="8+ characters" /></div>
+        <div style={{ flex: 1 }}><span style={lbl}>Licensed in</span><select style={inSty} value={f.country} onChange={e => set('country', e.target.value)}>
+          <option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option><option value="AE">United Arab Emirates</option><option value="EU">European Union</option>
+          <option value="XX">Somewhere else</option></select></div>
+        <div style={{ flex: 1 }}><span style={lbl}>Website (optional)</span><input style={inSty} value={f.website} onChange={e => set('website', e.target.value)} placeholder="maplefx.ca" /></div>
       </div>
-      <div style={{ fontSize: 11.5, color: 'var(--faint)' }}>The owner must change this password on first sign-in.</div>
+      <div style={{ fontSize: 11.5, color: 'var(--faint)' }}>No password here — they set their own on their own screen.</div>
       {err && <div style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
         <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
-        <button style={{ flex: 2, padding: '10px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', cursor: 'pointer', fontWeight: 700, opacity: busy ? 0.6 : 1 }} disabled={busy}>{busy ? 'Creating…' : 'Create desk'}</button>
+        <button style={{ flex: 2, padding: '10px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', cursor: 'pointer', fontWeight: 700, opacity: busy ? 0.6 : 1 }} disabled={busy}>{busy ? 'Sending…' : 'Send their setup link'}</button>
       </div>
+      </>)}
     </form>
   </div>);
 }
@@ -716,9 +749,17 @@ function OnboardingPage({ reference: startRef }) {
       pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
         <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
         <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>}
-      actions={a.isWalkthrough
-        ? <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>
-        : null} />
+      actions={<>
+        {/* The customer's own screens, opened on their record. Not a copy of
+            the flow rendered in here — the same page they get, on the same
+            answers, so doing it with them on the phone and them doing it
+            alone are the same act. */}
+        <a href={'/onboarding/' + encodeURIComponent(a.reference)} target="_blank" rel="noopener"
+          style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 13, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>
+          Walk their setup ↗</a>
+        {a.isWalkthrough &&
+          <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>}
+      </>} />
 
     <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
       <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
@@ -750,6 +791,13 @@ function OnboardingPage({ reference: startRef }) {
                       <span style={{ fontSize: 11.5, color: 'var(--mute)', fontWeight: 600 }}>{f.label}</span>
                       {f.source === 'application' && <Pill tone="blue">from their application</Pill>}
                       {f.source === 'derived' && <Pill tone="mute">from {String(f.id === 'regulator' ? 'the country' : 'the regulator')}</Pill>}
+                      {/* Which surface this arrived through. "From their setup"
+                          rather than "they typed this" on purpose: the value
+                          came through their own screens, but some of those
+                          screens offer a default they only had to accept, and
+                          the pill should not claim more than it knows. */}
+                      {f.filledBy === 'customer' && <Pill tone="green">from their setup</Pill>}
+                      {f.filledBy === 'operator' && <Pill tone="mute">you entered this</Pill>}
                       {f.required && f.value == null && <span style={{ fontSize: 11, color: 'var(--amber)' }}>needed</span>}
                     </div>
                     {f.type === 'select'
@@ -786,19 +834,44 @@ function OnboardingPage({ reference: startRef }) {
           {kv('Email', a.email)}
           {Object.entries(a.told || {}).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').toLowerCase(), String(v)))}
         </Card>
-        <Card title="Build the desk">
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-            {d.ready.ok ? 'Everything is answered. This creates the desk from exactly what is above.'
-              : d.ready.missing.length === 1 && d.ready.missing[0] === 'password'
-                ? 'Everything of ours is done — the owner sets their own password from their link.'
-                : 'Still needed: ' + d.ready.missing.join(', ') + '.'}
+        {/* The walkthrough is a rehearsal — it walks every screen a real one
+            does and deliberately creates nothing at the end. Offering to build
+            a desk from it is offering something that cannot happen. */}
+        {a.isWalkthrough ? (
+        <Card title="This is the walkthrough">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
+            Practise on it as often as you like — every screen and every save is
+            the real thing. It never creates a desk, never takes a founding
+            place, and never appears in the funnel. <b style={{ color: 'var(--text)' }}>Start over</b> puts it back.
           </div>
-          {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-          <button disabled={busy} onClick={finish}
-            style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-              background: d.ready.ok ? 'var(--green)' : 'transparent', color: d.ready.ok ? '#0b0b0b' : 'var(--text)', cursor: 'pointer' }}>
-            {busy ? 'Working…' : 'Create the desk'}</button>
         </Card>
+        ) : (
+        <Card title="Build the desk">
+          {/* Once the desk exists there is nothing left to build, and offering
+              it again invites an operator to press a button that can only
+              answer 409. Send them to the desk instead. */}
+          {d.tenantId ? (<>
+            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+              This desk is open. It was created from exactly what is above.
+            </div>
+            <button onClick={() => goto('#/desks/' + d.tenantId)}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
+                background: 'var(--green)', color: '#0b0b0b', cursor: 'pointer' }}>Open the desk</button>
+          </>) : (<>
+            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+              {d.ready.ok ? 'Everything is answered. This creates the desk from exactly what is above.'
+                : d.ready.missing.length === 1 && d.ready.missing[0] === 'ownerPass'
+                  ? 'Everything of ours is done — the owner sets their own password from their link.'
+                  : 'Still needed: ' + d.ready.missing.join(', ') + '.'}
+            </div>
+            {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
+            <button disabled={busy} onClick={finish}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
+                background: d.ready.ok ? 'var(--green)' : 'transparent', color: d.ready.ok ? '#0b0b0b' : 'var(--text)', cursor: 'pointer' }}>
+              {busy ? 'Working…' : 'Create the desk'}</button>
+          </>)}
+        </Card>
+        )}
       </div>
     </div>
   </div>);
@@ -952,7 +1025,7 @@ function App() {
         <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{TAB_TITLE[tab] || 'Desks'}</h1>
         <Pill tone="green" dot>Live</Pill>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
-          <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ New desk</button>
+          <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ Start a desk</button>
         </div>
       </div>}
 

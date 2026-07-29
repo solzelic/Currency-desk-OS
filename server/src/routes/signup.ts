@@ -12,15 +12,15 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { forgetClaimedCount } from "./early-access.js";
-import { and, eq, notInArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
-import { audit } from "../audit.js";
 import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
+import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
 import { tenantPlan } from "./tenant.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -48,7 +48,10 @@ const onboardingShape = z
     city: z.string().max(80).optional(),
     region: z.string().max(40).optional(),
     postal: z.string().max(16).optional(),
-    plan: z.enum(["basic", "pro", "premium"]).optional(),
+    /* Both vocabularies land here — the API's tiers and the design's plan
+       ids — so this takes the string and the creation path decides what it
+       is worth. An unknown one becomes a trial, never a free upgrade. */
+    plan: z.string().max(20).optional(),
     idThreshold: z.number().nonnegative().max(1_000_000).optional(),
   })
   .passthrough();
@@ -95,12 +98,6 @@ const allow = (key: string, max: number, windowMs = 60 * 60 * 1000): boolean => 
   return true;
 };
 
-async function slugTaken(db: Db, slug: string, exceptEmail?: string): Promise<boolean> {
-  const asTenant = await db.select({ id: schema.tenants.id }).from(schema.tenants).where(eq(schema.tenants.siteSlug, slug)).limit(1);
-  if (asTenant.length) return true;
-  const asPending = await db.select({ email: schema.pendingSignups.email }).from(schema.pendingSignups).where(eq(schema.pendingSignups.slug, slug));
-  return asPending.some((p) => p.email !== exceptEmail);
-}
 async function emailInUse(db: Db, email: string): Promise<boolean> {
   const rows = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, email)).limit(1);
   return rows.length > 0;
@@ -192,56 +189,37 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (await slugTaken(db, p.slug, email)) return reply.code(409).send({ error: "slug_taken", detail: "That desk address was just taken — pick another." });
 
     const onb = (p.onboarding ?? {}) as Record<string, unknown>;
-    const chosenPlan = typeof onb.plan === "string" && ["basic", "pro", "premium"].includes(onb.plan) ? (onb.plan as string) : "trial";
+    /* Both the tier names the API takes directly and the design's own plan
+       ids arrive here, because both doors write pendingSignups. Anything we
+       do not recognise stays on trial rather than silently granting a tier
+       nobody paid for. */
+    const planFromOnboarding = typeof onb.plan === "string" ? onb.plan : "";
+    const chosenPlan = ["basic", "pro", "premium"].includes(planFromOnboarding)
+      ? planFromOnboarding
+      : ({ rates: "basic", full: "premium", ai: "premium" } as Record<string, string>)[planFromOnboarding] ?? "trial";
     const regulator = typeof onb.regulator === "string" && onb.regulator ? onb.regulator : "FINTRAC";
     const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
 
-    const tenantId = "tnt-" + p.slug;
-    const legalEntityId = "le-" + p.slug;
-    const branchId = "br-" + p.slug + "-main";
-    const workspaceId = "ws-" + p.slug + "-till-01";
     forgetClaimedCount();
-    await db.insert(schema.tenants).values({ id: tenantId, name: p.businessName, plan: chosenPlan, siteSlug: p.slug, setup: p.onboarding ?? null }).onConflictDoNothing();
-    await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: p.businessName, msbNumber, jurisdiction: regulator }).onConflictDoNothing();
-    await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
-    await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
-    const ownerId = `${tenantId}:${email}`;
-    await db.insert(schema.staffUsers).values({
-      id: ownerId,
-      tenantId,
-      legalEntityId,
-      branchId,
-      staffId: email, // email-as-identity for the owner
-      name: p.ownerName,
-      role: "administrator",
-      authorizedBranchIds: [branchId],
-      passwordHash: p.passwordHash,
-      mustChangePassword: false,
-      passwordUpdatedAt: new Date(),
-    }).onConflictDoNothing();
+    const { tenantId, legalEntityId, branchId, ownerId } = await provisionDesk(
+      db,
+      {
+        businessName: p.businessName,
+        legalName: p.businessName,
+        ownerName: p.ownerName,
+        email,
+        slug: p.slug,
+        plan: chosenPlan,
+        setup: (p.onboarding ?? {}) as Record<string, unknown>,
+        msbNumber,
+        regulator,
+        team: [],
+      },
+      p.passwordHash,
+      "signup",
+    );
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
-
-    await audit(db, { tenantId, legalEntityId, branchId, actorId: ownerId, action: "tenant.created", detail: { via: "signup", slug: p.slug, email } });
-
-    /* Close the loop on any early-access application from this address. This
-       is the join that makes the funnel a funnel: without it the control panel
-       shows applications and desks as two unrelated lists and can never say
-       which application became which desk. Best-effort — a desk is real
-       whether or not it started as an application. */
-    try {
-      await db
-        .update(schema.enquiries)
-        .set({ status: "accepted", tenantId, decidedAt: new Date(), decidedBy: "signup" })
-        .where(
-          and(
-            eq(schema.enquiries.email, email),
-            eq(schema.enquiries.kind, "early_access"),
-            notInArray(schema.enquiries.status, ["accepted", "declined"]),
-          ),
-        );
-    } catch {
-      /* the application record is bookkeeping; never let it fail a signup */
-    }
+    await closeApplication(db, email, tenantId, "signup");
 
     const { token, expiresAt } = await createSession(db, ownerId);
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
