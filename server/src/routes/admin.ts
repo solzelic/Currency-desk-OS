@@ -23,6 +23,7 @@ import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
+import { hasHostedSite } from "../sites.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -224,8 +225,51 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const application =
       (await db.select().from(schema.enquiries).where(eq(schema.enquiries.tenantId, id)).limit(1))[0] ?? null;
 
+    /* Is their public board actually live?
+
+       Three separate things have to be true and any of them can be false on
+       its own, which is exactly why this was so hard to see: the desk has to
+       have a site to serve, it has to have published a board, and a visitor
+       has to be able to reach it. Answer all three in one place rather than
+       leaving an operator to infer it. */
+    const boards = await db
+      .select()
+      .from(schema.rateBoards)
+      .where(eq(schema.rateBoards.tenantId, id))
+      .orderBy(desc(schema.rateBoards.publishedAt))
+      .limit(1);
+    const board = boards[0] ?? null;
+    const rows = (board?.boardRows ?? {}) as Record<string, { show?: boolean }>;
+    const shown = Object.entries(rows).filter(([, r]) => r && r.show !== false);
+    const hosted = !!t.siteSlug && hasHostedSite(t.siteSlug);
+    const publicSite = {
+      // the address anybody can reach today
+      slug: t.siteSlug,
+      path: t.siteSlug && hosted ? `/sites/${t.siteSlug}` : null,
+      domain: t.siteDomain,
+      // is a storefront actually deployed for this slug, or is it just a name?
+      hosted,
+      published: !!board,
+      publishedAt: board ? board.publishedAt.getTime() : null,
+      publishedBy: board?.publishedBy ?? null,
+      currencies: shown.length,
+      // what a visitor's browser would ask for
+      ratesEndpoint: t.siteSlug ? `/api/sites/${t.siteSlug}/rates` : null,
+      /* The one sentence an operator needs. Anything else is them working it
+         out from three booleans, which is how "is it connected?" became a
+         question nobody could answer. */
+      status: !t.siteSlug
+        ? "No public address yet."
+        : !hosted
+          ? "No storefront is deployed at this address yet."
+          : !board
+            ? "Site is live, but this desk has never published a board — visitors see no rates."
+            : `Live. ${shown.length} currencies, last published ${board.publishedAt.toISOString()}.`,
+    };
+
     return {
       tenant: { id: t.id, name: t.name, slug: t.siteSlug, plan: t.plan, entitledPlan: plan, suspended: t.suspended, siteDomain: t.siteDomain, setup: t.setup ?? null, createdAt: t.createdAt },
+      publicSite,
       legalEntities: entities,
       staff,
       audit,

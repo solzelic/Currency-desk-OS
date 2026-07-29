@@ -96,6 +96,71 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     return { site: publicConfig(t) };
   });
 
+  /* ----------------------------------------------------------------
+     The rates a visitor sees.
+
+     The desk publishes its board to rate_boards, and until now nothing
+     public read it: the storefront's numbers came out of the browser's
+     own localStorage, so they existed only for whoever pressed Publish
+     and nobody else. A customer looking at the site saw whatever their
+     machine happened to hold, which for a first-time visitor is nothing.
+
+     This is the join. One published board, read by the window display,
+     the public page and the quote endpoint alike — so the number on the
+     website is the number the desk is trading at, by construction.
+
+     Buy and sell are worked out here rather than in the page. The margin
+     is the desk's business and has no reason to be sitting in public
+     JavaScript for anyone to read off.
+     ---------------------------------------------------------------- */
+  const boardJson = async (t: typeof schema.tenants.$inferSelect) => {
+    const board = await latestBoard(db, t.id);
+    if (!board) return { published: false, rates: [] as unknown[] };
+    const rows = board.boardRows ?? {};
+    const order = board.boardOrder ?? Object.keys(rows);
+    const rates = order
+      .filter((ccy) => rows[ccy] && rows[ccy]!.show !== false)
+      .map((ccy) => {
+        const r = rows[ccy]!;
+        /* The same two lines the quote endpoint prices off, deliberately
+           identical. Margins are FRACTIONS here, not percentages — the
+           publish schema caps them at 0.2, so 0.02 is two percent. Dividing
+           by a hundred as well would put a spread on the website a hundred
+           times tighter than the one the desk is actually trading at, which
+           is a number a customer could hold us to. */
+        return {
+          code: ccy,
+          // we buy foreign under mid and sell over it — the desk's side
+          buy: +(r.mid * (1 - (r.spread ?? board.buyMargin))).toFixed(6),
+          sell: +(r.mid * (1 + (r.spread ?? board.sellMargin))).toFixed(6),
+        };
+      });
+    return {
+      published: true,
+      publishedAt: board.publishedAt.getTime(),
+      currencies: rates.length,
+      rates,
+    };
+  };
+
+  app.get("/api/sites/:slug/rates", async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const t = await tenantForSlug(db, slug);
+    if (!t) return reply.code(404).send({ error: "not_found" });
+    // a board changes when the desk says so; a minute of cache is plenty
+    reply.header("cache-control", "public, max-age=60");
+    return boardJson(t);
+  });
+
+  app.get("/api/site/rates", async (req, reply) => {
+    const slug = siteSlugForHost(req.headers.host);
+    if (!slug) return reply.code(404).send({ error: "no_site_for_host" });
+    const t = await tenantForSlug(db, slug);
+    if (!t) return reply.code(404).send({ error: "not_found" });
+    reply.header("cache-control", "public, max-age=60");
+    return boardJson(t);
+  });
+
   // the same lookup for custom-domain visitors, where the path carries no slug
   app.get("/api/site/config", async (req, reply) => {
     const slug = siteSlugForHost(req.headers.host);
