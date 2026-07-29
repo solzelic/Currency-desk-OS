@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS pending_signups (
 -- blob; CREATE TABLE IF NOT EXISTS is a no-op there, so add the column explicitly
 ALTER TABLE pending_signups ADD COLUMN IF NOT EXISTS onboarding jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS pending_signups_email_idx ON pending_signups(email);
+CREATE TABLE IF NOT EXISTS platform_users (
+  email text PRIMARY KEY,
+  name text,
+  role text NOT NULL DEFAULT 'support',
+  status text NOT NULL DEFAULT 'active',
+  added_by text,
+  last_seen_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS enquiries (
   id text PRIMARY KEY,
   reference text NOT NULL,

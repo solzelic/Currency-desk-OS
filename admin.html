@@ -148,6 +148,8 @@ function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFil
     {navItem('onboarding', 'Onboarding', null)}
     {navItem('messages', 'Messages', counts.unread || null)}
     {navItem('activity', 'Activity', null)}
+    {navItem('billing', 'Billing', null)}
+    {navItem('settings', 'Settings', null)}
     <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
       <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Start a desk
     </button>
@@ -257,7 +259,7 @@ function CreateModal({ onClose, onCreated }) {
 // Everything the public site sends us. An application is not a message in an
 // inbox — it is a thing somebody works — so this reads as a pipeline: what
 // stage each one is at, what the applicant told us, and what it became.
-const TAB_TITLE = { desks: 'Desks', applications: 'Early access', onboarding: 'Onboarding', messages: 'Messages', activity: 'Activity' };
+const TAB_TITLE = { desks: 'Desks', applications: 'Early access', onboarding: 'Onboarding', messages: 'Messages', activity: 'Activity', billing: 'Billing', settings: 'Platform settings' };
 const STAGE_TONE = { new: 'blue', reviewing: 'amber', invited: 'purple', accepted: 'green', declined: 'mute' };
 const STAGES = ['new', 'reviewing', 'invited', 'accepted', 'declined'];
 // stages an operator can set; "accepted" is what a created desk means
@@ -420,6 +422,213 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   </div>);
 }
 
+/* ===================== PLATFORM SETTINGS =====================
+   Built for a team that does not exist yet, on purpose. The permission
+   system has to be there before anybody is added to it — retro-fitting
+   roles onto a panel where everyone had everything is how you end up
+   auditing what your support contractor could reach. */
+function SettingsPage() {
+  const [d, setD] = useState(null); const [flash, setFlash] = useState(''); const [busy, setBusy] = useState(false);
+  const [f, setF] = useState({ email: '', name: '', role: 'support' });
+  const load = () => api('/api/admin/team').then(setD).catch(() => setFlash('Could not load the team.'));
+  useEffect(() => { load(); }, []);
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const act = async (fn, ok) => {
+    setBusy(true); setFlash('');
+    try { await fn(); setFlash(ok); await load(); }
+    catch (e) { setFlash((e.body && e.body.detail) || 'That did not work.'); }
+    setBusy(false);
+  };
+  const inSty = { padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13, outline: 'none' };
+  const roleOf = (id) => d.roles.find(r => r.id === id) || { title: id, blurb: '' };
+
+  return (<div>
+    {/* No PageHead: the tab header above already says "Platform settings",
+        and printing it twice reads as a bug rather than as emphasis. */}
+    <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>Who runs CurrencyDesk, and what each of them can reach.</p>
+    {flash && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13, background: 'var(--hover)', border: '1px solid var(--line)' }}>{flash}</div>}
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(300px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="Team">
+          {d.members.map(m => (<div key={m.email} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderBottom: '1px solid var(--line2)' }}>
+            <Avatar name={m.name || m.email} size={32} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{m.name || m.email}</span>
+              <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{m.email}</span>
+            </span>
+            {m.status === 'suspended' && <Pill tone="amber">suspended</Pill>}
+            {m.role === 'owner'
+              ? <Pill tone="purple">Platform Owner</Pill>
+              : d.canManage
+                ? (<select disabled={busy} value={m.role} onChange={e => act(() => api('/api/admin/team/' + encodeURIComponent(m.email), { method: 'PATCH', body: JSON.stringify({ role: e.target.value }) }), m.email + ' is now ' + e.target.value + '.')}
+                    style={{ ...inSty, fontSize: 12 }}>
+                    {d.roles.filter(r => r.id !== 'owner').map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+                  </select>)
+                : <Pill tone="mute">{roleOf(m.role).title}</Pill>}
+            {d.canManage && m.role !== 'owner' && (<>
+              <button disabled={busy} onClick={() => act(() => api('/api/admin/team/' + encodeURIComponent(m.email), { method: 'PATCH', body: JSON.stringify({ status: m.status === 'active' ? 'suspended' : 'active' }) }), m.email + ' ' + (m.status === 'active' ? 'suspended' : 'restored') + '.')}
+                style={{ ...inSty, cursor: 'pointer', fontSize: 12 }}>{m.status === 'active' ? 'Suspend' : 'Restore'}</button>
+              <button disabled={busy} onClick={() => act(() => api('/api/admin/team/' + encodeURIComponent(m.email), { method: 'DELETE' }), m.email + ' removed, and their sessions with them.')}
+                style={{ ...inSty, cursor: 'pointer', fontSize: 12, color: 'var(--red)' }}>Remove</button>
+            </>)}
+          </div>))}
+          {d.canManage && (<form onSubmit={ev => { ev.preventDefault(); act(() => api('/api/admin/team', { method: 'POST', body: JSON.stringify(f) }), f.email + ' added as ' + f.role + '.'); setF({ email: '', name: '', role: 'support' }); }}
+            style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+            <input required type="email" placeholder="them@currencydeskos.com" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} style={{ ...inSty, flex: 2, minWidth: 200 }} />
+            <input placeholder="Name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} style={{ ...inSty, flex: 1, minWidth: 110 }} />
+            <select value={f.role} onChange={e => setF({ ...f, role: e.target.value })} style={inSty}>
+              {d.roles.filter(r => r.id !== 'owner').map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+            </select>
+            <button disabled={busy} style={{ ...inSty, cursor: 'pointer', background: 'var(--text)', color: '#111', fontWeight: 700, border: 'none' }}>Add</button>
+          </form>)}
+          <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>
+            They sign in with this address. Adding somebody here grants the role; it does not create a login for them.
+          </div>
+        </Card>
+
+        <Card title="What each role can reach">
+          {d.roles.map(r => (<div key={r.id} style={{ padding: '11px 0', borderBottom: '1px solid var(--line2)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>{r.title}</span>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)' }}>{r.permissions.length} permissions</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginTop: 3 }}>{r.blurb}</div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 7 }}>
+              {r.permissions.map(p => <span key={p} style={{ fontFamily: MONO, fontSize: 10, padding: '2px 6px', borderRadius: 5, background: 'var(--hover)', color: 'var(--mute)' }}>{p}</span>)}
+            </div>
+          </div>))}
+        </Card>
+      </div>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="You">
+          {kv('Signed in as', d.me.email)}
+          {kv('Role', roleOf(d.me.role).title)}
+          {d.me.isOwner && (<div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.55, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line2)' }}>
+            Your account cannot be demoted, suspended or removed from here — not by anyone, including you.
+            Full control has to survive a bad day, and locking yourself out of your own platform is one.
+          </div>)}
+        </Card>
+
+        {/* Said plainly rather than shown as a finished feature, because
+            claiming security you have not built is worse than not having it. */}
+        <Card title="Still to build">
+          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.6 }}>
+            <b style={{ color: 'var(--text)' }}>Security</b> — mandatory MFA on this account, device and session
+            visibility, login history, and hardware keys. Not built yet.<br /><br />
+            <b style={{ color: 'var(--text)' }}>Communications</b> — sending address, templates and delivery history.
+            Emails send today; they are not editable from here.<br /><br />
+            <b style={{ color: 'var(--text)' }}>Privacy &amp; compliance</b> — retention, legal holds, privacy requests.<br /><br />
+            <b style={{ color: 'var(--text)' }}>Integrations</b> — Stripe is wired. KYC, SMS and accounting are not.
+          </div>
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
+/* ===================== BILLING ===================== */
+function BillingPage() {
+  const [d, setD] = useState(null); const [err, setErr] = useState('');
+  useEffect(() => { api('/api/admin/billing').then(setD).catch(e => setErr((e.body && e.body.detail) || 'Could not load billing.')); }, []);
+  if (err) return <div style={{ color: 'var(--red)', padding: 20 }}>{err}</div>;
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+
+  const cash = (c) => '$' + ((Number(c) || 0) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const stat = (label, value, note, tone) => (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: '14px 16px' }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--faint)' }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: tone || 'var(--text)' }}>{value}</div>
+      {note && <div style={{ fontSize: 11.5, color: 'var(--mute)', marginTop: 3 }}>{note}</div>}
+    </div>
+  );
+
+  return (<div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
+      <Pill tone={d.connected ? 'green' : 'amber'} dot>{d.connected ? 'Stripe connected' : 'Stripe not configured'}</Pill>
+    </div>
+    <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>Stripe is the source of truth. These are the numbers its webhooks have told us.</p>
+
+    {!d.connected && (<div style={{ marginBottom: 16, padding: '12px 15px', borderRadius: 11, border: '1px solid var(--line)', background: 'var(--hover)', fontSize: 13, lineHeight: 1.55 }}>
+      No Stripe keys are set on this deployment, so every figure below is zero rather than wrong. Set them in the host's environment — never in here.
+    </div>)}
+
+    {/* The failure that hides: a webhook that has stopped arriving leaves the
+        panel showing yesterday's numbers as though they were today's. */}
+    {d.connected && !d.lastEventAt && (<div style={{ marginBottom: 16, padding: '12px 15px', borderRadius: 11, border: '1px solid var(--amber)', fontSize: 13 }}>
+      Stripe is configured but no webhook has ever arrived. Until one does, these numbers cannot move.
+    </div>)}
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(178px,1fr))', gap: 12, marginBottom: 18 }}>
+      {stat('MRR', cash(d.mrrCents), 'recurring, per month')}
+      {stat('ARR', cash(d.arrCents), 'MRR × 12')}
+      {stat('Paying desks', d.activePaying, d.trialing + ' on trial')}
+      {stat('New this month', d.newThisMonth)}
+      {stat('Cash collected', cash(d.cashCollectedThisMonthCents), 'this month, incl. tax')}
+      {stat('Tax collected', cash(d.taxCollectedThisMonthCents), 'not yours', 'var(--mute)')}
+      {stat('Needs attention', d.needsAttention.length, 'unpaid or overdue', d.needsAttention.length ? 'var(--amber)' : null)}
+      {stat('Cancelled', d.cancelled)}
+    </div>
+
+    <div style={{ fontSize: 11.5, color: 'var(--faint)', marginBottom: 18, lineHeight: 1.55, maxWidth: 620 }}>
+      Cash collected is not revenue. A desk paying a year up front hands over twelve months of cash today and earns
+      one month of it — these are Stripe's cash and subscription figures, and accounting recognition is a different report.
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(300px,1fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="Needs attention" pad={0}>
+          <div style={{ padding: '4px 16px' }}>
+            {d.needsAttention.map(i => (<div key={i.invoiceId} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '10px 0', borderBottom: '1px solid var(--line2)' }}>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: 13.5 }}>{i.tenantName}</span>
+              <Pill tone="amber">{i.status}</Pill>
+              <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{cash(i.amountDueCents)}</span>
+              {i.url && <a href={i.url} target="_blank" rel="noopener" style={{ fontSize: 12, color: 'var(--blue)' }}>open</a>}
+            </div>))}
+            {d.needsAttention.length === 0 && <div style={{ padding: 24, color: 'var(--faint)', textAlign: 'center' }}>Nothing overdue.</div>}
+          </div>
+        </Card>
+
+        <Card title="Subscribers" pad={0}>
+          <div style={{ padding: '4px 16px' }}>
+            {d.subscribers.map(s => (<div key={s.tenantId} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '10px 0', borderBottom: '1px solid var(--line2)' }}>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: 13.5 }}>{s.tenantName}</span>
+              {s.cancelAtPeriodEnd && <Pill tone="amber">ending</Pill>}
+              <Pill tone={s.status === 'active' ? 'green' : 'mute'}>{s.status}</Pill>
+              <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--mute)' }}>{s.plan || '—'}</span>
+              <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{cash(s.mrrCents)}</span>
+            </div>))}
+            {d.subscribers.length === 0 && <div style={{ padding: 24, color: 'var(--faint)', textAlign: 'center' }}>Nobody is subscribed yet.</div>}
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="By plan">
+          {d.byPlan.map(p => (<div key={p.plan} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '9px 0', borderBottom: '1px solid var(--line2)' }}>
+            <span style={{ textTransform: 'capitalize', fontSize: 13.5 }}>{p.plan}</span>
+            <span><span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--faint)', marginRight: 9 }}>{p.subscribers}</span>
+              <span style={{ fontFamily: MONO, fontSize: 13 }}>{cash(p.mrrCents)}</span></span>
+          </div>))}
+        </Card>
+
+        <Card title="Recent invoices" pad={0}>
+          <div style={{ padding: '4px 16px', maxHeight: 320, overflow: 'auto' }}>
+            {d.recent.map(i => (<div key={i.invoiceId} style={{ display: 'flex', gap: 9, alignItems: 'baseline', padding: '9px 0', borderBottom: '1px solid var(--line2)' }}>
+              <span style={{ flex: 1, fontSize: 12.5 }}>{i.tenantName}</span>
+              <Pill tone={i.status === 'paid' ? 'green' : 'mute'}>{i.status}</Pill>
+              <span style={{ fontFamily: MONO, fontSize: 12 }}>{cash(i.amountPaidCents)}</span>
+            </div>))}
+            {d.recent.length === 0 && <div style={{ padding: 24, color: 'var(--faint)', textAlign: 'center' }}>No invoices yet.</div>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
 // ===================== SHARED PAGE FURNITURE =====================
 const money = (n, ccy) => {
   const v = Number(n) || 0;
@@ -433,7 +642,7 @@ const goto = (h) => { window.location.hash = h; };
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
   const tab = parts[0] || 'desks';
-  const known = ['desks', 'applications', 'messages', 'activity', 'people', 'onboarding'];
+  const known = ['desks', 'applications', 'messages', 'activity', 'people', 'onboarding', 'billing', 'settings'];
   return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
 }
 
@@ -1236,6 +1445,8 @@ function App() {
       </div>}
 
       {tab === 'onboarding' && <OnboardingPage reference={route.id} />}
+      {tab === 'billing' && <BillingPage />}
+      {tab === 'settings' && <SettingsPage />}
 
       {route.id && tab !== 'onboarding' && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
