@@ -171,11 +171,44 @@ var RATE_CONFIG = null;      // last published config, if any
     try { window.dispatchEvent(new CustomEvent('yorkfx:catalog', { detail: { added: added, total: CUR.length } })); } catch (e) {}
   }
 
-  function tick() {
-    fetch('/api/rates', { credentials: 'same-origin' })
+  /* Which URL carries THIS page's board, in the order worth asking.
+
+     This matters more than it looks. /api/rates takes no session and, given
+     no branchId, answers with a hardcoded demo branch — York FX's. So a
+     storefront polling it gets York FX's rates whoever it belongs to. That
+     is invisible while York FX is the only customer and wrong the moment
+     there are two: shop B's window would quote shop A's prices.
+
+     So a hosted site asks the endpoint that knows which desk it is, and
+     /api/rates is only for the OS, where the page is staff-side already. */
+  function boardSources() {
+    var p = window.location.pathname;
+    var m = p.match(/^\/sites\/([^/]+)\//);
+    // served under /sites/<slug>/ — the slug names the desk, no ambiguity
+    if (m) return ['/api/sites/' + encodeURIComponent(m[1]) + '/rates'];
+    // the Rate Board embedded inside the OS: staff context, desk implied
+    if (/^\/YorkFX\//.test(p)) return ['/api/rates'];
+    // the customer's own domain, which the server maps to their slug
+    return ['/api/site/rates', '/api/rates'];
+  }
+
+  function fetchBoard(urls, i) {
+    if (i >= urls.length) return Promise.resolve();
+    return fetch(urls[i], { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { applyBoard(d && d.board); })
-      .catch(function () {});
+      .then(function (d) {
+        if (!d || !d.board) return fetchBoard(urls, i + 1);
+        applyBoard(d.board);
+        /* Real numbers are on the page now, so nothing may invent movement
+           on top of them. A public board that drifts is a shop quoting a
+           rate it is not trading at. */
+        window.__yfxLiveBoard = true;
+      })
+      .catch(function () { return fetchBoard(urls, i + 1); });
+  }
+
+  function tick() {
+    fetchBoard(boardSources(), 0);
     fetch('/api/rates/market', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(applyCatalog)

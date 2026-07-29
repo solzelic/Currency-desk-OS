@@ -222,6 +222,12 @@ window.addEventListener('storage', function (e) {
    LIVE DRIFT — nudge rates so the board feels alive
    =================================================================== */
 function drift() {
+  /* Only ever a prototype flourish, to stop a static page looking dead. The
+     moment the desk's real published board is on the page it has to stop:
+     nudging a live rate every six seconds means the window is quoting a
+     number the desk is not trading at, and a customer can hold them to
+     what the window says. */
+  if (window.__yfxLiveBoard) return;
   CUR.forEach(function (c) {
     if (c.code === 'CAD') return;
     c.perCad = Math.max(0.0001, c.perCad + (Math.random() - 0.5) * c.perCad * 0.0006);
