@@ -24,6 +24,7 @@ import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
+import { cleanLabel, labelsOf, moveTo, STAGES, type Stage } from "../onboarding/pipeline.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -31,8 +32,11 @@ const patchEnquiryBody = z
   .object({
     status: z.enum(["new", "reviewing", "invited", "accepted", "declined"]).optional(),
     notes: z.string().max(4000).optional(),
+    // send the stage's email again without pretending the stage changed
+    resend: z.boolean().optional(),
   })
   .refine((b) => b.status !== undefined || b.notes !== undefined, { message: "nothing to change" });
+const labelsBody = z.object({ labels: z.array(z.string().max(32)).max(12) });
 const patchTenantBody = z
   .object({ plan: PLAN.optional(), suspended: z.boolean().optional() })
   .refine((b) => b.plan !== undefined || b.suspended !== undefined, { message: "nothing to change" });
@@ -366,6 +370,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     }
     return {
       enquiries: rows.map((r) => ({ ...r, tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null })),
+      /* The board's columns come from the server's own list of stages, so
+         adding one later shows up in the panel without a second edit — and
+         the columns can never drift from what a transition will accept. */
+      stages: STAGES,
     };
   });
 
@@ -377,50 +385,80 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
     const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
-    /* "accepted" means a desk exists, which only a completed signup can make
-       true. Letting it be set by hand would put a lie in the funnel. */
-    if (parsed.data.status === "accepted") {
-      return reply.code(400).send({
-        error: "not_settable",
-        detail: "An application becomes accepted when the desk is created, not by hand.",
-      });
+    /* Everything about moving an application lives in one place now — which
+       stage may follow which, what the applicant hears on arrival, and how
+       the move is recorded. A reviewer agent doing this later calls the same
+       function with a different `by`. */
+    if (parsed.data.notes !== undefined) {
+      await db.update(schema.enquiries).set({ notes: parsed.data.notes }).where(eq(schema.enquiries.id, req.params.id));
     }
+    if (parsed.data.status === undefined) return { ok: true };
 
     // declining hands the place back to the site's "N of 100 claimed"
-    if (parsed.data.status !== undefined && parsed.data.status !== row.status) forgetClaimedCount();
+    if (parsed.data.status !== row.status) forgetClaimedCount();
 
-    const set: Record<string, unknown> = {};
-    if (parsed.data.status !== undefined) {
-      set.status = parsed.data.status;
-      set.decidedAt = new Date();
-      set.decidedBy = who.staffId;
-      if (parsed.data.status !== "new") set.handledAt = row.handledAt ?? new Date();
-    }
-    if (parsed.data.notes !== undefined) set.notes = parsed.data.notes;
-    await db.update(schema.enquiries).set(set).where(eq(schema.enquiries.id, req.params.id));
+    const moved = await moveTo(db, row, parsed.data.status as Stage, who.staffId, {
+      actorId: who.id,
+      resend: parsed.data.resend === true,
+    });
+    if (!moved.ok) return reply.code(400).send({ error: moved.error, detail: moved.detail });
+    return { ok: true, from: moved.from, to: moved.to, email: moved.email, ...(moved.email ? { invite: moved.email } : {}) };
+  });
 
-    /* Inviting someone is the one stage change the applicant hears about, so
-       it is the one that sends. Best-effort: the stage is already saved, and
-       a mail outage must not silently roll it back — the operator can see it
-       failed and send again. */
-    let invited: EmailStatus | null = null;
-    if (parsed.data.status === "invited" && row.status !== "invited") {
-      const origin = (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
-      const mail = inviteEmail({ name: row.name, reference: row.reference, origin });
-      invited = await sendEmail(row.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
-    }
+  /* Labels — what an application is like, as opposed to where it is. */
+  app.put<{ Params: { id: string } }>("/api/admin/enquiries/:id/labels", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const parsed = labelsBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    // deduplicated and normalised, so "High Volume" and "high volume" are one
+    const labels = [...new Set(parsed.data.labels.map(cleanLabel).filter(Boolean))].slice(0, 12);
+    await db.update(schema.enquiries).set({ labels }).where(eq(schema.enquiries.id, req.params.id));
+    return { ok: true, labels };
+  });
 
-    if (parsed.data.status !== undefined) {
-      await audit(db, {
-        tenantId: row.tenantId ?? PLATFORM_TENANT,
-        legalEntityId: "-",
-        branchId: "-",
-        actorId: who.id,
-        action: "admin.enquiry_status",
-        detail: { reference: row.reference, from: row.status, to: parsed.data.status, ...(invited ? { invite: invited } : {}) },
-      });
+  /* Every label anybody has used, so the panel can offer them back rather
+     than making an operator remember what they typed last week. */
+  app.get("/api/admin/labels", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    const rows = await db.select({ labels: schema.enquiries.labels }).from(schema.enquiries);
+    const seen = new Map<string, number>();
+    for (const r of rows) for (const l of labelsOf(r)) seen.set(l, (seen.get(l) ?? 0) + 1);
+    return { labels: [...seen.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count })) };
+  });
+
+  /* Burn this code and issue another.
+
+     Moving an application out of `invited` already stops its code opening
+     anything — that is the revoke, and it needs no new machinery. This is
+     the other case: the code itself has gone somewhere it should not have,
+     and they need a different one. The old reference dies with it, so
+     anybody holding it gets the same nothing as a stranger. */
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/rotate", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    if (row.status === "accepted") {
+      return reply.code(409).send({ error: "already_open", detail: "Their desk is open — the code has done its job." });
     }
-    return { ok: true, ...(invited ? { invite: invited } : {}) };
+    const was = row.reference;
+    const reference = makeReference();
+    await db.update(schema.enquiries).set({ reference }).where(eq(schema.enquiries.id, req.params.id));
+    await audit(db, {
+      tenantId: row.tenantId ?? PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.enquiry_code_rotated", detail: { was, now: reference },
+    });
+    /* Only re-send if they are holding a live invitation. Emailing a new code
+       to somebody still in review would be telling them they are in. */
+    let email: EmailStatus | null = null;
+    if (row.status === "invited") {
+      const m = await moveTo(db, { ...row, reference }, "invited", who.staffId, { actorId: who.id, resend: true });
+      email = m.ok ? m.email : null;
+    }
+    return { ok: true, reference, was, email };
   });
 
   /* ---- one person -------------------------------------------------------

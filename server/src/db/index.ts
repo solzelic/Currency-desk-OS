@@ -98,6 +98,9 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS notes text;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS tenant_id text;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS decided_at timestamptz;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS decided_by text;
+-- what an application is LIKE, as opposed to where it IS. Free-form and
+-- multi-valued; status stays the single ordered thing automation keys off.
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS labels jsonb NOT NULL DEFAULT '[]'::jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
