@@ -85,5 +85,12 @@ services:
         value: price_1TyKx0AWdRTG9PX9rPOU2sox
       - key: STRIPE_PRICE_PREMIUM_MONTHLY
         value: price_1TyKx4AWdRTG9PX9z6MyB8lT
+      # Google Places, for the address screen in onboarding. The key stays
+      # server-side — the page asks us and we ask Google, so it is never in
+      # anyone's browser. Leave it unset and the address is simply typed by
+      # hand; nothing breaks. Enable "Places API (New)" on the project and
+      # restrict the key to that API.
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
       - key: STRIPE_PRICE_PREMIUM_ANNUAL
         value: price_1TyKx7AWdRTG9PX9CL2NjTPK
