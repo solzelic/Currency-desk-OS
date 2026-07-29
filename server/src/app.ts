@@ -73,8 +73,40 @@ const isPublicAsset = (pathname: string): boolean => {
     file === "/yorkfx-converter.js" ||
     file.startsWith("/assets/") ||
     file.startsWith("/os-src/") ||
+    /* The Rate Board, which the OS embeds in an iframe, and the storefront
+       pages beside it. Public design content — no server source, no config.
+       Without this the iframe asks for a file the static handler refuses and
+       lands on the not-found path below, which used to answer with the
+       marketing site: the OS showed "More trades. Less paperwork." where the
+       rate board should be. */
+    file.startsWith("/YorkFX/") ||
     file.startsWith("/web/")
   );
+};
+
+/* Is this request a page, or something a page asked for?
+
+   It matters because the fallback below answers with the site's front page,
+   which is right for a deep link somebody typed and catastrophic for
+   anything else: a mistyped script path came back 200 with HTML in it, an
+   iframe whose source was missing rendered the marketing site inside the
+   product, and neither looked like an error anywhere.
+
+   Sec-Fetch-Dest says exactly which it is — "document" only for a top-level
+   navigation, "iframe"/"script"/"style"/"image" for everything a page pulls
+   in. Browsers that do not send it fall back to Accept, the older and
+   coarser version of the same question.
+
+   A caller that sends neither gets the page. That is not a guess worth
+   tightening: every browser sends at least Accept, so what is left is
+   tooling and health checks, and the permissive answer is what this route
+   has always given them. */
+const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
+  const dest = req.headers["sec-fetch-dest"];
+  if (typeof dest === "string") return dest === "document";
+  const accept = req.headers.accept;
+  if (typeof accept !== "string" || accept === "") return true;
+  return accept.includes("text/html");
 };
 
 export async function buildApp(db: Db): Promise<FastifyInstance> {
@@ -177,7 +209,11 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
       app.get("/admin", (_req, reply) => reply.sendFile("admin.html"));
     }
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === "GET" && !req.url.startsWith("/api/")) {
+      /* Only a page gets a page. A missing script, stylesheet, image or
+         iframe source is a 404 — saying otherwise hands the caller HTML
+         where it expected code and turns a one-line mistake into an hour of
+         wondering why the product is showing the marketing site. */
+      if (req.method === "GET" && !req.url.startsWith("/api/") && wantsPage(req)) {
         // unknown paths under /app belong to the OS; everything else lands on
         // the public site (or the OS, when no site is deployed)
         if (req.url.startsWith("/app")) return reply.sendFile(indexFile);
