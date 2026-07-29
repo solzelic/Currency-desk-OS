@@ -24,7 +24,7 @@ import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
-import { cleanLabel, labelsOf, moveTo, STAGES, type Stage } from "../onboarding/pipeline.js";
+import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { tenantPlan } from "./tenant.js";
@@ -32,7 +32,7 @@ import { tenantPlan } from "./tenant.js";
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
 const patchEnquiryBody = z
   .object({
-    status: z.enum(["new", "reviewing", "invited", "accepted", "declined"]).optional(),
+    status: z.enum(schema.ENQUIRY_STATUSES as [Stage, ...Stage[]]).optional(),
     notes: z.string().max(4000).optional(),
     // send the stage's email again without pretending the stage changed
     resend: z.boolean().optional(),
@@ -329,7 +329,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const alsoFrom = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, row.email)))
       .filter((e) => e.id !== row.id)
       .map((e) => ({ id: e.id, kind: e.kind, reference: e.reference, status: e.status, createdAt: e.createdAt }));
-    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom };
+    // the same stage list the board uses, so one application's page offers
+    // exactly the moves the board does — and exactly the ones that will work
+    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board() };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (req, reply) => {
@@ -405,10 +407,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     }
     return {
       enquiries: rows.map((r) => ({ ...r, tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null })),
-      /* The board's columns come from the server's own list of stages, so
-         adding one later shows up in the panel without a second edit — and
-         the columns can never drift from what a transition will accept. */
-      stages: STAGES,
+      /* The board's columns come from the server's own list of stages, and
+         each carries the moves that leave it, so adding a stage later shows
+         up in the panel without a second edit and the buttons on a card can
+         never offer a move a transition would refuse. */
+      stages: board(),
     };
   });
 

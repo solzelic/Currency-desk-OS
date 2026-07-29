@@ -11,7 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { canMove, STAGES } from "../src/onboarding/pipeline.js";
+import { canMove, STAGES, type Stage } from "../src/onboarding/pipeline.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -57,18 +57,70 @@ describe("the board's columns", () => {
   it("never offers a move into Open — a desk opening is something they do", () => {
     for (const s of STAGES) expect(canMove(s.id, "accepted")).toBe(false);
   });
+
+  /* The buttons on a card are the legal moves, not a second guess at them.
+     If these two lists can disagree, an operator gets offered a button that
+     returns 400 — which reads as the panel being broken. */
+  it("carry the moves that leave them, so a card cannot offer one that fails", async () => {
+    const d = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
+    for (const s of d.stages as { id: Stage; next: Stage[] }[]) {
+      for (const to of s.next) expect(canMove(s.id, to)).toBe(true);
+    }
+    const reviewing = (d.stages as { id: string; next: string[] }[]).find((s) => s.id === "reviewing")!;
+    expect(reviewing.next).toEqual(["invited", "hold", "declined"]);
+  });
+
+  it("names the approving move as the one button an operator presses", () => {
+    const invited = STAGES.find((s) => s.id === "invited")!;
+    expect(invited.primary).toBe(true);
+    expect(invited.action).toBe("Approve & invite");
+    // and nothing else claims to be the main action
+    expect(STAGES.filter((s) => s.primary)).toHaveLength(1);
+  });
 });
 
 describe("what the applicant hears", () => {
-  it("tells them somebody is looking, the moment they go into review", async () => {
-    const a = await apply("review-me@shop.ca", "Rea Vue");
+  it("tells them somebody is looking, without waiting for anyone to press anything", async () => {
+    /* The acknowledgement is not an operator's chore. Applying puts them in
+       review and sends it, through the same transition a button would use —
+       so there is no window where the application exists and the applicant
+       has heard nothing. */
     (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.length = 0;
-    const res = await move(a.id, "reviewing");
-    expect(res.statusCode).toBe(200);
-    expect(res.json().email).toBe("simulated");
+    const a = await apply("review-me@shop.ca", "Rea Vue");
+    const list = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
+    expect((list.enquiries as { id: string; status: string }[]).find((e) => e.id === a.id)!.status).toBe("reviewing");
+
     const mail = logged().find((l) => l.includes("to=review-me@shop.ca"));
     expect(mail).toContain("We're looking at your CurrencyDesk application");
     expect(mail).toContain("call you shortly");
+  });
+
+  it("does not say it twice when an operator moves them back into review", async () => {
+    const a = await apply("again@shop.ca", "Ree Peat");
+    await move(a.id, "hold");
+    (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.length = 0;
+    expect((await move(a.id, "reviewing")).statusCode).toBe(200);
+    // coming back from hold DOES re-send: they were told once, then parked,
+    // and hearing "we're looking at this" again is true rather than noise
+    expect(logged().some((l) => l.includes("to=again@shop.ca"))).toBe(true);
+  });
+
+  it("holds somebody in silence — that is our note, not a decision they were told", async () => {
+    const a = await apply("hold-me@shop.ca", "Holly Dupp");
+    (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.length = 0;
+    const res = await move(a.id, "hold");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().email).toBeNull();
+    expect(logged().some((l) => l.includes("to=hold-me@shop.ca"))).toBe(false);
+  });
+
+  it("lets a held application be approved without going back through review", async () => {
+    const a = await apply("held-then-in@shop.ca", "Hal Din");
+    await move(a.id, "hold");
+    (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.length = 0; // drop the arrival email
+    const res = await move(a.id, "invited");
+    expect(res.statusCode).toBe(200);
+    expect(logged().find((l) => l.includes("to=held-then-in@shop.ca"))).toContain(a.reference);
   });
 
   it("sends the code and the link on invite, and nothing on decline", async () => {
@@ -78,6 +130,7 @@ describe("what the applicant hears", () => {
     expect(logged().find((l) => l.includes("to=invite-me@shop.ca"))).toContain(a.reference);
 
     const b = await apply("no-thanks@shop.ca", "Dee Kline");
+    (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.length = 0; // drop the arrival email
     expect((await move(b.id, "declined")).json().email).toBeNull();
     expect(logged().some((l) => l.includes("to=no-thanks@shop.ca"))).toBe(false);
   });
@@ -141,11 +194,11 @@ describe("labels", () => {
   });
 
   it("do not touch the stage — they are what an application is like, not where it is", async () => {
-    const a = await apply("still-new@shop.ca", "Stil New");
+    const a = await apply("still-there@shop.ca", "Stil There");
     await app.inject({ method: "PUT", url: `/api/admin/enquiries/${a.id}/labels`, cookies: admin, payload: { labels: ["urgent"] } as Record<string, unknown> });
     const list = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
     const row = (list.enquiries as { id: string; status: string }[]).find((e) => e.id === a.id)!;
-    expect(row.status).toBe("new");
+    expect(row.status).toBe("reviewing");
   });
 
   it("offers back what has been used before", async () => {

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { sendEmail } from "../email.js";
+import { moveTo } from "../onboarding/pipeline.js";
 import { forgetClaimedCount } from "./early-access.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
@@ -105,7 +106,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
 
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
-    await db.insert(schema.enquiries).values({
+    const [row] = await db.insert(schema.enquiries).values({
       id: randomUUID(),
       reference,
       kind,
@@ -113,7 +114,25 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       name: name ?? null,
       details: details ?? {},
       charterNo,
-    });
+    }).returning();
+
+    /* An application goes straight into review, and the applicant is told so
+       in the same breath.
+
+       There used to be a stage before this one — the row landed unacknowledged
+       and waited for somebody to notice it. That is not a stage anybody works,
+       it is a gap: the applicant hears nothing while it lasts, and the only
+       thing an operator ever did with it was move it to review. So arriving IS
+       being in review, and the acknowledgement goes out automatically.
+
+       Through moveTo rather than a second sending path here, so there is one
+       answer to "what happens when an application reaches review?" — the same
+       one whether a person, this route, or a reviewer agent caused it. Best
+       effort: the row is saved, and a mail outage must never cost us the
+       application. */
+    if (kind === "early_access" && row) {
+      await moveTo(db, row, "reviewing", "system").catch(() => null);
+    }
 
     // Tell the operators. Best-effort: the enquiry is already saved, so a
     // mail outage costs a notification, never the application itself.

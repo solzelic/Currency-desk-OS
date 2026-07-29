@@ -20,7 +20,7 @@ let app: FastifyInstance;
 let owner: Record<string, string> = {};
 const OWNER = "j.masri";
 
-const cookieOf = (res: { cookies: { name: string; value: string }[] }) => {
+const cookieOf = (res: { cookies: { name: string; value: string }[] }): Record<string, string> => {
   const c = res.cookies.find((x) => x.name === "cdos_session");
   return c ? { cdos_session: c.value } : {};
 };
