@@ -25,6 +25,7 @@ import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { codeMatches, hashCode, makeCode, sendEmail, verificationEmail } from "../email.js";
 import { normalizePhone, sendSms } from "../sms.js";
+import { details, placesEnabled, suggest } from "../places.js";
 import { forgetClaimedCount } from "./early-access.js";
 import {
   JURISDICTION, PHASES, STEPS, canCreateDesk, fromApplication, resolve, stepById, stepProgress,
@@ -392,6 +393,43 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, a.id));
     return { ok: true };
   });
+
+  /* ----------------------------------------------------------------
+     Address lookup.
+
+     Behind the code like everything else here, for a reason that is not
+     privacy: these calls cost money per keystroke, and an open endpoint
+     is somebody else's free geocoder billed to us.
+     ---------------------------------------------------------------- */
+  app.get<{ Params: { ref: string }; Querystring: { q?: string; country?: string; s?: string } }>(
+    "/api/onboarding/:ref/places/suggest",
+    async (req, reply) => {
+      if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+      const a = await find(req.params.ref);
+      if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+      if (!placesEnabled()) return { enabled: false, suggestions: [] };
+      /* A busy typist is one person; a script is not. Generous enough that
+         nobody filling in their own address ever notices. */
+      if (!allow("places:" + a.reference, 400)) return { enabled: true, suggestions: [] };
+      const q = String(req.query.q ?? "").slice(0, 200);
+      const session = String(req.query.s ?? "").slice(0, 64);
+      return { enabled: true, suggestions: await suggest(q, req.query.country, session) };
+    },
+  );
+
+  app.get<{ Params: { ref: string }; Querystring: { id?: string; s?: string } }>(
+    "/api/onboarding/:ref/places/details",
+    async (req, reply) => {
+      if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+      const a = await find(req.params.ref);
+      if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+      const id = String(req.query.id ?? "");
+      if (!id) return reply.code(400).send({ error: "invalid_request" });
+      const address = await details(id, String(req.query.s ?? "").slice(0, 64));
+      if (!address) return reply.code(502).send({ error: "lookup_failed", detail: "We couldn't read that address — type it in instead." });
+      return { address };
+    },
+  );
 
   /* ----------------------------------------------------------------
      Confirming the account.
