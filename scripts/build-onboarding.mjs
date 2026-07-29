@@ -104,7 +104,52 @@ const BRIDGE = `<script>
     verify: { channel: "email", sentTo: "" },
     err: "",
 
-    refValid: function (v) { return REF.test(String(v || "").toUpperCase().trim()); },
+    /* Which codes the server has confirmed, and which it has denied. The
+       design's own check was a shape check — CD- and six characters — which
+       every invented string passes. A wizard whose first screen can be walked
+       by anybody who guesses the format is not gated at all, so the gate is
+       the server: a code opens this only if it belongs to an application we
+       actually invited. */
+    known: {},
+    checking: "",
+
+    refValid: function (v) {
+      var code = String(v || "").toUpperCase().trim();
+      return REF.test(code) && CD.known[code] === true;
+    },
+    /* What screen 0 should be saying right now: nothing yet, we're asking,
+       we don't know it, or it's theirs. */
+    refState: function (v) {
+      var code = String(v || "").toUpperCase().trim();
+      if (!REF.test(code)) return "empty";
+      if (CD.known[code] === true) return "ok";
+      if (CD.known[code] === false) return "no";
+      return CD.checking === code ? "checking" : "empty";
+    },
+    /* Debounced, because this fires as they type and a wrong answer counts
+       against the miss limit. Cached, so re-checking a code we already have
+       an answer for costs nothing. */
+    checkRef: function (v, done) {
+      var code = String(v || "").toUpperCase().trim();
+      clearTimeout(CD._rt);
+      if (!REF.test(code) || code in CD.known) return;
+      CD._rt = setTimeout(function () {
+        if (code in CD.known) return;
+        CD.checking = code;
+        done();
+        fetch("/api/onboarding/" + encodeURIComponent(code) + "/state")
+          .then(function (r) {
+            CD.known[code] = r.ok;
+            CD.checking = "";
+            /* Their code, typed rather than followed. Send them to the same
+               address the email would have, so the rest of this — hydrating
+               their answers, saving, launching — is one path, not two. */
+            if (r.ok && code !== CD.code) { location.href = "/onboarding/" + encodeURIComponent(code); return; }
+            done();
+          })
+          .catch(function () { CD.checking = ""; done(); });
+      }, 450);
+    },
     fmtRef: function (v) {
       var raw = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^CD/, "").slice(0, 12);
       return raw ? "CD-" + raw : "";
@@ -197,6 +242,7 @@ const BRIDGE = `<script>
       xhr.send();
       if (xhr.status === 200) {
         var s = JSON.parse(xhr.responseText);
+        CD.known[CD.code] = true;   // followed from the email: already proven
         CD.application = s.application || null;
         if (s.verify) CD.verify = s.verify;
         var data = s.data || {};
@@ -206,6 +252,7 @@ const BRIDGE = `<script>
         if (!data.cdId) data.cdId = CD.code;
         localStorage.setItem(KEY, JSON.stringify({ i: s.at || 0, data: data }));
       } else if (xhr.status === 404) {
+        CD.known[CD.code] = false;
         CD.unknownCode = true;
       }
     } catch (e) { /* offline: their own browser's copy is what they get */ }
@@ -311,9 +358,34 @@ patch(
   "cdIdValid(v) { return window.__cdOnb ? window.__cdOnb.refValid(v) : /^CD-[A-Z0-9]{4}-[0-9]{4}$/.test(v || ''); }",
 );
 patch(
-  "the code input's formatter — it would break CD-A3V5ZE into CD-A3V5-ZE as you type",
+  "the code input — it would break CD-A3V5ZE into CD-A3V5-ZE, and never ask whether the code is real",
   "onCdId: (e) => this.set('cdId', this.fmtCdId(e.target.value)),",
-  "onCdId: (e) => this.set('cdId', window.__cdOnb ? window.__cdOnb.fmtRef(e.target.value) : this.fmtCdId(e.target.value)),",
+  "onCdId: (e) => {\n" +
+  "        if (!window.__cdOnb) { this.set('cdId', this.fmtCdId(e.target.value)); return; }\n" +
+  "        const v = window.__cdOnb.fmtRef(e.target.value);\n" +
+  "        this.set('cdId', v);\n" +
+  "        window.__cdOnb.checkRef(v, () => this.forceUpdate());\n" +
+  "      },",
+);
+
+/* --- 3b. Say what the server said ---------------------------------
+   The badge read "Recognised" the moment the shape was right, which was
+   the lie underneath the hole: it claimed recognition for a code nobody
+   had looked up. */
+patch(
+  "the code badge — it claimed 'Recognised' for anything shaped like a code",
+  "cdIdBadge: this.cdIdValid(d.cdId) ? 'Recognised' : 'From your invite email',",
+  "cdIdBadge: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
+  "        return s === 'ok' ? 'Recognised' : s === 'checking' ? 'Checking\\u2026' : s === 'no' ? 'Not recognised' : 'From your invite email'; })(),",
+);
+patch(
+  "the code hint — it told somebody their invented code was theirs to keep",
+  "cdIdHint: this.cdIdValid(d.cdId)\n        ? 'This is how you\\u2019ll sign in from now on. It stays yours.'\n        : 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.',",
+  "cdIdHint: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
+  "        if (s === 'ok') return 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
+  "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
+  "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +
+  "        return 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.'; })(),",
 );
 patch(
   "the code input's placeholder — it advertises a format we do not issue",

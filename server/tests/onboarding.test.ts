@@ -343,6 +343,28 @@ describe("the applicant's own screens", () => {
   it("does not open for a code we never invited", async () => {
     expect((await app.inject({ method: "GET", url: "/api/onboarding/CD-NOTREAL/state" })).statusCode).toBe(404);
   });
+
+  /* This is what the first screen leans on. It used to check only that the
+     code was SHAPED like one of ours — CD- and six characters from the right
+     alphabet — which every invented string passes, so anybody who guessed the
+     format walked straight into the flow. The shape proves nothing; only this
+     does. */
+  it("refuses a code that is perfectly well-formed and belongs to nobody", async () => {
+    for (const invented of ["CD-ZZZZZZ", "CD-234567", "CD-ABCDEF"]) {
+      const res = await app.inject({ method: "GET", url: `/api/onboarding/${invented}/state` });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe("no_such_code");
+    }
+  });
+
+  it("refuses an application we have not invited yet", async () => {
+    const applied = await app.inject({
+      method: "POST", url: "/api/enquiries",
+      payload: { kind: "early_access", email: "notyet@waiting.ca", name: "Not Yet" } as Record<string, unknown>,
+    });
+    // a real reference, a real application — but nobody has pressed "invited"
+    expect((await app.inject({ method: "GET", url: `/api/onboarding/${applied.json().reference}/state` })).statusCode).toBe(404);
+  });
 });
 
 /* Confirming the account, and the thing the whole flow was missing: at the
