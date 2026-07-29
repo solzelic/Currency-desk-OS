@@ -199,7 +199,18 @@ function CreateModal({ onClose, onCreated }) {
   const lbl = { fontSize: 11.5, color: 'var(--mute)', marginBottom: 5, display: 'block' };
   return (<div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
     <form onClick={e => e.stopPropagation()} onSubmit={submit} style={{ width: 440, maxWidth: '100%', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 16, padding: '22px 24px', display: 'grid', gap: 12 }}>
-      <div style={{ fontSize: 17, fontWeight: 800 }}>Create a desk</div>
+      <div style={{ fontSize: 17, fontWeight: 800 }}>Create a desk directly</div>
+      {/* There are two ways to open a desk and they are not interchangeable.
+          This one is the shortcut: it skips onboarding entirely, so none of
+          the things the flow asks — spreads, float, compliance officer, team,
+          plan — are ever collected. Say so, rather than letting somebody pick
+          it by accident because it was the button on the screen. */}
+      <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5 }}>
+        This skips onboarding. The desk opens with a temporary password and none of
+        the setup — no spreads, float, compliance officer or team. For a real
+        customer, invite them from <b style={{ color: 'var(--text)' }}>Early access</b> and
+        use <b style={{ color: 'var(--text)' }}>Onboarding</b> instead.
+      </div>
       <div><span style={lbl}>Business name</span><input style={inSty} value={f.businessName} onChange={e => set('businessName', e.target.value)} placeholder="Maple Currency Exchange" autoFocus /></div>
       <div style={{ display: 'flex', gap: 10 }}>
         <div style={{ flex: 1 }}><span style={lbl}>Owner name</span><input style={inSty} value={f.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Dana Kim" /></div>
@@ -716,9 +727,17 @@ function OnboardingPage({ reference: startRef }) {
       pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
         <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
         <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>}
-      actions={a.isWalkthrough
-        ? <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>
-        : null} />
+      actions={<>
+        {/* The customer's own screens, opened on their record. Not a copy of
+            the flow rendered in here — the same page they get, on the same
+            answers, so doing it with them on the phone and them doing it
+            alone are the same act. */}
+        <a href={'/onboarding/' + encodeURIComponent(a.reference)} target="_blank" rel="noopener"
+          style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 13, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>
+          Walk their setup ↗</a>
+        {a.isWalkthrough &&
+          <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>}
+      </>} />
 
     <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
       <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
