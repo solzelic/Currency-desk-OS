@@ -32,7 +32,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const MONO = "var(--m)";
 
 // ---- helpers ----
@@ -284,6 +284,19 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   const [stages, setStages] = useState(null);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState('');
+  /* What is in the hand, and which column it is over.
+
+     Two copies of the same thing on purpose. A drop only happens if a column
+     called preventDefault() on a PRECEDING dragover — that is the browser's
+     rule, not ours — so the answer to "can I take this?" has to be available
+     synchronously, on the very first dragover, before React has re-rendered
+     with the new state. The ref is what dragover reads; the state is what
+     the columns are drawn from. Reading state in dragover looks fine when
+     you move slowly and silently drops the card when you flick. */
+  const dragRef = useRef(null);
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+  const accepts = (id) => { const d = dragRef.current; return !!d && d.next.includes(id); };
 
   const load = async () => {
     const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({ enquiries: [] }));
@@ -340,9 +353,27 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     const from = BOARD.find(s => s.id === r.status) || {};
     const onward = (from.next || []).map(id => BOARD.find(s => s.id === id)).filter(Boolean)
       .sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
+    /* Draggable only where there is somewhere to go. Picking up a card that
+       cannot be put down anywhere is a promise the board cannot keep.
+
+       The buttons stay. Drag is the fast way when you know where it goes;
+       the buttons are the way that works on a phone, with a keyboard, and
+       when you want to read what pressing the thing will actually do. */
+    const canDrag = onward.length > 0;
+    const lifted = drag && drag.row.id === r.id;
     /* minWidth:0 the whole way down, or one long address makes the card wider
        than its column and the board stops lining up. */
-    return (<div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, minWidth: 0, overflow: 'hidden', opacity: busy === r.id ? 0.5 : 1 }}>
+    return (<div key={r.id} draggable={canDrag}
+      onDragStart={ev => {
+        ev.dataTransfer.effectAllowed = 'move';
+        // some browsers refuse to start a drag with nothing on the transfer
+        ev.dataTransfer.setData('text/plain', r.reference);
+        dragRef.current = { row: r, next: onward.map(s => s.id) };
+        setDrag(dragRef.current);
+      }}
+      onDragEnd={() => { dragRef.current = null; setDrag(null); setOver(null); }}
+      style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, minWidth: 0, overflow: 'hidden',
+        cursor: canDrag ? 'grab' : 'default', opacity: busy === r.id ? 0.5 : lifted ? 0.35 : 1 }}>
       <div onClick={() => goto('#/applications/' + r.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <Avatar name={r.name || r.email} size={26} />
@@ -384,6 +415,7 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
       {view === 'list' && chip('all', 'Everything', rows.length)}
       {view === 'list' && columns.map(s => chip(s.id, s.title, counts[s.id]))}
+      {view === 'board' && <span style={{ fontSize: 12, color: 'var(--faint)' }}>Drag a card to move it, or use the buttons on it.</span>}
       <span style={{ flex: 1 }} />
       <div style={{ display: 'flex', gap: 6 }}>{toggle('board', 'Board')}{toggle('list', 'List')}</div>
     </div>
@@ -392,15 +424,42 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     {view === 'board' && (<div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
       {columns.map(s => {
         const inCol = rows.filter(r => r.status === s.id);
-        return (<div key={s.id} style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320 }}>
+        /* A column takes a card only if the server would accept the move.
+           While something is in the hand the board says so plainly: the
+           columns that can have it light up, the ones that cannot fade —
+           so you find out before you let go rather than after. */
+        const canDrop = !!drag && drag.next.includes(s.id);
+        const refusing = !!drag && !canDrop;
+        const hot = canDrop && over === s.id;
+        return (<div key={s.id}
+          /* dragenter AND dragover. Cancelling only dragover is the classic
+             half-fix: it works when you drift in slowly and enough dragover
+             events fire, and drops the card on the floor when you move fast
+             enough that the first event over the column is the only one. */
+          onDragEnter={ev => { if (!accepts(s.id)) return; ev.preventDefault(); if (over !== s.id) setOver(s.id); }}
+          onDragOver={ev => { if (!accepts(s.id)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; if (over !== s.id) setOver(s.id); }}
+          onDragLeave={ev => { if (!ev.currentTarget.contains(ev.relatedTarget)) setOver(o => (o === s.id ? null : o)); }}
+          onDrop={ev => {
+            ev.preventDefault();
+            const d = dragRef.current;
+            dragRef.current = null; setOver(null); setDrag(null);
+            if (d && d.next.includes(s.id)) move(d.row, s.id);
+          }}
+          style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320, opacity: refusing ? 0.4 : 1, transition: 'opacity .12s' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px 8px' }}>
             <span style={{ fontSize: 13, fontWeight: 800 }}>{s.title}</span>
             <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{inCol.length}</span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.45, padding: '0 2px 10px', minHeight: 30 }}>{s.blurb}</div>
-          <div style={{ display: 'grid', gap: 8, background: 'var(--line2)', borderRadius: 13, padding: 8, minHeight: 90 }}>
+          <div data-stage={s.id} style={{ display: 'grid', gap: 8, borderRadius: 13, padding: 8, minHeight: 90, transition: 'background .12s, box-shadow .12s',
+            background: hot ? 'color-mix(in srgb,var(--text) 10%,var(--line2))' : 'var(--line2)',
+            boxShadow: hot ? 'inset 0 0 0 2px var(--text)' : canDrop ? 'inset 0 0 0 1px var(--line)' : 'none' }}>
             {inCol.map(card)}
-            {inCol.length === 0 && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
+            {/* what the drop will do, said before you let go */}
+            {hot && (<div style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>
+              {s.action ? s.action : 'Move here'}
+            </div>)}
+            {inCol.length === 0 && !hot && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
           </div>
         </div>);
       })}
