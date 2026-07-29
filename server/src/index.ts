@@ -9,6 +9,7 @@ try {
 import { and, eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
+import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { syncMarketRatesIfStale } from "./rates/market.js";
 import { refreshSiteDomains } from "./sites.js";
@@ -27,6 +28,8 @@ const handle = await createDb();
 // an empty database gets the demo tenant/staff/board and an existing one is
 // untouched. First boot on Render provisions Neon automatically this way.
 await seed(handle.db);
+// the platform team is a table now; the env vars only seed the first owner
+await seedOwner(handle.db);
 
 // break-glass recovery: RESET_STAFF_PASSWORD="staffId:newpassword" resets one
 // account at boot (audited, marked temporary). For the day an owner is locked

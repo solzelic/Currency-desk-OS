@@ -25,6 +25,8 @@ import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { cleanLabel, labelsOf, moveTo, STAGES, type Stage } from "../onboarding/pipeline.js";
+import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
+import { stripeBillingConfig } from "../billing/stripe.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -37,6 +39,22 @@ const patchEnquiryBody = z
   })
   .refine((b) => b.status !== undefined || b.notes !== undefined, { message: "nothing to change" });
 const labelsBody = z.object({ labels: z.array(z.string().max(32)).max(12) });
+const ROLE_IDS = ["owner", "support", "billing", "security", "privacy", "auditor"] as const;
+const teamAddBody = z.object({
+  email: z.string().trim().toLowerCase().email().max(160),
+  name: z.string().trim().max(120).optional(),
+  role: z.enum(ROLE_IDS),
+});
+const teamPatchBody = z.object({
+  role: z.enum(ROLE_IDS).optional(),
+  status: z.enum(["active", "suspended"]).optional(),
+  name: z.string().trim().max(120).optional(),
+}).refine((b) => b.role !== undefined || b.status !== undefined || b.name !== undefined, { message: "nothing to change" });
+
+/* List prices in cents, mirroring the Stripe catalog. Held here so MRR can be
+   worked out from a price id without a round trip to Stripe on every page
+   load; if the catalog changes these move with it. */
+const PLAN_LIST_CENTS: Record<"basic" | "pro" | "premium", number> = { basic: 29900, pro: 49900, premium: 74900 };
 const patchTenantBody = z
   .object({ plan: PLAN.optional(), suspended: z.boolean().optional() })
   .refine((b) => b.plan !== undefined || b.suspended !== undefined, { message: "nothing to change" });
@@ -61,22 +79,17 @@ const createTenantBody = z.object({
   password: z.string().min(8, "password: at least 8 characters").max(512),
 });
 
-function platformAdmins(): Set<string> {
-  const set = new Set(
-    (process.env.PLATFORM_ADMIN_EMAILS || "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  // the bootstrapped operator email is always a platform admin
-  const boot = process.env.PLATFORM_ADMIN_BOOTSTRAP;
-  if (boot) { const email = boot.split(":")[0]?.trim().toLowerCase(); if (email) set.add(email); }
-  return set;
-}
+/* Authorization comes from the platform_users table now, not from an env
+   var. The env vars seed the first owner into an empty database and are
+   ignored afterwards — see src/platform/team.ts for why that matters. */
 // the operator's own tenant is not a customer desk — hide it from the lists
 const PLATFORM_TENANT = "tnt-platform";
+/* Kept sync and callback-shaped because registerOnboardingRoutes takes it
+   that way; it answers from a cache the gate refreshes on every request, so
+   a member removed in the panel stops being one on their next call. */
+const memberCache = new Map<string, PlatformRole>();
 export const isPlatformAdmin = (email: string | undefined): boolean =>
-  !!email && platformAdmins().has(email.toLowerCase());
+  !!email && memberCache.has(email.toLowerCase());
 
 /* Readable aloud and hard to mistype: no vowels to form a word by accident,
    no characters that look like each other down a phone line. */
@@ -154,23 +167,45 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
   // (having already sent 401/403).
-  async function gate(req: any, reply: any) {
+  /* `need` is the permission this route requires. Omitting it means "any
+     member of the platform team", which is right for the read-only shell
+     around everything else. */
+  async function gate(req: any, reply: any, need?: Permission) {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) {
       reply.code(401).send({ error: "unauthenticated" });
       return null;
     }
-    if (!isPlatformAdmin(who.staffId)) {
-      reply.code(403).send({ error: "forbidden", detail: "Platform admin only." });
+    const me = await member(db, who.staffId);
+    if (me) memberCache.set(me.email, me.role as PlatformRole);
+    else memberCache.delete((who.staffId ?? "").toLowerCase());
+    if (!me) {
+      reply.code(403).send({ error: "forbidden", detail: "Platform team only." });
       return null;
     }
+    if (need && !can(me.role as PlatformRole, need)) {
+      reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${need.replace(":", " ")}.` });
+      return null;
+    }
+    (who as any).platform = me;
     return who;
   }
+
 
   // lightweight probe the UI calls to decide whether to show the admin app
   app.get("/api/admin/me", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
-    return { isAdmin: !!who && isPlatformAdmin(who.staffId) };
+    /* Ask the table, not the cache: this is usually the FIRST admin call a
+       browser makes, and the cache is only warm once a gated route has run.
+       Reading it here answered "no" to the owner on every fresh page load. */
+    const me = who ? await member(db, who.staffId) : null;
+    if (me) memberCache.set(me.email, me.role as PlatformRole);
+    return {
+      isAdmin: !!me,
+      role: me?.role ?? null,
+      email: me?.email ?? null,
+      can: me ? Object.fromEntries((ROLES.find((r) => r.id === me.role)?.permissions ?? []).map((p) => [p, true])) : {},
+    };
   });
 
   app.get("/api/admin/tenants", async (req, reply) => {
@@ -459,6 +494,169 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       email = m.ok ? m.email : null;
     }
     return { ok: true, reference, was, email };
+  });
+
+  /* ---- who runs CurrencyDesk --------------------------------------------
+     The team, the fixed roles, and what each may do. Readable by anybody on
+     the team so they can see who else has access; changeable only by the
+     owner. */
+  app.get("/api/admin/team", async (req, reply) => {
+    const who = await gate(req, reply);
+    if (!who) return;
+    const rows = await db.select().from(schema.platformUsers).orderBy(schema.platformUsers.createdAt);
+    const me = (who as any).platform as { email: string; role: string };
+    return {
+      me: { email: me.email, role: me.role, isOwner: me.role === "owner" },
+      members: rows,
+      roles: ROLES,
+      canManage: can(me.role as PlatformRole, "team:manage"),
+    };
+  });
+
+  app.post("/api/admin/team", async (req, reply) => {
+    const who = await gate(req, reply, "team:manage");
+    if (!who) return;
+    const parsed = teamAddBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const b = parsed.data;
+    if (b.role === "owner") {
+      return reply.code(400).send({ error: "one_owner", detail: "There is one Platform Owner. Give them a role and hand ownership over deliberately if it ever needs to move." });
+    }
+    const existing = (await db.select().from(schema.platformUsers).where(eq(schema.platformUsers.email, b.email)).limit(1))[0];
+    if (existing) return reply.code(409).send({ error: "already_on_team", detail: `${b.email} is already ${existing.role}.` });
+    await db.insert(schema.platformUsers).values({
+      email: b.email, name: b.name ?? null, role: b.role, status: "active", addedBy: (who as any).platform.email,
+    });
+    await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "platform.team_added", detail: { email: b.email, role: b.role } });
+    return reply.code(201).send({ ok: true });
+  });
+
+  app.patch<{ Params: { email: string } }>("/api/admin/team/:email", async (req, reply) => {
+    const who = await gate(req, reply, "team:manage");
+    if (!who) return;
+    const parsed = teamPatchBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const target = (await db.select().from(schema.platformUsers).where(eq(schema.platformUsers.email, decodeURIComponent(req.params.email).toLowerCase())).limit(1))[0];
+    if (!target) return reply.code(404).send({ error: "not_found" });
+    const actor = (who as any).platform;
+
+    if (parsed.data.role !== undefined) {
+      const no = refuseChange(actor, target, "role");
+      if (no) return reply.code(403).send({ error: "protected", detail: no });
+      if (parsed.data.role === "owner") return reply.code(400).send({ error: "one_owner", detail: "There is one Platform Owner." });
+    }
+    if (parsed.data.status !== undefined) {
+      const no = refuseChange(actor, target, "status");
+      if (no) return reply.code(403).send({ error: "protected", detail: no });
+    }
+    const set: Record<string, unknown> = {};
+    if (parsed.data.role !== undefined) set.role = parsed.data.role;
+    if (parsed.data.status !== undefined) set.status = parsed.data.status;
+    if (parsed.data.name !== undefined) set.name = parsed.data.name;
+    await db.update(schema.platformUsers).set(set).where(eq(schema.platformUsers.email, target.email));
+    memberCache.delete(target.email);
+    await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "platform.team_changed", detail: { email: target.email, ...set } });
+    return { ok: true };
+  });
+
+  app.delete<{ Params: { email: string } }>("/api/admin/team/:email", async (req, reply) => {
+    const who = await gate(req, reply, "team:manage");
+    if (!who) return;
+    const target = (await db.select().from(schema.platformUsers).where(eq(schema.platformUsers.email, decodeURIComponent(req.params.email).toLowerCase())).limit(1))[0];
+    if (!target) return reply.code(404).send({ error: "not_found" });
+    const no = refuseChange((who as any).platform, target, "remove");
+    if (no) return reply.code(403).send({ error: "protected", detail: no });
+    await db.delete(schema.platformUsers).where(eq(schema.platformUsers.email, target.email));
+    memberCache.delete(target.email);
+    /* Their sessions go with their access. Removing somebody who stays
+       signed in until their cookie expires is not removing them. */
+    const staff = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, target.email));
+    for (const u of staff) await revokeAllSessions(db, u.id);
+    await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "platform.team_removed", detail: { email: target.email, was: target.role } });
+    return { ok: true };
+  });
+
+  /* ---- the money ---------------------------------------------------------
+     Stripe stays the source of truth; this reads what its webhooks have
+     already told us. Amounts are in cents, as Stripe sends them, and are
+     converted once at the edge rather than drifting through float maths.
+
+     One distinction the panel must not blur: CASH COLLECTED is not REVENUE.
+     A customer paying a year up front hands over twelve months of cash today
+     and earns one month of it. These are Stripe's cash and subscription
+     numbers; accounting recognition is a different report. */
+  app.get("/api/admin/billing", async (req, reply) => {
+    const who = await gate(req, reply, "billing:read");
+    if (!who) return;
+
+    const subs = await db.select().from(schema.stripeSubscriptions);
+    const invoices = await db.select().from(schema.stripeInvoices).orderBy(desc(schema.stripeInvoices.updatedAt));
+    const tenants = await db.select().from(schema.tenants);
+    const names = new Map(tenants.map((t) => [t.id, t.name]));
+
+    const cfg = stripeBillingConfig();
+    const monthlyCents = (s: typeof subs[number]): number => {
+      if (!s.priceId || !cfg) return 0;
+      for (const plan of ["basic", "pro", "premium"] as const) {
+        const p = cfg.prices[plan];
+        if (p.monthly === s.priceId) return PLAN_LIST_CENTS[plan];
+        // annual list price spread across the year it covers
+        if (p.annual === s.priceId) return Math.round((PLAN_LIST_CENTS[plan] * 12 * 0.9) / 12);
+      }
+      return 0;
+    };
+
+    const live = subs.filter((s) => s.status === "active" || s.status === "past_due");
+    const trialing = subs.filter((s) => s.status === "trialing");
+    const cancelled = subs.filter((s) => s.status === "canceled" || s.status === "unpaid");
+    const mrr = live.reduce((n, s) => n + monthlyCents(s), 0);
+
+    const since = (days: number) => Date.now() - days * 864e5;
+    const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0, 0, 0, 0);
+    const paidThisMonth = invoices.filter((i) => i.status === "paid" && i.updatedAt.getTime() >= thisMonth.getTime());
+    const needsAttention = invoices.filter((i) => i.status === "open" || i.status === "uncollectible");
+
+    const byPlan = (["basic", "pro", "premium"] as const).map((plan) => {
+      const inPlan = live.filter((s) => s.plan === plan);
+      return { plan, subscribers: inPlan.length, mrrCents: inPlan.reduce((n, s) => n + monthlyCents(s), 0) };
+    });
+
+    const events = await db.select().from(schema.stripeEvents).orderBy(desc(schema.stripeEvents.receivedAt)).limit(1);
+    return {
+      connected: !!cfg,
+      /* A webhook that has not spoken in a while is the failure that hides:
+         the panel keeps showing yesterday's numbers as though they were
+         today's, and nothing looks wrong. */
+      lastEventAt: events[0]?.receivedAt?.getTime() ?? null,
+      mrrCents: mrr,
+      arrCents: mrr * 12,
+      activePaying: live.length,
+      trialing: trialing.length,
+      cancelled: cancelled.length,
+      newThisMonth: subs.filter((s) => s.createdAt.getTime() >= thisMonth.getTime()).length,
+      cashCollectedThisMonthCents: paidThisMonth.reduce((n, i) => n + (i.amountPaid ?? 0), 0),
+      taxCollectedThisMonthCents: paidThisMonth.reduce((n, i) => n + (i.tax ?? 0), 0),
+      expectedThisMonthCents: live.reduce((n, s) => n + monthlyCents(s), 0),
+      byPlan,
+      needsAttention: needsAttention.slice(0, 25).map((i) => ({
+        invoiceId: i.stripeInvoiceId, tenantId: i.tenantId, tenantName: names.get(i.tenantId) ?? i.tenantId,
+        status: i.status, amountDueCents: i.amountDue ?? 0, currency: i.currency,
+        url: i.hostedInvoiceUrl, at: i.updatedAt.getTime(),
+      })),
+      recent: invoices.slice(0, 20).map((i) => ({
+        invoiceId: i.stripeInvoiceId, tenantName: names.get(i.tenantId) ?? i.tenantId,
+        status: i.status, amountPaidCents: i.amountPaid ?? 0, currency: i.currency,
+        url: i.hostedInvoiceUrl, at: i.updatedAt.getTime(),
+      })),
+      subscribers: live.concat(trialing).map((s) => ({
+        tenantId: s.tenantId, tenantName: names.get(s.tenantId) ?? s.tenantId,
+        plan: s.plan, status: s.status, mrrCents: monthlyCents(s),
+        cancelAtPeriodEnd: s.cancelAtPeriodEnd, periodEnd: s.currentPeriodEnd?.getTime() ?? null,
+      })),
+    };
   });
 
   /* ---- one person -------------------------------------------------------

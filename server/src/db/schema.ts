@@ -70,6 +70,23 @@ export const TENANT_PLANS: TenantPlan[] = ["basic", "pro", "premium"];
 /* Stripe is the commercial system of record. These projections contain only
    identifiers and billing state needed to operate CurrencyDesk — never card
    data, billing addresses, or raw webhook payloads. */
+/* The people who run CurrencyDesk, as opposed to the people who run a desk.
+
+   Was an environment variable. An env var has no roles, no record of who
+   added whom, nothing to suspend, and it resets to the deploy config on
+   every restart — which is also why the bootstrap password kept coming
+   back. The table is authoritative; the env vars only seed it when it is
+   empty. */
+export const platformUsers = pgTable("platform_users", {
+  email: text("email").primaryKey(),
+  name: text("name"),
+  role: text("role").notNull().default("support"),
+  status: text("status").notNull().default("active"),
+  addedBy: text("added_by"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const stripeCustomers = pgTable(
   "stripe_customers",
   {
