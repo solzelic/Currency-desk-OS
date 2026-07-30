@@ -234,3 +234,44 @@ describe("the shape of the journey", () => {
     expect(live.slice(firstExit).every((s) => s.exit)).toBe(true);
   });
 });
+
+/* The desk exists but the application never closed.
+
+   The address somebody applies with and the address they put down as the
+   desk owner are allowed to differ. Closing the application by email meant
+   that when they did, the desk opened and its application sat in Invited
+   forever — so the funnel disagreed with the customer list and Open stayed
+   empty however many desks had actually been created. */
+describe("an application closing when its desk opens", () => {
+  const openADesk = async (applied: string, finishedAs: string) => {
+    await app.inject({ method: "POST", url: "/api/enquiries",
+      payload: { kind: "early_access", email: applied, name: "Dee Fferent", details: { jurisdiction: "CA" } } as Record<string, unknown> });
+    const list = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
+    const row = (list.enquiries as { id: string; reference: string; email: string }[]).find((e) => e.email === applied)!;
+    await move(row.id, "invited");
+    const ref = row.reference;
+    await app.inject({ method: "PUT", url: `/api/onboarding/${ref}/state`,
+      payload: { at: 3, data: { ownerEmail: finishedAs, operatingName: "Different FX", bizName: "Different FX Inc.", plan: "full" } } as Record<string, unknown> });
+    await app.inject({ method: "POST", url: `/api/onboarding/${ref}/verify/send`, payload: { data: {} } as Record<string, unknown> });
+    const code = logged().reverse().find((l) => /\b\d{6}\b/.test(l))!.match(/\b(\d{6})\b/)![1]!;
+    await app.inject({ method: "POST", url: `/api/onboarding/${ref}/verify/check`, payload: { code } as Record<string, unknown> });
+    const done = await app.inject({ method: "POST", url: `/api/onboarding/${ref}/launch`, payload: { data: { ownerPass: "a-strong-pass" } } as Record<string, unknown> });
+    return { done, id: row.id };
+  };
+
+  it("closes the right one even when they finish under a different address", async () => {
+    const { done, id } = await openADesk("applied-as@shop.ca", "actually-me@shop.ca");
+    expect(done.statusCode).toBe(201);
+    const list = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
+    const after = (list.enquiries as { id: string; status: string; tenantId: string }[]).find((e) => e.id === id)!;
+    expect(after.status).toBe("accepted");
+    expect(after.tenantId).toBe(done.json().tenantId);
+  });
+
+  it("still closes it when both addresses are the same", async () => {
+    const { done, id } = await openADesk("same-both@shop.ca", "same-both@shop.ca");
+    expect(done.statusCode).toBe(201);
+    const list = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: admin })).json();
+    expect((list.enquiries as { id: string; status: string }[]).find((e) => e.id === id)!.status).toBe("accepted");
+  });
+});

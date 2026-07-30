@@ -219,7 +219,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
       "signup",
     );
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
-    await closeApplication(db, email, tenantId, "signup");
+    await closeApplication(db, { email }, tenantId, "signup");
 
     const { token, expiresAt } = await createSession(db, ownerId);
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });

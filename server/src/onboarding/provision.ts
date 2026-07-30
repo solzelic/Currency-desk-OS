@@ -287,14 +287,34 @@ export async function provisionDesk(
    shows applications and desks as two unrelated lists and can never say
    which application became which desk. Best-effort — a desk is real whether
    or not it started as an application. */
-export async function closeApplication(db: Db, email: string, tenantId: string, by: string): Promise<void> {
+/* Mark the application this desk came from as Open.
+
+   `enquiryId` when the caller knows which application it is — the
+   onboarding flow always does, because the code in the link IS the
+   application. Matching on the email instead was a real bug: the address
+   somebody applies with and the address they put down as the desk owner
+   are allowed to differ, and when they did the desk opened while its
+   application sat in Invited forever. The funnel then disagreed with the
+   customer list, and Open stayed empty however many desks existed.
+
+   The email is still the fallback, for the plain signup route where
+   there is no reference to go on. */
+export async function closeApplication(
+  db: Db,
+  match: { enquiryId?: string | null; email: string },
+  tenantId: string,
+  by: string,
+): Promise<void> {
   try {
+    const target = match.enquiryId
+      ? eq(schema.enquiries.id, match.enquiryId)
+      : eq(schema.enquiries.email, match.email);
     await db
       .update(schema.enquiries)
       .set({ status: "accepted", tenantId, decidedAt: new Date(), decidedBy: by })
       .where(
         and(
-          eq(schema.enquiries.email, email),
+          target,
           eq(schema.enquiries.kind, "early_access"),
           notInArray(schema.enquiries.status, ["accepted", "declined"]),
         ),
