@@ -435,3 +435,33 @@ export const auditEvents = pgTable(
   },
   (t) => [index("audit_scope_idx").on(t.tenantId, t.branchId, t.at)],
 );
+
+/* What we have written back to somebody who messaged us.
+
+   Their note lives on `enquiries`; this is our side of the thread. Kept
+   as rows rather than appended to a text field because each one has a
+   sender, a time and a delivery result — "did that reply actually leave
+   the building" is the question you ask when a customer says they never
+   heard back, and a blob of concatenated text cannot answer it.
+
+   Outbound only, and deliberately so: nothing here receives email. When
+   they reply it goes to the reply-to address, which is a real inbox a
+   person reads — not into this table. The panel says so rather than
+   implying a two-way thread it does not have. */
+export const enquiryReplies = pgTable(
+  "enquiry_replies",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull(),
+    body: text("body").notNull(),
+    /* Who wrote it. A staff id rather than a name, so it still resolves
+       after somebody changes what they are called. */
+    sentBy: text("sent_by").notNull(),
+    /* sent | simulated | failed — the same three answers sendEmail gives.
+       A reply that only reached a log file must not look like one that
+       reached a person. */
+    emailStatus: text("email_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_replies_idx").on(t.enquiryId, t.createdAt)],
+);

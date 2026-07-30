@@ -113,6 +113,16 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS labels jsonb NOT NULL DEFAULT '[]
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
+-- our side of a thread with somebody who wrote to us. Outbound only.
+CREATE TABLE IF NOT EXISTS enquiry_replies (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL,
+  body text NOT NULL,
+  sent_by text NOT NULL,
+  email_status text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_replies_idx ON enquiry_replies(enquiry_id, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_email_idx ON enquiries(email);
 CREATE TABLE IF NOT EXISTS onboarding (
   enquiry_id text PRIMARY KEY,

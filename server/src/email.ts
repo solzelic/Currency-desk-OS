@@ -11,7 +11,20 @@ import { randomInt, createHash, timingSafeEqual } from "node:crypto";
 
 export type EmailStatus = "sent" | "simulated" | "failed";
 
-export async function sendEmail(to: string, subject: string, body: { text: string; html?: string }): Promise<EmailStatus> {
+/* Where a reply lands.
+
+   Most of what we send is a code or a link and wants no answer. A reply
+   written by a person in the panel is the opposite: the whole point is
+   that they can write back, and a conversation that dead-ends at
+   noreply@ is not one. Set REPLY_TO to an inbox somebody reads. */
+export const replyToAddress = (): string | undefined =>
+  process.env.REPLY_TO?.trim() || undefined;
+
+export async function sendEmail(
+  to: string,
+  subject: string,
+  body: { text: string; html?: string; replyTo?: string },
+): Promise<EmailStatus> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
   if (!key || !from) {
@@ -22,7 +35,10 @@ export async function sendEmail(to: string, subject: string, body: { text: strin
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ from, to, subject, text: body.text, html: body.html }),
+      body: JSON.stringify({
+        from, to, subject, text: body.text, html: body.html,
+        ...(body.replyTo ? { reply_to: body.replyTo } : {}),
+      }),
     });
     if (!res.ok) {
       console.error(`[email failed] ${res.status} ${await res.text().catch(() => "")}`);
@@ -171,6 +187,29 @@ export function verificationEmail(code: string, businessName: string): { subject
     `<div style="font-size:15px;line-height:1.6;color:#444">Enter this code to finish creating your desk${businessName ? ` for <b style="color:#0a0a0a">${businessName}</b>` : ""}:</div>` +
     `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:34px;font-weight:700;letter-spacing:.28em;margin:20px 0;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${code}</div>` +
     `<div style="font-size:13px;color:#8a8a8a">It expires in 10 minutes. If you didn't request this, ignore this email.</div>` +
+    `</div>`;
+  return { subject, text, html };
+}
+
+/* A person writing back.
+
+   Deliberately plain. Everything else we send is a transactional notice
+   with a code in a box; this is one human answering another, so it looks
+   like an email somebody typed — their words, our name under it, and
+   nothing else competing for attention. The subject carries the
+   reference so a thread stays a thread in their client. */
+export function replyEmail(o: { name?: string | null; body: string; reference: string; from: string }):
+  { subject: string; text: string; html: string } {
+  const hi = o.name ? `${o.name.trim().split(/\s+/)[0]},` : "Hello,";
+  const subject = `Re: your note to CurrencyDesk (${o.reference})`;
+  const text = `${hi}\n\n${o.body}\n\n\u2014 ${o.from}\nCurrencyDesk\n\nJust reply to this email if there is more.`;
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
+    `<div style="font-size:15px;line-height:1.65;color:#0a0a0a">${esc(hi)}</div>` +
+    `<div style="font-size:15px;line-height:1.65;color:#444;margin-top:14px;white-space:pre-wrap">${esc(o.body)}</div>` +
+    `<div style="font-size:15px;line-height:1.65;color:#444;margin-top:18px">\u2014 ${esc(o.from)}<br>CurrencyDesk</div>` +
+    `<div style="font-size:13px;color:#8a8a8a;margin-top:22px;border-top:1px solid #e8e4da;padding-top:12px">Just reply to this email if there is more.</div>` +
     `</div>`;
   return { subject, text, html };
 }
