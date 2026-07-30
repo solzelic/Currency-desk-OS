@@ -139,17 +139,30 @@ must never look like one that reached a person.
 
 ---
 
-## Two things worth deciding, not building
+## The call: decided, keep the copy as designed
 
-**A1 says a call comes today.** *"A call — about ten minutes, mostly us
-listening"*, and *"your ID and setup link land while we're still on the
-phone."* That is a promise made in writing to everyone who applies, the
-moment they apply. It is a good promise and it is only true if somebody
-actually rings. Decide the hours you will honour before this goes live, or
-soften the line.
+A1 promises a call the same day — *"about ten minutes, mostly us
+listening"* — and A2 says the ID and setup link arrive *"while we're still
+on the phone."* Both attribute it to **SAM**, which writes and calls.
 
-**SAM writes and calls.** The design attributes the emails to an automated
-system that also places the call. Nothing places a call today. The wording
-holds for now — SAM writes the email, a person makes the call — but if the
-first customers are told a machine will ring them and a human does, that is
-the sort of small dishonesty a founding cohort remembers.
+**Write it exactly as designed. Do not soften it.** The automated call ships
+before this goes public; until then the founder places every call by hand.
+The end state and the copy agree, and the interim is a person doing what
+the machine will do — not a promise nobody intends to keep.
+
+### What that means operationally, today
+
+Anyone who applies right now gets A1 within seconds and expects a phone
+call the same day. So somebody has to know they applied.
+
+Two things carry that, and **only one of them works right now**:
+
+- The **Applications** badge in the panel goes amber the moment an
+  application lands. Works today.
+- The **new-application alert** to the platform team is an email — and email
+  is not switched on, so it is written to the server log and reaches nobody.
+
+Until `RESEND_API_KEY` is set, **the panel is the only notification**. While
+volume is a handful a day that is fine, as long as somebody is actually
+opening it. It stops being fine the moment the site is public, which is the
+same moment sending is on — so this resolves itself, but not before.
