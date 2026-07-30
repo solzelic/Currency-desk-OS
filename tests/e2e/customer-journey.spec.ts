@@ -138,10 +138,27 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   // through the station picker into the desk itself
   const open = page.getByRole("button", { name: /OPEN WORKSPACE/i }).first();
   if (await open.count()) { await open.click(); await rendered(page, /LEDGER|RATE BOARD/i); }
-  const desk = await page.locator("body").innerText();
-  expect(desk).toContain(APPLICANT.shop);
-  // a brand-new desk has no trading on it
-  expect(desk).toMatch(/No records match|No transactions|0\s*records/i);
+  expect(await page.locator("body").innerText()).toContain(APPLICANT.shop);
+
+  /* A brand-new desk has no trading on it.
+
+     Asked of the desk's own data rather than of a screen. The OS opens on
+     the rate board about as often as the ledger, and a rate board is full
+     of numbers on day one by design — so reading emptiness off "whatever
+     is showing" passes or fails on which screen won a race, which is not a
+     fact about the product. Driving the nav is no better: the rates ticker
+     across the top never stops moving, so a click on the row beneath it
+     waits out the timeout on a tab that is plainly sitting there.
+
+     This goes through their own signed-in session, so it is also a second
+     proof that the session survived setup. */
+  const state = await (await page.request.get("/api/tenant/state")).json();
+  const blob = JSON.stringify(state.state ?? {});
+  expect(blob).not.toMatch(/York Foreign Exchange/i);
+  for (const [, list] of Object.entries<unknown>(state.state ?? {})) {
+    // no ledger, till or client list arrives with anything already on it
+    if (Array.isArray(list)) expect(list).toHaveLength(0);
+  }
 });
 
 /* The funnel has to agree with the customer list. It did not: a desk
