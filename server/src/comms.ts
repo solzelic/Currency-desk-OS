@@ -21,7 +21,7 @@
    what leaves the building.
    ============================================================ */
 import {
-  cdIdEmail, inviteEmail, loginCodeEmail, reviewEmail,
+  cdIdEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
   tempPasswordEmail, verificationEmail,
 } from "./email.js";
 
@@ -100,6 +100,17 @@ export const DISPATCHES: Dispatch[] = [
     when: "When you reset somebody's password for them.",
     automatic: false,
     sample: () => tempPasswordEmail({ name: "Amir Rostami", tempPassword: "quiet-harbour-71", signInId: "a.rostami" }),
+  },
+  {
+    id: "reply",
+    title: "A reply to their message",
+    audience: "applicant",
+    when: "When you write back from the Inbox. Whatever you typed, sent as an ordinary email.",
+    automatic: false,
+    sample: () => replyEmail({
+      name: "Amir Rostami", reference: "CD-7BETHC", from: "Jordan",
+      body: "Yes — EUR cash settlement is supported, and there is nothing to switch on. Happy to walk through how the float works on a call if that is useful.",
+    }),
   },
   {
     id: "enquiry_alert",

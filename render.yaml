@@ -60,6 +60,12 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
+      # where a customer's reply lands. EMAIL_FROM is usually a noreply
+      # address; a reply written by a person in the Inbox has to be
+      # answerable, so it goes out with this as its Reply-To. Point it at an
+      # inbox somebody actually reads.
+      - key: REPLY_TO
+        sync: false
       # comma-separated emails allowed into the cross-tenant Admin Console
       - key: PLATFORM_ADMIN_EMAILS
         sync: false

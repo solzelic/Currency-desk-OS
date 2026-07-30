@@ -22,7 +22,7 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
-import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
+import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
@@ -39,8 +39,15 @@ const patchEnquiryBody = z
     notes: z.string().max(4000).optional(),
     // send the stage's email again without pretending the stage changed
     resend: z.boolean().optional(),
+    /* A note from the contact page is not an application and has no stages
+       to walk. It is answered or it is not, and that is the whole model —
+       which is why this is its own field rather than a status somebody had
+       to squint at. Reversible, because "answered" is a claim a person
+       makes and people misclick. */
+    answered: z.boolean().optional(),
   })
-  .refine((b) => b.status !== undefined || b.notes !== undefined, { message: "nothing to change" });
+  .refine((b) => b.status !== undefined || b.notes !== undefined || b.answered !== undefined, { message: "nothing to change" });
+const replyBody = z.object({ body: z.string().trim().min(1, "write something first").max(6000) });
 const labelsBody = z.object({ labels: z.array(z.string().max(32)).max(12) });
 const ROLE_IDS = ["owner", "support", "billing", "security", "privacy", "auditor"] as const;
 const teamAddBody = z.object({
@@ -334,7 +341,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       .map((e) => ({ id: e.id, kind: e.kind, reference: e.reference, status: e.status, createdAt: e.createdAt }));
     // the same stage list the board uses, so one application's page offers
     // exactly the moves the board does — and exactly the ones that will work
-    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board() };
+    /* Our side of the thread, oldest first — the order a conversation is
+       read in. Their own note is the enquiry itself and is already here. */
+    const replies = (await db.select().from(schema.enquiryReplies)
+      .where(eq(schema.enquiryReplies.enquiryId, row.id))
+      .orderBy(schema.enquiryReplies.createdAt));
+    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board(), replies };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (req, reply) => {
@@ -384,7 +396,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         waiting: (byAppStatus.new ?? 0) + (byAppStatus.reviewing ?? 0),
         byStatus: byAppStatus,
         messages: messages.length,
-        unread: messages.filter((m) => m.status === "new").length,
+        /* A message is answered or it is not — `handledAt` is the record
+           of that, and it is what the Inbox sets. Counting by status here
+           meant the badge never cleared, because nothing moves a contact
+           note through the applications stages. */
+        unread: messages.filter((m) => !m.handledAt).length,
       },
     };
   });
@@ -408,8 +424,20 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         names.set(t.id, t.name);
       }
     }
+    /* How many times we have written back, so the list can show a thread
+       as a thread without opening every one of them. */
+    const replyCount = new Map<string, number>();
+    if (kind === "contact") {
+      for (const r of await db.select({ id: schema.enquiryReplies.enquiryId }).from(schema.enquiryReplies)) {
+        replyCount.set(r.id, (replyCount.get(r.id) ?? 0) + 1);
+      }
+    }
     return {
-      enquiries: rows.map((r) => ({ ...r, tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null })),
+      enquiries: rows.map((r) => ({
+        ...r,
+        tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null,
+        replyCount: replyCount.get(r.id) ?? 0,
+      })),
       /* The board's columns come from the server's own list of stages, and
          each carries the moves that leave it, so adding a stage later shows
          up in the panel without a second edit and the buttons on a card can
@@ -433,7 +461,21 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (parsed.data.notes !== undefined) {
       await db.update(schema.enquiries).set({ notes: parsed.data.notes }).where(eq(schema.enquiries.id, req.params.id));
     }
-    if (parsed.data.status === undefined) return { ok: true };
+    /* Marking a message answered. Deliberately not routed through moveTo:
+       the pipeline is the applications funnel, and a contact note has no
+       business borrowing stages called "Invited" and "Open". */
+    if (parsed.data.answered !== undefined) {
+      const at = parsed.data.answered ? new Date() : null;
+      await db.update(schema.enquiries).set({ handledAt: at, decidedBy: parsed.data.answered ? who.staffId : null })
+        .where(eq(schema.enquiries.id, req.params.id));
+      await audit(db, {
+        tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+        action: "admin.message_answered",
+        detail: { reference: row.reference, answered: parsed.data.answered },
+      });
+    }
+
+    if (parsed.data.status === undefined) return { ok: true, answered: parsed.data.answered };
 
     // declining hands the place back to the site's "N of 100 claimed"
     if (parsed.data.status !== row.status) forgetClaimedCount();
@@ -594,6 +636,48 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      A customer paying a year up front hands over twelve months of cash today
      and earns one month of it. These are Stripe's cash and subscription
      numbers; accounting recognition is a different report. */
+  /* ---- writing back ------------------------------------------------------
+     Somebody messaged us; this is answering them without leaving the panel.
+
+     Sending is what marks the message answered — there is no separate
+     button for "I replied", because a claim you have to remember to make
+     is a claim that goes stale. The reply is kept with its delivery
+     result, so "they say they never heard back" has an answer.
+
+     Outbound only. Their response goes to the reply-to inbox, not into
+     this table, and the panel says so rather than implying otherwise. */
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/reply", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    const parsed = replyBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    if (row.isDemo) {
+      return reply.code(400).send({ error: "is_walkthrough", detail: "The walkthrough has no inbox — nothing would arrive." });
+    }
+
+    const author = (await member(db, who.staffId))?.name || who.name || who.staffId;
+    const mail = replyEmail({ name: row.name, body: parsed.data.body, reference: row.reference, from: author });
+    const status = await sendEmail(row.email, mail.subject, { text: mail.text, html: mail.html, replyTo: replyToAddress() })
+      .catch(() => "failed" as const);
+
+    const saved = {
+      id: randomUUID(), enquiryId: row.id, body: parsed.data.body,
+      sentBy: who.staffId, emailStatus: status,
+    };
+    await db.insert(schema.enquiryReplies).values(saved);
+    // answering IS the thing that marks it answered
+    await db.update(schema.enquiries).set({ handledAt: new Date(), decidedBy: who.staffId })
+      .where(eq(schema.enquiries.id, row.id));
+    await audit(db, {
+      tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.enquiry_replied", detail: { reference: row.reference, email: status },
+    });
+    return reply.code(201).send({ ok: true, email: status, reply: { ...saved, createdAt: new Date().toISOString() } });
+  });
+
   /* ---- put the rehearsal back -------------------------------------------
      The walkthrough is a real application against the real customer flow,
      so running it leaves answers behind and the second run would start

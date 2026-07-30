@@ -114,7 +114,12 @@ const PAGES = {
         "    this.setState({ sent: true, ref: 'sending…' });\n" +
         "    sendEnquiry('contact', s.email, s.name, {\n" +
         "      topic: s.topic, shop: s.shop, city: s.city, message: s.msg, newsletter: s.news,\n" +
-        "    }).then((ref) => this.setState({ ref: ref || 'not sent — please email hello@currencydeskos.com' }));",
+        /* sendEnquiry resolves the whole reply, not a string. Setting that
+           object straight into `ref` put an object where the confirmation
+           screen renders text — React refuses to render one, so the page
+           went blank at the exact moment somebody had finished writing to
+           us. Read the reference off it. */
+        "    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent — please email hello@currencydeskos.com' }));",
     ]] },
   "CurrencyDesk Add-ons":      { out: "add-ons.html", route: "/add-ons", anchor: "#pricing",
     title: "Add-ons — CurrencyDesk",
