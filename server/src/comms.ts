@@ -21,7 +21,7 @@
    what leaves the building.
    ============================================================ */
 import {
-  cdIdEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
+  cdIdEmail, customEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
   tempPasswordEmail, verificationEmail,
 } from "./email.js";
 
@@ -33,11 +33,21 @@ export type Audience = "applicant" | "operator" | "staff" | "platform";
 export interface Rendered { subject: string; text: string; html: string }
 
 /* The person a hand-sent email is going to, as the panel knows them.
-   Everything here comes off the enquiry record — nothing is typed. */
+   Everything here comes off a record — nothing is typed.
+
+   Two kinds of person can be written to and they are not the same. An
+   APPLICANT is somebody in the funnel: they have a reference, a stage, and
+   no account. A STAFF member works at a desk that already exists: they
+   have an account and no reference. Templates that quote a reference are
+   nonsense to the second, so the distinction is carried here rather than
+   guessed at the call site. */
 export interface Recipient {
+  who: "applicant" | "staff";
   name: string | null;
   email: string;
+  /* empty for staff — they never had one */
   reference: string;
+  /* the pipeline stage, for an applicant; the desk's name, for staff */
   status: string;
   kind: string;
 }
@@ -99,6 +109,36 @@ export interface Dispatch {
 const SAMPLE_ORIGIN = "https://www.currencydeskos.com";
 
 export const DISPATCHES: Dispatch[] = [
+  /* First on the list on purpose. Most of what anybody needs to say is not
+     one of the written emails, and if the only way to say it is to leave
+     the panel then the record of the relationship leaves with it. */
+  {
+    id: "custom",
+    title: "Something you write yourself",
+    audience: "applicant",
+    when: "Whenever the situation is not one of the written ones. Your subject, your words, our letterhead — and it goes on their record.",
+    automatic: false,
+    manual: {
+      action: "Send it",
+      needs: [
+        {
+          id: "subject", label: "Subject",
+          help: "What they will see in their inbox before they open it. Say the thing rather than announcing it — “Your setup link, again” beats “Following up”.",
+          placeholder: "Your setup link, again",
+        },
+        {
+          id: "body", label: "What to say", lines: 9,
+          help: "Their first name is already on the top and yours is on the bottom, so start with the point. Plain words — no formatting survives the trip.",
+          placeholder: "The link in Tuesday's email had expired. Here is a fresh one…",
+        },
+      ],
+      render: (to, f, ctx) => customEmail({ name: to.name, subject: f.subject ?? "", body: f.body ?? "", from: ctx.from }),
+    },
+    sample: () => customEmail({
+      name: "Amir Rostami", subject: "Your setup link, again", from: "Jordan",
+      body: "The link in Tuesday's email had expired before you got to it — this one is good for a week.\n\nNo rush, and ring me if the second screen asks for anything you do not have to hand.",
+    }),
+  },
   {
     id: "review",
     title: "We're looking at your application",
@@ -109,6 +149,7 @@ export const DISPATCHES: Dispatch[] = [
     manual: {
       action: "Send it again",
       needs: [],
+      blocked: (to) => to.who === "applicant" ? null : "This is about an application. They already have a desk.",
       render: (to) => reviewEmail({ name: to.name }),
     },
     sample: () => reviewEmail({ name: "Amir Rostami" }),
@@ -128,9 +169,11 @@ export const DISPATCHES: Dispatch[] = [
          ring up. Approving is what sends it the first time; this is for
          the one who deleted it. */
       blocked: (to) =>
-        to.status === "invited"
-          ? null
-          : "This carries their setup link, and the link only opens while they are Invited. Approve them first — that sends this email on its own.",
+        to.who !== "applicant"
+          ? "This is an invitation to build a desk. Theirs is already built."
+          : to.status === "invited"
+            ? null
+            : "This carries their setup link, and the link only opens while they are Invited. Approve them first — that sends this email on its own.",
       render: (to, _f, ctx) => inviteEmail({ name: to.name, reference: to.reference, origin: ctx.origin }),
     },
     sample: () => inviteEmail({ name: "Amir Rostami", reference: "CD-7BETHC", origin: SAMPLE_ORIGIN }),
@@ -186,6 +229,10 @@ export const DISPATCHES: Dispatch[] = [
         lines: 7,
         placeholder: "Yes — EUR cash settlement is supported, and there is nothing to switch on…",
       }],
+      /* The subject quotes their reference so the thread stays a thread in
+         their mail client. Somebody with no reference has nothing to quote
+         — write to them with "Something you write yourself" instead. */
+      blocked: (to) => to.reference ? null : "This answers a message they sent us, and quotes its reference. They never sent one — write to them yourself instead.",
       render: (to, f, ctx) => replyEmail({ name: to.name, body: f.body ?? "", reference: to.reference, from: ctx.from }),
     },
     sample: () => replyEmail({

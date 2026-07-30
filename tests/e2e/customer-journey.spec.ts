@@ -201,6 +201,38 @@ test("an operator can send them one of the written emails", async ({ page }) => 
   await expect(page.getByText(/not actually sent/i).first()).toBeVisible();
 });
 
+/* Writing something of your own, on a page of its own.
+
+   Every "email them" button used to be a mailto: link, which handed the
+   conversation to a mail client and took it off the record. This walks the
+   thing that replaced it: press it, land on a page, write a letter, watch
+   the real one render, send it. */
+test("writing to somebody is a page, not a handoff to a mail client", async ({ page }) => {
+  await signInAsOperator(page);
+  await page.goto("/admin#/applications");
+  await page.reload();
+  await rendered(page, "In review");
+
+  await page.locator('[data-stage="accepted"]').getByText(APPLICANT.name).first().click();
+  await rendered(page, "Send them an email");
+  await page.getByRole("button", { name: "Write to them" }).first().click();
+
+  await rendered(page, `Write to ${APPLICANT.name}`);
+  expect(page.url()).toContain("#/compose/e/");
+
+  // custom is already open, because most of what anybody needs to say is
+  // not one of the written ones
+  await page.getByLabel("Subject").fill("Your setup link, again");
+  await page.getByLabel("What to say").fill("The link in Tuesday's email had expired — here is a fresh one.");
+
+  // the preview is the real render, from the server, addressed off their record
+  await rendered(page, /had expired — here is a fresh one/);
+  await expect(page.getByText(APPLICANT.name.split(" ")[0]!, { exact: false }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: /^Send it to/ }).click();
+  await expect(page.getByText(/Written to the server log|Sent to/i).first()).toBeVisible();
+});
+
 /* Somebody writes in, and we answer them without leaving the panel. */
 test("a message from the contact page can be replied to", async ({ page }) => {
   const from = `writes-${stamp}@shop.example`;

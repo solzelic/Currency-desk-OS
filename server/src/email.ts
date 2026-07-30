@@ -198,10 +198,34 @@ export function verificationEmail(code: string, businessName: string): { subject
    like an email somebody typed — their words, our name under it, and
    nothing else competing for attention. The subject carries the
    reference so a thread stays a thread in their client. */
+/* Anything else.
+
+   The written emails cover the moments we already know about. This is the
+   rest of business — a question after a call, a heads-up before a
+   deployment, an apology. Same letterhead, same signature, same promise
+   that a reply reaches a person; the operator supplies the subject as
+   well as the words, and nothing is prefilled but their name.
+
+   It exists so that "I'll just use my own mail client" stops being the
+   answer. Mail sent from somebody's laptop is off the record, in the
+   wrong voice, and invisible to whoever picks the customer up next. */
+export function customEmail(o: { name?: string | null; subject: string; body: string; from: string }):
+  { subject: string; text: string; html: string } {
+  return letter({ name: o.name, subject: o.subject.trim(), body: o.body, from: o.from });
+}
+
 export function replyEmail(o: { name?: string | null; body: string; reference: string; from: string }):
   { subject: string; text: string; html: string } {
+  return letter({ name: o.name, subject: `Re: your note to CurrencyDesk (${o.reference})`, body: o.body, from: o.from });
+}
+
+/* One person writing to another, on our paper. Shared so a reply and a
+   letter you composed cannot end up looking like they came from two
+   different companies. */
+function letter(o: { name?: string | null; subject: string; body: string; from: string }):
+  { subject: string; text: string; html: string } {
   const hi = o.name ? `${o.name.trim().split(/\s+/)[0]},` : "Hello,";
-  const subject = `Re: your note to CurrencyDesk (${o.reference})`;
+  const subject = o.subject;
   const text = `${hi}\n\n${o.body}\n\n\u2014 ${o.from}\nCurrencyDesk\n\nJust reply to this email if there is more.`;
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html =

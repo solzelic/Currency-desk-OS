@@ -22,13 +22,15 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
-import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, type EmailStatus } from "../email.js";
+import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
+import { CODE_TTL_MS, issueCode as issueVerificationCode, loadOrCreateOnboarding } from "../onboarding/verify.js";
+import { VERIFY_CHANNEL } from "./onboarding-public.js";
 import { DISPATCHES, DISPATCH, SILENT, delivery, sendableTo, type Recipient } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
 
@@ -190,11 +192,26 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
    never from the request — so no amount of typing in the panel can
    address an email to somebody else. */
 const recipientOf = (row: typeof schema.enquiries.$inferSelect): Recipient => ({
+  who: "applicant",
   name: row.name ?? null,
   email: row.email,
   reference: row.reference,
   status: row.status,
   kind: row.kind,
+});
+
+/* A staff member's address is their sign-in id, but only when that id is an
+   address — plenty of desks sign their people in as "a.rostami". Somebody
+   with no address cannot be written to, and saying so beats sending into
+   the void. */
+const STAFF_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const staffRecipient = (p: typeof schema.staffUsers.$inferSelect, deskName: string): Recipient => ({
+  who: "staff",
+  name: p.name ?? null,
+  email: STAFF_EMAIL.test(p.staffId) ? p.staffId : "",
+  reference: "",
+  status: deskName,
+  kind: "staff",
 });
 
 /* Where the customer-facing links point. */
@@ -724,40 +741,53 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      reply has, because from the customer's side there is no difference: an
      email arrived from us, and the next person to open this page needs to
      know it did. */
-  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/email", async (req, reply) => {
-    const who = await gate(req, reply, "applications:write");
-    if (!who) return;
+  /* Everything up to the moment of sending, shared by both kinds of
+     recipient. Returns the rendered mail, or null having already answered
+     with the reason it cannot go — so the applicant route and the staff
+     route cannot drift into disagreeing about what is allowed. */
+  async function compose(req: any, reply: any, who: any, to: Recipient) {
     const parsed = templateBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    if (!parsed.success) { reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message }); return null; }
     const { template, fields = {}, preview } = parsed.data;
 
-    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
-    if (!row) return reply.code(404).send({ error: "not_found" });
-
     const d = DISPATCH.get(template);
-    if (!d) return reply.code(404).send({ error: "no_such_template", detail: `There is no email called "${template}".` });
+    if (!d) { reply.code(404).send({ error: "no_such_template", detail: `There is no email called "${template}".` }); return null; }
     if (!d.manual) {
-      return reply.code(400).send({
-        error: "not_sendable_by_hand",
-        detail: d.elsewhere ?? "This one is not something to send by hand.",
-      });
+      reply.code(400).send({ error: "not_sendable_by_hand", detail: d.elsewhere ?? "This one is not something to send by hand." });
+      return null;
     }
-
-    const to = recipientOf(row);
+    if (!to.email) {
+      reply.code(409).send({ error: "no_address", detail: "There is no email address on file for them — they sign in with a name rather than an address." });
+      return null;
+    }
     const blocked = d.manual.blocked?.(to);
-    if (blocked) return reply.code(409).send({ error: "blocked", detail: blocked });
+    if (blocked) { reply.code(409).send({ error: "blocked", detail: blocked }); return null; }
 
     for (const f of d.manual.needs) {
       if (!(fields[f.id] ?? "").trim()) {
-        return reply.code(400).send({ error: "missing_field", detail: `${f.label} is empty — there is nothing to send.` });
+        reply.code(400).send({ error: "missing_field", detail: `${f.label} is empty — there is nothing to send.` });
+        return null;
       }
     }
 
     const author = (await member(db, who.staffId))?.name || who.name || who.staffId;
     const mail = d.manual.render(to, fields, { origin: publicOrigin(), from: author });
+    return { d, mail, preview: !!preview };
+  }
+
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/email", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+
+    const c = await compose(req, reply, who, recipientOf(row));
+    if (!c) return;
+    const { d, mail } = c;
 
     /* Shown, not sent. Same render, one branch later — see templateBody. */
-    if (preview) return { preview: true, template: d.id, to: row.email, ...mail };
+    if (c.preview) return { preview: true, template: d.id, to: row.email, ...mail };
 
     if (row.isDemo) {
       return reply.code(400).send({ error: "is_walkthrough", detail: "The walkthrough has no inbox — nothing would arrive." });
@@ -784,6 +814,104 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       ok: true, template: d.id, email: status, subject: mail.subject,
       reply: { ...saved, createdAt: new Date().toISOString() },
     });
+  });
+
+  /* The same thing, to somebody who already has a desk.
+
+     "Email owner" used to be a mailto: link — which is to say, it handed
+     the conversation to whatever mail client the operator happened to have
+     open. That mail is in the wrong voice, off the record, and invisible
+     to whoever picks the customer up next. It goes through here now, and
+     lands on the desk's audit trail like everything else. */
+  app.post<{ Params: { id: string } }>("/api/admin/staff/:id/email", async (req, reply) => {
+    const who = await gate(req, reply, "desks:write");
+    if (!who) return;
+
+    const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
+    if (!p) return reply.code(404).send({ error: "not_found" });
+    const desk = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, p.tenantId)).limit(1))[0];
+
+    const c = await compose(req, reply, who, staffRecipient(p, desk?.name ?? ""));
+    if (!c) return;
+    const { d, mail } = c;
+    if (c.preview) return { preview: true, template: d.id, to: p.staffId, ...mail };
+
+    const status = await sendEmail(p.staffId, mail.subject, { text: mail.text, html: mail.html, replyTo: replyToAddress() })
+      .catch(() => "failed" as const);
+    await audit(db, {
+      tenantId: p.tenantId, legalEntityId: p.legalEntityId, branchId: p.branchId, actorId: who.id,
+      action: "admin.staff_emailed",
+      /* The subject, not the body. What was said to a customer belongs on
+         the record; the audit trail is not the place to keep a copy of
+         every sentence, and a subject is enough to find the conversation. */
+      detail: { to: p.staffId, template: d.id, subject: mail.subject, email: status },
+    });
+    return reply.code(201).send({ ok: true, template: d.id, email: status, subject: mail.subject });
+  });
+
+  /* ---- their confirmation code, minted for real -------------------------
+
+     Setup asks them to confirm their address before the desk is built, and
+     normally they press the button on their own screen. On the phone that
+     is one instruction too many, and if their mail is slow it is a dead
+     end — so this issues one from the panel.
+
+     It is the SAME code their screen would have issued, through the same
+     storage, on the same ten-minute clock. It is not a template rendered
+     from something somebody typed; that distinction is the whole reason
+     the written "verification code" email cannot be hand-sent.
+
+     WHILE EMAIL IS OFF, THE CODE COMES BACK AND THE PANEL SHOWS IT.
+
+     That is a deliberate decision and it deserves saying out loud: with no
+     provider configured nothing reaches anybody, so a code that only ever
+     went to a log file makes setup impossible to finish, including for us
+     testing our own product. The moment sending works, it goes to them and
+     the panel stops showing it. Reading it out on a call you placed is the
+     same act as them reading it off their screen. */
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/verify-code", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    if (row.kind !== "early_access") {
+      return reply.code(400).send({ error: "not_an_application", detail: "Only an application has a setup to confirm." });
+    }
+    if (row.status !== "invited") {
+      return reply.code(409).send({
+        error: "not_invited",
+        detail: row.status === "accepted"
+          ? "Their desk is already open — there is nothing left to confirm."
+          : "Their setup is not open yet. Approve them first.",
+      });
+    }
+
+    /* Whatever address their setup is working against, which is not
+       necessarily the one they applied with — plenty of people apply from
+       a personal address and run the desk from a shared one. */
+    const onb = await loadOrCreateOnboarding(db, row.id);
+    const answers = (onb.answers ?? {}) as Record<string, unknown>;
+    const to = String(answers.ownerEmail ?? row.email ?? "").trim().toLowerCase();
+    if (!/.+@.+\..+/.test(to)) {
+      return reply.code(400).send({ error: "no_email", detail: "There is no owner address on their setup yet." });
+    }
+
+    const code = makeCode();
+    await issueVerificationCode(db, row.id, code, to, VERIFY_CHANNEL);
+    const mail = verificationEmail(code, String(answers.bizName ?? answers.operatingName ?? ""));
+    const status = await sendEmail(to, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+
+    await audit(db, {
+      tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.verify_code_issued", detail: { reference: row.reference, to, email: status },
+    });
+    return {
+      ok: true, sentTo: to, email: status,
+      /* Withheld the moment it can actually reach them. */
+      code: status === "sent" ? null : code,
+      expiresInMinutes: Math.round(CODE_TTL_MS / 60000),
+    };
   });
 
   /* ---- put the rehearsal back -------------------------------------------
@@ -933,6 +1061,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       desk: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.siteSlug, suspended: tenant.suspended } : null,
       sessions: { live: live.length, lastSignInAt: lastSignIn ? new Date(lastSignIn).toISOString() : null },
       events,
+      /* What can be written to them, and what cannot — same catalogue the
+         applications side uses, asked about a person with an account
+         rather than an application. */
+      templates: sendableTo(staffRecipient(p, tenant?.name ?? "")),
+      delivery: delivery(),
+      canEmail: STAFF_EMAIL.test(p.staffId),
     };
   });
 

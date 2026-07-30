@@ -210,3 +210,79 @@ describe("the invitation, which only works while it works", () => {
     expect(p.text).toContain("/onboarding/" + row.reference);
   });
 });
+
+/* Writing to somebody who already runs a desk.
+
+   "Email owner" was a mailto: link, which is to say it handed the
+   conversation to whatever mail client happened to be installed — off the
+   record, in the wrong voice, invisible to whoever picks that customer up
+   next. It goes through the same catalogue now, and the templates that
+   make no sense to somebody with an account say so rather than being
+   quietly absent. */
+describe("a person on a desk, not an application", () => {
+  const detailOf = async (sid: string) =>
+    (await app.inject({ method: "GET", url: `/api/admin/staff/${sid}`, cookies: admin })).json() as {
+      canEmail: boolean; templates: { id: string; action: string | null; blocked: string | null }[];
+    };
+  const send = async (sid: string, payload: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: `/api/admin/staff/${sid}/email`, cookies: admin, payload });
+
+  /* Somebody who signs in with an address. A desk opened through setup
+     always has one — its owner signs in with the email they confirmed —
+     but the seeded rehearsal desk signs its people in by name, so this
+     cannot just grab the first row. */
+  let withAddress = "";
+  beforeAll(async () => {
+    const rows = await handle.db.select().from(schema.staffUsers);
+    const hit = rows.find((s) => /@/.test(s.staffId));
+    if (hit) { withAddress = hit.id; return; }
+    const base = rows[0]!;
+    withAddress = `${base.tenantId}:mara@harbour.example`;
+    await handle.db.insert(schema.staffUsers).values({
+      ...base, id: withAddress, staffId: "mara@harbour.example", name: "Mara Oyelaran", cdId: null,
+    });
+  });
+
+  it("offers what suits them, and rules out what does not", async () => {
+    const d = await detailOf(withAddress);
+    const open = d.templates.filter((t) => t.action && !t.blocked).map((t) => t.id);
+    expect(open).toContain("custom");
+    // both of these are about an application; theirs is long finished
+    expect(d.templates.find((t) => t.id === "invite")!.blocked).toMatch(/already built/);
+    expect(d.templates.find((t) => t.id === "review")!.blocked).toMatch(/already have a desk/);
+    // and a reply quotes a reference they never had
+    expect(d.templates.find((t) => t.id === "reply")!.blocked).toMatch(/reference/);
+  });
+
+  it("previews and sends something written on the spot", async () => {
+    const fields = { subject: "Sunday's maintenance", body: "Ten minutes from 02:00. Nothing to do at your end." };
+    const res0 = await send(withAddress, { template: "custom", preview: true, fields });
+    expect(res0.statusCode, res0.body).toBe(200);
+    const shown = res0.json();
+    expect(shown.subject).toBe("Sunday's maintenance");
+    expect(shown.text).toContain("Nothing to do at your end.");
+
+    clearLog();
+    const sent = await send(withAddress, { template: "custom", fields });
+    expect(sent.statusCode).toBe(201);
+    expect(logged().some((l) => l.includes(shown.to) && l.includes("Sunday's maintenance"))).toBe(true);
+
+    const actions = (await handle.db.select().from(schema.auditEvents)).map((e) => e.action);
+    expect(actions).toContain("admin.staff_emailed");
+  });
+
+  /* Plenty of desks sign their people in as "a.rostami" — the rehearsal
+     desk does. There is nowhere to send to, and saying so beats sending
+     into the void or, worse, mailing a username. */
+  it("says so when they sign in with a name rather than an address", async () => {
+    const p = (await handle.db.select().from(schema.staffUsers)).find((s) => !/@/.test(s.staffId))!;
+    expect((await detailOf(p.id)).canEmail).toBe(false);
+    const res = await send(p.id, { template: "custom", fields: { subject: "Hello", body: "Hello" } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("no_address");
+  });
+
+  it("is the platform team's business only", async () => {
+    expect((await app.inject({ method: "POST", url: `/api/admin/staff/${withAddress}/email`, payload: { template: "custom" } as Record<string, unknown> })).statusCode).toBe(401);
+  });
+});
