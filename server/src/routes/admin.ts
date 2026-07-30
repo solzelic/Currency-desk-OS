@@ -39,8 +39,14 @@ const patchEnquiryBody = z
     notes: z.string().max(4000).optional(),
     // send the stage's email again without pretending the stage changed
     resend: z.boolean().optional(),
+    /* A note from the contact page is not an application and has no stages
+       to walk. It is answered or it is not, and that is the whole model —
+       which is why this is its own field rather than a status somebody had
+       to squint at. Reversible, because "answered" is a claim a person
+       makes and people misclick. */
+    answered: z.boolean().optional(),
   })
-  .refine((b) => b.status !== undefined || b.notes !== undefined, { message: "nothing to change" });
+  .refine((b) => b.status !== undefined || b.notes !== undefined || b.answered !== undefined, { message: "nothing to change" });
 const labelsBody = z.object({ labels: z.array(z.string().max(32)).max(12) });
 const ROLE_IDS = ["owner", "support", "billing", "security", "privacy", "auditor"] as const;
 const teamAddBody = z.object({
@@ -384,7 +390,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
         waiting: (byAppStatus.new ?? 0) + (byAppStatus.reviewing ?? 0),
         byStatus: byAppStatus,
         messages: messages.length,
-        unread: messages.filter((m) => m.status === "new").length,
+        /* A message is answered or it is not — `handledAt` is the record
+           of that, and it is what the Inbox sets. Counting by status here
+           meant the badge never cleared, because nothing moves a contact
+           note through the applications stages. */
+        unread: messages.filter((m) => !m.handledAt).length,
       },
     };
   });
@@ -433,7 +443,21 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (parsed.data.notes !== undefined) {
       await db.update(schema.enquiries).set({ notes: parsed.data.notes }).where(eq(schema.enquiries.id, req.params.id));
     }
-    if (parsed.data.status === undefined) return { ok: true };
+    /* Marking a message answered. Deliberately not routed through moveTo:
+       the pipeline is the applications funnel, and a contact note has no
+       business borrowing stages called "Invited" and "Open". */
+    if (parsed.data.answered !== undefined) {
+      const at = parsed.data.answered ? new Date() : null;
+      await db.update(schema.enquiries).set({ handledAt: at, decidedBy: parsed.data.answered ? who.staffId : null })
+        .where(eq(schema.enquiries.id, req.params.id));
+      await audit(db, {
+        tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+        action: "admin.message_answered",
+        detail: { reference: row.reference, answered: parsed.data.answered },
+      });
+    }
+
+    if (parsed.data.status === undefined) return { ok: true, answered: parsed.data.answered };
 
     // declining hands the place back to the site's "N of 100 claimed"
     if (parsed.data.status !== row.status) forgetClaimedCount();

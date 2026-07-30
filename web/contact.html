@@ -200,7 +200,7 @@ class Component extends DCLogic {
     this.setState({ sent: true, ref: 'sending…' });
     sendEnquiry('contact', s.email, s.name, {
       topic: s.topic, shop: s.shop, city: s.city, message: s.msg, newsletter: s.news,
-    }).then((ref) => this.setState({ ref: ref || 'not sent — please email hello@currencydeskos.com' }));
+    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent — please email hello@currencydeskos.com' }));
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
   };
   onAgain = () => this.setState({ sent: false, name: '', shop: '', email: '', city: '', msg: '', ref: '' });

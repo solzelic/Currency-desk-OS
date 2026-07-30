@@ -428,7 +428,7 @@ const PAGES = [
     blurb: 'Subscriptions, invoices and what has actually been collected.',
     action: { label: 'Send an invoice', kind: 'invoice' } },
   { id: 'inbox', label: 'Inbox', title: 'Inbox', count: 'unread',
-    blurb: 'Notes from the contact page. Each one was promised a reply within a business day.' },
+    blurb: 'Notes from the contact page. Each one was promised a straight answer, usually the same day.' },
   { id: 'comms', label: 'Emails', title: 'Emails',
     blurb: 'Everything CurrencyDesk says to anybody — what goes out, what fires it, and whether it is really sending.' },
   { id: 'activity', label: 'Activity', title: 'Activity',
@@ -531,6 +531,112 @@ function Journey({ stages, counts }) {
         <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{counts[s.id] || 0}</span>
       </span>))}
     </>)}
+  </div>);
+}
+
+/* ============================================================
+   THE INBOX
+
+   A note from the contact page was being rendered through the
+   applications board, so a message asking "do you support EUR?" sat in a
+   column called In review with buttons offering to Approve & invite it,
+   and a column called Open waiting for it to become a desk. None of that
+   is true of a message.
+
+   A message is answered or it is not. That is the whole model, so this is
+   a list with one action, and the page shows the thing that actually
+   matters: what they wrote, and how to write back.
+   ============================================================ */
+function Inbox() {
+  const [rows, setRows] = useState(null);
+  const [open, setOpen] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [show, setShow] = useState('open');   // open | all
+
+  const load = async () => {
+    const r = await api('/api/admin/enquiries?kind=contact').catch(() => ({ enquiries: [] }));
+    setRows(r.enquiries);
+  };
+  useEffect(() => { load(); }, []);
+
+  const mark = async (m, answered) => {
+    setBusy(m.id);
+    try { await api('/api/admin/enquiries/' + m.id, { method: 'PATCH', body: JSON.stringify({ answered }) }); await load(); }
+    catch (e) {}
+    setBusy(null);
+  };
+
+  if (!rows) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+  const unanswered = rows.filter(m => !m.handledAt);
+  const shown = show === 'open' ? unanswered : rows;
+  const tab = (id, label, n) => (
+    <button key={id} onClick={() => setShow(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 13,
+      fontWeight: show === id ? 700 : 500, border: '1px solid ' + (show === id ? 'var(--text)' : 'var(--line)'),
+      background: show === id ? 'var(--hover)' : 'var(--card)', color: show === id ? 'var(--text)' : 'var(--mute)' }}>
+      {label}<span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{n}</span></button>
+  );
+
+  return (<div>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+      {tab('open', 'Needs a reply', unanswered.length)}
+      {tab('all', 'Everything', rows.length)}
+    </div>
+
+    {shown.length === 0 && (<div style={{ padding: 40, textAlign: 'center', color: 'var(--faint)', fontSize: 13.5,
+      background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14 }}>
+      {rows.length === 0 ? 'Nothing has come in yet.' : 'Every message has been answered.'}
+    </div>)}
+
+    <div style={{ display: 'grid', gap: 10 }}>
+      {shown.map(m => {
+        const answered = !!m.handledAt;
+        const isOpen = open === m.id;
+        const d = m.details || {};
+        return (<div key={m.id} style={{ background: 'var(--card)', border: '1px solid ' + (answered ? 'var(--line2)' : 'var(--line)'), borderRadius: 13, opacity: busy === m.id ? 0.5 : 1 }}>
+          <button onClick={() => setOpen(isOpen ? null : m.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '13px 15px', background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
+            <Avatar name={m.name || m.email} size={30} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{m.name || m.email}</span>
+                {d.topic && <Pill tone="blue">{String(d.topic)}</Pill>}
+                {answered && <Pill tone="green">answered</Pill>}
+              </span>
+              {/* The first line of what they wrote, because that is what
+                  decides whether you open it. */}
+              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.message ? String(d.message) : <span style={{ color: 'var(--faint)' }}>No message</span>}
+              </span>
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', flex: 'none' }}>{fmtDay(m.createdAt)}</span>
+            <span style={{ color: 'var(--faint)', fontSize: 11, flex: 'none' }}>{isOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {isOpen && (<div style={{ padding: '0 15px 15px' }}>
+            <div style={{ padding: 13, borderRadius: 10, background: 'var(--sidebar)', fontSize: 13.5, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+              {d.message ? String(d.message) : 'They sent no message.'}
+            </div>
+            <div style={{ marginTop: 12 }}>
+              {kv('Email', <a href={'mailto:' + m.email} style={{ color: 'var(--blue)' }}>{m.email}</a>)}
+              {kv('Shop', d.shop && String(d.shop))}
+              {kv('Where', d.city && String(d.city))}
+              {kv('About', d.topic && String(d.topic), 'What they picked on the contact form. It is their word for it, not a category we assigned.')}
+              {kv('Wants updates', d.newsletter === true || d.newsletter === 'true' ? 'Yes' : d.newsletter === false ? 'No' : null,
+                'They ticked "keep me posted" on the form. Not a subscription yet — nothing sends to it.')}
+              {kv('Reference', <span style={{ fontFamily: MONO }}>{m.reference}</span>, 'What the site showed them when they pressed send. They may quote it back.')}
+              {kv('Answered', answered ? fmtWhen(m.handledAt) + (m.decidedBy ? ' · ' + m.decidedBy : '') : null)}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 13, flexWrap: 'wrap' }}>
+              <a href={'mailto:' + m.email + '?subject=' + encodeURIComponent('Re: your note to CurrencyDesk (' + m.reference + ')')}
+                style={{ padding: '9px 15px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>Reply by email</a>
+              <button disabled={busy === m.id} onClick={() => mark(m, !answered)}
+                style={{ padding: '9px 15px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                {answered ? 'Mark unanswered' : 'Mark answered'}
+              </button>
+            </div>
+          </div>)}
+        </div>);
+      })}
+    </div>
   </div>);
 }
 
@@ -1802,7 +1908,7 @@ function App() {
 
       {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()} />}
 
-      {!route.id && tab === 'inbox' && <Pipeline kind="contact" onCounts={() => loadAll()} />}
+      {!route.id && tab === 'inbox' && <Inbox />}
 
       {!route.id && tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
         {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}
