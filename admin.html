@@ -895,15 +895,17 @@ const goto = (h) => { window.location.hash = h; };
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
   let tab = parts[0] || 'overview';
-  /* Old links keep working. `messages` was renamed to `inbox`, and
-     `onboarding` stopped being a place you go — it is a thing you do to
-     one application, so it lives on that application's page now. Anything
-     already in somebody's history, or in an email we sent, still lands
-     somewhere sensible instead of on a blank screen. */
+  let id = parts[1] ? decodeURIComponent(parts[1]) : null;
+  /* Old links keep working. `messages` is now `inbox`. `onboarding` was a
+     staff-side copy of the customer's setup flow and is gone entirely, so
+     those land on the applications list — its second part was a CD
+     reference, which is not an application id, and carrying it through
+     would only produce a not-found. */
   const MOVED = { messages: 'inbox', 'early-access': 'applications' };
-  if (MOVED[tab]) tab = MOVED[tab];
-  const known = PAGES.map(p => p.id).concat(['settings', 'people', 'onboarding']);
-  return { tab: known.indexOf(tab) >= 0 ? tab : 'overview', id: parts[1] ? decodeURIComponent(parts[1]) : null };
+  if (tab === 'onboarding') { tab = 'applications'; id = null; }
+  else if (MOVED[tab]) tab = MOVED[tab];
+  const known = PAGES.map(p => p.id).concat(['settings', 'people']);
+  return { tab: known.indexOf(tab) >= 0 ? tab : 'overview', id };
 }
 
 function PageHead({ back, backTo, title, sub, pills, actions }) {
@@ -1241,240 +1243,6 @@ function PersonPage({ id, onChanged }) {
 }
 
 // ===================== APPLICATION PAGE =====================
-// ===================== ONBOARDING =====================
-/* Type the reference they already hold and work the signup flow with them —
-   on the phone, or standing at their counter. It is the SAME flow they would
-   see, with everything their application already told us filled in, saving as
-   you go so it can be put down and picked up from either side. */
-// NB: the prop is `reference`, not `ref` — React intercepts `ref` on a
-// function component and it would never arrive.
-const WALKTHROUGH = 'CD-WALKTHRU';
-
-function OnboardingPage({ reference: startRef }) {
-  const [ref, setRef] = useState(startRef || '');
-  const [typed, setTyped] = useState(startRef || '');
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({});      // fieldId → value being typed
-  const [saved, setSaved] = useState('');
-
-  const load = (r) => {
-    if (!r) return;
-    setErr(''); setD(null);
-    api('/api/admin/onboarding/' + encodeURIComponent(r))
-      .then(x => { setD(x); setDraft({}); })
-      .catch(e => setErr((e.body && e.body.detail) || 'No application with that reference.'));
-  };
-  useEffect(() => { if (ref) load(ref); }, [ref]);
-
-  const open = () => { const r = typed.trim().toUpperCase(); if (r) { setRef(r); goto('#/onboarding/' + encodeURIComponent(r)); } };
-
-  const save = async (step) => {
-    const mine = {};
-    step.fields.forEach(f => { if (f.id in draft) mine[f.id] = draft[f.id]; });
-    if (!Object.keys(mine).length) return;
-    setBusy(true); setErr('');
-    try {
-      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'PATCH', body: JSON.stringify({ stepId: step.id, answers: mine }) }));
-      setDraft(p => { const n = { ...p }; Object.keys(mine).forEach(k => delete n[k]); return n; });
-      setSaved(step.id); setTimeout(() => setSaved(''), 1600);
-    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
-    setBusy(false);
-  };
-  const mark = async (step, done) => {
-    setBusy(true); setErr('');
-    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'POST', body: JSON.stringify({}) })); } catch (e) {}
-    try {
-      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/mark', { method: 'POST', body: JSON.stringify({ stepId: step.id, done }) }));
-    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
-    setBusy(false);
-  };
-  const reset = async () => {
-    setBusy(true); setErr('');
-    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/reset', { method: 'POST', body: JSON.stringify({}) })); setDraft({}); }
-    catch (x) { setErr((x.body && x.body.detail) || 'Could not reset.'); }
-    setBusy(false);
-  };
-  const finish = async () => {
-    setBusy(true); setErr('');
-    try { const r = await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/create', { method: 'POST', body: JSON.stringify({}) }); setD(x => ({ ...x, handoff: r.handoff })); }
-    catch (x) { setErr((x.body && x.body.detail) || 'Not ready yet.'); }
-    setBusy(false);
-  };
-
-  const inSty = { width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', fontSize: 13.5, outline: 'none' };
-
-  if (!ref || err || !d) return (<div>
-    <PageHead back="Applications" backTo="#/applications" title="Fill setup in with someone"
-      sub="Normally you reach this from their application. Type a reference to open one directly." />
-    <div style={{ maxWidth: 460 }}>
-      <Card title="Which application">
-        <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-          The reference on their charter card and in every email we’ve sent them.
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === 'Enter' && open()}
-            placeholder="CD-A3V5ZE" autoFocus
-            style={{ ...inSty, fontFamily: MONO, letterSpacing: '0.12em', textTransform: 'uppercase' }} />
-          <button onClick={open} style={{ padding: '9px 16px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', fontWeight: 700, fontSize: 13, cursor: 'pointer', flex: 'none' }}>Open</button>
-        </div>
-        {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10 }}>{err}</div>}
-        {ref && !err && !d && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12, marginTop: 10 }}>Loading…</div>}
-      </Card>
-
-      {/* Onboarding is a thing you do TO somebody, so it is hard to rehearse.
-          This one is always here and can be reset. */}
-      <div style={{ marginTop: 14 }}>
-        <Card title="Just want a run-through?">
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-            <b style={{ color: 'var(--text)', fontFamily: MONO }}>{WALKTHROUGH}</b> is a permanent application you can open any
-            time and run start to finish. It goes through exactly the same code a real one does, counts towards nothing,
-            and never leaves a desk behind.
-          </div>
-          <button onClick={() => { setTyped(WALKTHROUGH); setRef(WALKTHROUGH); goto('#/onboarding/' + WALKTHROUGH); }}
-            style={{ padding: '9px 15px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Open the walkthrough</button>
-        </Card>
-      </div>
-    </div>
-  </div>);
-
-  const a = d.application;
-  const pct = Math.round((d.done / d.total) * 100);
-  return (<div>
-    <PageHead back="Applications" backTo="#/applications" title={a.name || a.email}
-      sub={a.reference + (a.charterNo ? '  ·  charter Nº ' + String(a.charterNo).padStart(4, '0') : '') + '  ·  applied ' + fmtDay(a.appliedAt)}
-      pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
-        <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
-        <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>}
-      actions={<>
-        {/* The customer's own screens, opened on their record. Not a copy of
-            the flow rendered in here — the same page they get, on the same
-            answers, so doing it with them on the phone and them doing it
-            alone are the same act. */}
-        <a href={'/onboarding/' + encodeURIComponent(a.reference)} target="_blank" rel="noopener"
-          style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 13, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>
-          Walk their setup ↗</a>
-        {a.isWalkthrough &&
-          <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>}
-      </>} />
-
-    <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
-      <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
-    </div>
-
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
-      <div style={{ display: 'grid', gap: 14 }}>
-        {d.phases.map(ph => {
-          const steps = d.steps.filter(s => s.phase === ph.id);
-          if (!steps.length) return null;
-          return (<div key={ph.id}>
-            <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--faint)', margin: '4px 0 8px' }}>{ph.title}</div>
-            {steps.map(s => (<div key={s.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: 16, marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
-                <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700,
-                  border: '1px solid ' + (s.done ? 'transparent' : 'var(--line)'), background: s.done ? 'var(--green)' : 'transparent', color: '#0b0b0b' }}>{s.done ? '✓' : ''}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 700 }}>{s.title}</span>
-                {s.who === 'customer' && <Pill tone="purple">theirs to do</Pill>}
-                {saved === s.id && <Pill tone="green">saved</Pill>}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginBottom: s.fields.length ? 12 : 10 }}>{s.blurb}</div>
-
-              {s.fields.length > 0 && (<div style={{ display: 'grid', gap: 10 }}>
-                {s.fields.map(f => {
-                  const v = f.id in draft ? draft[f.id] : (f.value == null ? '' : f.value);
-                  const locked = f.derived || s.who === 'customer';
-                  return (<label key={f.id} style={{ display: 'block' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11.5, color: 'var(--mute)', fontWeight: 600 }}>{f.label}</span>
-                      {f.source === 'application' && <Pill tone="blue">from their application</Pill>}
-                      {f.source === 'derived' && <Pill tone="mute">from {String(f.id === 'regulator' ? 'the country' : 'the regulator')}</Pill>}
-                      {/* Which surface this arrived through. "From their setup"
-                          rather than "they typed this" on purpose: the value
-                          came through their own screens, but some of those
-                          screens offer a default they only had to accept, and
-                          the pill should not claim more than it knows. */}
-                      {f.filledBy === 'customer' && <Pill tone="green">from their setup</Pill>}
-                      {f.filledBy === 'operator' && <Pill tone="mute">you entered this</Pill>}
-                      {f.required && f.value == null && <span style={{ fontSize: 11, color: 'var(--amber)' }}>needed</span>}
-                    </div>
-                    {f.type === 'select'
-                      ? <select disabled={locked} value={v} onChange={e => setDraft(p => ({ ...p, [f.id]: e.target.value }))} style={{ ...inSty, opacity: locked ? 0.6 : 1 }}>
-                          <option value="">—</option>
-                          {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      : <input disabled={locked} value={v} type={f.type === 'password' ? 'password' : 'text'}
-                          onChange={e => setDraft(p => ({ ...p, [f.id]: f.type === 'money' || f.type === 'number' ? Number(e.target.value) || '' : e.target.value }))}
-                          onKeyDown={e => e.key === 'Enter' && save(s)}
-                          placeholder={f.placeholder || ''} style={{ ...inSty, opacity: locked ? 0.6 : 1 }} />}
-                    {f.help && <div style={{ fontSize: 11, color: 'var(--faint)', marginTop: 3 }}>{f.help}</div>}
-                  </label>);
-                })}
-                {s.who !== 'customer' && (<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button disabled={busy || !s.fields.some(f => f.id in draft)} onClick={() => save(s)}
-                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--line)', fontSize: 12.5, fontWeight: 700,
-                      background: s.fields.some(f => f.id in draft) ? 'var(--text)' : 'transparent',
-                      color: s.fields.some(f => f.id in draft) ? '#111' : 'var(--faint)',
-                      cursor: s.fields.some(f => f.id in draft) ? 'pointer' : 'default' }}>Save</button>
-                </div>)}
-              </div>)}
-
-              {s.fields.length === 0 && (<button disabled={busy} onClick={() => mark(s, !s.done)}
-                style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                {s.done ? 'Undo' : s.kind === 'payment' ? 'Mark paid' : 'Mark sighted'}</button>)}
-            </div>))}
-          </div>);
-        })}
-      </div>
-
-      <div style={{ display: 'grid', gap: 14, position: 'sticky', top: 20 }}>
-        <Card title="What they told us">
-          {kv('Email', a.email)}
-          {Object.entries(a.told || {}).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').toLowerCase(), String(v)))}
-        </Card>
-        {/* The walkthrough is a rehearsal — it walks every screen a real one
-            does and deliberately creates nothing at the end. Offering to build
-            a desk from it is offering something that cannot happen. */}
-        {a.isWalkthrough ? (
-        <Card title="This is the walkthrough">
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
-            Practise on it as often as you like — every screen and every save is
-            the real thing. It never creates a desk, never takes a founding
-            place, and never appears in the funnel. <b style={{ color: 'var(--text)' }}>Start over</b> puts it back.
-          </div>
-        </Card>
-        ) : (
-        <Card title="Build the desk">
-          {/* Once the desk exists there is nothing left to build, and offering
-              it again invites an operator to press a button that can only
-              answer 409. Send them to the desk instead. */}
-          {d.tenantId ? (<>
-            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-              This desk is open. It was created from exactly what is above.
-            </div>
-            <button onClick={() => goto('#/desks/' + d.tenantId)}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-                background: 'var(--green)', color: '#0b0b0b', cursor: 'pointer' }}>Open the desk</button>
-          </>) : (<>
-            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-              {d.ready.ok ? 'Everything is answered. This creates the desk from exactly what is above.'
-                : d.ready.missing.length === 1 && d.ready.missing[0] === 'ownerPass'
-                  ? 'Everything of ours is done — the owner sets their own password from their link.'
-                  : 'Still needed: ' + d.ready.missing.join(', ') + '.'}
-            </div>
-            {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-            <button disabled={busy} onClick={finish}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-                background: d.ready.ok ? 'var(--green)' : 'transparent', color: d.ready.ok ? '#0b0b0b' : 'var(--text)', cursor: 'pointer' }}>
-              {busy ? 'Working…' : 'Create the desk'}</button>
-          </>)}
-        </Card>
-        )}
-      </div>
-    </div>
-  </div>);
-}
 
 /* Free-form on purpose. The moment you make an operator pick from a fixed
    list you have to guess the list, and they will want one you did not think
@@ -1573,15 +1341,13 @@ function ApplicationPage({ id, onChanged }) {
             it — an invitation is what makes the link work. */}
         {isApp && e.status === 'invited' && (<Card title="Their setup">
           <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.6, marginBottom: 12 }}>
-            They can do this themselves from the link we emailed. Open it alongside them on a call if it
-            is quicker to fill in together — it is the same form and the same saved answers either way.
+            Theirs to do, on the link we emailed them. This is the same page they are looking at, so
+            it is the thing to open when somebody rings up stuck on a screen.
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => goto('#/onboarding/' + encodeURIComponent(e.reference))}
-              style={btn('transparent', 'var(--text)', { fontSize: 12.5 })}>Fill it in with them</button>
-            <a href={'/onboarding/' + encodeURIComponent(e.reference)} target="_blank" rel="noopener"
-              style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), textDecoration: 'none' }}>See what they see ↗</a>
-          </div>
+          <a href={'/onboarding/' + encodeURIComponent(e.reference)} target="_blank" rel="noopener"
+            style={{ ...btn('transparent', 'var(--text)', { fontSize: 12.5 }), textDecoration: 'none', display: 'inline-block' }}>Open their setup page ↗</a>
+          {e.isDemo && <button onClick={async () => { await api('/api/admin/walkthrough/reset', { method: 'POST', body: '{}' }).catch(() => {}); load(); setFlash('Walkthrough reset — it starts from the beginning again.'); }}
+            style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), marginLeft: 8 }}>Start the rehearsal over</button>}
         </Card>)}
 
         <Card title="Your notes">
@@ -1771,11 +1537,7 @@ function App() {
       {!route.id && tab === 'billing' && <BillingPage />}
       {!route.id && tab === 'settings' && <SettingsPage />}
 
-      {/* Onboarding stopped being a section. The route still resolves, so a
-          bookmark or an old link opens the one application it was about. */}
-      {tab === 'onboarding' && <OnboardingPage reference={route.id} />}
-
-      {route.id && tab !== 'onboarding' && (tab === 'desks'
+      {route.id && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
         : tab === 'people'
         ? <PersonPage id={route.id} onChanged={loadAll} />

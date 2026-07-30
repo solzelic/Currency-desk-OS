@@ -28,6 +28,7 @@ import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/p
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
+import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
 import { DISPATCHES, SILENT, delivery } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
 
@@ -593,6 +594,22 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      A customer paying a year up front hands over twelve months of cash today
      and earns one month of it. These are Stripe's cash and subscription
      numbers; accounting recognition is a different report. */
+  /* ---- put the rehearsal back -------------------------------------------
+     The walkthrough is a real application against the real customer flow,
+     so running it leaves answers behind and the second run would start
+     halfway through. This wipes those, not the application. It is the only
+     record that can be reset — a real applicant's answers are theirs. */
+  app.post("/api/admin/walkthrough/reset", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    await resetWalkthrough(db);
+    await audit(db, {
+      tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.walkthrough_reset", detail: { reference: WALKTHROUGH_REF },
+    });
+    return { ok: true, reference: WALKTHROUGH_REF };
+  });
+
   /* ---- is anything broken right now -------------------------------------
      The screen you open when somebody says "it's not working". Every check
      answers in one sentence and says where to go and fix it. */

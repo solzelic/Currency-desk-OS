@@ -5,9 +5,13 @@
    arrives with those answered, and everything that FOLLOWS from where they
    trade is worked out rather than typed.
 
+   There is ONE implementation of this flow and it is the customer's. The
+   panel used to carry a second copy that staff could fill in on somebody's
+   behalf; it is gone, and so are the tests that drove it. What the panel
+   does now is mint the link and send it — which is the first block below.
+
    The field names here are the DESIGN's — operatingName, ownerEmail,
-   idOver — because the panel and the applicant's own screens read and
-   write one list. If those two ever disagree again, these break. */
+   idOver — because that list is what the record is keyed on. */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
@@ -26,15 +30,18 @@ const cookieOf = (res: { cookies: { name: string; value: string }[] }): Record<s
   const c = res.cookies.find((x) => x.name === "cdos_session");
   return c ? { cdos_session: c.value } : {};
 };
-const get = () => app.inject({ method: "GET", url: `/api/admin/onboarding/${ref}`, cookies: adminCookie });
-const save = (stepId: string, answers: Record<string, unknown>) =>
-  app.inject({ method: "PATCH", url: `/api/admin/onboarding/${ref}`, cookies: adminCookie, payload: { stepId, answers } as Record<string, unknown> });
-const fieldOf = (body: Record<string, unknown>, id: string) => {
-  for (const s of body.steps as { fields: { id: string }[] }[]) {
-    const f = s.fields.find((x) => x.id === id);
-    if (f) return f as { id: string; value: unknown; source: string | null };
-  }
-  throw new Error("no field " + id);
+/* The setup record as it really sits in the database. There is no staff-side
+   copy of this flow any more — the customer's screens are the only way in —
+   so what is on the row is the whole truth about it. */
+const stored = async (reference = ref) => {
+  const { schema } = await import("../src/db/index.js");
+  const enq = (await handle.db.select().from(schema.enquiries)).find((e) => e.reference === reference)!;
+  const row = (await handle.db.select().from(schema.onboarding)).find((r) => r.enquiryId === enq.id)!;
+  return {
+    answers: (row.answers ?? {}) as Record<string, unknown>,
+    by: (((row.touched ?? {}) as Record<string, unknown>).__by ?? {}) as Record<string, string>,
+    tenantId: row.tenantId,
+  };
 };
 
 beforeAll(async () => {
@@ -61,6 +68,13 @@ beforeAll(async () => {
   const listed = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: adminCookie })).json();
   const mine = (listed.enquiries as { id: string; reference: string }[]).find((e) => e.reference === ref)!;
   await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${mine.id}`, cookies: adminCookie, payload: { status: "invited" } as Record<string, unknown> });
+  /* Then they start filling it in, on their own screens. This used to be
+     typed on their behalf in the panel; there is no panel copy of the flow
+     any more, so the answers arrive the only way they can — from them. */
+  await app.inject({
+    method: "PUT", url: `/api/onboarding/${ref}/state`,
+    payload: { at: 3, data: { operatingName: "New Shop FX", bizName: "New Shop FX Inc.", plan: "full" } } as Record<string, unknown>,
+  });
 });
 afterAll(async () => {
   await app.close(); await handle.close(); vi.restoreAllMocks();
@@ -127,108 +141,6 @@ describe("the desk address, which the design never asks for", () => {
   });
 });
 
-describe("driving it from the reference they already hold", () => {
-  it("opens on the reference, and starts the record on first look", async () => {
-    const res = await get();
-    expect(res.statusCode).toBe(200);
-    const d = res.json();
-    expect(d.application.reference).toBe(ref);
-    expect(d.application.charterNo).toBeGreaterThan(0);
-    // and it carries what they told us that the flow does not ask again,
-    // because the operator wants that in front of them on the call
-    expect(d.application.told.monthlyVolume).toBe("$500K – $2M");
-  });
-
-  it("arrives with their answers already in it — the whole point", async () => {
-    const d = (await get()).json();
-    expect(fieldOf(d, "ownerName")).toMatchObject({ value: "Alex Roy", source: "application" });
-    expect(fieldOf(d, "ownerEmail")).toMatchObject({ value: "alex@newshop.ca", source: "application" });
-    expect(fieldOf(d, "country")).toMatchObject({ value: "CA", source: "application" });
-    // and the consequences of that, without anybody typing them
-    expect(fieldOf(d, "regulator")).toMatchObject({ value: "FINTRAC", source: "derived" });
-    expect(fieldOf(d, "reportThreshold")).toMatchObject({ value: 10000, source: "derived" });
-    // the owner step is already complete on arrival
-    expect((d.steps as { id: string; done: boolean }[]).find((s) => s.id === "account")!.done).toBe(true);
-  });
-
-  it("shows the panel the same screens the applicant walks", async () => {
-    const d = (await get()).json();
-    const steps = d.steps as { id: string; screen: number | null }[];
-    // the design's own numbering, so an operator on the phone can say
-    // "you're on the one about spreads" without translating
-    expect(steps.find((s) => s.id === "spreads")!.screen).toBe(7);
-    expect(steps.find((s) => s.id === "compliance")!.screen).toBe(9);
-    expect((d.phases as { id: string }[]).map((p) => p.id)).toEqual(["business", "money", "rules", "launch"]);
-  });
-
-  it("saves as you type, so it can be put down and picked up", async () => {
-    const res = await save("shop", { operatingName: "New Shop FX" });
-    expect(res.statusCode).toBe(200);
-    expect(fieldOf(res.json(), "operatingName")).toMatchObject({ value: "New Shop FX", source: "entered" });
-    // a fresh look sees it — this is the resume
-    expect(fieldOf((await get()).json(), "operatingName").value).toBe("New Shop FX");
-    const step = ((await get()).json().steps as { id: string; touchedBy: string }[]).find((s) => s.id === "shop")!;
-    expect(step.touchedBy).toBe("operator");
-  });
-
-  it("takes only the fields the step declares", async () => {
-    await save("shop", { operatingName: "New Shop FX", plan: "ai", nonsense: 1 });
-    const d = (await get()).json();
-    // plan belongs to a different step; it must not be writable from this one
-    expect(fieldOf(d, "plan").value).toBeNull();
-  });
-
-  it("refuses the owner's password, however helpful we are being", async () => {
-    const res = await save("password", { ownerPass: "we-chose-this" });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error).toBe("customer_only");
-  });
-
-  it("says what is still needed, and names the owner's part separately", async () => {
-    const first = await app.inject({ method: "POST", url: `/api/admin/onboarding/${ref}/create`, cookies: adminCookie });
-    expect(first.statusCode).toBe(409);
-    expect(first.json().error).toBe("not_ready");
-    expect(first.json().missing).toContain("bizName");
-
-    await save("shop", { operatingName: "New Shop FX", bizName: "New Shop FX Inc." });
-    await save("plan", { plan: "full" });
-    await save("currencies", { currencies: ["USD", "EUR"] });
-
-    // everything ours is done; what is left is theirs alone
-    const now = await app.inject({ method: "POST", url: `/api/admin/onboarding/${ref}/create`, cookies: adminCookie });
-    expect(now.statusCode).toBe(409);
-    expect(now.json().error).toBe("needs_owner");
-    expect(now.json().missing).toEqual(["ownerPass"]);
-    expect(now.json().detail).toContain("their link");
-  });
-
-  it("does not hold the doors shut for a registration number that hasn't landed", async () => {
-    // plenty of shops apply before FINTRAC comes back; the design lets them
-    // skip it, so the readiness check must not quietly require it
-    const d = (await get()).json();
-    expect(fieldOf(d, "msbNumber").value).toBeNull();
-    expect((d.ready as { missing: string[] }).missing).not.toContain("msbNumber");
-  });
-
-  it("marks the steps that have nothing to type", async () => {
-    const res = await app.inject({
-      method: "POST", url: `/api/admin/onboarding/${ref}/mark`, cookies: adminCookie,
-      payload: { stepId: "documents", done: true, note: "MSB cert sighted in person" } as Record<string, unknown>,
-    });
-    expect(res.statusCode).toBe(200);
-    expect((res.json().steps as { id: string; done: boolean }[]).find((s) => s.id === "documents")!.done).toBe(true);
-    // a step with fields is answered, not marked
-    expect((await app.inject({ method: "POST", url: `/api/admin/onboarding/${ref}/mark`, cookies: adminCookie, payload: { stepId: "shop", done: true } as Record<string, unknown> })).statusCode).toBe(400);
-  });
-
-  it("is nobody's business but the platform team's", async () => {
-    expect((await app.inject({ method: "GET", url: `/api/admin/onboarding/${ref}` })).statusCode).toBe(401);
-    const teller = cookieOf(await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId: "m.costa", password: "yorkville", tenantId: "tnt-yorkfx" } }));
-    expect((await app.inject({ method: "GET", url: `/api/admin/onboarding/${ref}`, cookies: teller })).statusCode).toBe(403);
-    expect((await app.inject({ method: "GET", url: "/api/admin/onboarding/CD-NOTREAL", cookies: adminCookie })).statusCode).toBe(404);
-  });
-});
-
 /* Adding a desk from the panel does not add a desk. It sends somebody the
    link to set one up — because the answers have to be theirs, and they cannot
    be if the shop already exists by the time they are asked. */
@@ -285,12 +197,16 @@ describe("the applicant's own screens", () => {
   const put = (at: number, data: Record<string, unknown>) =>
     app.inject({ method: "PUT", url: `/api/onboarding/${ref}/state`, payload: { at, data } as Record<string, unknown> });
 
-  it("opens on what the panel already knows, without a session", async () => {
+  it("opens on what their application already told us, without a session", async () => {
     const res = await state();
     expect(res.statusCode).toBe(200);
     const d = res.json();
-    expect(d.data.operatingName).toBe("New Shop FX"); // typed in the panel above
-    expect(d.data.ownerName).toBe("Alex Roy");        // from their application
+    // nothing gets asked twice: what they wrote on the application is already in
+    expect(d.data.ownerName).toBe("Alex Roy");
+    expect(d.data.website).toBe("newshop.ca");
+    // what FOLLOWS from where they trade is derived on the screen that asks,
+    // not baked into the state — resolve() is pinned separately above
+    expect(d.data.country).toBe("CA");
     expect(d.application.reference).toBe(ref);
   });
 
@@ -300,28 +216,26 @@ describe("the applicant's own screens", () => {
     expect(d.verify.sentTo).toBe("alex@newshop.ca");
   });
 
-  it("saves the design's own field names, flat, where the panel reads them", async () => {
+  it("saves the design's own field names, flat, not as a blob", async () => {
     expect((await put(7, { spreadAll: "1.8", sameSpread: true })).statusCode).toBe(200);
-    // the panel sees it as an ordinary answer, not as a blob it cannot read
-    expect(fieldOf((await get()).json(), "spreadAll").value).toBe("1.8");
+    // stored under the name the design uses, so anything reading the record
+    // reads an ordinary answer rather than having to unpack a wrapper
+    expect((await stored()).answers.spreadAll).toBe("1.8");
+    expect((await state()).json().data.spreadAll).toBe("1.8");
   });
 
-  it("records which surface each answer arrived through", async () => {
+  /* Who actually answered each question, kept on the record. It is not on a
+     screen today — the staff-side copy of this flow that used to show it is
+     gone — but it is the sort of thing a regulator asks about a file, and
+     recovering it later is impossible if it was never written down. */
+  it("records which answers really came from them", async () => {
     // the page hands the whole blob back on every save, including blanks and
     // the values we seeded for them — neither of which is an answer of theirs
     await put(7, { spreadAll: "1.8", sameSpread: true, elseReg: "", ownerName: "Alex Roy" });
-    const d = (await get()).json();
-    const field = (id: string) => {
-      for (const s of d.steps as { fields: { id: string; filledBy: string | null }[] }[]) {
-        const f = s.fields.find((x) => x.id === id);
-        if (f) return f;
-      }
-      throw new Error("no field " + id);
-    };
-    expect(field("spreadAll").filledBy).toBe("customer");   // came through their screens
-    expect(field("operatingName").filledBy).toBe("operator"); // we typed it in the panel
-    expect(field("elseReg").filledBy).toBeNull();            // a blank is not an answer
-    expect(field("ownerName").filledBy).toBeNull();          // seeded from their application
+    const by = (await stored()).by;
+    expect(by.spreadAll).toBe("customer");     // they typed it
+    expect(by.elseReg).toBeUndefined();        // a blank is not an answer
+    expect(by.ownerName).toBeUndefined();      // seeded from their application
   });
 
   it("never stores the card or the password, whatever the page sends", async () => {
@@ -460,9 +374,11 @@ describe("confirming and opening the desk", () => {
   });
 
   it("closes the application, so the funnel can say which one became which desk", async () => {
-    const d = (await get()).json();
-    expect(d.application.status).toBe("accepted");
-    expect(d.tenantId).toMatch(/^tnt-/);
+    const { schema } = await import("../src/db/index.js");
+    const enq = (await handle.db.select().from(schema.enquiries)).find((e) => e.reference === ref)!;
+    expect(enq.status).toBe("accepted");
+    expect(enq.tenantId).toMatch(/^tnt-/);
+    expect((await stored()).tenantId).toBe(enq.tenantId);
   });
 
   it("will not open a second desk from the same link", async () => {
@@ -472,77 +388,47 @@ describe("confirming and opening the desk", () => {
   });
 });
 
-/* The walkthrough. Onboarding is a thing you do TO somebody, so the only way
-   to practise used to be inventing a customer and living with the mess. */
+/* The walkthrough — one permanent application you can run start to finish.
+
+   It used to be practised through a staff-side copy of the flow. That copy
+   is gone, so the rehearsal is now the real thing: the customer's own
+   screens, the customer's own endpoints, and a hard stop before a desk
+   exists. Which is a better rehearsal, because it is the flow that ships. */
 describe("the walkthrough", () => {
   const W = "CD-WALKTHRU";
-  const open = () => app.inject({ method: "GET", url: `/api/admin/onboarding/${W}`, cookies: adminCookie });
+  const state = () => app.inject({ method: "GET", url: `/api/onboarding/${W}/state` });
 
-  it("is always there, with a properly-formed reference", async () => {
-    const res = await open();
+  it("is always there, on the applicant's own door, with a real reference", async () => {
+    const res = await state();
     expect(res.statusCode).toBe(200);
-    const d = res.json();
-    expect(d.application.reference).toBe(W);
-    expect(d.application.isWalkthrough).toBe(true);
     // the same alphabet as every real reference: nothing that misreads down
     // a phone line, so practising rehearses the real thing
     expect(W).toMatch(/^CD-[2-9A-HJ-NP-Z]+$/);
-    expect(d.application.status).toBe("invited");
   });
 
   it("arrives half-answered, like a real one does", async () => {
-    const d = (await open()).json();
-    expect(fieldOf(d, "ownerName").source).toBe("application");
-    expect(fieldOf(d, "website")).toMatchObject({ value: "harbourfx.ca", source: "application" });
-    expect(fieldOf(d, "regulator")).toMatchObject({ value: "FINTRAC", source: "derived" });
+    const d = (await state()).json();
+    const a = (d.data ?? {}) as Record<string, unknown>;
+    expect(a.website).toBe("harbourfx.ca");
+    expect(a.country).toBe("CA");
     // and still has real work left, or it rehearses nothing
-    expect(d.ready.ok).toBe(false);
-    expect(d.ready.missing).toContain("operatingName");
+    expect(a.operatingName ?? null).toBeNull();
   });
 
   it("counts towards nothing — not the site's tally, not the funnel", async () => {
     const before = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json().claimed;
-    await open();  // creating its record must not move anything either
-    const after = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json();
-    expect(after.claimed).toBe(before);
+    await state();
+    expect((await app.inject({ method: "GET", url: "/api/site/early-access" })).json().claimed).toBe(before);
 
     const ov = (await app.inject({ method: "GET", url: "/api/admin/overview", cookies: adminCookie })).json();
     const real = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: adminCookie })).json().enquiries;
-    // it is visible in the list — you have to be able to find it — but it is
-    // not counted among the applications waiting for an answer
+    // visible in the list — you have to be able to find it — but not counted
     expect(real.some((e: { reference: string }) => e.reference === W)).toBe(true);
     expect(ov.funnel.applications).toBe(real.filter((e: { reference: string }) => e.reference !== W).length);
-    // and it never took a founding place
-    expect((await open()).json().application.charterNo).toBeNull();
+    expect(real.find((e: { reference: string }) => e.reference === W).charterNo).toBeNull();
   });
 
-  it("runs the whole way and stops before leaving a real desk behind", async () => {
-    const patch = (stepId: string, answers: Record<string, unknown>) =>
-      app.inject({ method: "PATCH", url: `/api/admin/onboarding/${W}`, cookies: adminCookie, payload: { stepId, answers } as Record<string, unknown> });
-    await patch("shop", { operatingName: "Harbour FX", bizName: "Harbour FX Inc." });
-    await patch("registration", { msbNumber: "M20-7654321" });
-    await patch("plan", { plan: "full" });
-    await patch("currencies", { currencies: ["USD", "EUR", "GBP"] });
-    // the one step a real operator cannot answer — but there is no real owner
-    // here, and a rehearsal that cannot reach the ending rehearses nothing
-    expect((await patch("password", { ownerPass: "rehearsal-only" })).statusCode).toBe(200);
-
-    const done = await app.inject({ method: "POST", url: `/api/admin/onboarding/${W}/create`, cookies: adminCookie });
-    expect(done.statusCode).toBe(200);
-    expect(done.json().walkthrough).toBe(true);
-    expect(done.json().detail).toContain("No desk was created");
-    const desks = await handle.db.select().from((await import("../src/db/index.js")).schema.tenants);
-    expect(desks.some((t) => t.siteSlug === "harbourfx")).toBe(false);
-  });
-
-  it("never writes the rehearsal's password down", async () => {
-    const { schema } = await import("../src/db/index.js");
-    const rows = await handle.db.select().from(schema.onboarding);
-    const w = rows.find((r) => r.enquiryId === "enq-walkthrough")!;
-    expect((w.answers as Record<string, unknown>).ownerPass).toBe("set");
-  });
-
-  it("runs the applicant's ending too, and still creates nothing", async () => {
+  it("runs the applicant's ending and still creates nothing", async () => {
     const send = await app.inject({ method: "POST", url: `/api/onboarding/${W}/verify/send`, payload: { data: {} } as Record<string, unknown> });
     expect(send.statusCode).toBe(200);
     const line = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls
@@ -558,21 +444,27 @@ describe("the walkthrough", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().walkthrough).toBe(true);
-    const desks = await handle.db.select().from((await import("../src/db/index.js")).schema.tenants);
+    const { schema } = await import("../src/db/index.js");
+    const desks = await handle.db.select().from(schema.tenants);
     expect(desks.some((t) => t.siteSlug === "harbourfx")).toBe(false);
   });
 
-  it("starts over, so the next run begins where the last one did", async () => {
-    const res = await app.inject({ method: "POST", url: `/api/admin/onboarding/${W}/reset`, cookies: adminCookie });
-    expect(res.statusCode).toBe(200);
-    expect(fieldOf(res.json(), "operatingName").value).toBeNull();
-    // what the application told us survives — that is not progress, it is them
-    expect(fieldOf(res.json(), "ownerName").source).toBe("application");
+  it("never writes the rehearsal's password down", async () => {
+    const { schema } = await import("../src/db/index.js");
+    const rows = await handle.db.select().from(schema.onboarding);
+    const w = rows.find((r) => r.enquiryId === "enq-walkthrough")!;
+    expect((w.answers as Record<string, unknown>).ownerPass).not.toBe("rehearsal-only");
   });
 
-  it("is the only thing that can be reset — a real applicant's answers are not", async () => {
-    const res = await app.inject({ method: "POST", url: `/api/admin/onboarding/${ref}/reset`, cookies: adminCookie });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error).toBe("not_the_walkthrough");
+  it("starts over, so the next run begins where the last one did", async () => {
+    expect((await app.inject({ method: "POST", url: "/api/admin/walkthrough/reset", cookies: adminCookie, payload: {} })).statusCode).toBe(200);
+    const a = ((await state()).json().data ?? {}) as Record<string, unknown>;
+    expect(a.operatingName ?? null).toBeNull();
+    // what the application told us survives — that is not progress, it is them
+    expect(a.website).toBe("harbourfx.ca");
+  });
+
+  it("is the platform team's button, not the public's", async () => {
+    expect((await app.inject({ method: "POST", url: "/api/admin/walkthrough/reset", payload: {} })).statusCode).toBe(401);
   });
 });

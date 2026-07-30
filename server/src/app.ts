@@ -18,7 +18,6 @@ import { registerStaffRoutes } from "./routes/staff.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
-import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
@@ -129,7 +128,11 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   registerTenantRoutes(app, db);
   registerTenantStateRoutes(app, db);
   registerAdminRoutes(app, db);
-  registerOnboardingRoutes(app, db, isPlatformAdmin);
+  /* There used to be a second, staff-side copy of the whole setup flow —
+     sixteen steps an operator could fill in on somebody's behalf. It is
+     gone. Setting a desk up is the customer's job on the link we email
+     them, and a parallel implementation of the same flow was two things
+     to keep in step for the sake of a screen nobody wanted to work. */
   registerPublicOnboardingRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
