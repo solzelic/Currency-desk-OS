@@ -655,6 +655,12 @@
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
+    /* Same trick, for the two things the session-resume below has to read
+       from inside an effect that only runs once. A setState callback looks
+       like a way to peek at current state and is not one — React is free to
+       defer it, and the peek silently reads nothing. */
+    const stageRef = useRef('lock');
+    const settingsRef = useRef(null);
     const hydratedRef = useRef(false);              // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
 
@@ -1005,6 +1011,9 @@
        role + assignments. Owner → full picker. One branch + a posted till →
        straight to the desktop (the single-shop base case, rule R10). One
        branch, no till → till pick. Multiple → filtered picker. None → stop. */
+    useEffect(() => { stageRef.current = stage; }, [stage]);
+    useEffect(() => { settingsRef.current = settings; }, [settings]);
+
     const routeAfterAuth = (rec) => {
       if (!rec) { setStage('lock'); return; }
       applyRole(rec);
@@ -1043,6 +1052,43 @@
           .then(r => { if (r.status === 401) relock(); })
           .catch(() => {});   // offline: leave the desk alone
       };
+
+      /* PICK UP A SESSION THAT ALREADY EXISTS.
+         Finishing setup signs the new owner in — the server sets the cookie
+         as part of opening the desk. Without this the OS still opened on its
+         own sign-in screen, so the very last thing that happened to somebody
+         who had just typed a password was being asked for it again, for an
+         account thirty seconds old. That is where the loop was breaking.
+
+         Only ever on the way IN. The relock check above still owns going the
+         other way, so an expired session drops to the lock screen exactly as
+         before, and a desk left open does not resume itself. */
+      const resume = () => {
+        if (typeof fetch !== 'function') return;
+        fetch('/api/auth/me', { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(async (d) => {
+            if (!alive || !d || !d.user) return;
+            /* Never yank somebody out of a screen they are mid-way through.
+               Read the live stage rather than the one this effect closed over
+               on mount — by the time the request comes back they may have
+               started signing in by hand. */
+            if (stageRef.current !== 'lock') return;
+            const u = d.user;
+            if (u.mustChangePassword) return;   // that has its own screen, and a password we do not have
+            const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+            const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
+            const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+            if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
+            if (u.plan) setSettings(s => ({ ...s, billingPlan: u.plan }));
+            srvUserRef.current = u; setSrvUser(u);
+            setUser(rec.code || rec.name); setAuthRec(rec);
+            await hydrateTenant();
+            routeAfterAuth(rec);
+          })
+          .catch(() => {});
+      };
+      resume();
       const onFocus = () => { if (document.visibilityState === 'visible') check(); };
       const onMessage = (e) => {
         if (e.origin !== window.location.origin) return;
@@ -1418,19 +1464,33 @@
     // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
     // the onboarding answers: business identity, home currency, ID threshold,
     // one branch named for the business, the owner as the sole employee.
-    const freshDeskSlate = () => {
+    /* `served` is the tenant record from the server, for the case this was
+       written without: somebody arriving on an existing session rather than
+       straight out of the OS's own signup wizard. Without it `newDesk` is
+       null, the business name falls back to whatever the demo ships with,
+       and a brand-new owner's first screen offers them a branch belonging
+       to another company. */
+    const freshDeskSlate = (served) => {
       const su = srvUserRef.current || srvUser;
-      const t = (newDesk && newDesk.tenant) || {};
+      const t = served || (newDesk && newDesk.tenant) || {};
       const setup = t.setup || (su && su.setup) || {};
       const ownerName = (su && su.name) || (newDesk && newDesk.user && newDesk.user.name) || 'Owner';
       const ownerId = (su && su.id) || (newDesk && newDesk.user && newDesk.user.id) || ownerName;
       const bizName = t.name || settings.bizName || 'Your Desk';
+      /* Setup stores the address as the shape the form collected — street,
+         city, region, postal, country — and these fields each want one line
+         of it. Reading `setup.address` straight put the whole object where a
+         string belonged, which React refuses to render: the desk came up
+         blank the first time a real setup reached this. */
+      const a0 = setup.address;
+      const addr = (a0 && typeof a0 === 'object') ? a0
+        : { street: typeof a0 === 'string' ? a0 : '', city: setup.city || '', region: setup.region || '', postal: setup.postal || '' };
       const homeCcy = setup.homeCurrency || 'CAD';
       const threshold = typeof setup.idThreshold === 'number' ? setup.idThreshold : 10000;
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
-        bizPhone: '', bizEmail: ownerId, bizAddress: setup.address || '', bizCity: setup.city || '', bizRegion: setup.region || '', bizPostal: setup.postal || '',
+        bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
         baseCurrency: homeCcy, threshold: threshold, idRequiredOver: Math.min(3000, threshold),
         receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
         employees: [owner] };
@@ -1441,7 +1501,7 @@
       try {
         const b0 = _ST.defaultBranches()[0];
         const t0 = (b0.tills || [])[0] || {};
-        const branch = { ...b0, name: bizName + ' — Main', code: 'MAIN', city: setup.city || setup.address || '', status: 'open', main: true, dealsToday: 0, volToday: 0,
+        const branch = { ...b0, name: bizName + ' — Main', code: 'MAIN', city: addr.city, status: 'open', main: true, dealsToday: 0, volToday: 0,
           vault: zero(b0.vault),
           tills: [{ ...t0, name: 'Till 1', teller: '', operator: '', status: 'open', cash: zero(t0.cash) }] };
         oneBranches = [branch];
@@ -1480,7 +1540,15 @@
       let status = 'offline';
       try { status = await window.CDOS_PERSIST.begin(tid); } catch (e) {}
       if (status === 'restored') reseatFromStorage();
-      else if (status === 'empty') freshDeskSlate();
+      else if (status === 'empty') {
+        // their name, their city, their thresholds — before anything is drawn
+        let served = null;
+        try {
+          const r = await fetch('/api/tenant', { credentials: 'same-origin' });
+          if (r.ok) served = (await r.json()).tenant || null;
+        } catch (e) {}
+        freshDeskSlate(served);
+      }
       if (status !== 'offline') window.CDOS_PERSIST.startAutosave();
     };
 

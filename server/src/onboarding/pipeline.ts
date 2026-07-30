@@ -43,12 +43,28 @@ export type Stage = "new" | "reviewing" | "hold" | "invited" | "accepted" | "dec
 
    `new` is left in the type for rows that predate that, and only shows as
    a column while any of them exist. Nothing lands there any more. */
+/* THE ORDER IS THE JOURNEY, AND THE JOURNEY IS NOT A STRAIGHT LINE.
+
+   Three stages are the path a customer actually walks: somebody looks at
+   them, we approve them, they open a desk. They are numbered, because
+   that is a thing you can count and a thing you can explain to a new
+   starter in one breath: one, two, three.
+
+   The other two are ways OUT of that path, not steps along it. Held and
+   declined are where an application stops, and drawing them in the
+   middle of the run — which is what happened when the list was simply
+   the order the stages were invented in — made the eye read them as
+   somewhere you pass through. They come after, marked as exits. */
 export const STAGES: {
   id: Stage; title: string; blurb: string;
   /* What pressing the button DOES, in the imperative. "Approve" reads as a
      decision; "→ Invited" reads as a database field, and an operator
      working a queue should not have to translate. */
   action: string;
+  /* 1, 2, 3 along the main path; absent on the ways out of it. */
+  step?: number;
+  /* A place an application stops rather than passes through. */
+  exit?: boolean;
   terminal?: boolean; legacy?: boolean; primary?: boolean;
 }[] = [
   /* No `action`, because nothing moves INTO these two. `new` is only where
@@ -56,15 +72,15 @@ export const STAGES: {
      opening is something the applicant does. */
   { id: "new", title: "Not yet acknowledged", action: "", legacy: true,
     blurb: "Came in before applications were acknowledged automatically. Nothing new lands here." },
-  { id: "reviewing", title: "In review", action: "Move to review",
+  { id: "reviewing", title: "In review", action: "Move to review", step: 1,
     blurb: "Where every application starts. They have been told we are looking." },
-  { id: "hold", title: "On hold", action: "Hold for later",
-    blurb: "Worth keeping, not now. They hear nothing — this is our note, not a decision they were told about." },
-  { id: "invited", title: "Invited", action: "Approve & invite", primary: true,
+  { id: "invited", title: "Invited", action: "Approve & invite", primary: true, step: 2,
     blurb: "Approved. They have their ID and the link, and can set their desk up." },
-  { id: "accepted", title: "Open", action: "", terminal: true,
+  { id: "accepted", title: "Open", action: "", terminal: true, step: 3,
     blurb: "They finished. The desk exists and they are trading." },
-  { id: "declined", title: "Declined", action: "Decline", terminal: true,
+  { id: "hold", title: "On hold", action: "Hold for later", exit: true,
+    blurb: "Worth keeping, not now. They hear nothing — this is our note, not a decision they were told about." },
+  { id: "declined", title: "Declined", action: "Decline", terminal: true, exit: true,
     blurb: "Not for us. Their code no longer opens anything." },
 ];
 

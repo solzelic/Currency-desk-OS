@@ -64,6 +64,12 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
         plan: t.plan,
         siteSlug: t.siteSlug && SITES[t.siteSlug] ? t.siteSlug : null,
         siteDomain: t.siteDomain,
+        /* What they answered while setting the desk up — city, currencies,
+           the ID threshold their regulator sets. The OS needs it to seed a
+           brand-new desk as THEIRS: without it the first screen a new owner
+           saw was a branch named after the demo tenant. Their own data,
+           asked for by a signed-in member of their own desk. */
+        setup: t.setup ?? null,
       },
     };
   });

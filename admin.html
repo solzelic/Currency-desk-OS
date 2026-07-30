@@ -490,6 +490,50 @@ const DETAIL_HELP = {
   phoneUnparsed: 'They typed something we could not read as a phone number, so it is kept exactly as written. Check it before dialling.',
 };
 
+/* ============================================================
+   THE JOURNEY, ACROSS THE TOP
+
+   Five columns of equal weight do not say what order anything happens
+   in, and they especially do not say that two of them are places an
+   application STOPS rather than passes through. So the path is drawn
+   once, numbered, above the board: one, somebody looks at them. Two, we
+   approve them. Three, they open a desk.
+
+   The two ways out hang off the end, unnumbered, because they are exits
+   and not steps. Somebody who has never seen this should be able to
+   read the whole process off this one line.
+   ============================================================ */
+function Journey({ stages, counts }) {
+  const path = (stages || []).filter(s => s.step).sort((a, b) => a.step - b.step);
+  const exits = (stages || []).filter(s => s.exit);
+  if (!path.length) return null;
+  const pill = (s, n) => (
+    <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+      <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none',
+        background: counts[s.id] ? 'var(--text)' : 'transparent', color: counts[s.id] ? '#111' : 'var(--faint)',
+        border: '1px solid ' + (counts[s.id] ? 'var(--text)' : 'var(--line)'),
+        fontFamily: MONO, fontSize: 11, fontWeight: 800 }}>{n}</span>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</span>
+      <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{counts[s.id] || 0}</span>
+    </span>
+  );
+  const arrow = (k) => (
+    <span key={'a' + k} aria-hidden="true" style={{ flex: '1 1 20px', minWidth: 16, height: 1, background: 'var(--line)' }} />
+  );
+  return (<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 18,
+    padding: '13px 16px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13 }}>
+    {path.map((s, k) => [k ? arrow(k) : null, pill(s, s.step)]).flat().filter(Boolean)}
+    {exits.length > 0 && (<>
+      <span aria-hidden="true" style={{ width: 1, height: 22, background: 'var(--line)', margin: '0 4px', flex: 'none' }} />
+      <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--faint)', textTransform: 'uppercase', flex: 'none' }}>Or out</span>
+      {exits.map(s => (<span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flex: 'none' }}>
+        <span style={{ fontSize: 13, color: 'var(--mute)' }}>{s.title}</span>
+        <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{counts[s.id] || 0}</span>
+      </span>))}
+    </>)}
+  </div>);
+}
+
 function Pipeline({ kind, onCounts }) {
   const [rows, setRows] = useState(null);
   const [stage, setStage] = useState('all');
@@ -549,6 +593,27 @@ function Pipeline({ kind, onCounts }) {
      applications that arrived before review was automatic can be worked out
      of it rather than silently disappearing from the board. */
   const columns = BOARD.filter(s => !s.legacy || counts[s.id] > 0);
+  /* The three numbered stages are the path; the two exits are where an
+     application stops. Drawn as two runs with a gap, so the eye reads the
+     journey as a journey instead of five equal boxes. */
+  const path = columns.filter(s => !s.exit);
+  const exits = columns.filter(s => s.exit);
+  const ordered = [...path, ...exits];
+
+  /* OPEN KEEPS THE LAST FIVE.
+
+     A desk that opens has left this board — it is a customer now, and it
+     lives under Desks. But a column that is permanently empty teaches you
+     to stop looking at it, and the most recent handful is the most
+     encouraging thing on the page: proof the funnel came out the other
+     end. So Open shows the five newest and says where the rest went. */
+  const OPEN_KEEP = 5;
+  const inColumn = (id) => {
+    const all = rows.filter(r => r.status === id);
+    if (id !== 'accepted') return all;
+    return all.slice().sort((a, b) =>
+      new Date(b.decidedAt || b.createdAt) - new Date(a.decidedAt || a.createdAt)).slice(0, OPEN_KEEP);
+  };
   const shown = stage === 'all' ? rows : rows.filter(r => r.status === stage);
   const th = { textAlign: 'left', fontSize: 11, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 16px 10px', fontWeight: 600 };
   const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
@@ -642,9 +707,14 @@ function Pipeline({ kind, onCounts }) {
     </div>
     {note && <div style={{ marginBottom: 12, padding: '9px 13px', borderRadius: 9, background: 'var(--hover)', border: '1px solid var(--line)', fontSize: 13 }}>{note}</div>}
 
+    {view === 'board' && <Journey stages={BOARD} counts={counts} />}
+
     {view === 'board' && (<div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
-      {columns.map(s => {
-        const inCol = rows.filter(r => r.status === s.id);
+      {ordered.map((s, ci) => {
+        const inCol = inColumn(s.id);
+        const hidden = s.id === 'accepted' ? counts[s.id] - inCol.length : 0;
+        // the gap that separates the path from the ways out of it
+        const gap = s.exit && ci === path.length ? 26 : 0;
         /* A column takes a card only if the server would accept the move.
            While something is in the hand the board says so plainly: the
            columns that can have it light up, the ones that cannot fade —
@@ -666,10 +736,12 @@ function Pipeline({ kind, onCounts }) {
             dragRef.current = null; setOver(null); setDrag(null);
             if (d && d.next.includes(s.id)) move(d.row, s.id);
           }}
-          style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320, opacity: refusing ? 0.4 : 1, transition: 'opacity .12s' }}>
+          style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320, marginLeft: gap, opacity: refusing ? 0.4 : 1, transition: 'opacity .12s' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px 8px' }}>
+            {s.step && <span style={{ width: 17, height: 17, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center',
+              background: 'var(--hover)', border: '1px solid var(--line)', fontFamily: MONO, fontSize: 10, fontWeight: 700, color: 'var(--mute)' }}>{s.step}</span>}
             <span style={{ fontSize: 13, fontWeight: 800 }}>{s.title}</span>
-            <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{inCol.length}</span>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{counts[s.id]}</span>
             {STAGE_HELP[s.id] && <Info title={s.title}>{STAGE_HELP[s.id]}</Info>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.45, padding: '0 2px 10px', minHeight: 30 }}>{s.blurb}</div>
@@ -677,6 +749,10 @@ function Pipeline({ kind, onCounts }) {
             background: hot ? 'color-mix(in srgb,var(--text) 10%,var(--line2))' : 'var(--line2)',
             boxShadow: hot ? 'inset 0 0 0 2px var(--text)' : canDrop ? 'inset 0 0 0 1px var(--line)' : 'none' }}>
             {inCol.map(card)}
+            {hidden > 0 && (<button onClick={() => goto('#/desks')} style={{ padding: '9px 8px', textAlign: 'center', fontSize: 11.5, color: 'var(--mute)',
+              background: 'none', border: '1px dashed var(--line)', borderRadius: 10, cursor: 'pointer' }}>
+              {hidden} more {hidden === 1 ? 'desk' : 'desks'} — see them all under Desks →
+            </button>)}
             {/* what the drop will do, said before you let go */}
             {hot && (<div style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>
               {s.action ? s.action : 'Move here'}

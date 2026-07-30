@@ -210,3 +210,27 @@ describe("labels", () => {
     expect((await app.inject({ method: "GET", url: "/api/admin/labels" })).statusCode).toBe(401);
   });
 });
+
+/* The board is meant to read as a process, not five equal boxes. What the
+   panel draws — the numbered run, the two ways out, the order — is read
+   off these flags, so they are worth pinning. */
+describe("the shape of the journey", () => {
+  it("numbers the path one, two, three and nothing else", () => {
+    const path = STAGES.filter((s) => s.step).sort((a, b) => a.step! - b.step!);
+    expect(path.map((s) => [s.step, s.id])).toEqual([[1, "reviewing"], [2, "invited"], [3, "accepted"]]);
+  });
+
+  it("marks the ways out as exits, and never as steps", () => {
+    for (const s of STAGES) expect(!!(s.step && s.exit)).toBe(false);
+    expect(STAGES.filter((s) => s.exit).map((s) => s.id)).toEqual(["hold", "declined"]);
+  });
+
+  /* Column order is the array order, and the exits belong after the run —
+     drawing "on hold" between review and invited is what made it read as
+     somewhere you pass through. */
+  it("lists the path before the exits", () => {
+    const live = STAGES.filter((s) => !s.legacy);
+    const firstExit = live.findIndex((s) => s.exit);
+    expect(live.slice(firstExit).every((s) => s.exit)).toBe(true);
+  });
+});

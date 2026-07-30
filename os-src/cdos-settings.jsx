@@ -678,62 +678,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <button onClick={openBillingPortal} className="mt-3 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="card" s={15} c="var(--cd-on-ink)" /> Manage billing in Stripe</button>
             </div>
           </div>);
-          /* Retired local mock. Stripe-hosted Checkout and Customer Portal
-             are the only production payment surfaces. */
-          const cards = seedCards(settings);
-          const setCards = (fn) => setSettings(s => ({ ...s, cards: fn(s.cards || seedCards(s)) }));
-          const setRole = (id, role) => { setCards(list => list.map(c => c.id === id ? { ...c, role } : (c.role === role ? { ...c, role: undefined } : c))); log('Card updated', role + ' card set'); };
-          const removeCard = (id) => { const c = cards.find(x => x.id === id) || {}; setCards(list => list.filter(x => x.id !== id)); log('Card removed', cardBrand(c.num) + ' ··' + cardLast4(c.num)); };
-          const submitCard = () => {
-            const digits = cardDraft.num.replace(/\D/g, ''); if (digits.length < 12) return;
-            setCards(list => [...list, { id: 'card_' + Date.now(), num: cardDraft.num, exp: cardDraft.exp, name: cardDraft.name || (settings.billingName || ''), postal: cardDraft.postal, role: list.some(c => c.role === 'primary') ? undefined : 'primary' }]);
-            log('Card added', cardBrand(cardDraft.num) + ' ··' + cardLast4(cardDraft.num));
-            setCardDraft({ num: '', exp: '', cvc: '', name: '', postal: '' }); setAddingCard(false);
-          };
-          return (<div>
-            <SectionTitle icon="card" title="Payment methods" sub="Cards we charge for your subscription and per-use verification checks. The primary card is charged first; the backup is used automatically if it declines." />
-            <div className="space-y-3 mb-5">
-              {cards.map(c => { const brand = cardBrand(c.num); return (
-                <div key={c.id} style={{ border: `1px solid ${c.role === 'primary' ? CD.ink : CD.line}`, borderRadius: 14, overflow: 'hidden', background: CD.panel }}>
-                  <div className="flex items-stretch flex-wrap">
-                    <div className="p-4 flex flex-col justify-between" style={{ width: 270, background: CARD_GRAD[brand], color: 'var(--cd-on-ink)' }}>
-                      <div className="flex items-center justify-between"><span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, letterSpacing: '.06em', fontSize: 11 }}>{brand}</span><span style={{ width: 30, height: 22, borderRadius: 4, background: 'linear-gradient(135deg,#e8c87a,#b8923f)', opacity: 0.9 }} /></div>
-                      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 15, letterSpacing: '.16em', margin: '14px 0 10px' }}>···· ···· ···· {cardLast4(c.num)}</div>
-                      <div className="flex items-center justify-between" style={{ fontSize: 10.5, opacity: 0.85, fontFamily: 'Space Mono, monospace' }}><span style={{ textTransform: 'uppercase' }}>{c.name || 'CARDHOLDER'}</span><span>{c.exp || 'MM/YY'}</span></div>
-                    </div>
-                    <div className="flex-1 p-3 flex flex-col justify-between" style={{ minWidth: 200 }}>
-                      <div className="flex items-center gap-1.5">{c.role === 'primary' ? <span className="text-[9px] px-2 py-0.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>PRIMARY · CHARGED FIRST</span> : c.role === 'backup' ? <span className="text-[9px] px-2 py-0.5 font-semibold" style={{ background: CD.brass, color: 'var(--cd-on-ink)', borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BACKUP</span> : <span className="text-[10.5px]" style={{ color: CD.faint }}>Not in rotation</span>}</div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {c.role !== 'primary' && <button onClick={() => setRole(c.id, 'primary')} className="text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-on-ink)' }}>Make primary</button>}
-                        {c.role !== 'backup' && <button onClick={() => setRole(c.id, 'backup')} className="text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-on-ink)' }}>Set as backup</button>}
-                        <button onClick={() => removeCard(c.id)} disabled={cards.length <= 1} className="text-[11px] px-2.5 py-1.5 font-medium flex items-center gap-1" style={{ border: `1px solid ${CD.flagSoft}`, borderRadius: 7, color: CD.flag, background: CD.flagSoft, opacity: cards.length <= 1 ? 0.45 : 1, cursor: cards.length <= 1 ? 'not-allowed' : 'pointer' }}><Ic n="trash" s={12} c={CD.flag} /> Remove</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>); })}
-            </div>
-            {addingCard ? (
-              <div className="p-4 mb-5" style={{ border: `1px solid ${CD.ink}`, borderRadius: 14, background: CD.panel }}>
-                <div className="text-[13px] font-semibold mb-3" style={{ color: CD.ink }}>Add a card</div>
-                <div className="grid grid-cols-2 gap-2.5" style={{ maxWidth: 480 }}>
-                  <label className="block col-span-2"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Card number</div><input value={cardDraft.num} onChange={e => setCardDraft(d => ({ ...d, num: e.target.value }))} placeholder="4242 4242 4242 4242" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></label>
-                  <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Expiry</div><input value={cardDraft.exp} onChange={e => setCardDraft(d => ({ ...d, exp: e.target.value }))} placeholder="04/27" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></label>
-                  <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>CVC</div><input value={cardDraft.cvc} onChange={e => setCardDraft(d => ({ ...d, cvc: e.target.value }))} placeholder="•••" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></label>
-                  <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Name on card</div><input value={cardDraft.name} onChange={e => setCardDraft(d => ({ ...d, name: e.target.value }))} placeholder="Jordan Masri" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></label>
-                  <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Billing postal</div><input value={cardDraft.postal} onChange={e => setCardDraft(d => ({ ...d, postal: e.target.value }))} placeholder="M5V 2T6" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></label>
-                </div>
-                <div className="flex items-center gap-2 mt-3">
-                  <button onClick={submitCard} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Add card</button>
-                  <button onClick={() => { setAddingCard(false); setCardDraft({ num: '', exp: '', cvc: '', name: '', postal: '' }); }} className="px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute, background: 'var(--cd-on-ink)' }}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setAddingCard(true)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold mb-5" style={{ border: `1px dashed ${CD.line}`, borderRadius: 9, color: CD.ink, background: CD.panel }}><Ic n="plus" s={15} c={CD.ink} /> Add a card</button>
-            )}
-            <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Billing contact</div>
-            <Row title="Billing email" desc="Invoices and receipts are sent here."><input value={settings.billingEmail || ''} onChange={e => set('billingEmail', e.target.value)} placeholder={settings.bizEmail || 'billing@business.com'} className="text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, width: 220 }} /></Row>
-            <div className="flex items-center gap-1.5 text-[11px] mt-3" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> Card details are stored securely with our payments provider — we only keep the brand and last four digits.</div>
-          </div>); */
+          /* A local mock of card management used to live here — add a card,
+             pick a primary, store the digits in settings. It was retired when
+             Stripe-hosted Checkout and the Customer Portal became the only
+             production payment surfaces, and it is deleted rather than
+             commented out: the comment that retired it closed on its own
+             second line, so fifty lines of it stayed live, cdos-settings.jsx
+             stopped parsing, and the entire Settings app failed to load. Git
+             remembers it; this file does not need to. */
         })()}
 
         {tab === 'texts' && (<div>
