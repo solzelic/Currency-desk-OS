@@ -275,6 +275,63 @@ function OverviewPage({ ov, health, counts }) {
    invisible: no way to see what goes out, what fires it, or that sending
    had quietly fallen back to writing to a log file. That last one is the
    dangerous one at forty invitations. */
+/* Put one in your own inbox.
+
+   The list below renders every template, which answers "is the markup
+   right" and not "what does this look like in Gmail on a phone". Those are
+   different questions, and only the second catches what actually goes
+   wrong — Outlook renders through Word, Gmail clips a long message, a
+   dark-mode client inverts a cream background.
+
+   Addresses are typed, never picked off a customer record, and the server
+   turns away anybody who is actually in the system: sample data carries a
+   made-up reference and a link that opens nothing, and an applicant
+   receiving "You're in" out of the blue is a phone call you cannot take
+   back. */
+function SampleBox({ delivery, template, label }) {
+  const [to, setTo] = useState(() => { try { return localStorage.getItem('cd_sample_to') || ''; } catch (e) { return ''; } });
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const addresses = to.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean);
+  const ok = addresses.length > 0 && addresses.every(a => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+
+  const send = async () => {
+    setBusy(true); setFlash(null);
+    try { localStorage.setItem('cd_sample_to', to); } catch (e) {}
+    try {
+      const r = await api('/api/admin/comms/sample', {
+        method: 'POST', body: JSON.stringify({ to: addresses, template: template || undefined }),
+      });
+      const n = r.sent.length;
+      const bad = r.sent.filter(x => x.email === 'failed').length;
+      setFlash({ tone: bad ? 'red' : r.sent.some(x => x.email === 'simulated') ? 'amber' : 'green',
+        text: bad ? bad + ' of ' + n + ' did not send.'
+          : r.sent.some(x => x.email === 'simulated')
+            ? n + ' written to the server log — email is not switched on, so nothing arrived.'
+            : n + ' sent. Check ' + addresses.join(', ') + '.' });
+    } catch (x) { setFlash({ tone: 'red', text: (x.body && x.body.detail) || 'Could not send those.' }); }
+    setBusy(false);
+  };
+
+  return (<div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <input value={to} onChange={e => setTo(e.target.value)} placeholder="you@gmail.com, you@outlook.com"
+        style={{ flex: 1, minWidth: 220, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
+      <button disabled={busy || !ok} onClick={send}
+        style={{ padding: '9px 15px', borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 13,
+          background: ok ? 'var(--text)' : 'var(--line)', color: ok ? '#111' : 'var(--faint)', cursor: busy || !ok ? 'default' : 'pointer' }}>
+        {busy ? 'Sending…' : (label || 'Send me all of them')}</button>
+    </div>
+    <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 7, lineHeight: 1.5 }}>
+      Two or three of your own addresses, comma separated — a Gmail, an Outlook and an Apple Mail break different things.
+      {!delivery?.live && ' Email is not switched on yet, so these go to the server log.'}
+    </div>
+    {flash && <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.55,
+      background: 'color-mix(in srgb,' + toneColor(flash.tone) + ' 12%,transparent)',
+      border: '1px solid color-mix(in srgb,' + toneColor(flash.tone) + ' 30%,transparent)' }}>{flash.text}</div>}
+  </div>);
+}
+
 function CommsPage() {
   const [d, setD] = useState(null);
   const [open, setOpen] = useState(null);
@@ -290,6 +347,11 @@ function CommsPage() {
       <b>{d.delivery.live ? 'Sending' : 'Not sending'}</b> — {d.delivery.detail}
       {d.delivery.fix && <div style={{ color: 'var(--mute)', marginTop: 4 }}>{d.delivery.fix}</div>}
     </div>
+
+    <Card title="Put them in your own inbox"
+      help="Renders below are a browser's idea of the email. A real client is the only place you find out what Outlook does to it, or how it looks on a phone at arm's length. These go through the same sender a customer's would.">
+      <SampleBox delivery={d.delivery} />
+    </Card>
 
     <Card title="What goes out" pad={0}>
       {d.dispatches.map(x => (<div key={x.id} style={{ borderBottom: '1px solid var(--line2)' }}>
@@ -323,6 +385,9 @@ function CommsPage() {
           <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 12 }}>{x.sample.subject}</div>
           <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>BODY (sample)</div>
           <pre style={{ whiteSpace: 'pre-wrap', fontFamily: MONO, fontSize: 12, lineHeight: 1.6, color: 'var(--mute)', margin: 0, background: 'var(--sidebar)', padding: 13, borderRadius: 10 }}>{x.sample.text}</pre>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line2)' }}>
+            <SampleBox delivery={d.delivery} template={x.id} label="Send me this one" />
+          </div>
         </div>)}
       </div>))}
     </Card>

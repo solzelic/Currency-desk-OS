@@ -959,6 +959,76 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     };
   });
 
+  /* ---- send yourself a sample -------------------------------------------
+
+     The Emails page renders every template, which answers "is the markup
+     right" and not "what does this look like in Gmail on a phone". Those
+     are different questions, and only the second one catches the things
+     that actually go wrong: Outlook renders through Word, Gmail clips a
+     long message, a dark-mode client inverts a cream background.
+
+     So: type an address, get the real thing. It goes through the same
+     sendEmail as everything else, from the same domain, so what lands is
+     what a customer would get.
+
+     IT REFUSES TO SEND TO A CUSTOMER. Sample data carries a made-up
+     reference and a setup link that opens nothing, and an applicant
+     receiving "You're in" out of the blue is a phone call you cannot take
+     back. Addresses belonging to an application or to somebody on a
+     customer desk are turned away by name. */
+  const sampleBody = z.object({
+    to: z.array(z.string().trim().toLowerCase().email()).min(1).max(5),
+    /* Omitted means all of them — which is the usual reason to be here. */
+    template: z.string().trim().max(64).optional(),
+  });
+
+  app.post("/api/admin/comms/sample", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    const parsed = sampleBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const { to, template } = parsed.data;
+
+    const chosen = template ? DISPATCHES.filter((d) => d.id === template) : DISPATCHES;
+    if (chosen.length === 0) return reply.code(404).send({ error: "no_such_template", detail: `There is no email called "${template}".` });
+
+    /* Everyone this platform could reach for real. Platform team members
+       are fine — that is who is asking — but an applicant or a customer's
+       staff is not. */
+    const applicants = new Set((await db.select().from(schema.enquiries)).map((e) => e.email.toLowerCase()));
+    const team = new Set((await db.select().from(schema.platformUsers)).map((m) => m.email.toLowerCase()));
+    const customerStaff = new Set(
+      (await db.select().from(schema.staffUsers))
+        .filter((s) => !team.has(s.staffId.toLowerCase()))
+        .map((s) => s.staffId.toLowerCase()),
+    );
+    for (const addr of to) {
+      if (team.has(addr)) continue;
+      if (applicants.has(addr) || customerStaff.has(addr)) {
+        return reply.code(409).send({
+          error: "real_person",
+          detail: `${addr} belongs to somebody in the system. Samples carry a made-up reference and a link that opens nothing — send them to your own inbox instead.`,
+        });
+      }
+    }
+
+    const sent: { to: string; template: string; email: EmailStatus }[] = [];
+    for (const addr of to) {
+      for (const d of chosen) {
+        const s = d.sample();
+        if (!s.html && !s.text) continue;
+        const status = await sendEmail(addr, s.subject, { text: s.text, html: s.html || undefined, replyTo: replyToAddress() })
+          .catch(() => "failed" as const);
+        sent.push({ to: addr, template: d.id, email: status });
+      }
+    }
+    await audit(db, {
+      tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.samples_sent", detail: { to, templates: chosen.map((d) => d.id), results: sent.map((s) => s.email) },
+    });
+    return reply.code(201).send({ ok: true, delivery: delivery(), sent });
+  });
+
   app.get("/api/admin/billing", async (req, reply) => {
     const who = await gate(req, reply, "billing:read");
     if (!who) return;
