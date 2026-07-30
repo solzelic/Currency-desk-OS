@@ -741,6 +741,61 @@ patch(
 );
 
 /* ------------------------------------------------------------------
+   FINISHING THE LOOP.
+
+   The last screen is a real Day-1 checklist — bring your rates across,
+   publish them, walk your settings, take your first deal — and every
+   one of its buttons pointed at a design document. So the last thing
+   that happened to somebody who had just opened a desk was a dead link,
+   with the actual desk one URL away and never offered.
+
+   Their session already exists by this point: opening the desk signs
+   them in. So these are ordinary links into the running app, and the OS
+   picks that session up rather than asking for the password they typed
+   ninety seconds ago.
+   ------------------------------------------------------------------ */
+patch(
+  "the Day-1 checklist pointed at design documents instead of the desk",
+  "href: 'CurrencyDesk Rate Board.dc.html'",
+  "href: '/app'",
+  3,
+);
+patch(
+  "the same, for the steps that open the desk itself",
+  "href: 'CurrencyDesk Dashboard.dc.html'",
+  "href: '/app'",
+  3,
+);
+
+patch(
+  "the last dead link on the Day-1 screen",
+  'href="CurrencyDesk Dashboard.dc.html"',
+  'href="/app"',
+);
+patch(
+  "\"questions before you sign\" pointed at a design document",
+  'href="CurrencyDesk Contact.dc.html"',
+  'href="/contact"',
+);
+patch(
+  "\"see what your team sees\" — that is the sign-in screen, and it exists",
+  'href="CurrencyDesk Sign Up.dc.html"',
+  'href="/login"',
+);
+
+patch(
+  "the service agreement link — /legal is a real page",
+  'href="CurrencyDesk Legal.dc.html"',
+  'href="/legal"',
+);
+
+/* Two preview links are deliberately left pointing at design documents:
+   "CurrencyDesk Rate Page" and "CurrencyDesk Board Display" are pages
+   that have not been built as routes yet. Sending a customer to a
+   plausible-looking wrong URL is worse than a link that obviously has
+   not shipped, so they wait for the real pages. */
+
+/* ------------------------------------------------------------------
    Put it back. The "</" escaping is the bundler's, and reproducing it is
    not optional: without it the page truncates at the design's own
    closing script tag.
