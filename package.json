@@ -2,31 +2,18 @@
   "name": "currencydesk-os",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "npm run build:onboarding && tsc -b && vite build",
     "build:onboarding": "node scripts/build-onboarding.mjs",
-    "typecheck": "tsc -b && tsc --noEmit -p tsconfig.test.json",
-    "test": "vitest run --dir tests/unit",
+    "build:site": "node scripts/build-site.mjs",
+    "unbundle": "node scripts/unbundle-design.mjs",
+    "check:parse": "node scripts/check-browser-parses.mjs",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm run test && npm run build",
-    "preview": "vite preview --host 127.0.0.1"
-  },
-  "dependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "check": "npm run check:parse && npm run test:e2e"
   },
   "devDependencies": {
+    "@babel/standalone": "^7.29.0",
     "@playwright/test": "^1.61.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^22.20.1",
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "jsdom": "^26.1.0",
-    "vitest": "^4.1.10"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }
