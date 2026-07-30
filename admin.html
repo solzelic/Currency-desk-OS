@@ -757,7 +757,18 @@ function Pipeline({ kind, onCounts }) {
             {hot && (<div style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>
               {s.action ? s.action : 'Move here'}
             </div>)}
-            {inCol.length === 0 && !hot && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
+            {/* A column that just fades when you drag at it leaves you
+                wondering whether the board is broken. Say which it is:
+                Open is not somewhere you can put an application, and the
+                rest are simply not legal from where this card is. */}
+            {refusing && (<div style={{ padding: '12px 10px', textAlign: 'center', fontSize: 11.5, lineHeight: 1.5, color: 'var(--mute)' }}>
+              {s.id === 'accepted'
+                ? 'A desk opens when they finish setup — you cannot put one here.'
+                : 'Not a move you can make from where that card is.'}
+            </div>)}
+            {inCol.length === 0 && !hot && !refusing && (<div style={{ padding: '18px 10px', textAlign: 'center', color: 'var(--faint)', fontSize: 12, lineHeight: 1.5 }}>
+              {s.id === 'accepted' ? 'Nobody has finished setting up yet. Desks arrive here on their own.' : 'Empty'}
+            </div>)}
           </div>
         </div>);
       })}
