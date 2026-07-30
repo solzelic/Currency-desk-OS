@@ -227,7 +227,7 @@ window.claimedCount.then(function (d) {
           <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(169,121,28,0.14); display: grid; place-items: center;"><svg sc-camel-view-box="0 0 24 24" width="24" height="24" fill="none" stroke="#A9791C" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M8 4v16"></path></svg></div>
           <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">Reserve your desk.</h2>
           <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">This becomes your private home on CurrencyDesk. It's yours the moment you apply.</p>
-          <div style="margin-top: 22px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; overflow: hidden;" style-focus="border-color:#A9791C;">
+          <label for="cd-shop" style="display: block; margin-top: 22px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6459;">What the shop is called</label><input id="cd-shop" ref="{{ refShop }}" value="{{ shopName }}" sc-camel-on-input="{{ onShopName }}" sc-camel-on-key-down="{{ onKey }}" placeholder="Yorkville Currency" style="width: 100%; box-sizing: border-box; margin-top: 8px; padding: 15px 18px; font-size: 16.5px; font-weight: 600; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none;" style-focus="border-color:#A9791C;"><div style="margin-top: 18px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6459;">Your address on CurrencyDesk</div><div style="margin-top: 8px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; overflow: hidden;" style-focus="border-color:#A9791C;">
             <input ref="{{ ref2 }}" value="{{ workspace }}" sc-camel-on-input="{{ onWorkspace }}" sc-camel-on-key-down="{{ onKey }}" placeholder="yourshop" style="flex: 1; min-width: 0; padding: 15px 18px; font-size: 16.5px; font-weight: 600; color: #17140F; background: transparent; border: none; outline: none;">
             <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #6B6459; background: #EFE8DA; padding: 15px 16px; white-space: nowrap;">.currencydeskos.com</span>
           </div>
@@ -470,7 +470,7 @@ class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
-      step: 0, email: '', domain: '', workspace: '', volume: null,
+      step: 0, email: '', domain: '', shopName: '', workspace: '', volume: null,
       branches: 'single', stack: null, timeline: null, name: '', role: '', employees: null, phone: '', dial: '+1', callWindow: '', jur: 'CA', seed: 0, toast: '', noWebsite: false, memberCount: null
     };
     this.ref0 = React.createRef();
@@ -479,7 +479,8 @@ class Component extends DCLogic {
     this.ref6 = React.createRef();
     this.ref7 = React.createRef();
     this.cardRef = React.createRef();
-    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'ref2', 6: 'ref7', 7: 'ref6' };
+    this.refShop = React.createRef();
+    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'refShop', 6: 'ref7', 7: 'ref6' };
     this.themes = [
       { rarity: 'CHARTER', pct: '1 OF 500', c1: '#1D6B45', c2: '#8A5E12', seal: '#F1ECE1', sealText: '#17583A' },
       { rarity: 'SUPER RARE', pct: 'TOP 3%', c1: '#0F4A30', c2: '#2EA36B', seal: '#F1ECE1', sealText: '#0F4A30' },
@@ -499,7 +500,7 @@ class Component extends DCLogic {
     switch (s.step) {
       case 0: return /.+@.+\..+/.test(s.email);
       case 1: return s.noWebsite || s.domain.trim().length > 2;
-      case 2: return s.workspace.trim().length > 1;
+      case 2: return s.shopName.trim().length > 1 && s.workspace.trim().length > 1;
       case 3: return !!s.volume;
       case 4: return !!s.stack;
       case 5: return !!s.timeline;
@@ -649,7 +650,7 @@ class Component extends DCLogic {
       if (this.state.step === 8) {
         const s = this.state;
         sendEnquiry('early_access', s.email, s.name, {
-          workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,
+          shopName: s.shopName, workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,
           jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,
           branches: s.branches, runningOn: s.stack, timeline: s.timeline,
           phone: s.dial + ' ' + String(s.phone || '').replace(/\D/g, ''), bestTime: s.callWindow,
@@ -673,6 +674,15 @@ class Component extends DCLogic {
     }
   }
   componentWillUnmount() { clearTimeout(this._tt); clearInterval(this._mc); clearTimeout(this._curtainT); }
+
+  onShopName = (e) => {
+    const v = e.target.value;
+    this.setState((s) => {
+      const slug = v.trim().toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+      const ours = !s.workspace || s.workspace === s._autoWs;
+      return ours ? { shopName: v, workspace: slug, _autoWs: slug } : { shopName: v };
+    });
+  };
 
   _workspaceFull() {
     const w = (this.state.workspace || 'yourdesk').trim().toLowerCase().replace(/[^a-z0-9-]/g, '') || 'yourdesk';
@@ -829,6 +839,7 @@ class Component extends DCLogic {
       email: s.email, onEmail: this.set('email'), ref0: this.ref0,
       domain: s.domain, onDomain: this.set('domain'), ref1: this.ref1, skipWebsite: this.skipWebsite,
       workspace: s.workspace, onWorkspace: this.set('workspace'), ref2: this.ref2, workspaceFull: this._workspaceFull(),
+      shopName: s.shopName, onShopName: this.onShopName, refShop: this.refShop,
       volumeOpts, branchOpts, stackOpts, timelineOpts,
       name: s.name, onName: this.set('name'), ref6: this.ref6,
       role: s.role, onRole: this.set('role'), employeeOpts,

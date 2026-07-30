@@ -37,6 +37,34 @@ only the words and the markup.
 
 ---
 
+## A1 and A2 are built — read this before touching them
+
+The two emails in the live flow now render the design. They are in
+`server/src/emails/design.ts`: nested tables, inline styles, no flex, no
+CSS custom properties, plain-text twin, preheader. `reviewEmail` and
+`inviteEmail` are thin wrappers over them, so every existing caller is
+unchanged.
+
+Two things the design draws are **deliberately not sent**, and both are
+guarded by a test that fails if somebody adds them back without building
+the thing underneath:
+
+| Not sent | Why |
+|---|---|
+| The **founding code** block — *"enter it at the payment step and the first three months come to zero"* | There is no promo code, and setup does not end at a payment step. Nothing is charged today, so the "three months free" copy above it is true; a code that works nowhere is not. |
+| **Save your card** (`card_url`) | The charter card is drawn in the browser at the end of setup. There is no server-rendered PNG to link to. The card itself is in the email — it is the middle of it — just not a download of it. |
+
+And one relabelling: the design's card reads **CurrencyDesk ID · Sign-in**.
+At the moment A2 is sent there is no account and no ID. What they hold is
+a reference that opens their setup and stops working if the invitation is
+withdrawn, so the card says that instead. When IDs are issued at approval
+rather than after setup, change it back.
+
+`shop_name` is **collected now** — the early-access form asks for it on the
+"Reserve your desk" step, and typing it fills the address in underneath.
+Applications lodged before that fall back to their workspace slug, tidied
+up. `card_url` and `device` from the table below are still open.
+
 ## Step 1 — Know what you are up against
 
 The design is a web page. It uses flexbox and CSS grid in about a hundred
@@ -67,7 +95,7 @@ not have is the fastest way to ship a mail that says `undefined`.
 
 | Field | Used by | Problem | Recommended |
 |---|---|---|---|
-| `shop_name` | A1, A2 | **The early-access form never asks for it.** It collects a workspace slug (`bayfx`), a website and a person's name — no business name. So *"thanks for putting Yorkville Currency forward"* has no source. | Add one field to the early-access form. It is one more question on a form that already asks nine, and it is the single most personal thing in the email. Fall back to the workspace slug where it is missing — every existing application is missing it. |
+| ~~`shop_name`~~ | A1, A2 | **Done.** The form asks for it on the "Reserve your desk" step and it flows through to both emails. What follows is the original note. The early-access form never asked for it: It collects a workspace slug (`bayfx`), a website and a person's name — no business name. So *"thanks for putting Yorkville Currency forward"* has no source. | Add one field to the early-access form. It is one more question on a form that already asks nine, and it is the single most personal thing in the email. Fall back to the workspace slug where it is missing — every existing application is missing it. |
 | `card_url` | A2 | The charter card is drawn client-side as a PNG in the browser at the end of the wizard. There is no URL for it. | Cut it from the launch version, or serve a rendered card at `/card/<reference>.png`. Cutting is fine; the card already reaches them on screen. |
 | `device` | A3 | Sign-in codes do not record the requesting device. | Capture the user-agent on the login-code request and pass a coarse label ("Chrome on Mac"). Small change in `routes/auth.ts`. Or cut the line. |
 | `topic`, `message` | A4 | Both exist on the record. **But the auto-reply itself does not exist** — the contact form emails the platform team and says nothing to the sender. | Build it. New template plus a send in `routes/enquiries.ts` where the operator alert already goes. |

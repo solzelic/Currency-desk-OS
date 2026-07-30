@@ -91,8 +91,9 @@ describe("what the applicant hears", () => {
     expect((list.enquiries as { id: string; status: string }[]).find((e) => e.id === a.id)!.status).toBe("reviewing");
 
     const mail = logged().find((l) => l.includes("to=review-me@shop.ca"));
-    expect(mail).toContain("We're looking at your CurrencyDesk application");
-    expect(mail).toContain("call you shortly");
+    // the designed A1, word for word — see src/emails/design.ts
+    expect(mail).toContain("We're looking at your shop");
+    expect(mail).toContain("mostly us listening");
   });
 
   it("does not say it twice when an operator moves them back into review", async () => {

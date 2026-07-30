@@ -1211,7 +1211,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const origin = publicOrigin();
     const linkFor = (ref: string) => `${origin}/onboarding/${encodeURIComponent(ref)}`;
     if (existing) {
-      const mail = inviteEmail({ name: existing.name, reference: existing.reference, origin });
+      const mail = inviteEmail({
+        name: existing.name, reference: existing.reference, origin,
+        shopName: b.businessName || null, cohortNo: existing.charterNo,
+      });
       const sent = await sendEmail(existing.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
       return {
         ok: true, resent: true, reference: existing.reference, link: linkFor(existing.reference), invite: sent,
@@ -1247,7 +1250,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       await db.insert(schema.onboarding).values({ enquiryId: id, answers: { operatingName: b.businessName } }).onConflictDoNothing();
     }
 
-    const mail = inviteEmail({ name: b.ownerName, reference, origin });
+    const mail = inviteEmail({
+      name: b.ownerName, reference, origin, shopName: b.businessName || null, cohortNo: charterNo,
+    });
     const sent = await sendEmail(b.ownerEmail, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
     await audit(db, {
       tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,

@@ -105,7 +105,9 @@ describe("the preview", () => {
     const p = res.json();
     expect(p.preview).toBe(true);
     expect(p.to).toBe("menu@shop.ca");
-    expect(p.text).toContain("Amir Rostami");
+    /* Greeted by first name, which is how the design writes it, and taken
+       off the record rather than out of the request. */
+    expect(p.text).toContain("Amir —");
     expect(p.subject).toBeTruthy();
   });
 
@@ -143,7 +145,7 @@ describe("sending it", () => {
     const t = (await detail(id)).replies;
     expect(t).toHaveLength(1);
     // the words, not the name of a template — "review" tells nobody anything in a year
-    expect(t[0]!.body).toContain("Nadia Haddad");
+    expect(t[0]!.body).toContain("Nadia —");
     expect(t[0]!.emailStatus).toBe("simulated");
     expect(t[0]!.sentBy).toBe(ADMIN);
   });
