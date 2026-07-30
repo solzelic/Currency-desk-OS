@@ -32,16 +32,40 @@ import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { inviteEmail, reviewEmail, sendEmail, type EmailStatus } from "../email.js";
 
-export type Stage = "new" | "reviewing" | "invited" | "accepted" | "declined";
+export type Stage = "new" | "reviewing" | "hold" | "invited" | "accepted" | "declined";
 
-/* The board, in the order an application travels. `declined` is not a
-   column anybody works towards, so it sits apart. */
-export const STAGES: { id: Stage; title: string; blurb: string; terminal?: boolean }[] = [
-  { id: "new", title: "Applied", blurb: "Came in from the site. Nobody has looked yet." },
-  { id: "reviewing", title: "Reviewing", blurb: "We are looking at them. They have been told." },
-  { id: "invited", title: "Invited", blurb: "They hold a working code and can set their desk up." },
-  { id: "accepted", title: "Open", blurb: "They finished, and the desk exists.", terminal: true },
-  { id: "declined", title: "Declined", blurb: "Not for now. Their code no longer opens anything.", terminal: true },
+/* The board, in the order an application travels.
+
+   An application does not sit anywhere waiting to be noticed. It arrives
+   IN REVIEW and is acknowledged in the same breath, because the gap
+   between "we got it" and any human looking is where an applicant decides
+   nobody is home.
+
+   `new` is left in the type for rows that predate that, and only shows as
+   a column while any of them exist. Nothing lands there any more. */
+export const STAGES: {
+  id: Stage; title: string; blurb: string;
+  /* What pressing the button DOES, in the imperative. "Approve" reads as a
+     decision; "→ Invited" reads as a database field, and an operator
+     working a queue should not have to translate. */
+  action: string;
+  terminal?: boolean; legacy?: boolean; primary?: boolean;
+}[] = [
+  /* No `action`, because nothing moves INTO these two. `new` is only where
+     rows that predate automatic acknowledgement are sitting, and a desk
+     opening is something the applicant does. */
+  { id: "new", title: "Not yet acknowledged", action: "", legacy: true,
+    blurb: "Came in before applications were acknowledged automatically. Nothing new lands here." },
+  { id: "reviewing", title: "In review", action: "Move to review",
+    blurb: "Where every application starts. They have been told we are looking." },
+  { id: "hold", title: "On hold", action: "Hold for later",
+    blurb: "Worth keeping, not now. They hear nothing — this is our note, not a decision they were told about." },
+  { id: "invited", title: "Invited", action: "Approve & invite", primary: true,
+    blurb: "Approved. They have their ID and the link, and can set their desk up." },
+  { id: "accepted", title: "Open", action: "", terminal: true,
+    blurb: "They finished. The desk exists and they are trading." },
+  { id: "declined", title: "Declined", action: "Decline", terminal: true,
+    blurb: "Not for us. Their code no longer opens anything." },
 ];
 
 /* `accepted` is deliberately absent from every list. A desk existing is
@@ -49,14 +73,24 @@ export const STAGES: { id: Stage; title: string; blurb: string; terminal?: boole
    not a decision, and an operator marking it by hand would be putting a
    lie in the funnel. */
 const ALLOWED: Record<Stage, Stage[]> = {
-  new: ["reviewing", "invited", "declined"],
-  reviewing: ["invited", "declined", "new"],
-  invited: ["reviewing", "declined"],   // moving out of `invited` is what revokes the code
+  new: ["reviewing", "invited", "hold", "declined"],
+  reviewing: ["invited", "hold", "declined"],
+  hold: ["reviewing", "invited", "declined"],
+  invited: ["reviewing", "hold", "declined"],   // moving out of `invited` is what revokes the code
   accepted: [],
-  declined: ["reviewing", "new"],
+  declined: ["reviewing", "hold"],
 };
 
 export const canMove = (from: Stage, to: Stage): boolean => (ALLOWED[from] ?? []).includes(to);
+
+/* Where an application can go from where it is. Served to the panel so the
+   buttons on a card ARE the legal moves rather than a second guess at them —
+   an operator should never be offered a button that returns 400. */
+export const movesFrom = (from: Stage): Stage[] => ALLOWED[from] ?? [];
+
+/* The board, with each column carrying the moves that leave it. One shape
+   for both the list and a single application's page. */
+export const board = () => STAGES.map((s) => ({ ...s, next: movesFrom(s.id) }));
 
 /* What each stage sends on arrival. Declared here, beside the stage, so
    "what does the applicant hear when we accept them?" is answerable by
@@ -65,7 +99,16 @@ type Mail = { subject: string; text: string; html: string };
 const ON_ARRIVAL: Partial<Record<Stage, (a: Row, origin: string) => Mail>> = {
   reviewing: (a) => reviewEmail({ name: a.name }),
   invited: (a, origin) => inviteEmail({ name: a.name, reference: a.reference, origin }),
+  /* `hold` and `declined` send nothing on purpose. Holding somebody is a
+     note to ourselves; telling them they are parked is worse than saying
+     nothing. Declining deserves a human reply, not an automated one. */
 };
+
+/* Which stages speak to the applicant. Exported so the communications
+   catalogue can be checked against it rather than kept in step by hand: a
+   stage that starts or stops sending should break that check, not surprise
+   somebody who thought they knew what a button did. */
+export const mailStages = (): Stage[] => Object.keys(ON_ARRIVAL) as Stage[];
 
 type Row = typeof schema.enquiries.$inferSelect;
 

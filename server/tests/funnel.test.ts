@@ -52,7 +52,7 @@ const list = (qs = "") =>
   app.inject({ method: "GET", url: "/api/admin/enquiries" + qs, cookies: adminCookie });
 
 describe("the early-access funnel", () => {
-  it("an application from the site lands in the control panel, unanswered", async () => {
+  it("an application from the site lands in the control panel, already in review", async () => {
     const sent = await apply("amir@yorkville.example", { workspace: "yorkville.currencydeskos.com", jurisdiction: "CA", monthlyVolume: "Under $500K" });
     expect(sent.statusCode).toBe(201);
 
@@ -60,7 +60,10 @@ describe("the early-access funnel", () => {
     expect(res.statusCode).toBe(200);
     const row = res.json().enquiries.find((e: { email: string }) => e.email === "amir@yorkville.example");
     expect(row).toBeTruthy();
-    expect(row.status).toBe("new");
+    /* Not "new" waiting to be noticed. Arriving IS being in review — there
+       is no stage before somebody is looking, because the applicant hears
+       nothing while one exists. */
+    expect(row.status).toBe("reviewing");
     expect(row.tenantId).toBeNull();
     // every answer the applicant gave is there to read
     expect(row.details).toMatchObject({ jurisdiction: "CA", monthlyVolume: "Under $500K" });

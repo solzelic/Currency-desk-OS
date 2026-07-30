@@ -386,10 +386,13 @@ export const enquiries = pgTable(
   ],
 );
 export type EnquiryKind = "early_access" | "contact";
-/* new → reviewing → invited → accepted, or declined at any point. "accepted"
-   is not set by hand: it is what a completed signup means. */
-export type EnquiryStatus = "new" | "reviewing" | "invited" | "accepted" | "declined";
-export const ENQUIRY_STATUSES: EnquiryStatus[] = ["new", "reviewing", "invited", "accepted", "declined"];
+/* reviewing → invited → accepted, with hold and declined as the two other
+   ways out of review. "accepted" is not set by hand: it is what a completed
+   signup means. "new" is only for rows that arrived before applications
+   were acknowledged automatically — nothing lands there any more, and the
+   ordering here is what the board's columns are drawn from. */
+export type EnquiryStatus = "new" | "reviewing" | "hold" | "invited" | "accepted" | "declined";
+export const ENQUIRY_STATUSES: EnquiryStatus[] = ["new", "reviewing", "hold", "invited", "accepted", "declined"];
 
 /* SMS rate-hold quotes — a site visitor asks for a rate by text; the
    server prices it off the newest published board and HOLDS it for 30

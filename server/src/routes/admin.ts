@@ -24,15 +24,18 @@ import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
-import { cleanLabel, labelsOf, moveTo, STAGES, type Stage } from "../onboarding/pipeline.js";
+import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
+import { systemHealth } from "../platform/health.js";
+import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
+import { DISPATCHES, SILENT, delivery } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
 const patchEnquiryBody = z
   .object({
-    status: z.enum(["new", "reviewing", "invited", "accepted", "declined"]).optional(),
+    status: z.enum(schema.ENQUIRY_STATUSES as [Stage, ...Stage[]]).optional(),
     notes: z.string().max(4000).optional(),
     // send the stage's email again without pretending the stage changed
     resend: z.boolean().optional(),
@@ -329,7 +332,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const alsoFrom = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, row.email)))
       .filter((e) => e.id !== row.id)
       .map((e) => ({ id: e.id, kind: e.kind, reference: e.reference, status: e.status, createdAt: e.createdAt }));
-    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom };
+    // the same stage list the board uses, so one application's page offers
+    // exactly the moves the board does — and exactly the ones that will work
+    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board() };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (req, reply) => {
@@ -405,10 +410,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     }
     return {
       enquiries: rows.map((r) => ({ ...r, tenantName: r.tenantId ? (names.get(r.tenantId) ?? null) : null })),
-      /* The board's columns come from the server's own list of stages, so
-         adding one later shows up in the panel without a second edit — and
-         the columns can never drift from what a transition will accept. */
-      stages: STAGES,
+      /* The board's columns come from the server's own list of stages, and
+         each carries the moves that leave it, so adding a stage later shows
+         up in the panel without a second edit and the buttons on a card can
+         never offer a move a transition would refuse. */
+      stages: board(),
     };
   });
 
@@ -588,6 +594,47 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      A customer paying a year up front hands over twelve months of cash today
      and earns one month of it. These are Stripe's cash and subscription
      numbers; accounting recognition is a different report. */
+  /* ---- put the rehearsal back -------------------------------------------
+     The walkthrough is a real application against the real customer flow,
+     so running it leaves answers behind and the second run would start
+     halfway through. This wipes those, not the application. It is the only
+     record that can be reset — a real applicant's answers are theirs. */
+  app.post("/api/admin/walkthrough/reset", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    await resetWalkthrough(db);
+    await audit(db, {
+      tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.walkthrough_reset", detail: { reference: WALKTHROUGH_REF },
+    });
+    return { ok: true, reference: WALKTHROUGH_REF };
+  });
+
+  /* ---- is anything broken right now -------------------------------------
+     The screen you open when somebody says "it's not working". Every check
+     answers in one sentence and says where to go and fix it. */
+  app.get("/api/admin/health", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    return systemHealth(db);
+  });
+
+  /* ---- what we say to people --------------------------------------------
+     The catalogue of every email, what fires it, and whether sending is
+     live or simulated. Also the two stages that deliberately say nothing,
+     because an operator should not have to guess about silence. */
+  app.get("/api/admin/comms", async (req, reply) => {
+    if (!(await gate(req, reply))) return;
+    return {
+      delivery: delivery(),
+      dispatches: DISPATCHES.map((d) => ({
+        id: d.id, title: d.title, audience: d.audience,
+        when: d.when, automatic: d.automatic, stage: d.stage ?? null,
+        sample: d.sample(),
+      })),
+      silent: SILENT,
+    };
+  });
+
   app.get("/api/admin/billing", async (req, reply) => {
     const who = await gate(req, reply, "billing:read");
     if (!who) return;

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { sendEmail } from "../email.js";
+import { moveTo } from "../onboarding/pipeline.js";
 import { forgetClaimedCount } from "./early-access.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
@@ -55,6 +56,31 @@ const LABELS: Record<string, string> = {
   early_access: "Early access application",
   contact: "Contact form",
 };
+
+/* The number we ring.
+
+   Stored E.164-ish — a plus, a country code, digits, nothing else — because
+   that is the only shape that can be dialled, texted, and compared for
+   "have we already got this person". How it is displayed is the panel's
+   business; how it was typed is nobody's.
+
+   Deliberately NOT rejected when it looks wrong. This is a public form and
+   a number we cannot parse is still a lead: somebody typing an extension,
+   a country we did not list, or their number with a word in it should not
+   lose their place in the cohort over it. We keep what they typed, mark it
+   unparsed, and let a person look. */
+export function normalizePhone(raw: unknown): { phone: string; ok: boolean } | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const digits = s.replace(/\D+/g, "");
+  if (!digits) return { phone: s.slice(0, 40), ok: false };
+  // a leading + is the caller's own country code; otherwise assume +1, which
+  // is where every desk is today and is what the form's default sends
+  const plus = s.trimStart().startsWith("+");
+  const e164 = plus ? `+${digits}` : digits.length === 10 ? `+1${digits}` : `+${digits}`;
+  // 8 is the shortest real national number, 15 the E.164 ceiling
+  return { phone: e164.slice(0, 17), ok: digits.length >= 8 && digits.length <= 15 };
+}
 
 export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
   // one bucket per sender, swept lazily — this endpoint is low-traffic and
@@ -103,17 +129,47 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       }
     }
 
+    /* The phone number is the one field on this form that gets acted on
+       rather than read — somebody rings it within minutes of approval — so
+       it is stored in a dialable shape, and whether we could make sense of
+       it is recorded next to it rather than left for the caller to find
+       out. */
+    const kept: Record<string, unknown> = { ...(details ?? {}) };
+    const tel = normalizePhone(kept.phone);
+    if (tel) {
+      kept.phone = tel.phone;
+      if (!tel.ok) kept.phoneUnparsed = String((details ?? {}).phone ?? "");
+    }
+
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
-    await db.insert(schema.enquiries).values({
+    const [row] = await db.insert(schema.enquiries).values({
       id: randomUUID(),
       reference,
       kind,
       email,
       name: name ?? null,
-      details: details ?? {},
+      details: kept,
       charterNo,
-    });
+    }).returning();
+
+    /* An application goes straight into review, and the applicant is told so
+       in the same breath.
+
+       There used to be a stage before this one — the row landed unacknowledged
+       and waited for somebody to notice it. That is not a stage anybody works,
+       it is a gap: the applicant hears nothing while it lasts, and the only
+       thing an operator ever did with it was move it to review. So arriving IS
+       being in review, and the acknowledgement goes out automatically.
+
+       Through moveTo rather than a second sending path here, so there is one
+       answer to "what happens when an application reaches review?" — the same
+       one whether a person, this route, or a reviewer agent caused it. Best
+       effort: the row is saved, and a mail outage must never cost us the
+       application. */
+    if (kind === "early_access" && row) {
+      await moveTo(db, row, "reviewing", "system").catch(() => null);
+    }
 
     // Tell the operators. Best-effort: the enquiry is already saved, so a
     // mail outage costs a notification, never the application itself.

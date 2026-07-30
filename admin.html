@@ -32,7 +32,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const MONO = "var(--m)";
 
 // ---- helpers ----
@@ -125,46 +125,57 @@ function Login({ onIn }) {
 }
 
 // ===================== SIDEBAR =====================
-function Sidebar({ counts, statusFilter, setStatusFilter, planFilter, setPlanFilter, tab, setTab, onCreate }) {
-  const navItem = (id, label, count) => (
-    <button onClick={() => setTab(id)} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9,
-      border: 'none', cursor: 'pointer', background: tab === id ? 'var(--hover)' : 'transparent', color: tab === id ? 'var(--text)' : 'var(--mute)', fontSize: 14, fontWeight: tab === id ? 600 : 500 }}>
-      <span style={{ flex: 1 }}>{label}</span>{count != null && <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{count}</span>}
-    </button>
-  );
-  const section = (t) => <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', color: 'var(--faint)', margin: '20px 11px 8px', textTransform: 'uppercase' }}>{t}</div>;
-  const filterRow = (label, c, active, onClick, n) => (
-    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '7px 11px', borderRadius: 8, border: 'none', cursor: 'pointer', background: active ? 'var(--hover)' : 'transparent', color: active ? 'var(--text)' : 'var(--mute)', fontSize: 13 }}>
-      {dot(c)}<span style={{ flex: 1, textTransform: 'capitalize' }}>{label}</span>{n != null && <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{n}</span>}
-    </button>
-  );
-  return (<div style={{ width: 248, flex: 'none', background: 'var(--sidebar)', borderRight: '1px solid var(--line)', height: '100vh', overflow: 'auto', padding: '18px 12px', display: 'flex', flexDirection: 'column' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '4px 8px 16px' }}>
+function Cog({ s = 15 }) {
+  return (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>);
+}
+
+/* The nav is the PAGES table and nothing else. Counts are the numbers that
+   should make you click — things sitting on somebody — not totals for
+   their own sake, so a page with nothing waiting shows no badge at all.
+
+   The desk filters used to live down here, which meant Billing and
+   Settings both had a "Status: Active / Trial / Suspended" list attached
+   to them that did nothing. Filters belong to the list they filter. */
+function Sidebar({ counts, tab, health, onSettings }) {
+  const navItem = (p) => {
+    const n = p.count ? counts[p.count] : null;
+    const on = tab === p.id;
+    return (<button key={p.id} onClick={() => goto('#/' + p.id)} title={p.blurb}
+      style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9,
+        border: 'none', cursor: 'pointer', background: on ? 'var(--hover)' : 'transparent', color: on ? 'var(--text)' : 'var(--mute)', fontSize: 14, fontWeight: on ? 600 : 500 }}>
+      <span style={{ flex: 1 }}>{p.label}</span>
+      {/* Amber means somebody is waiting on you. A total — how many desks
+          exist — is just a number, and dressing it as an alert is how a
+          panel teaches you to stop reading its alerts. */}
+      {n ? (p.quiet
+        ? <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)' }}>{n}</span>
+        : <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: '#111', background: 'var(--amber)', borderRadius: 20, padding: '1px 7px' }}>{n}</span>) : null}
+    </button>);
+  };
+  const tone = health && health.state !== 'ok' ? (health.state === 'down' ? 'var(--red)' : 'var(--amber)') : 'var(--green)';
+  return (<div style={{ width: 232, flex: 'none', background: 'var(--sidebar)', borderRight: '1px solid var(--line)', height: '100vh', overflow: 'auto', padding: '18px 12px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '4px 8px 18px' }}>
       <span style={{ width: 34, height: 34, borderRadius: 9, background: '#1c1c20', display: 'grid', placeItems: 'center', flex: 'none' }}><Mark w={20} /></span>
       <span><span style={{ display: 'block', fontWeight: 700, fontSize: 14.5 }}>CurrencyDesk</span><span style={{ display: 'block', fontSize: 12, color: 'var(--mute)' }}>Platform control</span></span>
     </div>
-    {navItem('desks', 'Desks', counts.desks)}
-    {navItem('applications', 'Early access', counts.waiting || null)}
-    {navItem('onboarding', 'Onboarding', null)}
-    {navItem('messages', 'Messages', counts.unread || null)}
-    {navItem('activity', 'Activity', null)}
-    {navItem('billing', 'Billing', null)}
-    {navItem('settings', 'Settings', null)}
-    <button onClick={onCreate} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', cursor: 'pointer', background: 'transparent', color: 'var(--mute)', fontSize: 13.5, marginTop: 6 }}>
-      <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Start a desk
+    {PAGES.map(navItem)}
+    <div style={{ flex: 1, minHeight: 20 }} />
+    {/* Whether anything is broken, always in the corner of your eye, and
+        one click from the page that says what. */}
+    <button onClick={() => goto('#/overview')} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 11px', borderRadius: 9, border: 'none', background: 'transparent', color: 'var(--mute)', fontSize: 12.5, cursor: 'pointer' }}>
+      {dot(tone)}<span>{!health ? 'Checking…' : health.state === 'ok' ? 'All systems fine' : health.state === 'down' ? 'Something is down' : 'Needs a look'}</span>
     </button>
-    {section('Status')}
-    {filterRow('All', 'var(--mute)', statusFilter === 'all', () => setStatusFilter('all'), counts.desks)}
-    {filterRow('Active', 'var(--green)', statusFilter === 'active', () => setStatusFilter('active'), counts.active)}
-    {filterRow('Trial', 'var(--amber)', statusFilter === 'trial', () => setStatusFilter('trial'), counts.trial)}
-    {filterRow('Suspended', 'var(--red)', statusFilter === 'suspended', () => setStatusFilter('suspended'), counts.suspended)}
-    {section('Plans')}
-    {filterRow('All plans', 'var(--mute)', planFilter === 'all', () => setPlanFilter('all'))}
-    {filterRow('Basic', 'var(--mute)', planFilter === 'basic', () => setPlanFilter('basic'))}
-    {filterRow('Pro', 'var(--green)', planFilter === 'pro', () => setPlanFilter('pro'))}
-    {filterRow('Premium', 'var(--purple)', planFilter === 'premium', () => setPlanFilter('premium'))}
-    <div style={{ flex: 1 }} />
-    <a href="/" style={{ display: 'block', padding: '9px 11px', color: 'var(--faint)', fontSize: 12.5, textDecoration: 'none' }}>← Back to the OS</a>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, borderTop: '1px solid var(--line2)', paddingTop: 8 }}>
+      <button onClick={onSettings} title="Platform settings"
+        style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, textAlign: 'left', padding: '8px 11px', borderRadius: 9, border: 'none', cursor: 'pointer',
+          background: tab === 'settings' ? 'var(--hover)' : 'transparent', color: tab === 'settings' ? 'var(--text)' : 'var(--mute)', fontSize: 13 }}>
+        <Cog /> Settings
+      </button>
+      <a href="/" title="Back to the OS" style={{ padding: '8px 10px', color: 'var(--faint)', fontSize: 12.5, textDecoration: 'none' }}>↩</a>
+    </div>
   </div>);
 }
 
@@ -187,6 +198,130 @@ function StatRow({ ov }) {
   </div>);
 }
 
+// ===================== OVERVIEW =====================
+/* The page you open first, and the page you open when somebody says "it's
+   not working".
+
+   Ordered by what it is for: what is sitting on you, then whether anything
+   is broken, then how the business is doing. Numbers last on purpose — a
+   dashboard that leads with a revenue tile is a dashboard nobody opens on
+   a Tuesday, because there is nothing to DO with it. */
+const HEALTH_TONE = { ok: 'green', warn: 'amber', down: 'red', off: 'mute' };
+const HEALTH_WORD = { ok: 'Fine', warn: 'Look', down: 'Down', off: 'Not set up' };
+
+function OverviewPage({ ov, health, counts }) {
+  const f = (ov && ov.funnel) || {};
+  const [bill, setBill] = useState(null);
+  useEffect(() => { api('/api/admin/billing').then(setBill).catch(() => setBill(null)); }, []);
+
+  /* Only things a person can act on, and only when there are any. An
+     empty "needs you" list is the good outcome and should look like it,
+     not like a card that failed to load. */
+  const todo = [];
+  if (f.waiting) todo.push({ what: `${f.waiting} application${f.waiting === 1 ? '' : 's'} in review`, go: '#/applications', cta: 'Work the queue' });
+  if (f.unread) todo.push({ what: `${f.unread} unanswered message${f.unread === 1 ? '' : 's'}`, go: '#/inbox', cta: 'Read them' });
+  if (bill && bill.failedCount) todo.push({ what: `${bill.failedCount} failed payment${bill.failedCount === 1 ? '' : 's'}`, go: '#/billing', cta: 'Chase them' });
+  for (const c of (health ? health.checks : [])) {
+    if (c.state === 'down') todo.push({ what: c.detail, go: c.href || '#/overview', cta: 'Fix' });
+  }
+
+  return (<div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ background: todo.length ? 'var(--card)' : 'transparent', border: '1px solid ' + (todo.length ? 'var(--line)' : 'var(--line2)'), borderRadius: 14, padding: todo.length ? 6 : 18 }}>
+      {todo.length === 0 && <div style={{ color: 'var(--mute)', fontSize: 13.5 }}>Nothing is waiting on you. Applications are answered, messages are read, and every check is green.</div>}
+      {todo.map((t, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderTop: i ? '1px solid var(--line2)' : 'none' }}>
+        <span style={{ flex: 1, fontSize: 13.5 }}>{t.what}</span>
+        <button onClick={() => goto(t.go)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{t.cta}</button>
+      </div>))}
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
+      <Card title="Is anything broken">
+        {!health && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12 }}>Checking…</div>}
+        {health && health.checks.map(c => (<div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--line2)' }}>
+          <span style={{ width: 92, flex: 'none' }}><Pill tone={HEALTH_TONE[c.state]} dot>{HEALTH_WORD[c.state]}</Pill></span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{c.title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginTop: 2 }}>{c.detail}</span>
+            {c.fix && <span style={{ display: 'block', fontSize: 12, color: 'var(--faint)', marginTop: 3 }}>{c.fix}</span>}
+          </span>
+          {c.href && c.state !== 'ok' && <button onClick={() => goto(c.href)} style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent', color: 'var(--mute)', fontSize: 11.5, cursor: 'pointer', flex: 'none' }}>Open</button>}
+        </div>))}
+      </Card>
+
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card title="The business">
+          {kv('Desks', counts.desks)}
+          {kv('Paying', counts.active)}
+          {kv('On trial', counts.trial)}
+          {kv('Suspended', counts.suspended || '0')}
+          {kv('MRR', bill ? (bill.connected ? '$' + K((bill.mrrCents || 0) / 100) : 'Stripe not connected') : '…')}
+        </Card>
+        <Card title="The funnel">
+          {kv('Applications', f.applications)}
+          {kv('In review', f.byStatus ? f.byStatus.reviewing : null)}
+          {kv('On hold', f.byStatus ? f.byStatus.hold : null)}
+          {kv('Invited', f.byStatus ? f.byStatus.invited : null)}
+          {kv('Open desks', f.byStatus ? f.byStatus.accepted : null)}
+        </Card>
+      </div>
+    </div>
+  </div>);
+}
+
+// ===================== EMAILS =====================
+/* What CurrencyDesk says to people, and whether it is actually saying it.
+
+   This page exists because the emails were written, worked, and were
+   invisible: no way to see what goes out, what fires it, or that sending
+   had quietly fallen back to writing to a log file. That last one is the
+   dangerous one at forty invitations. */
+function CommsPage() {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(null);
+  useEffect(() => { api('/api/admin/comms').then(setD).catch(() => setD({ error: true })); }, []);
+  if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
+  if (d.error) return <div style={{ padding: 20, color: 'var(--red)' }}>Could not load this.</div>;
+
+  const AUD = { applicant: 'Applicant', operator: 'Desk owner', staff: 'Their staff', platform: 'Us' };
+  return (<div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ padding: '13px 16px', borderRadius: 12, fontSize: 13, lineHeight: 1.6,
+      background: 'color-mix(in srgb,' + toneColor(d.delivery.live ? 'green' : 'amber') + ' 12%,transparent)',
+      border: '1px solid color-mix(in srgb,' + toneColor(d.delivery.live ? 'green' : 'amber') + ' 30%,transparent)' }}>
+      <b>{d.delivery.live ? 'Sending' : 'Not sending'}</b> — {d.delivery.detail}
+      {d.delivery.fix && <div style={{ color: 'var(--mute)', marginTop: 4 }}>{d.delivery.fix}</div>}
+    </div>
+
+    <Card title="What goes out" pad={0}>
+      {d.dispatches.map(x => (<div key={x.id} style={{ borderBottom: '1px solid var(--line2)' }}>
+        <button onClick={() => setOpen(open === x.id ? null : x.id)} style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'left', padding: '13px 16px', background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{x.title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', marginTop: 2 }}>{x.when}</span>
+          </span>
+          <Pill tone="blue">{AUD[x.audience]}</Pill>
+          <Pill tone={x.automatic ? 'purple' : 'mute'}>{x.automatic ? 'automatic' : 'you send it'}</Pill>
+          <span style={{ color: 'var(--faint)', fontSize: 11 }}>{open === x.id ? '▲' : '▼'}</span>
+        </button>
+        {open === x.id && (<div style={{ padding: '0 16px 16px' }}>
+          <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>SUBJECT</div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 12 }}>{x.sample.subject}</div>
+          <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>BODY (sample)</div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: MONO, fontSize: 12, lineHeight: 1.6, color: 'var(--mute)', margin: 0, background: 'var(--sidebar)', padding: 13, borderRadius: 10 }}>{x.sample.text}</pre>
+        </div>)}
+      </div>))}
+    </Card>
+
+    {/* Silence is a decision here, so it is written down rather than left
+        to somebody wondering whether a send failed. */}
+    <Card title="Where we say nothing, on purpose">
+      {d.silent.map(s => (<div key={s.stage} style={{ display: 'flex', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}>
+        <span style={{ width: 90, flex: 'none', textTransform: 'capitalize', fontWeight: 600 }}>{s.stage}</span>
+        <span style={{ color: 'var(--mute)', lineHeight: 1.55 }}>{s.why}</span>
+      </div>))}
+    </Card>
+  </div>);
+}
+
 // ===================== START A DESK =====================
 /* Adding a desk does not create a desk. It sends somebody the link to set
    one up. We fill in the handful of things we already know — the same ones
@@ -198,6 +333,13 @@ function CreateModal({ onClose, onCreated }) {
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); const [copied, setCopied] = useState(false);
   const set = (k, v) => setF(s => Object.assign({}, s, { [k]: k === 'slug' ? v.toLowerCase().replace(/[^a-z0-9-]/g, '') : v }));
+  // Escape closes it. Clicking the backdrop already did, and a dialog where
+  // one of the two ways out works is a dialog people feel stuck in.
+  useEffect(() => {
+    const on = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, []);
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('');
     try { const r = await api('/api/admin/onboarding/invite', { method: 'POST', body: JSON.stringify(f) }); setBusy(false); setDone(r); onCreated(); }
@@ -259,19 +401,96 @@ function CreateModal({ onClose, onCreated }) {
 // Everything the public site sends us. An application is not a message in an
 // inbox — it is a thing somebody works — so this reads as a pipeline: what
 // stage each one is at, what the applicant told us, and what it became.
-const TAB_TITLE = { desks: 'Desks', applications: 'Early access', onboarding: 'Onboarding', messages: 'Messages', activity: 'Activity', billing: 'Billing', settings: 'Platform settings' };
-const STAGE_TONE = { new: 'blue', reviewing: 'amber', invited: 'purple', accepted: 'green', declined: 'mute' };
-const STAGES = ['new', 'reviewing', 'invited', 'accepted', 'declined'];
-// stages an operator can set; "accepted" is what a created desk means
-const SETTABLE = ['new', 'reviewing', 'invited', 'declined'];
+/* ============================================================
+   THE PANEL, DECLARED IN ONE PLACE
+
+   Every page, in the order somebody works them, with the one thing that
+   page is for. This table is why the nav, the headings, the routes and
+   the buttons cannot disagree with each other — they are all read from
+   it.
+
+   `action` is the point. There used to be a single "Start a desk" button
+   pinned to the top of every screen, which is how you end up able to
+   start a desk from the billing page. An action belongs to the page it
+   makes sense on: you invite people from Applications, you bill people
+   from Billing, and Activity is a record so it has no action at all.
+   ============================================================ */
+const PAGES = [
+  { id: 'overview', label: 'Overview', title: 'Overview',
+    blurb: 'What needs you, what the business is doing, and whether anything is broken.' },
+  { id: 'applications', label: 'Applications', title: 'Applications', count: 'waiting',
+    blurb: 'Everyone who asked for a desk, and where you have got to with them. Approving sends their code and setup link.',
+    action: { label: 'Invite a desk', kind: 'invite' } },
+  { id: 'desks', label: 'Desks', title: 'Desks', count: 'desks', quiet: true,
+    blurb: 'The customers. Open one to see their storefront, their people and their plan.',
+    action: { label: 'Invite a desk', kind: 'invite' } },
+  { id: 'billing', label: 'Billing', title: 'Billing',
+    blurb: 'Subscriptions, invoices and what has actually been collected.',
+    action: { label: 'Send an invoice', kind: 'invoice' } },
+  { id: 'inbox', label: 'Inbox', title: 'Inbox', count: 'unread',
+    blurb: 'Notes from the contact page. Each one was promised a reply within a business day.' },
+  { id: 'comms', label: 'Emails', title: 'Emails',
+    blurb: 'Everything CurrencyDesk says to anybody — what goes out, what fires it, and whether it is really sending.' },
+  { id: 'activity', label: 'Activity', title: 'Activity',
+    blurb: 'Every change anybody made, in order. Six years of it, because that is what the rulebook asks for.' },
+];
+const PAGE = (id) => PAGES.find(p => p.id === id) || PAGES[0];
+/* One answer off an application, whichever shape the row is in. */
+const det = (e, k) => { const v = (e && e.details || {})[k]; return v == null || v === '' ? null : String(v); };
+/* The number, spaced for reading. Stored E.164 so it can be dialled; a
+   fifteen-digit run with no gaps is unreadable to the person dialling it. */
+const tel = (e) => {
+  const raw = det(e, 'phone');
+  if (!raw) return null;
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(raw);
+  return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : raw;
+};
+/* Settings is not in the list on purpose — it is the cogwheel at the
+   bottom. You visit it when something needs configuring, not while you
+   are working, and putting it in the run of daily pages made it look
+   like one. */
+const SETTINGS = { id: 'settings', title: 'Platform settings', blurb: 'Who runs CurrencyDesk, and how it is wired up.' };
+const STAGE_TONE = { new: 'mute', reviewing: 'amber', hold: 'blue', invited: 'purple', accepted: 'green', declined: 'mute' };
+/* Only a fallback, for the moment before the server's own list arrives. The
+   real columns — their titles, the verb on each button, and which moves are
+   legal from where — all come from the server, so the panel cannot drift
+   from what a transition will actually accept. */
+const STAGES = ['new', 'reviewing', 'hold', 'invited', 'accepted', 'declined'];
+const stageTitle = (stages, id) => ((stages || []).find(s => s.id === id) || {}).title || id;
+/* Each column, in more words than fit under its heading — what it means,
+   what the applicant has been told, and what moving them out of it does.
+   The one-liner under the title is the summary; this is the training. */
+const STAGE_HELP = {
+  new: 'Applications from before arrivals were acknowledged automatically. They have heard nothing from us. Nothing new lands here, and the column disappears once it is empty — so work these out and it goes.',
+  reviewing: 'Where every application starts, the moment it arrives. They have already been emailed to say somebody is looking and that we will call. Nobody has to press anything to get them here.',
+  hold: 'Worth keeping, not now. They are told nothing — this is a note to ourselves, not a decision they were given. You can approve straight from here without sending them back through review.',
+  invited: 'Approved. Pressing Approve emailed them their reference and the link to set the desk up, and that link works for exactly as long as they sit in this column.',
+  accepted: 'They finished setup and the desk exists. You cannot put an application here by hand — it arrives when they complete it, which is what keeps this board honest about the funnel.',
+  declined: 'Not for us. Their code stops opening anything immediately. We send nothing automatically: a decline deserves a person writing to them.',
+};
+/* What each answer on the application is called here, and — where the name
+   alone is not enough — what it means. The help text is the difference
+   between a new starter guessing and a new starter knowing. */
 const DETAIL_LABELS = {
   workspace: 'Workspace', website: 'Website', jurisdiction: 'Jurisdiction', role: 'Their role',
   employees: 'Team size', monthlyVolume: 'Monthly volume', branches: 'Locations',
   runningOn: 'Running on today', timeline: 'Wants to be live', topic: 'About', shop: 'Shop',
   city: 'City', message: 'Message', newsletter: 'Wants updates',
+  phone: 'Mobile', bestTime: 'Best time to call', phoneUnparsed: 'Number as typed',
+};
+const DETAIL_HELP = {
+  workspace: 'The web address they asked for. Their storefront will live at currencydeskos.com/sites/<this>, and it becomes the desk’s slug when they finish setup.',
+  jurisdiction: 'Where they are licensed. It decides the regulator, the home currency and the reporting threshold their desk carries — so it is the one answer everything else follows from.',
+  monthlyVolume: 'What they say they exchange in a month. Self-reported on the form, never verified — treat it as a sizing hint, not a fact.',
+  runningOn: 'What they use today. “Spreadsheets & manual logs” usually means a quick, happy switch; “Legacy MSB software” usually means a data migration conversation.',
+  timeline: 'How soon they want to be trading on it. Worth weighing against the queue — somebody who says “as soon as possible” and waits three weeks tends not to answer the phone.',
+  branches: 'One shop or several. Multi-branch desks need a legal entity and branch set up per location, so they take longer to open.',
+  phone: 'The number we ring after approving them. Collected on the application so nobody has to chase it — it is also the number they can sign in with later.',
+  bestTime: 'When they said to call. Their local time, not yours.',
+  phoneUnparsed: 'They typed something we could not read as a phone number, so it is kept exactly as written. Check it before dialling.',
 };
 
-function Pipeline({ kind, title, blurb, onCounts }) {
+function Pipeline({ kind, onCounts }) {
   const [rows, setRows] = useState(null);
   const [stage, setStage] = useState('all');
   /* Board or list. The board is for working the queue; the list is for
@@ -281,6 +500,19 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   const [stages, setStages] = useState(null);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState('');
+  /* What is in the hand, and which column it is over.
+
+     Two copies of the same thing on purpose. A drop only happens if a column
+     called preventDefault() on a PRECEDING dragover — that is the browser's
+     rule, not ours — so the answer to "can I take this?" has to be available
+     synchronously, on the very first dragover, before React has re-rendered
+     with the new state. The ref is what dragover reads; the state is what
+     the columns are drawn from. Reading state in dragover looks fine when
+     you move slowly and silently drops the card when you flick. */
+  const dragRef = useRef(null);
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+  const accepts = (id) => { const d = dragRef.current; return !!d && d.next.includes(id); };
 
   const load = async () => {
     const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({ enquiries: [] }));
@@ -299,7 +531,7 @@ function Pipeline({ kind, title, blurb, onCounts }) {
     try {
       const res = await api('/api/admin/enquiries/' + r.id, { method: 'PATCH', body: JSON.stringify({ status: to }) });
       const sent = res.email;
-      setNote((r.name || r.email) + ' → ' + to + (sent ? ' · email ' + sent : ''));
+      setNote((r.name || r.email) + ' → ' + stageTitle(stages, to) + (sent ? ' · email ' + sent : ''));
       await load();
     } catch (e) {
       setNote((e.body && e.body.detail) || 'Could not move that one.');
@@ -309,9 +541,14 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   };
 
   if (!rows) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
-  const BOARD = stages || STAGES.map(id => ({ id, title: id, blurb: '' }));
+  const BOARD = stages || STAGES.map(id => ({ id, title: id, blurb: '', next: [] }));
 
-  const counts = STAGES.reduce((a, s) => (a[s] = rows.filter(r => r.status === s).length, a), {});
+  const counts = BOARD.reduce((a, s) => (a[s.id] = rows.filter(r => r.status === s.id).length, a), {});
+  /* A stage nothing lands in any more is not a column — it is clutter. It
+     stays visible only while somebody is still sitting in it, so the eight
+     applications that arrived before review was automatic can be worked out
+     of it rather than silently disappearing from the board. */
+  const columns = BOARD.filter(s => !s.legacy || counts[s.id] > 0);
   const shown = stage === 'all' ? rows : rows.filter(r => r.status === stage);
   const th = { textAlign: 'left', fontSize: 11, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 16px 10px', fontWeight: 600 };
   const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
@@ -325,20 +562,51 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   /* A card. The same one on the board and, one day, anywhere else a single
      application needs to be shown small. */
   const card = (r) => {
-    const here = BOARD.findIndex(s => s.id === r.status);
-    const onward = BOARD.filter(s => s.id !== r.status && s.id !== 'accepted');
-    return (<div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, opacity: busy === r.id ? 0.5 : 1 }}>
-      <div onClick={() => goto('#/applications/' + r.id)} style={{ cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+    /* Exactly the moves the server will accept from here, named by what
+       pressing them DOES. The approving one comes first and is the only one
+       that looks like a decision, because approving is one click and the
+       rest of it — the code, the email, the link — happens on its own. */
+    const from = BOARD.find(s => s.id === r.status) || {};
+    const onward = (from.next || []).map(id => BOARD.find(s => s.id === id)).filter(Boolean)
+      .sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
+    /* Draggable only where there is somewhere to go. Picking up a card that
+       cannot be put down anywhere is a promise the board cannot keep.
+
+       The buttons stay. Drag is the fast way when you know where it goes;
+       the buttons are the way that works on a phone, with a keyboard, and
+       when you want to read what pressing the thing will actually do. */
+    const canDrag = onward.length > 0;
+    const lifted = drag && drag.row.id === r.id;
+    /* minWidth:0 the whole way down, or one long address makes the card wider
+       than its column and the board stops lining up. */
+    return (<div key={r.id} draggable={canDrag}
+      onDragStart={ev => {
+        ev.dataTransfer.effectAllowed = 'move';
+        // some browsers refuse to start a drag with nothing on the transfer
+        ev.dataTransfer.setData('text/plain', r.reference);
+        dragRef.current = { row: r, next: onward.map(s => s.id) };
+        setDrag(dragRef.current);
+      }}
+      onDragEnd={() => { dragRef.current = null; setDrag(null); setOver(null); }}
+      style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: 12, minWidth: 0, overflow: 'hidden',
+        cursor: canDrag ? 'grab' : 'default', opacity: busy === r.id ? 0.5 : lifted ? 0.35 : 1 }}>
+      <div onClick={() => goto('#/applications/' + r.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <Avatar name={r.name || r.email} size={26} />
-          <span style={{ minWidth: 0 }}>
-            <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{r.name || '—'}</span>
-            <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || '—'}</span>
+            <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.email}</span>
           </span>
         </div>
         <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)', marginTop: 8 }}>
           {r.reference}{r.charterNo ? ' · Nº ' + String(r.charterNo).padStart(4, '0') : ''}
         </div>
+        {/* The number, on the card. Approving promises a call within minutes,
+            so whether we can actually make it belongs where the decision is
+            taken, not one click further in. */}
+        {tel(r) && <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)', marginTop: 3 }}>
+          ☏ {tel(r)}{det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''}
+        </div>}
         {/* The rehearsal sits in the same board as everyone else so it can be
             found, and has to be unmistakable so nobody works it as a lead. */}
         {r.isDemo && <div style={{ marginTop: 6 }}><Pill tone="purple">walkthrough</Pill></div>}
@@ -347,14 +615,14 @@ function Pipeline({ kind, title, blurb, onCounts }) {
         </div>)}
         {r.tenantName && <div style={{ marginTop: 8 }}><Pill tone="green">{r.tenantName}</Pill></div>}
       </div>
-      {/* Where they can go from here — the server decides which moves are
-          legal, and 'Open' never appears because a desk opening is something
-          they do, not something we assert. */}
+      {/* Where they can go from here. 'Open' never appears because a desk
+          opening is something they do, not something we assert. */}
       {onward.length > 0 && (<div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line2)' }}>
         {onward.map(s => (<button key={s.id} disabled={busy === r.id} onClick={() => move(r, s.id)}
-          style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'transparent',
-            color: BOARD.findIndex(x => x.id === s.id) > here ? 'var(--text)' : 'var(--mute)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-          {BOARD.findIndex(x => x.id === s.id) > here ? '→ ' : '← '}{s.title}</button>))}
+          style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid ' + (s.primary ? 'transparent' : 'var(--line)'),
+            background: s.primary ? 'var(--text)' : 'transparent', color: s.primary ? '#111' : 'var(--mute)',
+            fontSize: 11, fontWeight: s.primary ? 800 : 600, cursor: 'pointer' }}>
+          {s.action || s.title}</button>))}
       </div>)}
     </div>);
   };
@@ -365,27 +633,55 @@ function Pipeline({ kind, title, blurb, onCounts }) {
   );
 
   return (<div>
-    <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '0 0 16px', maxWidth: 640 }}>{blurb}</p>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
       {view === 'list' && chip('all', 'Everything', rows.length)}
-      {view === 'list' && STAGES.map(s => chip(s, s, counts[s]))}
+      {view === 'list' && columns.map(s => chip(s.id, s.title, counts[s.id]))}
+      {view === 'board' && <span style={{ fontSize: 12, color: 'var(--faint)' }}>Drag a card to move it, or use the buttons on it.</span>}
       <span style={{ flex: 1 }} />
       <div style={{ display: 'flex', gap: 6 }}>{toggle('board', 'Board')}{toggle('list', 'List')}</div>
     </div>
     {note && <div style={{ marginBottom: 12, padding: '9px 13px', borderRadius: 9, background: 'var(--hover)', border: '1px solid var(--line)', fontSize: 13 }}>{note}</div>}
 
     {view === 'board' && (<div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
-      {BOARD.map(s => {
+      {columns.map(s => {
         const inCol = rows.filter(r => r.status === s.id);
-        return (<div key={s.id} style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320 }}>
+        /* A column takes a card only if the server would accept the move.
+           While something is in the hand the board says so plainly: the
+           columns that can have it light up, the ones that cannot fade —
+           so you find out before you let go rather than after. */
+        const canDrop = !!drag && drag.next.includes(s.id);
+        const refusing = !!drag && !canDrop;
+        const hot = canDrop && over === s.id;
+        return (<div key={s.id}
+          /* dragenter AND dragover. Cancelling only dragover is the classic
+             half-fix: it works when you drift in slowly and enough dragover
+             events fire, and drops the card on the floor when you move fast
+             enough that the first event over the column is the only one. */
+          onDragEnter={ev => { if (!accepts(s.id)) return; ev.preventDefault(); if (over !== s.id) setOver(s.id); }}
+          onDragOver={ev => { if (!accepts(s.id)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; if (over !== s.id) setOver(s.id); }}
+          onDragLeave={ev => { if (!ev.currentTarget.contains(ev.relatedTarget)) setOver(o => (o === s.id ? null : o)); }}
+          onDrop={ev => {
+            ev.preventDefault();
+            const d = dragRef.current;
+            dragRef.current = null; setOver(null); setDrag(null);
+            if (d && d.next.includes(s.id)) move(d.row, s.id);
+          }}
+          style={{ flex: '1 0 232px', minWidth: 232, maxWidth: 320, opacity: refusing ? 0.4 : 1, transition: 'opacity .12s' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px 8px' }}>
             <span style={{ fontSize: 13, fontWeight: 800 }}>{s.title}</span>
             <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{inCol.length}</span>
+            {STAGE_HELP[s.id] && <Info title={s.title}>{STAGE_HELP[s.id]}</Info>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.45, padding: '0 2px 10px', minHeight: 30 }}>{s.blurb}</div>
-          <div style={{ display: 'grid', gap: 8, background: 'var(--line2)', borderRadius: 13, padding: 8, minHeight: 90 }}>
+          <div data-stage={s.id} style={{ display: 'grid', gap: 8, borderRadius: 13, padding: 8, minHeight: 90, transition: 'background .12s, box-shadow .12s',
+            background: hot ? 'color-mix(in srgb,var(--text) 10%,var(--line2))' : 'var(--line2)',
+            boxShadow: hot ? 'inset 0 0 0 2px var(--text)' : canDrop ? 'inset 0 0 0 1px var(--line)' : 'none' }}>
             {inCol.map(card)}
-            {inCol.length === 0 && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
+            {/* what the drop will do, said before you let go */}
+            {hot && (<div style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11.5, fontWeight: 700 }}>
+              {s.action ? s.action : 'Move here'}
+            </div>)}
+            {inCol.length === 0 && !hot && <div style={{ padding: '18px 8px', textAlign: 'center', color: 'var(--faint)', fontSize: 12 }}>Empty</div>}
           </div>
         </div>);
       })}
@@ -406,7 +702,7 @@ function Pipeline({ kind, title, blurb, onCounts }) {
                   <span><span style={{ display: 'block', fontWeight: 600 }}>{r.name || '—'}</span>
                   <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{r.email}</span></span></span>
               </td>
-              <td style={td}><Pill tone={STAGE_TONE[r.status]} dot>{r.status}</Pill></td>
+              <td style={td}><Pill tone={STAGE_TONE[r.status]} dot>{stageTitle(BOARD, r.status)}</Pill></td>
               <td style={{ ...td, color: 'var(--mute)', fontSize: 13 }}>{(r.details && (r.details.workspace || r.details.topic)) || '—'}</td>
               <td style={td}>{r.tenantName ? <Pill tone="green">{r.tenantName}</Pill> : <span style={{ color: 'var(--faint)' }}>—</span>}</td>
               <td style={{ ...td, fontFamily: MONO, fontSize: 12.5, color: 'var(--mute)' }}>{fmtDay(r.createdAt)}</td>
@@ -537,9 +833,13 @@ function BillingPage() {
   if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
 
   const cash = (c) => '$' + ((Number(c) || 0) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const stat = (label, value, note, tone) => (
+  /* Every money word on this page means one specific thing, and most of
+     them are words people think they already know. MRR is not revenue,
+     cash collected is not revenue either, and tax collected is not ours
+     at all — so each tile says which it is. */
+  const stat = (label, value, note, tone, help) => (
     <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: '14px 16px' }}>
-      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--faint)' }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--faint)', display: 'flex', alignItems: 'center' }}>{label}{help && <Info title={label}>{help}</Info>}</div>
       <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: tone || 'var(--text)' }}>{value}</div>
       {note && <div style={{ fontSize: 11.5, color: 'var(--mute)', marginTop: 3 }}>{note}</div>}
     </div>
@@ -562,14 +862,22 @@ function BillingPage() {
     </div>)}
 
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(178px,1fr))', gap: 12, marginBottom: 18 }}>
-      {stat('MRR', cash(d.mrrCents), 'recurring, per month')}
-      {stat('ARR', cash(d.arrCents), 'MRR × 12')}
-      {stat('Paying desks', d.activePaying, d.trialing + ' on trial')}
-      {stat('New this month', d.newThisMonth)}
-      {stat('Cash collected', cash(d.cashCollectedThisMonthCents), 'this month, incl. tax')}
-      {stat('Tax collected', cash(d.taxCollectedThisMonthCents), 'not yours', 'var(--mute)')}
-      {stat('Needs attention', d.needsAttention.length, 'unpaid or overdue', d.needsAttention.length ? 'var(--amber)' : null)}
-      {stat('Cancelled', d.cancelled)}
+      {stat('MRR', cash(d.mrrCents), 'recurring, per month', null,
+        'Monthly recurring revenue: what every live subscription adds up to per month, with annual plans divided by twelve. It is a run rate, not money in the bank — nobody has paid you this figure.')}
+      {stat('ARR', cash(d.arrCents), 'MRR × 12', null,
+        'MRR multiplied by twelve. What a year would bring if nothing changed — no new desks, none lost. A shorthand for scale, not a forecast.')}
+      {stat('Paying desks', d.activePaying, d.trialing + ' on trial', null,
+        'Desks with a live paid subscription. Trials are counted separately underneath because they are not paying yet and some never will.')}
+      {stat('New this month', d.newThisMonth, null, null,
+        'Subscriptions that started since the 1st. A desk that started and cancelled in the same month still counts here — check Cancelled alongside it.')}
+      {stat('Cash collected', cash(d.cashCollectedThisMonthCents), 'this month, incl. tax', null,
+        'What Stripe actually took this month, tax included. NOT revenue: a desk paying a year up front hands over twelve months of cash today and earns one month of it.')}
+      {stat('Tax collected', cash(d.taxCollectedThisMonthCents), 'not yours', 'var(--mute)',
+        'Sales tax taken on your behalf and owed onward to the government. It sits inside Cash collected, and it was never income — subtract it before you think about what you earned.')}
+      {stat('Needs attention', d.needsAttention.length, 'unpaid or overdue', d.needsAttention.length ? 'var(--amber)' : null,
+        'Invoices Stripe could not collect. Usually an expired card. They do not fix themselves, and a desk here is one that keeps working while not paying.')}
+      {stat('Cancelled', d.cancelled, null, null,
+        'Subscriptions that have ended. Cancelling does not close their desk or delete anything — it stops the billing.')}
     </div>
 
     <div style={{ fontSize: 11.5, color: 'var(--faint)', marginBottom: 18, lineHeight: 1.55, maxWidth: 620 }}>
@@ -641,9 +949,18 @@ const goto = (h) => { window.location.hash = h; };
    you can bookmark, reload and paste to someone — which a drawer never was. */
 function parseHash(h) {
   const parts = String(h || '').replace(/^#\/?/, '').split('/').filter(Boolean);
-  const tab = parts[0] || 'desks';
-  const known = ['desks', 'applications', 'messages', 'activity', 'people', 'onboarding', 'billing', 'settings'];
-  return { tab: known.indexOf(tab) >= 0 ? tab : 'desks', id: parts[1] ? decodeURIComponent(parts[1]) : null };
+  let tab = parts[0] || 'overview';
+  let id = parts[1] ? decodeURIComponent(parts[1]) : null;
+  /* Old links keep working. `messages` is now `inbox`. `onboarding` was a
+     staff-side copy of the customer's setup flow and is gone entirely, so
+     those land on the applications list — its second part was a CD
+     reference, which is not an application id, and carrying it through
+     would only produce a not-found. */
+  const MOVED = { messages: 'inbox', 'early-access': 'applications' };
+  if (tab === 'onboarding') { tab = 'applications'; id = null; }
+  else if (MOVED[tab]) tab = MOVED[tab];
+  const known = PAGES.map(p => p.id).concat(['settings', 'people']);
+  return { tab: known.indexOf(tab) >= 0 ? tab : 'overview', id };
 }
 
 function PageHead({ back, backTo, title, sub, pills, actions }) {
@@ -657,9 +974,50 @@ function PageHead({ back, backTo, title, sub, pills, actions }) {
     {sub && <div style={{ fontFamily: MONO, fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>{sub}</div>}
   </div>);
 }
-function Card({ title, children, pad = 16 }) {
+/* ============================================================
+   THE LITTLE ⓘ
+
+   The bar this panel is held to: somebody who has never seen the system
+   should be able to work it within a day. That means nothing on screen
+   is allowed to be a word you have to already know — every label that
+   could be read two ways carries the explanation next to it, one click
+   away.
+
+   Deliberately click rather than hover. Hover help does not exist on a
+   phone, disappears the moment you move to read it, and cannot be left
+   open next to the thing it describes while you decide.
+   ============================================================ */
+function Info({ children, title }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const shut = (e) => { if (!e.target.closest || !e.target.closest('[data-info]')) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('click', shut);
+    window.addEventListener('keydown', esc);
+    return () => { window.removeEventListener('click', shut); window.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (<span data-info style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}>
+    <button type="button" aria-label={'What is ' + (title || 'this') + '?'} aria-expanded={open}
+      onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+      style={{ width: 15, height: 15, marginLeft: 6, borderRadius: '50%', border: '1px solid ' + (open ? 'var(--text)' : 'var(--line)'),
+        background: open ? 'var(--text)' : 'transparent', color: open ? '#111' : 'var(--faint)',
+        fontSize: 10, fontWeight: 800, lineHeight: 1, display: 'grid', placeItems: 'center', cursor: 'pointer', padding: 0, flex: 'none' }}>i</button>
+    {open && (<span onClick={e => e.stopPropagation()} style={{ position: 'absolute', zIndex: 80, top: 22, left: -8, width: 290,
+      background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 11, padding: '11px 13px',
+      boxShadow: '0 18px 40px -12px rgba(0,0,0,0.6)', fontSize: 12.5, lineHeight: 1.6, color: 'var(--mute)',
+      fontWeight: 400, letterSpacing: 0, textTransform: 'none', fontFamily: 'inherit', whiteSpace: 'normal', textAlign: 'left' }}>
+      {title && <span style={{ display: 'block', fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{title}</span>}
+      {children}
+    </span>)}
+  </span>);
+}
+
+function Card({ title, help, children, pad = 16 }) {
   return (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
-    {title && <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>{title}</div>}
+    {title && <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>
+      {title}{help && <Info title={title}>{help}</Info>}
+    </div>}
     <div style={{ padding: pad }}>{children}</div>
   </div>);
 }
@@ -672,9 +1030,10 @@ function Tiles({ items }) {
     </div>))}
   </div>);
 }
-const kv = (k, v) => v == null || v === '' ? null : (
+const kv = (k, v, help) => v == null || v === '' ? null : (
   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}>
-    <span style={{ color: 'var(--mute)', flex: 'none' }}>{k}</span><span style={{ fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span></div>);
+    <span style={{ color: 'var(--mute)', flex: 'none', display: 'inline-flex', alignItems: 'center' }}>{k}{help && <Info title={k}>{help}</Info>}</span>
+    <span style={{ fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span></div>);
 
 // ===================== DESK PAGE =====================
 // The page you open when a customer rings. Who they are, how the desk is
@@ -981,240 +1340,6 @@ function PersonPage({ id, onChanged }) {
 }
 
 // ===================== APPLICATION PAGE =====================
-// ===================== ONBOARDING =====================
-/* Type the reference they already hold and work the signup flow with them —
-   on the phone, or standing at their counter. It is the SAME flow they would
-   see, with everything their application already told us filled in, saving as
-   you go so it can be put down and picked up from either side. */
-// NB: the prop is `reference`, not `ref` — React intercepts `ref` on a
-// function component and it would never arrive.
-const WALKTHROUGH = 'CD-WALKTHRU';
-
-function OnboardingPage({ reference: startRef }) {
-  const [ref, setRef] = useState(startRef || '');
-  const [typed, setTyped] = useState(startRef || '');
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({});      // fieldId → value being typed
-  const [saved, setSaved] = useState('');
-
-  const load = (r) => {
-    if (!r) return;
-    setErr(''); setD(null);
-    api('/api/admin/onboarding/' + encodeURIComponent(r))
-      .then(x => { setD(x); setDraft({}); })
-      .catch(e => setErr((e.body && e.body.detail) || 'No application with that reference.'));
-  };
-  useEffect(() => { if (ref) load(ref); }, [ref]);
-
-  const open = () => { const r = typed.trim().toUpperCase(); if (r) { setRef(r); goto('#/onboarding/' + encodeURIComponent(r)); } };
-
-  const save = async (step) => {
-    const mine = {};
-    step.fields.forEach(f => { if (f.id in draft) mine[f.id] = draft[f.id]; });
-    if (!Object.keys(mine).length) return;
-    setBusy(true); setErr('');
-    try {
-      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'PATCH', body: JSON.stringify({ stepId: step.id, answers: mine }) }));
-      setDraft(p => { const n = { ...p }; Object.keys(mine).forEach(k => delete n[k]); return n; });
-      setSaved(step.id); setTimeout(() => setSaved(''), 1600);
-    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
-    setBusy(false);
-  };
-  const mark = async (step, done) => {
-    setBusy(true); setErr('');
-    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref), { method: 'POST', body: JSON.stringify({}) })); } catch (e) {}
-    try {
-      setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/mark', { method: 'POST', body: JSON.stringify({ stepId: step.id, done }) }));
-    } catch (x) { setErr((x.body && x.body.detail) || 'That didn’t save.'); }
-    setBusy(false);
-  };
-  const reset = async () => {
-    setBusy(true); setErr('');
-    try { setD(await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/reset', { method: 'POST', body: JSON.stringify({}) })); setDraft({}); }
-    catch (x) { setErr((x.body && x.body.detail) || 'Could not reset.'); }
-    setBusy(false);
-  };
-  const finish = async () => {
-    setBusy(true); setErr('');
-    try { const r = await api('/api/admin/onboarding/' + encodeURIComponent(ref) + '/create', { method: 'POST', body: JSON.stringify({}) }); setD(x => ({ ...x, handoff: r.handoff })); }
-    catch (x) { setErr((x.body && x.body.detail) || 'Not ready yet.'); }
-    setBusy(false);
-  };
-
-  const inSty = { width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--text)', fontSize: 13.5, outline: 'none' };
-
-  if (!ref || err || !d) return (<div>
-    <PageHead back="Desks" backTo="#/desks" title="Onboarding"
-      sub="Open a desk with someone — type the reference from their application." />
-    <div style={{ maxWidth: 460 }}>
-      <Card title="Which application">
-        <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-          The reference on their charter card and in every email we’ve sent them.
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === 'Enter' && open()}
-            placeholder="CD-A3V5ZE" autoFocus
-            style={{ ...inSty, fontFamily: MONO, letterSpacing: '0.12em', textTransform: 'uppercase' }} />
-          <button onClick={open} style={{ padding: '9px 16px', borderRadius: 9, border: 'none', background: 'var(--text)', color: '#111', fontWeight: 700, fontSize: 13, cursor: 'pointer', flex: 'none' }}>Open</button>
-        </div>
-        {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10 }}>{err}</div>}
-        {ref && !err && !d && <div style={{ color: 'var(--mute)', fontFamily: MONO, fontSize: 12, marginTop: 10 }}>Loading…</div>}
-      </Card>
-
-      {/* Onboarding is a thing you do TO somebody, so it is hard to rehearse.
-          This one is always here and can be reset. */}
-      <div style={{ marginTop: 14 }}>
-        <Card title="Just want a run-through?">
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-            <b style={{ color: 'var(--text)', fontFamily: MONO }}>{WALKTHROUGH}</b> is a permanent application you can open any
-            time and run start to finish. It goes through exactly the same code a real one does, counts towards nothing,
-            and never leaves a desk behind.
-          </div>
-          <button onClick={() => { setTyped(WALKTHROUGH); setRef(WALKTHROUGH); goto('#/onboarding/' + WALKTHROUGH); }}
-            style={{ padding: '9px 15px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Open the walkthrough</button>
-        </Card>
-      </div>
-    </div>
-  </div>);
-
-  const a = d.application;
-  const pct = Math.round((d.done / d.total) * 100);
-  return (<div>
-    <PageHead back="Onboarding" backTo="#/onboarding" title={a.name || a.email}
-      sub={a.reference + (a.charterNo ? '  ·  charter Nº ' + String(a.charterNo).padStart(4, '0') : '') + '  ·  applied ' + fmtDay(a.appliedAt)}
-      pills={<>{a.isWalkthrough && <Pill tone="purple">walkthrough</Pill>}
-        <Pill tone={a.status === 'invited' ? 'amber' : a.status === 'accepted' ? 'green' : 'mute'}>{a.status}</Pill>
-        <Pill tone={d.done === d.total ? 'green' : 'mute'}>{d.done} of {d.total} steps</Pill></>}
-      actions={<>
-        {/* The customer's own screens, opened on their record. Not a copy of
-            the flow rendered in here — the same page they get, on the same
-            answers, so doing it with them on the phone and them doing it
-            alone are the same act. */}
-        <a href={'/onboarding/' + encodeURIComponent(a.reference)} target="_blank" rel="noopener"
-          style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--text)', color: '#111', fontSize: 13, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }}>
-          Walk their setup ↗</a>
-        {a.isWalkthrough &&
-          <button disabled={busy} onClick={reset} style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{busy ? '…' : 'Start over'}</button>}
-      </>} />
-
-    <div style={{ height: 5, borderRadius: 999, background: 'var(--line2)', overflow: 'hidden', marginBottom: 20 }}>
-      <div style={{ height: '100%', width: pct + '%', background: pct === 100 ? 'var(--green)' : 'var(--accent)', transition: 'width .3s ease' }} />
-    </div>
-
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
-      <div style={{ display: 'grid', gap: 14 }}>
-        {d.phases.map(ph => {
-          const steps = d.steps.filter(s => s.phase === ph.id);
-          if (!steps.length) return null;
-          return (<div key={ph.id}>
-            <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--faint)', margin: '4px 0 8px' }}>{ph.title}</div>
-            {steps.map(s => (<div key={s.id} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: 16, marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
-                <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700,
-                  border: '1px solid ' + (s.done ? 'transparent' : 'var(--line)'), background: s.done ? 'var(--green)' : 'transparent', color: '#0b0b0b' }}>{s.done ? '✓' : ''}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 700 }}>{s.title}</span>
-                {s.who === 'customer' && <Pill tone="purple">theirs to do</Pill>}
-                {saved === s.id && <Pill tone="green">saved</Pill>}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.5, marginBottom: s.fields.length ? 12 : 10 }}>{s.blurb}</div>
-
-              {s.fields.length > 0 && (<div style={{ display: 'grid', gap: 10 }}>
-                {s.fields.map(f => {
-                  const v = f.id in draft ? draft[f.id] : (f.value == null ? '' : f.value);
-                  const locked = f.derived || s.who === 'customer';
-                  return (<label key={f.id} style={{ display: 'block' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11.5, color: 'var(--mute)', fontWeight: 600 }}>{f.label}</span>
-                      {f.source === 'application' && <Pill tone="blue">from their application</Pill>}
-                      {f.source === 'derived' && <Pill tone="mute">from {String(f.id === 'regulator' ? 'the country' : 'the regulator')}</Pill>}
-                      {/* Which surface this arrived through. "From their setup"
-                          rather than "they typed this" on purpose: the value
-                          came through their own screens, but some of those
-                          screens offer a default they only had to accept, and
-                          the pill should not claim more than it knows. */}
-                      {f.filledBy === 'customer' && <Pill tone="green">from their setup</Pill>}
-                      {f.filledBy === 'operator' && <Pill tone="mute">you entered this</Pill>}
-                      {f.required && f.value == null && <span style={{ fontSize: 11, color: 'var(--amber)' }}>needed</span>}
-                    </div>
-                    {f.type === 'select'
-                      ? <select disabled={locked} value={v} onChange={e => setDraft(p => ({ ...p, [f.id]: e.target.value }))} style={{ ...inSty, opacity: locked ? 0.6 : 1 }}>
-                          <option value="">—</option>
-                          {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      : <input disabled={locked} value={v} type={f.type === 'password' ? 'password' : 'text'}
-                          onChange={e => setDraft(p => ({ ...p, [f.id]: f.type === 'money' || f.type === 'number' ? Number(e.target.value) || '' : e.target.value }))}
-                          onKeyDown={e => e.key === 'Enter' && save(s)}
-                          placeholder={f.placeholder || ''} style={{ ...inSty, opacity: locked ? 0.6 : 1 }} />}
-                    {f.help && <div style={{ fontSize: 11, color: 'var(--faint)', marginTop: 3 }}>{f.help}</div>}
-                  </label>);
-                })}
-                {s.who !== 'customer' && (<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button disabled={busy || !s.fields.some(f => f.id in draft)} onClick={() => save(s)}
-                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--line)', fontSize: 12.5, fontWeight: 700,
-                      background: s.fields.some(f => f.id in draft) ? 'var(--text)' : 'transparent',
-                      color: s.fields.some(f => f.id in draft) ? '#111' : 'var(--faint)',
-                      cursor: s.fields.some(f => f.id in draft) ? 'pointer' : 'default' }}>Save</button>
-                </div>)}
-              </div>)}
-
-              {s.fields.length === 0 && (<button disabled={busy} onClick={() => mark(s, !s.done)}
-                style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                {s.done ? 'Undo' : s.kind === 'payment' ? 'Mark paid' : 'Mark sighted'}</button>)}
-            </div>))}
-          </div>);
-        })}
-      </div>
-
-      <div style={{ display: 'grid', gap: 14, position: 'sticky', top: 20 }}>
-        <Card title="What they told us">
-          {kv('Email', a.email)}
-          {Object.entries(a.told || {}).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').toLowerCase(), String(v)))}
-        </Card>
-        {/* The walkthrough is a rehearsal — it walks every screen a real one
-            does and deliberately creates nothing at the end. Offering to build
-            a desk from it is offering something that cannot happen. */}
-        {a.isWalkthrough ? (
-        <Card title="This is the walkthrough">
-          <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>
-            Practise on it as often as you like — every screen and every save is
-            the real thing. It never creates a desk, never takes a founding
-            place, and never appears in the funnel. <b style={{ color: 'var(--text)' }}>Start over</b> puts it back.
-          </div>
-        </Card>
-        ) : (
-        <Card title="Build the desk">
-          {/* Once the desk exists there is nothing left to build, and offering
-              it again invites an operator to press a button that can only
-              answer 409. Send them to the desk instead. */}
-          {d.tenantId ? (<>
-            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-              This desk is open. It was created from exactly what is above.
-            </div>
-            <button onClick={() => goto('#/desks/' + d.tenantId)}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-                background: 'var(--green)', color: '#0b0b0b', cursor: 'pointer' }}>Open the desk</button>
-          </>) : (<>
-            <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-              {d.ready.ok ? 'Everything is answered. This creates the desk from exactly what is above.'
-                : d.ready.missing.length === 1 && d.ready.missing[0] === 'ownerPass'
-                  ? 'Everything of ours is done — the owner sets their own password from their link.'
-                  : 'Still needed: ' + d.ready.missing.join(', ') + '.'}
-            </div>
-            {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-            <button disabled={busy} onClick={finish}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--line)', fontSize: 13, fontWeight: 700,
-                background: d.ready.ok ? 'var(--green)' : 'transparent', color: d.ready.ok ? '#0b0b0b' : 'var(--text)', cursor: 'pointer' }}>
-              {busy ? 'Working…' : 'Create the desk'}</button>
-          </>)}
-        </Card>
-        )}
-      </div>
-    </div>
-  </div>);
-}
 
 /* Free-form on purpose. The moment you make an operator pick from a fixed
    list you have to guess the list, and they will want one you did not think
@@ -1238,7 +1363,8 @@ function LabelBox({ enquiry, onSaved }) {
   const drop = (l) => put(labels.filter(x => x !== l));
   const unused = all.filter(a => !labels.includes(a.label)).slice(0, 8);
 
-  return (<Card title="Labels">
+  return (<Card title="Labels"
+    help="What an application is LIKE — 'high volume', 'referred by jordan', 'toronto'. Free-form and unlimited, and they drive nothing on their own: they are for finding and sorting. Where an application IS in the process is its stage, and that is the column it sits in.">
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: labels.length ? 11 : 0 }}>
       {labels.map(l => (<button key={l} disabled={busy} onClick={() => drop(l)} title="Remove"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -1269,6 +1395,12 @@ function ApplicationPage({ id, onChanged }) {
 
   const e = d.enquiry;
   const isApp = e.kind === 'early_access';
+  /* The same stage list the board draws its columns from, so this page can
+     never offer a move the board would not, or one the server would refuse. */
+  const stages = d.stages || [];
+  const onward = ((stages.find(s => s.id === e.status) || {}).next || [])
+    .map(id => stages.find(s => s.id === id)).filter(Boolean)
+    .sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0));
   const save = async (body, label) => {
     setBusy(true); setFlash('');
     try {
@@ -1282,18 +1414,49 @@ function ApplicationPage({ id, onChanged }) {
   const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }, extra || {});
 
   return (<div>
-    <PageHead back={isApp ? 'Early access' : 'Messages'} backTo={isApp ? '#/applications' : '#/messages'}
+    <PageHead back={isApp ? 'Applications' : 'Inbox'} backTo={isApp ? '#/applications' : '#/inbox'}
       title={e.name || e.email} sub={e.reference + '  ·  received ' + fmtWhen(e.createdAt)}
-      pills={<Pill tone={STAGE_TONE[e.status]} dot>{e.status}</Pill>}
+      pills={<Pill tone={STAGE_TONE[e.status]} dot>{stageTitle(stages, e.status)}</Pill>}
       actions={<a href={'mailto:' + e.email} style={{ ...btn('transparent', 'var(--text)'), textDecoration: 'none' }}>Reply by email</a>} />
 
     {flash && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13, background: 'color-mix(in srgb,var(--blue) 12%,transparent)', border: '1px solid color-mix(in srgb,var(--blue) 30%,transparent)' }}>{flash}</div>}
 
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 16 }}>
-        <Card title={isApp ? 'What they told us' : 'Their message'}>
-          {kv('Email', <a href={'mailto:' + e.email} style={{ color: 'var(--blue)' }}>{e.email}</a>)}
-          {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v)))}
+        {/* How to reach them, first and on its own.
+
+            Everything else on this page is something you read; this is the
+            thing you DO. The application form promises a call within minutes
+            of approval, so the number, the hour they said to ring, and a
+            button that dials it should not be four rows down a list of
+            answers about monthly volume. */}
+        {isApp && (<Card title="How to reach them"
+          help="Collected on the application so nobody has to chase it. The call is the promise the form makes — within a few minutes of approving, at the time they picked.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontFamily: MONO, fontSize: 19, fontWeight: 700, letterSpacing: '0.03em' }}>
+                {tel(e) || <span style={{ color: 'var(--faint)', fontSize: 14, fontWeight: 400, letterSpacing: 0 }}>No number — they applied before we asked for one</span>}
+              </span>
+              {det(e, 'bestTime') && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', marginTop: 3 }}>Best time: {det(e, 'bestTime')}</span>}
+            </span>
+            <span style={{ flex: 1 }} />
+            {tel(e) && <a href={'tel:' + tel(e).replace(/\s+/g, '')} style={{ ...btn('var(--text)', '#111'), textDecoration: 'none', fontWeight: 700, border: 'none' }}>Call them</a>}
+            <a href={'mailto:' + e.email} style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), textDecoration: 'none' }}>Email instead</a>
+          </div>
+          {det(e, 'phoneUnparsed') && (<div style={{ marginTop: 11, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.55,
+            background: 'color-mix(in srgb,var(--amber) 12%,transparent)', border: '1px solid color-mix(in srgb,var(--amber) 30%,transparent)' }}>
+            We could not read this as a phone number. They typed <b style={{ fontFamily: MONO }}>{det(e, 'phoneUnparsed')}</b> — check it before dialling.
+          </div>)}
+          <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>{e.email}</div>
+        </Card>)}
+
+        <Card title={isApp ? 'What they told us' : 'Their message'}
+          help={isApp ? 'Their own answers from the early-access form, exactly as given. Nothing here is verified — it is what they said about themselves.' : 'Sent from the contact page. They were promised a reply within a business day.'}>
+          {kv('Email', <a href={'mailto:' + e.email} style={{ color: 'var(--blue)' }}>{e.email}</a>, 'The address they applied with. Everything we send goes here, and it is the address their desk is opened against.')}
+          {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '')
+            /* the number has its own card above; repeating it here is noise */
+            .filter(([k]) => !(isApp && (k === 'phone' || k === 'bestTime' || k === 'phoneUnparsed')))
+            .map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v), DETAIL_HELP[k]))}
         </Card>
 
         {/* Labels: what this application is LIKE. Kept apart from the stage,
@@ -1301,7 +1464,24 @@ function ApplicationPage({ id, onChanged }) {
             stage called "high-volume-reviewing" and can automate neither. */}
         {isApp && <LabelBox enquiry={e} onSaved={load} />}
 
-        <Card title="Your notes">
+        {/* Setup used to be its own section in the nav, which made it look
+            like a place you go rather than a thing you do with one person.
+            It belongs here, on them, and only once they can actually use
+            it — an invitation is what makes the link work. */}
+        {isApp && e.status === 'invited' && (<Card title="Their setup"
+          help="Their sixteen-screen setup, on the link we emailed. There is no staff copy of it — this opens exactly what they are looking at, which is the thing to have in front of you when somebody rings up stuck.">
+          <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.6, marginBottom: 12 }}>
+            Theirs to do, on the link we emailed them. This is the same page they are looking at, so
+            it is the thing to open when somebody rings up stuck on a screen.
+          </div>
+          <a href={'/onboarding/' + encodeURIComponent(e.reference)} target="_blank" rel="noopener"
+            style={{ ...btn('transparent', 'var(--text)', { fontSize: 12.5 }), textDecoration: 'none', display: 'inline-block' }}>Open their setup page ↗</a>
+          {e.isDemo && <button onClick={async () => { await api('/api/admin/walkthrough/reset', { method: 'POST', body: '{}' }).catch(() => {}); load(); setFlash('Walkthrough reset — it starts from the beginning again.'); }}
+            style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), marginLeft: 8 }}>Start the rehearsal over</button>}
+        </Card>)}
+
+        <Card title="Your notes"
+          help="Anything the next person needs: what you learned on the call, what you promised, why you held them. The applicant never sees this. It stays on the record after their desk opens.">
           <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={6} placeholder="What you learned on the call, what you promised, anything the next person needs…"
             style={{ width: '100%', padding: 11, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
           <button disabled={busy || note === (e.notes || '')} onClick={() => save({ notes: note }, 'Note saved.')}
@@ -1310,15 +1490,26 @@ function ApplicationPage({ id, onChanged }) {
       </div>
 
       <div style={{ display: 'grid', gap: 16 }}>
-        <Card title="Move this along">
+        {/* One click per decision. The buttons are the moves the server will
+            accept from where this application is, named by what they do, and
+            approving is a single press — the code, the email and the link all
+            follow from it without a second step. */}
+        <Card title="Move this along"
+          help="The stages this application can go to from where it is now. The server decides which are legal, so a button here always works. Approving is one press — it moves them to Invited, mints nothing new, and emails their existing code with the setup link.">
           {e.status === 'accepted'
             ? <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.55 }}>They built their desk — this one is done.</div>
             : (<div>
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                  {SETTABLE.filter(s => s !== e.status).map(s => (
-                    <button key={s} disabled={busy} onClick={() => save({ status: s }, 'Moved to ' + s + '.')} style={btn(s === 'invited' ? 'color-mix(in srgb,var(--purple) 16%,transparent)' : 'transparent', s === 'invited' ? 'var(--purple)' : 'var(--text)', { textTransform: 'capitalize', fontSize: 12.5 })}>{s}</button>))}
+                  {onward.map(s => (
+                    <button key={s.id} disabled={busy} onClick={() => save({ status: s.id }, 'Moved to ' + s.title + '.')}
+                      style={btn(s.primary ? 'var(--text)' : 'transparent', s.primary ? '#111' : 'var(--mute)',
+                        { fontSize: 12.5, fontWeight: s.primary ? 800 : 600, border: s.primary ? '1px solid transparent' : '1px solid var(--line)' })}>
+                      {s.action || s.title}</button>))}
                 </div>
-                {isApp && <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>Inviting emails them their reference and the link to set the desk up. Accepted happens on its own when they finish.</div>}
+                {isApp && <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>
+                  Approving emails them their reference and the link to set the desk up. Open happens on its own when they finish.
+                  {' '}Holding tells them nothing — it is a note to us that they are worth coming back to.
+                </div>}
               </div>)}
         </Card>
 
@@ -1331,11 +1522,12 @@ function ApplicationPage({ id, onChanged }) {
             went somewhere it should not have and they need a different one.
             Say which is which, because guessing wrong is either an angry
             customer or a live code in the wrong hands. */}
-        {isApp && e.status === 'invited' && (<Card title="Their code">
+        {isApp && e.status === 'invited' && (<Card title="Their code"
+          help="The reference they were given when they applied, printed on their charter card and in every email. Holding it is what opens their setup page — so it is a key, and it stops working the moment they are not Invited.">
           <div style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: '0.08em', marginBottom: 8 }}>{e.reference}</div>
           <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
-            Live. This opens their setup. Moving them to <b style={{ color: 'var(--text)' }}>Reviewing</b> or <b style={{ color: 'var(--text)' }}>Declined</b> above
-            stops it working straight away — that is how you take a code back.
+            Live. This opens their setup. Any of the buttons above — back to review, on hold, or declined —
+            stops it working straight away, and that is how you take a code back.
           </div>
           <button disabled={busy} onClick={async () => {
             setBusy(true); setFlash('');
@@ -1351,7 +1543,8 @@ function ApplicationPage({ id, onChanged }) {
           </div>
         </Card>)}
 
-        <Card title="History">
+        <Card title="History"
+          help="Received is when the form arrived. First answered is when it first left the unacknowledged stage — automatic now, so it usually matches. Last moved is the most recent stage change and who made it; 'system' means nobody pressed anything.">
           {kv('Received', fmtWhen(e.createdAt))}
           {kv('First answered', e.handledAt ? fmtWhen(e.handledAt) : null)}
           {kv('Last moved', e.decidedAt ? fmtWhen(e.decidedAt) : null)}
@@ -1369,7 +1562,7 @@ function ApplicationPage({ id, onChanged }) {
           {d.alsoFrom.map(o => (<button key={o.id} onClick={() => goto('#/applications/' + o.id)} style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', background: 'none', border: 'none', borderBottom: '1px solid var(--line2)', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}>
             <span><span style={{ display: 'block', fontFamily: MONO, fontSize: 12 }}>{o.reference}</span>
               <span style={{ display: 'block', fontSize: 11.5, color: 'var(--faint)' }}>{o.kind === 'early_access' ? 'application' : 'message'} · {fmtDay(o.createdAt)}</span></span>
-            <Pill tone={STAGE_TONE[o.status]}>{o.status}</Pill>
+            <Pill tone={STAGE_TONE[o.status]}>{stageTitle(stages, o.status)}</Pill>
           </button>))}
         </Card>)}
       </div>
@@ -1390,12 +1583,12 @@ function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   const tab = route.tab;
-  const setTab = (t) => goto('#/' + t);
   const [statusFilter, setStatusFilter] = useState('all');
   const [planFilter, setPlanFilter] = useState('all');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('joined');
   const [creating, setCreating] = useState(false);
+  const [health, setHealth] = useState(null);
 
   const loadAll = async () => {
     const [t, o] = await Promise.all([api('/api/admin/tenants'), api('/api/admin/overview').catch(() => null)]);
@@ -1407,6 +1600,18 @@ function App() {
   };
   useEffect(() => { boot(); }, []);
   useEffect(() => { if (tab === 'activity' && !audit) api('/api/admin/audit?limit=150').then(r => setAudit(r.events)).catch(() => setAudit([])); }, [tab]);
+  /* Health is checked once on the way in and then every couple of minutes,
+     because the point of the light in the corner is that you did not have
+     to go and ask. Failure to check is not itself reported as an outage —
+     that way lies a panel that cries wolf whenever a request is slow. */
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    let live = true;
+    const beat = () => api('/api/admin/health').then(h => { if (live) setHealth(h); }).catch(() => {});
+    beat();
+    const t = setInterval(beat, 120000);
+    return () => { live = false; clearInterval(t); };
+  }, [phase]);
 
   if (phase === 'loading') return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
   if (phase === 'login') return <Login onIn={() => { setPhase('loading'); boot(); }} />;
@@ -1433,22 +1638,40 @@ function App() {
   const td = { padding: '13px 16px', borderTop: '1px solid var(--line2)', fontSize: 14, verticalAlign: 'middle' };
   const ctrl = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, color: 'var(--mute)' };
 
+  /* The head of every page: its name, what it is for, and the one action
+     that belongs to it. Read from the PAGES table rather than written out
+     per page, which is what stopped "Start a desk" turning up on Billing. */
+  const page = tab === 'settings' ? SETTINGS : PAGE(tab);
+  const act = page.action;
+  const invoicing = act && act.kind === 'invoice';
+  // Stripe is not wired up yet. Say so on the button rather than offering
+  // an action that would quietly do nothing.
+  const stripeOn = !!(health && (health.checks.find(c => c.id === 'stripe') || {}).state === 'ok');
+  const doAction = () => { if (act.kind === 'invite') setCreating(true); else goto('#/billing'); };
+
   return (<div style={{ display: 'flex', minHeight: '100vh' }}>
-    <Sidebar counts={counts} statusFilter={statusFilter} setStatusFilter={setStatusFilter} planFilter={planFilter} setPlanFilter={setPlanFilter} tab={tab} setTab={setTab} onCreate={() => setCreating(true)} />
+    <Sidebar counts={counts} tab={tab} health={health} onSettings={() => goto('#/settings')} />
     <div style={{ flex: 1, minWidth: 0, height: '100vh', overflow: 'auto', padding: '24px 30px' }}>
-      {!route.id && <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{TAB_TITLE[tab] || 'Desks'}</h1>
-        <Pill tone="green" dot>Live</Pill>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
-          <button onClick={() => setCreating(true)} style={{ padding: '9px 15px', background: 'var(--text)', color: '#111', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>＋ Start a desk</button>
+      {!route.id && <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{page.title}</h1>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
+            {act && (<button onClick={doAction} disabled={invoicing && !stripeOn}
+              title={invoicing && !stripeOn ? 'Connect Stripe first — there is nothing to invoice through yet.' : ''}
+              style={{ padding: '9px 15px', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13,
+                background: invoicing && !stripeOn ? 'var(--line)' : 'var(--text)', color: invoicing && !stripeOn ? 'var(--faint)' : '#111',
+                cursor: invoicing && !stripeOn ? 'not-allowed' : 'pointer' }}>{act.label}</button>)}
+          </div>
         </div>
+        {page.blurb && <p style={{ color: 'var(--mute)', fontSize: 13.5, margin: '8px 0 0', maxWidth: 680, lineHeight: 1.55 }}>{page.blurb}</p>}
       </div>}
 
-      {tab === 'onboarding' && <OnboardingPage reference={route.id} />}
-      {tab === 'billing' && <BillingPage />}
-      {tab === 'settings' && <SettingsPage />}
+      {!route.id && tab === 'overview' && <OverviewPage ov={ov} health={health} counts={counts} />}
+      {!route.id && tab === 'comms' && <CommsPage />}
+      {!route.id && tab === 'billing' && <BillingPage />}
+      {!route.id && tab === 'settings' && <SettingsPage />}
 
-      {route.id && tab !== 'onboarding' && (tab === 'desks'
+      {route.id && (tab === 'desks'
         ? <DeskPage id={route.id} onChanged={loadAll} />
         : tab === 'people'
         ? <PersonPage id={route.id} onChanged={loadAll} />
@@ -1456,8 +1679,15 @@ function App() {
 
       {!route.id && tab === 'desks' && (<div>
         <StatRow ov={ov} />
+        {/* The filters live with the list they filter. They used to be in
+            the sidebar, which put a desk status filter on the billing page
+            and on settings, where it did nothing at all. */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search desks, owners, email…" style={{ flex: 1, minWidth: 220, padding: '9px 14px', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontSize: 13.5, outline: 'none' }} />
+          <label style={ctrl}>Status <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+            <option value="all">All ({counts.desks})</option><option value="active">Active ({counts.active})</option><option value="trial">Trial ({counts.trial})</option><option value="suspended">Suspended ({counts.suspended})</option></select></label>
+          <label style={ctrl}>Plan <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}>
+            <option value="all">All plans</option><option value="basic">Basic</option><option value="pro">Pro</option><option value="premium">Premium</option></select></label>
           <label style={ctrl}>Sort <select value={sort} onChange={e => setSort(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}><option value="joined">Newest</option><option value="name">Name</option><option value="plan">Plan</option></select></label>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
@@ -1483,11 +1713,9 @@ function App() {
         </div>
       </div>)}
 
-      {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()}
-        blurb="Every application from the site, and where you have got to with it. An application becomes accepted when that person creates their desk — not by hand — so this list and the desk list always agree." />}
+      {!route.id && tab === 'applications' && <Pipeline kind="early_access" onCounts={() => loadAll()} />}
 
-      {!route.id && tab === 'messages' && <Pipeline kind="contact" onCounts={() => loadAll()}
-        blurb="Notes sent from the contact page. Each one was promised a reply within a business day." />}
+      {!route.id && tab === 'inbox' && <Pipeline kind="contact" onCounts={() => loadAll()} />}
 
       {!route.id && tab === 'activity' && (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 16px' }}>
         {!audit && <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>}
