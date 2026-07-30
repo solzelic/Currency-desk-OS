@@ -322,6 +322,45 @@ window.claimedCount.then(function (d) {
         </div>
         </sc-if>
 
+        <sc-if value="{{ s7 }}">
+        <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
+          <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(169,121,28,0.12); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#A9791C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></div>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">Where do we call you?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">If we approve you, your phone rings within a few minutes. Fifteen minutes, mostly us listening — then a follow-up in a week once the desk is in your hands.</p>
+
+          <div style="margin-top: 20px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #9C948A; font-weight: 600;">MOBILE · WE CALL THIS ONE</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #B3AA9C;">{{ phoneHint }}</span>
+          </div>
+          <div style="margin-top: 8px; display: flex; gap: 10px;">
+            <div style="position: relative; flex: none;">
+              <select value="{{ dial }}" onChange="{{ onDial }}" style="height: 100%; box-sizing: border-box; padding: 15px 34px 15px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none; appearance: none; -webkit-appearance: none; cursor: pointer;" style-focus="border-color: #1D6B45; box-shadow: 0 0 0 4px rgba(29,107,69,0.13);">
+                <sc-for list="{{ dialOpts }}" as="d" hint-placeholder-count="5">
+                  <option value="{{ d.v }}">{{ d.l }}</option>
+                </sc-for>
+              </select>
+              <span aria-hidden="true" style="position: absolute; right: 13px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #6B6459; display: flex;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg></span>
+            </div>
+            <input ref="{{ ref7 }}" value="{{ phone }}" onInput="{{ onPhone }}" onKeyDown="{{ onKey }}" type="tel" inputmode="tel" autocomplete="tel-national" aria-label="Mobile number" placeholder="416 555 0148" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 15px 18px; font-family: 'IBM Plex Mono', monospace; font-size: 16.5px; letter-spacing: 0.02em; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none;" style-focus="border-color: #1D6B45; box-shadow: 0 0 0 4px rgba(29,107,69,0.13);">
+          </div>
+
+          <div style="margin-top: 16px;">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #9C948A; font-weight: 600;">BEST TIME TO REACH YOU</span>
+            <div style="margin-top: 9px; display: flex; flex-wrap: wrap; gap: 9px;">
+              <sc-for list="{{ timeOpts }}" as="t" hint-placeholder-count="4">
+                <button type="button" onClick="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="margin: 18px 0 0; height: 1px; background: #E7DFCF;"></div>
+          <div style="margin-top: 14px; display: flex; gap: 10px; align-items: flex-start;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#1D6B45" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 2px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>
+            <p style="font-size: 13px; line-height: 1.55; color: #6B6459; margin: 0;">One number, used for this call and to sign you in. Never sold, never used for marketing. <b style="color: #17140F;">SAM</b> places the call — a person reads every reply.</p>
+          </div>
+        </div>
+        </sc-if>
+
         <!-- action button -->
         <button type="button" onClick="{{ next }}" style="{{ nextStyle }}" style-active="transform: translateY(1px);">{{ nextLabel }}<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 9px;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
 
@@ -334,7 +373,7 @@ window.claimedCount.then(function (d) {
     </sc-if>
 
     <!-- ============ FOUNDING OPERATOR TICKET ============ -->
-    <sc-if value="{{ s7 }}">
+    <sc-if value="{{ s8 }}">
     <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 8px 0 4px;">
       <div aria-hidden="true" style="position: absolute; top: 118px; left: 50%; width: 560px; height: 560px; margin-left: -280px; border-radius: 50%; background: radial-gradient(circle, rgba(233,200,120,0.3), rgba(46,163,107,0.08) 46%, transparent 66%); filter: blur(26px); animation: cdSpot 1.1s ease-out 0.2s both; pointer-events: none;"></div>
 
@@ -430,14 +469,16 @@ class Component extends DCLogic {
     super(props);
     this.state = {
       step: 0, email: '', domain: '', workspace: '', volume: null,
-      branches: 'single', stack: null, timeline: null, name: '', role: '', employees: null, jur: 'CA', seed: 0, toast: '', noWebsite: false, memberCount: null
+      branches: 'single', stack: null, timeline: null, name: '', role: '', employees: null, jur: 'CA', seed: 0, toast: '', noWebsite: false, memberCount: null,
+      phone: '', dial: '+1', bestTime: 'Any time'
     };
     this.ref0 = React.createRef();
     this.ref1 = React.createRef();
     this.ref2 = React.createRef();
     this.ref6 = React.createRef();
+    this.ref7 = React.createRef();
     this.cardRef = React.createRef();
-    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'ref2', 6: 'ref6' };
+    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'ref2', 6: 'ref6', 7: 'ref7' };
     this.themes = [
       { rarity: 'CHARTER', pct: '1 OF 500', c1: '#1D6B45', c2: '#8A5E12', seal: '#F1ECE1', sealText: '#17583A' },
       { rarity: 'SUPER RARE', pct: 'TOP 3%', c1: '#0F4A30', c2: '#2EA36B', seal: '#F1ECE1', sealText: '#0F4A30' },
@@ -448,9 +489,20 @@ class Component extends DCLogic {
   }
 
   set = (k) => (e) => this.setState({ [k]: e.target.value });
+  /* Digits only, so formatting never decides whether a number is valid.
+     Ten is the North American length; anywhere else can be longer, and a
+     shop that types their number with spaces or dashes is not wrong. */
+  phoneDigits = () => String(this.state.phone || '').replace(/\D+/g, '');
+  onPhone = (e) => {
+    const d = String(e.target.value || '').replace(/\D+/g, '').slice(0, 15);
+    const p = this.state.dial === '+1' && d.length > 3
+      ? (d.length > 6 ? d.slice(0, 3) + ' ' + d.slice(3, 6) + ' ' + d.slice(6) : d.slice(0, 3) + ' ' + d.slice(3))
+      : d;
+    this.setState({ phone: p });
+  };
   pick = (k, v) => () => this.setState({ [k]: v });
   setJur = (j) => () => this.setState({ jur: j });
-  skipWebsite = () => this.setState((s) => ({ noWebsite: true, domain: '', step: Math.min(s.step + 1, 7) }));
+  skipWebsite = () => this.setState((s) => ({ noWebsite: true, domain: '', step: Math.min(s.step + 1, 8) }));
 
   canNext() {
     const s = this.state;
@@ -462,17 +514,18 @@ class Component extends DCLogic {
       case 4: return !!s.stack;
       case 5: return !!s.timeline;
       case 6: return s.name.trim().length > 1 && !!s.role && !!s.employees;
+      case 7: return this.phoneDigits().length >= 10;
       default: return true;
     }
   }
 
   next = () => {
-    if (this.state.step < 7 && !this.canNext()) {
+    if (this.state.step < 8 && !this.canNext()) {
       const rk = this._refByStep[this.state.step];
       if (rk && this[rk].current) this[rk].current.focus();
       return;
     }
-    this.setState((s) => ({ step: Math.min(s.step + 1, 7) }));
+    this.setState((s) => ({ step: Math.min(s.step + 1, 8) }));
   };
   back = () => this.setState((s) => ({ step: Math.max(s.step - 1, 0) }));
   onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.next(); } };
@@ -603,12 +656,13 @@ class Component extends DCLogic {
         const el = this[rk].current;
         setTimeout(() => { try { el.focus(); } catch (e) {} }, 60);
       }
-      if (this.state.step === 7) {
+      if (this.state.step === 8) {
         const s = this.state;
         sendEnquiry('early_access', s.email, s.name, {
           workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,
           jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,
           branches: s.branches, runningOn: s.stack, timeline: s.timeline,
+          phone: s.dial + ' ' + this.phoneDigits(), bestTime: s.bestTime,
         }).then((r) => {
           if (!r.reference) this.flashToast('We could not record that — email hello@currencydeskos.com');
           this._target = r.charterNo || null;
@@ -672,7 +726,8 @@ class Component extends DCLogic {
     const can = this.canNext();
     const washes = [
       'rgba(29,107,69,0)', 'rgba(29,107,69,0.05)', 'rgba(169,121,28,0.07)',
-      'rgba(29,107,69,0.08)', 'rgba(194,69,45,0.06)', 'rgba(90,63,128,0.06)', 'rgba(29,107,69,0.1)', 'rgba(29,107,69,0.14)'
+      'rgba(29,107,69,0.08)', 'rgba(194,69,45,0.06)', 'rgba(90,63,128,0.06)', 'rgba(29,107,69,0.1)',
+      'rgba(169,121,28,0.09)', 'rgba(29,107,69,0.14)'
     ];
     const volumeData = [
       { v: 'Under $500K', sub: 'Getting established' },
@@ -719,7 +774,29 @@ class Component extends DCLogic {
       subStyle: { fontSize: '11px', fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.02em', color: s.timeline === v ? 'rgba(252,250,245,0.82)' : '#9C948A' }
     }));
 
-    const nextLabels = ['Apply for early access', 'Continue', 'Reserve it', 'Continue', 'Continue', 'Continue', 'Claim my membership'];
+    /* Country code as a short list rather than every dialling code on earth:
+       this is a Canadian product opening to the UK and Australia, and a
+       200-row select is a worse answer than a free-typed number. */
+    const dialOpts = [
+      { v: '+1', l: '+1 CA/US' }, { v: '+44', l: '+44 UK' }, { v: '+61', l: '+61 AU' },
+      { v: '+353', l: '+353 IE' }, { v: '+64', l: '+64 NZ' }
+    ];
+    const times = ['Any time', 'Mornings', 'Afternoons', 'After close'];
+    const timeOpts = times.map((t) => ({
+      label: t, onClick: this.pick('bestTime', t),
+      style: {
+        padding: '10px 18px', borderRadius: '999px', cursor: 'pointer',
+        fontFamily: "'Schibsted Grotesk', sans-serif", fontSize: '14px', fontWeight: 600,
+        border: '1px solid ' + (s.bestTime === t ? '#17140F' : '#DDD5C6'),
+        background: s.bestTime === t ? '#17140F' : 'transparent',
+        color: s.bestTime === t ? '#F1ECE1' : '#17140F', transition: 'all 0.2s ease'
+      }
+    }));
+    const digits = this.phoneDigits();
+    const phoneHint = digits.length === 0 ? 'A REAL NUMBER, PLEASE'
+      : digits.length < 10 ? 'A FEW MORE DIGITS' : 'THAT WILL DO';
+
+    const nextLabels = ['Apply for early access', 'Continue', 'Reserve it', 'Continue', 'Continue', 'Continue', 'Continue', 'Claim my membership'];
     const nextStyle = {
       display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', boxSizing: 'border-box',
       marginTop: '26px', padding: '16px 22px', borderRadius: '13px', border: 'none',
@@ -735,7 +812,7 @@ class Component extends DCLogic {
       cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, transition: 'opacity 0.2s ease'
     });
 
-    const pager = [0, 1, 2, 3, 4, 5, 6].map((i) => ({
+    const pager = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
       style: {
         height: '6px', borderRadius: '3px', transition: 'all 0.3s ease',
         width: i === step ? '26px' : '6px',
@@ -749,7 +826,7 @@ class Component extends DCLogic {
       background: on ? '#17140F' : 'transparent', color: on ? '#F1ECE1' : '#6B6459', transition: 'all 0.2s ease'
     });
 
-    const dark = step === 7;
+    const dark = step === 8;
     const cardStyle = {
       position: 'relative', width: '286px', height: '432px', borderRadius: '20px',
       background: 'linear-gradient(158deg, #F6DE96 0%, #D3A231 18%, #F7E6AC 38%, #C08E22 58%, #EAC974 80%, #CE9E38 100%)',
@@ -759,18 +836,20 @@ class Component extends DCLogic {
 
     return {
       washColor: washes[step],
-      isForm: step < 7,
-      s0: step === 0, s1: step === 1, s2: step === 2, s3: step === 3, s4: step === 4, s5: step === 5, s6: step === 6, s7: step === 7,
+      isForm: step < 8,
+      s0: step === 0, s1: step === 1, s2: step === 2, s3: step === 3, s4: step === 4, s5: step === 5, s6: step === 6, s7: step === 7, s8: step === 8,
       email: s.email, onEmail: this.set('email'), ref0: this.ref0,
       domain: s.domain, onDomain: this.set('domain'), ref1: this.ref1, skipWebsite: this.skipWebsite,
       workspace: s.workspace, onWorkspace: this.set('workspace'), ref2: this.ref2, workspaceFull: this._workspaceFull(),
       volumeOpts, branchOpts, stackOpts, timelineOpts,
       name: s.name, onName: this.set('name'), ref6: this.ref6,
       role: s.role, onRole: this.set('role'), employeeOpts,
+      phone: s.phone, onPhone: this.onPhone, ref7: this.ref7,
+      dial: s.dial, onDial: this.set('dial'), dialOpts, timeOpts, phoneHint,
       onKey: this.onKey,
       next: this.next, back: this.back,
       nextLabel: nextLabels[step] || 'Continue', nextStyle,
-      stepCount: 'Step ' + Math.min(step + 1, 7) + ' of 7',
+      stepCount: 'Step ' + Math.min(step + 1, 8) + ' of 8',
       backStyle: circle(step > 0), fwdStyle: circle(can),
       pager,
       headText: dark ? '#F4E7C4' : '#17140F',

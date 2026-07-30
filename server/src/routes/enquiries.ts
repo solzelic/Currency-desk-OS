@@ -57,6 +57,31 @@ const LABELS: Record<string, string> = {
   contact: "Contact form",
 };
 
+/* The number we ring.
+
+   Stored E.164-ish — a plus, a country code, digits, nothing else — because
+   that is the only shape that can be dialled, texted, and compared for
+   "have we already got this person". How it is displayed is the panel's
+   business; how it was typed is nobody's.
+
+   Deliberately NOT rejected when it looks wrong. This is a public form and
+   a number we cannot parse is still a lead: somebody typing an extension,
+   a country we did not list, or their number with a word in it should not
+   lose their place in the cohort over it. We keep what they typed, mark it
+   unparsed, and let a person look. */
+export function normalizePhone(raw: unknown): { phone: string; ok: boolean } | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const digits = s.replace(/\D+/g, "");
+  if (!digits) return { phone: s.slice(0, 40), ok: false };
+  // a leading + is the caller's own country code; otherwise assume +1, which
+  // is where every desk is today and is what the form's default sends
+  const plus = s.trimStart().startsWith("+");
+  const e164 = plus ? `+${digits}` : digits.length === 10 ? `+1${digits}` : `+${digits}`;
+  // 8 is the shortest real national number, 15 the E.164 ceiling
+  return { phone: e164.slice(0, 17), ok: digits.length >= 8 && digits.length <= 15 };
+}
+
 export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
   // one bucket per sender, swept lazily — this endpoint is low-traffic and
   // the map only ever holds addresses seen in the last minute
@@ -104,6 +129,18 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       }
     }
 
+    /* The phone number is the one field on this form that gets acted on
+       rather than read — somebody rings it within minutes of approval — so
+       it is stored in a dialable shape, and whether we could make sense of
+       it is recorded next to it rather than left for the caller to find
+       out. */
+    const kept: Record<string, unknown> = { ...(details ?? {}) };
+    const tel = normalizePhone(kept.phone);
+    if (tel) {
+      kept.phone = tel.phone;
+      if (!tel.ok) kept.phoneUnparsed = String((details ?? {}).phone ?? "");
+    }
+
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
     const [row] = await db.insert(schema.enquiries).values({
@@ -112,7 +149,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       kind,
       email,
       name: name ?? null,
-      details: details ?? {},
+      details: kept,
       charterNo,
     }).returning();
 

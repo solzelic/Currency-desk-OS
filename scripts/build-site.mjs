@@ -129,13 +129,17 @@ const PAGES = {
       '<a href="#" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
       '<a href="/login" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
     ], [
-      "if (this.state.step === 7) { setTimeout(() => this.startMemberCount(), 800); }",
-      "if (this.state.step === 7) {\n" +
+      "if (this.state.step === 8) { setTimeout(() => this.startMemberCount(), 800); }",
+      "if (this.state.step === 8) {\n" +
         "        const s = this.state;\n" +
         "        sendEnquiry('early_access', s.email, s.name, {\n" +
         "          workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,\n" +
         "          jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,\n" +
         "          branches: s.branches, runningOn: s.stack, timeline: s.timeline,\n" +
+        /* The number we ring, in one piece and in the shape a person dials.
+           Sent as the dialling code plus the digits, never the prettified
+           version the field shows — spacing is for reading, not for storing. */
+        "          phone: s.dial + ' ' + this.phoneDigits(), bestTime: s.bestTime,\n" +
         "        }).then((r) => {\n" +
         "          if (!r.reference) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
         "          this._target = r.charterNo || null;\n" +

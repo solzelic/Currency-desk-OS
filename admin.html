@@ -435,6 +435,16 @@ const PAGES = [
     blurb: 'Every change anybody made, in order. Six years of it, because that is what the rulebook asks for.' },
 ];
 const PAGE = (id) => PAGES.find(p => p.id === id) || PAGES[0];
+/* One answer off an application, whichever shape the row is in. */
+const det = (e, k) => { const v = (e && e.details || {})[k]; return v == null || v === '' ? null : String(v); };
+/* The number, spaced for reading. Stored E.164 so it can be dialled; a
+   fifteen-digit run with no gaps is unreadable to the person dialling it. */
+const tel = (e) => {
+  const raw = det(e, 'phone');
+  if (!raw) return null;
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(raw);
+  return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : raw;
+};
 /* Settings is not in the list on purpose — it is the cogwheel at the
    bottom. You visit it when something needs configuring, not while you
    are working, and putting it in the run of daily pages made it look
@@ -447,11 +457,37 @@ const STAGE_TONE = { new: 'mute', reviewing: 'amber', hold: 'blue', invited: 'pu
    from what a transition will actually accept. */
 const STAGES = ['new', 'reviewing', 'hold', 'invited', 'accepted', 'declined'];
 const stageTitle = (stages, id) => ((stages || []).find(s => s.id === id) || {}).title || id;
+/* Each column, in more words than fit under its heading — what it means,
+   what the applicant has been told, and what moving them out of it does.
+   The one-liner under the title is the summary; this is the training. */
+const STAGE_HELP = {
+  new: 'Applications from before arrivals were acknowledged automatically. They have heard nothing from us. Nothing new lands here, and the column disappears once it is empty — so work these out and it goes.',
+  reviewing: 'Where every application starts, the moment it arrives. They have already been emailed to say somebody is looking and that we will call. Nobody has to press anything to get them here.',
+  hold: 'Worth keeping, not now. They are told nothing — this is a note to ourselves, not a decision they were given. You can approve straight from here without sending them back through review.',
+  invited: 'Approved. Pressing Approve emailed them their reference and the link to set the desk up, and that link works for exactly as long as they sit in this column.',
+  accepted: 'They finished setup and the desk exists. You cannot put an application here by hand — it arrives when they complete it, which is what keeps this board honest about the funnel.',
+  declined: 'Not for us. Their code stops opening anything immediately. We send nothing automatically: a decline deserves a person writing to them.',
+};
+/* What each answer on the application is called here, and — where the name
+   alone is not enough — what it means. The help text is the difference
+   between a new starter guessing and a new starter knowing. */
 const DETAIL_LABELS = {
   workspace: 'Workspace', website: 'Website', jurisdiction: 'Jurisdiction', role: 'Their role',
   employees: 'Team size', monthlyVolume: 'Monthly volume', branches: 'Locations',
   runningOn: 'Running on today', timeline: 'Wants to be live', topic: 'About', shop: 'Shop',
   city: 'City', message: 'Message', newsletter: 'Wants updates',
+  phone: 'Mobile', bestTime: 'Best time to call', phoneUnparsed: 'Number as typed',
+};
+const DETAIL_HELP = {
+  workspace: 'The web address they asked for. Their storefront will live at currencydeskos.com/sites/<this>, and it becomes the desk’s slug when they finish setup.',
+  jurisdiction: 'Where they are licensed. It decides the regulator, the home currency and the reporting threshold their desk carries — so it is the one answer everything else follows from.',
+  monthlyVolume: 'What they say they exchange in a month. Self-reported on the form, never verified — treat it as a sizing hint, not a fact.',
+  runningOn: 'What they use today. “Spreadsheets & manual logs” usually means a quick, happy switch; “Legacy MSB software” usually means a data migration conversation.',
+  timeline: 'How soon they want to be trading on it. Worth weighing against the queue — somebody who says “as soon as possible” and waits three weeks tends not to answer the phone.',
+  branches: 'One shop or several. Multi-branch desks need a legal entity and branch set up per location, so they take longer to open.',
+  phone: 'The number we ring after approving them. Collected on the application so nobody has to chase it — it is also the number they can sign in with later.',
+  bestTime: 'When they said to call. Their local time, not yours.',
+  phoneUnparsed: 'They typed something we could not read as a phone number, so it is kept exactly as written. Check it before dialling.',
 };
 
 function Pipeline({ kind, onCounts }) {
@@ -565,6 +601,12 @@ function Pipeline({ kind, onCounts }) {
         <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)', marginTop: 8 }}>
           {r.reference}{r.charterNo ? ' · Nº ' + String(r.charterNo).padStart(4, '0') : ''}
         </div>
+        {/* The number, on the card. Approving promises a call within minutes,
+            so whether we can actually make it belongs where the decision is
+            taken, not one click further in. */}
+        {tel(r) && <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)', marginTop: 3 }}>
+          ☏ {tel(r)}{det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''}
+        </div>}
         {/* The rehearsal sits in the same board as everyone else so it can be
             found, and has to be unmistakable so nobody works it as a lead. */}
         {r.isDemo && <div style={{ marginTop: 6 }}><Pill tone="purple">walkthrough</Pill></div>}
@@ -628,6 +670,7 @@ function Pipeline({ kind, onCounts }) {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px 8px' }}>
             <span style={{ fontSize: 13, fontWeight: 800 }}>{s.title}</span>
             <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{inCol.length}</span>
+            {STAGE_HELP[s.id] && <Info title={s.title}>{STAGE_HELP[s.id]}</Info>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.45, padding: '0 2px 10px', minHeight: 30 }}>{s.blurb}</div>
           <div data-stage={s.id} style={{ display: 'grid', gap: 8, borderRadius: 13, padding: 8, minHeight: 90, transition: 'background .12s, box-shadow .12s',
@@ -790,9 +833,13 @@ function BillingPage() {
   if (!d) return <div style={{ padding: 20, color: 'var(--mute)', fontFamily: MONO }}>Loading…</div>;
 
   const cash = (c) => '$' + ((Number(c) || 0) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const stat = (label, value, note, tone) => (
+  /* Every money word on this page means one specific thing, and most of
+     them are words people think they already know. MRR is not revenue,
+     cash collected is not revenue either, and tax collected is not ours
+     at all — so each tile says which it is. */
+  const stat = (label, value, note, tone, help) => (
     <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 13, padding: '14px 16px' }}>
-      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--faint)' }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--faint)', display: 'flex', alignItems: 'center' }}>{label}{help && <Info title={label}>{help}</Info>}</div>
       <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: tone || 'var(--text)' }}>{value}</div>
       {note && <div style={{ fontSize: 11.5, color: 'var(--mute)', marginTop: 3 }}>{note}</div>}
     </div>
@@ -815,14 +862,22 @@ function BillingPage() {
     </div>)}
 
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(178px,1fr))', gap: 12, marginBottom: 18 }}>
-      {stat('MRR', cash(d.mrrCents), 'recurring, per month')}
-      {stat('ARR', cash(d.arrCents), 'MRR × 12')}
-      {stat('Paying desks', d.activePaying, d.trialing + ' on trial')}
-      {stat('New this month', d.newThisMonth)}
-      {stat('Cash collected', cash(d.cashCollectedThisMonthCents), 'this month, incl. tax')}
-      {stat('Tax collected', cash(d.taxCollectedThisMonthCents), 'not yours', 'var(--mute)')}
-      {stat('Needs attention', d.needsAttention.length, 'unpaid or overdue', d.needsAttention.length ? 'var(--amber)' : null)}
-      {stat('Cancelled', d.cancelled)}
+      {stat('MRR', cash(d.mrrCents), 'recurring, per month', null,
+        'Monthly recurring revenue: what every live subscription adds up to per month, with annual plans divided by twelve. It is a run rate, not money in the bank — nobody has paid you this figure.')}
+      {stat('ARR', cash(d.arrCents), 'MRR × 12', null,
+        'MRR multiplied by twelve. What a year would bring if nothing changed — no new desks, none lost. A shorthand for scale, not a forecast.')}
+      {stat('Paying desks', d.activePaying, d.trialing + ' on trial', null,
+        'Desks with a live paid subscription. Trials are counted separately underneath because they are not paying yet and some never will.')}
+      {stat('New this month', d.newThisMonth, null, null,
+        'Subscriptions that started since the 1st. A desk that started and cancelled in the same month still counts here — check Cancelled alongside it.')}
+      {stat('Cash collected', cash(d.cashCollectedThisMonthCents), 'this month, incl. tax', null,
+        'What Stripe actually took this month, tax included. NOT revenue: a desk paying a year up front hands over twelve months of cash today and earns one month of it.')}
+      {stat('Tax collected', cash(d.taxCollectedThisMonthCents), 'not yours', 'var(--mute)',
+        'Sales tax taken on your behalf and owed onward to the government. It sits inside Cash collected, and it was never income — subtract it before you think about what you earned.')}
+      {stat('Needs attention', d.needsAttention.length, 'unpaid or overdue', d.needsAttention.length ? 'var(--amber)' : null,
+        'Invoices Stripe could not collect. Usually an expired card. They do not fix themselves, and a desk here is one that keeps working while not paying.')}
+      {stat('Cancelled', d.cancelled, null, null,
+        'Subscriptions that have ended. Cancelling does not close their desk or delete anything — it stops the billing.')}
     </div>
 
     <div style={{ fontSize: 11.5, color: 'var(--faint)', marginBottom: 18, lineHeight: 1.55, maxWidth: 620 }}>
@@ -919,9 +974,50 @@ function PageHead({ back, backTo, title, sub, pills, actions }) {
     {sub && <div style={{ fontFamily: MONO, fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>{sub}</div>}
   </div>);
 }
-function Card({ title, children, pad = 16 }) {
+/* ============================================================
+   THE LITTLE ⓘ
+
+   The bar this panel is held to: somebody who has never seen the system
+   should be able to work it within a day. That means nothing on screen
+   is allowed to be a word you have to already know — every label that
+   could be read two ways carries the explanation next to it, one click
+   away.
+
+   Deliberately click rather than hover. Hover help does not exist on a
+   phone, disappears the moment you move to read it, and cannot be left
+   open next to the thing it describes while you decide.
+   ============================================================ */
+function Info({ children, title }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const shut = (e) => { if (!e.target.closest || !e.target.closest('[data-info]')) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('click', shut);
+    window.addEventListener('keydown', esc);
+    return () => { window.removeEventListener('click', shut); window.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (<span data-info style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}>
+    <button type="button" aria-label={'What is ' + (title || 'this') + '?'} aria-expanded={open}
+      onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+      style={{ width: 15, height: 15, marginLeft: 6, borderRadius: '50%', border: '1px solid ' + (open ? 'var(--text)' : 'var(--line)'),
+        background: open ? 'var(--text)' : 'transparent', color: open ? '#111' : 'var(--faint)',
+        fontSize: 10, fontWeight: 800, lineHeight: 1, display: 'grid', placeItems: 'center', cursor: 'pointer', padding: 0, flex: 'none' }}>i</button>
+    {open && (<span onClick={e => e.stopPropagation()} style={{ position: 'absolute', zIndex: 80, top: 22, left: -8, width: 290,
+      background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 11, padding: '11px 13px',
+      boxShadow: '0 18px 40px -12px rgba(0,0,0,0.6)', fontSize: 12.5, lineHeight: 1.6, color: 'var(--mute)',
+      fontWeight: 400, letterSpacing: 0, textTransform: 'none', fontFamily: 'inherit', whiteSpace: 'normal', textAlign: 'left' }}>
+      {title && <span style={{ display: 'block', fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{title}</span>}
+      {children}
+    </span>)}
+  </span>);
+}
+
+function Card({ title, help, children, pad = 16 }) {
   return (<div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
-    {title && <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>{title}</div>}
+    {title && <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--line2)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>
+      {title}{help && <Info title={title}>{help}</Info>}
+    </div>}
     <div style={{ padding: pad }}>{children}</div>
   </div>);
 }
@@ -934,9 +1030,10 @@ function Tiles({ items }) {
     </div>))}
   </div>);
 }
-const kv = (k, v) => v == null || v === '' ? null : (
+const kv = (k, v, help) => v == null || v === '' ? null : (
   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13 }}>
-    <span style={{ color: 'var(--mute)', flex: 'none' }}>{k}</span><span style={{ fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span></div>);
+    <span style={{ color: 'var(--mute)', flex: 'none', display: 'inline-flex', alignItems: 'center' }}>{k}{help && <Info title={k}>{help}</Info>}</span>
+    <span style={{ fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span></div>);
 
 // ===================== DESK PAGE =====================
 // The page you open when a customer rings. Who they are, how the desk is
@@ -1266,7 +1363,8 @@ function LabelBox({ enquiry, onSaved }) {
   const drop = (l) => put(labels.filter(x => x !== l));
   const unused = all.filter(a => !labels.includes(a.label)).slice(0, 8);
 
-  return (<Card title="Labels">
+  return (<Card title="Labels"
+    help="What an application is LIKE — 'high volume', 'referred by jordan', 'toronto'. Free-form and unlimited, and they drive nothing on their own: they are for finding and sorting. Where an application IS in the process is its stage, and that is the column it sits in.">
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: labels.length ? 11 : 0 }}>
       {labels.map(l => (<button key={l} disabled={busy} onClick={() => drop(l)} title="Remove"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -1325,9 +1423,40 @@ function ApplicationPage({ id, onChanged }) {
 
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(280px,1fr)', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 16 }}>
-        <Card title={isApp ? 'What they told us' : 'Their message'}>
-          {kv('Email', <a href={'mailto:' + e.email} style={{ color: 'var(--blue)' }}>{e.email}</a>)}
-          {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '').map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v)))}
+        {/* How to reach them, first and on its own.
+
+            Everything else on this page is something you read; this is the
+            thing you DO. The application form promises a call within minutes
+            of approval, so the number, the hour they said to ring, and a
+            button that dials it should not be four rows down a list of
+            answers about monthly volume. */}
+        {isApp && (<Card title="How to reach them"
+          help="Collected on the application so nobody has to chase it. The call is the promise the form makes — within a few minutes of approving, at the time they picked.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontFamily: MONO, fontSize: 19, fontWeight: 700, letterSpacing: '0.03em' }}>
+                {tel(e) || <span style={{ color: 'var(--faint)', fontSize: 14, fontWeight: 400, letterSpacing: 0 }}>No number — they applied before we asked for one</span>}
+              </span>
+              {det(e, 'bestTime') && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--mute)', marginTop: 3 }}>Best time: {det(e, 'bestTime')}</span>}
+            </span>
+            <span style={{ flex: 1 }} />
+            {tel(e) && <a href={'tel:' + tel(e).replace(/\s+/g, '')} style={{ ...btn('var(--text)', '#111'), textDecoration: 'none', fontWeight: 700, border: 'none' }}>Call them</a>}
+            <a href={'mailto:' + e.email} style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), textDecoration: 'none' }}>Email instead</a>
+          </div>
+          {det(e, 'phoneUnparsed') && (<div style={{ marginTop: 11, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.55,
+            background: 'color-mix(in srgb,var(--amber) 12%,transparent)', border: '1px solid color-mix(in srgb,var(--amber) 30%,transparent)' }}>
+            We could not read this as a phone number. They typed <b style={{ fontFamily: MONO }}>{det(e, 'phoneUnparsed')}</b> — check it before dialling.
+          </div>)}
+          <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 10, lineHeight: 1.5 }}>{e.email}</div>
+        </Card>)}
+
+        <Card title={isApp ? 'What they told us' : 'Their message'}
+          help={isApp ? 'Their own answers from the early-access form, exactly as given. Nothing here is verified — it is what they said about themselves.' : 'Sent from the contact page. They were promised a reply within a business day.'}>
+          {kv('Email', <a href={'mailto:' + e.email} style={{ color: 'var(--blue)' }}>{e.email}</a>, 'The address they applied with. Everything we send goes here, and it is the address their desk is opened against.')}
+          {Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '')
+            /* the number has its own card above; repeating it here is noise */
+            .filter(([k]) => !(isApp && (k === 'phone' || k === 'bestTime' || k === 'phoneUnparsed')))
+            .map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v), DETAIL_HELP[k]))}
         </Card>
 
         {/* Labels: what this application is LIKE. Kept apart from the stage,
@@ -1339,7 +1468,8 @@ function ApplicationPage({ id, onChanged }) {
             like a place you go rather than a thing you do with one person.
             It belongs here, on them, and only once they can actually use
             it — an invitation is what makes the link work. */}
-        {isApp && e.status === 'invited' && (<Card title="Their setup">
+        {isApp && e.status === 'invited' && (<Card title="Their setup"
+          help="Their sixteen-screen setup, on the link we emailed. There is no staff copy of it — this opens exactly what they are looking at, which is the thing to have in front of you when somebody rings up stuck.">
           <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.6, marginBottom: 12 }}>
             Theirs to do, on the link we emailed them. This is the same page they are looking at, so
             it is the thing to open when somebody rings up stuck on a screen.
@@ -1350,7 +1480,8 @@ function ApplicationPage({ id, onChanged }) {
             style={{ ...btn('transparent', 'var(--mute)', { fontSize: 12.5 }), marginLeft: 8 }}>Start the rehearsal over</button>}
         </Card>)}
 
-        <Card title="Your notes">
+        <Card title="Your notes"
+          help="Anything the next person needs: what you learned on the call, what you promised, why you held them. The applicant never sees this. It stays on the record after their desk opens.">
           <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={6} placeholder="What you learned on the call, what you promised, anything the next person needs…"
             style={{ width: '100%', padding: 11, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
           <button disabled={busy || note === (e.notes || '')} onClick={() => save({ notes: note }, 'Note saved.')}
@@ -1363,7 +1494,8 @@ function ApplicationPage({ id, onChanged }) {
             accept from where this application is, named by what they do, and
             approving is a single press — the code, the email and the link all
             follow from it without a second step. */}
-        <Card title="Move this along">
+        <Card title="Move this along"
+          help="The stages this application can go to from where it is now. The server decides which are legal, so a button here always works. Approving is one press — it moves them to Invited, mints nothing new, and emails their existing code with the setup link.">
           {e.status === 'accepted'
             ? <div style={{ fontSize: 13, color: 'var(--mute)', lineHeight: 1.55 }}>They built their desk — this one is done.</div>
             : (<div>
@@ -1390,7 +1522,8 @@ function ApplicationPage({ id, onChanged }) {
             went somewhere it should not have and they need a different one.
             Say which is which, because guessing wrong is either an angry
             customer or a live code in the wrong hands. */}
-        {isApp && e.status === 'invited' && (<Card title="Their code">
+        {isApp && e.status === 'invited' && (<Card title="Their code"
+          help="The reference they were given when they applied, printed on their charter card and in every email. Holding it is what opens their setup page — so it is a key, and it stops working the moment they are not Invited.">
           <div style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: '0.08em', marginBottom: 8 }}>{e.reference}</div>
           <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
             Live. This opens their setup. Any of the buttons above — back to review, on hold, or declined —
@@ -1410,7 +1543,8 @@ function ApplicationPage({ id, onChanged }) {
           </div>
         </Card>)}
 
-        <Card title="History">
+        <Card title="History"
+          help="Received is when the form arrived. First answered is when it first left the unacknowledged stage — automatic now, so it usually matches. Last moved is the most recent stage change and who made it; 'system' means nobody pressed anything.">
           {kv('Received', fmtWhen(e.createdAt))}
           {kv('First answered', e.handledAt ? fmtWhen(e.handledAt) : null)}
           {kv('Last moved', e.decidedAt ? fmtWhen(e.decidedAt) : null)}
