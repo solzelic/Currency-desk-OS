@@ -13,27 +13,54 @@ import path from "node:path";
    a sandboxed runner the request may not leave at all. The same versions
    are in node_modules, so they are served from there. What is being
    tested is our code, not unpkg's uptime.
+
+   THE VERSIONS HAVE TO AGREE, EXACTLY
+
+   Those <script> tags carry an SRI `integrity` hash. The browser hashes
+   whatever comes back and blocks it if the digest differs — so serving
+   7.29.7 in answer to a request for 7.29.0 does not merely serve the
+   wrong file, it serves nothing at all. Babel never loads, none of the
+   JSX on the page ever compiles, and the panel comes up as a black
+   rectangle with one line in the console. That is a genuinely horrible
+   thing to debug from a CI log, so the substitution below refuses to
+   guess: if node_modules and the page disagree, the test says which
+   two versions and where to fix it.
    ============================================================ */
 /* Playwright runs from the directory holding its config, which is the
    repo root. import.meta is not available here — the runner compiles
    these to CommonJS. */
 const ROOT = process.cwd();
-const VENDOR: Record<string, string> = {
-  "react@18.3.1/umd/react.development.js": "react/umd/react.development.js",
-  "react-dom@18.3.1/umd/react-dom.development.js": "react-dom/umd/react-dom.development.js",
-  "@babel/standalone@7.29.0/babel.min.js": "@babel/standalone/babel.min.js",
-};
+/* What we are willing to answer for, and the file inside each package
+   that unpkg would have served. */
+const VENDOR: Record<string, true> = { react: true, "react-dom": true, "@babel/standalone": true };
+const UNPKG = /unpkg\.com\/((?:@[^/]+\/)?[^@/]+)@([^/]+)\/(.+)$/;
+
+function installedVersion(pkg: string): string {
+  return JSON.parse(readFileSync(path.join(ROOT, "node_modules", pkg, "package.json"), "utf8")).version;
+}
 
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use) => {
     await page.route("**unpkg.com/**", (route) => {
       const url = route.request().url();
-      const hit = Object.keys(VENDOR).find((k) => url.includes(k));
-      if (!hit) return route.abort();
+      const m = UNPKG.exec(url);
+      if (!m || !VENDOR[m[1]!]) return route.abort();
+      const [, pkg, want, file] = m as unknown as [string, string, string, string];
+
+      const have = installedVersion(pkg);
+      if (have !== want) {
+        throw new Error(
+          `${pkg}: the page asks for ${want}, node_modules has ${have}.\n` +
+            `These are served from disk and the page pins them with an SRI hash, so a\n` +
+            `mismatch is blocked by the browser and the page renders nothing at all.\n` +
+            `Pin "${pkg}": "${want}" in package.json, or update the <script> tag and its\n` +
+            `integrity hash in 'CurrencyDesk OS.html' and 'admin.html' to ${have}.`,
+        );
+      }
       return route.fulfill({
         status: 200,
         contentType: "application/javascript",
-        body: readFileSync(path.join(ROOT, "node_modules", VENDOR[hit]!), "utf8"),
+        body: readFileSync(path.join(ROOT, "node_modules", pkg, file), "utf8"),
       });
     });
     /* Tailwind's CDN build is a nicety the OS degrades without, and it is
