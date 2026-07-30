@@ -137,9 +137,15 @@ const PAGES = {
         "          jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,\n" +
         "          branches: s.branches, runningOn: s.stack, timeline: s.timeline,\n" +
         /* The number we ring, in one piece and in the shape a person dials.
-           Sent as the dialling code plus the digits, never the prettified
-           version the field shows — spacing is for reading, not for storing. */
-        "          phone: s.dial + ' ' + this.phoneDigits(), bestTime: s.bestTime,\n" +
+           The dialling code plus digits only, never the prettified version
+           the field shows — spacing is for reading, not for storing. The
+           server normalises it to E.164 from here.
+
+           `callWindow` becomes `bestTime` on the way out for the same reason
+           `volume` becomes `monthlyVolume` above: the design names its own
+           state, and an application's answers are named for the person
+           reading them in the panel. */
+        "          phone: s.dial + ' ' + String(s.phone || '').replace(/\\D/g, ''), bestTime: s.callWindow,\n" +
         "        }).then((r) => {\n" +
         "          if (!r.reference) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
         "          this._target = r.charterNo || null;\n" +
@@ -175,6 +181,22 @@ const PAGES = {
     ], [
       "      a.download = 'CurrencyDesk-Founding-Operator-' + String(this.state.memberCount).padStart(4, '0') + '.png';",
       "      a.download = 'CurrencyDesk-Founding-Operator' + (this.state.memberCount == null ? '' : '-' + String(this.state.memberCount).padStart(4, '0')) + '.png';",
+    ], [
+      /* Two things the eighth step left behind, fixed here rather than in the
+         design so a re-export stays a file copy.
+
+         The phone step was inserted at index 6 and the label list was not
+         extended, so `nextLabels[step] || 'Continue'` put "Claim my
+         membership" on the PHONE screen — which is not the last one — and
+         "Continue" on the final screen, which is. The applicant is told they
+         are done a step early and then asked for more. */
+      "    const nextLabels = ['Apply for early access', 'Continue', 'Reserve it', 'Continue', 'Continue', 'Continue', 'Claim my membership'];",
+      "    const nextLabels = ['Apply for early access', 'Continue', 'Reserve it', 'Continue', 'Continue', 'Continue', 'Continue', 'Claim my membership'];",
+    ], [
+      // and the pager still draws seven dots for eight steps, so the last one
+      // has nothing to light up
+      "    const pager = [0, 1, 2, 3, 4, 5, 6].map((i) => ({",
+      "    const pager = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({",
     ], [
       // the cohort meter, live. The bar ANIMATES to its width, so the keyframe
       // has to end on the real figure too — hence the custom property.
