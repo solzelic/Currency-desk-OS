@@ -29,7 +29,7 @@ import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } 
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
-import { DISPATCHES, SILENT, delivery } from "../comms.js";
+import { DISPATCHES, DISPATCH, SILENT, delivery, sendableTo, type Recipient } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
@@ -48,6 +48,17 @@ const patchEnquiryBody = z
   })
   .refine((b) => b.status !== undefined || b.notes !== undefined || b.answered !== undefined, { message: "nothing to change" });
 const replyBody = z.object({ body: z.string().trim().min(1, "write something first").max(6000) });
+/* Sending one of the written emails to one person, by hand.
+
+   `preview` is a flag on the same request rather than a route of its own,
+   so what an operator is shown before pressing send and what actually
+   leaves are produced by one call to one renderer. A preview that could
+   drift from the send would be worse than no preview. */
+const templateBody = z.object({
+  template: z.string().trim().min(1).max(64),
+  fields: z.record(z.string().max(6000)).optional(),
+  preview: z.boolean().optional(),
+});
 const labelsBody = z.object({ labels: z.array(z.string().max(32)).max(12) });
 const ROLE_IDS = ["owner", "support", "billing", "security", "privacy", "auditor"] as const;
 const teamAddBody = z.object({
@@ -173,6 +184,22 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
     },
   };
 }
+
+/* An enquiry as the email catalogue sees it. Everything a hand-sent
+   email fills in about the person comes from here, off the record —
+   never from the request — so no amount of typing in the panel can
+   address an email to somebody else. */
+const recipientOf = (row: typeof schema.enquiries.$inferSelect): Recipient => ({
+  name: row.name ?? null,
+  email: row.email,
+  reference: row.reference,
+  status: row.status,
+  kind: row.kind,
+});
+
+/* Where the customer-facing links point. */
+const publicOrigin = (): string =>
+  (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
 
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
@@ -346,7 +373,14 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const replies = (await db.select().from(schema.enquiryReplies)
       .where(eq(schema.enquiryReplies.enquiryId, row.id))
       .orderBy(schema.enquiryReplies.createdAt));
-    return { enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board(), replies };
+    return {
+      enquiry: { ...row, tenantName: tenant?.name ?? null }, alsoFrom, stages: board(), replies,
+      /* Which of the written emails can go to this particular person as
+         they stand — computed here rather than in the browser, so the
+         menu and the send agree by construction. */
+      templates: sendableTo(recipientOf(row)),
+      delivery: delivery(),
+    };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (req, reply) => {
@@ -678,6 +712,80 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     return reply.code(201).send({ ok: true, email: status, reply: { ...saved, createdAt: new Date().toISOString() } });
   });
 
+  /* ---- send one of the written emails, to one person --------------------
+
+     The Inbox reply is one email written from scratch. This is the rest of
+     them: pick a template off the catalogue, see exactly what will go, send
+     it. Everything about the person — their name, their address, their
+     reference — comes off their record, so the only thing an operator can
+     supply is the part the template genuinely cannot know.
+
+     Whatever goes out is written onto the thread with the same shape a
+     reply has, because from the customer's side there is no difference: an
+     email arrived from us, and the next person to open this page needs to
+     know it did. */
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/email", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    const parsed = templateBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const { template, fields = {}, preview } = parsed.data;
+
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+
+    const d = DISPATCH.get(template);
+    if (!d) return reply.code(404).send({ error: "no_such_template", detail: `There is no email called "${template}".` });
+    if (!d.manual) {
+      return reply.code(400).send({
+        error: "not_sendable_by_hand",
+        detail: d.elsewhere ?? "This one is not something to send by hand.",
+      });
+    }
+
+    const to = recipientOf(row);
+    const blocked = d.manual.blocked?.(to);
+    if (blocked) return reply.code(409).send({ error: "blocked", detail: blocked });
+
+    for (const f of d.manual.needs) {
+      if (!(fields[f.id] ?? "").trim()) {
+        return reply.code(400).send({ error: "missing_field", detail: `${f.label} is empty — there is nothing to send.` });
+      }
+    }
+
+    const author = (await member(db, who.staffId))?.name || who.name || who.staffId;
+    const mail = d.manual.render(to, fields, { origin: publicOrigin(), from: author });
+
+    /* Shown, not sent. Same render, one branch later — see templateBody. */
+    if (preview) return { preview: true, template: d.id, to: row.email, ...mail };
+
+    if (row.isDemo) {
+      return reply.code(400).send({ error: "is_walkthrough", detail: "The walkthrough has no inbox — nothing would arrive." });
+    }
+
+    const status = await sendEmail(row.email, mail.subject, { text: mail.text, html: mail.html, replyTo: replyToAddress() })
+      .catch(() => "failed" as const);
+
+    const saved = {
+      id: randomUUID(), enquiryId: row.id,
+      /* The thread stores what was actually said, not the name of a
+         template — a year from now "invite" tells nobody anything. */
+      body: mail.text,
+      sentBy: who.staffId, emailStatus: status,
+    };
+    await db.insert(schema.enquiryReplies).values(saved);
+    await db.update(schema.enquiries).set({ handledAt: row.handledAt ?? new Date(), decidedBy: who.staffId })
+      .where(eq(schema.enquiries.id, row.id));
+    await audit(db, {
+      tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "admin.enquiry_emailed", detail: { reference: row.reference, template: d.id, email: status },
+    });
+    return reply.code(201).send({
+      ok: true, template: d.id, email: status, subject: mail.subject,
+      reply: { ...saved, createdAt: new Date().toISOString() },
+    });
+  });
+
   /* ---- put the rehearsal back -------------------------------------------
      The walkthrough is a real application against the real customer flow,
      so running it leaves answers behind and the second run would start
@@ -713,6 +821,10 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       dispatches: DISPATCHES.map((d) => ({
         id: d.id, title: d.title, audience: d.audience,
         when: d.when, automatic: d.automatic, stage: d.stage ?? null,
+        /* Whether an operator can reach for this one on a person's page,
+           and if not, where the send actually lives. */
+        manual: d.manual ? { action: d.manual.action, needs: d.manual.needs } : null,
+        elsewhere: d.elsewhere ?? null,
         sample: d.sample(),
       })),
       silent: SILENT,
@@ -962,7 +1074,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     const existing = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, b.ownerEmail)))
       .find((e) => e.kind === "early_access" && (e.status === "invited" || e.status === "accepted"));
 
-    const origin = (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
+    const origin = publicOrigin();
     const linkFor = (ref: string) => `${origin}/onboarding/${encodeURIComponent(ref)}`;
     if (existing) {
       const mail = inviteEmail({ name: existing.name, reference: existing.reference, origin });

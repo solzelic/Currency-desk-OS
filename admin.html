@@ -300,9 +300,25 @@ function CommsPage() {
           </span>
           <Pill tone="blue">{AUD[x.audience]}</Pill>
           <Pill tone={x.automatic ? 'purple' : 'mute'}>{x.automatic ? 'automatic' : 'you send it'}</Pill>
+          {/* Whether you can reach for this one on somebody's page. Worth a
+              pill of its own: "you send it" and "you can send it from here"
+              are different facts, and confusing them sends an operator
+              hunting through a menu that was never going to have it. */}
+          {x.manual && <Pill tone="green">on their page</Pill>}
           <span style={{ color: 'var(--faint)', fontSize: 11 }}>{open === x.id ? '▲' : '▼'}</span>
         </button>
         {open === x.id && (<div style={{ padding: '0 16px 16px' }}>
+          {x.manual
+            ? (<div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12 }}>
+                Open anyone in Applications or the Inbox and you can send them this — under <b style={{ color: 'var(--text)' }}>Send them an email</b>.
+                {x.manual.needs.length > 0 && ' You write the ' + x.manual.needs.map(n => n.label.toLowerCase()).join(' and ') + '; everything else is filled in from their record.'}
+              </div>)
+            : x.elsewhere
+              ? (<div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55, marginBottom: 12, padding: '9px 12px', borderRadius: 9,
+                  background: 'var(--sidebar)', border: '1px solid var(--line)' }}>
+                  <b style={{ color: 'var(--text)' }}>Not sendable by hand.</b> {x.elsewhere}
+                </div>)
+              : null}
           <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>SUBJECT</div>
           <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 12 }}>{x.sample.subject}</div>
           <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--faint)', marginBottom: 6 }}>BODY (sample)</div>
@@ -1642,6 +1658,160 @@ function LabelBox({ enquiry, onSaved }) {
   </Card>);
 }
 
+/* Send one of the written emails to this person.
+
+   The Inbox reply is one email typed from scratch. This is the rest of
+   them — the same templates the Emails page lists, sent to whoever is on
+   the screen. Three rules it is built around:
+
+   1. NOTHING ABOUT THEM IS TYPED. Their name, their address and their
+      reference come off the record on the server. The only thing an
+      operator supplies is the part a template genuinely cannot know, and
+      most of them need nothing at all.
+   2. YOU SEE WHAT WILL GO. The preview is the same render as the send,
+      one branch earlier in the same route, so it cannot drift.
+   3. THE ONES YOU CANNOT SEND SAY WHY. Four of these carry a live
+      credential and there is no honest way to fake one, so they are
+      listed with the reason and where the real send lives. An operator
+      who cannot find an email should never have to wonder whether they
+      are missing a permission or a menu. */
+function SendEmail({ enquiry, templates, delivery, onSent }) {
+  const [pick, setPick] = useState('');
+  const [fields, setFields] = useState({});
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState(null);
+
+  const list = templates || [];
+  const open = list.filter(t => t.action && !t.blocked);
+  const shut = list.filter(t => !t.action || t.blocked);
+  const chosen = list.find(t => t.id === pick) || null;
+  const missing = chosen ? chosen.needs.filter(f => !(fields[f.id] || '').trim()) : [];
+
+  useEffect(() => { setPick(''); setFields({}); setPreview(null); setFlash(null); }, [enquiry.id]);
+
+  /* Re-render the preview a beat after the last keystroke. Debounced
+     because every one of these is a round trip, and a preview that
+     stutters is worse than one that arrives a moment late. */
+  useEffect(() => {
+    if (!chosen || missing.length) { setPreview(null); return; }
+    let live = true;
+    const t = setTimeout(() => {
+      api('/api/admin/enquiries/' + enquiry.id + '/email', {
+        method: 'POST', body: JSON.stringify({ template: chosen.id, fields, preview: true }),
+      }).then(r => { if (live) setPreview(r); }).catch(() => { if (live) setPreview(null); });
+    }, 350);
+    return () => { live = false; clearTimeout(t); };
+  }, [enquiry.id, pick, JSON.stringify(fields), missing.length]);
+
+  const send = async () => {
+    setBusy(true); setFlash(null);
+    try {
+      const r = await api('/api/admin/enquiries/' + enquiry.id + '/email', {
+        method: 'POST', body: JSON.stringify({ template: chosen.id, fields }),
+      });
+      setFlash({ tone: r.email === 'sent' ? 'green' : r.email === 'simulated' ? 'amber' : 'red',
+        text: r.email === 'sent' ? 'Sent to ' + enquiry.email + '.'
+          : r.email === 'simulated' ? 'Written to the server log, not sent — email is not switched on yet.'
+          : 'It did not send. Nothing reached them.' });
+      setPick(''); setFields({}); setPreview(null);
+      onSent && onSent();
+    } catch (x) { setFlash({ tone: 'red', text: (x.body && x.body.detail) || 'Could not send that.' }); }
+    setBusy(false);
+  };
+
+  const chip = (on) => ({
+    padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer',
+    border: '1px solid ' + (on ? 'transparent' : 'var(--line)'),
+    background: on ? 'var(--text)' : 'transparent', color: on ? '#111' : 'var(--mute)',
+  });
+
+  return (<Card title="Send them an email"
+    help="The written emails, sent to this person by hand. Their name, address and reference are filled in from their record — you never type those, so an email from here cannot go to the wrong person. You see exactly what will go before it goes.">
+    {!delivery?.live && (<div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.55,
+      background: 'color-mix(in srgb,var(--amber) 12%,transparent)', border: '1px solid color-mix(in srgb,var(--amber) 30%,transparent)' }}>
+      <b>Email is not switched on.</b> Anything you send here is written to the server log and reaches nobody.
+      {delivery?.fix ? ' ' + delivery.fix : ''}
+    </div>)}
+
+    {flash && <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.55,
+      background: 'color-mix(in srgb,' + toneColor(flash.tone) + ' 12%,transparent)',
+      border: '1px solid color-mix(in srgb,' + toneColor(flash.tone) + ' 30%,transparent)' }}>{flash.text}</div>}
+
+    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      {open.map(t => (<button key={t.id} onClick={() => { setPick(pick === t.id ? '' : t.id); setFields({}); setPreview(null); }}
+        style={chip(pick === t.id)}>{t.title}</button>))}
+      {open.length === 0 && <div style={{ fontSize: 13, color: 'var(--mute)' }}>Nothing can be sent to them from here as they stand.</div>}
+    </div>
+
+    {chosen && (<div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 12, color: 'var(--faint)', lineHeight: 1.5, marginBottom: 11 }}>{chosen.when}</div>
+
+      {chosen.needs.map(f => (<div key={f.id} style={{ marginBottom: 11 }}>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 5 }}>{f.label}</label>
+        {f.lines > 1
+          ? <textarea rows={f.lines} value={fields[f.id] || ''} placeholder={f.placeholder || ''}
+              onChange={ev => setFields({ ...fields, [f.id]: ev.target.value })}
+              style={{ width: '100%', padding: 11, borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
+          : <input value={fields[f.id] || ''} placeholder={f.placeholder || ''}
+              onChange={ev => setFields({ ...fields, [f.id]: ev.target.value })}
+              style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--line)', background: 'var(--sidebar)', color: 'var(--text)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box' }} />}
+        <div style={{ fontSize: 11.5, color: 'var(--faint)', marginTop: 5, lineHeight: 1.5 }}>{f.help}</div>
+      </div>))}
+
+      {/* What will actually arrive, addressed to whom. Rendered by the
+          server from their record — this is not a mock-up of the email,
+          it is the email. */}
+      <div style={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--sidebar)', overflow: 'hidden' }}>
+        <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--line)', fontSize: 11.5, color: 'var(--faint)' }}>
+          To <b style={{ color: 'var(--text)' }}>{enquiry.email}</b>
+          {preview && <> · <b style={{ color: 'var(--text)' }}>{preview.subject}</b></>}
+        </div>
+        <div style={{ padding: 12, fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', color: 'var(--mute)', maxHeight: 260, overflow: 'auto' }}>
+          {preview ? preview.text
+            : missing.length ? missing[0].label + ' is empty — fill it in and this will show what goes.'
+            : 'Working out what to send…'}
+        </div>
+      </div>
+
+      <button disabled={busy || !preview} onClick={send}
+        style={{ marginTop: 11, padding: '10px 16px', borderRadius: 9, border: 'none', width: '100%',
+          background: preview ? 'var(--text)' : 'var(--line)', color: preview ? '#111' : 'var(--faint)',
+          fontWeight: 800, fontSize: 13, cursor: busy || !preview ? 'default' : 'pointer' }}>
+        {busy ? 'Sending…' : (chosen.action || 'Send') + ' to ' + (enquiry.name || enquiry.email)}</button>
+    </div>)}
+
+    {shut.length > 0 && (<div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line2)' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--faint)', marginBottom: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Not from here</div>
+      {shut.map(t => (<div key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '6px 0' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, width: 150, flex: 'none', color: 'var(--mute)' }}>{t.title}</span>
+        <span style={{ fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.5, minWidth: 0 }}>{t.blocked}</span>
+      </div>))}
+    </div>)}
+  </Card>);
+}
+
+/* Everything we have said to them, in the order it was said. Sends now
+   come from three places — approving, the Inbox, and the card above — so
+   the record of what they have already been told belongs on their page
+   rather than only in the Inbox thread. */
+function SentSoFar({ replies }) {
+  if (!replies || replies.length === 0) return null;
+  return (<Card title={'What we have sent them (' + replies.length + ')'}
+    help="Every email a person here sent them, newest last. The automatic ones — the acknowledgement, the invitation — are on the History card instead, because those follow from a stage rather than from somebody pressing send.">
+    {replies.map(r => (<div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--line2)' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 5 }}>
+        <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{fmtWhen(r.createdAt)}</span>
+        <span style={{ fontSize: 11.5, color: 'var(--faint)' }}>{r.sentBy}</span>
+        <span style={{ flex: 1 }} />
+        <Pill tone={r.emailStatus === 'sent' ? 'green' : r.emailStatus === 'simulated' ? 'amber' : 'red'}>
+          {r.emailStatus === 'sent' ? 'delivered' : r.emailStatus === 'simulated' ? 'not actually sent' : 'failed'}</Pill>
+      </div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--mute)', whiteSpace: 'pre-wrap' }}>{r.body}</div>
+    </div>))}
+  </Card>);
+}
+
 function ApplicationPage({ id, onChanged }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(''); const [flash, setFlash] = useState('');
@@ -1721,6 +1891,10 @@ function ApplicationPage({ id, onChanged }) {
             which is where it IS — mixing the two is how you end up with a
             stage called "high-volume-reviewing" and can automate neither. */}
         {isApp && <LabelBox enquiry={e} onSaved={load} />}
+
+        <SendEmail enquiry={e} templates={d.templates} delivery={d.delivery} onSent={() => { load(); onChanged && onChanged(); }} />
+
+        <SentSoFar replies={d.replies} />
 
         {/* Setup used to be its own section in the nav, which made it look
             like a place you go rather than a thing you do with one person.

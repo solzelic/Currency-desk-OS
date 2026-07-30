@@ -157,6 +157,33 @@ test("the application closes, and the desk shows up as Open", async ({ page }) =
   await expect(page.locator('[data-stage="invited"]').getByText(APPLICANT.name)).toHaveCount(0);
 });
 
+/* One of the written emails, sent to a named person by hand.
+
+   Approving sends the invitation on its own and the Inbox sends a reply
+   somebody typed; this is the case in between, and it is the one where a
+   mistake is expensive — an email addressed from a form field rather than
+   from the record goes to the wrong person, and there is no unsending it.
+   So the walk checks the two things that make it safe: the preview is
+   filled in from their record, and what was sent is on their thread
+   afterwards saying honestly whether it left the building. */
+test("an operator can send them one of the written emails", async ({ page }) => {
+  await signInAsOperator(page);
+  await page.goto("/admin#/applications");
+  await page.reload();
+  await rendered(page, "In review");
+
+  await page.locator('[data-stage="accepted"]').getByText(APPLICANT.name).first().click();
+  await rendered(page, "Send them an email");
+
+  await page.getByRole("button", { name: "We're looking at your application" }).click();
+  // their name, which nothing on this screen typed
+  await expect(page.getByText(new RegExp(APPLICANT.name.split(" ")[0]!)).first()).toBeVisible();
+
+  await page.getByRole("button", { name: /^Send it again to/ }).click();
+  await expect(page.getByText(/What we have sent them/i).first()).toBeVisible();
+  await expect(page.getByText(/not actually sent/i).first()).toBeVisible();
+});
+
 /* Somebody writes in, and we answer them without leaving the panel. */
 test("a message from the contact page can be replied to", async ({ page }) => {
   const from = `writes-${stamp}@shop.example`;
