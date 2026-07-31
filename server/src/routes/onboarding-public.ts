@@ -32,6 +32,10 @@ import {
   type Answers,
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
+import {
+  MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
+  setVerifyState, verifyStateOf, type VerifyState,
+} from "../onboarding/verify.js";
 
 const patchBody = z.object({
   stepId: z.string().min(1).max(60),
@@ -64,20 +68,9 @@ const normalizeRef = (s: string) => s.trim().toUpperCase().replace(/\s+/g, "");
 export const VERIFY_CHANNEL: "email" | "phone" =
   process.env.VERIFY_CHANNEL === "phone" ? "phone" : "email";
 
-const CODE_TTL_MS = 10 * 60 * 1000;
-const MAX_CODE_ATTEMPTS = 5;
-
-/* Where the confirmation state lives on the onboarding row. Under a
-   double-underscore key because `answers` is otherwise exactly the design's
-   field list, and anything in here is ours rather than theirs. */
-interface VerifyState {
-  codeHash?: string;
-  attempts?: number;
-  expiresAt?: number;
-  confirmedAt?: number;
-  channel?: string;
-  sentTo?: string;
-}
+/* The code's storage lives in ../onboarding/verify.js — the panel mints
+   these too, on the phone, for somebody whose email never arrived, and
+   both surfaces have to agree on what a valid code is. */
 
 /* The design's answers, whichever shape the row is in. Rows written before
    the two surfaces were brought onto one field list keep theirs under
@@ -159,34 +152,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     return row;
   }
 
-  async function loadOrCreate(enquiryId: string) {
-    const rows = await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, enquiryId)).limit(1);
-    if (rows[0]) return rows[0];
-    await db.insert(schema.onboarding).values({ enquiryId }).onConflictDoNothing();
-    return (await db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, enquiryId)).limit(1))[0]!;
-  }
-
-  const verifyStateOf = (row: { answers?: Record<string, unknown> | null }): VerifyState =>
-    (((row.answers ?? {}) as Record<string, unknown>).__verify ?? {}) as VerifyState;
-
-  async function setVerifyState(enquiryId: string, patch: VerifyState): Promise<void> {
-    const row = await loadOrCreate(enquiryId);
-    const answers = { ...((row.answers ?? {}) as Record<string, unknown>) };
-    answers.__verify = { ...verifyStateOf(row), ...patch };
-    await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, enquiryId));
-  }
-
-  /* A code is one code. Issuing a new one resets the attempt count and
-     invalidates the last, so "send it again" is always the right advice. */
+  const loadOrCreate = (enquiryId: string) => loadOrCreateOnboarding(db, enquiryId);
+  const setVerify = (enquiryId: string, patch: VerifyState) => setVerifyState(db, enquiryId, patch);
   const issueCode = (enquiryId: string, code: string, sentTo: string) =>
-    setVerifyState(enquiryId, {
-      codeHash: hashCode(code),
-      attempts: 0,
-      expiresAt: Date.now() + CODE_TTL_MS,
-      confirmedAt: undefined,
-      channel: VERIFY_CHANNEL,
-      sentTo,
-    });
+    issueVerificationCode(db, enquiryId, code, sentTo, VERIFY_CHANNEL);
 
   async function checkCode(
     a: { id: string },
@@ -198,10 +167,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     if ((v.expiresAt ?? 0) < Date.now()) return { ok: false, status: 410, error: "expired", detail: "That code expired — ask for a new one." };
     if ((v.attempts ?? 0) >= MAX_CODE_ATTEMPTS) return { ok: false, status: 429, error: "too_many_attempts", detail: "Too many tries — ask for a new code." };
     if (!codeMatches(entered, v.codeHash)) {
-      await setVerifyState(a.id, { attempts: (v.attempts ?? 0) + 1 });
+      await setVerify(a.id, { attempts: (v.attempts ?? 0) + 1 });
       return { ok: false, status: 401, error: "wrong_code", detail: "That code isn't right — check and try again." };
     }
-    await setVerifyState(a.id, { confirmedAt: Date.now() });
+    await setVerify(a.id, { confirmedAt: Date.now() });
     return { ok: true };
   }
 

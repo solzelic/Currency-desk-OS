@@ -8,6 +8,7 @@
    (SendGrid is a small addition if one-vendor billing is preferred.)
    ============================================================ */
 import { randomInt, createHash, timingSafeEqual } from "node:crypto";
+import { applicationReceived, youreIn } from "./emails/design.js";
 
 export type EmailStatus = "sent" | "simulated" | "failed";
 
@@ -91,51 +92,40 @@ export function loginCodeEmail(code: string, name?: string): { subject: string; 
 /* Somebody has picked their application up. Sent the moment they move into
    review, because the gap between "we got it" and "you're in" is where an
    applicant decides we are not serious — and it costs nothing to say so. */
-export function reviewEmail(opts: { name?: string | null }): { subject: string; text: string; html: string } {
-  const who = opts.name ? `${opts.name}, we` : "We";
-  const subject = "We're looking at your CurrencyDesk application";
-  const text =
-    `${who}'ve got your application and it's with us now.\n\n` +
-    `Someone will call you shortly to talk it through — no preparation needed, ` +
-    `we mostly want to hear how your desk runs today.\n\n` +
-    `If anything changes in the meantime, just reply to this email.`;
-  const html =
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
-    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
-    `<div style="font-size:15px;line-height:1.6;color:#444">${who}'ve got your application and it's with us now.</div>` +
-    `<div style="margin:20px 0;padding:14px 16px;background:#f4f3f0;border-radius:12px;font-size:14px;line-height:1.6;color:#444">` +
-    `Someone will call you shortly to talk it through. No preparation needed \u2014 we mostly want to hear how your desk runs today.` +
-    `</div>` +
-    `<div style="font-size:13px;color:#8a8a8a;line-height:1.6">If anything changes in the meantime, just reply to this email.</div>` +
-    `</div>`;
-  return { subject, text, html };
+export interface ReviewOpts {
+  name?: string | null;
+  /* What the shop is called. Collected on the application; falls back to
+     the workspace they chose, because the design's whole first line is
+     "thanks for putting <their shop> forward" and a blank there reads
+     like a mail merge that failed. */
+  shopName?: string | null;
+  reference?: string;
+  place?: string | null;
+}
+export function reviewEmail(o: ReviewOpts): { subject: string; text: string; html: string } {
+  return applicationReceived({ name: o.name, shopName: o.shopName, reference: o.reference ?? "", place: o.place });
 }
 
-export function inviteEmail(opts: { name?: string | null; reference: string; origin: string }): { subject: string; text: string; html: string } {
-  const who = opts.name ? `${opts.name}, you` : "You";
+export interface InviteOpts {
+  name?: string | null;
+  shopName?: string | null;
+  reference: string;
+  origin: string;
+  /* Their place in the founding hundred, printed on the card. */
+  cohortNo?: number | null;
+  place?: string | null;
+  issuedOn?: Date;
+}
+export function inviteEmail(o: InviteOpts): { subject: string; text: string; html: string } {
   /* Straight into setup, with their code already in the link so most people
      never type it. NOT /signup — that is the application they have already
      filled in, and sending an accepted operator back to it is the one thing
      this email must not do. */
-  const link = `${opts.origin}/onboarding/${encodeURIComponent(opts.reference)}`;
-  const subject = "You're in — set up your CurrencyDesk";
-  const text =
-    `${who}'re through to the Founding Operator group.\n\n` +
-    `Your reference is ${opts.reference} — keep it, and quote it if you ever write to us.\n\n` +
-    `Set your desk up here: ${link}\n\n` +
-    `It takes a few minutes: your business details, then a code to your email, and the desk is yours. ` +
-    `Reply to this email if anything is in your way.`;
-  const html =
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
-    `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
-    `<div style="font-size:15px;line-height:1.6;color:#444">${who}'re through to the Founding Operator group.</div>` +
-    `<div style="margin:20px 0;padding:14px 16px;background:#f4f3f0;border-radius:12px">` +
-    `<div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a">Your reference</div>` +
-    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:22px;font-weight:700;letter-spacing:.12em;margin-top:4px">${opts.reference}</div></div>` +
-    `<a href="${link}" style="display:block;text-align:center;padding:14px;background:#1D6B45;color:#fff;border-radius:12px;font-weight:700;text-decoration:none;font-size:14px">Set up your desk</a>` +
-    `<div style="font-size:13px;color:#8a8a8a;margin-top:16px;line-height:1.6">A few minutes: your business details, then a code to your email. Reply to this if anything is in your way.</div>` +
-    `</div>`;
-  return { subject, text, html };
+  const setupUrl = `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
+  return youreIn({
+    name: o.name, shopName: o.shopName, reference: o.reference, setupUrl,
+    cohortNo: o.cohortNo, place: o.place, issuedOn: o.issuedOn,
+  });
 }
 
 /* Support reset somebody's password. They get a temporary one and have to
@@ -198,10 +188,34 @@ export function verificationEmail(code: string, businessName: string): { subject
    like an email somebody typed — their words, our name under it, and
    nothing else competing for attention. The subject carries the
    reference so a thread stays a thread in their client. */
+/* Anything else.
+
+   The written emails cover the moments we already know about. This is the
+   rest of business — a question after a call, a heads-up before a
+   deployment, an apology. Same letterhead, same signature, same promise
+   that a reply reaches a person; the operator supplies the subject as
+   well as the words, and nothing is prefilled but their name.
+
+   It exists so that "I'll just use my own mail client" stops being the
+   answer. Mail sent from somebody's laptop is off the record, in the
+   wrong voice, and invisible to whoever picks the customer up next. */
+export function customEmail(o: { name?: string | null; subject: string; body: string; from: string }):
+  { subject: string; text: string; html: string } {
+  return letter({ name: o.name, subject: o.subject.trim(), body: o.body, from: o.from });
+}
+
 export function replyEmail(o: { name?: string | null; body: string; reference: string; from: string }):
   { subject: string; text: string; html: string } {
+  return letter({ name: o.name, subject: `Re: your note to CurrencyDesk (${o.reference})`, body: o.body, from: o.from });
+}
+
+/* One person writing to another, on our paper. Shared so a reply and a
+   letter you composed cannot end up looking like they came from two
+   different companies. */
+function letter(o: { name?: string | null; subject: string; body: string; from: string }):
+  { subject: string; text: string; html: string } {
   const hi = o.name ? `${o.name.trim().split(/\s+/)[0]},` : "Hello,";
-  const subject = `Re: your note to CurrencyDesk (${o.reference})`;
+  const subject = o.subject;
   const text = `${hi}\n\n${o.body}\n\n\u2014 ${o.from}\nCurrencyDesk\n\nJust reply to this email if there is more.`;
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html =

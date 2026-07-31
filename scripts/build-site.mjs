@@ -134,11 +134,58 @@ const PAGES = {
       '<a href="#" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
       '<a href="/login" style="font-size: 13.5px; font-weight: 700; color: {{ headText }};',
     ], [
+      /* WHAT THE SHOP IS CALLED.
+
+         The form asked nine questions and none of them was the name of the
+         business. Everything downstream wanted it: the emails open with
+         "thanks for putting <their shop> forward", the charter card is
+         mostly that name, and the panel had nothing to show but a slug.
+
+         It goes on the step that already asks them to reserve an address,
+         because that is where somebody is thinking about what their shop
+         is called anyway — and typing it fills the address in underneath. */
+      '<div style="margin-top: 22px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; overflow: hidden;" style-focus="border-color:#A9791C;">',
+      '<label for="cd-shop" style="display: block; margin-top: 22px; font-family: \'IBM Plex Mono\', monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6459;">What the shop is called</label>' +
+        '<input id="cd-shop" ref="{{ refShop }}" value="{{ shopName }}" sc-camel-on-input="{{ onShopName }}" sc-camel-on-key-down="{{ onKey }}" placeholder="Yorkville Currency" ' +
+        'style="width: 100%; box-sizing: border-box; margin-top: 8px; padding: 15px 18px; font-size: 16.5px; font-weight: 600; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; outline: none;" style-focus="border-color:#A9791C;">' +
+        '<div style="margin-top: 18px; font-family: \'IBM Plex Mono\', monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6459;">Your address on CurrencyDesk</div>' +
+        '<div style="margin-top: 8px; display: flex; align-items: center; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 13px; overflow: hidden;" style-focus="border-color:#A9791C;">',
+    ], [
+      // the name is the field worth landing on, so the step opens there
+      "this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'ref2', 6: 'ref7', 7: 'ref6' };",
+      "this.refShop = React.createRef();\n    this._refByStep = { 0: 'ref0', 1: 'ref1', 2: 'refShop', 6: 'ref7', 7: 'ref6' };",
+    ], [
+      "step: 0, email: '', domain: '', workspace: '', volume: null,",
+      "step: 0, email: '', domain: '', shopName: '', workspace: '', volume: null,",
+    ], [
+      // both, or the step is not done. A desk with no name is the thing
+      // this whole change exists to stop happening again.
+      "case 2: return s.workspace.trim().length > 1;",
+      "case 2: return s.shopName.trim().length > 1 && s.workspace.trim().length > 1;",
+    ], [
+      /* Typing the name fills the address in under it — but only while the
+         address is still ours to guess. The moment they edit it themselves
+         it is theirs, and nothing we do here may overwrite it. */
+      "  _workspaceFull() {",
+      "  onShopName = (e) => {\n" +
+        "    const v = e.target.value;\n" +
+        "    this.setState((s) => {\n" +
+        "      const slug = v.trim().toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);\n" +
+        "      const ours = !s.workspace || s.workspace === s._autoWs;\n" +
+        "      return ours ? { shopName: v, workspace: slug, _autoWs: slug } : { shopName: v };\n" +
+        "    });\n" +
+        "  };\n\n" +
+        "  _workspaceFull() {",
+    ], [
+      "      workspace: s.workspace, onWorkspace: this.set('workspace'), ref2: this.ref2, workspaceFull: this._workspaceFull(),",
+      "      workspace: s.workspace, onWorkspace: this.set('workspace'), ref2: this.ref2, workspaceFull: this._workspaceFull(),\n" +
+        "      shopName: s.shopName, onShopName: this.onShopName, refShop: this.refShop,",
+    ], [
       "if (this.state.step === 8) { setTimeout(() => this.startMemberCount(), 800); }",
       "if (this.state.step === 8) {\n" +
         "        const s = this.state;\n" +
         "        sendEnquiry('early_access', s.email, s.name, {\n" +
-        "          workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,\n" +
+        "          shopName: s.shopName, workspace: this._workspaceFull(), website: s.noWebsite ? 'none yet' : s.domain,\n" +
         "          jurisdiction: s.jur, role: s.role, employees: s.employees, monthlyVolume: s.volume,\n" +
         "          branches: s.branches, runningOn: s.stack, timeline: s.timeline,\n" +
         /* The number we ring, in one piece and in the shape a person dials.

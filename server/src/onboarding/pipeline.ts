@@ -108,13 +108,48 @@ export const movesFrom = (from: Stage): Stage[] => ALLOWED[from] ?? [];
    for both the list and a single application's page. */
 export const board = () => STAGES.map((s) => ({ ...s, next: movesFrom(s.id) }));
 
+/* What the emails call their shop, and where.
+
+   The designed emails open with "thanks for putting <their shop>
+   forward" and print the name across the charter card, so a blank there
+   is not a missing nicety — it is the most personal line in the email
+   reading like a mail merge that failed.
+
+   The form asks for the shop's name now. Every application lodged before
+   it did has nothing to put there, so the workspace they chose stands in:
+   `yorkville-currency` was typed by somebody thinking of their shop, and
+   tidied up it is usually the shop. Where even that is absent the
+   templates drop the phrase rather than printing an empty gap. */
+const PLACES: Record<string, string> = {
+  CA: "Canada", US: "United States", GB: "United Kingdom", AE: "United Arab Emirates",
+  AU: "Australia", NZ: "New Zealand", SG: "Singapore", IE: "Ireland", IN: "India",
+};
+function aboutTheShop(a: Row): { shopName: string | null; place: string | null } {
+  const d = (a.details ?? {}) as Record<string, unknown>;
+  /* Two names for one thing, because two doors write it: the public form
+     asks for `shopName`, and the panel's "add a desk" has always called it
+     `businessName`. Read both rather than making one of them wrong. */
+  const given = String(d.shopName ?? d.businessName ?? "").trim();
+  const slug = String(d.workspace ?? "").trim().split(".")[0] ?? "";
+  const fromSlug = slug
+    ? slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim()
+    : "";
+  const jur = String(d.jurisdiction ?? "").trim().toUpperCase();
+  return {
+    shopName: given || fromSlug || null,
+    place: String(d.city ?? "").trim() || PLACES[jur] || (jur || null),
+  };
+}
+
 /* What each stage sends on arrival. Declared here, beside the stage, so
    "what does the applicant hear when we accept them?" is answerable by
    reading one file rather than by grepping for sendEmail. */
 type Mail = { subject: string; text: string; html: string };
 const ON_ARRIVAL: Partial<Record<Stage, (a: Row, origin: string) => Mail>> = {
-  reviewing: (a) => reviewEmail({ name: a.name }),
-  invited: (a, origin) => inviteEmail({ name: a.name, reference: a.reference, origin }),
+  reviewing: (a) => reviewEmail({ name: a.name, reference: a.reference, ...aboutTheShop(a) }),
+  invited: (a, origin) => inviteEmail({
+    name: a.name, reference: a.reference, origin, cohortNo: a.charterNo, ...aboutTheShop(a),
+  }),
   /* `hold` and `declined` send nothing on purpose. Holding somebody is a
      note to ourselves; telling them they are parked is worse than saying
      nothing. Declining deserves a human reply, not an automated one. */

@@ -66,7 +66,6 @@ const isPublicAsset = (pathname: string): boolean => {
   const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
   return (
     file === "/CurrencyDesk OS.html" ||
-    file === "/frontend.html" ||
     file === "/admin.html" ||
     file === "/yorkfx.css" ||
     file === "/yorkfx-converter.js" ||
@@ -146,10 +145,12 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   // serve the built frontend (vite build → dist) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
   if (staticDir && existsSync(staticDir)) {
-    // which HTML is the app shell:
-    //   production (Render): STATIC_DIR=../dist → frontend.html (vite build)
-    //   prototype mode (npm run dev:prototype): STATIC_DIR=.. STATIC_INDEX="CurrencyDesk OS.html"
-    const indexFile = process.env.STATIC_INDEX ?? "frontend.html";
+    /* Which HTML is the app shell. There used to be two — a Vite build at
+       frontend.html and the buildless OS — and the default pointed at the
+       one production never built, which is the same reason its tests were
+       green while the shipped code went unwatched. It is gone; the OS is
+       the app, and the default says so. */
+    const indexFile = process.env.STATIC_INDEX ?? "CurrencyDesk OS.html";
     // the public front door. When SITE_INDEX is present in the static dir the
     // marketing site serves at "/" and the OS moves to "/app"; without it the
     // OS keeps the root, so a deploy that ships only the app still works.

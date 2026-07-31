@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&amp;family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600&amp;display=swap" rel="stylesheet">
+  <style></style>
+  <style>
+    body { margin: 0; background: #D9D4C8; }
+    * { box-sizing: border-box; }
+    ::selection { background: #1D6B45; color: #F7F4ED; }
+    a { color: #1D6B45; text-decoration: none; }
+    a:hover { color: #17583A; }
+    button { font-family: inherit; }
+    [data-mailrow] { scroll-margin-top: 88px; }
+    @media (max-width: 720px) {
+      [style*="max-width: 1180px"] { padding-left: 16px !important; padding-right: 16px !important; }
+      [data-mailrow] { grid-template-columns: minmax(0, 1fr) !important; }
+      [data-meta] { position: static !important; }
+      [style*="grid-template-columns: repeat(4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
+    @keyframes cdCardFloat { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-5px) rotate(-0.25deg); } }
+    @keyframes cdCardSheen { 0% { transform: translateX(-130%) skewX(-18deg); } 55%, 100% { transform: translateX(320%) skewX(-18deg); } }
+ 50% { opacity: 0.8; transform: translateX(120%) rotate(24deg); } }
+    @keyframes cdCtaPulse { 0%, 100% { box-shadow: 0 12px 26px -12px rgba(169,121,28,0.7), 0 0 0 0 rgba(169,121,28,0.45); } 55% { box-shadow: 0 12px 26px -12px rgba(169,121,28,0.7), 0 0 0 14px rgba(169,121,28,0); } }
+    @keyframes cdCtaSheen { 0% { transform: translateX(-140%) skewX(-16deg); } 60%, 100% { transform: translateX(360%) skewX(-16deg); } }
+    @keyframes cdCtaNudge { 0%, 88%, 100% { transform: translateX(0); } 92% { transform: translateX(4px); } 96% { transform: translateX(0); } }
+  </style>
+</helmet>
+
+<div style="--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --paper: #F4F0E6; --panel: #FBF9F4; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.05); --hair: rgba(23,20,15,0.08); --mute: #5C554C; --faint: #9A938A; --green: #1D6B45; --green-deep: #17583A; --green-bright: #2EA36B; --green-soft: #E4EFE7; --brass: #A9791C; --brass-soft: #F2E7CE; --clay: #C2452D; --glass: saturate(160%) blur(22px); position: relative; font-family: var(--f); color: var(--ink); background-color: #D9D4C8; overflow-x: clip;">
+
+  <div style="position: sticky; top: 0; z-index: 60; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(217,212,200,0.86); border-bottom: 1px solid var(--line);">
+    <div style="max-width: 1180px; margin: 0 auto; height: 64px; padding: 0 26px; display: flex; align-items: center; gap: 14px;">
+      <a href="CurrencyDesk Site.dc.html" style="display: inline-flex; align-items: center; gap: 11px; color: var(--ink);">
+        <svg sc-camel-view-box="0 0 200 140" width="40" height="28"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#D9D4C8"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
+        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 14px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: var(--m); font-size: 7px; font-weight: 600; letter-spacing: 0.1em; color: var(--green); margin-left: 4px; transform: translateY(-5px);">OS</span></span>
+      </a>
+      <div style="flex: 1;"></div>
+      <button type="button" sc-camel-on-click="{{ toggleTheme }}" style="{{ themeBtn }}">{{ themeLabel }}</button>
+      <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);">Internal</span>
+    </div>
+  </div>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 60px 26px 0;">
+    <div style="max-width: 660px;">
+      <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Email system · Resend</div>
+      <h1 style="font-family: var(--serif); font-weight: 400; font-size: clamp(38px, 4.6vw, 64px); line-height: 0.99; letter-spacing: -0.022em; margin: 14px 0 0;">The emails, written and designed.</h1>
+      <p style="font-size: 16px; line-height: 1.62; color: var(--mute); margin: 17px 0 0;">Seventeen built here — the whole programme, signup through to news. Each one is shown at send width — a true 600px on a wide screen, scaling down below that, in both light and dark. Copy is final; swap the sample values for Resend variables at the end.</p>
+    </div>
+
+    <div style="margin-top: 32px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); overflow: hidden;">
+      <div style="padding: 17px 22px 15px; border-bottom: 1px solid var(--hair); display: flex; align-items: baseline; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
+        <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); font-weight: 600;">The sequence a new shop walks through</span>
+        <span style="font-family: var(--m); font-size: 10.5px; color: var(--green-deep); font-weight: 600;">Signup to desk, same day</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line);">
+        <sc-for list="{{ flow }}" as="s" hint-placeholder-count="4">
+          <div style="background: var(--panel); padding: 18px 20px 20px;">
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span style="{{ s.dotStyle }}"></span>
+              <span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">{{ s.when }}</span>
+            </div>
+            <div style="font-size: 14.5px; font-weight: 700; margin-top: 9px; letter-spacing: -0.005em;">{{ s.what }}</div>
+            <div style="font-size: 12.5px; line-height: 1.45; color: var(--mute); margin-top: 5px;">{{ s.note }}</div>
+            <div style="{{ s.tagStyle }}">{{ s.tag }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 26px;">
+      <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin-right: 4px;">Jump to</span>
+      <sc-for list="{{ jumps }}" as="j" hint-placeholder-count="8">
+        <a href="{{ j.href }}" style="font-family: var(--m); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--mute); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px;" style-hover="border-color: var(--green); color: var(--green);">{{ j.label }}</a>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="{{ themeVars }}">
+    <div style="max-width: 1180px; margin: 0 auto; padding: 42px 26px 0;">
+
+      <!-- ============ A1 ============ -->
+      <div id="a1" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">A1</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #fff; background: var(--green); border-radius: 999px; padding: 4px 9px;">Launch</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Application received</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">We're looking at your shop</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Nothing for you to do. We'll come back today.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Early Access form submitted · immediate, before the call</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">first_name</span><span style="{{ varChip }}">shop_name</span><span style="{{ varChip }}">ref</span></div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 38px 40px 34px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">We're looking at your shop.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 16px 0 0;">Amir — thanks for putting Yorkville Currency forward.</p>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 13px 0 0;">Over the next few minutes we'll look at your shop the way one of your customers would — your website, your rates, how easy you are to find. It means that when we speak, we're not asking you questions we could have answered ourselves.</p>
+              <div style="margin: 22px 0 0; padding: 16px 18px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">What happens today</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.7; color: var(--e-ink, #17140F); margin-top: 8px;">A call — about ten minutes, mostly us listening.<br>If it's a fit, your ID and setup link land while we're still on the phone.</div>
+              </div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 20px 0 0;">Nothing for you to do before then. If we ring at a bad moment, say so and we'll call back.</p>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+              <div style="margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; color: var(--e-faint, #9A938A);">Reference CD-4471</span>
+                <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--e-faint, #9A938A);">Toronto</span>
+              </div>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;">
+              <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">You applied at currencydeskos.com. Reply to this email and a person reads it.</span>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ A2 ============ -->
+      <div id="a2" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">A2</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #fff; background: var(--green); border-radius: 999px; padding: 4px 9px;">Launch</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">The big one</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">You're in</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Your CurrencyDesk ID is inside</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Three months, the whole system, no card.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">SAM approves on the call · fired live, stage five</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">first_name</span><span style="{{ varChip }}">shop_name</span><span style="{{ varChip }}">cohort_no</span><span style="{{ varChip }}">issued_date</span><span style="{{ varChip }}">card_url</span><span style="{{ varChip }}">setup_url</span></div>
+            <div style="margin-top: 6px; padding: 11px 13px; border-radius: 10px; background: var(--soft); border: 1px solid var(--hair);">
+              <div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Needs building</div>
+              <div style="font-size: 12px; line-height: 1.5; color: var(--mute); margin-top: 4px;">The card renders server-side to PNG + PDF, attached to the send and linked from <span style="font-family: var(--m); font-size: 10.5px;">card_url</span>. </div>
+            </div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--clay); margin: 8px 0 0;">SAM sends this from the call itself and waits for the operator to say out loud that it arrived — a wrong address surfaces while they're still on the phone. See <a href="CurrencyDesk SAM Call Flow.dc.html">the call flow</a>.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+
+              <div style="padding: 34px 34px 0;">
+                <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 32px; line-height: 1.06; letter-spacing: -0.02em; color: var(--e-ink, #17140F); text-align: center;">You're in, Amir.</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14.5px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 9px; text-align: center;">We looked at Yorkville Currency and we'd like you on the desk.</div>
+              </div>
+
+              <div style="padding: 24px 34px 0;">
+                <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; border-collapse: separate; border-radius: 14px; overflow: hidden; background-color: #1D6B45; box-shadow: 0 18px 38px -20px rgba(11,23,16,0.75); animation: cdCardFloat 7s ease-in-out infinite; will-change: transform;">
+                  <sc-raw-tr><sc-raw-td style="position: relative; padding: 22px 24px 20px;">
+                    <span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 34%; background-color: rgba(255,255,255,0.13); filter: blur(9px); animation: cdCardSheen 6.5s ease-in-out 1.2s infinite; pointer-events: none;"></span>
+
+                    <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;"><sc-raw-tr>
+                      <sc-raw-td style="text-align: left; vertical-align: middle;">
+                        <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; color: #ffffff;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 5.5px; font-weight: 600; letter-spacing: 0.1em; color: #7fe3ab; margin-left: 3px; transform: translateY(-3px);">OS</span></span>
+                      </sc-raw-td>
+                      <sc-raw-td style="text-align: right; vertical-align: middle;">
+                        <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.62);">Nº 042 of 100</span>
+                      </sc-raw-td>
+                    </sc-raw-tr></sc-raw-table>
+
+                    <div style="height: 1px; background: rgba(255,255,255,0.2); margin: 16px 0 0;"></div>
+
+                    <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; margin-top: 18px;"><sc-raw-tr>
+                      <sc-raw-td style="vertical-align: top;">
+                        <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 8.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Founding Operator</div>
+                        <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 27px; line-height: 1.06; letter-spacing: -0.012em; color: #ffffff; margin-top: 5px;">Yorkville Currency</div>
+
+                        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="#0B1710" style="margin-top: 16px; border-collapse: separate; border-radius: 7px; background-color: #0B1710;  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.55), 0 6px 15px rgba(0,0,0,0.34);">
+                          <sc-raw-tr><sc-raw-td style="padding: 12px 17px 13px;">
+                            <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;"><sc-raw-tr>
+                              <sc-raw-td style="text-align: left;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 7px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 600;">CurrencyDesk ID</span></sc-raw-td>
+                              <sc-raw-td style="text-align: right;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 7px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.4); font-weight: 600;">Sign-in</span></sc-raw-td>
+                            </sc-raw-tr></sc-raw-table>
+                            <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 27px; font-weight: 800; letter-spacing: 0.09em; color: #ffffff; margin-top: 6px; text-shadow: 0 1px 0 rgba(0,0,0,0.55);">CD-YORK-0042</div>
+                          </sc-raw-td></sc-raw-tr>
+                        </sc-raw-table>
+                      </sc-raw-td>
+                    </sc-raw-tr></sc-raw-table>
+
+                    <div style="height: 1px; background: rgba(255,255,255,0.14); margin: 18px 0 0;"></div>
+
+                    <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; margin-top: 11px;"><sc-raw-tr>
+                      <sc-raw-td style="text-align: left;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.1em; color: rgba(255,255,255,0.72);">AMIR ROSTAMI · TORONTO</span></sc-raw-td>
+                      <sc-raw-td style="text-align: right;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.1em; color: rgba(255,255,255,0.72);">ISSUED 28 JUL 2026</span></sc-raw-td>
+                    </sc-raw-tr></sc-raw-table>
+
+                  </sc-raw-td></sc-raw-tr>
+                </sc-raw-table>
+
+                <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; margin-top: 12px;"><sc-raw-tr>
+                  <sc-raw-td style="text-align: center;">
+                    <a href="#" style="display: inline-block; padding: 11px 20px; border-radius: 9px; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--e-mute, #5C554C);">↓ Save your card</a>
+                    <div style="text-align: center; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; color: var(--e-faint, #9A938A); margin-top: 9px;">PNG + PDF · also attached</div>
+                  </sc-raw-td>
+                </sc-raw-tr></sc-raw-table>
+              </div>
+
+              <div style="padding: 26px 34px 34px;">
+                <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">That ID is yours from here on. It's how you and your tellers sign in, it's on every report you file, and it stays yours whether you stay with us or not.</p>
+
+                <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; margin: 26px 0 0;"><sc-raw-tr><sc-raw-td align="center" style="text-align: center;">
+                  <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;"><sc-raw-tr><sc-raw-td align="center" bgcolor="#A9791C" style="position: relative; overflow: hidden; border-radius: 13px; background-color: #A9791C; box-shadow: 0 12px 26px -12px rgba(169,121,28,0.7); animation: cdCtaPulse 2.6s ease-out infinite;">
+                    <span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 32%; background-color: rgba(255,255,255,0.3); filter: blur(7px); animation: cdCtaSheen 3.4s ease-in-out 1s infinite; pointer-events: none;"></span>
+                    <a href="#" style="position: relative; display: block; padding: 20px 30px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 13.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: #ffffff; text-align: center;">Set up your desk <span style="display: inline-block; animation: cdCtaNudge 2.6s ease-in-out infinite;">→</span></a>
+                  </sc-raw-td></sc-raw-tr></sc-raw-table>
+                  <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; color: var(--e-faint, #9A938A); margin-top: 11px; text-align: center;">Takes about ten minutes · link holds for seven days</div>
+                </sc-raw-td></sc-raw-tr></sc-raw-table>
+
+                <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#0B1710" style="width: 100%; margin-top: 20px; border-collapse: separate; border-radius: 8px; background-color: #0B1710;  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.55), 0 8px 20px rgba(11,23,16,0.28);">
+                  <sc-raw-tr><sc-raw-td style="padding: 15px 19px 16px;">
+                    <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;"><sc-raw-tr>
+                      <sc-raw-td style="text-align: left;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 7px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 600;">Founding code</span></sc-raw-td>
+                      <sc-raw-td style="text-align: right;"><span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 8px; font-weight: 800; letter-spacing: 0.05em; color: rgba(255,255,255,0.44);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 5px; font-weight: 600; letter-spacing: 0.1em; color: #7fe3ab; margin-left: 2px; transform: translateY(-3px);">OS</span></span></sc-raw-td>
+                    </sc-raw-tr></sc-raw-table>
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 25px; font-weight: 800; letter-spacing: 0.09em; color: #ffffff; margin-top: 7px; text-shadow: 0 1px 0 rgba(0,0,0,0.55);">FOUNDING-042</div>
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; line-height: 1.5; color: rgba(255,255,255,0.66); margin-top: 8px;">Enter it at the payment step and the first three months come to zero. Tied to your ID, so it only works for you.</div>
+                  </sc-raw-td></sc-raw-tr>
+                </sc-raw-table>
+
+                <div style="margin: 28px 0 0; padding-top: 24px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                  <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #A9791C; font-weight: 600;">Three things worth knowing</div>
+
+                  <div style="margin-top: 16px;">
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">Three months, free, all of it.</div>
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 4px;">Not a trial tier — the whole system, every application. Setup ends at a payment step, which is where your code comes in; after that we'll tell you before anything is ever charged.</div>
+                  </div>
+
+                  <div style="margin-top: 16px;">
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">We're going to ask you a lot.</div>
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 4px;">That's the trade. You're one of the first hundred desks, and what we want back is your opinion — what's slow, what's wrong, what you'd never use. We'd rather hear it early and rudely than politely in six months.</div>
+                  </div>
+
+                  <div style="margin-top: 16px;">
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">A phone call in a week.</div>
+                    <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 4px;">A proper follow-up, once you've had the desk in your hands a few days — and a person, not SAM. Not a sales call. We want to hear what's slow and what's wrong. Nothing to book; we'll use this number.</div>
+                  </div>
+                </div>
+
+                <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 13.5px; line-height: 1.6; color: var(--e-mute, #5C554C); margin: 20px 0 0;">One thing free doesn't cover: client verification is run by a third-party provider and billed per file. Prices are in USD and vary by provider and region, and the desk always shows you the cost before it runs one. <a href="CurrencyDesk Compliance.dc.html#kyc" style="color: #1D6B45; font-weight: 600;">See KYC pricing and features</a>.</p>
+
+                <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+              </div>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;">
+              <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Your founding rate is held for the life of the account. Reply to this email and a person reads it.</span>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ A3 ============ -->
+      <div id="a3" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">A3</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Setup unfinished</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Your desk is half-built</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">3 days after the invite, setup not completed</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">first_name</span><span style="{{ varChip }}">last_step</span><span style="{{ varChip }}">founding_code</span><span style="{{ varChip }}">resume_url</span><span style="{{ varChip }}">days_left</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">The drop-off point is the payment step — people stop when they see a card field. This email exists to get the code in front of them again.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">Your desk is half-built.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 15px 0 0;">You got as far as the payment step and stopped. Fair enough — nobody likes a card field appearing in something they were told was free.</p>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 13px 0 0;">That step is where your founding code goes. Enter it and the total is zero for three months.</p>
+
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#0B1710" style="width: 100%; margin-top: 20px; border-collapse: separate; border-radius: 8px; background-color: #0B1710;  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.55), 0 8px 20px rgba(11,23,16,0.28);">
+                <sc-raw-tr><sc-raw-td style="padding: 15px 19px 16px;">
+                  <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;"><sc-raw-tr>
+                    <sc-raw-td style="text-align: left;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 7px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.5); font-weight: 600;">Founding code</span></sc-raw-td>
+                    <sc-raw-td style="text-align: right;"><span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 8px; font-weight: 800; letter-spacing: 0.05em; color: rgba(255,255,255,0.44);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 5px; font-weight: 600; letter-spacing: 0.1em; color: #7fe3ab; margin-left: 2px; transform: translateY(-3px);">OS</span></span></sc-raw-td>
+                  </sc-raw-tr></sc-raw-table>
+                  <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 25px; font-weight: 800; letter-spacing: 0.09em; color: #ffffff; margin-top: 7px; text-shadow: 0 1px 0 rgba(0,0,0,0.55);">FOUNDING-042</div>
+                </sc-raw-td></sc-raw-tr>
+              </sc-raw-table>
+
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Pick up where you left off →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; color: var(--e-faint, #9A938A); margin-top: 10px;">Everything you entered is saved. Four days left on the link.</div>
+
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 20px 0 0;">If something in there put you off, tell me what it was — that's exactly the sort of thing we're asking the first hundred desks for.</p>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 22px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;">
+              <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Changed your mind? Reply with "not for us" and we'll stop, no follow-up.</span>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ A4 ============ -->
+      <div id="a4" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">A4</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;">Later</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Not this cohort</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Not yet — and why</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Application declined or out of jurisdiction</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">first_name</span><span style="{{ varChip }}">reason</span><span style="{{ varChip }}">jurisdiction</span><span style="{{ varChip }}">target_date</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">These people talk to other shop owners. Never send a form rejection.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">Not this time — here's the honest reason.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 15px 0 0;">Amir — we're only running desks in Canada while we get this right, and Dubai isn't open yet. It isn't about your shop.</p>
+              <div style="margin: 22px 0 0; padding: 18px 20px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">UAE · CBUAE rules mapped</div>
+                <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; line-height: 1.1; color: var(--e-ink, #17140F); margin-top: 7px;">Opening early 2028</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 13.5px; line-height: 1.55; color: var(--e-mute, #5C554C); margin-top: 7px;">You're on the list for the day it opens, and you'll hear from us before anyone else in the market does.</div>
+              </div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 20px 0 0;">If you'd rather not wait, tell me what you're using now and what's broken about it — I'll point you somewhere useful even if it isn't us.</p>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 22px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ B1 ============ -->
+      <div id="b1" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">B1</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #fff; background: var(--green); border-radius: 999px; padding: 4px 9px;">Launch</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Sign-in code</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">482 190 — your sign-in code</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Password accepted · second factor</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">code</span><span style="{{ varChip }}">device</span><span style="{{ varChip }}">expires_in</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Code in the subject line so it can be read from a lock screen without opening anything.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px; text-align: center;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Sign-in code</div>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 42px; letter-spacing: 0.18em; font-weight: 600; color: var(--e-ink, #17140F); margin-top: 14px;">482 190</div>
+              <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; color: var(--e-mute, #5C554C); margin-top: 12px;">Good for ten minutes.</div>
+              <div style="margin: 26px 0 0; padding: 14px 18px; border-radius: 11px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08)); text-align: left;">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; line-height: 1.6; color: var(--e-mute, #5C554C);">Chrome on macOS · Toronto, CA · 14:06</div>
+              </div>
+              <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 13.5px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 18px; text-align: left;">If this wasn't you, someone has your password. <a href="#" style="color: #1D6B45; font-weight: 600;">Lock the account</a> and we'll call you within the hour.</div>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ B2 ============ -->
+      <div id="b2" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">B2</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #fff; background: var(--green); border-radius: 999px; padding: 4px 9px;">Launch</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Contact auto-reply</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Got it — CD-4471</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Contact form submitted · immediate</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">first_name</span><span style="{{ varChip }}">ref</span><span style="{{ varChip }}">topic</span><span style="{{ varChip }}">message</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">The site already shows this reference number and promises one business day. This is the email that makes both true.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">We've got it.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 15px 0 0;">Your note landed. Someone will come back to you inside one business day — and it'll be a person, not this address.</p>
+              <div style="margin: 22px 0 0; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 12px; overflow: hidden;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; background: var(--e-soft, rgba(23,20,15,0.05)); border-bottom: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                  <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Compliance</span>
+                  <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; font-weight: 600; color: var(--e-ink, #17140F);">CD-4471</span>
+                </div>
+                <div style="padding: 15px 16px; font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: var(--e-mute, #5C554C); font-style: italic;">"We run three tellers and file our LCTRs by hand every Friday. Wanted to understand how the threshold watching actually works before we move."</div>
+              </div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 18px 0 0;">If you need an answer sooner, <a href="#" style="color: #1D6B45; font-weight: 600;">forty-nine questions are already answered here</a>.</p>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;">
+              <span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Don't send client ID or transaction records by email. Ask and we'll open a secure channel.</span>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ B3 ============ -->
+      <div id="b3" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">B3</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Team invite</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Amir added you to Yorkville Currency</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Owner adds a teammate</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">inviter</span><span style="{{ varChip }}">shop_name</span><span style="{{ varChip }}">role</span><span style="{{ varChip }}">setup_url</span><span style="{{ varChip }}">role_can</span><span style="{{ varChip }}">role_cant</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Their first impression of the product. Lead with who invited them, and tell them what to have ready — a teller who starts this mid-shift abandons it.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">Amir added you to the desk.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 15px 0 0;">You have a <b style="color: var(--e-ink, #17140F);">Cashier</b> account at Yorkville Currency. Setting it up takes about five minutes, and you only do it once.</p>
+
+
+              <div style="margin: 20px 0 0; padding: 16px 18px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Have these to hand first</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.8; color: var(--e-ink, #17140F); margin-top: 8px;">Your mobile — we text a code to confirm it<br>A password you'll remember, six characters or more<br>Five quiet minutes, ideally not mid-shift</div>
+              </div>
+
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="CurrencyDesk Onboarding.dc.html" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Set up your account →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; color: var(--e-faint, #9A938A); margin-top: 10px;">Link holds for seven days. After that, ask Amir to send it again.</div>
+
+              <div style="margin: 26px 0 0; padding-top: 20px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">What a cashier can do</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.85; color: var(--e-ink, #17140F); margin-top: 8px;">Write deals at the published rate<br>Take payment and print receipts<br>Run client ID checks<br>Read the ledger and count your own till</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 13.5px; line-height: 1.6; color: var(--e-mute, #5C554C); margin-top: 12px;">You can't change rates, open the vault, or send filings — Amir can change what you reach at any time.</div>
+              </div>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ B4 ============ -->
+      <div id="b4" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">B4</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">New device</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">New sign-in on your desk</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Login from an unrecognised device</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">who</span><span style="{{ varChip }}">device</span><span style="{{ varChip }}">location</span><span style="{{ varChip }}">time</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Expected in a business that holds cash. One tap to kill the session.</p>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+          <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+            <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+              <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+            </sc-raw-td></sc-raw-tr>
+            <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 36px 40px 32px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F);">Someone signed in on a new device.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 15px 0 0;">If that was you, ignore this. If it wasn't, act now — your ledger and client files are behind that login.</p>
+              <div style="margin: 22px 0 0; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 12px; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--e-faint, #9A938A);">Account</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: var(--e-ink, #17140F);">Priya · teller</span></div>
+                <div style="display: flex; justify-content: space-between; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--e-faint, #9A938A);">Device</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: var(--e-ink, #17140F);">Safari · iPhone</span></div>
+                <div style="display: flex; justify-content: space-between; gap: 14px; padding: 12px 16px;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--e-faint, #9A938A);">Where · when</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: var(--e-ink, #17140F);">Toronto, CA · 14:06</span></div>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #C2452D;">
+                <a href="#" style="display: inline-block; padding: 14px 26px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">This wasn't us — lock it</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+            </sc-raw-td></sc-raw-tr>
+          </sc-raw-table>
+        </div>
+      </div>
+
+      <!-- ============ C1 ============ -->
+      <div id="c1" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">C1</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Receipt</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Receipt · CurrencyDesk · July 2026</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">PDF attached. Nothing needs doing.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Subscription charged · monthly</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">month</span><span style="{{ varChip }}">plan_total</span><span style="{{ varChip }}">kyc_count</span><span style="{{ varChip }}">kyc_total</span><span style="{{ varChip }}">tax</span><span style="{{ varChip }}">total</span><span style="{{ varChip }}">card_last4</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">The bookkeeper is the real reader. It has to survive being forwarded.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="padding: 34px 40px 10px;">
+              <div style="font-family: 'Instrument Serif', Georgia, serif; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F); font-size: 28px;">Receipt · July 2026</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 13px 0 0;">Your CurrencyDesk subscription for York Currency Exchange. A PDF is attached for your bookkeeper.</p>
+            </div>
+            <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-top: 22px;">
+              <sc-raw-tr><sc-raw-td style="padding: 10px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Full System · monthly</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 14px; color: var(--e-ink, #17140F);">$599.00</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 10px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Client verification · 34 files</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 14px; color: var(--e-ink, #17140F);">$305.66</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 10px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">HST · 13%</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 14px; color: var(--e-ink, #17140F);">$117.61</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 15px 40px 18px; border-top: 2px solid var(--e-ink, #17140F);"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 800; color: var(--e-ink, #17140F);">Total charged</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 21px; font-weight: 700; color: var(--e-ink, #17140F);">$1,022.27</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+            </sc-raw-table>
+            <div style="padding: 0 40px 32px;">
+              <div style="padding: 13px 15px; border-radius: 11px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; line-height: 1.7; color: var(--e-mute, #5C554C);">Visa ending 4471 · charged 1 July<br>Next charge 1 August · $599.00 plus verification</div>
+              </div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">York Currency Exchange · CD-YORK-0042 · currencydeskos.com</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ C2 ============ -->
+      <div id="c2" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">C2</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Payment failed</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Your card was declined</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Nothing has stopped. Here is the timeline.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Charge declined · immediate</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">card_last4</span><span style="{{ varChip }}">amount</span><span style="{{ varChip }}">retry_dates</span><span style="{{ varChip }}">readonly_date</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Panic here loses accounts that meant to stay. Give them the whole timeline up front.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="background: #C2452D; padding: 22px 40px;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.78); font-weight: 600;">Action needed</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; line-height: 1.06; letter-spacing: -0.02em; color: #ffffff; margin-top: 8px;">Your card was declined.</div>
+            </div>
+            <div style="padding: 28px 40px 32px;">
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">The card ending 4471 didn't go through for July's $1,022.27. Nothing has stopped — your desk is running and your records are safe.</p>
+              <div style="margin: 20px 0 0; padding: 16px 18px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">What happens next</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.75; color: var(--e-ink, #17140F); margin-top: 8px;">We try your backup card in 24 hours.<br>We try again on the 5th, and on the 9th.<br>If nothing clears by the 12th, the desk goes read-only.</div>
+              </div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px; margin: 16px 0 0;">Read-only means you can still open every record and export anything you need. Nothing is ever deleted for non-payment.</p>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Update the card →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Reply to this email and a person reads it. We would rather sort it than switch you off.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ C3 ============ -->
+      <div id="c3" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">C3</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Verification result</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">Amara Okonkwo · verification complete</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Cleared, with one article to read.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">KYC file returns a result</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">client_name</span><span style="{{ varChip }}">teller</span><span style="{{ varChip }}">tier</span><span style="{{ varChip }}">checks</span><span style="{{ varChip }}">price</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Doubles as the billing record for the file. Show every check, not just the verdict.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="padding: 32px 40px 0;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Verification complete</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F); font-size: 28px; margin-top: 9px;">Amara Okonkwo · cleared</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 12px 0 0;">Run by Priya at 14:06. The file is on the client record and the deal can go ahead.</p>
+            </div>
+            <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-top: 20px;">
+              <sc-raw-tr><sc-raw-td style="padding: 11px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Identity document</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12.5px; font-weight: 600; color: #1D6B45;">Authentic</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 11px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Database cross-check</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12.5px; font-weight: 600; color: #1D6B45;">Matched</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 11px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Sanctions and PEP</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12.5px; font-weight: 600; color: #1D6B45;">No hits</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              <sc-raw-tr><sc-raw-td style="padding: 11px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px;">Adverse media</sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12.5px; font-weight: 600; color: #9a6b1f;">1 to review</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+            </sc-raw-table>
+            <div style="padding: 20px 40px 32px;">
+              <div style="padding: 14px 16px; border-radius: 11px; background: rgba(154,107,31,0.09); border: 1px solid rgba(154,107,31,0.26);">
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 13.5px; line-height: 1.55; color: var(--e-mute, #5C554C);"><b style="color: var(--e-ink, #17140F);">One article to read.</b> A name match in a 2019 news piece. Likely a different person — your compliance officer should look and note the decision either way.</div>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Open the client file →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; color: var(--e-faint, #9A938A); margin-top: 12px;">Verified Plus · $14.99 · billed on your next invoice</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Do not forward client verification results outside your business.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ D1 ============ -->
+      <div id="d1" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">D1</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">The flagship</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Report ready</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">LCTR ready to review · Amara Okonkwo</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Drafted from the deal. Two minutes to send.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">A deal crosses a reporting threshold</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">rule</span><span style="{{ varChip }}">report_type</span><span style="{{ varChip }}">client_name</span><span style="{{ varChip }}">amount</span><span style="{{ varChip }}">due_date</span><span style="{{ varChip }}">missing_fields</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">The single most valuable email we send. This is the product, in an inbox.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="background: #1D6B45; padding: 26px 40px;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Threshold reached · FINTRAC</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 32px; line-height: 1.05; letter-spacing: -0.02em; color: #ffffff; margin-top: 9px;">A report is written and waiting.</div>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 10px;">Large Cash Transaction Report · due in 15 days</div>
+            </div>
+            <div style="padding: 28px 40px 32px;">
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">Priya wrote a CAD 12,400 cash deal at 14:06. That crosses the CAD 10,000 line, so the desk drafted the LCTR from the record as it was written. Nothing has been sent.</p>
+              <div style="margin: 22px 0 0; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 12px; overflow: hidden;">
+                <div style="padding: 11px 16px; background: var(--e-soft, rgba(23,20,15,0.05)); border-bottom: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Already filled in</div>
+                <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <sc-raw-tr><sc-raw-td style="padding: 10px 16px; font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px;">Client, ID and occupation</sc-raw-td><sc-raw-td align="right" style="padding: 10px 16px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: #1D6B45; font-weight: 600;">From file</sc-raw-td></sc-raw-tr>
+                  <sc-raw-tr><sc-raw-td style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px;">Amount, currency, time</sc-raw-td><sc-raw-td align="right" style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: #1D6B45; font-weight: 600;">From deal</sc-raw-td></sc-raw-tr>
+                  <sc-raw-tr><sc-raw-td style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px;">Teller and branch</sc-raw-td><sc-raw-td align="right" style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: #1D6B45; font-weight: 600;">From desk</sc-raw-td></sc-raw-tr>
+                  <sc-raw-tr><sc-raw-td style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px;">Source of funds</sc-raw-td><sc-raw-td align="right" style="padding: 10px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: #9a6b1f; font-weight: 600;">Needs you</sc-raw-td></sc-raw-tr>
+                </sc-raw-table>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 16px 30px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Review and send →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; color: var(--e-faint, #9A938A); margin-top: 11px;">Two minutes. You read it, you send it — we never file on your behalf.</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Sent to the named compliance officer for York Currency Exchange.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ D2 ============ -->
+      <div id="d2" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">D2</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">Soon</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Deadline approaching</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">3 reports due Friday</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Drafted and waiting on you.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Filing due in 5 days, anything unsent</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">due_date</span><span style="{{ varChip }}">queue</span><span style="{{ varChip }}">unread_count</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Missing a deadline is the fear we sell against. Never make this email feel like blame.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="background: #9a6b1f; padding: 22px 40px;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.8); font-weight: 600;">Due in 5 days</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; line-height: 1.06; letter-spacing: -0.02em; color: #ffffff; margin-top: 8px;">Three reports still unsent.</div>
+            </div>
+            <div style="padding: 26px 40px 32px;">
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">These are drafted and sitting in your compliance queue. FINTRAC wants them by <b style="color: var(--e-ink, #17140F);">Friday 31 July</b>.</p>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 20px; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 12px; border-collapse: separate; overflow: hidden;">
+                <sc-raw-tr><sc-raw-td style="padding: 12px 16px;"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; color: var(--e-ink, #17140F);"><b>LCTR · Amara Okonkwo</b><br><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: var(--e-faint, #9A938A);">CAD 12,400 · 14 July</span></sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: #9a6b1f; font-weight: 600;">Unread</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+                <sc-raw-tr><sc-raw-td style="padding: 12px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; color: var(--e-ink, #17140F);"><b>LCTR · Wei Zhang</b><br><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: var(--e-faint, #9A938A);">CAD 15,900 · 18 July</span></sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: #1D6B45; font-weight: 600;">Reviewed</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+                <sc-raw-tr><sc-raw-td style="padding: 12px 16px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><sc-raw-table role="presentation" width="100%"><sc-raw-tr><sc-raw-td style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; color: var(--e-ink, #17140F);"><b>EFTR · Bilal Haddad</b><br><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: var(--e-faint, #9A938A);">CAD 22,000 outgoing · 21 July</span></sc-raw-td><sc-raw-td align="right" style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11px; color: #9a6b1f; font-weight: 600;">Unread</sc-raw-td></sc-raw-tr></sc-raw-table></sc-raw-td></sc-raw-tr>
+              </sc-raw-table>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #17140F;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Open the queue →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; margin: 16px 0 0;">We'll nudge you again on Wednesday if anything is still unsent. After the deadline we stop nudging and log that we told you.</p>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Deadlines come from your jurisdiction settings. Change them in Compliance.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ D3 ============ -->
+      <div id="d3" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">D3</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;">Later</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Monthly summary</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">July compliance summary</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Nine filed, nothing missed.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">First of the month</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">month</span><span style="{{ varChip }}">filed</span><span style="{{ varChip }}">verified</span><span style="{{ varChip }}">missed</span><span style="{{ varChip }}">patterns</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">The email an owner forwards to their compliance officer without editing it.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="padding: 32px 40px 0;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Compliance · July 2026</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F); font-size: 28px; margin-top: 9px;">A clean month.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 12px 0 0;">Everything due in July was sent on time. Here it is in one page — forward it to your compliance officer or keep it for the file.</p>
+            </div>
+            <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 22px;">
+              <sc-raw-tr>
+                <sc-raw-td width="33%" style="padding: 16px 20px 18px 40px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 34px; line-height: 1; color: #1D6B45;">9</div><div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 12.5px; margin-top: 5px;">Reports filed</div></sc-raw-td>
+                <sc-raw-td width="33%" style="padding: 16px 20px 18px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 34px; line-height: 1; color: var(--e-ink, #17140F);">34</div><div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 12.5px; margin-top: 5px;">Clients verified</div></sc-raw-td>
+                <sc-raw-td width="33%" style="padding: 16px 40px 18px 20px; border-top: 1px solid var(--e-hair, rgba(23,20,15,0.08));"><div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 34px; line-height: 1; color: var(--e-ink, #17140F);">0</div><div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 12.5px; margin-top: 5px;">Missed deadlines</div></sc-raw-td>
+              </sc-raw-tr>
+            </sc-raw-table>
+            <div style="padding: 6px 40px 32px;">
+              <div style="padding: 15px 17px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">Worth a look</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; margin-top: 8px;">Two clients crossed CAD 10,000 more than once this month. Not a problem on its own — but it is the pattern an examiner asks about, so the desk has flagged them on the client record.</div>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Open the full summary →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">First of the month. Turn it off in Compliance if you would rather not receive it.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ E1 ============ -->
+      <div id="e1" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">E1</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;">Later</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--brass); background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.3); border-radius: 999px; padding: 4px 9px;">The newsletter</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Rule change</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">FINTRAC moved the EFT threshold</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Your desk already knows. Nothing to do.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">A regulator changes a rule where you operate</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">jurisdiction</span><span style="{{ varChip }}">regulator</span><span style="{{ varChip }}">rule</span><span style="{{ varChip }}">old_value</span><span style="{{ varChip }}">new_value</span><span style="{{ varChip }}">effective_date</span><span style="{{ varChip }}">impact_estimate</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">This is what the newsletter should be. Not product news — a threshold moved, and what we already did about it. Nobody unsubscribes from this.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="background: #17140F; padding: 24px 40px;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Rule change · Canada</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 30px; line-height: 1.06; letter-spacing: -0.02em; color: #ffffff; margin-top: 9px;">FINTRAC moved the EFT threshold.</div>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; color: rgba(241,238,232,0.7); margin-top: 9px;">Effective 1 September 2026</div>
+            </div>
+            <div style="padding: 26px 40px 30px;">
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">Electronic funds transfer reports will be required from CAD 7,500 rather than CAD 10,000. It applies to outgoing and incoming transfers, and there is no grandfathering — deals on 1 September count.</p>
+              <div style="margin: 22px 0 0; border: 1px solid rgba(29,107,69,0.26); border-radius: 12px; overflow: hidden;">
+                <div style="padding: 11px 16px; background: rgba(29,107,69,0.08); border-bottom: 1px solid rgba(29,107,69,0.18); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #17583A; font-weight: 700;">What we already did</div>
+                <div style="padding: 14px 16px; font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.8; color: var(--e-ink, #17140F);">Your desk is already watching the new number.<br>It switches over by itself on 1 September.<br>Nothing for you to change, and nothing to install.</div>
+              </div>
+              <div style="margin: 18px 0 0; padding: 14px 16px; border-radius: 12px; background: var(--e-soft, rgba(23,20,15,0.05)); border: 1px solid var(--e-hair, rgba(23,20,15,0.08));">
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px;"><b style="color: var(--e-ink, #17140F);">What it means for you.</b> Looking at last month, about eleven more deals would have crossed the line. Expect a few more reports to review each month — the drafting is still automatic.</div>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="#" style="display: inline-block; padding: 15px 28px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Read the change →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">You get this because you run a desk in Canada. It is not advice — check with your compliance officer.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ E2 ============ -->
+      <div id="e2" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">E2</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;">Later</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">What shipped</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">What shipped in July</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Three things, and one we got wrong.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">Monthly, only if there is something worth saying</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">month</span><span style="{{ varChip }}">items</span><span style="{{ varChip }}">fix</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Skip the month if there is nothing real. Admitting the bug is what makes the other three believable.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="padding: 34px 40px 30px;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">What shipped · July</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; line-height: 1.1; letter-spacing: -0.015em; color: var(--e-ink, #17140F); font-size: 28px; margin-top: 9px;">Three things, and one we got wrong.</div>
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 12px 0 0;">Short as usual. If none of it is useful to you, that's fine — skip it.</p>
+
+              <div style="margin-top: 22px;">
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">Window display</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px; margin-top: 3px;">Put your board on the TV in your window. Full screen, no controls, updates when you publish.</div>
+              </div>
+              <div style="margin-top: 16px;">
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">Import from a spreadsheet</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px; margin-top: 3px;">Drop your old rate file in and we read it. Works on a photo of the board too, which surprised us.</div>
+              </div>
+              <div style="margin-top: 16px;">
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--e-ink, #17140F);">Cheque history per client</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 14px; margin-top: 3px;">Every cheque you've cashed for someone, on their record. Asked for by four desks in one week.</div>
+              </div>
+
+              <div style="margin: 22px 0 0; padding: 15px 17px; border-radius: 12px; background: rgba(194,69,45,0.06); border: 1px solid rgba(194,69,45,0.24);">
+                <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #C2452D; font-weight: 700;">And one we got wrong</div>
+                <div style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); font-size: 13.5px; margin-top: 7px;">Rate alerts sent twice for a fortnight if you had two branches. Fixed on the 19th. If you got doubles, that was us, not your phone.</div>
+              </div>
+
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">Monthly, at most. Unsubscribe and you will still get anything about your filings.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+      <!-- ============ E3 ============ -->
+      <div id="e3" data-mailrow="true" style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 30px; align-items: start; padding: 30px 0; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink);">
+        <div data-meta="true" style="position: sticky; top: 88px;">
+          <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; color: var(--green); font-weight: 600;">E3</span><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;">Later</span></div>
+          <div style="font-family: var(--serif); font-size: 25px; line-height: 1.08; letter-spacing: -0.012em; margin-top: 9px;">Your jurisdiction is live</div>
+          <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Subject</div><div style="font-size: 13.5px; margin-top: 3px;">The Philippines is open</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Preheader</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">You asked for this one in March.</div></div>
+            <div><div style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Fires on</div><div style="font-size: 12.5px; color: var(--mute); margin-top: 3px;">A new market opens, to everyone who applied from it</div></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px;"><span style="{{ varChip }}">jurisdiction</span><span style="{{ varChip }}">regulator</span><span style="{{ varChip }}">home_ccy</span><span style="{{ varChip }}">applied_date</span></div>
+            <p style="font-size: 12px; line-height: 1.5; color: var(--mute); margin: 6px 0 0;">Nine jurisdictions of people are waiting for this email. Lead with the fact they asked, not with us.</p>
+          </div>
+        </div>
+
+      <div style="display: flex; justify-content: center; padding: 26px 20px 30px; border-radius: 20px; background: var(--e-bg, #E7E3DA); border: 1px solid var(--line);">
+        <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 100%; border-collapse: collapse;">
+          <sc-raw-tr><sc-raw-td style="padding: 0 0 16px; text-align: center;">
+            <span style="display: inline-flex; align-items: baseline;"><span style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--e-ink, #17140F);">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 6.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 3px; transform: translateY(-4px);">OS</span></span>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="background: var(--e-card, #FBF9F4); border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 16px; padding: 0; overflow: hidden;">
+            <div style="background: #1D6B45; padding: 30px 40px 28px; text-align: center;">
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">You asked for this one</div>
+              <div style="font-family: 'Instrument Serif', Georgia, serif; font-size: 34px; line-height: 1.04; letter-spacing: -0.02em; color: #ffffff; margin-top: 10px;">The Philippines is open.</div>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 11px;">AMLC rules mapped · live today</div>
+            </div>
+            <div style="padding: 28px 40px 32px;">
+              <p style="font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.62; color: var(--e-mute, #5C554C); margin: 0;">You applied from Manila back in March, when we were Canada only. We said we'd tell you before anyone else in the market. Here it is.</p>
+              <div style="margin: 22px 0 0; border: 1px solid var(--e-line, rgba(23,20,15,0.12)); border-radius: 12px; overflow: hidden;">
+                <div style="padding: 11px 16px; background: var(--e-soft, rgba(23,20,15,0.05)); border-bottom: 1px solid var(--e-hair, rgba(23,20,15,0.08)); font-family: 'IBM Plex Mono', Courier, monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--e-faint, #9A938A); font-weight: 600;">What's built for you</div>
+                <div style="padding: 14px 16px; font-family: 'Schibsted Grotesk', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.8; color: var(--e-ink, #17140F);">AMLC thresholds and covered-transaction reports<br>PHP as your home currency, priced in PHP<br>Receipts and records in the format your examiner expects</div>
+              </div>
+              <sc-raw-table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 22px 0 0;"><sc-raw-tr><sc-raw-td style="border-radius: 12px; background: #1D6B45;">
+                <a href="CurrencyDesk Early Access.dc.html" style="display: inline-block; padding: 16px 30px; font-family: 'IBM Plex Mono', Courier, monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: #ffffff;">Claim your place →</a>
+              </sc-raw-td></sc-raw-tr></sc-raw-table>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10.5px; color: var(--e-faint, #9A938A); margin-top: 11px;">Founding pricing, same as the first hundred Canadian desks. Held for the life of the account.</div>
+              <p style="font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 19px; color: var(--e-ink, #17140F); margin: 24px 0 0;">— SAM</p>
+              <div style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A); margin-top: 5px;">Smart Automated Machine · CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>
+            </div>
+          </sc-raw-td></sc-raw-tr>
+          <sc-raw-tr><sc-raw-td style="padding: 14px 24px 0; text-align: center;"><span style="font-family: 'IBM Plex Mono', Courier, monospace; font-size: 10px; line-height: 1.6; color: var(--e-faint, #9A938A);">You applied at currencydeskos.com in March 2026. Reply and a person reads it.</span></sc-raw-td></sc-raw-tr>
+        </sc-raw-table>
+      </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 40px 26px 0;">
+    <div style="border-radius: 20px; background: var(--ink); color: #F1EEE8; padding: 32px 34px 34px;">
+      <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8fe0b3; font-weight: 600;">Before these go into Resend</div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; margin-top: 16px;">
+        <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+          <div>
+            <div style="font-family: var(--serif); font-size: 21px; line-height: 1.14; letter-spacing: -0.012em;">{{ n.h }}</div>
+            <p style="font-size: 13.5px; line-height: 1.62; color: rgba(241,238,232,0.72); margin: 9px 0 0;">{{ n.b }}</p>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 22px 26px 0;">
+    <div style="border: 1px solid var(--line); border-radius: 18px; background: var(--panel); padding: 26px 28px 28px;">
+      <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Still to build</div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 15px;">
+        <sc-for list="{{ next }}" as="x" hint-placeholder-count="3">
+          <div style="border-left: 2px solid var(--line); padding-left: 15px;">
+            <div style="font-size: 14.5px; font-weight: 700;">{{ x.h }}</div>
+            <div style="font-size: 12.5px; line-height: 1.55; color: var(--mute); margin-top: 5px;">{{ x.b }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 46px; border-top: 1px solid var(--line); background: rgba(255,255,255,0.42);">
+    <div style="max-width: 1180px; margin: 0 auto; padding: 26px; display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;">
+      <span style="font-family: var(--m); font-size: 10.5px; color: var(--faint);">Email system · working document · not customer-facing</span>
+      <a href="CurrencyDesk Email Map.dc.html" style="font-size: 13px; color: var(--mute);">The full 17-email map</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  state = { dark: false };
+  toggleTheme = () => this.setState(s => ({ dark: !s.dark }));
+
+  renderVals() {
+    const d = this.state.dark;
+    const dot = (c) => 'width:8px;height:8px;border-radius:50%;flex:none;background:' + c + ';';
+    const tag = (c, bg, bd) => 'display:inline-block;margin-top:11px;font-family:var(--m);font-size:8.5px;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;padding:4px 9px;border-radius:999px;color:' + c + ';background:' + bg + ';border:1px solid ' + bd + ';';
+
+    return {
+      toggleTheme: this.toggleTheme,
+      themeLabel: d ? 'Dark' : 'Light',
+      themeBtn: 'appearance:none;cursor:pointer;font-family:var(--m);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;padding:8px 15px;border-radius:999px;transition:all .22s ease;border:1px solid ' + (d ? 'var(--ink)' : 'var(--line)') + ';background:' + (d ? 'var(--ink)' : 'var(--panel)') + ';color:' + (d ? '#F1EEE8' : 'var(--mute)') + ';',
+
+      themeVars: d
+        ? '--e-bg:#0E0C09;--e-card:#17140F;--e-ink:#F1EEE8;--e-mute:rgba(241,238,232,0.72);--e-faint:rgba(241,238,232,0.45);--e-line:rgba(241,238,232,0.15);--e-hair:rgba(241,238,232,0.10);--e-soft:rgba(241,238,232,0.06);'
+        : '--e-bg:#E7E3DA;--e-card:#FBF9F4;--e-ink:#17140F;--e-mute:#5C554C;--e-faint:#9A938A;--e-line:rgba(23,20,15,0.12);--e-hair:rgba(23,20,15,0.08);--e-soft:rgba(23,20,15,0.05);',
+
+      varChip: 'font-family:var(--m);font-size:9.5px;color:var(--green-deep);background:var(--green-soft);border:1px solid rgba(29,107,69,0.22);border-radius:5px;padding:3px 7px;',
+
+      flow: [
+        { when: 'Minute 0', what: 'They apply', note: 'Name, shop, city, currencies. Ninety seconds, no card.', dotStyle: dot('#1D6B45'),
+          tag: 'A1 · Application received', tagStyle: tag('#fff', 'var(--green)', 'var(--green)') },
+        { when: 'Minutes 1–5', what: 'We read their shop', note: 'An agent looks at their site, rates and listings and scores the fit.', dotStyle: dot('#A9791C'),
+          tag: 'No email', tagStyle: tag('var(--faint)', 'transparent', 'var(--line)') },
+        { when: 'Same day', what: 'The call decides it', note: 'About ten minutes. If it is a fit, SAM sends the ID and founding code while they are still on the line.', dotStyle: dot('#1D6B45'),
+          tag: 'A2 · You\u2019re in', tagStyle: tag('#fff', 'var(--green)', 'var(--green)') },
+        { when: 'They set up', what: 'Code at the payment step', note: 'Setup ends at checkout. The founding code takes three months to zero.', dotStyle: dot('#A9791C'),
+          tag: 'A3 \u00b7 If they stall', tagStyle: tag('var(--brass)', 'var(--brass-soft)', 'rgba(169,121,28,0.3)') }
+      ],
+
+      jumps: [
+        { label: 'A1 Received', href: '#a1' }, { label: 'A2 You\u2019re in', href: '#a2' },
+        { label: 'A3 Half-built', href: '#a3' }, { label: 'A4 Not yet', href: '#a4' },
+        { label: 'B1 Code', href: '#b1' }, { label: 'B2 Auto-reply', href: '#b2' },
+        { label: 'B3 Team invite', href: '#b3' }, { label: 'B4 New device', href: '#b4' },
+        { label: 'C1 Receipt', href: '#c1' }, { label: 'C2 Payment failed', href: '#c2' },
+        { label: 'C3 Verification', href: '#c3' }, { label: 'D1 Report ready', href: '#d1' },
+        { label: 'D2 Deadline', href: '#d2' }, { label: 'D3 Monthly', href: '#d3' },
+        { label: 'E1 Rule change', href: '#e1' }, { label: 'E2 What shipped', href: '#e2' },
+        { label: 'E3 New market', href: '#e3' }
+      ],
+
+      notes: [
+        { h: 'Fonts will not load for most people.', b: 'Gmail strips web fonts. Every block here falls back to Georgia, Helvetica and Courier — which is why the emails still read correctly when Instrument Serif never arrives. Do not remove the fallback stacks.' },
+        { h: 'Dark mode is handled, not inherited.', b: 'Apple Mail and Outlook invert a paper-and-ink palette badly. Toggle above to see the deliberate dark set — ink becomes the card, paper becomes the text. Ship it as a prefers-color-scheme block, not as an auto-invert.' },
+        { h: 'Sample values, not variables.', b: 'Every email reads with real content so you can judge the copy. Swap Amir, Yorkville Currency, CD-YORK-0042 and CD-4471 for the Resend variables listed beside each one. Every email is signed SAM \u2014 a Smart Automated Machine \u2014 the same name that makes the qualification call. Disclosed in the footer of each send, which is the right call for a compliance audience.' }
+      ],
+
+      next: [
+        { h: 'Teller emails', b: 'A staff account gets a different set — no billing, no filings, no rule changes. Their first-run tour is already built.' },
+        { h: 'The Currency Weekly', b: 'Not a newsletter — a two-to-five page newspaper. Stories you missed, what is coming, and a features column. Its own design object.' }
+      ]
+    };
+  }
+}
+</script>
+
+
+</body></html>

@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+/* ============================================================
+   Does every file the browser loads actually parse?
+
+     node scripts/check-browser-parses.mjs
+
+   WHY THIS EXISTS
+
+   The Settings app did not load for days. A comment retiring a block of
+   mock payment UI closed on its own second line instead of after the
+   block, so fifty lines stayed live and a stray `*​/` ended the file —
+   cdos-settings.jsx stopped parsing, and the whole screen was simply
+   gone. Nothing noticed, because nothing was looking: the shipped
+   browser code is plain .jsx and .html compiled by Babel in the visitor's
+   browser, so there is no compiler between writing it and a customer
+   opening it.
+
+   This is that compiler, run early. It is not a test — it proves nothing
+   about behaviour. It proves the far cheaper thing: that what we ship can
+   be read at all.
+
+   WHAT IT COVERS
+
+     os-src/*.jsx, *.js   the OS itself
+     admin.html           the platform panel, JSX inside a script tag
+     web/*.html           the built public pages, including the two
+                          compiled from designs
+     yorkfx-converter.js  the storefront's rate script
+
+   A file that does not parse fails the build. There is no severity dial:
+   a page that cannot be read is not a degraded page, it is a missing one.
+   ============================================================ */
+import { readFileSync, readdirSync, existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import babel from "@babel/standalone";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rel = (p) => path.relative(ROOT, p);
+
+/* Every <script> the page runs itself, with the line it started on so a
+   failure points at the real place rather than at offset 0 of a fragment. */
+function inlineScripts(html) {
+  const out = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const [, attrs, body] = m;
+    if (/\bsrc\s*=/.test(attrs)) continue;              // external, checked on its own
+    const type = (attrs.match(/type\s*=\s*["']([^"']+)["']/) || [])[1] || "";
+    // the design bundles carry their source as JSON in a template tag, and
+    // importmaps/JSON blobs are data — neither is script to parse
+    if (/json|importmap|__bundler|text\/x-dc/i.test(type)) continue;
+    if (!body.trim()) continue;
+    out.push({ code: body, line: html.slice(0, m.index).split("\n").length, jsx: /babel|jsx/i.test(type) });
+  }
+  return out;
+}
+
+const failures = [];
+let checked = 0;
+
+function parse(code, label, jsx, lineOffset = 0) {
+  checked++;
+  try {
+    babel.transform(code, { presets: jsx ? ["react"] : [], filename: label, sourceType: "script" });
+  } catch (err) {
+    const m = String(err.message).match(/\((\d+):(\d+)\)/);
+    const at = m ? `:${Number(m[1]) + lineOffset}:${m[2]}` : "";
+    failures.push(`${label}${at}  ${String(err.message).split("\n")[0]}`);
+  }
+}
+
+// ---- the OS -----------------------------------------------------------
+const osDir = path.join(ROOT, "os-src");
+if (existsSync(osDir)) {
+  for (const f of readdirSync(osDir).filter((f) => /\.jsx?$/.test(f)).sort()) {
+    const p = path.join(osDir, f);
+    parse(readFileSync(p, "utf8"), rel(p), f.endsWith(".jsx"));
+  }
+}
+
+// ---- standalone browser scripts ---------------------------------------
+for (const f of ["yorkfx-converter.js"]) {
+  const p = path.join(ROOT, f);
+  if (existsSync(p)) parse(readFileSync(p, "utf8"), f, false);
+}
+
+// ---- pages, and the scripts inside them --------------------------------
+const pages = [
+  path.join(ROOT, "admin.html"),
+  path.join(ROOT, "CurrencyDesk OS.html"),
+  ...(existsSync(path.join(ROOT, "web"))
+    ? readdirSync(path.join(ROOT, "web")).filter((f) => f.endsWith(".html")).sort().map((f) => path.join(ROOT, "web", f))
+    : []),
+];
+for (const p of pages) {
+  if (!existsSync(p)) continue;
+  const html = readFileSync(p, "utf8");
+  for (const s of inlineScripts(html)) parse(s.code, rel(p), s.jsx, s.line - 1);
+}
+
+// ---- say so ------------------------------------------------------------
+if (failures.length) {
+  console.error(`\n${failures.length} of ${checked} browser script(s) do not parse:\n`);
+  for (const f of failures) console.error("  ✗ " + f);
+  console.error("\nA file that cannot be parsed is not a degraded page — it is a missing one.\n");
+  process.exit(1);
+}
+console.log(`${checked} browser scripts parse.`);

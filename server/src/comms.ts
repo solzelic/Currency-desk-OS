@@ -21,7 +21,7 @@
    what leaves the building.
    ============================================================ */
 import {
-  cdIdEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
+  cdIdEmail, customEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
   tempPasswordEmail, verificationEmail,
 } from "./email.js";
 
@@ -29,6 +29,53 @@ import {
    very different fact depending on whether it reached a customer, one of
    their staff, or us. */
 export type Audience = "applicant" | "operator" | "staff" | "platform";
+
+export interface Rendered { subject: string; text: string; html: string }
+
+/* The person a hand-sent email is going to, as the panel knows them.
+   Everything here comes off a record — nothing is typed.
+
+   Two kinds of person can be written to and they are not the same. An
+   APPLICANT is somebody in the funnel: they have a reference, a stage, and
+   no account. A STAFF member works at a desk that already exists: they
+   have an account and no reference. Templates that quote a reference are
+   nonsense to the second, so the distinction is carried here rather than
+   guessed at the call site. */
+export interface Recipient {
+  who: "applicant" | "staff";
+  name: string | null;
+  email: string;
+  /* empty for staff — they never had one */
+  reference: string;
+  /* the pipeline stage, for an applicant; the desk's name, for staff */
+  status: string;
+  kind: string;
+}
+
+/* Something the operator has to supply because the template cannot know
+   it. Kept to a minimum on purpose: every field is a chance to send
+   somebody the wrong thing. */
+export interface Field {
+  id: string;
+  label: string;
+  help: string;
+  /* more than one line renders a textarea rather than an input */
+  lines?: number;
+  placeholder?: string;
+}
+
+/* What it takes to send this one by hand, from a person's page. */
+export interface Manual {
+  /* The button, in the operator's words. */
+  action: string;
+  needs: Field[];
+  /* Why it cannot go to THIS person right now — null when it can. Guards
+     live here rather than in the route so the list the panel draws and
+     the check the send performs are the same code, and a greyed-out
+     button can never disagree with a 409. */
+  blocked?: (to: Recipient) => string | null;
+  render: (to: Recipient, fields: Record<string, string>, ctx: { origin: string; from: string }) => Rendered;
+}
 
 export interface Dispatch {
   id: string;
@@ -45,12 +92,53 @@ export interface Dispatch {
      it. Cross-checked against pipeline.ts by a test, so a stage cannot
      start or stop sending without this list noticing. */
   stage?: string;
-  sample: () => { subject: string; text: string; html: string };
+  /* Present when an operator can pick this off a list and send it now.
+
+     ABSENT IS ALSO A DECISION. Four of these carry a live credential — a
+     sign-in code, a verification code, a CurrencyDesk ID, a temporary
+     password. Their content has to be the real one, minted by the thing
+     it belongs to, so there is no honest way to render them from a box
+     somebody typed into: the mail would look perfect and the code inside
+     it would not work. Those already have their own buttons, on the page
+     that holds the credential, and `elsewhere` says where. */
+  manual?: Manual;
+  elsewhere?: string;
+  sample: () => Rendered;
 }
 
 const SAMPLE_ORIGIN = "https://www.currencydeskos.com";
 
 export const DISPATCHES: Dispatch[] = [
+  /* First on the list on purpose. Most of what anybody needs to say is not
+     one of the written emails, and if the only way to say it is to leave
+     the panel then the record of the relationship leaves with it. */
+  {
+    id: "custom",
+    title: "Something you write yourself",
+    audience: "applicant",
+    when: "Whenever the situation is not one of the written ones. Your subject, your words, our letterhead — and it goes on their record.",
+    automatic: false,
+    manual: {
+      action: "Send it",
+      needs: [
+        {
+          id: "subject", label: "Subject",
+          help: "What they will see in their inbox before they open it. Say the thing rather than announcing it — “Your setup link, again” beats “Following up”.",
+          placeholder: "Your setup link, again",
+        },
+        {
+          id: "body", label: "What to say", lines: 9,
+          help: "Their first name is already on the top and yours is on the bottom, so start with the point. Plain words — no formatting survives the trip.",
+          placeholder: "The link in Tuesday's email had expired. Here is a fresh one…",
+        },
+      ],
+      render: (to, f, ctx) => customEmail({ name: to.name, subject: f.subject ?? "", body: f.body ?? "", from: ctx.from }),
+    },
+    sample: () => customEmail({
+      name: "Amir Rostami", subject: "Your setup link, again", from: "Jordan",
+      body: "The link in Tuesday's email had expired before you got to it — this one is good for a week.\n\nNo rush, and ring me if the second screen asks for anything you do not have to hand.",
+    }),
+  },
   {
     id: "review",
     title: "We're looking at your application",
@@ -58,6 +146,12 @@ export const DISPATCHES: Dispatch[] = [
     when: "The moment an application arrives. Nobody presses anything.",
     automatic: true,
     stage: "reviewing",
+    manual: {
+      action: "Send it again",
+      needs: [],
+      blocked: (to) => to.who === "applicant" ? null : "This is about an application. They already have a desk.",
+      render: (to) => reviewEmail({ name: to.name }),
+    },
     sample: () => reviewEmail({ name: "Amir Rostami" }),
   },
   {
@@ -67,6 +161,21 @@ export const DISPATCHES: Dispatch[] = [
     when: "When you approve an application. Carries their reference and the setup link.",
     automatic: false,
     stage: "invited",
+    manual: {
+      action: "Send the invitation again",
+      needs: [],
+      /* The link in this email only opens while they are Invited, so
+         sending it to anybody else hands them a dead door and a reason to
+         ring up. Approving is what sends it the first time; this is for
+         the one who deleted it. */
+      blocked: (to) =>
+        to.who !== "applicant"
+          ? "This is an invitation to build a desk. Theirs is already built."
+          : to.status === "invited"
+            ? null
+            : "This carries their setup link, and the link only opens while they are Invited. Approve them first — that sends this email on its own.",
+      render: (to, _f, ctx) => inviteEmail({ name: to.name, reference: to.reference, origin: ctx.origin }),
+    },
     sample: () => inviteEmail({ name: "Amir Rostami", reference: "CD-7BETHC", origin: SAMPLE_ORIGIN }),
   },
   {
@@ -75,6 +184,7 @@ export const DISPATCHES: Dispatch[] = [
     audience: "operator",
     when: "During setup, when they ask us to confirm their email address.",
     automatic: true,
+    elsewhere: "The code has to be the live one their setup screen is waiting for. They ask for it themselves on that screen, and pressing it again there is what re-sends it.",
     sample: () => verificationEmail("418206", "York Currency Exchange"),
   },
   {
@@ -83,6 +193,7 @@ export const DISPATCHES: Dispatch[] = [
     audience: "staff",
     when: "On sign-in, when the desk requires a code as well as a password.",
     automatic: true,
+    elsewhere: "Only the sign-in they are part-way through can mint this code, and it dies in ten minutes. There is nothing useful to send from here.",
     sample: () => loginCodeEmail("418206", "Amir Rostami"),
   },
   {
@@ -91,6 +202,7 @@ export const DISPATCHES: Dispatch[] = [
     audience: "staff",
     when: "When you issue somebody an ID, or replace one that got about.",
     automatic: false,
+    elsewhere: "An ID belongs to a person on a desk, not to an application. Open them under their desk and press “Issue an ID” — that mints the real one and emails it.",
     sample: () => cdIdEmail({ name: "Amir Rostami", cdId: "CD-4417-9082", replaced: false }),
   },
   {
@@ -99,6 +211,7 @@ export const DISPATCHES: Dispatch[] = [
     audience: "staff",
     when: "When you reset somebody's password for them.",
     automatic: false,
+    elsewhere: "The password in it has to be one that actually works, so resetting is what sends it. Open them under their desk and press “Reset their password”.",
     sample: () => tempPasswordEmail({ name: "Amir Rostami", tempPassword: "quiet-harbour-71", signInId: "a.rostami" }),
   },
   {
@@ -107,6 +220,21 @@ export const DISPATCHES: Dispatch[] = [
     audience: "applicant",
     when: "When you write back from the Inbox. Whatever you typed, sent as an ordinary email.",
     automatic: false,
+    manual: {
+      action: "Send it",
+      needs: [{
+        id: "body",
+        label: "What to say",
+        help: "Their name goes on the top and yours on the bottom, so start with the answer. Plain words — no formatting survives the trip.",
+        lines: 7,
+        placeholder: "Yes — EUR cash settlement is supported, and there is nothing to switch on…",
+      }],
+      /* The subject quotes their reference so the thread stays a thread in
+         their mail client. Somebody with no reference has nothing to quote
+         — write to them with "Something you write yourself" instead. */
+      blocked: (to) => to.reference ? null : "This answers a message they sent us, and quotes its reference. They never sent one — write to them yourself instead.",
+      render: (to, f, ctx) => replyEmail({ name: to.name, body: f.body ?? "", reference: to.reference, from: ctx.from }),
+    },
     sample: () => replyEmail({
       name: "Amir Rostami", reference: "CD-7BETHC", from: "Jordan",
       body: "Yes — EUR cash settlement is supported, and there is nothing to switch on. Happy to walk through how the float works on a call if that is useful.",
@@ -118,6 +246,7 @@ export const DISPATCHES: Dispatch[] = [
     audience: "platform",
     when: "Every time the public site sends us something. Goes to the platform team, not the customer.",
     automatic: true,
+    elsewhere: "This one comes to us, not to them. There is nobody to hand-send it to.",
     sample: () => ({
       subject: "Early access application · CD-7BETHC",
       text: "Early access application — CD-7BETHC\n\nFrom:  Amir Rostami <amir@yorkville.example>\njurisdiction:  CA\nmonthlyVolume:  Under $500K",
@@ -125,6 +254,30 @@ export const DISPATCHES: Dispatch[] = [
     }),
   },
 ];
+
+export const DISPATCH = new Map(DISPATCHES.map((d) => [d.id, d]));
+
+/* What can be sent to one particular person, right now.
+
+   The panel draws its menu from this and the send route checks against
+   this, so the greyed-out button and the refusal are never two different
+   opinions. Everything is returned — including the ones that cannot go —
+   because "why is that not in the list?" is a worse question to leave an
+   operator holding than a disabled row with the reason next to it. */
+export function sendableTo(to: Recipient): Array<{
+  id: string; title: string; when: string; audience: Audience;
+  action: string | null; needs: Field[]; blocked: string | null;
+}> {
+  return DISPATCHES.map((d) => ({
+    id: d.id,
+    title: d.title,
+    when: d.when,
+    audience: d.audience,
+    action: d.manual?.action ?? null,
+    needs: d.manual?.needs ?? [],
+    blocked: d.manual ? d.manual.blocked?.(to) ?? null : d.elsewhere ?? "Not something to send by hand.",
+  }));
+}
 
 /* Two deliberately separate stages that nothing else asked before.
 
