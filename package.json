@@ -6,10 +6,12 @@
   "scripts": {
     "build:onboarding": "node scripts/build-onboarding.mjs",
     "build:site": "node scripts/build-site.mjs",
+    "build:os": "node scripts/build-os.mjs",
     "unbundle": "node scripts/unbundle-design.mjs",
     "check:parse": "node scripts/check-browser-parses.mjs",
     "test:e2e": "playwright test",
-    "check": "npm run check:parse && npm run test:e2e"
+    "build": "npm run build:onboarding && npm run build:site && npm run build:os",
+    "check": "npm run build && npm run check:parse && npm run test:e2e"
   },
   "devDependencies": {
     "@babel/standalone": "7.29.0",

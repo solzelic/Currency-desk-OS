@@ -33,12 +33,16 @@ jobs:
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a
       # customer.
-      - name: Built pages are current with the designs
+      # web/app is the OS and the panel, compiled ahead of time so a
+      # customer's browser does not have to. If it is stale, what ships is
+      # not what the sources say.
+      - name: Built pages are current with the designs and the sources
         run: |
           npm run build:onboarding
           npm run build:site
+          npm run build:os
           git diff --exit-code -- web/ || {
-            echo "::error::web/ is stale. Run 'npm run build:onboarding && npm run build:site' and commit the result."
+            echo "::error::web/ is stale. Run 'npm run build' and commit the result."
             exit 1
           }
 

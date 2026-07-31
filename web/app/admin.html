@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CurrencyDesk — Control</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:#0a0a0b; --panel:#141416; --card:#161618; --sidebar:#0c0c0d; --hover:rgba(255,255,255,0.045);
+    --line:rgba(255,255,255,0.08); --line2:rgba(255,255,255,0.055);
+    --text:#ececee; --mute:#8b8b93; --faint:#5c5c64;
+    --green:#34d399; --amber:#f5b544; --red:#f87171; --purple:#a78bfa; --blue:#60a5fa; --accent:#f5c542;
+    --f:'Archivo',system-ui,sans-serif; --m:'Space Mono',monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { font-family:var(--f); color:var(--text); background:var(--bg); -webkit-font-smoothing:antialiased; }
+  #root { height:100%; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.09); border-radius:8px; border:2px solid var(--bg); }
+  button { font-family:inherit; }
+  input, select { font-family:inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="/web/vendor/react.production.min.js"></script>
+<script src="/web/vendor/react-dom.production.min.js"></script>
+<script src="/web/app/admin.js"></script>
+</body>
+</html>
