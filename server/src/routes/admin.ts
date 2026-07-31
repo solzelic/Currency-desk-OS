@@ -29,6 +29,7 @@ import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } 
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
+import { describe as describeState } from "../state/shape.js";
 import { CODE_TTL_MS, issueCode as issueVerificationCode, loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { VERIFY_CHANNEL } from "./onboarding-public.js";
@@ -293,6 +294,28 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       };
     });
     return { tenants: rows, total: rows.length };
+  });
+
+  /* What is inside one desk's saved state, and how much of it is the
+     compliance record rather than screen furniture.
+
+     Answers the question that decides the promotion work — "what is
+     actually making this desk large, and how much of it has to move into
+     tables" — without asking somebody to open their browser's devtools and
+     read it out. Sizes and shapes only: the report names keys and counts
+     bytes, and never returns a customer's data. */
+  app.get<{ Params: { id: string } }>("/api/admin/tenants/:id/state-shape", async (req, reply) => {
+    if (!(await gate(req, reply, "desks:read"))) return;
+    const id = req.params.id;
+    const row = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, id)).limit(1))[0];
+    if (!row) return { tenantId: id, saved: false, report: null };
+    return {
+      tenantId: id,
+      saved: true,
+      updatedAt: row.updatedAt,
+      version: row.version,
+      report: describeState(row.state as Record<string, unknown>),
+    };
   });
 
   app.get<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {

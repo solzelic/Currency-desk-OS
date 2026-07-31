@@ -15,6 +15,17 @@ import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
+import { describe as describeState, summarise } from "../state/shape.js";
+
+/* What we last said about each desk's document, so a save every four
+   seconds does not become a log line every four seconds. Only a CHANGE in
+   what is wrong is worth writing down.
+
+   In memory, and therefore per process — the same assumption four other
+   things in this codebase make (see docs/ARCHITECTURE.md §8). For log
+   de-duplication that costs nothing if it is wrong: a restart writes one
+   extra line. */
+const lastSaid = new Map<string, string>();
 
 const putBody = z.object({
   state: z.record(z.unknown()),
@@ -128,6 +139,22 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         state: current.state,
         version: current.version,
       });
+    }
+
+    /* Describe what is being saved. This NEVER refuses — the browser holds
+       the only copy, so rejecting a document we merely find surprising
+       destroys the data it was meant to protect. What it does is make drift
+       a fact somebody can read instead of something nobody can see. See
+       src/state/shape.ts for why that trade goes this way round. */
+    const report = describeState(state);
+    const said = summarise(report);
+    if (lastSaid.get(who.tenantId) !== said) {
+      lastSaid.set(who.tenantId, said);
+      const notable = report.unknown.length > 0 || report.invalid.length > 0;
+      req.log[notable ? "warn" : "info"](
+        { tenantId: who.tenantId, unknown: report.unknown, invalid: report.invalid, recordBytes: report.recordBytes },
+        `desk state: ${said}`,
+      );
     }
 
     // mutates `state`: any till PIN in the blob moves to the staff record
