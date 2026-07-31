@@ -194,6 +194,16 @@ ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_must_change boolean NOT NUL
 -- where set; Postgres allows many NULLs, so accounts predating it keep working.
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS cd_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS staff_cd_id_idx ON staff_users(cd_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES staff_users(id),
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets(user_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

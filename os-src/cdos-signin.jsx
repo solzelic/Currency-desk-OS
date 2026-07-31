@@ -94,12 +94,22 @@
     const [code, setCode] = useState('');
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false); const [note, setNote] = useState('');
+    const [resetEmail, setResetEmail] = useState(''); const [newPw, setNewPw] = useState('');
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
     const known = useMemo(() => resolve(idInput), [idInput, dir]);
-    const owner = dir.find(e => e.role === 'Owner') || dir[0];
-    const rep = dir.find(e => e.role !== 'Owner' && e !== owner) || dir[1];
+    /* EXAMPLES ARE ONLY EVER THIS DESK'S PEOPLE.
+
+       A browser that has never signed in here carries the rehearsal desk's
+       five, and offering those to a returning customer showed them two
+       strangers' staff IDs and told them to pick one. Somebody who runs
+       their own shop signs in with their email address, which looks
+       nothing like `j.masri`. If we do not know this desk's people yet, we
+       say what the field wants instead of guessing. */
+    const ours = dir.filter(e => !e.demo);
+    const owner = ours.find(e => e.role === 'Owner') || ours[0];
+    const rep = ours.find(e => e.role !== 'Owner' && e !== owner) || ours[1];
     const examples = [owner, rep].filter(Boolean).slice(0, 2);
 
     // captured across the login call so the code step can complete
@@ -153,6 +163,53 @@
         authRef.current = { rec, srvPlan: null, srvUser: null, staffId, demo: true };
         setCode(''); setStep('code');
       }
+    }
+
+    /* ---- forgot password ------------------------------------------
+       Nobody could get back in on their own. This screen said "the owner
+       can reset it" to the owner, so the only path was a phone call to
+       CurrencyDesk and a temporary password read down the line. */
+    async function askForReset(e) {
+      e && e.preventDefault();
+      const addr = (resetEmail || idInput).trim().toLowerCase();
+      if (addr.indexOf('@') < 0) { setErr('Enter the email address you sign in with.'); return; }
+      setBusy(true); setErr('');
+      try {
+        const res = await fetch('/api/auth/forgot', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ email: addr }),
+        });
+        setBusy(false);
+        if (res.status === 429) { const d = await res.json().catch(() => null); setErr((d && d.detail) || 'Too many requests — wait a few minutes.'); return; }
+        /* Deliberately the same words whether or not that address has an
+           account. The server says nothing either, and a screen that said
+           "no account here" would undo the point of that. */
+        setResetEmail(addr); setCode(''); setNewPw(''); setStep('reset');
+      } catch (_) { setBusy(false); setErr('The sign-in service is unavailable. Try again in a moment.'); }
+    }
+
+    async function submitReset(e) {
+      e && e.preventDefault();
+      if (code.length < 6) { setErr('Enter the 6-digit code from your email.'); return; }
+      if (newPw.length < 8) { setErr('Pick a password of at least 8 characters.'); return; }
+      setBusy(true); setErr('');
+      try {
+        const res = await fetch('/api/auth/reset', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ email: resetEmail, code, newPassword: newPw }),
+        });
+        const data = await res.json().catch(() => null);
+        setBusy(false);
+        if (!res.ok) { setErr((data && data.detail) || 'That code is not right, or it has expired.'); return; }
+        /* Straight back to signing in, with the address filled in. The
+           reset signed every device out — including any this browser had —
+           so proving the new password is both the next step and the proof
+           it took. */
+        setIdInput(resetEmail); setPw(''); setCode(''); setNewPw('');
+        setStep('password');
+        setNote('Password changed. Sign in with the new one.');
+        setErr('');
+      } catch (_) { setBusy(false); setErr('Network error — try again.'); }
     }
 
     // Step 2: the emailed code grants the session.
@@ -232,9 +289,14 @@
           <span style={{ fontSize: 13 }}><b>{known.name}</b> <span style={{ color: 'var(--si-mute)' }}>· {(known.role || 'Staff')} · York Currency Exchange</span></span>
         </div>
       )}
+      {!known && examples.length === 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 10, lineHeight: 1.5 }}>
+          The email address you set the desk up with, or the ID whoever runs your desk gave you.
+        </div>
+      )}
       {!known && examples.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.14em', color: 'var(--si-faint)' }}>EXAMPLES</span>
+          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.14em', color: 'var(--si-faint)' }}>ON THIS DESK</span>
           {examples.map(ex => (
             <button key={ex.code || ex.name} type="button" onClick={() => { setIdInput(ex.code || ex.name); setErr(''); }}
               style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, border: '1px dashed var(--si-line)', background: 'transparent', color: 'var(--si-ink)', cursor: 'pointer' }}>
@@ -246,7 +308,10 @@
       {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
       <button type="submit" disabled={idInput.trim().length < 3} style={{ ...primaryBtn(idInput.trim().length >= 3), marginTop: 16 }}>Continue →</button>
       <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--si-mute)', marginTop: 16, lineHeight: 1.6 }}>
-        Every session is <b style={{ color: 'var(--si-ink)' }}>on the record</b>. No ID? Ask the owner of your desk.
+        Every session is <b style={{ color: 'var(--si-ink)' }}>on the record</b>.{' '}
+        <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setStep('forgot'); }}
+          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
+          Can't get in?</button>
       </div>
       {onSignup && <div style={{ textAlign: 'center', fontSize: 12, marginTop: 10 }}>
         New to CurrencyDesk? <button type="button" onClick={onSignup} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button>
@@ -272,10 +337,77 @@
             onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
           <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-mute)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, padding: '5px 9px', cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8 }}>Forgot it? The owner can reset it.</div>
+        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8 }}>
+          Forgot it?{' '}
+          <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
+            Send yourself a reset code</button>.
+        </div>
         {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
         <button type="submit" disabled={busy || pw.length < 4} style={{ ...primaryBtn(!busy && pw.length >= 4), marginTop: 16 }}>{busy ? 'Checking…' : 'Send my code'}</button>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--si-mute)', marginTop: 14 }}>We'll email a fresh code to confirm it's you.</div>
+        <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
+          {note || "We'll email a fresh code to confirm it's you."}</div>
+      </form>));
+    }
+
+    // ---- B1 · Can't get in — ask for a reset code ---------------------
+    if (step === 'forgot') {
+      return shell(card(<form onSubmit={askForReset}>
+        <h1 style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 6px' }}>Let's get you back in.</h1>
+        <div style={{ fontSize: 13, color: 'var(--si-mute)', lineHeight: 1.6, marginBottom: 18 }}>
+          Type the email address you sign in with and we'll send a code. You'll set a new password with it — no old
+          password needed, and nobody to ring.
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>EMAIL ADDRESS</div>
+        <input type="email" value={resetEmail} onChange={e => { setResetEmail(e.target.value); setErr(''); }} autoFocus
+          placeholder="you@yourshop.com" autoComplete="username"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '13px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
+          onFocus={e => { e.target.style.borderColor = 'var(--si-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)'; }}
+          onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
+        {/* Says nothing about whether that address has an account — the
+            server does not either, and a screen that leaked it would undo
+            the point of that. */}
+        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8, lineHeight: 1.5 }}>
+          If your desk signs you in with a name rather than an address, whoever runs it can reset you from their side.
+        </div>
+        {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
+        <button type="submit" disabled={busy} style={{ ...primaryBtn(!busy), marginTop: 16 }}>{busy ? 'Sending…' : 'Send me a code'}</button>
+        <button type="button" onClick={() => { setStep('id'); setErr(''); }}
+          style={{ display: 'block', margin: '12px auto 0', background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, cursor: 'pointer' }}>← Back to sign in</button>
+      </form>));
+    }
+
+    // ---- B2 · The code, and a new password ----------------------------
+    if (step === 'reset') {
+      return shell(card(<form onSubmit={submitReset}>
+        <div style={{ display: 'grid', placeItems: 'center', marginBottom: 10 }}><MailGlyph /></div>
+        <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>Check your email</h1>
+        <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--si-mute)', lineHeight: 1.6, marginBottom: 18 }}>
+          If <b style={{ color: 'var(--si-ink)' }}>{resetEmail}</b> has an account, a 6-digit code is on its way. It's good for 15 minutes.
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>CODE</div>
+        <input value={code} onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setErr(''); }} autoFocus
+          inputMode="numeric" placeholder="000000" autoComplete="one-time-code"
+          style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontFamily: MONO, fontSize: 22, fontWeight: 700, letterSpacing: '0.3em',
+            padding: '13px 12px', border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }} />
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', margin: '14px 0 6px' }}>NEW PASSWORD</div>
+        <div style={{ position: 'relative' }}>
+          <input type={showPw ? 'text' : 'password'} value={newPw} onChange={e => { setNewPw(e.target.value); setErr(''); }}
+            placeholder="At least 8 characters" autoComplete="new-password"
+            style={{ width: '100%', boxSizing: 'border-box', padding: '13px 62px 13px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }} />
+          <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-mute)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, padding: '5px 9px', cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
+        </div>
+        {/* Said before they press it, not after. Somebody resetting from a
+            phone while the till is signed in at the shop should know the
+            till is about to be signed out. */}
+        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8, lineHeight: 1.5 }}>
+          Setting a new password signs out every device on this account, including this one — you'll sign in again with the new password.
+        </div>
+        {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
+        <button type="submit" disabled={busy || code.length < 6 || newPw.length < 8}
+          style={{ ...primaryBtn(!busy && code.length >= 6 && newPw.length >= 8), marginTop: 16 }}>{busy ? 'Setting it…' : 'Set my new password'}</button>
+        <button type="button" onClick={() => { setStep('forgot'); setErr(''); setCode(''); }}
+          style={{ display: 'block', margin: '12px auto 0', background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, cursor: 'pointer' }}>← Send it again</button>
       </form>));
     }
 

@@ -252,6 +252,30 @@ export const staffUsers = pgTable(
   (t) => [uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId), uniqueIndex("staff_cd_id_idx").on(t.cdId)],
 );
 
+/* A password reset in flight.
+
+   Only the hash of the code is kept, for the same reason sessions keep
+   only the hash of the token: a leak of this table must not be a way in.
+
+   One live reset per person — issuing a new code deletes the last, so
+   "ask for another" is always safe advice and there is never a second
+   code quietly still working. `attempts` is what makes six digits enough:
+   the code dies on the fifth wrong guess, so the million-wide space is
+   never walked. */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => staffUsers.id),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
 export const sessions = pgTable(
   "sessions",
   {

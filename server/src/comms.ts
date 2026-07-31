@@ -21,8 +21,8 @@
    what leaves the building.
    ============================================================ */
 import {
-  cdIdEmail, customEmail, inviteEmail, loginCodeEmail, replyEmail, reviewEmail,
-  tempPasswordEmail, verificationEmail,
+  cdIdEmail, contactReceivedEmail, customEmail, inviteEmail, loginCodeEmail,
+  passwordResetEmail, replyEmail, reviewEmail, tempPasswordEmail, verificationEmail,
 } from "./email.js";
 
 /* Who is on the other end. Worth naming, because "an email went out" is a
@@ -239,6 +239,29 @@ export const DISPATCHES: Dispatch[] = [
       name: "Amir Rostami", reference: "CD-7BETHC", from: "Jordan",
       body: "Yes — EUR cash settlement is supported, and there is nothing to switch on. Happy to walk through how the float works on a call if that is useful.",
     }),
+  },
+  {
+    id: "contact_ack",
+    title: "We got your message",
+    audience: "applicant",
+    when: "The moment somebody writes in from the contact page. Nobody presses anything.",
+    automatic: true,
+    elsewhere: "It answers a message as it arrives. To write to them yourself, open them in the Inbox — “A reply to their message” is the one you want.",
+    sample: () => contactReceivedEmail({
+      name: "Amir Rostami", reference: "CD-7BETHC", topic: "Pricing",
+      message: "Do you support EUR cash settlement, and is there a per-branch cost?",
+    }),
+  },
+  {
+    id: "password_reset",
+    title: "Your reset code",
+    audience: "staff",
+    when: "When somebody asks to reset a forgotten password from the sign-in screen.",
+    automatic: true,
+    /* The one email most likely to reach somebody who did not ask for it,
+       so it names no shop and confirms no account — see design.ts. */
+    elsewhere: "Only the person who cannot get in can start this, from the sign-in screen. Sending it for somebody would be handing out a key on a phone call.",
+    sample: () => passwordResetEmail("418206", "Amir Rostami"),
   },
   {
     id: "enquiry_alert",

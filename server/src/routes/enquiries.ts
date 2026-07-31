@@ -21,7 +21,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { sendEmail } from "../email.js";
+import { contactReceivedEmail, replyToAddress, sendEmail } from "../email.js";
 import { moveTo } from "../onboarding/pipeline.js";
 import { forgetClaimedCount } from "./early-access.js";
 
@@ -197,6 +197,29 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
           }).catch(() => "failed" as const),
         ),
       );
+    }
+
+    /* A4 · and now tell THEM.
+
+       An application already gets an acknowledgement the moment it lands.
+       A message from the contact page got nothing at all: the page said
+       somebody would reply within a business day, and then there was
+       silence until a person got to it — which over a weekend is two days
+       of wondering whether it sent.
+
+       Sent after the operator alert and never allowed to break the
+       submission: their note is already recorded, and failing the request
+       because our acknowledgement did not send would be losing the thing
+       that mattered to protect the thing that did not. */
+    if (kind === "contact") {
+      const d = (details ?? {}) as Record<string, unknown>;
+      const mail = contactReceivedEmail({
+        name, reference,
+        topic: d.topic == null ? null : String(d.topic),
+        message: d.message == null ? null : String(d.message),
+      });
+      await sendEmail(email, mail.subject, { text: mail.text, html: mail.html, replyTo: replyToAddress() })
+        .catch(() => "failed" as const);
     }
 
     // charterNo is the number printed on their card; null for a message
