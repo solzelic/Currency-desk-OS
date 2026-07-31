@@ -401,6 +401,23 @@ const BRIDGE = `<script>
   }
   address();
 
+  /* The press. A rule rather than style-hover, because the design's runtime
+     has no notion of :active and being able to see the button go down under
+     your finger is most of what "responsive" means on a touchscreen.
+
+     prefers-reduced-motion is honoured: somebody who has asked their
+     machine to stop moving things has asked us too. */
+  (function () {
+    var css = document.createElement("style");
+    css.textContent =
+      'button[style*="--cd-cta"]:hover{transform:translateY(-1px);box-shadow:0 12px 26px -8px rgba(29,107,69,0.55)}' +
+      'button[style*="--cd-cta"]:active{transform:translateY(1px) scale(0.995);box-shadow:0 4px 12px -6px rgba(29,107,69,0.5)}' +
+      'button[style*="--cd-cta"]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}' +
+      '@media (prefers-reduced-motion: reduce){button[style*="--cd-cta"]{transition:none}' +
+      'button[style*="--cd-cta"]:hover,button[style*="--cd-cta"]:active{transform:none}}';
+    document.head.appendChild(css);
+  })();
+
   // before the bundle runs, so the first paint is already their desk
   if (CD.code) {
     try {
@@ -417,7 +434,19 @@ const BRIDGE = `<script>
            read it off the email and type it back is the flow admitting it
            wasn't listening. */
         if (!data.cdId) data.cdId = CD.code;
-        localStorage.setItem(KEY, JSON.stringify({ i: s.at || 0, data: data }));
+        /* THE LINK OPENS AT THE BEGINNING, NOT WHERE THEY STOPPED.
+
+           s.at is the screen they last saved on, and restoring it meant
+           the button in the invitation — "Set up your desk, takes about
+           ten minutes" — dropped somebody straight onto "Confirm your
+           email" with no idea how they got there and nothing they could
+           check. An email that promises a beginning has to open on one.
+
+           Their answers are still here, so paging forward through what
+           they already filled in is quick and, more to the point,
+           possible: before this there was no way back to look at what you
+           had typed. */
+        localStorage.setItem(KEY, JSON.stringify({ i: 0, data: data }));
       } else if (xhr.status === 404) {
         CD.known[CD.code] = false;
         CD.unknownCode = true;
@@ -628,6 +657,22 @@ patch(
   "the tail of the 'wrong number' footnote",
   "Go back and change it</button> — you'll need this number every time you sign in.</span>",
   "Go back and change it</button> {{ verifyFixTail }}</span>",
+);
+
+/* --- 6b. The main button acknowledges being pressed ----------------
+
+   It had a transition declared and nothing to transition: hover changed
+   the colour and that was the whole of it, so on a sixteen-screen flow the
+   one control you press sixteen times felt dead under the cursor.
+
+   The marker is a custom property rather than a class because the bundle
+   re-renders on every keystroke and would strip a class straight back off;
+   the inline style survives, so the rule below has something stable to
+   hang on. --cd-cta does nothing on its own — it exists to be selected. */
+patch(
+  "a marker on the primary CTA, so it can be given a press",
+  "cursor:pointer;box-shadow:0 8px 20px -6px rgba(29,107,69,0.5);transition:transform .1s ease, background .15s;",
+  "cursor:pointer;--cd-cta:1;box-shadow:0 8px 20px -6px rgba(29,107,69,0.5);transition:transform .12s cubic-bezier(0.2,0.8,0.2,1), box-shadow .18s ease, background .15s;",
 );
 
 /* --- 7. The code is checked against the server, and resending

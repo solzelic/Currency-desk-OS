@@ -91,8 +91,17 @@ test("approving is one press, and it hands them a working link", async ({ page }
    the desk creates — which is precisely the handover that was broken, and
    splitting it would have hidden the bug rather than caught it. */
 test("they set the desk up, and land inside their own desk signed in", async ({ page }) => {
+  /* The link in the invitation opens at the BEGINNING.
+
+     It used to restore the screen they last saved on, so the button that
+     promises "set up your desk, takes about ten minutes" could drop
+     somebody straight onto the last step — "Confirm your email" — with no
+     idea how they got there and no way back to check what they had typed.
+     Their answers are still restored; only the position is not. */
   await page.goto(`/onboarding/${reference}`);
-  await rendered(page, /set up|desk|welcome/i);
+  await rendered(page, /Let.s open your desk/i);
+  const opened = await page.locator("body").innerText();
+  expect(opened).not.toMatch(/Confirm your email/i);
 
   /* Their answers, through the endpoint their own page saves to. The
      owner email is deliberately DIFFERENT from the one they applied

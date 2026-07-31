@@ -2,7 +2,7 @@
   "name": "currencydesk-os",
   "private": true,
   "version": "0.1.0",
-  "//": "react, react-dom and @babel/standalone are PINNED EXACTLY, on purpose. The OS and the panel load all three from unpkg with an SRI integrity hash, and the end-to-end tests serve the same files out of node_modules so a CDN having a bad morning cannot fail a build. A caret would let npm resolve a newer patch, the bytes would stop matching the hash the page carries, the browser would block the script, and the page would come up blank with nothing in the log to say why. These versions must equal the ones in the <script> tags of 'CurrencyDesk OS.html' and 'admin.html'; tests/e2e/fixtures.ts checks that they do.",
+  "//": "react, react-dom and @babel/standalone are PINNED EXACTLY, on purpose. react and react-dom are served to the browser from web/vendor, copied out of node_modules by `npm run build:site`; @babel/standalone compiles the JSX at build time in `npm run build:os` and never reaches a browser. A caret on any of them would let npm resolve a different version than the one the built output was produced with, which is the kind of drift nothing here would notice.",
   "scripts": {
     "build:onboarding": "node scripts/build-onboarding.mjs",
     "build:site": "node scripts/build-site.mjs",
