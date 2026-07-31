@@ -43,7 +43,11 @@ export default defineConfig({
       /* The same shape Render runs: repo root as the static dir, the
          buildless OS as the app shell, the built site at the front. */
       STATIC_DIR: "..",
-      STATIC_INDEX: "CurrencyDesk OS.html",
+      /* No STATIC_INDEX on purpose. The server prefers web/app when the
+         compiled apps are there, which is what Render serves — naming the
+         uncompiled original here would walk a customer journey through code
+         no customer runs, which is the whole mistake this suite exists to
+         stop repeating. */
       SITE_INDEX: "web/index.html",
       // a database that exists only for this run
       PGLITE_MEMORY: "1",
