@@ -19,12 +19,13 @@
    And the thing that makes six digits enough: the code dies on the fifth
    wrong guess, so a million-wide space is never walked.
 */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
 
 let handle: DbHandle; let app: FastifyInstance;
 const TENANT = "tnt-yorkfx";
@@ -68,6 +69,11 @@ beforeAll(async () => {
 });
 afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); });
 
+/* The two-minute gap between codes is real now (src/cooldown.ts), and a
+   test that asks for two in a row is not a person double-clicking — it is
+   a suite deliberately exercising the second one. Clear it between tests,
+   and inline wherever one test genuinely needs two sends. */
+beforeEach(() => forgetCooldown());
 describe("asking for a reset", () => {
   it("emails a code to somebody who has an account", async () => {
     const OWNER = await anOwner();
@@ -108,6 +114,7 @@ describe("asking for a reset", () => {
     await forgot(OWNER);
     const first = codeFromLog(OWNER);
     clearLog();
+    forgetCooldown();   // a person would have waited two minutes
     await forgot(OWNER);
     const second = codeFromLog(OWNER);
     expect(second).not.toBe(first);

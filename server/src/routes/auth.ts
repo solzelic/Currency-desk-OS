@@ -21,6 +21,7 @@ import { looksLikeCdId, normalizeCdId } from "../auth/cdid.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import { randomUUID } from "node:crypto";
+import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -205,10 +206,18 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
       return { ok: true, needsCode: false, user: await userPayload(user) };
     }
+    /* Pressing "Send my code" twice used to send two, and only the second
+       one worked — so the code somebody read off the first email was the
+       one that failed. The password was already proved above, so refusing
+       here tells them nothing they did not know a moment ago. */
+    const wait = waitBefore("login:" + user.id);
+    if (wait) return reply.code(429).send(tooSoon(wait));
+
     const code = makeCode();
     loginChallenges.set(user.id, { codeHash: hashCode(code), expiresAt: Date.now() + CHALLENGE_TTL_MS, attempts: 0 });
     const mail = loginCodeEmail(code, user.name);
     await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html });
+    markSent("login:" + user.id);
     return { ok: true, needsCode: true, maskedEmail: maskEmail(recipient), user: { id: user.staffId, name: user.name, role: user.role, tenantId: user.tenantId, mustChangePassword: user.mustChangePassword } };
   });
 
@@ -297,6 +306,12 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     /* Only somebody who signs in with an address can be sent a code. A desk
        that signs its people in as "a.rostami" has nowhere to send one, and
        says so through the same silent answer. */
+    /* The gap is checked BEFORE we know whether this address exists, and
+       answers the same way regardless, so it cannot be read as "yes, there
+       is an account here". */
+    const wait = waitBefore("reset:" + email);
+    if (wait) return reply.code(429).send(tooSoon(wait));
+
     if (user && user.active && isEmail(user.staffId) && !(await tenantSuspended(user.tenantId))) {
       const code = makeCode();
       // one live reset per person: the last one stops working now
@@ -312,6 +327,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         actorId: user.id, action: "auth.reset_requested",
       });
     }
+    /* Marked whether or not anything was sent — otherwise the cooldown
+       itself becomes the tell: a second ask that goes through instantly
+       means "no account", and one that is refused means "there is". */
+    markSent("reset:" + email);
     /* Deliberately says nothing about whether that landed. */
     return { ok: true };
   });

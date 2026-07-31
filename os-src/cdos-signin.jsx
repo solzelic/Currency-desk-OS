@@ -59,7 +59,7 @@
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(numKey)}
         {leftLabel != null
-          ? <button type="button" disabled={verifying} onClick={onLeft}
+          ? <button type="button" disabled={verifying || !onLeft} onClick={onLeft || undefined}
               style={{ background: 'none', border: 'none', fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--si-ink)', cursor: 'pointer' }}>{leftLabel}</button>
           : <span />}
         {numKey(0)}
@@ -95,6 +95,25 @@
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false); const [note, setNote] = useState('');
     const [resetEmail, setResetEmail] = useState(''); const [newPw, setNewPw] = useState('');
+    /* HOW LONG UNTIL ANOTHER CODE MAY BE ASKED FOR.
+
+       The server allows one every two minutes and answers 429 with
+       `retryAfter` when it is too soon. Counting it down here is not
+       decoration: without it the button looks broken, which is exactly
+       what makes somebody press it again.
+
+       `sending` is a separate latch from `busy` because it has to be set
+       BEFORE the await. React state does not update synchronously, so
+       `disabled` alone loses the race against a double-click — the second
+       press lands while the first render is still pending. A ref cannot. */
+    const [cool, setCool] = useState(0);
+    const sending = useRef(false);
+    useEffect(() => {
+      if (cool <= 0) return;
+      const t = setTimeout(() => setCool(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    }, [cool]);
+    const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -132,6 +151,9 @@
     async function submitPassword(e) {
       e && e.preventDefault();
       if (pw.length < 4) { setErr('Enter your password.'); return; }
+      // set before the first await, or a double-click gets through
+      if (sending.current) return;
+      sending.current = true;
       let rec = known;
       const staffId = rec ? (rec.code || rec.name) : idInput.trim().toLowerCase();
       setBusy(true); setErr('Checking… (first sign-in of the day can take ~30s while the server wakes)');
@@ -140,21 +162,28 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { setBusy(false); setErr('That password doesn’t match this ID. Try again — or the owner can reset it.'); return; }
-        if (res && !res.ok) { setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
+        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn’t match this ID. Try again — or reset it below.'); return; }
+        if (res && res.status === 429) {
+          const d = await res.json().catch(() => null);
+          sending.current = false; setBusy(false);
+          startCooldown(d && d.retryAfter);
+          setErr((d && d.detail) || 'A code went out moments ago — check your email.');
+          return;
+        }
+        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
         const data = await res.json().catch(() => null);
         const u = (data && data.user) || null;
         const srvPlan = (u && u.plan) || null;
         if (!rec && u) rec = adopt(u, null);
-        setBusy(false); setErr('');
+        sending.current = false; setBusy(false); setErr('');
         if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
         authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail };
         if (data && data.needsCode === false) { onComplete(rec, srvPlan, u); return; } // password-only (no email on file)
-        setCode(''); setStep('code');
+        setCode(''); setStep('code'); startCooldown(120);
       } catch (_) {
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
-        setBusy(false);
+        sending.current = false; setBusy(false);
         if (!offlineDemoAllowed()) {
           setErr('The sign-in service is unavailable. Check your connection and try again.');
           return;
@@ -173,25 +202,35 @@
       e && e.preventDefault();
       const addr = (resetEmail || idInput).trim().toLowerCase();
       if (addr.indexOf('@') < 0) { setErr('Enter the email address you sign in with.'); return; }
+      if (sending.current || cool > 0) return;
+      sending.current = true;
       setBusy(true); setErr('');
       try {
         const res = await fetch('/api/auth/forgot', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ email: addr }),
         });
-        setBusy(false);
-        if (res.status === 429) { const d = await res.json().catch(() => null); setErr((d && d.detail) || 'Too many requests — wait a few minutes.'); return; }
+        sending.current = false; setBusy(false);
+        if (res.status === 429) {
+          const d = await res.json().catch(() => null);
+          startCooldown(d && d.retryAfter);
+          setErr((d && d.detail) || 'Too many requests — wait a few minutes.');
+          return;
+        }
+        startCooldown(120);
         /* Deliberately the same words whether or not that address has an
            account. The server says nothing either, and a screen that said
            "no account here" would undo the point of that. */
         setResetEmail(addr); setCode(''); setNewPw(''); setStep('reset');
-      } catch (_) { setBusy(false); setErr('The sign-in service is unavailable. Try again in a moment.'); }
+      } catch (_) { sending.current = false; setBusy(false); setErr('The sign-in service is unavailable. Try again in a moment.'); }
     }
 
     async function submitReset(e) {
       e && e.preventDefault();
       if (code.length < 6) { setErr('Enter the 6-digit code from your email.'); return; }
       if (newPw.length < 8) { setErr('Pick a password of at least 8 characters.'); return; }
+      if (sending.current) return;
+      sending.current = true;
       setBusy(true); setErr('');
       try {
         const res = await fetch('/api/auth/reset', {
@@ -199,7 +238,7 @@
           body: JSON.stringify({ email: resetEmail, code, newPassword: newPw }),
         });
         const data = await res.json().catch(() => null);
-        setBusy(false);
+        sending.current = false; setBusy(false);
         if (!res.ok) { setErr((data && data.detail) || 'That code is not right, or it has expired.'); return; }
         /* Straight back to signing in, with the address filled in. The
            reset signed every device out — including any this browser had —
@@ -209,7 +248,7 @@
         setStep('password');
         setNote('Password changed. Sign in with the new one.');
         setErr('');
-      } catch (_) { setBusy(false); setErr('Network error — try again.'); }
+      } catch (_) { sending.current = false; setBusy(false); setErr('Network error — try again.'); }
     }
 
     // Step 2: the emailed code grants the session.
@@ -231,8 +270,16 @@
     async function resendCode() {
       const a = authRef.current;
       if (!a.staffId || a.demo) { setCode(''); return; }
+      if (sending.current || cool > 0) return;   // the latch, before any await
+      sending.current = true;
       setNote('Sending a new code…');
-      try { await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) }); setNote('A new code is on its way.'); setCode(''); } catch (_) { setNote('Couldn’t resend — try again.'); }
+      try {
+        const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) });
+        const d = await res.json().catch(() => null);
+        if (res.status === 429) { startCooldown(d && d.retryAfter); setNote((d && d.detail) || 'A code went out moments ago.'); return; }
+        setNote('A new code is on its way.'); setCode(''); startCooldown(120);
+      } catch (_) { setNote('Couldn’t resend — try again.'); }
+      finally { sending.current = false; }
     }
 
     const pushDigit = (d) => {
@@ -344,7 +391,8 @@
             Send yourself a reset code</button>.
         </div>
         {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || pw.length < 4} style={{ ...primaryBtn(!busy && pw.length >= 4), marginTop: 16 }}>{busy ? 'Checking…' : 'Send my code'}</button>
+        <button type="submit" disabled={busy || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && cool === 0 && pw.length >= 4), marginTop: 16 }}>
+          {busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
         <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
           {note || "We'll email a fresh code to confirm it's you."}</div>
       </form>));
@@ -371,7 +419,8 @@
           If your desk signs you in with a name rather than an address, whoever runs it can reset you from their side.
         </div>
         {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy} style={{ ...primaryBtn(!busy), marginTop: 16 }}>{busy ? 'Sending…' : 'Send me a code'}</button>
+        <button type="submit" disabled={busy || cool > 0} style={{ ...primaryBtn(!busy && cool === 0), marginTop: 16 }}>
+          {busy ? 'Sending…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send me a code'}</button>
         <button type="button" onClick={() => { setStep('id'); setErr(''); }}
           style={{ display: 'block', margin: '12px auto 0', background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, cursor: 'pointer' }}>← Back to sign in</button>
       </form>));
@@ -407,7 +456,8 @@
         <button type="submit" disabled={busy || code.length < 6 || newPw.length < 8}
           style={{ ...primaryBtn(!busy && code.length >= 6 && newPw.length >= 8), marginTop: 16 }}>{busy ? 'Setting it…' : 'Set my new password'}</button>
         <button type="button" onClick={() => { setStep('forgot'); setErr(''); setCode(''); }}
-          style={{ display: 'block', margin: '12px auto 0', background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, cursor: 'pointer' }}>← Send it again</button>
+          style={{ display: 'block', margin: '12px auto 0', background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, cursor: 'pointer' }}>
+          {cool > 0 ? '← Send it again in ' + cool + 's' : '← Send it again'}</button>
       </form>));
     }
 
@@ -424,7 +474,8 @@
         })}
       </div>
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: err ? 'var(--si-flag)' : 'var(--si-faint)', margin: '4px 0 14px' }}>{err ? err.toUpperCase() : verifying ? 'VERIFYING…' : 'TAP THE CODE IN BELOW'}</div>
-      <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit} leftLabel="Resend" onLeft={resendCode} verifying={verifying} />
+      <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit}
+        leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying} />
       <div style={{ fontSize: 11, color: 'var(--si-faint)', marginTop: 16 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
       <button type="button" onClick={() => { setStep('password'); setCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
     </div>));

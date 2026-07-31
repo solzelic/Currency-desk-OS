@@ -17,12 +17,13 @@
    ONLY while nothing can be delivered. The moment sending works it goes to
    them and the panel is not told what it was.
 */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const ADMIN = "j.masri";
@@ -49,6 +50,11 @@ beforeAll(async () => {
 });
 afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); delete process.env.PLATFORM_ADMIN_EMAILS; });
 
+/* The two-minute gap between codes is real now (src/cooldown.ts), and a
+   test that asks for two in a row is not a person double-clicking — it is
+   a suite deliberately exercising the second one. Clear it between tests,
+   and inline wherever one test genuinely needs two sends. */
+beforeEach(() => forgetCooldown());
 describe("before they are approved", () => {
   it("refuses, because there is no setup to confirm yet", async () => {
     const res = await issue();
@@ -92,6 +98,7 @@ describe("once they are invited", () => {
 
   it("kills the one before it, so “ask for another” is always safe advice", async () => {
     const first = (await issue()).json().code as string;
+    forgetCooldown();   // a person would have waited two minutes
     const second = (await issue()).json().code as string;
     expect(second).not.toBe(first);
 

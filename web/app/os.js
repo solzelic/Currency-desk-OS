@@ -52103,8 +52103,8 @@ ${snap}`;
       }
     }, [1, 2, 3, 4, 5, 6, 7, 8, 9].map(numKey), leftLabel != null ? /*#__PURE__*/React.createElement("button", {
       type: "button",
-      disabled: verifying,
-      onClick: onLeft,
+      disabled: verifying || !onLeft,
+      onClick: onLeft || undefined,
       style: {
         background: 'none',
         border: 'none',
@@ -52197,6 +52197,23 @@ ${snap}`;
     const [note, setNote] = useState('');
     const [resetEmail, setResetEmail] = useState('');
     const [newPw, setNewPw] = useState('');
+    /* HOW LONG UNTIL ANOTHER CODE MAY BE ASKED FOR.
+        The server allows one every two minutes and answers 429 with
+       `retryAfter` when it is too soon. Counting it down here is not
+       decoration: without it the button looks broken, which is exactly
+       what makes somebody press it again.
+        `sending` is a separate latch from `busy` because it has to be set
+       BEFORE the await. React state does not update synchronously, so
+       `disabled` alone loses the race against a double-click — the second
+       press lands while the first render is still pending. A ref cannot. */
+    const [cool, setCool] = useState(0);
+    const sending = useRef(false);
+    useEffect(() => {
+      if (cool <= 0) return;
+      const t = setTimeout(() => setCool(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    }, [cool]);
+    const startCooldown = secs => setCool(Math.max(1, Math.round(secs || 120)));
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -52264,6 +52281,9 @@ ${snap}`;
         setErr('Enter your password.');
         return;
       }
+      // set before the first await, or a double-click gets through
+      if (sending.current) return;
+      sending.current = true;
       let rec = known;
       const staffId = rec ? rec.code || rec.name : idInput.trim().toLowerCase();
       setBusy(true);
@@ -52281,11 +52301,21 @@ ${snap}`;
           })
         });
         if (res && res.status === 401) {
+          sending.current = false;
           setBusy(false);
-          setErr('That password doesn’t match this ID. Try again — or the owner can reset it.');
+          setErr('That password doesn’t match this ID. Try again — or reset it below.');
+          return;
+        }
+        if (res && res.status === 429) {
+          const d = await res.json().catch(() => null);
+          sending.current = false;
+          setBusy(false);
+          startCooldown(d && d.retryAfter);
+          setErr(d && d.detail || 'A code went out moments ago — check your email.');
           return;
         }
         if (res && !res.ok) {
+          sending.current = false;
           setBusy(false);
           setErr('Sign-in service error (' + res.status + ') — try again in a moment.');
           return;
@@ -52294,6 +52324,7 @@ ${snap}`;
         const u = data && data.user || null;
         const srvPlan = u && u.plan || null;
         if (!rec && u) rec = adopt(u, null);
+        sending.current = false;
         setBusy(false);
         setErr('');
         if (u && u.mustChangePassword) {
@@ -52316,9 +52347,11 @@ ${snap}`;
         } // password-only (no email on file)
         setCode('');
         setStep('code');
+        startCooldown(120);
       } catch (_) {
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
+        sending.current = false;
         setBusy(false);
         if (!offlineDemoAllowed()) {
           setErr('The sign-in service is unavailable. Check your connection and try again.');
@@ -52351,6 +52384,8 @@ ${snap}`;
         setErr('Enter the email address you sign in with.');
         return;
       }
+      if (sending.current || cool > 0) return;
+      sending.current = true;
       setBusy(true);
       setErr('');
       try {
@@ -52364,12 +52399,15 @@ ${snap}`;
             email: addr
           })
         });
+        sending.current = false;
         setBusy(false);
         if (res.status === 429) {
           const d = await res.json().catch(() => null);
+          startCooldown(d && d.retryAfter);
           setErr(d && d.detail || 'Too many requests — wait a few minutes.');
           return;
         }
+        startCooldown(120);
         /* Deliberately the same words whether or not that address has an
            account. The server says nothing either, and a screen that said
            "no account here" would undo the point of that. */
@@ -52378,6 +52416,7 @@ ${snap}`;
         setNewPw('');
         setStep('reset');
       } catch (_) {
+        sending.current = false;
         setBusy(false);
         setErr('The sign-in service is unavailable. Try again in a moment.');
       }
@@ -52392,6 +52431,8 @@ ${snap}`;
         setErr('Pick a password of at least 8 characters.');
         return;
       }
+      if (sending.current) return;
+      sending.current = true;
       setBusy(true);
       setErr('');
       try {
@@ -52408,6 +52449,7 @@ ${snap}`;
           })
         });
         const data = await res.json().catch(() => null);
+        sending.current = false;
         setBusy(false);
         if (!res.ok) {
           setErr(data && data.detail || 'That code is not right, or it has expired.');
@@ -52425,6 +52467,7 @@ ${snap}`;
         setNote('Password changed. Sign in with the new one.');
         setErr('');
       } catch (_) {
+        sending.current = false;
         setBusy(false);
         setErr('Network error — try again.');
       }
@@ -52472,9 +52515,11 @@ ${snap}`;
         setCode('');
         return;
       }
+      if (sending.current || cool > 0) return; // the latch, before any await
+      sending.current = true;
       setNote('Sending a new code…');
       try {
-        await fetch('/api/auth/login/start', {
+        const res = await fetch('/api/auth/login/start', {
           method: 'POST',
           headers: {
             'content-type': 'application/json'
@@ -52485,10 +52530,19 @@ ${snap}`;
             password: pw
           })
         });
+        const d = await res.json().catch(() => null);
+        if (res.status === 429) {
+          startCooldown(d && d.retryAfter);
+          setNote(d && d.detail || 'A code went out moments ago.');
+          return;
+        }
         setNote('A new code is on its way.');
         setCode('');
+        startCooldown(120);
       } catch (_) {
         setNote('Couldn’t resend — try again.');
+      } finally {
+        sending.current = false;
       }
     }
     const pushDigit = d => {
@@ -52927,12 +52981,12 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy || pw.length < 4,
+        disabled: busy || cool > 0 || pw.length < 4,
         style: {
-          ...primaryBtn(!busy && pw.length >= 4),
+          ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
           marginTop: 16
         }
-      }, busy ? 'Checking…' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
@@ -53012,12 +53066,12 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy,
+        disabled: busy || cool > 0,
         style: {
-          ...primaryBtn(!busy),
+          ...primaryBtn(!busy && cool === 0),
           marginTop: 16
         }
-      }, busy ? 'Sending…' : 'Send me a code'), /*#__PURE__*/React.createElement("button", {
+      }, busy ? 'Sending…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send me a code'), /*#__PURE__*/React.createElement("button", {
         type: "button",
         onClick: () => {
           setStep('id');
@@ -53183,7 +53237,7 @@ ${snap}`;
           fontSize: 12,
           cursor: 'pointer'
         }
-      }, "\u2190 Send it again"))));
+      }, cool > 0 ? '← Send it again in ' + cool + 's' : '← Send it again'))));
     }
 
     // ---- A3 · Email code (keypad) -------------------------------------
@@ -53246,8 +53300,8 @@ ${snap}`;
       max: 6,
       onDigit: pushDigit,
       onBack: backDigit,
-      leftLabel: "Resend",
-      onLeft: resendCode,
+      leftLabel: cool > 0 ? cool + 's' : 'Resend',
+      onLeft: cool > 0 ? null : resendCode,
       verifying: verifying
     }), /*#__PURE__*/React.createElement("div", {
       style: {

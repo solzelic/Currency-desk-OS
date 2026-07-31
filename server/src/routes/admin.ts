@@ -30,6 +30,7 @@ import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
 import { CODE_TTL_MS, issueCode as issueVerificationCode, loadOrCreateOnboarding } from "../onboarding/verify.js";
+import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { VERIFY_CHANNEL } from "./onboarding-public.js";
 import { DISPATCHES, DISPATCH, SILENT, delivery, sendableTo, type Recipient } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
@@ -897,11 +898,19 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       return reply.code(400).send({ error: "no_email", detail: "There is no owner address on their setup yet." });
     }
 
+    /* Same two-minute gap as their own screen, and the same key — so an
+       operator on the phone pressing this twice, or pressing it just after
+       the applicant did, cannot put two codes in one inbox where only the
+       second works. */
+    const wait = waitBefore("onb:" + row.reference);
+    if (wait) return reply.code(429).send(tooSoon(wait));
+
     const code = makeCode();
     await issueVerificationCode(db, row.id, code, to, VERIFY_CHANNEL);
     const mail = verificationEmail(code, String(answers.bizName ?? answers.operatingName ?? ""));
     const status = await sendEmail(to, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
 
+    markSent("onb:" + row.reference);
     await audit(db, {
       tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
       action: "admin.verify_code_issued", detail: { reference: row.reference, to, email: status },

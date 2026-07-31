@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -25,6 +26,11 @@ beforeAll(async () => {
   await app.inject({ method: "POST", url: "/api/signup/verify", payload: { email: "sam@twofa.ca", code: codeFromLog() } });
 });
 afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); delete process.env.EARLY_ACCESS_OPEN; });
+/* The two-minute gap between codes is real now (src/cooldown.ts), and a
+   test that asks for two in a row is not a person double-clicking — it is
+   a suite deliberately exercising the second one. Clear it between tests,
+   and inline wherever one test genuinely needs two sends. */
+beforeEach(() => forgetCooldown());
 beforeEach(() => { logged = []; });
 
 function codeFromLog(): string {
