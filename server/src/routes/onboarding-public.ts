@@ -416,7 +416,17 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
      browser holding anything sensitive in between.
      ---------------------------------------------------------------- */
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/verify/send", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+    /* Every refusal carries a `detail`. The page falls back to "we couldn't
+       send that code just now" when there isn't one, which is the least
+       useful sentence in the product: it is shown for a rate limit, for a
+       missing address and for a provider outage alike, and none of them
+       have the same answer. */
+    if (tooManyMisses(req.ip)) {
+      return reply.code(429).send({
+        error: "slow_down",
+        detail: "Too many tries from here in the last hour. Wait a few minutes and ask again.",
+      });
+    }
     const a = await find(req.params.ref);
     if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
     const parsed = launchBody.safeParse(req.body);
@@ -451,13 +461,28 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       await sendSms(num, `${code} is your CurrencyDesk confirmation code.`);
     } else {
       const mail = verificationEmail(code, String(resolved.operatingName?.value ?? "your desk"));
-      await sendEmail(email, mail.subject, { text: mail.text, html: mail.html });
+      /* The result was being thrown away, so a send that failed still came
+         back as `ok: true` — the screen said "we emailed a 6-digit code"
+         and then somebody sat waiting for an email that was never going to
+         arrive. Say what happened. */
+      const status = await sendEmail(email, mail.subject, { text: mail.text, html: mail.html });
+      if (status === "failed") {
+        return reply.code(502).send({
+          error: "send_failed",
+          detail: "We could not send that code — our email provider refused it. Try again in a moment, or reply to the invitation and we will sort it out.",
+        });
+      }
     }
     return { ok: true, channel: VERIFY_CHANNEL, sentTo: to };
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/verify/check", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
+    if (tooManyMisses(req.ip)) {
+      return reply.code(429).send({
+        error: "slow_down",
+        detail: "Too many tries from here in the last hour. Wait a few minutes and try again.",
+      });
+    }
     const a = await find(req.params.ref);
     if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
     const parsed = codeBody.safeParse(req.body);
