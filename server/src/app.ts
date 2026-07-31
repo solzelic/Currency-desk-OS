@@ -150,7 +150,18 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
        one production never built, which is the same reason its tests were
        green while the shipped code went unwatched. It is gone; the OS is
        the app, and the default says so. */
-    const indexFile = process.env.STATIC_INDEX ?? "CurrencyDesk OS.html";
+    /* Prefer the compiled apps.
+
+       Both were written buildless — plain JSX compiled in the visitor's
+       browser on every load, which meant fetching three megabytes of Babel
+       and 1.6 MB of source before anything appeared. `npm run build:os`
+       compiles them ahead of time into web/app; when that output is present
+       it is what gets served, and the hand-written originals stay as the
+       thing you edit. A deploy that has not run the build still works — it
+       just serves the slow ones. */
+    const compiled = (built: string, source: string): string =>
+      existsSync(path.join(staticDir, built)) ? built : source;
+    const indexFile = process.env.STATIC_INDEX ?? compiled("web/app/index.html", "CurrencyDesk OS.html");
     // the public front door. When SITE_INDEX is present in the static dir the
     // marketing site serves at "/" and the OS moves to "/app"; without it the
     // OS keeps the root, so a deploy that ships only the app still works.
@@ -209,8 +220,9 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     }
     // the platform control panel — served whether prod ships the vite build or
     // the prototype, as long as admin.html is in the static dir (repo root)
-    if (existsSync(path.join(staticDir, "admin.html"))) {
-      app.get("/admin", (_req, reply) => reply.sendFile("admin.html"));
+    const adminFile = compiled("web/app/admin.html", "admin.html");
+    if (existsSync(path.join(staticDir, adminFile))) {
+      app.get("/admin", (_req, reply) => reply.sendFile(adminFile));
     }
     app.setNotFoundHandler((req, reply) => {
       /* Only a page gets a page. A missing script, stylesheet, image or

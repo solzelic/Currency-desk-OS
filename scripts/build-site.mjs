@@ -349,6 +349,17 @@ const CDN = {
   "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "/web/vendor/react-dom.production.min.js",
 };
 
+/* Vendor code, served from our own domain.
+ 
+   Every page used to fetch React — and the OS and the panel also fetched
+   Babel, three megabytes of it — from unpkg on load. That is a third party
+   standing between a customer and their own till: when unpkg is slow the
+   desk does not open, and there is nothing anybody here can do about it.
+   Measured on a bad connection it was the difference between five seconds
+   and eighty-five.
+ 
+   So they are copied out of node_modules and served from here. Same files,
+   same versions, our uptime. */
 const VENDOR = [
   ["react/umd/react.production.min.js", "react.production.min.js"],
   ["react-dom/umd/react-dom.production.min.js", "react-dom.production.min.js"],
