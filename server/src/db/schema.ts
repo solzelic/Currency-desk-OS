@@ -51,6 +51,11 @@ export const tenantState = pgTable("tenant_state", {
   state: jsonb("state").$type<Record<string, unknown>>().notNull().default({}),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  /* Bumped on every write. Two tellers on two machines each hold a whole
+     copy of this document, so a save without a precondition silently erased
+     whatever the other one had just done. The client sends back the version
+     it last saw and a stale save is refused. */
+  version: integer("version").notNull().default(0),
 });
 
 export interface SiteConfig {

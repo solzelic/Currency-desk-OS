@@ -140,6 +140,10 @@ CREATE TABLE IF NOT EXISTS tenant_state (
   updated_by text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Bumped on every write. A client sends back the version it last saw, and a
+-- save built on a stale one is refused instead of quietly erasing whatever
+-- landed in between. See routes/tenantState.ts.
+ALTER TABLE tenant_state ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),

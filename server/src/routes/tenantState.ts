@@ -14,10 +14,14 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPin } from "./pin.js";
+import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 
-// a working desk's snapshot is well under this; guards against a runaway client
-const MAX_STATE_BYTES = 4 * 1024 * 1024;
-const putBody = z.object({ state: z.record(z.unknown()) });
+const putBody = z.object({
+  state: z.record(z.unknown()),
+  /* The version this save was built on. Optional only while browsers opened
+     before this shipped are still running — see the PUT handler. */
+  version: z.number().int().nonnegative().optional(),
+});
 
 /* The desk's settings used to carry every teller's till PIN in the clear,
    inside this very snapshot — which the browser downloads whole on sign-in.
@@ -73,26 +77,75 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const rows = await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1);
     const row = rows[0];
-    if (!row) return { state: null, updatedAt: null };
-    return { state: row.state, updatedAt: row.updatedAt };
+    if (!row) return { state: null, updatedAt: null, version: 0 };
+    return { state: row.state, updatedAt: row.updatedAt, version: row.version };
   });
 
-  app.put("/api/tenant/state", async (req, reply) => {
+  /* The route carries its own body limit, above the guard below, so that a
+     document over the line is refused by US — with its actual size and what
+     to do about it — instead of by Fastify's generic 413, which tells a
+     client nothing it can act on. See src/state/contract.ts. */
+  app.put("/api/tenant/state", { bodyLimit: BODY_LIMIT_BYTES }, async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const state = parsed.data.state;
-    if (Buffer.byteLength(JSON.stringify(state)) > MAX_STATE_BYTES) {
-      return reply.code(413).send({ error: "state_too_large", detail: "Desk state exceeds the size limit." });
+
+    const bytes = Buffer.byteLength(JSON.stringify(state));
+    if (bytes > MAX_STATE_BYTES) {
+      /* Logged, because this is the failure that used to happen in silence.
+         A desk in this state cannot save at all and nobody was finding out. */
+      req.log.error({ tenantId: who.tenantId, bytes, limit: MAX_STATE_BYTES }, "desk state over the limit — nothing saved");
+      return reply.code(413).send(tooLarge(bytes));
     }
+
+    /* ---- has somebody else written since this browser last read? --------
+
+       Every teller's browser holds a whole copy of this document and writes
+       it back entire. Without a precondition the last writer wins and the
+       other one's work is gone — no error, no log, nothing on screen. Two
+       people on one desk is not an exotic case, it is a Saturday.
+
+       So a save carries the version it was built on. If the stored version
+       has moved, this save is refused and the current document is handed
+       back, so the client can merge key by key (see cdos-persist.js) rather
+       than either side losing everything.
+
+       A save with NO version behaves exactly as before. That is deliberate
+       and temporary: a browser that was already open when this deployed is
+       still running the old bridge, and breaking its saves to fix a race is
+       a bad trade. It is logged so we can see when the last one is gone,
+       and then this branch becomes a 400. */
+    const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+    const expected = parsed.data.version;
+    if (expected === undefined) {
+      req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
+    } else if (current && current.version !== expected) {
+      return reply.code(409).send({
+        error: "state_conflict",
+        detail: "Somebody else saved this desk while you were working. Merging.",
+        state: current.state,
+        version: current.version,
+      });
+    }
+
     // mutates `state`: any till PIN in the blob moves to the staff record
     await absorbStaffPins(db, who.tenantId, state);
     const now = new Date();
+    const version = (current?.version ?? 0) + 1;
     await db
       .insert(schema.tenantState)
-      .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now })
-      .onConflictDoUpdate({ target: schema.tenantState.tenantId, set: { state, updatedBy: who.id, updatedAt: now } });
-    return { ok: true, updatedAt: now.toISOString() };
+      .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
+      .onConflictDoUpdate({ target: schema.tenantState.tenantId, set: { state, updatedBy: who.id, updatedAt: now, version } });
+    /* Say how close they are while there is still room to act. The client
+       surfaces this once rather than every four seconds. */
+    return {
+      ok: true,
+      updatedAt: now.toISOString(),
+      version,
+      bytes,
+      ...(bytes > WARN_AT_BYTES ? { nearingLimit: true, limit: MAX_STATE_BYTES } : {}),
+    };
   });
 }
