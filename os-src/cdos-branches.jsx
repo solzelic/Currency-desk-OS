@@ -118,7 +118,22 @@
     const tLab = (x, t) => (x && t) ? x.code + ' · ' + t.name.replace(/\s+—.*/, '') : '';
     const fromLabel = kind === 'return' ? tLab(b, till) : vLab(b);
     const toLabel = kind === 'issue' ? tLab(b, till) : kind === 'return' ? vLab(b) : vLab(toB);
-    const submit = () => valid && onMove({ kind, fromB: bId, toB: toBId, tId: till && till.id, ccy, amt, fromLabel, toLabel });
+    /* The move is only real once the ledger has taken it. onMove may refuse —
+       an unsupported currency, the wrong till, a server that said no — and the
+       teller has to see that here rather than watch the modal close on a
+       movement that never happened. */
+    const [moveErr, setMoveErr] = useState('');
+    const [posting, setPosting] = useState(false);
+    const submit = async () => {
+      if (!valid || posting) return;
+      setPosting(true); setMoveErr('');
+      try {
+        const result = await onMove({ kind, fromB: bId, toB: toBId, tId: till && till.id, ccy, amt, fromLabel, toLabel });
+        if (result && result.ok === false) setMoveErr(result.message || 'That movement was refused.');
+      } catch (e) {
+        setMoveErr((e && e.message) || 'That movement was refused.');
+      } finally { setPosting(false); }
+    };
     const toNow = kind === 'issue' ? ((till && till.cash && till.cash[ccy]) || 0) : kind === 'return' ? vaultUnits(b || {}, ccy) : vaultUnits(toB || {}, ccy);
     const Sel = ({ value, onChange, children, mono }) => (<select value={value} onChange={e => onChange(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[12.5px] px-2 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8, color: CD.ink, fontFamily: mono ? 'Space Mono, monospace' : 'inherit' }}>{children}</select>);
     const Static = ({ children }) => (<div className="w-full text-[12.5px] px-2 py-1.5" style={{ border: `1px solid ${CD.lineSoft}`, background: 'var(--cd-chip)', borderRadius: 8, color: CD.ink, fontWeight: 600 }}>{children}</div>);
@@ -178,12 +193,13 @@
           </div>
           {sameV && <div className="text-[11px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>Pick two different vaults.</div>}
           {short && <div className="text-[11px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>{kind === 'return' ? 'That till' : 'That vault'} only holds {num(avail)} {ccy} — it can't go negative.</div>}
+          {moveErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{moveErr} <b>Nothing moved.</b></span></div>}
         </div>
         <div className="flex items-center justify-between gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <span className="text-[11px] min-w-0 truncate" style={{ color: amt > 0 && !short && !sameV ? CD.mute : CD.faint, fontFamily: 'Space Mono, monospace' }}>{amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), 'CAD')}` : 'Recorded to History with your name on it'}</span>
           <div className="flex items-center gap-2 flex-none">
             <button onClick={onClose} className="px-3.5 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Cancel</button>
-            <button onClick={submit} disabled={!valid} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: valid ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: valid ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {kind === 'issue' ? 'Issue float' : kind === 'return' ? 'Return to vault' : 'Run cash'}</button>
+            <button onClick={submit} disabled={!valid || posting} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: valid ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: !valid ? 'not-allowed' : posting ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {posting ? 'Recording…' : kind === 'issue' ? 'Issue float' : kind === 'return' ? 'Return to vault' : 'Run cash'}</button>
           </div>
         </div>
       </div>
@@ -400,7 +416,7 @@
   }
 
   /* ===================== MAIN ===================== */
-  function Branches({ me, log, branches, setBranches, moves, setMoves, station, setStation, settings, setSettings, onOpenTill, gate }) {
+  function Branches({ me, log, branches, setBranches, moves, setMoves, station, setStation, settings, setSettings, onOpenTill, gate, onMove }) {
     const [tab, setTab] = useState('network');
     const [moving, setMoving] = useState(null);
     const [histScope, setHistScope] = useState('all');
@@ -420,12 +436,22 @@
     const activeBranch = branches.find(b => b.id === (station && station.branchId));
     const activeTill = activeBranch && (activeBranch.tills || []).find(t => t.id === station.tillId);
 
-    /* the vault rail — every movement debits one box and credits another */
-    const doMove = (payload) => {
+    /* the vault rail — every movement debits one box and credits another.
+       On a server-backed desk the OS hands down `onMove`, which posts to the
+       ledger first and only then touches the local rail; without it (the
+       demo desk) the movement is local, exactly as before. */
+    const doMove = async (payload) => {
+      if (onMove) {
+        const result = await onMove(payload);
+        if (result && result.ok === false) return result;
+        setMoving(null);
+        return { ok: true };
+      }
       const r = applyMove(branches, moves, payload, me.name);
       setBranches(r.branches); setMoves(r.moves);
       log && log(r.verb, r.detail);
       setMoving(null);
+      return { ok: true };
     };
     const toggleBranch = (id) => setBranches(list => list.map(b => b.id === id ? { ...b, status: b.status === 'open' ? 'closed' : 'open' } : b));
     const toggleTill = (bId, tId) => setBranches(list => list.map(b => b.id === bId ? { ...b, tills: b.tills.map(t => t.id === tId ? { ...t, status: t.status === 'open' ? 'closed' : 'open' } : t) } : b));

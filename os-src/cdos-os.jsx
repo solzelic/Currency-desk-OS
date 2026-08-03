@@ -764,20 +764,75 @@
     // OS-level Move cash: one modal, one rail — openable from the Vault, the
     // Cash Drawer, or the Branch Network with a preset (kind/branch/till).
     const [moveCash, setMoveCash] = useState(null);
-    // vault → till: issue a multi-currency float directly on the rail (from the
-    // Vault's Assign flow — owner/manager hands money to a drawer, all recorded)
-    const issueToTill = (tId, amounts) => {
-      const b = branches.find(x => x.id === station.branchId); if (!b) return;
-      const t = (b.tills || []).find(x => x.id === tId); if (!t) return;
+    // bumped whenever cash actually moves on the server, so the Cash Drawer
+    // re-reads its authoritative balance instead of showing a stale float
+    const [cashVersion, setCashVersion] = useState(0);
+
+    /* ===================== THE CASH RAIL, SERVER-FIRST =====================
+       Money reaches a till exactly two ways — the vault issues it, or a deal
+       posts against it — and there is one door for the first: this function.
+       Every caller (the Vault's Assign flow, the Move cash modal, the Cash
+       Drawer's own button) goes through it, so the server ledger and the local
+       rail can never tell two different stories about the same drawer.
+
+       On a server-backed desk the server moves first. If it refuses, the local
+       rail is left untouched and the caller is told why — a movement that only
+       happened in this browser is worse than one that did not happen at all. */
+    const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];
+    const postTillMovement = async ({ kind, fromB, tId, ccy, amt, fromLabel, toLabel }) => {
+      if (!srvUser || !window.CDOS.Backend) return { ok: true };
+      // the ledger tracks ONE till — the one this session is signed in at
+      if (kind === 'vault') {
+        return { ok: false, message: 'Vault-to-vault runs are not on the server ledger yet. Record it from the Branch Network once that lands.' };
+      }
+      if (!station || tId !== station.tillId || fromB !== station.branchId) {
+        return { ok: false, message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.' };
+      }
+      if (LEDGER_CCYS.indexOf(ccy) < 0) {
+        return { ok: false, message: `${ccy} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.` };
+      }
+      try {
+        await window.CDOS.Backend.moveTillCash({
+          idempotencyKey: `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          direction: kind === 'issue' ? 'in' : 'out',
+          currency: ccy,
+          amount: Number(amt).toFixed(2),
+          counterpartyType: 'vault',
+          counterpartyRef: `${fromB}:vault`,
+          reason: `${fromLabel} → ${toLabel}`,
+        });
+        setCashVersion(v => v + 1);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, message: error.message || 'The ledger server rejected this cash movement. Nothing moved.' };
+      }
+    };
+
+    // vault → till: issue a multi-currency float on the rail (from the Vault's
+    // Assign flow — owner/manager hands money to a drawer, all recorded).
+    // Each currency is its own ledger movement, so a rejected one stops the run
+    // rather than leaving the drawer half-floated on one side only.
+    const issueToTill = async (tId, amounts) => {
+      const b = branches.find(x => x.id === station.branchId); if (!b) return { ok: false, message: 'No active branch.' };
+      const t = (b.tills || []).find(x => x.id === tId); if (!t) return { ok: false, message: 'No such till at this branch.' };
+      const fromLabel = b.code + ' · Vault', toLabel = b.code + ' · ' + t.name.replace(/\s+—.*/, '');
       let list = branches, mv = branchMoves; const parts = [];
-      Object.keys(amounts || {}).forEach(ccy2 => {
-        const amt = +amounts[ccy2] || 0; if (amt <= 0) return;
-        const r = _ST.applyMove(list, mv, { kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel: b.code + ' · Vault', toLabel: b.code + ' · ' + t.name.replace(/\s+—.*/, '') }, me.name);
+      for (const ccy2 of Object.keys(amounts || {})) {
+        const amt = +amounts[ccy2] || 0; if (amt <= 0) continue;
+        const posted = await postTillMovement({ kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel, toLabel });
+        if (!posted.ok) {
+          // commit whatever already cleared the server, then report the stop
+          if (parts.length) { setBranches(list); setBranchMoves(mv); log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`); }
+          log('Float issue stopped', `${ccy2} · ${posted.message}`);
+          return { ok: false, message: posted.message };
+        }
+        const r = _ST.applyMove(list, mv, { kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel, toLabel }, me.name);
         list = r.branches; mv = r.moves; parts.push(`${amt.toLocaleString()} ${ccy2}`);
-      });
-      if (!parts.length) return;
+      }
+      if (!parts.length) return { ok: false, message: 'Nothing to issue.' };
       setBranches(list); setBranchMoves(mv);
-      log('Float issued', `${parts.join(' + ')} · ${b.code} Vault → ${t.name.replace(/\s+—.*/, '')}`);
+      log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`);
+      return { ok: true };
     };
     // wholesale orders land in THIS branch's vault — other locations fill their
     // own sub-vaults by ordering; the main vault stays the network's cash root
@@ -787,30 +842,16 @@
       setBranchMoves(list => [{ id: 'm' + Date.now(), ref: 'RC-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + (list.filter(m => m.date === TODAY).length + 1).toString().padStart(2, '0'), kind: 'order', from: supplier || 'Wholesale order', to: b.code + ' · Vault', ccy: ccy2, amount: units, cadVal: +((ccy2 === 'CAD' ? units : units * (crossRate(ccy2, 'CAD') || 0))).toFixed(2), date: TODAY, by: me.name }, ...list]);
     };
     const doOsMove = async (payload) => {
-      if (srvUser && window.CDOS.Backend) {
-        if (payload.kind === 'vault' || payload.fromB !== station.branchId || payload.tId !== station.tillId || !['CAD', 'USD', 'EUR', 'GBP'].includes(payload.ccy)) {
-          log('Cash movement blocked', 'Server-backed moves currently require the active till and a supported ledger currency');
-          return;
-        }
-        try {
-          await window.CDOS.Backend.moveTillCash({
-            idempotencyKey: `cash-move-${Date.now()}-${payload.kind}`,
-            direction: payload.kind === 'issue' ? 'in' : 'out',
-            currency: payload.ccy,
-            amount: Number(payload.amt).toFixed(2),
-            counterpartyType: 'vault',
-            counterpartyRef: `${payload.fromB}:vault`,
-            reason: `${payload.fromLabel} → ${payload.toLabel}`,
-          });
-        } catch (error) {
-          log('Cash movement failed', error.message || 'Server rejected the cash movement');
-          return;
-        }
+      const posted = await postTillMovement(payload);
+      if (!posted.ok) {
+        log('Cash movement blocked', posted.message);
+        return posted;                       // the modal stays open and says why
       }
       const r = _ST.applyMove(branches, branchMoves, payload, me.name);
       setBranches(r.branches); setBranchMoves(r.moves);
       log(r.verb, r.detail);
       setMoveCash(null);
+      return { ok: true };
     };
     useEffect(() => { try { localStorage.setItem('cdos_station_v1', JSON.stringify(station)); } catch (e) {} }, [station]);
     // ---- beneficiaries + corridors: shared so Clients nests beneficiaries under
@@ -873,23 +914,28 @@
     // ---- day state (Day Close finalises the book) ----
     const [day, setDay] = useState(() => { try { const r = localStorage.getItem('cdos_day'); return r ? JSON.parse(r) : { closed: false, closedAt: null, closedBy: null, summary: null, num: 1 }; } catch (e) { return { closed: false, closedAt: null, closedBy: null, summary: null, num: 1 }; } });
     useEffect(() => { try { localStorage.setItem('cdos_day', JSON.stringify(day)); } catch (e) {} }, [day]);
+    /* The day IS the server's till session on a server-backed desk. No open
+       session means the book is shut — the ledger will refuse to post anyway,
+       so the desk must show that rather than let a teller start a deal that
+       cannot land. The till is opened deliberately, in the Cash Drawer; this
+       only reads what the server says. */
+    const syncDayFromSession = (session) => {
+      if (!session) { setDay(current => ({ ...current, closed: true })); return; }
+      setDay(current => ({
+        ...current,
+        num: session.sessionNumber,
+        closed: session.status === 'closed',
+        closedAt: session.closedAt,
+        closedBy: session.closedBy,
+      }));
+    };
+    const syncDayRef = useRef(syncDayFromSession);
+    syncDayRef.current = syncDayFromSession;
     useEffect(() => {
       if (stage !== 'desktop' || !srvUser || !station || !station.tillId || !window.CDOS.Backend) return;
       let active = true;
-      const applySession = (result) => {
-        if (!active || !result || !result.session) return;
-        const session = result.session;
-        setDay(current => ({
-          ...current,
-          num: session.sessionNumber,
-          closed: session.status === 'closed',
-          closedAt: session.closedAt,
-          closedBy: session.closedBy,
-        }));
-      };
       window.CDOS.Backend.loadTillSession()
-        .then(result => result && result.session ? result : window.CDOS.Backend.openTillSession())
-        .then(applySession)
+        .then(result => { if (active) syncDayRef.current((result && result.session) || null); })
         .catch(error => {
           if (active && error.code !== 'AUTHORIZATION_DENIED') log('Till session sync failed', error.message || 'Server till session unavailable');
         });
@@ -1432,14 +1478,15 @@
           const session = result.session;
           setDay({ closed: false, closedAt: null, closedBy: null, summary: null, num: session.sessionNumber });
           log('Day opened', `Server till session ${session.sessionNumber} — book unlocked`);
-          return;
+          return session;
         } catch (error) {
           log('Day open failed', error.message || 'Server till session unavailable');
-          return;
+          throw error;                       // the Cash Drawer shows this on screen
         }
       }
       setDay(d => ({ closed: false, closedAt: null, closedBy: null, summary: null, num: (d.num || 1) + 1 }));
       log('Day opened', 'New trading day — book unlocked');
+      return null;
     };
 
     // ---- Per-tenant persistence (Phase B) --------------------------------
@@ -1675,9 +1722,9 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={syncDayFromSession} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} />;
-        case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} />;
+        case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
         case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
         case 'calc': return <Calc settings={settings} />;

@@ -33,6 +33,9 @@
         TILL_NOT_OPEN: "Open the till before posting or recording cash activity.",
         TILL_ALREADY_CLOSED: "This till session is already closed.",
         INCOMPLETE_TILL_COUNT: "Count every server-backed currency before closing the till.",
+        TILL_SESSION_NOT_FOUND: "That till session no longer exists on the server. Reload the drawer.",
+        TILL_ALREADY_ACTIVE: "This till already has an open session.",
+        IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
         REVERSAL_ALREADY_EXISTS: "This transaction has already been reversed.",
       })[body.code] || "The ledger server rejected this request. Nothing was posted.");
@@ -163,6 +166,23 @@
       },
       loadTillSession: function () {
         return request("/api/ledger/till-session");
+      },
+      /* The drawer always wants both halves of the same picture — what the
+         server says the till holds, and which session that holding sits in.
+         Fetching them separately let one arrive without the other and the
+         screen rendered a balance with no session to post it against. */
+      loadTill: function () {
+        return Promise.all([
+          request("/api/ledger/till-balances"),
+          request("/api/ledger/till-session"),
+        ]).then(function (results) {
+          return {
+            tillId: results[0].tillId || null,
+            balances: results[0].balances || {},
+            session: results[1].session || null,
+            latestCounts: results[1].latestCounts || {},
+          };
+        });
       },
       openTillSession: function () {
         return request("/api/ledger/till-sessions/open", {

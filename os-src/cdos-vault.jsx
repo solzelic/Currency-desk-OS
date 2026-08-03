@@ -212,7 +212,16 @@
       log && log('Shift float assigned', `${teller} · ${fmt(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0), 'CAD')} on the desk (accountability — holdings unchanged)`);
       setAssigning(false);
     };
-    const doIssueTill = (tId, opening) => { onIssueTill && onIssueTill(tId, opening); setAssigning(false); };
+    // vault → till: real cash, so the modal only closes once the movement has
+    // actually been taken (by the ledger on a server-backed desk, locally
+    // otherwise). A refusal comes back to the modal and stays on screen.
+    const doIssueTill = async (tId, opening) => {
+      if (!onIssueTill) { setAssigning(false); return { ok: true }; }
+      const result = await onIssueTill(tId, opening);
+      if (result && result.ok === false) return result;
+      setAssigning(false);
+      return { ok: true };
+    };
     const doSettle = (shift, counted) => {
       let varCad = 0;
       Object.keys(shift.opening || {}).forEach(c => { varCad += cadVal((+counted[c] || 0) - expectedFor(shift, c), c); });
@@ -296,7 +305,19 @@
     const short = fc.filter(c => (+opening[c] || 0) > availFn(c));
     const tillOk = target !== 'till' || !!tillId;
     const valid = tillOk && (target === 'till' || !!teller) && short.length === 0 && floatCad > 0;
-    const submit = () => { if (!valid) return; if (target === 'till') onIssueTill(tillId, opening); else onAssign(teller, opening); };
+    const [issueErr, setIssueErr] = useState('');
+    const [issuing, setIssuing] = useState(false);
+    const submit = async () => {
+      if (!valid || issuing) return;
+      if (target !== 'till') { onAssign(teller, opening); return; }
+      setIssuing(true); setIssueErr('');
+      try {
+        const result = await onIssueTill(tillId, opening);
+        if (result && result.ok === false) setIssueErr(result.message || 'That float was refused.');
+      } catch (e) {
+        setIssueErr((e && e.message) || 'That float was refused.');
+      } finally { setIssuing(false); }
+    };
     return (<Modal onClose={onClose} icon="userplus" title="Assign money" sub={target === 'person' ? 'A shift float on a named teller — accountability only, holdings don’t move.' : `Cash physically moves ${branchCode || 'this branch'} Vault → the drawer — recorded on the rail.`}>
       {/* who gets it — a person (accountability) or a till (cash moves) */}
       <div className="grid grid-cols-2 gap-1.5 mb-3">
@@ -323,9 +344,10 @@
         </div>))}
       </div>
       {short.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>{target === 'till' ? 'The vault is short on ' : 'Pool is short on '}{short.join(', ')} — reduce the amount or replenish first.</div>}
+      {issueErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{issueErr}</span></div>}
       <div className="flex items-center justify-between pt-1">
         <div className="text-[12px]" style={{ color: CD.mute }}>{target === 'person' ? 'Float value ' : 'Moving '}<b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(floatCad, 'CAD')}</b></div>
-        <button disabled={!valid} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: !valid ? CD.faint : CD.ink, borderRadius: 9, cursor: !valid ? 'not-allowed' : 'pointer' }}><Ic n="arrowright" s={15} c="var(--cd-on-ink)" /> {target === 'person' ? 'Assign to desk' : 'Issue to till'}</button>
+        <button disabled={!valid || issuing} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: !valid ? CD.faint : CD.ink, borderRadius: 9, cursor: !valid ? 'not-allowed' : issuing ? 'wait' : 'pointer' }}><Ic n="arrowright" s={15} c="var(--cd-on-ink)" /> {issuing ? 'Issuing…' : target === 'person' ? 'Assign to desk' : 'Issue to till'}</button>
       </div>
     </Modal>);
   }
