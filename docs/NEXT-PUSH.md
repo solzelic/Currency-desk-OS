@@ -1,197 +1,163 @@
 # The next push
 
-Written after walking every flow in a browser against the built app on
-2026-07-31 — the public site, all eight panel pages, the early-access form,
-the setup flow, a desk being created, and a returning owner signing back in
-from a cold browser.
+Rewritten 2026-08-03, after auditing every guidance doc in `docs/` against
+the code. The previous version described a push that shipped, plus two more
+after it.
 
-Everything below was **seen**, not inferred. Where something is a guess it
-says so.
+Everything below was **checked in the code or in a browser**. Where something
+is a guess it says so.
+
+---
+
+## Shipped since the last version of this file
+
+Three pushes, all merged to `main`.
+
+| | |
+|---|---|
+| **Forgot password, end to end** | Ask from sign-in → six-digit code, fifteen minutes, five guesses → new password → every device signed out. A stranger and a customer get the same answer, in the same words, and the rate limit answers the same way too. |
+| **The sign-in screen** | The rehearsal desk's staff are marked `demo` and never offered to a real customer. Both dead ends ("the owner can reset it" — they *are* the owner) open the reset flow. |
+| **A4 · contact auto-reply** | Somebody writing in gets an acknowledgement with their reference, in the designed style. |
+| **Two of three 404s** | Gone. The third is deliberate — see below. |
+| **Two minutes between codes** | `/api/auth/login/start` had **no send limit at all**. One shared gap now, across all four routes that send codes. |
+| **One press, one email** | `disabled` can't stop a double-click — React state isn't synchronous. Every send latches on a ref set *before* the await. Verified by triple-clicking the real button. |
+| **The state size guard that could never fire** | It refused at 4 MB; no body limit was configured, so Fastify's 1 MiB default rejected first. Found by sending 1.5 MB to a running server. The client retried the same doomed payload every four seconds, silently, forever. |
+| **Two tellers stopped overwriting each other** | Versioned saves; a stale one is refused and merged key by key. |
+| **The desk document has a shape** | 44 keys catalogued, 29 compliance-bearing. Describes, never refuses — the browser holds the only copy. |
+| **The last CDN is gone** | Tailwind compiled at build time. Verified signed in with the CDN host blocked: 67/67 flex elements styled. |
+| **A3 · sign-in code** | Now renders the design, through the same helper the reset email uses. It was the most-seen email in the product and the last one still plain. |
+| **The fake `000000` screen** | Deleted. Already unreachable, still compiled into every customer's bundle. |
 
 ---
 
 ## What already works, so nobody re-checks it
 
-- Applying → the application lands in review → the acknowledgement goes out
-  on its own.
-- Approving in one press → the invitation with the reference and setup link.
-- Setup → confirmation code → the desk is built → they land inside it,
-  signed in, with their own shop's name on it and no trading on the ledger.
-- **A returning owner can sign in from a cold browser**: email, password,
-  emailed six-digit code — typed on a keyboard, not just the on-screen
-  keypad — station picker, desk. Walked end to end.
+- Applying → review → acknowledgement, on its own.
+- Approving in one press → the invitation with reference and setup link.
+- Setup → confirmation code → desk built → landed inside it, signed in, with
+  their own shop's name on it and nothing on the ledger.
+- A returning owner signing in from a cold browser: email, password, emailed
+  code — typed on a keyboard, not only the on-screen keypad — station picker,
+  desk.
+- Forgot password, end to end.
 - The Inbox, the compose page, the sample sender, the Emails page.
-- The public site renders. No broken images and no empty image slots — the
-  large blank bands are the design's own whitespace, checked rather than
-  assumed.
+- Every public page and every internal link: no broken links, no broken
+  images, and **no soft-404s** — specifically tested, because the not-found
+  handler serving the front page is what makes a broken link invisible.
+- The desk opens with every third-party host blocked.
 
----
-
-## Built — this push
-
-All four items below shipped. What follows them is what is left.
-
-| | |
-|---|---|
-| **Forgot password** | Self-serve, end to end. Ask from the sign-in screen → 6-digit code, 15 minutes, five guesses → set a new password → every device signed out. `POST /api/auth/forgot` answers a stranger and a customer identically, in the same words; five asks an hour per address and twenty per caller. 14 tests. |
-| **The sign-in screen** | The rehearsal desk's staff are marked `demo` and are never offered as examples to a real customer — a browser that does not yet know this desk says what the field wants instead. Both dead ends ("the owner can reset it", "ask the owner of your desk") now open the reset flow. |
-| **A4 · contact auto-reply** | Somebody writing in gets an acknowledgement with their reference and what they sent, in the designed style. Registered in the catalogue, so it shows on the Emails page and the drift test covers it. |
-| **Two of the three 404s** | `/api/site/rates` is no longer asked on the app's own domain, and the design-time `image-slot` sidecar is no longer shipped. |
-
-### The one 404 left, and why it is still there
+### The one 404 left, and why
 
 `<img src="{{ p.src }}">` on the front page. The browser's preload scanner
-fetches that literally, before any JavaScript runs, and gets a 404 — then
-the design's runtime substitutes the real path a tick later and the image
-loads correctly.
+fetches that literally before any JavaScript runs; the design's runtime
+substitutes the real path a tick later and the image loads.
 
-Silencing it means renaming the attribute in the design's markup and
-copying it back after the runtime resolves it. That is a real risk to the
-front page's imagery in exchange for one line in a console nobody but us
-opens. Left deliberately; revisit if the design is re-exported anyway.
-
-(The `401 /api/auth/me` on `/app` and `/login` is not a fault. It is a
-signed-out visitor asking whether they are signed in, and being told no.)
+Silencing it means renaming the attribute in the design's markup and copying
+it back after the runtime resolves it — a real risk to the front page's
+imagery for one line in a console nobody but us opens. Left deliberately.
 
 ---
 
-## P0 · Somebody is locked out and rings you
+## P0 · The compliance record is in a browser-written document
 
-### 1. Forgot password, self-serve
+**This is the next push.** Everything else on this list is smaller.
 
-**The gap, exactly.** There is no recovery route of any kind. `routes/auth.ts`
-has `login`, `login/start`, `login/verify`, `change-password` (needs an
-existing session), `logout`, `me`. That is all.
+`cdos_clients_v1` holds every customer, their ID type and number, expiry,
+address, date of birth and risk rating. It lives in the state document — no
+table, no `/api/clients`, nothing on the server that knows a customer exists.
 
-What a locked-out owner is told today, in their own words on the screen:
+Two things make it worse than "not migrated yet":
 
-> Forgot it? **The owner can reset it.**
+1. **Clients are keyed by the person's name.** `seedClients()` returns
+   `{ 'Jakob Miller': {...} }` and transactions join by that string
+   (`row.customer`). Two people called David Chen are one client. Correcting
+   a spelling orphans somebody's transaction history.
+2. **Transaction ids are client-assigned integers** — `id: 1, 2, 3`. Two
+   tellers posting at once collide.
 
-They *are* the owner. And on the ID screen:
+The per-key merge shipped last push makes the common two-teller case safe,
+and there's a test recording exactly where it doesn't: both editing the same
+key still loses one side, and every transaction lives in one key.
 
-> No ID? **Ask the owner of your desk.**
-
-There is nobody above them. The only working path is: ring CurrencyDesk,
-somebody opens the panel, presses **Reset their password**, and reads a
-temporary one down the phone. That is fine for forty desks and impossible
-for four hundred — and it is a support call at 8am on a Saturday when the
-shop is opening.
-
-**Build:** request a reset by address → one-time token, short-lived, single
-use, hashed at rest → emailed link or code → set a new password → every
-existing session revoked. The pieces already exist: `onboarding/verify.ts`
-is exactly this shape for setup codes, and `staff/reset-password` already
-knows how to revoke sessions and force a change.
-
-Careful about two things. Asking for a reset must give the **same answer**
-whether or not the address exists, or the form becomes a way to find out who
-banks with us. And a reset must kill live sessions — a password change that
-leaves the thief signed in is theatre.
-
-### 2. The sign-in screen is talking about somebody else's desk
-
-On a cold browser at `/app` the ID screen offers:
-
-```
-EXAMPLES
-j.masri · owner
-r.haddad · manager
-```
-
-Those are the **demo desk's** staff, hardcoded in `os-src/cdos-base.jsx`,
-shown to every returning customer. A real owner signs in with their email
-address, which looks nothing like `j.masri`, and is being shown two examples
-that are neither theirs nor valid for them.
-
-(Checked: this is client-side demo data, not a leak. Every server endpoint —
-`/api/tenant`, `/api/tenant/state`, `/api/auth/me` — correctly 401s to a
-signed-out visitor.)
-
-**Build:** show examples only once the browser has actually seen this desk's
-staff; otherwise say what the field wants — "the email address you set the
-desk up with". And the two dead-end lines above need to point at the reset
-flow from item 1 instead of at a person who does not exist.
+**Build:** `desk_clients` with a real id → migrate name→id on read → cut the
+joins over → delete the key. `docs/ARCHITECTURE.md` §3 has the strangle path;
+this is the first entity through it, so the pattern it establishes is worth
+more than the entity.
 
 ---
 
-## P1 · Things that look unfinished to a customer
+## P1 · One password guards every desk we host
 
-### 3. The Tailwind Play CDN is still on the OS and the panel
+Platform team membership is a table with roles, every route gated, every
+action audited — that part is right. There is no second factor.
 
-The last off-domain request either app makes, and the worst kind: it is a
-**compiler that runs in the browser**, scanning the DOM and generating CSS
-on every load. Tailwind's own documentation says never to ship it.
+A desk **owner** signs in with a password and an emailed code. We sign in
+with a password. That is backwards, and the blast radius is not one desk, it
+is every customer's client list.
 
-Now that the JSX is compiled ahead of time this is the single remaining
-thing standing between a customer and their till when somebody else's CDN
-is having a morning.
-
-**Build:** generate a real stylesheet at build time, beside `web/app/os.js`.
-Same shape as the build that already exists.
-
-### 4. Three 404s on every page load
-
-| Request | Where | What it is |
-|---|---|---|
-| `/api/site/rates` | `/app`, `/login` | `yorkfx-converter.js` asking a **storefront** endpoint on the app domain. Correctly 404s — there is no site for that host — so it should not be asked. |
-| `/{{ p.src }}`, `/{{ f.src }}` | the home page | The browser's preload scanner fetching the design's template bindings literally, before the runtime substitutes them. Harmless, and it is a broken-image icon for a frame plus two wasted requests. |
-| `/.image-slots.state.json` | the home page | `image-slot.js` is a **design-time** runtime looking for its editor sidecar. It should not ship. |
-
-None of these breaks anything. All three are the kind of thing somebody
-opens the console and finds, and then wonders what else is wrong.
+The machinery already exists: `login/start` + `login/verify`, the cooldown,
+the code storage. This is wiring, not invention.
 
 ---
 
-## P2 · The two emails that are still the plain fallback
+## P2 · Money
 
-`docs/EMAIL-BUILD.md` has the detail. A1 and A2 render the design; these do
-not.
+Neither is a bug; both are load-bearing for what the site and the emails
+already promise.
 
-- **A4 · contact auto-reply — does not exist at all.** Somebody writes in
-  from the contact page and hears nothing back until a person answers. It is
-  the simplest of the four and the most obviously missing.
-- **A3 · sign-in code.** Currently plain text in a box. After A2 it is the
-  email a customer sees most often — every single sign-in.
-
----
-
-## P3 · Money
-
-Neither of these is a bug; both are load-bearing for what the emails and the
-site already promise.
-
-- **Stripe does not gate anything.** A desk is created without a card, and
-  setup does not end at a payment step. That is why A2 currently omits the
-  founding-code block: there is no checkout for a code to work at.
-- **No founding promo code**, so "the first three months come to zero" has
-  no mechanism behind it. Today nothing is charged at all, so the promise is
-  kept by accident rather than by design — which stops being true the moment
-  billing is switched on.
+- **Payment gates nothing.** `POST /api/onboarding/:ref/launch` creates the
+  desk without asking about a card. Checkout and the customer portal both
+  exist and the in-OS plan cards call them — nothing depends on the result.
+- **⛔ Blocked on a decision, not on code:** what "three months free" means
+  mechanically. Trial with a card on file, a 100%-off coupon for three cycles,
+  or a delayed subscription start? That answer decides the checkout call and
+  A2's payment copy. It has been open a while and it blocks the whole of P2.
 
 ---
 
-## P4 · Platform hygiene
+## P3 · The rest of the document
 
-The panel already lists these under **Settings → Still to build**, and they
-are correctly described there:
+Same pattern as clients, once clients has established it.
 
-- **Admin MFA.** One password stands between anybody and every customer's
-  desk. This should probably be P1 rather than P4 the day a second person
-  gets an account.
-- Security, Communications, Privacy & compliance, Integrations sections.
-- The **Day-1 checklist** still lives as a mock rather than in the real OS.
+- **Cheques and transfers** — document-only.
+- **The Texts inbox** — `cdos-telegraph.jsx` makes no server call at all.
+  `rate_quotes` exists and nothing reads it; there is no `quote_messages`
+  table. The last app that has never spoken to the server.
+- **Export & backup** of a tenant's own data.
 
 ---
 
-## Suggested order for one push
+## P4 · Known, deliberate, not urgent
 
-1. Forgot password, end to end — route, screen, email, session revocation.
-2. The sign-in screen's copy and examples, which is where a locked-out
-   person is standing when they need item 1.
-3. The three 404s. Half an hour, and it makes the console clean enough that
-   the next real error is visible.
-4. A4, the contact auto-reply.
+Written down so nobody spends an afternoon rediscovering them.
 
-That is a coherent push: **nobody is stranded, and nobody writes to us into
-silence.** Tailwind, A3, Stripe and MFA are each big enough to deserve their
-own.
+- **York FX is seeded on every boot**, and `tenantId` defaults to
+  `"tnt-yorkfx"` in the login schema. Harmless today — email and CurrencyDesk
+  ID resolve a person on their own — but the demo tenant is baked into the
+  platform's auth as everyone's fallback. Remove both together when the
+  rehearsal desk stops earning its keep.
+- **Four in-memory maps assume one process** (login challenges, reset
+  throttle, code cooldown, the platform-member cache). No horizontal scale,
+  and every deploy drops in-flight sign-ins.
+- **Two schema mechanisms.** A boot-time DDL string and checksummed
+  migrations describe the same tables two ways, and the migrations don't run
+  on the embedded database at all — so dev and production run different
+  schemas. CI covers it with a real Postgres; the daily loop doesn't.
+- **Authorization is a remembered line**, not a hook. Correct today — checked
+  route by route — but one forgotten `gate()` is a full platform breach.
+- **Google Fonts** is the last off-domain request. Degrades to fallback fonts;
+  half an hour to self-host, same as the site already does.
+
+---
+
+## Suggested order
+
+1. **Clients into a table** — the compliance record, and the pattern for
+   everything after it.
+2. **Platform MFA** — cheap, and it's the risk that ends the company rather
+   than costs it a customer.
+3. **Answer the billing question**, then let payment gate launch.
+4. Cheques, transfers, Texts — repeat the pattern.
+
+That is a coherent run: **the record becomes real, our own door gets a second
+lock, and the thing we sell can be charged for.**

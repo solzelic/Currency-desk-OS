@@ -1,5 +1,33 @@
 # CurrencyDesk OS — Session Handoff
 
+> **Superseded, 2026-08-03.** This was the source of truth as of 2026-07-22.
+> It is no longer maintained — `docs/ARCHITECTURE.md` is how the system is
+> built, `docs/NEXT-PUSH.md` is what to do next, and `docs/DEVELOPMENT.md` is
+> how to run it. The "paste this as your first message" block at the top is
+> stale (it says to expect 69 passing tests; there are now ~400).
+>
+> **Its §6 "Next 10 things", re-checked against the code:**
+>
+> - **#1 admin bootstrap** — the hardcoded `12345` is gone from the code;
+>   `PLATFORM_ADMIN_BOOTSTRAP` is an env var with no default. *Whether it is
+>   still set in Render is yours to confirm — nothing in the repo can tell.*
+> - **#2 rotate the Resend key** — operational, can't be verified from here.
+>   Assume still outstanding unless you did it.
+> - **#3 `/api/auth/login` bypassing 2FA** — **done.** It now refuses any
+>   account whose identity is an email with `code_required`, so the emailed
+>   code cannot be walked past. Staff ids that aren't addresses stay
+>   single-factor because there is nowhere to send a code; that's documented
+>   at the call site.
+> - **#5 the `CD-YORK-0042` scheme** — **done** (`src/auth/cdid.ts`), issued
+>   on demand, unique platform-wide, accepted at sign-in.
+> - **#4 new desks starting spotless** — largely done; a fresh desk opens on
+>   its own name with an empty ledger.
+>
+> Everything still outstanding from that list has been folded into
+> `docs/NEXT-PUSH.md`. Kept for the history, and because §7 "Gotchas" is
+> still worth reading.
+
+
 _Last updated: 2026-07-22. Status: **LIVE on the web** at https://www.currencydeskos.com_
 
 > **This file is the source of truth for where the project stands. Keep it

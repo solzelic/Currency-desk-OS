@@ -1,5 +1,18 @@
 # Security and Compliance Foundation
 
+> **Scope correction, 2026-08-03.** Written for the deleted `src/` React
+> foundation and its `PersistenceAdapter` ports — none of which exist. There is
+> no `DemoLocalStoragePersistenceAdapter`; persistence is Fastify + Drizzle +
+> Postgres, plus a per-tenant JSON document described in
+> `docs/ARCHITECTURE.md` §3.
+>
+> **The non-compliance notice at the top is still true and still important**,
+> as is the SOC 2 readiness mapping as a list of what remains. The warning
+> against putting real KYC in browser storage is *especially* live: client
+> records are still held in a browser-written document, which is P0 in
+> `docs/NEXT-PUSH.md`.
+
+
 ## Status and Non-Compliance Notice
 
 This repository is an engineering prototype. It is **not production compliant** and does not claim SOC 2, GDPR, AML, FINTRAC, or any other regulatory certification or compliance status.

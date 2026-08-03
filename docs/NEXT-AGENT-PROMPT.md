@@ -1,5 +1,17 @@
 # Prompt for the next agent
 
+> **Superseded, 2026-08-03.** A prompt for a session that has since happened.
+> Everything in its "What to build, in order" list is done: launch creates the
+> desk, the panel can drive every step, the emails render the design.
+>
+> Its branch (`claude/login-signup-process-pibvxw`) is long merged. Stripe —
+> item 2 — is built but gates nothing, and is blocked on a pricing decision
+> rather than on code; see `docs/NEXT-PUSH.md` §P2.
+>
+> To brief a new session now: `docs/ARCHITECTURE.md` for how and why,
+> `docs/NEXT-PUSH.md` for what's next, `docs/DEVELOPMENT.md` to run it.
+
+
 Copy everything below the line.
 
 ---

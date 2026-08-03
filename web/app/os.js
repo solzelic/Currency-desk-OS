@@ -55504,90 +55504,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "Enter CurrencyDesk \u2192")));
   }
-  function Otp({
-    user,
-    onBack,
-    onVerify
-  }) {
-    const DEMO = '000000';
-    const [d, setD] = useState(DEMO.split(''));
-    const refs = useRef([]);
-    const set = (i, v) => {
-      if (!/^\d?$/.test(v)) return;
-      const n = [...d];
-      n[i] = v;
-      setD(n);
-      if (v && i < 5) refs.current[i + 1]?.focus();
-    };
-    const ok = d.join('') === DEMO;
-    return /*#__PURE__*/React.createElement("div", {
-      id: "lock"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "lock-card"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "lock-mark"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "yk"
-    }, "CurrencyDesk"), /*#__PURE__*/React.createElement("span", {
-      className: "sub"
-    }, "Two-step verification")), /*#__PURE__*/React.createElement("h1", null, "Enter your code"), /*#__PURE__*/React.createElement("div", {
-      className: "station"
-    }, "Texted to \u2022\u2022\u2022\u2022 \u2022\u2022\u2022 4821 \xB7 changeable once you're in"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        gap: 8,
-        justifyContent: 'center',
-        margin: '4px 0 14px'
-      }
-    }, d.map((v, i) => /*#__PURE__*/React.createElement("input", {
-      key: i,
-      ref: el => refs.current[i] = el,
-      value: v,
-      onChange: e => set(i, e.target.value),
-      inputMode: "numeric",
-      maxLength: 1,
-      style: {
-        width: 44,
-        height: 52,
-        textAlign: 'center',
-        fontSize: 20,
-        border: `1px solid ${ok ? CD.ink : CD.line}`,
-        background: '#fafafa',
-        outline: 'none',
-        fontFamily: 'Space Mono, monospace'
-      }
-    }))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        background: CD.brassSoft,
-        color: 'var(--cd-brass-text)',
-        fontFamily: 'Space Mono, monospace',
-        fontSize: 11,
-        padding: '8px 10px',
-        marginBottom: 14,
-        letterSpacing: '0.02em'
-      }
-    }, "Simulated: demo code is ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        letterSpacing: '0.2em'
-      }
-    }, DEMO), ". Real SMS needs a backend + provider."), /*#__PURE__*/React.createElement("button", {
-      className: "go",
-      disabled: !ok,
-      style: {
-        width: '100%',
-        opacity: ok ? 1 : 0.4,
-        cursor: ok ? 'pointer' : 'not-allowed'
-      },
-      onClick: onVerify
-    }, "Verify & open workspace"), /*#__PURE__*/React.createElement("button", {
-      className: "lock-back",
-      onClick: onBack
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "arrowleft",
-      s: 13,
-      c: "currentColor"
-    }), " Back")));
-  }
+
+  /* The two-step screen that used to live here is gone.
+      It was from before there was a backend: six boxes, a hardcoded
+     '000000', and a banner reading "Simulated: demo code is 000000. Real
+     SMS needs a backend + provider." The real second factor arrived — a
+     six-digit code emailed by /api/auth/login/start and checked by
+     /api/auth/login/verify, in SignIn (cdos-signin.jsx) — and this was left
+     behind.
+      Nothing ever reached it: no code path set stage to 'otp'. But it was
+     still compiled into the bundle every customer downloads, which means a
+     security product was shipping a screen that accepts a code of all
+     zeroes. Unreachable is not the same as absent, and the difference
+     matters to whoever reads this next looking for how sign-in works. */
 
   /* ====================== STATION PICKER (sign-in) ======================
      Scoped per the spec's routing table (§04): owners see every branch;
@@ -57024,7 +56953,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       let alive = true;
       const relock = () => {
         if (!alive) return;
-        setStage(cur => cur === 'lock' || cur === 'signup' || cur === 'verify' || cur === 'otp' ? cur : 'lock');
+        setStage(cur => cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock');
       };
       const check = () => {
         if (typeof fetch !== 'function') return;
@@ -58163,14 +58092,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onBack: () => {
         setPwTemp(null);
         setStage('lock');
-      }
-    });
-    if (stage === 'otp') return /*#__PURE__*/React.createElement(Otp, {
-      user: user,
-      onBack: () => setStage('lock'),
-      onVerify: async () => {
-        await hydrateTenant();
-        routeAfterAuth(authRec);
       }
     });
     if (stage === 'noassign') {

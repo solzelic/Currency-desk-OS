@@ -1,5 +1,17 @@
 # Frontend Migration Plan
 
+> **Obsolete, 2026-08-03 — kept for the record only.** This is the plan to
+> migrate the prototype into a Vite/React app under `src/`. That migration was
+> abandoned and the app deleted: its CI was green while the shipped code went
+> unwatched, which is how a dead Settings screen survived for days. The
+> "preserved prototype" became the product.
+>
+> Nothing here is a current instruction. Phase 3's list is the one part that
+> outlived it, and it is now tracked properly in `docs/SAAS_ROADMAP.md` and
+> `docs/NEXT-PUSH.md`. For how to work on the code today, see
+> `docs/DEVELOPMENT.md`.
+
+
 ## Phase 0: Repository Foundation
 
 - Document the preserved prototype and repository structure.

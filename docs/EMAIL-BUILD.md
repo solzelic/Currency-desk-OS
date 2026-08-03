@@ -105,26 +105,42 @@ not have is the fastest way to ship a mail that says `undefined`.
 
 ## Step 3 — Where the code lives
 
-Everything is in two files.
+Everything is in three files now.
 
-- **`server/src/email.ts`** — one exported function per email, each returning
-  `{ subject, text, html }`. A1 is `reviewEmail`, A2 is `inviteEmail`, A3 is
-  `loginCodeEmail`. A4 does not exist yet.
+- **`server/src/emails/design.ts`** — the designed templates and the shell
+  they share. `applicationReceived` (A1), `youreIn` (A2),
+  `contactReceivedEmail` (A4), plus `codeEmail`, a shared six-digit-code
+  layout used by both `passwordResetEmail` and A3.
+- **`server/src/email.ts`** — the transport (`sendEmail`), the code helpers,
+  and thin wrappers so every existing caller kept working: `reviewEmail` →
+  A1, `inviteEmail` → A2, `loginCodeEmail` → A3.
 - **`server/src/comms.ts`** — the catalogue. Every template has an entry with
-  its audience, trigger, and a `sample()`. **Add A4's entry when you add A4**,
-  or the drift test fails, which is the point of it.
+  its audience, trigger, and a `sample()`. **Add an entry when you add a
+  template**, or the drift test fails, which is the point of it.
 
 Nothing else needs touching. The pipeline already calls these.
 
-## Step 4 — Order of work
+## Step 4 — Order of work ✅ **all four are done**
 
-1. `shop_name` on the early-access form + the server storing it
-2. A1 — the one that fires most and is seen first
-3. A4 — the missing one; it is also the simplest
-4. A2 — the biggest, and the one carrying the ID and the link
-5. A3 — mostly a code in a box; least design in it
+Kept for the record; this is the order they were built in.
 
-Commit after each. They are independent.
+1. ✅ `shop_name` on the early-access form + the server storing it
+2. ✅ A1 — the one that fires most and is seen first
+3. ✅ A4 — was missing entirely; also the simplest
+4. ✅ A2 — the biggest, and the one carrying the ID and the link
+5. ✅ A3 — done last, 2026-08-03
+
+**A3 is worth a note.** It was ranked last here as "mostly a code in a box;
+least design in it" — and that reasoning was wrong in a way worth
+remembering. A3 fires on *every single sign-in*, forever, which makes it the
+email a customer sees more than any other. It sat on the plain fallback for
+weeks after everything around it had been redrawn, so the least designed
+email in the product was also the most seen.
+
+It renders through `codeEmail` now — the same helper the password-reset email
+uses — so the two emails somebody gets when they're having trouble getting in
+look like they came from the same company. That's the argument for a shared
+layout over a bespoke one: the sixth code email costs nothing and can't drift.
 
 ## Step 5 — How to check your work
 

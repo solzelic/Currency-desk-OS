@@ -1,5 +1,18 @@
 # Frontend Foundation Threat Model
 
+> **Scope correction, 2026-08-03.** This was written for the React frontend
+> foundation under `src/` — an app that was deleted; the buildless OS is the
+> product. The scope paragraph below is therefore wrong, and "Foundation
+> response" describes code that no longer exists.
+>
+> **The substance still stands**, and the STRIDE table is still the right
+> checklist — several of its "Production requirements" have since been built
+> (idempotency keys, server-side scoping, revocable sessions, rate limits,
+> transactional audit). Read it as a list of threats to answer, not as a
+> description of what is in place. `docs/ARCHITECTURE.md` §4–5 is the current
+> statement of what we actually do.
+
+
 ## Scope
 
 This threat model covers the React frontend foundation, its demo persistence adapters, domain authorization helpers, and audit-event creation. It does not cover the preserved legacy prototype as a production system. Review this model whenever authentication, backend APIs, document handling, third-party screening, exports, or deployment architecture change.
