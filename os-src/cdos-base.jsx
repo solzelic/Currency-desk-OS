@@ -186,12 +186,23 @@
      the role applies — branches: '*' (owner) or an array of branch ids, with
      one home branch. S. Iqbal is deliberately unassigned to demo the R1 stop
      screen. The live, editable copy lives in settings.employees. */
+  /* EVERY ONE OF THESE IS MARKED `demo`, AND THAT MATTERS.
+
+     These five are the rehearsal desk's staff. On a browser that has never
+     signed in to a real desk they are the whole directory — which is fine
+     for the demo and was quietly wrong on the sign-in screen, where they
+     were offered to real returning customers as EXAMPLES of what to type.
+     Somebody who runs their own shop was being shown two strangers' staff
+     IDs and told to pick one.
+
+     The flag is what lets that screen tell "this desk's people" from
+     "nobody's people". Anything adopted from the server is unmarked. */
   const STAFF = [
-    { name: 'J. Masri',  role: 'Owner',         staffId: 'j.masri',  branches: '*',            home: null },
-    { name: 'R. Haddad', role: 'Manager',       staffId: 'r.haddad', branches: ['b02'],        home: 'b02' },
-    { name: 'A. Singh',  role: 'Senior teller', staffId: 'a.singh',  branches: ['b01'],        home: 'b01' },
-    { name: 'M. Costa',  role: 'Cashier',       staffId: 'm.costa',  branches: ['b01', 'b02'], home: 'b01' },
-    { name: 'S. Iqbal',  role: 'Trainee',       staffId: 's.iqbal',  branches: [],             home: null },
+    { name: 'J. Masri',  role: 'Owner',         staffId: 'j.masri',  branches: '*',            home: null, demo: true },
+    { name: 'R. Haddad', role: 'Manager',       staffId: 'r.haddad', branches: ['b02'],        home: 'b02', demo: true },
+    { name: 'A. Singh',  role: 'Senior teller', staffId: 'a.singh',  branches: ['b01'],        home: 'b01', demo: true },
+    { name: 'M. Costa',  role: 'Cashier',       staffId: 'm.costa',  branches: ['b01', 'b02'], home: 'b01', demo: true },
+    { name: 'S. Iqbal',  role: 'Trainee',       staffId: 's.iqbal',  branches: [],             home: null, demo: true },
   ];
   /* scope axis: how much of the network a role can see/act on.
      network = everything · branch = their assigned branch(es), all tills

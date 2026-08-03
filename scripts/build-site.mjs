@@ -403,7 +403,35 @@ mkdirSync(path.join(OUT, "vendor"), { recursive: true });
 for (const [from, to] of VENDOR) {
   copyFileSync(path.join(ROOT, "node_modules", from), path.join(OUT, "vendor", to));
 }
-copyFileSync(path.join(SRC, "image-slot.js"), path.join(OUT, "image-slot.js"));
+/* image-slot.js is a DESIGN-TIME runtime.
+
+   It fetches a `.image-slots.state.json` sidecar that the design tool writes
+   while somebody is dropping pictures into slots. We do not ship that file
+   and never will, so on every visit to the front page it fetched it, got a
+   404, and logged one — for a feature that only exists inside the editor.
+
+   The shipped copy keeps the placeholder rendering and loses the editor's
+   hydration, so the slots still draw and nothing asks for a file that is
+   not there. */
+writeFileSync(
+  path.join(OUT, "image-slot.js"),
+  readFileSync(path.join(SRC, "image-slot.js"), "utf8")
+    .replace(
+      "loadP = fetch(STATE_FILE)",
+      "loadP = Promise.reject(new Error('no sidecar in production'))\n      .catch(() => ({ ok: false, json: () => null }))\n      .then((r) => r)",
+    )
+    /* And do not chase a binding that has not been resolved yet.
+
+       These slots live inside <sc-for> templates, so the attribute is
+       literally "{{ f.src }}" until the design's runtime substitutes it a
+       moment later. Setting that as an image source asks the server for a
+       file called {{ f.src }}, which 404s on every visit to the front page
+       for an image that loads correctly a tick afterwards. */
+    .replace(
+      "const srcAttr = this.getAttribute('src') || '';",
+      "const raw = this.getAttribute('src') || '';\n      const srcAttr = raw.indexOf('{{') >= 0 ? '' : raw;",
+    ),
+);
 writeFileSync(path.join(OUT, "support.js"), patchRuntime(readFileSync(path.join(SRC, "support.js"), "utf8")));
 
 /* ---------------------------------------------------------------

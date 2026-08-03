@@ -27,6 +27,34 @@ says so.
 
 ---
 
+## Built — this push
+
+All four items below shipped. What follows them is what is left.
+
+| | |
+|---|---|
+| **Forgot password** | Self-serve, end to end. Ask from the sign-in screen → 6-digit code, 15 minutes, five guesses → set a new password → every device signed out. `POST /api/auth/forgot` answers a stranger and a customer identically, in the same words; five asks an hour per address and twenty per caller. 14 tests. |
+| **The sign-in screen** | The rehearsal desk's staff are marked `demo` and are never offered as examples to a real customer — a browser that does not yet know this desk says what the field wants instead. Both dead ends ("the owner can reset it", "ask the owner of your desk") now open the reset flow. |
+| **A4 · contact auto-reply** | Somebody writing in gets an acknowledgement with their reference and what they sent, in the designed style. Registered in the catalogue, so it shows on the Emails page and the drift test covers it. |
+| **Two of the three 404s** | `/api/site/rates` is no longer asked on the app's own domain, and the design-time `image-slot` sidecar is no longer shipped. |
+
+### The one 404 left, and why it is still there
+
+`<img src="{{ p.src }}">` on the front page. The browser's preload scanner
+fetches that literally, before any JavaScript runs, and gets a 404 — then
+the design's runtime substitutes the real path a tick later and the image
+loads correctly.
+
+Silencing it means renaming the attribute in the design's markup and
+copying it back after the runtime resolves it. That is a real risk to the
+front page's imagery in exchange for one line in a console nobody but us
+opens. Left deliberately; revisit if the design is re-exported anyway.
+
+(The `401 /api/auth/me` on `/app` and `/login` is not a fault. It is a
+signed-out visitor asking whether they are signed in, and being told no.)
+
+---
+
 ## P0 · Somebody is locked out and rings you
 
 ### 1. Forgot password, self-serve

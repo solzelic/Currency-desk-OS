@@ -32,6 +32,7 @@ import {
   type Answers,
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
+import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
   setVerifyState, verifyStateOf, type VerifyState,
@@ -442,6 +443,12 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     if (!/.+@.+\..+/.test(email)) {
       return reply.code(400).send({ error: "no_email", detail: "We need the owner's email address before we can send a code." });
     }
+    /* Two minutes between codes. Arriving at the confirm screen sends one
+       automatically, so a page that is refreshed — or a back button — would
+       otherwise send another every time, and only the last of them works. */
+    const wait = waitBefore("onb:" + a.reference);
+    if (wait) return reply.code(429).send(tooSoon(wait));
+
     if (!allow("onb-send:" + a.reference, 8)) {
       return reply.code(429).send({ error: "slow_down", detail: "Hold on — wait a moment before asking for another code." });
     }
@@ -473,6 +480,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
         });
       }
     }
+    markSent("onb:" + a.reference);
     return { ok: true, channel: VERIFY_CHANNEL, sentTo: to };
   });
 

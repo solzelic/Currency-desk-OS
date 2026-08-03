@@ -140,6 +140,10 @@ CREATE TABLE IF NOT EXISTS tenant_state (
   updated_by text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Bumped on every write. A client sends back the version it last saw, and a
+-- save built on a stale one is refused instead of quietly erasing whatever
+-- landed in between. See routes/tenantState.ts.
+ALTER TABLE tenant_state ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS legal_entities (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -194,6 +198,16 @@ ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_must_change boolean NOT NUL
 -- where set; Postgres allows many NULLs, so accounts predating it keep working.
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS cd_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS staff_cd_id_idx ON staff_users(cd_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES staff_users(id),
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets(user_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

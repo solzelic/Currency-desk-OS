@@ -186,9 +186,15 @@ var RATE_CONFIG = null;      // last published config, if any
     var m = p.match(/^\/sites\/([^/]+)\//);
     // served under /sites/<slug>/ — the slug names the desk, no ambiguity
     if (m) return ['/api/sites/' + encodeURIComponent(m[1]) + '/rates'];
-    // the Rate Board embedded inside the OS: staff context, desk implied
-    if (/^\/YorkFX\//.test(p)) return ['/api/rates'];
-    // the customer's own domain, which the server maps to their slug
+    /* Inside the product — the OS at /app, the panel, the sign-in screen.
+       These are staff context on our own domain, and /api/site/rates is for
+       a CUSTOMER visiting a desk's own storefront: it resolves the desk from
+       the Host header, so on app.currencydeskos.com there is no site to find
+       and it correctly 404s. Asking anyway put a red line in the console on
+       every single page load, which is the sort of noise that hides the next
+       real error. */
+    if (/^\/YorkFX\//.test(p) || /^\/(app|admin|login|onboarding|signup)(\/|$)/.test(p)) return ['/api/rates'];
+    // a desk's own domain, which the server maps to their slug
     return ['/api/site/rates', '/api/rates'];
   }
 

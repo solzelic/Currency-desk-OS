@@ -269,3 +269,112 @@ export function youreIn(o: A2): { subject: string; text: string; html: string } 
     html: shell({ preheader, body, footer: "Your founding rate is held for the life of the account. Reply to this email and a person reads it." }),
   };
 }
+
+
+/* A code, in a box, on our paper.
+
+   Shared by the two emails whose whole content is six digits: the reset
+   code and the contact acknowledgement's reference. The design draws these
+   the same way each time — big mono type on a soft panel — so they are
+   drawn here once rather than diverging by hand. */
+export function codeEmail(o: {
+  name?: string | null;
+  subject: string;
+  preheader: string;
+  heading: string;
+  lead: string;
+  code: string;
+  under: string;
+  footer: string;
+}): { subject: string; text: string; html: string } {
+  const first = firstName(o.name);
+  const hi = first ? `${first}, ` : "";
+  const text =
+    `${o.heading}\n\n${hi}${o.lead}\n\n${o.code}\n\n${o.under}\n\n` +
+    `— SAM\nSmart Automated Machine · CurrencyDesk\nSAM writes and calls. A person reads every reply.\n\n${o.footer}`;
+  const body =
+    `<div style="padding:38px 40px 34px">` +
+    `<div style="font-family:${SERIF};font-size:30px;line-height:1.1;letter-spacing:-0.015em;color:${INK}">${esc(o.heading)}</div>` +
+    `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:16px 0 0">${esc(hi + o.lead)}</p>` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:separate;margin-top:22px"><tr>` +
+    `<td align="center" style="padding:20px 18px;border-radius:12px;background-color:${SOFT};border:1px solid ${HAIR};text-align:center">` +
+    `<div style="font-family:${MONO};font-size:32px;font-weight:700;letter-spacing:0.24em;color:${INK}">${esc(o.code)}</div>` +
+    `</td></tr></table>` +
+    `<p style="font-family:${SANS};font-size:13.5px;line-height:1.6;color:${MUTE};margin:16px 0 0">${esc(o.under)}</p>` +
+    signoff +
+    `</div>`;
+  return { subject: o.subject, text, html: shell({ preheader: o.preheader, body, footer: o.footer }) };
+}
+
+/* Somebody could not get in.
+
+   The one email that has to be careful about what it says to a person who
+   did NOT ask for it: it names no shop, confirms no account, and tells
+   them plainly that ignoring it leaves everything as it was. */
+export function passwordResetEmail(code: string, name?: string | null, minutes = 15):
+  { subject: string; text: string; html: string } {
+  return codeEmail({
+    name,
+    subject: `${code} — your CurrencyDesk reset code`,
+    preheader: `Good for ${minutes} minutes. If this was not you, nothing has changed.`,
+    heading: "Let's get you back in.",
+    lead: "use this code to set a new password. It is the only thing you need — no old password, no phone call.",
+    code,
+    under:
+      `It is good for ${minutes} minutes and works once. Setting a new password signs out every device, ` +
+      `so you will sign in again with the new one.\n\nIf you did not ask for this, ignore it — nothing has changed, ` +
+      `and nobody can use this code without your inbox.`,
+    footer: "Reply to this email and a person reads it.",
+  });
+}
+
+/* A4 · somebody wrote to us from the contact page.
+
+   Before this they heard nothing at all until a person got to it, which on
+   a weekend is two days of silence after being told we would reply. It
+   quotes their reference so the thread has a name, and repeats what they
+   sent so they can see it arrived intact. */
+export function contactReceivedEmail(o: {
+  name?: string | null;
+  reference: string;
+  topic?: string | null;
+  message?: string | null;
+}): { subject: string; text: string; html: string } {
+  const first = firstName(o.name);
+  const subject = `Got it — ${o.reference}`;
+  const preheader = "A person reads every one of these. You will hear back within a business day.";
+  const said = String(o.message ?? "").trim();
+  const topic = String(o.topic ?? "").trim();
+
+  const text =
+    `Got it.\n\n${first ? first + ", we" : "We"}'ve got your note and it is with a person, not a queue. ` +
+    `You will hear back within a business day — usually the same one.\n\n` +
+    `YOUR REFERENCE\n${o.reference}\n\n` +
+    (topic ? `About: ${topic}\n` : "") +
+    (said ? `\nWhat you sent us:\n${said}\n` : "") +
+    `\nIf anything changes in the meantime, just reply to this email — it lands on the same thread.\n\n` +
+    `— SAM\nSmart Automated Machine · CurrencyDesk\nSAM writes and calls. A person reads every reply.\n\n` +
+    `You wrote to us at currencydeskos.com.`;
+
+  const body =
+    `<div style="padding:38px 40px 34px">` +
+    `<div style="font-family:${SERIF};font-size:30px;line-height:1.1;letter-spacing:-0.015em;color:${INK}">Got it.</div>` +
+    `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:16px 0 0">` +
+    `${first ? esc(first) + ", we" : "We"}&rsquo;ve got your note and it is with a person, not a queue. ` +
+    `You will hear back within a business day &mdash; usually the same one.</p>` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:separate;margin-top:22px"><tr>` +
+    `<td style="padding:16px 18px;border-radius:12px;background-color:${SOFT};border:1px solid ${HAIR}">` +
+    `<div style="font-family:${MONO};font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:${FAINT};font-weight:600">Your reference</div>` +
+    `<div style="font-family:${MONO};font-size:20px;font-weight:700;letter-spacing:0.1em;color:${INK};margin-top:6px">${esc(o.reference)}</div>` +
+    (topic ? `<div style="font-family:${SANS};font-size:13px;color:${MUTE};margin-top:10px">About: ${esc(topic)}</div>` : "") +
+    `</td></tr></table>` +
+    (said
+      ? `<div style="font-family:${MONO};font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:${FAINT};font-weight:600;margin-top:22px">What you sent us</div>` +
+        `<p style="font-family:${SANS};font-size:14px;line-height:1.65;color:${MUTE};margin:8px 0 0;white-space:pre-wrap">${esc(said)}</p>`
+      : "") +
+    `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:20px 0 0">If anything changes in the meantime, just reply to this email &mdash; it lands on the same thread.</p>` +
+    signoff +
+    `</div>`;
+
+  return { subject, text, html: shell({ preheader, body, footer: "You wrote to us at currencydeskos.com." }) };
+}

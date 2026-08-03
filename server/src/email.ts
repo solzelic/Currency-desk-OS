@@ -8,7 +8,9 @@
    (SendGrid is a small addition if one-vendor billing is preferred.)
    ============================================================ */
 import { randomInt, createHash, timingSafeEqual } from "node:crypto";
-import { applicationReceived, youreIn } from "./emails/design.js";
+import { applicationReceived, contactReceivedEmail, passwordResetEmail, youreIn } from "./emails/design.js";
+
+export { contactReceivedEmail, passwordResetEmail };
 
 export type EmailStatus = "sent" | "simulated" | "failed";
 

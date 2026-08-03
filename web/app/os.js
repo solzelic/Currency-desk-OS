@@ -271,36 +271,50 @@
      the role applies — branches: '*' (owner) or an array of branch ids, with
      one home branch. S. Iqbal is deliberately unassigned to demo the R1 stop
      screen. The live, editable copy lives in settings.employees. */
+  /* EVERY ONE OF THESE IS MARKED `demo`, AND THAT MATTERS.
+      These five are the rehearsal desk's staff. On a browser that has never
+     signed in to a real desk they are the whole directory — which is fine
+     for the demo and was quietly wrong on the sign-in screen, where they
+     were offered to real returning customers as EXAMPLES of what to type.
+     Somebody who runs their own shop was being shown two strangers' staff
+     IDs and told to pick one.
+      The flag is what lets that screen tell "this desk's people" from
+     "nobody's people". Anything adopted from the server is unmarked. */
   const STAFF = [{
     name: 'J. Masri',
     role: 'Owner',
     staffId: 'j.masri',
     branches: '*',
-    home: null
+    home: null,
+    demo: true
   }, {
     name: 'R. Haddad',
     role: 'Manager',
     staffId: 'r.haddad',
     branches: ['b02'],
-    home: 'b02'
+    home: 'b02',
+    demo: true
   }, {
     name: 'A. Singh',
     role: 'Senior teller',
     staffId: 'a.singh',
     branches: ['b01'],
-    home: 'b01'
+    home: 'b01',
+    demo: true
   }, {
     name: 'M. Costa',
     role: 'Cashier',
     staffId: 'm.costa',
     branches: ['b01', 'b02'],
-    home: 'b01'
+    home: 'b01',
+    demo: true
   }, {
     name: 'S. Iqbal',
     role: 'Trainee',
     staffId: 's.iqbal',
     branches: [],
-    home: null
+    home: null,
+    demo: true
   }];
   /* scope axis: how much of the network a role can see/act on.
      network = everything · branch = their assigned branch(es), all tills
@@ -52089,8 +52103,8 @@ ${snap}`;
       }
     }, [1, 2, 3, 4, 5, 6, 7, 8, 9].map(numKey), leftLabel != null ? /*#__PURE__*/React.createElement("button", {
       type: "button",
-      disabled: verifying,
-      onClick: onLeft,
+      disabled: verifying || !onLeft,
+      onClick: onLeft || undefined,
       style: {
         background: 'none',
         border: 'none',
@@ -52181,6 +52195,25 @@ ${snap}`;
     const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false);
     const [note, setNote] = useState('');
+    const [resetEmail, setResetEmail] = useState('');
+    const [newPw, setNewPw] = useState('');
+    /* HOW LONG UNTIL ANOTHER CODE MAY BE ASKED FOR.
+        The server allows one every two minutes and answers 429 with
+       `retryAfter` when it is too soon. Counting it down here is not
+       decoration: without it the button looks broken, which is exactly
+       what makes somebody press it again.
+        `sending` is a separate latch from `busy` because it has to be set
+       BEFORE the await. React state does not update synchronously, so
+       `disabled` alone loses the race against a double-click — the second
+       press lands while the first render is still pending. A ref cannot. */
+    const [cool, setCool] = useState(0);
+    const sending = useRef(false);
+    useEffect(() => {
+      if (cool <= 0) return;
+      const t = setTimeout(() => setCool(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    }, [cool]);
+    const startCooldown = secs => setCool(Math.max(1, Math.round(secs || 120)));
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -52188,8 +52221,16 @@ ${snap}`;
       return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null;
     };
     const known = useMemo(() => resolve(idInput), [idInput, dir]);
-    const owner = dir.find(e => e.role === 'Owner') || dir[0];
-    const rep = dir.find(e => e.role !== 'Owner' && e !== owner) || dir[1];
+    /* EXAMPLES ARE ONLY EVER THIS DESK'S PEOPLE.
+        A browser that has never signed in here carries the rehearsal desk's
+       five, and offering those to a returning customer showed them two
+       strangers' staff IDs and told them to pick one. Somebody who runs
+       their own shop signs in with their email address, which looks
+       nothing like `j.masri`. If we do not know this desk's people yet, we
+       say what the field wants instead of guessing. */
+    const ours = dir.filter(e => !e.demo);
+    const owner = ours.find(e => e.role === 'Owner') || ours[0];
+    const rep = ours.find(e => e.role !== 'Owner' && e !== owner) || ours[1];
     const examples = [owner, rep].filter(Boolean).slice(0, 2);
 
     // captured across the login call so the code step can complete
@@ -52240,6 +52281,9 @@ ${snap}`;
         setErr('Enter your password.');
         return;
       }
+      // set before the first await, or a double-click gets through
+      if (sending.current) return;
+      sending.current = true;
       let rec = known;
       const staffId = rec ? rec.code || rec.name : idInput.trim().toLowerCase();
       setBusy(true);
@@ -52257,11 +52301,21 @@ ${snap}`;
           })
         });
         if (res && res.status === 401) {
+          sending.current = false;
           setBusy(false);
-          setErr('That password doesn’t match this ID. Try again — or the owner can reset it.');
+          setErr('That password doesn’t match this ID. Try again — or reset it below.');
+          return;
+        }
+        if (res && res.status === 429) {
+          const d = await res.json().catch(() => null);
+          sending.current = false;
+          setBusy(false);
+          startCooldown(d && d.retryAfter);
+          setErr(d && d.detail || 'A code went out moments ago — check your email.');
           return;
         }
         if (res && !res.ok) {
+          sending.current = false;
           setBusy(false);
           setErr('Sign-in service error (' + res.status + ') — try again in a moment.');
           return;
@@ -52270,6 +52324,7 @@ ${snap}`;
         const u = data && data.user || null;
         const srvPlan = u && u.plan || null;
         if (!rec && u) rec = adopt(u, null);
+        sending.current = false;
         setBusy(false);
         setErr('');
         if (u && u.mustChangePassword) {
@@ -52292,9 +52347,11 @@ ${snap}`;
         } // password-only (no email on file)
         setCode('');
         setStep('code');
+        startCooldown(120);
       } catch (_) {
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
+        sending.current = false;
         setBusy(false);
         if (!offlineDemoAllowed()) {
           setErr('The sign-in service is unavailable. Check your connection and try again.');
@@ -52313,6 +52370,106 @@ ${snap}`;
         };
         setCode('');
         setStep('code');
+      }
+    }
+
+    /* ---- forgot password ------------------------------------------
+       Nobody could get back in on their own. This screen said "the owner
+       can reset it" to the owner, so the only path was a phone call to
+       CurrencyDesk and a temporary password read down the line. */
+    async function askForReset(e) {
+      e && e.preventDefault();
+      const addr = (resetEmail || idInput).trim().toLowerCase();
+      if (addr.indexOf('@') < 0) {
+        setErr('Enter the email address you sign in with.');
+        return;
+      }
+      if (sending.current || cool > 0) return;
+      sending.current = true;
+      setBusy(true);
+      setErr('');
+      try {
+        const res = await fetch('/api/auth/forgot', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            email: addr
+          })
+        });
+        sending.current = false;
+        setBusy(false);
+        if (res.status === 429) {
+          const d = await res.json().catch(() => null);
+          startCooldown(d && d.retryAfter);
+          setErr(d && d.detail || 'Too many requests — wait a few minutes.');
+          return;
+        }
+        startCooldown(120);
+        /* Deliberately the same words whether or not that address has an
+           account. The server says nothing either, and a screen that said
+           "no account here" would undo the point of that. */
+        setResetEmail(addr);
+        setCode('');
+        setNewPw('');
+        setStep('reset');
+      } catch (_) {
+        sending.current = false;
+        setBusy(false);
+        setErr('The sign-in service is unavailable. Try again in a moment.');
+      }
+    }
+    async function submitReset(e) {
+      e && e.preventDefault();
+      if (code.length < 6) {
+        setErr('Enter the 6-digit code from your email.');
+        return;
+      }
+      if (newPw.length < 8) {
+        setErr('Pick a password of at least 8 characters.');
+        return;
+      }
+      if (sending.current) return;
+      sending.current = true;
+      setBusy(true);
+      setErr('');
+      try {
+        const res = await fetch('/api/auth/reset', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            email: resetEmail,
+            code,
+            newPassword: newPw
+          })
+        });
+        const data = await res.json().catch(() => null);
+        sending.current = false;
+        setBusy(false);
+        if (!res.ok) {
+          setErr(data && data.detail || 'That code is not right, or it has expired.');
+          return;
+        }
+        /* Straight back to signing in, with the address filled in. The
+           reset signed every device out — including any this browser had —
+           so proving the new password is both the next step and the proof
+           it took. */
+        setIdInput(resetEmail);
+        setPw('');
+        setCode('');
+        setNewPw('');
+        setStep('password');
+        setNote('Password changed. Sign in with the new one.');
+        setErr('');
+      } catch (_) {
+        sending.current = false;
+        setBusy(false);
+        setErr('Network error — try again.');
       }
     }
 
@@ -52358,9 +52515,11 @@ ${snap}`;
         setCode('');
         return;
       }
+      if (sending.current || cool > 0) return; // the latch, before any await
+      sending.current = true;
       setNote('Sending a new code…');
       try {
-        await fetch('/api/auth/login/start', {
+        const res = await fetch('/api/auth/login/start', {
           method: 'POST',
           headers: {
             'content-type': 'application/json'
@@ -52371,10 +52530,19 @@ ${snap}`;
             password: pw
           })
         });
+        const d = await res.json().catch(() => null);
+        if (res.status === 429) {
+          startCooldown(d && d.retryAfter);
+          setNote(d && d.detail || 'A code went out moments ago.');
+          return;
+        }
         setNote('A new code is on its way.');
         setCode('');
+        startCooldown(120);
       } catch (_) {
         setNote('Couldn’t resend — try again.');
+      } finally {
+        sending.current = false;
       }
     }
     const pushDigit = d => {
@@ -52560,7 +52728,14 @@ ${snap}`;
       style: {
         color: 'var(--si-mute)'
       }
-    }, "\xB7 ", known.role || 'Staff', " \xB7 York Currency Exchange"))), !known && examples.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "\xB7 ", known.role || 'Staff', " \xB7 York Currency Exchange"))), !known && examples.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: 'var(--si-faint)',
+        marginTop: 10,
+        lineHeight: 1.5
+      }
+    }, "The email address you set the desk up with, or the ID whoever runs your desk gave you."), !known && examples.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         alignItems: 'center',
@@ -52575,7 +52750,7 @@ ${snap}`;
         letterSpacing: '0.14em',
         color: 'var(--si-faint)'
       }
-    }, "EXAMPLES"), examples.map(ex => /*#__PURE__*/React.createElement("button", {
+    }, "ON THIS DESK"), examples.map(ex => /*#__PURE__*/React.createElement("button", {
       key: ex.code || ex.name,
       type: "button",
       onClick: () => {
@@ -52618,7 +52793,24 @@ ${snap}`;
       style: {
         color: 'var(--si-ink)'
       }
-    }, "on the record"), ". No ID? Ask the owner of your desk."), onSignup && /*#__PURE__*/React.createElement("div", {
+    }, "on the record"), ".", ' ', /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        setResetEmail(idInput.indexOf('@') >= 0 ? idInput : '');
+        setErr('');
+        setStep('forgot');
+      },
+      style: {
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        color: 'var(--si-primary)',
+        fontWeight: 700,
+        cursor: 'pointer',
+        textDecoration: 'underline',
+        fontSize: 11.5
+      }
+    }, "Can't get in?")), onSignup && /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: 'center',
         fontSize: 12,
@@ -52763,7 +52955,25 @@ ${snap}`;
           color: 'var(--si-faint)',
           marginTop: 8
         }
-      }, "Forgot it? The owner can reset it."), err && /*#__PURE__*/React.createElement("div", {
+      }, "Forgot it?", ' ', /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => {
+          setResetEmail(idInput.indexOf('@') >= 0 ? idInput : '');
+          setErr('');
+          setNote('');
+          setStep('forgot');
+        },
+        style: {
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          color: 'var(--si-primary)',
+          fontWeight: 700,
+          cursor: 'pointer',
+          textDecoration: 'underline',
+          fontSize: 11.5
+        }
+      }, "Send yourself a reset code"), "."), err && /*#__PURE__*/React.createElement("div", {
         style: {
           color: 'var(--si-flag)',
           fontSize: 12,
@@ -52771,19 +52981,263 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy || pw.length < 4,
+        disabled: busy || cool > 0 || pw.length < 4,
         style: {
-          ...primaryBtn(!busy && pw.length >= 4),
+          ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
           marginTop: 16
         }
-      }, busy ? 'Checking…' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
-          color: 'var(--si-mute)',
-          marginTop: 14
+          color: note ? 'var(--si-primary)' : 'var(--si-mute)',
+          marginTop: 14,
+          fontWeight: note ? 700 : 400
         }
-      }, "We'll email a fresh code to confirm it's you."))));
+      }, note || "We'll email a fresh code to confirm it's you."))));
+    }
+
+    // ---- B1 · Can't get in — ask for a reset code ---------------------
+    if (step === 'forgot') {
+      return shell(card(/*#__PURE__*/React.createElement("form", {
+        onSubmit: askForReset
+      }, /*#__PURE__*/React.createElement("h1", {
+        style: {
+          fontSize: 23,
+          fontWeight: 800,
+          letterSpacing: '-0.01em',
+          margin: '0 0 6px'
+        }
+      }, "Let's get you back in."), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 13,
+          color: 'var(--si-mute)',
+          lineHeight: 1.6,
+          marginBottom: 18
+        }
+      }, "Type the email address you sign in with and we'll send a code. You'll set a new password with it \u2014 no old password needed, and nobody to ring."), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontFamily: MONO,
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          color: 'var(--si-mute)',
+          marginBottom: 6
+        }
+      }, "EMAIL ADDRESS"), /*#__PURE__*/React.createElement("input", {
+        type: "email",
+        value: resetEmail,
+        onChange: e => {
+          setResetEmail(e.target.value);
+          setErr('');
+        },
+        autoFocus: true,
+        placeholder: "you@yourshop.com",
+        autoComplete: "username",
+        style: {
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '13px 14px',
+          fontSize: 15,
+          border: '1px solid var(--si-line)',
+          borderRadius: 11,
+          background: 'var(--si-panel)',
+          outline: 'none'
+        },
+        onFocus: e => {
+          e.target.style.borderColor = 'var(--si-primary)';
+          e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)';
+        },
+        onBlur: e => {
+          e.target.style.borderColor = 'var(--si-line)';
+          e.target.style.boxShadow = 'none';
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: 'var(--si-faint)',
+          marginTop: 8,
+          lineHeight: 1.5
+        }
+      }, "If your desk signs you in with a name rather than an address, whoever runs it can reset you from their side."), err && /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: 'var(--si-flag)',
+          fontSize: 12,
+          marginTop: 12
+        }
+      }, err), /*#__PURE__*/React.createElement("button", {
+        type: "submit",
+        disabled: busy || cool > 0,
+        style: {
+          ...primaryBtn(!busy && cool === 0),
+          marginTop: 16
+        }
+      }, busy ? 'Sending…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send me a code'), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => {
+          setStep('id');
+          setErr('');
+        },
+        style: {
+          display: 'block',
+          margin: '12px auto 0',
+          background: 'none',
+          border: 'none',
+          color: 'var(--si-mute)',
+          fontSize: 12,
+          cursor: 'pointer'
+        }
+      }, "\u2190 Back to sign in"))));
+    }
+
+    // ---- B2 · The code, and a new password ----------------------------
+    if (step === 'reset') {
+      return shell(card(/*#__PURE__*/React.createElement("form", {
+        onSubmit: submitReset
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'grid',
+          placeItems: 'center',
+          marginBottom: 10
+        }
+      }, /*#__PURE__*/React.createElement(MailGlyph, null)), /*#__PURE__*/React.createElement("h1", {
+        style: {
+          textAlign: 'center',
+          fontSize: 23,
+          fontWeight: 800,
+          letterSpacing: '-0.01em',
+          margin: '0 0 4px'
+        }
+      }, "Check your email"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          textAlign: 'center',
+          fontSize: 13,
+          color: 'var(--si-mute)',
+          lineHeight: 1.6,
+          marginBottom: 18
+        }
+      }, "If ", /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: 'var(--si-ink)'
+        }
+      }, resetEmail), " has an account, a 6-digit code is on its way. It's good for 15 minutes."), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontFamily: MONO,
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          color: 'var(--si-mute)',
+          marginBottom: 6
+        }
+      }, "CODE"), /*#__PURE__*/React.createElement("input", {
+        value: code,
+        onChange: e => {
+          setCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+          setErr('');
+        },
+        autoFocus: true,
+        inputMode: "numeric",
+        placeholder: "000000",
+        autoComplete: "one-time-code",
+        style: {
+          width: '100%',
+          boxSizing: 'border-box',
+          textAlign: 'center',
+          fontFamily: MONO,
+          fontSize: 22,
+          fontWeight: 700,
+          letterSpacing: '0.3em',
+          padding: '13px 12px',
+          border: '1px solid var(--si-line)',
+          borderRadius: 11,
+          background: 'var(--si-panel)',
+          outline: 'none'
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontFamily: MONO,
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          color: 'var(--si-mute)',
+          margin: '14px 0 6px'
+        }
+      }, "NEW PASSWORD"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          position: 'relative'
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: showPw ? 'text' : 'password',
+        value: newPw,
+        onChange: e => {
+          setNewPw(e.target.value);
+          setErr('');
+        },
+        placeholder: "At least 8 characters",
+        autoComplete: "new-password",
+        style: {
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '13px 62px 13px 14px',
+          fontSize: 15,
+          border: '1px solid var(--si-line)',
+          borderRadius: 11,
+          background: 'var(--si-panel)',
+          outline: 'none'
+        }
+      }), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setShowPw(s => !s),
+        style: {
+          position: 'absolute',
+          right: 8,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          fontFamily: MONO,
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+          color: 'var(--si-mute)',
+          background: 'var(--si-soft)',
+          border: 'none',
+          borderRadius: 7,
+          padding: '5px 9px',
+          cursor: 'pointer'
+        }
+      }, showPw ? 'HIDE' : 'SHOW')), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: 'var(--si-faint)',
+          marginTop: 8,
+          lineHeight: 1.5
+        }
+      }, "Setting a new password signs out every device on this account, including this one \u2014 you'll sign in again with the new password."), err && /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: 'var(--si-flag)',
+          fontSize: 12,
+          marginTop: 12
+        }
+      }, err), /*#__PURE__*/React.createElement("button", {
+        type: "submit",
+        disabled: busy || code.length < 6 || newPw.length < 8,
+        style: {
+          ...primaryBtn(!busy && code.length >= 6 && newPw.length >= 8),
+          marginTop: 16
+        }
+      }, busy ? 'Setting it…' : 'Set my new password'), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => {
+          setStep('forgot');
+          setErr('');
+          setCode('');
+        },
+        style: {
+          display: 'block',
+          margin: '12px auto 0',
+          background: 'none',
+          border: 'none',
+          color: 'var(--si-mute)',
+          fontSize: 12,
+          cursor: 'pointer'
+        }
+      }, cool > 0 ? '← Send it again in ' + cool + 's' : '← Send it again'))));
     }
 
     // ---- A3 · Email code (keypad) -------------------------------------
@@ -52846,8 +53300,8 @@ ${snap}`;
       max: 6,
       onDigit: pushDigit,
       onBack: backDigit,
-      leftLabel: "Resend",
-      onLeft: resendCode,
+      leftLabel: cool > 0 ? cool + 's' : 'Resend',
+      onLeft: cool > 0 ? null : resendCode,
       verifying: verifying
     }), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -53266,12 +53720,55 @@ ${snap}`;
    Backend: GET/PUT /api/tenant/state (see server/src/routes/tenantState.ts),
    always scoped to the session's own tenant. No backend / no session → the
    bridge no-ops and the offline demo keeps running on localStorage alone.
+
+   ---- WHY THE FAILURE HANDLING BELOW IS AS LONG AS THE SAVING ----
+
+   This used to be `if (r.ok) lastSig = sig;` and nothing else. Every other
+   outcome fell through to a bare catch, which meant a desk whose saves were
+   being refused retried the same doomed payload every four seconds, for the
+   rest of the session, without one line in a console or one pixel on the
+   screen. A teller kept working. Nothing was being kept.
+
+   Two failures are NOT worth retrying, and telling them apart is the whole
+   job:
+
+     • 413 — the document is over the size limit. The next attempt is the
+       same size. Retrying is not resilience, it is a loop.
+     • 401 — the session is gone. Only signing in fixes it.
+
+   Everything else (network dropped, server restarting, a 500) genuinely is
+   worth another go, so those back off instead of hammering, and say so if
+   they persist.
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
   var tenantId = null;
   var lastSig = '';
   var timer = null;
+
+  /* How saving is going. 'ok' | 'retrying' | 'stopped' — 'stopped' means we
+     have given up on purpose and only a person can clear it. */
+  var health = 'ok';
+  var failures = 0;
+  var lastTrouble = null;
+  var listeners = [];
+  var warnedNearLimit = false;
+
+  /* What the server had when we last agreed with it: the version number, and
+     the document itself. The document is the baseline a three-way merge is
+     measured against — without it we cannot tell "I changed this" from "they
+     changed this", and every conflict would have to be resolved by one side
+     losing everything. */
+  var version = 0;
+  var baseline = {};
+
+  var SAVE_EVERY_MS = 4000;
+  /* Back off rather than hammer a server that is already unhappy, but never
+     so far that a recovered connection waits minutes to notice. */
+  var BACKOFF_MS = [0, 4000, 8000, 15000, 30000, 60000];
+  var nextAttemptAt = 0;
+  /* Two misses can be a deploy restarting. Four is a problem worth a screen. */
+  var SPEAK_AFTER = 4;
 
   function keys() {
     var out = [];
@@ -53294,12 +53791,99 @@ window.CDOS_PERSIST = (function () {
     });
   }
 
+  /* ---- telling somebody ------------------------------------------------
+     A listener gets every change of state. The banner below is the default
+     one; the OS can register its own and render this properly in-shell. */
+  function onTrouble(fn) { if (typeof fn === 'function') listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }
+  function announce(info) {
+    lastTrouble = info;
+    listeners.forEach(function (fn) { try { fn(info); } catch (e) {} });
+    try { banner(info); } catch (e) {}
+    if (info.level === 'stopped') console.error('[CurrencyDesk] saving stopped —', info.detail);
+    else if (info.level === 'retrying') console.warn('[CurrencyDesk] save failing —', info.detail);
+  }
+
+  /* Drawn in plain DOM, deliberately.
+
+     This is the one message that must survive everything, including React
+     having thrown — the entire point of it is that this failure is never
+     silent again, and a banner that depends on the app being healthy is not
+     that. Kept visually quiet but impossible to miss, and it does not steal
+     focus or block the screen: a teller mid-transaction should finish. */
+  function banner(info) {
+    var id = 'cdos-persist-banner';
+    var el = document.getElementById(id);
+    if (info.level === 'ok') { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      el.setAttribute('role', 'status');
+      el.style.cssText = [
+        'position:fixed', 'left:0', 'right:0', 'bottom:0', 'z-index:2147483647',
+        'font:500 13px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif',
+        'padding:10px 16px', 'display:flex', 'gap:10px', 'align-items:center',
+        'box-shadow:0 -1px 0 rgba(0,0,0,.12), 0 -8px 24px rgba(0,0,0,.10)',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    var stopped = info.level === 'stopped';
+    el.style.background = stopped ? '#7f1d1d' : '#78350f';
+    el.style.color = '#fff';
+    el.textContent = '';
+    var dot = document.createElement('span');
+    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:' + (stopped ? '#fca5a5' : '#fcd34d');
+    var msg = document.createElement('span');
+    msg.textContent = info.detail;
+    el.appendChild(dot);
+    el.appendChild(msg);
+  }
+
+  /* ---- merging two people's work ---------------------------------------
+
+     Both browsers hold the whole document, so a refused save has to be
+     reconciled rather than simply retried — retrying is what would erase
+     the other person.
+
+     Decided per key, against the baseline we last agreed on:
+
+       we did not touch it     → take theirs, including their deletion
+       we changed or made it   → ours stands
+       we deleted it           → stays deleted
+
+     Two tellers working on different things — one adding a client, one
+     changing settings — therefore both keep their work.
+
+     WHAT THIS CANNOT DO. If both changed the SAME key, ours wins and
+     theirs is lost. `cdos_rows_v1` is one key holding every transaction, so
+     two tellers trading at once is exactly that case. The merge does not
+     save us there and is not pretending to: the real answer is that
+     transactions belong in a table, one row each, which is why promoting
+     them is the next piece of work (docs/ARCHITECTURE.md §3). This makes
+     the common case safe and makes the remaining one smaller. */
+  function merge(base, mine, theirs) {
+    var out = {}, all = {};
+    [base, mine, theirs].forEach(function (o) {
+      Object.keys(o || {}).forEach(function (k) { all[k] = 1; });
+    });
+    Object.keys(all).forEach(function (k) {
+      var b = base ? base[k] : undefined;
+      var m = mine ? mine[k] : undefined;
+      var t = theirs ? theirs[k] : undefined;
+      if (m === b) { if (t !== undefined) out[k] = t; return; }  // not ours to decide
+      if (m !== undefined) out[k] = m;                            // ours stands
+    });
+    return out;
+  }
+
   // Load this tenant's snapshot into localStorage.
   //   'restored' — the server had saved state; it's now in localStorage
   //   'empty'    — no saved state yet; caller decides the starting desk
   //   'offline'  — no backend / not signed in; demo continues untouched
   async function begin(tid) {
     tenantId = tid || null;
+    health = 'ok'; failures = 0; nextAttemptAt = 0; warnedNearLimit = false;
+    version = 0; baseline = {};
+    announce({ level: 'ok', detail: '' });
     if (!tenantId) return 'offline';
     var res;
     try {
@@ -53307,40 +53891,117 @@ window.CDOS_PERSIST = (function () {
       if (!r.ok) { tenantId = null; return 'offline'; }
       res = await r.json();
     } catch (e) { tenantId = null; return 'offline'; }
+    version = (res && res.version) || 0;
     if (res && res.state && Object.keys(res.state).length) {
       applyState(res.state);
-      lastSig = JSON.stringify(snapshot());
+      baseline = snapshot();
+      lastSig = JSON.stringify(baseline);
       return 'restored';
     }
+    baseline = {};
     lastSig = ''; // empty — the caller seeds a fresh (or demo) desk, then save()
     return 'empty';
   }
 
   async function save() {
     if (!tenantId) return;
+    if (health === 'stopped') return;           // a person has to clear this
+    if (Date.now() < nextAttemptAt) return;     // backing off
     var snap = snapshot();
     var sig = JSON.stringify(snap);
     if (sig === lastSig) return; // unchanged since the last successful save
+
+    var r;
     try {
-      var r = await fetch('/api/tenant/state', {
+      r = await fetch('/api/tenant/state', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin', body: JSON.stringify({ state: snap }),
+        credentials: 'same-origin', body: JSON.stringify({ state: snap, version: version }),
       });
-      if (r.ok) lastSig = sig;
-    } catch (e) { /* keep lastSig so we retry on the next tick */ }
+    } catch (e) {
+      return transient('CurrencyDesk cannot reach the server. Your recent work is not saved yet.');
+    }
+
+    /* Somebody else saved while we were working. Merge their document with
+       ours against the baseline, put the result back on screen, and let the
+       next tick save it — deliberately NOT saving here, so a room full of
+       browsers cannot turn one conflict into a storm of retries. */
+    if (r.status === 409) {
+      var conflict = null;
+      try { conflict = await r.json(); } catch (e) {}
+      if (conflict && conflict.state) {
+        var merged = merge(baseline, snap, conflict.state);
+        applyState(merged);
+        baseline = snapshot();
+        version = conflict.version || 0;
+        lastSig = '';            // the merged document still needs saving
+        failures = 0; nextAttemptAt = 0;
+      }
+      return;
+    }
+
+    if (r.ok) {
+      lastSig = sig;
+      baseline = snap;
+      failures = 0; nextAttemptAt = 0;
+      if (health !== 'ok') { health = 'ok'; announce({ level: 'ok', detail: '' }); }
+      var body = null;
+      try { body = await r.json(); } catch (e) {}
+      // the version our next save will be built on
+      if (body && typeof body.version === 'number') version = body.version;
+      /* Said once, not every four seconds — a warning repeated on a loop is
+         one people learn to ignore. */
+      if (body && body.nearingLimit && !warnedNearLimit) {
+        warnedNearLimit = true;
+        announce({ level: 'retrying', code: 'nearing_limit', detail: "This desk's saved records are approaching the size limit. Everything is saved — but tell CurrencyDesk before it reaches it." });
+      }
+      return;
+    }
+
+    /* Over the limit. The next attempt is the same size as this one, so
+       retrying is a loop, not resilience. Stop, and say so in words that
+       point at a person rather than at a button. */
+    if (r.status === 413) {
+      var over = null;
+      try { over = await r.json(); } catch (e) {}
+      health = 'stopped';
+      return announce({
+        level: 'stopped', code: 'state_too_large',
+        detail: (over && over.detail) || "This desk's records are too large to save. Nothing is being saved. Contact CurrencyDesk.",
+      });
+    }
+
+    /* Session gone. Retrying cannot fix it either; the OS handles the
+       sign-out, we just stop pretending we are saving. */
+    if (r.status === 401) {
+      health = 'stopped';
+      return announce({ level: 'stopped', code: 'unauthenticated', detail: 'Your session ended. Sign in again — recent work on this screen is not saved.' });
+    }
+
+    return transient('CurrencyDesk could not save the last few minutes of work. Still trying.');
+  }
+
+  function transient(detail) {
+    failures += 1;
+    health = 'retrying';
+    nextAttemptAt = Date.now() + (BACKOFF_MS[Math.min(failures, BACKOFF_MS.length - 1)]);
+    if (failures >= SPEAK_AFTER) announce({ level: 'retrying', code: 'unreachable', detail: detail });
   }
 
   function startAutosave() {
     if (timer || !tenantId) return;
-    timer = setInterval(save, 4000);
+    timer = setInterval(save, SAVE_EVERY_MS);
     window.addEventListener('beforeunload', function () {
-      if (!tenantId) return;
+      if (!tenantId || health === 'stopped') return;
       var snap = snapshot();
       if (JSON.stringify(snap) === lastSig) return;
       try {
+        /* Carries the version like any other save. There is no chance to
+           merge during an unload, so a stale flush is refused and lost —
+           which is the right way round: losing this browser's last few
+           seconds beats erasing everything the other teller did. */
         fetch('/api/tenant/state', {
           method: 'PUT', headers: { 'content-type': 'application/json' },
-          credentials: 'same-origin', body: JSON.stringify({ state: snap }), keepalive: true,
+          credentials: 'same-origin', body: JSON.stringify({ state: snap, version: version }), keepalive: true,
         });
       } catch (e) {}
     });
@@ -53352,16 +54013,24 @@ window.CDOS_PERSIST = (function () {
     if (timer) { clearInterval(timer); timer = null; }
     tenantId = null;
     lastSig = '';
+    health = 'ok'; failures = 0; nextAttemptAt = 0;
+    announce({ level: 'ok', detail: '' });
   }
 
   // let the caller mark the current localStorage as the saved baseline
   // (after seeding a fresh desk we save() explicitly, which sets this)
-  function markClean() { lastSig = JSON.stringify(snapshot()); }
+  function markClean() { baseline = snapshot(); lastSig = JSON.stringify(baseline); }
 
   return {
     begin: begin, save: save, end: end, startAutosave: startAutosave,
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
+    onTrouble: onTrouble,
+    status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
+    /* Exposed because it is the one piece of logic in this file worth
+       testing on its own: pure, and the thing standing between two tellers
+       and a lost afternoon. See server/tests/state-merge.test.ts. */
+    _merge: merge,
   };
 })();
 
@@ -55560,7 +56229,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           },
           apps: null,
           branches: s.branches,
-          home: s.home
+          home: s.home,
+          demo: s.demo
         }));
         // migration: employees saved before the Branch & Access Model gain assignments (spec §06)
         merged.employees = merged.employees.map(e => {

@@ -29,7 +29,9 @@ import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } 
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
+import { describe as describeState } from "../state/shape.js";
 import { CODE_TTL_MS, issueCode as issueVerificationCode, loadOrCreateOnboarding } from "../onboarding/verify.js";
+import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { VERIFY_CHANNEL } from "./onboarding-public.js";
 import { DISPATCHES, DISPATCH, SILENT, delivery, sendableTo, type Recipient } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
@@ -292,6 +294,28 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       };
     });
     return { tenants: rows, total: rows.length };
+  });
+
+  /* What is inside one desk's saved state, and how much of it is the
+     compliance record rather than screen furniture.
+
+     Answers the question that decides the promotion work — "what is
+     actually making this desk large, and how much of it has to move into
+     tables" — without asking somebody to open their browser's devtools and
+     read it out. Sizes and shapes only: the report names keys and counts
+     bytes, and never returns a customer's data. */
+  app.get<{ Params: { id: string } }>("/api/admin/tenants/:id/state-shape", async (req, reply) => {
+    if (!(await gate(req, reply, "desks:read"))) return;
+    const id = req.params.id;
+    const row = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, id)).limit(1))[0];
+    if (!row) return { tenantId: id, saved: false, report: null };
+    return {
+      tenantId: id,
+      saved: true,
+      updatedAt: row.updatedAt,
+      version: row.version,
+      report: describeState(row.state as Record<string, unknown>),
+    };
   });
 
   app.get<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
@@ -897,11 +921,19 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       return reply.code(400).send({ error: "no_email", detail: "There is no owner address on their setup yet." });
     }
 
+    /* Same two-minute gap as their own screen, and the same key — so an
+       operator on the phone pressing this twice, or pressing it just after
+       the applicant did, cannot put two codes in one inbox where only the
+       second works. */
+    const wait = waitBefore("onb:" + row.reference);
+    if (wait) return reply.code(429).send(tooSoon(wait));
+
     const code = makeCode();
     await issueVerificationCode(db, row.id, code, to, VERIFY_CHANNEL);
     const mail = verificationEmail(code, String(answers.bizName ?? answers.operatingName ?? ""));
     const status = await sendEmail(to, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
 
+    markSent("onb:" + row.reference);
     await audit(db, {
       tenantId: "tnt-platform", legalEntityId: "-", branchId: "-", actorId: who.id,
       action: "admin.verify_code_issued", detail: { reference: row.reference, to, email: status },

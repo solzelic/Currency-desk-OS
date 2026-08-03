@@ -12,11 +12,12 @@
        in the product, shown identically for a rate limit, a missing
        address and a provider outage
 */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const ADMIN = "j.masri";
@@ -44,6 +45,11 @@ beforeAll(async () => {
 });
 afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMocks(); delete process.env.PLATFORM_ADMIN_EMAILS; });
 
+/* The two-minute gap between codes is real now (src/cooldown.ts), and a
+   test that asks for two in a row is not a person double-clicking — it is
+   a suite deliberately exercising the second one. Clear it between tests,
+   and inline wherever one test genuinely needs two sends. */
+beforeEach(() => forgetCooldown());
 describe("when it works", () => {
   it("says where it went", async () => {
     const res = await send();
@@ -91,13 +97,18 @@ describe("when it is refused for a reason", () => {
     expect(bad.json().detail).toBeTruthy();
   });
 
-  it("stops asking after enough goes, and says that is what happened", async () => {
+  it("stops asking after enough goes in an hour, and says that is what happened", async () => {
+    /* The HOURLY cap, which is a different limit from the two-minute gap
+       and catches a different person: this one is somebody hammering it
+       all afternoon rather than double-clicking once. The gap is cleared
+       between goes so this reaches the cap it means to test. */
     let last: { statusCode: number; json: () => { detail?: string } } | null = null;
     for (let i = 0; i < 12; i++) {
+      forgetCooldown();
       last = await send();
-      if (last.statusCode === 429) break;
+      if (last.statusCode === 429 && /hold on|wait a moment/i.test(last.json().detail ?? "")) break;
     }
     expect(last!.statusCode).toBe(429);
-    expect(last!.json().detail).toMatch(/wait|too many/i);
+    expect(last!.json().detail).toMatch(/hold on|wait/i);
   });
 });
