@@ -5,7 +5,13 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
-import { acquire, currentBasis, dispose, ensureBasis } from "./cost-basis.js";
+import {
+  acquire,
+  currentBasis,
+  dispose,
+  ensureBasis,
+  reverseEvent,
+} from "./cost-basis.js";
 import { pairAllowed, resolvePack } from "./jurisdiction.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -922,6 +928,33 @@ export class LedgerService {
             now,
           ],
         );
+      }
+      /* The cash has come back; so must what it cost.
+
+         Without this the desk keeps the margin on a deal that never
+         happened — the till balances return to where they were, the journal
+         is mirrored, and `ledger_cost_events` still carries the sale and its
+         realized P&L with nothing to say it was undone. A month of voided
+         deals reads as a month of profit.
+
+         Reversed newest first, so a cross undoes its purchase before its
+         sale, and only the legs THIS transaction posted: the estimated
+         opening basis that may have been seeded alongside it is sourced to
+         the quote, and it stays. That cash is still in the drawer and still
+         needs a basis. */
+      const costLegs = await client.query(
+        `SELECT event_id FROM ledger_cost_events
+          WHERE source_kind='transaction' AND source_id=$1
+          ORDER BY created_at DESC, event_id DESC`,
+        [transactionId],
+      );
+      for (const leg of costLegs.rows) {
+        await reverseEvent(client, leg.event_id, {
+          sourceKind: "reversal",
+          sourceId: reversalId,
+          actorId: actor.userId,
+          now,
+        });
       }
       await client.query(
         "INSERT INTO ledger_reversals (reversal_id,transaction_id,actor_id,reason,posted_at) VALUES ($1,$2,$3,$4,$5)",

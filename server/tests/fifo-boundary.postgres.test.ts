@@ -168,6 +168,47 @@ const lotsAt = async (locationId: string) =>
     )
   ).rows as { unit_cost_home: string; remaining_quantity: string }[];
 
+/**
+ * A customer buys a thousand US dollars, so the desk disposes of USD.
+ *
+ * A quote is priced off what the customer hands over, and at 1.40 with the
+ * board's 3% sell margin 1,443.30 CAD buys exactly a thousand dollars —
+ * which is what makes the cost arithmetic below readable rather than a
+ * string of rounded remainders.
+ */
+async function sellAThousandDollars(idempotencyKey: string) {
+  const cookies = await cookie();
+  const quote = (
+    await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies,
+      payload: {
+        customerId: "customer-demo",
+        from: "CAD",
+        to: "USD",
+        inputAmount: "1443.30",
+        feeCad: "4.00",
+        direction: "customer_buy_foreign",
+      },
+    })
+  ).json();
+  expect(quote.outputAmount).toBe("1000.00");
+  const posted = await app.inject({
+    method: "POST",
+    url: `/api/quotes/${quote.quoteId}/post`,
+    cookies,
+    payload: {
+      idempotencyKey,
+      purpose: "Personal travel",
+      sourceOfFunds: "Employment income",
+    },
+  });
+  expect(posted.json()).toMatchObject({ transactionId: expect.any(String) });
+  expect(posted.statusCode).toBe(201);
+  return posted.json().transactionId as string;
+}
+
 /** What the open lots in a box are carried at, in home currency. */
 const bookValue = async (locationId: string) =>
   (await lotsAt(locationId)).reduce(
@@ -206,42 +247,7 @@ postgres("the journal says what the disposal actually cost", () => {
       "UPDATE ledger_till_balances SET avg_cost='1.380000000000' WHERE till_id=$1 AND currency='USD'",
       [TILL],
     );
-    const cookies = await cookie();
-
-    /* The customer buys US dollars with home currency, so the desk DISPOSES
-       of USD. A quote is priced off what the customer hands over, and at
-       1.40 with the board's 3% sell margin 1,443.30 CAD buys exactly a
-       thousand dollars — which is what makes the cost arithmetic below
-       readable rather than a string of rounded remainders. */
-    const quote = (
-      await app.inject({
-        method: "POST",
-        url: "/api/quotes",
-        cookies,
-        payload: {
-          customerId: "customer-demo",
-          from: "CAD",
-          to: "USD",
-          inputAmount: "1443.30",
-          feeCad: "4.00",
-          direction: "customer_buy_foreign",
-        },
-      })
-    ).json();
-    expect(quote.outputAmount).toBe("1000.00");
-    const posted = await app.inject({
-      method: "POST",
-      url: `/api/quotes/${quote.quoteId}/post`,
-      cookies,
-      payload: {
-        idempotencyKey: "fifo-sale-1",
-        purpose: "Personal travel",
-        sourceOfFunds: "Employment income",
-      },
-    });
-    expect(posted.json()).toMatchObject({ transactionId: expect.any(String) });
-    expect(posted.statusCode).toBe(201);
-    const transactionId = posted.json().transactionId;
+    const transactionId = await sellAThousandDollars("fifo-sale-1");
 
     /* The engine's answer: Monday's dollars, at 1.34. Not the drawer's
        1.38 average, which is what both books used to say. */
@@ -301,6 +307,55 @@ postgres("the journal says what the disposal actually cost", () => {
     ]);
   });
 
+  it("takes the profit back when the deal is voided", async () => {
+    await twoLots({ kind: "till", id: TILL });
+    await pool.query(
+      "UPDATE ledger_till_balances SET avg_cost='1.380000000000' WHERE till_id=$1 AND currency='USD'",
+      [TILL],
+    );
+    const transactionId = await sellAThousandDollars("fifo-void-1");
+    const earned = (
+      await pool.query(
+        "SELECT realized_pnl_home FROM ledger_transactions WHERE transaction_id=$1",
+        [transactionId],
+      )
+    ).rows[0].realized_pnl_home;
+    expect(new Decimal(earned).gt(0)).toBe(true);
+
+    const voided = await app.inject({
+      method: "POST",
+      url: `/api/ledger/transactions/${transactionId}/reversal`,
+      cookies: await cookie(),
+      payload: { idempotencyKey: "fifo-void-rv-1", reason: "customer changed mind" },
+    });
+    expect(voided.statusCode).toBe(201);
+
+    /* The cash came back, and so did what it cost. Reversing only the cash
+       and the journal left the desk holding the margin on a deal that never
+       happened — a month of voids reading as a month of profit. */
+    const realized = (
+      await pool.query(
+        `SELECT COALESCE(sum(realized_pnl_home),0) AS total FROM ledger_cost_events
+          WHERE location_id=$1 AND currency='USD'`,
+        [TILL],
+      )
+    ).rows[0].total;
+    expect(new Decimal(realized).toFixed(2)).toBe("0.00");
+
+    // and the dollars are back in the lot they were taken from, at their price
+    expect(await lotsAt(TILL)).toEqual([
+      { unit_cost_home: "1.340000000000", remaining_quantity: "2000.00" },
+      { unit_cost_home: "1.420000000000", remaining_quantity: "2000.00" },
+    ]);
+    const balance = (
+      await pool.query(
+        "SELECT available_amount FROM ledger_till_balances WHERE till_id=$1 AND currency='USD'",
+        [TILL],
+      )
+    ).rows[0].available_amount;
+    expect(new Decimal(balance).toFixed(2)).toBe("4000.00");
+  });
+
   it("floats cash between the desk's own boxes without changing what it is worth", async () => {
     /* A vault's cost box is keyed by the branch itself — one strong room per
        branch — while the movement names it `<branch>:vault`. Two different
@@ -342,10 +397,9 @@ postgres("the journal says what the disposal actually cost", () => {
        arrived in the drawer. At the safe's 1.38 average the drawer would
        have received 1,380 of book value for 1,340 of cash — 40 CAD created
        by carrying money down a corridor. */
-    const arrived = await lotsAt(TILL);
-    expect(arrived).toHaveLength(1);
-    expect(new Decimal(arrived[0].unit_cost_home).toFixed(2)).toBe("1.34");
-    expect(arrived[0].remaining_quantity).toBe("1000.00");
+    expect(await lotsAt(TILL)).toEqual([
+      { unit_cost_home: "1.340000000000", remaining_quantity: "1000.00" },
+    ]);
 
     // nothing was sold, so nothing was earned
     const realized = await pool.query(

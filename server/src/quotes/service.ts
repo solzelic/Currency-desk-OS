@@ -33,6 +33,35 @@ const scope = (a: LedgerActor) => [
   a.tillId,
 ];
 const fixed = (v: Decimal, p = 2) => v.toDecimalPlaces(p).toFixed(p);
+
+/**
+ * How old a published board may be and still be quotable.
+ *
+ * This has to be DERIVED from how often the board is refreshed, not picked
+ * independently, because the two settings shipped in contradiction: the
+ * market sync republishes every RATES_SYNC_MINUTES (default 60) and this
+ * tolerance defaulted to a flat 300 seconds. A desk on the defaults could
+ * quote for five minutes an hour and was refused for the other fifty-five,
+ * with "Rate publication is stale." and no way for a teller to act on it.
+ * Any fixed number shorter than the refresh cadence guarantees a dead
+ * window, so the default is one full cycle plus ten minutes of headroom
+ * for a slow or missed provider pull.
+ *
+ * With the sync off, nothing refreshes the board but a person, and a
+ * manager who publishes at open should be able to trade the shift on it —
+ * so the fallback is a working day rather than five minutes. It is still a
+ * ceiling: yesterday's board is refused, which is what the check is for.
+ *
+ * RATE_BOARD_MAX_AGE_SECONDS overrides all of it, and a desk that genuinely
+ * wants a five-minute tolerance can still say so.
+ */
+export function boardMaxAgeSeconds(): number {
+  const stated = process.env.RATE_BOARD_MAX_AGE_SECONDS;
+  if (stated != null && stated !== "") return Number(stated);
+  if (process.env.RATES_SYNC === "off") return 12 * 60 * 60;
+  const syncMinutes = Math.max(1, Number(process.env.RATES_SYNC_MINUTES ?? 60));
+  return syncMinutes * 60 + 10 * 60;
+}
 const complianceFact = (value: string, label: string) => {
   if (typeof value !== "string" || !value.trim() || value.trim().length > 500)
     throw new LedgerError("INVALID_REQUEST", `${label} is required and must be at most 500 characters.`);
@@ -185,7 +214,7 @@ export class QuoteService {
           "No published branch board.",
         );
       const board = boards.rows[0],
-        maxAge = Number(process.env.RATE_BOARD_MAX_AGE_SECONDS ?? 300);
+        maxAge = boardMaxAgeSeconds();
       if (
         !Number.isFinite(maxAge) ||
         maxAge < 1 ||

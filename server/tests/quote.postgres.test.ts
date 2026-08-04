@@ -158,8 +158,14 @@ postgres("quote service against real PostgreSQL", () => {
     expect(old.json().customerRate).toBe("1.372000000000");
   });
   it("rejects stale, expired, cancelled, malformed, and wrong-workspace quote requests", async () => {
+    /* Two days, not one hour. How long a board stays quotable is derived
+       from how often the market sync republishes it (see
+       `boardMaxAgeSeconds`), so an hour is inside the tolerance on the
+       shipped defaults — as it should be, since the sync only refreshes
+       hourly. What this test is for is that a board nobody has refreshed
+       is refused at all; `rate-staleness.test.ts` holds the window itself. */
     await pool.query(
-      "UPDATE rate_boards SET published_at=now()-interval '1 hour'",
+      "UPDATE rate_boards SET published_at=now()-interval '2 days'",
     );
     expect(
       (
