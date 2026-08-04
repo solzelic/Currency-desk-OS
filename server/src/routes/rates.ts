@@ -66,7 +66,29 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.get("/api/rates", async (req) => {
-    const branchId = (req.query as { branchId?: string }).branchId ?? DEMO_BRANCH;
+    /* WHOSE BOARD IS THIS?
+
+       This used to answer with a hardcoded demo branch whenever no branchId
+       was given, and the OS has never sent one — so the moment there was a
+       second desk, its staff were shown York FX's prices on their own rate
+       board, and their first quote then failed with "no published branch
+       board" because their branch genuinely had none. The board looked
+       tradeable and was not, and it belonged to another shop.
+
+       A request carrying a session is staff at a desk, and the answer is
+       their own branch. The demo fallback survives only for a request with
+       no session at all — the public shop-window case this endpoint was
+       written for. */
+    const asked = (req.query as { branchId?: string }).branchId;
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    const branchId = asked
+      ? asked
+      : who
+        ? who.branchId
+        : DEMO_BRANCH;
+    if (asked && who && !who.authorizedBranchIds.includes(asked)) {
+      return { board: null, serverTime: Date.now() };
+    }
     const rows = await db
       .select()
       .from(schema.rateBoards)

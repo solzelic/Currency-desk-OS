@@ -14,6 +14,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
+import { publishStartingBoard } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPassword } from "../auth/password.js";
@@ -1378,6 +1379,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, jurisdiction: "FINTRAC" }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
     await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
+    // a desk made by hand still has to arrive able to trade — same as one
+    // that came through onboarding
+    await publishStartingBoard(db, { tenantId, legalEntityId, branchId, currencies: [] });
     await db.insert(schema.staffUsers).values({ id: `${tenantId}:${b.ownerEmail}`, tenantId, legalEntityId, branchId, staffId: b.ownerEmail, name: b.ownerName, role: "administrator", authorizedBranchIds: [branchId], passwordHash: await hashPassword(b.password), mustChangePassword: true, passwordUpdatedAt: new Date() }).onConflictDoNothing();
     await audit(db, { tenantId, legalEntityId, branchId, actorId: who.id, action: "tenant.created", detail: { via: "admin", slug: b.slug, email: b.ownerEmail } });
     return reply.code(201).send({ ok: true, tenant: { id: tenantId, name: b.businessName, slug: b.slug, plan: b.plan } });

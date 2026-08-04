@@ -17,6 +17,7 @@
    ============================================================ */
 import { and, eq, notInArray } from "drizzle-orm";
 import { schema } from "../db/index.js";
+import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
@@ -233,6 +234,30 @@ export async function provisionDesk(
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
+
+  /* A DESK ARRIVES ABLE TO TRADE.
+
+     It did not before. A newly provisioned desk had no rate board, so its
+     first quote failed — while the screen showed another shop's board
+     because `/api/rates` fell back to a demo branch. And the opening float
+     the owner typed during onboarding was stored in `setup` and applied to
+     nothing, so the drawer was empty even though they had said what was in
+     it. Both are fixed here, at the moment the desk is made.
+
+     The vault is deliberately NOT seeded: nobody asked what is in their
+     safe, and inventing a figure for somebody's cash is exactly what the
+     cash-ownership invariants forbid. The Vault screen asks them to count
+     it in. */
+  const setup = (spec.setup ?? {}) as Record<string, unknown>;
+  const board = await publishStartingBoard(db, {
+    tenantId, legalEntityId, branchId,
+    currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
+    homeCurrency: typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined,
+  });
+  await seedOpeningFloat(db, {
+    tenantId, legalEntityId, branchId, workspaceId, tillId: "till-01",
+    float: (setup.openingFloat ?? {}) as Record<string, unknown>,
+  });
 
   const ownerId = `${tenantId}:${spec.email}`;
   await db.insert(schema.staffUsers).values({
