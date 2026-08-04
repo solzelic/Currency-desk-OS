@@ -806,7 +806,9 @@
           if (cancelled) return;
           window.CDOS.Backend.setWorkspace(null);
           setLedgerScope(null);
-          log('Ledger tills unavailable', error.message || 'Could not read this branch’s tills from the server');
+          // a plan without the ledger has no tills to report — that is the plan
+          // working, not a fault, and does not belong in the audit trail
+          if (error.code !== 'PLAN_NOT_ENTITLED') log('Ledger tills unavailable', error.message || 'Could not read this branch’s tills from the server');
         });
       return () => { cancelled = true; };
     }, [stage, srvUser]);
