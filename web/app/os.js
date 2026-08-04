@@ -2467,13 +2467,27 @@
     return number.toFixed(2);
   }
 
+  /* Which till the server should answer for. Every ledger and quote route reads
+     it from x-workspace-id and, when the header is missing, falls back to "the
+     branch's only workspace" — which worked only because every branch had one.
+     The browser never sent it, so a desk with two tills would have had the
+     server answer for whichever workspace it liked (or refuse outright), while
+     the Cash Drawer header said something else entirely. The OS sets this once
+     it has asked the server what tills this branch has. */
+  var activeWorkspaceId = null;
+  function setWorkspace(id) { activeWorkspaceId = id || null; }
+  function getWorkspace() { return activeWorkspaceId; }
+
   async function request(path, options) {
     var response;
+    /* Object.assign is shallow: a caller passing its own headers used to REPLACE
+       the default object wholesale, so merging the two here is what keeps
+       content-type on every POST that also needs the workspace header. */
+    var init = Object.assign({ credentials: "same-origin" }, options || {});
+    init.headers = Object.assign({ "content-type": "application/json" }, (options && options.headers) || {});
+    if (activeWorkspaceId) init.headers["x-workspace-id"] = activeWorkspaceId;
     try {
-      response = await fetch(path, Object.assign({
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-      }, options || {}));
+      response = await fetch(path, init);
     } catch (cause) {
       var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
@@ -2609,6 +2623,13 @@
   window.CDOS = Object.assign(window.CDOS || {}, {
     Backend: {
       request: request,
+      setWorkspace: setWorkspace,
+      getWorkspace: getWorkspace,
+      // the tills this session's branch has on the ledger, as the server names
+      // them — the desk's own branch records cannot answer this
+      loadWorkspaces: function () {
+        return request("/api/ledger/workspaces");
+      },
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {
@@ -12272,7 +12293,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     moves,
     serverBacked,
     cashVersion,
-    onSessionSync
+    onSessionSync,
+    ledgerScope
   }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
@@ -12290,6 +12312,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const [serverBalanceError, setServerBalanceError] = useState('');
     const [sessionErr, setSessionErr] = useState(''); // last failed till action, shown on screen
     const [tillBusy, setTillBusy] = useState(''); // 'open' | 'count' | 'close'
+    /* The till picker below switches THIS DESK's local station — ids this
+       browser invented ("b01t1"). The server names its tills separately and
+       decides which one to answer for from the workspace the OS sends. The two
+       cannot be matched up, so when the branch has more than one server till the
+       picker's label and the money on this screen are about different drawers.
+       That is what let a count taken at Till 2 be closed onto Till 1's balance,
+       so the drawer says plainly which till the ledger is answering for. */
+    const ledgerTill = ledgerScope && ledgerScope.active || null;
+    const ledgerTillWorkspace = ledgerTill ? ledgerTill.workspaceId : null;
+    const ledgerAmbiguous = !!(ledgerScope && ledgerScope.ambiguous);
     const sessionSyncRef = useRef(onSessionSync);
     useEffect(() => {
       sessionSyncRef.current = onSessionSync;
@@ -12370,8 +12402,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         active = false;
       };
       // cashVersion ticks on every posted movement, so the expected float on
-      // this screen follows money leaving the vault without a remount
-    }, [serverBacked, station && station.tillId, day && day.num, cashVersion]);
+      // this screen follows money leaving the vault without a remount; the
+      // ledger workspace joins it because the first fetch can happen before the
+      // OS has learned which till the server is answering for
+    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace]);
 
     // opening the till is an act, not a side effect of looking at the screen
     const openTill = async () => {
@@ -13074,7 +13108,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
-    }, "\xB7 ", serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'))), /*#__PURE__*/React.createElement("div", {
+    }, "\xB7 ", serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
+      title: "The till the server ledger is answering for",
+      style: {
+        color: ledgerAmbiguous ? CD.brass : CD.faint
+      }
+    }, "\xB7 ledger till ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        fontFamily: 'Space Mono, monospace',
+        color: ledgerAmbiguous ? CD.brass : CD.mute
+      }
+    }, ledgerTill.tillId)))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none ml-auto"
     }, (() => {
       // the drawer's rail balance — changes the moment cash is issued or returned.
@@ -13146,7 +13190,28 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: ic,
       s: 13,
       c: tab === id ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", label)))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, !serverSession && serverBalancesReady && /*#__PURE__*/React.createElement("div", {
+    }), " ", label)))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
+      style: {
+        background: CD.brassSoft,
+        borderBottom: `1px solid ${CD.line}`,
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 13,
+      c: CD.brass
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "flex-1 min-w-0"
+    }, "The ledger is answering for ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, ledgerTill.tillId), ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '', " \u2014 this branch has ", ledgerScope.workspaces.length, " tills on the server and the till picker above names this desk\u2019s own tills, which the server does not know by those names.", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: CD.mute
+      }
+    }, " Every balance, count and close on this screen belongs to ", ledgerTill.tillId, ", whichever till the header shows."))), !serverSession && serverBalancesReady && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 px-4 py-2.5 flex-none",
       style: {
         background: CD.brassSoft,
@@ -57013,6 +57078,55 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // re-reads its authoritative balance instead of showing a stale float
     const [cashVersion, setCashVersion] = useState(0);
 
+    /* WHICH TILL THE LEDGER IS ANSWERING FOR.
+       `station` is this desk's own idea of where you are sitting, and its ids
+       ("b01", "b01t1") were invented in the browser long before the server had
+       any — they are not the ledger's workspace ids and cannot be matched to
+       them. The server picks the till from the x-workspace-id header, which the
+       browser never sent; it got away with that only because it then fell back
+       to "the branch's only workspace". So switching to Till 2 in the Cash
+       Drawer renamed the header and nothing else: the balances, the counts and
+       the close all stayed on the one workspace the server chose, and a close
+       wrote your count onto that other drawer's balance.
+        This asks the server what tills the branch actually has and names one on
+       every subsequent call. With a single workspace that is simply the truth.
+       With more than one the desk cannot say which local till is which server
+       till — that reconciliation does not exist yet — so it holds the first by
+       till id (stable across reloads) and the Cash Drawer says out loud which
+       drawer it is counting, rather than letting somebody count Till 2 against
+       Till 1's expected. */
+    const [ledgerScope, setLedgerScope] = useState(null);
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser || !window.CDOS.Backend) {
+        if (window.CDOS.Backend) window.CDOS.Backend.setWorkspace(null);
+        setLedgerScope(null);
+        return;
+      }
+      let cancelled = false;
+      window.CDOS.Backend.loadWorkspaces().then(result => {
+        if (cancelled) return;
+        const list = result && result.workspaces || [];
+        const active = list[0] || null;
+        window.CDOS.Backend.setWorkspace(active ? active.workspaceId : null);
+        setLedgerScope({
+          workspaces: list,
+          active,
+          ambiguous: list.length > 1
+        });
+      }).catch(error => {
+        if (cancelled) return;
+        window.CDOS.Backend.setWorkspace(null);
+        setLedgerScope(null);
+        log('Ledger tills unavailable', error.message || 'Could not read this branch’s tills from the server');
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [stage, srvUser]);
+    // the id the header carries; screens that fetch server money key their
+    // refetch on it so they re-read once the workspace is known
+    const ledgerWorkspaceId = ledgerScope && ledgerScope.active && ledgerScope.active.workspaceId || null;
+
     /* A till balance moves for four reasons, and only one of them starts here:
          · the vault issues or takes back a float   → postTillMovement, below
          · a deal posts against the drawer          → the ledger moves it alone
@@ -57104,7 +57218,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return () => {
         cancelled = true;
       };
-    }, [stage, srvUser, station && station.branchId]);
+      // the workspace id joins the deps because the first paint can fetch before
+      // the header is known; once it is, the vault is re-read for that till
+    }, [stage, srvUser, station && station.branchId, ledgerWorkspaceId]);
 
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
@@ -57613,7 +57729,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return () => {
         active = false;
       };
-    }, [stage, srvUser, station && station.tillId]);
+    }, [stage, srvUser, station && station.tillId, ledgerWorkspaceId]);
 
     // customizable dock: order + hidden + edit (jiggle) mode
     const [appOrder, setAppOrder] = useState(() => {
@@ -59316,7 +59432,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             moves: branchMoves,
             serverBacked: !!srvUser,
             cashVersion: cashVersion,
-            onSessionSync: onTillSession
+            onSessionSync: onTillSession,
+            ledgerScope: ledgerScope
           });
         case 'vault':
           return /*#__PURE__*/React.createElement(Vault, {

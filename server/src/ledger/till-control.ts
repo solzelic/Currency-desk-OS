@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { currentBasis } from "./cost-basis.js";
+import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
-import { applyVaultLeg } from "./vault-control.js";
+import {
+  applyVaultLeg,
+  boardUnitCostHome,
+  lockVault,
+  transferCost,
+  vaultBox,
+  type CostBox,
+} from "./vault-control.js";
 
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
 type Counts = Partial<Record<Currency, string>>;
@@ -395,6 +404,53 @@ export class TillControlService {
         [...scope(actor), input.currency],
       );
       const amount = new Decimal(input.amount).toDecimalPlaces(2);
+
+      /* ---------------- COST BASIS ----------------
+         A float and a return are TRANSFERS. The desk has not sold anything
+         to anybody, so nothing is realized — but the cash carries what it
+         cost out of the sending box and into the receiving one, and that is
+         the part that used to be missing. A float that landed in the drawer
+         with no basis made the drawer's next sale unpriceable: either the
+         posting refuses it or it books the whole proceeds as profit.
+
+         Only a vault counterparty is handled here. Cash arriving from a bank
+         or from 'other' has no box on this ledger to have come out of, so
+         there is no average to carry and no price on record; that stays
+         quantity-only until somebody states what it cost.
+
+         Both averages are read BEFORE either balance moves, and under the
+         locks, because the weighted average is taken against the quantities
+         as they stood. Read afterwards it is a different, wrong number, and
+         nothing downstream would ever say so. See docs/COST_BASIS.md. */
+      const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+      const carriesCost =
+        input.counterpartyType === "vault" && input.currency !== home;
+      const tillBox: CostBox = {
+        tenantId: actor.tenantId,
+        legalEntityId: actor.legalEntityId,
+        branchId: actor.branchId,
+        locationKind: "till",
+        locationId: actor.tillId,
+      };
+      const branchVault = vaultBox(
+        actor.tenantId,
+        actor.legalEntityId,
+        actor.branchId,
+      );
+      let tillBefore = null;
+      let vaultBefore = null;
+      if (carriesCost) {
+        tillBefore = await currentBasis(client, {
+          ...tillBox,
+          currency: input.currency,
+        });
+        await lockVault(client, actor.tenantId, actor.legalEntityId, actor.branchId);
+        vaultBefore = await currentBasis(client, {
+          ...branchVault,
+          currency: input.currency,
+        });
+      }
+
       const current = new Decimal(balance.rows[0]?.available_amount ?? 0);
       const next =
         input.direction === "in" ? current.add(amount) : current.minus(amount);
@@ -446,6 +502,33 @@ export class TillControlService {
           reason: input.reason,
           actorId: actor.userId,
           idempotencyKey: input.idempotencyKey,
+          now,
+        });
+      }
+      /* Both boxes have moved; now the cost follows, against the figures
+         captured above. A null vault leg means this branch has never stated
+         a vault position — nothing was debited, so there is nothing whose
+         cost could have come from anywhere. */
+      if (carriesCost && vaultLegId && tillBefore && vaultBefore) {
+        const sending = input.direction === "in" ? branchVault : tillBox;
+        const receiving = input.direction === "in" ? tillBox : branchVault;
+        await transferCost(client, {
+          from: sending,
+          to: receiving,
+          currency: input.currency,
+          amount,
+          fromBefore: input.direction === "in" ? vaultBefore : tillBefore,
+          toBefore: input.direction === "in" ? tillBefore : vaultBefore,
+          fallbackUnitCostHome: await boardUnitCostHome(client, {
+            tenantId: actor.tenantId,
+            legalEntityId: actor.legalEntityId,
+            branchId: actor.branchId,
+            currency: input.currency,
+            homeCurrency: home,
+          }),
+          sourceKind: "cash_movement",
+          sourceId: movementId,
+          actorId: actor.userId,
           now,
         });
       }

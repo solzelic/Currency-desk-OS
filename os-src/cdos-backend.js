@@ -6,13 +6,27 @@
     return number.toFixed(2);
   }
 
+  /* Which till the server should answer for. Every ledger and quote route reads
+     it from x-workspace-id and, when the header is missing, falls back to "the
+     branch's only workspace" — which worked only because every branch had one.
+     The browser never sent it, so a desk with two tills would have had the
+     server answer for whichever workspace it liked (or refuse outright), while
+     the Cash Drawer header said something else entirely. The OS sets this once
+     it has asked the server what tills this branch has. */
+  var activeWorkspaceId = null;
+  function setWorkspace(id) { activeWorkspaceId = id || null; }
+  function getWorkspace() { return activeWorkspaceId; }
+
   async function request(path, options) {
     var response;
+    /* Object.assign is shallow: a caller passing its own headers used to REPLACE
+       the default object wholesale, so merging the two here is what keeps
+       content-type on every POST that also needs the workspace header. */
+    var init = Object.assign({ credentials: "same-origin" }, options || {});
+    init.headers = Object.assign({ "content-type": "application/json" }, (options && options.headers) || {});
+    if (activeWorkspaceId) init.headers["x-workspace-id"] = activeWorkspaceId;
     try {
-      response = await fetch(path, Object.assign({
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-      }, options || {}));
+      response = await fetch(path, init);
     } catch (cause) {
       var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
@@ -148,6 +162,13 @@
   window.CDOS = Object.assign(window.CDOS || {}, {
     Backend: {
       request: request,
+      setWorkspace: setWorkspace,
+      getWorkspace: getWorkspace,
+      // the tills this session's branch has on the ledger, as the server names
+      // them — the desk's own branch records cannot answer this
+      loadWorkspaces: function () {
+        return request("/api/ledger/workspaces");
+      },
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {

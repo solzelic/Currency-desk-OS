@@ -161,7 +161,7 @@
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     /* ---------------- SERVER TILL SESSION ----------------
@@ -178,6 +178,16 @@
     const [serverBalanceError, setServerBalanceError] = useState('');
     const [sessionErr, setSessionErr] = useState('');     // last failed till action, shown on screen
     const [tillBusy, setTillBusy] = useState('');         // 'open' | 'count' | 'close'
+    /* The till picker below switches THIS DESK's local station — ids this
+       browser invented ("b01t1"). The server names its tills separately and
+       decides which one to answer for from the workspace the OS sends. The two
+       cannot be matched up, so when the branch has more than one server till the
+       picker's label and the money on this screen are about different drawers.
+       That is what let a count taken at Till 2 be closed onto Till 1's balance,
+       so the drawer says plainly which till the ledger is answering for. */
+    const ledgerTill = (ledgerScope && ledgerScope.active) || null;
+    const ledgerTillWorkspace = ledgerTill ? ledgerTill.workspaceId : null;
+    const ledgerAmbiguous = !!(ledgerScope && ledgerScope.ambiguous);
     const sessionSyncRef = useRef(onSessionSync);
     useEffect(() => { sessionSyncRef.current = onSessionSync; }, [onSessionSync]);
     // hydrate the count fields from whatever the server last recorded for this
@@ -237,8 +247,10 @@
         });
       return () => { active = false; };
       // cashVersion ticks on every posted movement, so the expected float on
-      // this screen follows money leaving the vault without a remount
-    }, [serverBacked, station && station.tillId, day && day.num, cashVersion]);
+      // this screen follows money leaving the vault without a remount; the
+      // ledger workspace joins it because the first fetch can happen before the
+      // OS has learned which till the server is answering for
+    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace]);
 
     // opening the till is an act, not a side effect of looking at the screen
     const openTill = async () => {
@@ -547,6 +559,10 @@
             </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span>· {serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
+            {/* the ledger's own name for the drawer these figures belong to —
+                the picker to the left names a local till, which is a different
+                thing and can disagree */}
+            {serverBacked && ledgerTill && <span title="The till the server ledger is answering for" style={{ color: ledgerAmbiguous ? CD.brass : CD.faint }}>· ledger till <b style={{ fontFamily: 'Space Mono, monospace', color: ledgerAmbiguous ? CD.brass : CD.mute }}>{ledgerTill.tillId}</b></span>}
           </div></div>
           <div className="flex items-center gap-1.5 flex-none ml-auto">
             {(() => {
@@ -580,6 +596,19 @@
           No session is not an error state — it is the state before someone
           opens the till. */}
       {serverBacked && (<>
+        {/* More server tills than this desk can tell apart. Everything below —
+            the expected figures, the counts, the close — is about the one named
+            here, whatever the picker in the header happens to say. */}
+        {ledgerAmbiguous && ledgerTill && (
+          <div className="flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+            <Ic n="alert" s={13} c={CD.brass} />
+            <span className="flex-1 min-w-0">
+              The ledger is answering for <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
+              {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''} — this branch has {ledgerScope.workspaces.length} tills on the server and the till picker above names this desk’s own tills, which the server does not know by those names.
+              <span style={{ color: CD.mute }}> Every balance, count and close on this screen belongs to {ledgerTill.tillId}, whichever till the header shows.</span>
+            </span>
+          </div>
+        )}
         {!serverSession && serverBalancesReady && (
           <div className="flex items-center gap-3 px-4 py-2.5 flex-none" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}` }}>
             <span className="grid place-items-center flex-none" style={{ width: 28, height: 28, borderRadius: 8, background: CD.brass }}><Ic n="lock" s={14} c="var(--cd-on-ink)" /></span>

@@ -75,6 +75,12 @@ const cashMovementBody = z.object({
   counterpartyRef: z.string().trim().min(1).max(200),
   reason: z.string().trim().min(1).max(1000),
 }).strict();
+/* A unit cost is a ratio, not a money amount, so it is not `monetary`: two
+   decimal places on a per-unit figure drift the basis measurably over a day
+   of trading, and the column carries twelve. */
+const unitCost = z.string()
+  .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,12})?$/, "Expected a unit cost with at most twelve places.")
+  .refine((value) => new Decimal(value).gt(0) && new Decimal(value).lte("1000000"), "Unit cost is outside the permitted range.");
 const vaultBalancesBody = z.object({
   balances: z.object({
     CAD: monetary("0").optional(),
@@ -82,7 +88,22 @@ const vaultBalancesBody = z.object({
     EUR: monetary("0").optional(),
     GBP: monetary("0").optional(),
   }).strict().refine((value) => Object.keys(value).length > 0, "At least one balance is required."),
-}).strict();
+  /* What a unit of the opening position cost, where the desk can say. Its
+     own field rather than a change to `balances` so that every caller
+     sending the original shape keeps working — a desk that cannot
+     reconstruct what its safe cost must still be able to state what is in
+     it, and gets an unset basis rather than an invented one. */
+  unitCosts: z.object({
+    CAD: unitCost.optional(),
+    USD: unitCost.optional(),
+    EUR: unitCost.optional(),
+    GBP: unitCost.optional(),
+  }).strict().optional(),
+}).strict().refine(
+  (value) =>
+    Object.keys(value.unitCosts ?? {}).every((currency) => currency in value.balances),
+  { message: "A unit cost needs an opening amount to belong to.", path: ["unitCosts"] },
+);
 const vaultReceiptBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   direction: z.enum(["in", "out"]),
@@ -91,6 +112,10 @@ const vaultReceiptBody = z.object({
   counterpartyType: z.enum(["supplier", "bank", "other"]),
   counterpartyRef: z.string().trim().min(1).max(200),
   reason: z.string().trim().min(1).max(1000),
+  /* The home-currency price of the whole movement — the supplier's invoice
+     coming in, the sum the bank credited going out. Optional because the
+     cash can reach the safe before the paperwork does. */
+  costHome: monetary("0.01").optional(),
 }).strict();
 const vaultRunBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -177,6 +202,53 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
     return current.actor;
   }
+
+  /* The desk's own topology: which tills this session's branch actually has on
+     the ledger. Deliberately NOT resolved through resolveActor — that picks one
+     workspace and refuses (SCOPE_DENIED) when a branch has more than one and the
+     caller named none, which is exactly the state every client is in before it
+     has seen this list. The browser never sent x-workspace-id at all, so the
+     single-workspace fallback was carrying the whole desk; the day a branch got
+     a second till every ledger and quote call would have started failing with
+     nothing to tell the client which id to send. Scope still comes only from the
+     session record — the request cannot name a tenant, entity or branch. */
+  app.get("/api/ledger/workspaces", async (req, reply) => {
+    try {
+      const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+      if (!user) return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      if ((await tenantPlan(db, user.tenantId)) === "basic") {
+        return reply.code(403).send({
+          code: "PLAN_NOT_ENTITLED",
+          message: "The ledger is a Pro feature — upgrade the plan to use it.",
+        });
+      }
+      if (!user.authorizedBranchIds.includes(user.branchId)) {
+        return reply.code(403).send({ code: "SCOPE_DENIED" });
+      }
+      const rows = await db
+        .select({ workspace: schema.workspaces, branch: schema.branches })
+        .from(schema.workspaces)
+        .innerJoin(schema.branches, eq(schema.workspaces.branchId, schema.branches.id))
+        .where(and(
+          eq(schema.workspaces.tenantId, user.tenantId),
+          eq(schema.workspaces.legalEntityId, user.legalEntityId),
+          eq(schema.workspaces.branchId, user.branchId),
+        ));
+      // sorted by till id so a client that has to pick one picks the same one on
+      // every reload rather than following whatever order the database returned
+      const workspaces = rows
+        .map((row) => ({
+          workspaceId: row.workspace.id,
+          tillId: row.workspace.tillId,
+          branchId: row.branch.id,
+          branchName: row.branch.name,
+        }))
+        .sort((a, b) => a.tillId.localeCompare(b.tillId));
+      return reply.send({ workspaces });
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
 
   app.get("/api/ledger/readiness", async (req, reply) => {
     try {
@@ -348,7 +420,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor
-        ? reply.code(201).send(await vaultControl.initialize(actor, parsed.data.balances))
+        ? reply.code(201).send(await vaultControl.initialize(actor, parsed.data.balances, parsed.data.unitCosts))
         : undefined;
     } catch (error) {
       return failure(reply, error);

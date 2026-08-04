@@ -550,6 +550,112 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     ).toBe("auditor");
   });
 
+  it("lists the tills this session's branch has, without being told which one", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/ledger/workspaces",
+      cookies: await cookie(),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      workspaces: [
+        {
+          workspaceId: DEMO.workspaceId,
+          tillId: "till-01",
+          branchId: DEMO.branchId,
+          branchName: "Yorkville Desk",
+        },
+      ],
+    });
+    expect(
+      (await app.inject({ method: "GET", url: "/api/ledger/workspaces" }))
+        .statusCode,
+    ).toBe(401);
+  });
+
+  /* The header is what makes a second till possible at all. Before the browser
+     sent x-workspace-id the server fell back to "the branch's only workspace",
+     so the moment a branch had two, every ledger call failed with SCOPE_DENIED
+     and the Cash Drawer's till switcher was renaming a label over one drawer's
+     money. This walks that exact state: two workspaces, no header (still a
+     refusal, deliberately), then each workspace named in turn. */
+  it("answers for the named workspace once a branch has a second till", async () => {
+    const secondWorkspaceId = "ws-yorkville-till-02";
+    await handle.db.insert(schema.workspaces).values({
+      id: secondWorkspaceId,
+      tenantId: DEMO.tenantId,
+      legalEntityId: DEMO.legalEntityId,
+      branchId: DEMO.branchId,
+      tillId: "till-02",
+    });
+    try {
+      const cookies = await cookie();
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/ledger/workspaces",
+        cookies,
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json().workspaces.map((w: { tillId: string }) => w.tillId)).toEqual([
+        "till-01",
+        "till-02",
+      ]);
+
+      const unscoped = await app.inject({
+        method: "GET",
+        url: "/api/ledger/till-balances",
+        cookies,
+      });
+      expect(unscoped.statusCode).toBe(403);
+      expect(unscoped.json()).toMatchObject({ code: "SCOPE_DENIED" });
+
+      const first = await app.inject({
+        method: "GET",
+        url: "/api/ledger/till-balances",
+        cookies,
+        headers: { "x-workspace-id": DEMO.workspaceId },
+      });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toMatchObject({
+        tillId: "till-01",
+        balances: { CAD: "25000.00" },
+      });
+
+      const second = await app.inject({
+        method: "GET",
+        url: "/api/ledger/till-balances",
+        cookies,
+        headers: { "x-workspace-id": secondWorkspaceId },
+      });
+      expect(second.statusCode).toBe(200);
+      // a drawer of its own: same branch, its own till, none of till-01's money
+      expect(second.json()).toEqual({ tillId: "till-02", balances: {} });
+
+      const quoted = await app.inject({
+        method: "POST",
+        url: "/api/quotes",
+        cookies,
+        headers: { "x-workspace-id": secondWorkspaceId },
+        payload: {
+          customerId: "customer-demo",
+          from: "CAD",
+          to: "USD",
+          inputAmount: "100.00",
+          feeCad: "0.00",
+          direction: "customer_buy_foreign",
+        },
+      });
+      expect(quoted.statusCode).not.toBe(403);
+    } finally {
+      await pool.query("DELETE FROM ledger_principals WHERE workspace_id=$1", [
+        secondWorkspaceId,
+      ]);
+      await handle.db
+        .delete(schema.workspaces)
+        .where(eq(schema.workspaces.id, secondWorkspaceId));
+    }
+  });
+
   it("returns 401 for no session and 403 for invalid workspace", async () => {
     expect(
       (

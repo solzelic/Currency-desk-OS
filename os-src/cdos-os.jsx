@@ -768,6 +768,52 @@
     // re-reads its authoritative balance instead of showing a stale float
     const [cashVersion, setCashVersion] = useState(0);
 
+    /* WHICH TILL THE LEDGER IS ANSWERING FOR.
+       `station` is this desk's own idea of where you are sitting, and its ids
+       ("b01", "b01t1") were invented in the browser long before the server had
+       any — they are not the ledger's workspace ids and cannot be matched to
+       them. The server picks the till from the x-workspace-id header, which the
+       browser never sent; it got away with that only because it then fell back
+       to "the branch's only workspace". So switching to Till 2 in the Cash
+       Drawer renamed the header and nothing else: the balances, the counts and
+       the close all stayed on the one workspace the server chose, and a close
+       wrote your count onto that other drawer's balance.
+
+       This asks the server what tills the branch actually has and names one on
+       every subsequent call. With a single workspace that is simply the truth.
+       With more than one the desk cannot say which local till is which server
+       till — that reconciliation does not exist yet — so it holds the first by
+       till id (stable across reloads) and the Cash Drawer says out loud which
+       drawer it is counting, rather than letting somebody count Till 2 against
+       Till 1's expected. */
+    const [ledgerScope, setLedgerScope] = useState(null);
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser || !window.CDOS.Backend) {
+        if (window.CDOS.Backend) window.CDOS.Backend.setWorkspace(null);
+        setLedgerScope(null);
+        return;
+      }
+      let cancelled = false;
+      window.CDOS.Backend.loadWorkspaces()
+        .then(result => {
+          if (cancelled) return;
+          const list = (result && result.workspaces) || [];
+          const active = list[0] || null;
+          window.CDOS.Backend.setWorkspace(active ? active.workspaceId : null);
+          setLedgerScope({ workspaces: list, active, ambiguous: list.length > 1 });
+        })
+        .catch(error => {
+          if (cancelled) return;
+          window.CDOS.Backend.setWorkspace(null);
+          setLedgerScope(null);
+          log('Ledger tills unavailable', error.message || 'Could not read this branch’s tills from the server');
+        });
+      return () => { cancelled = true; };
+    }, [stage, srvUser]);
+    // the id the header carries; screens that fetch server money key their
+    // refetch on it so they re-read once the workspace is known
+    const ledgerWorkspaceId = (ledgerScope && ledgerScope.active && ledgerScope.active.workspaceId) || null;
+
     /* A till balance moves for four reasons, and only one of them starts here:
          · the vault issues or takes back a float   → postTillMovement, below
          · a deal posts against the drawer          → the ledger moves it alone
@@ -847,7 +893,9 @@
         .then(result => { if (!cancelled) applyVaultResult(result); })
         .catch(() => {});
       return () => { cancelled = true; };
-    }, [stage, srvUser, station && station.branchId]);
+      // the workspace id joins the deps because the first paint can fetch before
+      // the header is known; once it is, the vault is re-read for that till
+    }, [stage, srvUser, station && station.branchId, ledgerWorkspaceId]);
 
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
@@ -1086,7 +1134,7 @@
           if (active && error.code !== 'AUTHORIZATION_DENIED') log('Till session sync failed', error.message || 'Server till session unavailable');
         });
       return () => { active = false; };
-    }, [stage, srvUser, station && station.tillId]);
+    }, [stage, srvUser, station && station.tillId, ledgerWorkspaceId]);
 
     // customizable dock: order + hidden + edit (jiggle) mode
     const [appOrder, setAppOrder] = useState(() => { try { const s = JSON.parse(localStorage.getItem('cdos_app_order')); if (Array.isArray(s)) return s; } catch (e) {} return APP_ORDER.slice(); });
@@ -1868,7 +1916,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;

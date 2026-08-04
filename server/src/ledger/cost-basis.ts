@@ -58,14 +58,18 @@ export async function currentBasis(
   client: pg.PoolClient,
   scope: Scope,
 ): Promise<{ quantity: Decimal; avgCost: Decimal | null }> {
+  /* A vault has no till column to filter on, so its placeholders have to
+     close up rather than leave a hole where $4 was: PostgreSQL refuses to
+     prepare a statement that skips a parameter number ("could not determine
+     data type of parameter $4"), so every vault read failed outright. */
   const where =
     scope.locationKind === "till"
       ? `tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND till_id=$4 AND currency=$5`
-      : `tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND currency=$5`;
+      : `tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND currency=$4`;
   const params =
     scope.locationKind === "till"
       ? [scope.tenantId, scope.legalEntityId, scope.branchId, scope.locationId, scope.currency]
-      : [scope.tenantId, scope.legalEntityId, scope.branchId, null, scope.currency];
+      : [scope.tenantId, scope.legalEntityId, scope.branchId, scope.currency];
   const result = await client.query(
     `SELECT available_amount, avg_cost FROM ${balanceTable(scope.locationKind)}
       WHERE ${where}`,
@@ -84,18 +88,28 @@ async function writeAverage(
   scope: Scope,
   avgCost: Decimal | null,
 ) {
+  // same closed-up numbering as currentBasis, and for the same reason
   const where =
     scope.locationKind === "till"
       ? `tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND till_id=$5 AND currency=$6`
-      : `tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND currency=$6`;
-  const params = [
-    avgCost === null ? null : cost(avgCost),
-    scope.tenantId,
-    scope.legalEntityId,
-    scope.branchId,
-    scope.locationKind === "till" ? scope.locationId : null,
-    scope.currency,
-  ];
+      : `tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND currency=$5`;
+  const params =
+    scope.locationKind === "till"
+      ? [
+          avgCost === null ? null : cost(avgCost),
+          scope.tenantId,
+          scope.legalEntityId,
+          scope.branchId,
+          scope.locationId,
+          scope.currency,
+        ]
+      : [
+          avgCost === null ? null : cost(avgCost),
+          scope.tenantId,
+          scope.legalEntityId,
+          scope.branchId,
+          scope.currency,
+        ];
   await client.query(
     `UPDATE ${balanceTable(scope.locationKind)} SET avg_cost=$1 WHERE ${where}`,
     params,
