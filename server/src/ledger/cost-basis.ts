@@ -516,11 +516,13 @@ export async function acquire(
  * for a movement that is not a sale (a float, a return, a run): those carry
  * the cost out with them and realize nothing.
  *
- * The returned `unitCost` is what the units ACTUALLY left at, which under
- * FIFO is not the box's average. A transfer's receiving leg should acquire
- * at this figure and not at the sending box's average, or the value of the
- * cash changes crossing between two of the desk's own boxes. See the note
- * in docs/COST_BASIS.md — vault-control.ts still passes the average.
+ * The returned figures are what the disposal ACTUALLY applied, which under
+ * FIFO is not the box's average, and callers must post from them rather
+ * than doing the arithmetic again for themselves. A transfer's receiving
+ * leg acquires at `unitCost` — anything else changes the value of the cash
+ * as it crosses between two of the desk's own boxes — and a sale's journal
+ * carries `costOfSale` and `realized`, or the journal and the cost events
+ * describe the same deal differently.
  */
 export async function dispose(
   client: pg.PoolClient,

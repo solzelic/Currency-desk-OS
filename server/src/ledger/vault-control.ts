@@ -348,7 +348,7 @@ export async function transferCost(
   }
   if (unitCost === null) return null;
 
-  await dispose(client, from, {
+  const sent = await dispose(client, from, {
     quantity: args.amount,
     quantityBefore: args.fromBefore.quantity,
     avgCostBefore: unitCost,
@@ -359,9 +359,15 @@ export async function transferCost(
     actorId: args.actorId,
     now: args.now,
   });
+  /* What the units ACTUALLY left at, which under FIFO is what the sending
+     box's oldest lots cost and not its average. Acquiring at the average
+     instead would change the book value of inventory as cash crosses
+     between two of the desk's own boxes — money appearing or vanishing in
+     a corridor. Under weighted average the two are the same number, which
+     is exactly why this was invisible until FIFO existed. */
   await acquire(client, to, {
     quantity: args.amount,
-    unitCostHome: unitCost,
+    unitCostHome: sent.unitCost,
     quantityBefore: args.toBefore.quantity,
     avgCostBefore: args.toBefore.avgCost,
     eventKind: "transfer_in",
@@ -370,7 +376,7 @@ export async function transferCost(
     actorId: args.actorId,
     now: args.now,
   });
-  return unitCost;
+  return sent.unitCost;
 }
 
 export class VaultControlService {

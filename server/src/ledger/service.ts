@@ -372,12 +372,35 @@ export class LedgerService {
       const proceedsHome = disposing ? inputCad : null;   // they paid us this
       const paidHome = acquiring ? outputCad : null;      // we paid them this
 
-      const costOfSale =
+      const now = new Date(),
+        transactionId = `tx_${randomUUID()}`,
+        transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+
+      /* The stock leaves here, BEFORE the journal is written, because the
+         journal has to carry the figure the disposal actually produced.
+         Under weighted average that is output × the running average, which
+         is what this used to compute for itself; under FIFO it is what the
+         oldest lots cost, and a journal still doing its own arithmetic
+         against the average would disagree with the cost events behind it —
+         two books again, in the one place the whole file exists to keep
+         singular. `quantityBefore` is the pre-move balance for the same
+         reason it always was: the till balances move further down. */
+      const sale =
         disposing && basis
-          ? output.mul(basis.avgCost ?? new Decimal(0)).toDecimalPlaces(2)
-          : new Decimal(0);
-      const realized =
-        disposing && proceedsHome ? proceedsHome.minus(costOfSale) : new Decimal(0);
+          ? await dispose(client, { ...costScope, currency: quote.to }, {
+              quantity: output,
+              quantityBefore: basis.quantity,
+              avgCostBefore: basis.avgCost,
+              proceedsHome: proceedsHome ?? undefined,
+              eventKind: "sale",
+              sourceKind: "transaction",
+              sourceId: transactionId,
+              actorId: actor.userId,
+              now,
+            })
+          : null;
+      const costOfSale = sale ? sale.costOfSale : new Decimal(0);
+      const realized = sale?.realized ?? new Decimal(0);
 
       const journal = crossing
         ? ([
@@ -423,9 +446,6 @@ export class LedgerService {
           "JOURNAL_UNBALANCED",
           "Frozen quote journal is unbalanced.",
         );
-      const now = new Date(),
-        transactionId = `tx_${randomUUID()}`,
-        transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
       const response = {
         transactionId,
         transactionRef,
@@ -522,20 +542,8 @@ export class LedgerService {
       /* The basis moves with the cash. Quantities have just changed, so the
          pre-move figures captured above are what the weighted average is
          taken against — an average computed against a balance that has
-         already moved is the wrong number, quietly. */
-      if (disposing && basis) {
-        await dispose(client, { ...costScope, currency: quote.to }, {
-          quantity: output,
-          quantityBefore: basis.quantity,
-          avgCostBefore: basis.avgCost,
-          proceedsHome: proceedsHome ?? undefined,
-          eventKind: "sale",
-          sourceKind: "transaction",
-          sourceId: transactionId,
-          actorId: actor.userId,
-          now,
-        });
-      }
+         already moved is the wrong number, quietly. The disposal already
+         happened, above, so that the journal could be written from it. */
       if (acquiring && acquiredBasis) {
         await acquire(client, { ...costScope, currency: quote.from }, {
           quantity: input,

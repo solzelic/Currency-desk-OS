@@ -149,29 +149,28 @@ Under FIFO the running `avg_cost` column is still maintained, recomputed from
 the lots that remain. It is *informational* — the Vault's position screen
 shows it — and a FIFO disposal is never priced against it.
 
-### Known gaps at the FIFO boundary
+### One disposal, one figure
 
-Two callers still price against the average themselves rather than taking the
-figure `dispose()` computed. Under weighted average the two agree exactly, so
-neither is visible today; under FIFO they are the difference between the cost
-events and the journal.
+`dispose()` is the only thing that decides what a disposal cost. Nothing
+downstream recomputes it, because under FIFO a second opinion is a second
+book.
 
-**The journal on a customer sale.** `service.ts` computes `costOfSale` and
-`realized` from `basis.avgCost` and writes the journal, `ledger_transactions.
-realized_pnl_home` and `cost_of_sale_home` from them, before calling
-`dispose()`. So under FIFO `ledger_cost_events` carries the FIFO figure and
-the journal carries the weighted-average one. The fix is for `service.ts` to
-post the journal from what `dispose()` returned.
+**The journal on a customer sale** is written from what `dispose()` returned.
+The disposal therefore happens *before* the journal is composed rather than
+after it, which is the whole reason for the ordering in `postFrozenQuote`.
+`ledger_transactions.cost_of_sale_home` and `realized_pnl_home` come from the
+same return, so the cost events, the journal, and the row a report reads are
+three copies of one number.
 
-**Transfers between the desk's own boxes.**
-A float, a return and an armoured run dispose from one box and acquire into
-another. Under FIFO the disposing side now leaves at what its oldest lots
-cost, but `vault-control.ts` still acquires into the receiving box at the
-*sending box's average*. Under weighted average those are the same number and
-nothing is wrong; under FIFO they are not, and the book value of inventory
-moves as cash crosses between two of the desk's own boxes. `dispose()` returns
-the unit cost the units actually left at — the receiving leg should carry that
-figure.
+**A transfer between the desk's own boxes** — a float, a return, an armoured
+run — acquires into the receiving box at the `unitCost` the disposal returned,
+which under FIFO is what the sending box's oldest lots cost and not its
+average. Acquiring at the average would let the desk's inventory change value
+while cash walks down a corridor between two safes it owns.
+
+Under weighted average all of these figures coincide exactly, which is why
+this was invisible until FIFO existed and why
+`tests/fifo-boundary.postgres.test.ts` exercises it under FIFO specifically.
 
 ## An opening position that nobody costed
 
