@@ -1319,7 +1319,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   /* =====================================================================
      LEDGER — immutable record list
   ===================================================================== */
-  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked }) {
+  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
     const [q, setQ] = useState('');
     const [tf, setTf] = useState('All');
@@ -1330,10 +1330,15 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [breakdown, setBreakdown] = useState(null);   // 'volume' | 'fees' | null
     const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
     const [helpOpen, setHelpOpen] = useState(false);
+    /* Called after a deal posts and after a reversal. Both move the till on the
+       server — cash came across the counter — so the drawer has to be told, or
+       the Cash Drawer keeps showing the float from before the trade and the
+       teller reconciles against a number that is no longer true. */
     const refreshServerLedger = async () => {
       if (!serverBacked || !window.CDOS.Backend) return;
       const serverRows = await window.CDOS.Backend.loadLedger();
       setRows(current => window.CDOS.Backend.mergeRows(current, serverRows));
+      if (onTillChanged) await onTillChanged();
     };
     const openReceipt = async (row) => {
       if (!(serverBacked && row.serverTransactionId && window.CDOS.Backend)) {

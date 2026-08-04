@@ -768,6 +768,35 @@
     // re-reads its authoritative balance instead of showing a stale float
     const [cashVersion, setCashVersion] = useState(0);
 
+    /* A till balance moves for four reasons, and only one of them starts here:
+         · the vault issues or takes back a float   → postTillMovement, below
+         · a deal posts against the drawer          → the ledger moves it alone
+         · a reversal unwinds one                   → likewise
+         · the close writes the counted figure back → likewise
+       The last three happen entirely on the server, so the local rail would sit
+       at yesterday's figure while the ledger moved underneath it. Rather than
+       recompute the same arithmetic in the browser and hope the two agree, this
+       pulls the authoritative balances and writes them onto the active till.
+
+       Only the currencies the ledger carries are overwritten — a drawer holding
+       PHP keeps its PHP, which the server has no opinion about. */
+    const syncTillFromServer = async () => {
+      if (!srvUser || !window.CDOS.Backend || !station || !station.tillId) return;
+      try {
+        const result = await window.CDOS.Backend.loadTillBalances();
+        const ledger = Object.fromEntries(
+          Object.entries(result.balances || {}).map(([ccy2, value]) => [ccy2, Number(value)]));
+        setBranches(list => list.map(b => b.id !== station.branchId ? b : {
+          ...b,
+          tills: (b.tills || []).map(t => t.id !== station.tillId ? t
+            : { ...t, cash: { ...(t.cash || {}), ...ledger } }),
+        }));
+        setCashVersion(v => v + 1);
+      } catch (error) {
+        log('Till balance sync failed', error.message || 'Server till balances unavailable');
+      }
+    };
+
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
        posts against it — and there is one door for the first: this function.
@@ -832,6 +861,7 @@
       if (!parts.length) return { ok: false, message: 'Nothing to issue.' };
       setBranches(list); setBranchMoves(mv);
       log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`);
+      await syncTillFromServer();
       return { ok: true };
     };
     // wholesale orders land in THIS branch's vault — other locations fill their
@@ -851,6 +881,10 @@
       setBranches(r.branches); setBranchMoves(r.moves);
       log(r.verb, r.detail);
       setMoveCash(null);
+      // applyMove did the arithmetic; this replaces it with the server's answer,
+      // so a drawer that had drifted comes back into line on the next movement
+      // rather than carrying the drift forward forever
+      await syncTillFromServer();
       return { ok: true };
     };
     useEffect(() => { try { localStorage.setItem('cdos_station_v1', JSON.stringify(station)); } catch (e) {} }, [station]);
@@ -931,6 +965,13 @@
     };
     const syncDayRef = useRef(syncDayFromSession);
     syncDayRef.current = syncDayFromSession;
+    // the close writes the counted figures back as the till's balances, so the
+    // local rail has to be re-read from the server or it keeps the pre-count
+    // numbers and every screen outside the drawer disagrees with the drawer
+    const onTillSession = (session) => {
+      syncDayFromSession(session);
+      if (session && session.status === 'closed') syncTillFromServer();
+    };
     useEffect(() => {
       if (stage !== 'desktop' || !srvUser || !station || !station.tillId || !window.CDOS.Backend) return;
       let active = true;
@@ -1715,14 +1756,14 @@
         case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
-          ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser }} />
-          : <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser }} />;
+          ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />
+          : <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors }} />;
         case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig }} />;
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={syncDayFromSession} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;

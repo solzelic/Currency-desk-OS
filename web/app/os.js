@@ -27524,7 +27524,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     registerNav,
     winId,
     onFileLCTR,
-    serverBacked
+    serverBacked,
+    onTillChanged
   }) {
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
     const [q, setQ] = useState('');
@@ -27539,10 +27540,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       dir: 'desc'
     });
     const [helpOpen, setHelpOpen] = useState(false);
+    /* Called after a deal posts and after a reversal. Both move the till on the
+       server — cash came across the counter — so the drawer has to be told, or
+       the Cash Drawer keeps showing the float from before the trade and the
+       teller reconciles against a number that is no longer true. */
     const refreshServerLedger = async () => {
       if (!serverBacked || !window.CDOS.Backend) return;
       const serverRows = await window.CDOS.Backend.loadLedger();
       setRows(current => window.CDOS.Backend.mergeRows(current, serverRows));
+      if (onTillChanged) await onTillChanged();
     };
     const openReceipt = async row => {
       if (!(serverBacked && row.serverTransactionId && window.CDOS.Backend)) {
@@ -56804,6 +56810,38 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // re-reads its authoritative balance instead of showing a stale float
     const [cashVersion, setCashVersion] = useState(0);
 
+    /* A till balance moves for four reasons, and only one of them starts here:
+         · the vault issues or takes back a float   → postTillMovement, below
+         · a deal posts against the drawer          → the ledger moves it alone
+         · a reversal unwinds one                   → likewise
+         · the close writes the counted figure back → likewise
+       The last three happen entirely on the server, so the local rail would sit
+       at yesterday's figure while the ledger moved underneath it. Rather than
+       recompute the same arithmetic in the browser and hope the two agree, this
+       pulls the authoritative balances and writes them onto the active till.
+        Only the currencies the ledger carries are overwritten — a drawer holding
+       PHP keeps its PHP, which the server has no opinion about. */
+    const syncTillFromServer = async () => {
+      if (!srvUser || !window.CDOS.Backend || !station || !station.tillId) return;
+      try {
+        const result = await window.CDOS.Backend.loadTillBalances();
+        const ledger = Object.fromEntries(Object.entries(result.balances || {}).map(([ccy2, value]) => [ccy2, Number(value)]));
+        setBranches(list => list.map(b => b.id !== station.branchId ? b : {
+          ...b,
+          tills: (b.tills || []).map(t => t.id !== station.tillId ? t : {
+            ...t,
+            cash: {
+              ...(t.cash || {}),
+              ...ledger
+            }
+          })
+        }));
+        setCashVersion(v => v + 1);
+      } catch (error) {
+        log('Till balance sync failed', error.message || 'Server till balances unavailable');
+      }
+    };
+
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
        posts against it — and there is one door for the first: this function.
@@ -56932,6 +56970,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setBranches(list);
       setBranchMoves(mv);
       log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`);
+      await syncTillFromServer();
       return {
         ok: true
       };
@@ -56972,6 +57011,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setBranchMoves(r.moves);
       log(r.verb, r.detail);
       setMoveCash(null);
+      // applyMove did the arithmetic; this replaces it with the server's answer,
+      // so a drawer that had drifted comes back into line on the next movement
+      // rather than carrying the drift forward forever
+      await syncTillFromServer();
       return {
         ok: true
       };
@@ -57220,6 +57263,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     };
     const syncDayRef = useRef(syncDayFromSession);
     syncDayRef.current = syncDayFromSession;
+    // the close writes the counted figures back as the till's balances, so the
+    // local rail has to be re-read from the server or it keeps the pre-count
+    // numbers and every screen outside the drawer disagrees with the drawer
+    const onTillSession = session => {
+      syncDayFromSession(session);
+      if (session && session.status === 'closed') syncTillFromServer();
+    };
     useEffect(() => {
       if (stage !== 'desktop' || !srvUser || !station || !station.tillId || !window.CDOS.Backend) return;
       let active = true;
@@ -58792,7 +58842,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             registerNav: registerWinNav,
             winId: id,
             onFileLCTR: openComplianceFiling,
-            serverBacked: !!srvUser
+            serverBacked: !!srvUser,
+            onTillChanged: syncTillFromServer
           }) : /*#__PURE__*/React.createElement(Ledger, {
             rows,
             setRows,
@@ -58827,7 +58878,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             registerNav: registerWinNav,
             winId: id,
             onFileLCTR: openComplianceFiling,
-            serverBacked: !!srvUser
+            serverBacked: !!srvUser,
+            onTillChanged: syncTillFromServer
           });
         case 'transfers':
           return /*#__PURE__*/React.createElement(Transfers, {
@@ -58932,7 +58984,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             moves: branchMoves,
             serverBacked: !!srvUser,
             cashVersion: cashVersion,
-            onSessionSync: syncDayFromSession
+            onSessionSync: onTillSession
           });
         case 'vault':
           return /*#__PURE__*/React.createElement(Vault, {
