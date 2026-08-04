@@ -40,6 +40,11 @@ export type FrozenQuote = {
   inputAmount: string;
   outputAmount: string;
   marketMid: string;
+  /* A cross is priced off two board rows and `marketMid` can only hold
+     one of them, so both travel and both are checked. Null on an ordinary
+     deal, where one side IS the home currency and its rate is 1. */
+  fromMid?: string | null;
+  toMid?: string | null;
   customerRate: string;
   feeCad: string;
   spreadCad: string;
@@ -158,8 +163,16 @@ export class LedgerService {
           "Quote is outside the active scope.",
         );
       const row = authoritativeQuote.rows[0];
-      if ((row.from_currency === "CAD") === (row.to_currency === "CAD"))
-        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
+      /* What currency is this desk's book kept in, and may it trade this
+         pair at all? Asked of the jurisdiction pack, not assumed. This
+         used to demand that CAD be one side of every exchange, which is
+         the pilot's limitation written down as a rule — a customer with
+         dollars who wants euros is ordinary business for a currency desk. */
+      const pack = await resolvePack(client, actor.legalEntityId);
+      const home = pack.homeCurrency;
+      const permitted = pairAllowed(pack, row.from_currency, row.to_currency);
+      if (!permitted.ok)
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
       if (row.status !== "active")
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(row.expires_at).getTime() <= Date.now())
@@ -176,8 +189,18 @@ export class LedgerService {
         override.rows[0]?.overridden_spread_cad ?? row.spread_cad;
       const sameDecimal = (left: string, right: string, places: number) =>
         new Decimal(left).toDecimalPlaces(places).eq(new Decimal(right).toDecimalPlaces(places));
+      /* A cross carries two rates, and checking one of them is checking
+         half the price: move the mid nobody looked at and the deal posts
+         at a number the customer was never quoted. Presence has to match
+         too, or the check is skipped simply by omitting the field. */
+      const sameMid = (stored: string | null, submitted: string | null | undefined) =>
+        stored == null || submitted == null
+          ? (stored ?? null) === (submitted ?? null)
+          : sameDecimal(stored, submitted, 12);
       if (
         quote.quoteId !== row.quote_id ||
+        !sameMid(row.from_mid ?? null, quote.fromMid) ||
+        !sameMid(row.to_mid ?? null, quote.toMid) ||
         row.customer_id !== quote.customerId ||
         row.from_currency !== quote.from || row.to_currency !== quote.to ||
         !sameDecimal(row.input_amount, quote.inputAmount, 2) ||
@@ -195,8 +218,6 @@ export class LedgerService {
           "QUOTE_MISMATCH",
           "Frozen quote terms do not match authoritative record.",
         );
-      if ((quote.from === "CAD") === (quote.to === "CAD"))
-        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='quote-post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), idempotencyKey],
@@ -231,10 +252,28 @@ export class LedgerService {
         mid = new Decimal(quote.marketMid),
         rate = new Decimal(quote.customerRate),
         spread = decimal(quote.spreadCad, "0");
-      const inputCad =
-        quote.from === "CAD" ? input : input.mul(mid).toDecimalPlaces(2);
-      const outputCad =
-        quote.to === "CAD" ? output : output.mul(mid).toDecimalPlaces(2);
+      /* Both sides are foreign, so both are inventory and neither rate can
+         be inferred. A cross must carry both or there is nothing to value
+         it with — and valuing it off one mid would price the pair
+         one-for-one, which is not a rounding error, it is a giveaway. */
+      const crossing = quote.from !== home && quote.to !== home;
+      if (crossing && (quote.fromMid == null || quote.toMid == null))
+        throw new LedgerError(
+          "QUOTE_MISMATCH",
+          "A cross-currency deal must carry both frozen board mids.",
+        );
+      const sideMid = (currency: string, frozen: string | null | undefined) =>
+        frozen != null
+          ? new Decimal(frozen)
+          : currency === home
+            ? new Decimal(1)
+            : mid;
+      const fromMid = sideMid(quote.from, quote.fromMid);
+      const toMid = sideMid(quote.to, quote.toMid);
+      /* What the deal is worth to the desk, in the currency its book is
+         kept in, taken on each side at that side's own rate. */
+      const inputCad = input.mul(fromMid).toDecimalPlaces(2);
+      const outputCad = output.mul(toMid).toDecimalPlaces(2);
       if (inputCad.gte(3000) && customer.rows[0].id_status !== "verified")
         throw new LedgerError(
           "COMPLIANCE_BLOCKED",
@@ -253,8 +292,8 @@ export class LedgerService {
           "Insufficient till liquidity.",
         );
       /* ---------------- COST BASIS ----------------
-         One side of this exchange is home currency and the other is not
-         (the Canadian pilot requires it), so exactly one side is inventory:
+         Whichever side of this exchange is not the home currency is
+         inventory, and on a cross that is BOTH of them:
 
            customer pays foreign  → the desk ACQUIRES it, at what it paid
            customer takes foreign → the desk DISPOSES of it, and the margin
@@ -266,15 +305,6 @@ export class LedgerService {
          nobody paid; carrying stock at it books a gain the instant a trade
          happens and leaves the desk unable to say whether it made money on
          a currency over a week. See docs/COST_BASIS.md. */
-      /* What currency is this desk's book kept in? Asked, not assumed. A
-         London entity carries pack-gb-v1 and books in GBP; the same code
-         path serves both because nothing here knows what Canada is. */
-      const pack = await resolvePack(client, actor.legalEntityId);
-      const home = pack.homeCurrency;
-      const permitted = pairAllowed(pack, quote.from, quote.to);
-      if (!permitted.ok)
-        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
-
       const costScope = {
         tenantId: actor.tenantId,
         legalEntityId: actor.legalEntityId,
@@ -288,14 +318,16 @@ export class LedgerService {
         ? await currentBasis(client, { ...costScope, currency: quote.to })
         : null;
       if (disposing && basis && basis.avgCost === null && basis.quantity.gt(0)) {
-        /* Stock the desk held before cost tracking existed. The market mid
-           this trade is priced against is the best figure available, and the
-           event records that it was an estimate. */
+        /* Stock the desk held before cost tracking existed. The board mid
+           for THIS side is the best figure available, and the event records
+           that it was an estimate. On a cross the two sides have different
+           mids, and falling back to the other one's would put dollars into
+           the book at the price of euros. */
         basis.avgCost = await ensureBasis(
           client,
           { ...costScope, currency: quote.to },
           {
-            fallbackUnitCostHome: mid,
+            fallbackUnitCostHome: toMid,
             quantity: basis.quantity,
             avgCost: null,
             actorId: actor.userId,
@@ -318,7 +350,7 @@ export class LedgerService {
           client,
           { ...costScope, currency: quote.from },
           {
-            fallbackUnitCostHome: mid,
+            fallbackUnitCostHome: fromMid,
             quantity: acquiredBasis.quantity,
             avgCost: null,
             actorId: actor.userId,
@@ -331,7 +363,12 @@ export class LedgerService {
 
       /* What the desk actually gave up, and actually received, in home
          currency — the customer's rate, not the mid. The fee is charged on
-         top and is fee revenue, not part of the exchange. */
+         top and is fee revenue, not part of the exchange.
+
+         On a cross no home currency changes hands at all, and the deal is
+         valued on the side that ARRIVED: that is the cash the desk is
+         actually holding, and pricing off it leaves the margin as the only
+         thing moving the customer's number. */
       const proceedsHome = disposing ? inputCad : null;   // they paid us this
       const paidHome = acquiring ? outputCad : null;      // we paid them this
 
@@ -342,13 +379,27 @@ export class LedgerService {
       const realized =
         disposing && proceedsHome ? proceedsHome.minus(costOfSale) : new Decimal(0);
 
-      const journal = disposing
+      const journal = crossing
+        ? ([
+            /* Both sides are stock. The currency arriving comes in at what
+               the deal says it is worth; the currency leaving goes out AT
+               COST, and everything between them — the margin taken twice,
+               plus whatever the desk made or lost holding that currency —
+               is realized. Nothing here touches the home currency except
+               the fee, because nothing here IS the home currency. */
+            [`till:${quote.from}`, "debit", inputCad],
+            [`till:${home}`, "debit", fee],
+            [`till:${quote.to}`, "credit", costOfSale],
+            ["revenue:fx_trading", realized.gte(0) ? "credit" : "debit", realized.abs()],
+            ["revenue:fee", "credit", fee],
+          ] as const)
+        : disposing
         ? ([
             // sold foreign: home currency in, stock out AT COST, margin realized.
             // The exchange and the fee stay separate lines — they are separate
             // things, and a journal you cannot read them apart in is worse.
-            ["till:CAD", "debit", inputCad],
-            ["till:CAD", "debit", fee],
+            [`till:${home}`, "debit", inputCad],
+            [`till:${home}`, "debit", fee],
             [`till:${quote.to}`, "credit", costOfSale],
             ["revenue:fx_trading", realized.gte(0) ? "credit" : "debit", realized.abs()],
             ["revenue:fee", "credit", fee],
@@ -357,8 +408,8 @@ export class LedgerService {
             // bought foreign: stock in AT WHAT WE PAID, home currency out.
             // Nothing is earned buying — the margin comes when it is sold.
             [`till:${quote.from}`, "debit", paidHome ?? inputCad],
-            ["till:CAD", "debit", fee],
-            ["till:CAD", "credit", paidHome ?? outputCad],
+            [`till:${home}`, "debit", fee],
+            [`till:${home}`, "credit", paidHome ?? outputCad],
             ["revenue:fee", "credit", fee],
           ] as const);
       const debits = journal
@@ -401,7 +452,7 @@ export class LedgerService {
             `Customer: ${customer.rows[0].name}`,
             `Quote: ${quote.quoteId}`,
             `Paid exchange: ${fixed(input)} ${quote.from}`,
-            `Fee paid separately: CAD ${fixed(fee)}`,
+            `Fee paid separately: ${home} ${fixed(fee)}`,
             `Received: ${fixed(output)} ${quote.to}`,
           ],
         },
@@ -448,7 +499,8 @@ export class LedgerService {
       for (const [currency, direction, value] of [
         [quote.from, "in", input],
         [quote.to, "out", output],
-        ["CAD", "in", fee],
+        // the fee is cash too, and it is collected in the desk's own currency
+        [home, "in", fee],
       ] as const) {
         if (value.isZero()) continue;
         const delta = direction === "in" ? value : value.neg();
@@ -487,8 +539,15 @@ export class LedgerService {
       if (acquiring && acquiredBasis) {
         await acquire(client, { ...costScope, currency: quote.from }, {
           quantity: input,
-          // what a unit actually cost: the home currency handed over for it
-          unitCostHome: (paidHome ?? new Decimal(0)).div(input),
+          /* What a unit actually cost. On an ordinary purchase that is the
+             home currency handed over, divided by the units received. On a
+             cross nothing home-currency was handed over — what the desk
+             gave up was other stock — so the arriving cash enters at the
+             rate the deal was valued at, and the whole margin is realized
+             on the disposal side rather than half-hidden in this basis. */
+          unitCostHome: crossing
+            ? fromMid
+            : (paidHome ?? new Decimal(0)).div(input),
           quantityBefore: acquiredBasis.quantity,
           avgCostBefore: acquiredBasis.avgCost,
           eventKind: "purchase",
@@ -554,16 +613,22 @@ export class LedgerService {
         "INVALID_REQUEST",
         "Third-party status and name must be captured together.",
       );
-    if ((request.from === "CAD") === (request.to === "CAD"))
-      throw new LedgerError(
-        "UNSUPPORTED_CURRENCY_PAIR",
-        "CAD must be one side of an exchange.",
-      );
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
       await this.requireOpenTill(client, actor);
+      /* Whether this pair may be traded is the jurisdiction's answer, not a
+         constant. This used to demand CAD on one side, which is the pilot's
+         limitation and not a rule anywhere. It has to be asked inside the
+         transaction because the pack is read through the same client. */
+      const permitted = pairAllowed(
+        await resolvePack(client, actor.legalEntityId),
+        request.from,
+        request.to,
+      );
+      if (!permitted.ok)
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), request.idempotencyKey],

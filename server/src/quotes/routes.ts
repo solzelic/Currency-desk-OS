@@ -11,7 +11,7 @@ import { QuoteService } from "./service.js";
 
 const money=z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/).refine(v=>Number(v)<=1_000_000_000);
 const rate=z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,12})?$/).refine(v=>Number(v)>0&&Number(v)<=1_000_000_000);
-const createBody=z.object({customerId:z.string().min(1).max(120),from:z.enum(["CAD","USD","EUR","GBP"]),to:z.enum(["CAD","USD","EUR","GBP"]),inputAmount:money,feeCad:money,direction:z.enum(["customer_buy_foreign","customer_sell_foreign"]),supersedesQuoteId:z.string().min(1).max(120).optional()});
+const createBody=z.object({customerId:z.string().min(1).max(120),from:z.enum(["CAD","USD","EUR","GBP"]),to:z.enum(["CAD","USD","EUR","GBP"]),inputAmount:money,feeCad:money,direction:z.enum(["customer_buy_foreign","customer_sell_foreign","customer_cross"]),supersedesQuoteId:z.string().min(1).max(120).optional()});
 const overrideBody=z.object({customerRate:rate,reason:z.string().trim().min(1).max(1000)});
 const postBody=z.object({idempotencyKey:z.string().min(1).max(200),purpose:z.string().trim().min(1).max(500),sourceOfFunds:z.string().trim().min(1).max(500),thirdParty:z.boolean().default(false),thirdPartyName:z.string().trim().max(200).optional()}).refine(v=>!v.thirdParty||!!v.thirdPartyName,{message:"Third-party name is required.",path:["thirdPartyName"]}).refine(v=>v.thirdParty||!v.thirdPartyName,{message:"Third-party name requires third-party status.",path:["thirdPartyName"]});
 type Resolution={kind:"authenticated";actor:LedgerActor}|{kind:"unauthenticated"}|{kind:"scope_denied"}|{kind:"plan_denied"};

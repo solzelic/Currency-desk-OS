@@ -5,13 +5,14 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
 import {
   LedgerError,
   LedgerService,
   type FrozenQuote,
   type LedgerActor,
 } from "../ledger/service.js";
-import { calculateQuoteTerms } from "./terms.js";
+import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
@@ -21,7 +22,7 @@ export type QuoteRequest = {
   to: Currency;
   inputAmount: string;
   feeCad: string;
-  direction: "customer_buy_foreign" | "customer_sell_foreign";
+  direction: QuoteDirection;
   supersedesQuoteId?: string;
 };
 const scope = (a: LedgerActor) => [
@@ -113,6 +114,11 @@ export class QuoteService {
       inputAmount: q.input_amount,
       outputAmount,
       marketMid: q.market_mid,
+      /* Null on an ordinary deal, where one side IS the home currency and
+         its rate is 1 by definition. A cross carries both, because the
+         pair is priced off two board rows and neither one describes it. */
+      fromMid: q.from_mid ?? null,
+      toMid: q.to_mid ?? null,
       customerRate,
       buyOrSellSide: q.buy_or_sell_side,
       feeCad: q.fee_cad,
@@ -136,17 +142,26 @@ export class QuoteService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "quote:create");
-      if (request.from === request.to)
-        throw new LedgerError(
-          "UNSUPPORTED_CURRENCY_PAIR",
-          "An exchange must have exactly one CAD currency leg.",
-        );
-      if ((request.from === "CAD") === (request.to === "CAD"))
-        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", "CAD must be one side of an exchange.");
-      if (
-        (request.direction === "customer_buy_foreign" && request.from !== "CAD") ||
-        (request.direction === "customer_sell_foreign" && request.to !== "CAD")
-      )
+      /* Which country's rules is this desk under, and what does it book in?
+         Asked, not assumed — this used to test against the literal "CAD",
+         which quoted a London desk in the wrong currency and refused a
+         cross-currency deal that its jurisdiction actually permits. */
+      const pack = await resolvePack(client, actor.legalEntityId);
+      const home = pack.homeCurrency;
+      const permitted = pairAllowed(pack, request.from, request.to);
+      if (!permitted.ok)
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
+      /* The currencies and the home currency between them already say what
+         shape this deal is. A caller who states a different one has built
+         the wrong request, and there is no safe way to pick which half of
+         the disagreement was right. */
+      const shape: QuoteDirection =
+        request.from === home
+          ? "customer_buy_foreign"
+          : request.to === home
+            ? "customer_sell_foreign"
+            : "customer_cross";
+      if (shape !== request.direction)
         throw new LedgerError(
           "INVALID_REQUEST",
           "Transaction direction does not match the currency pair.",
@@ -180,33 +195,64 @@ export class QuoteService {
           "RATE_PUBLICATION_STALE",
           "Rate publication is stale.",
         );
-      const foreign =
-        request.direction === "customer_buy_foreign"
-          ? request.to
-          : request.from;
-      const row = board.board_rows[foreign];
-      if (!row || row.show === false)
-        throw new LedgerError(
-          "RATE_NOT_AVAILABLE",
-          "Currency is not published.",
-        );
+      /* Both sides of a cross come off the SAME publication. Reading one
+         mid from this board and the other from whatever is current would
+         price the pair off two moments in the market, and the difference
+         between those moments is a number nobody quoted. */
+      const publishedMid = (currency: string) => {
+        const row = board.board_rows[currency];
+        if (!row || row.show === false)
+          throw new LedgerError(
+            "RATE_NOT_AVAILABLE",
+            "Currency is not published.",
+          );
+        return row;
+      };
       let terms;
       try {
-        terms = calculateQuoteTerms({
-          direction: request.direction,
-          from: request.from,
-          to: request.to,
-          inputAmount: request.inputAmount,
-          feeCad: request.feeCad,
-          marketMid: String(row.mid),
-          margin: String(
-            row.spread ??
-              (request.direction === "customer_buy_foreign"
-                ? board.sell_margin
-                : board.buy_margin),
-          ),
-        });
-      } catch {
+        if (shape === "customer_cross") {
+          const fromRow = publishedMid(request.from);
+          const toRow = publishedMid(request.to);
+          terms = calculateQuoteTerms({
+            direction: shape,
+            from: request.from,
+            to: request.to,
+            inputAmount: request.inputAmount,
+            feeCad: request.feeCad,
+            /* Unused by a cross, but the shape of the input demands a rate.
+               The incoming side is the one the deal is valued on. */
+            marketMid: String(fromRow.mid),
+            fromMid: String(fromRow.mid),
+            toMid: String(toRow.mid),
+            /* The desk buys the currency arriving and sells the one leaving,
+               so each side takes the margin it would have taken had the
+               customer done this as two deals through the home currency. */
+            margin: String(fromRow.spread ?? board.buy_margin),
+            outMargin: String(toRow.spread ?? board.sell_margin),
+            homeCurrency: home,
+          });
+        } else {
+          const row = publishedMid(
+            shape === "customer_buy_foreign" ? request.to : request.from,
+          );
+          terms = calculateQuoteTerms({
+            direction: shape,
+            from: request.from,
+            to: request.to,
+            inputAmount: request.inputAmount,
+            feeCad: request.feeCad,
+            marketMid: String(row.mid),
+            margin: String(
+              row.spread ??
+                (shape === "customer_buy_foreign"
+                  ? board.sell_margin
+                  : board.buy_margin),
+            ),
+            homeCurrency: home,
+          });
+        }
+      } catch (error) {
+        if (error instanceof LedgerError) throw error;
         throw new LedgerError("INVALID_REQUEST", "Invalid commercial terms.");
       }
       const {
@@ -239,18 +285,26 @@ export class QuoteService {
           now.getTime() + Number(process.env.QUOTE_TTL_SECONDS ?? 60) * 1000,
         );
       await client.query(
-        "INSERT INTO quotes (quote_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,created_by,direction,from_currency,to_currency,input_amount,output_amount,market_mid,customer_rate,buy_or_sell_side,fee_cad,spread_cad,rate_board_publication_id,market_snapshot_id,rate_source_type,status,expires_at,created_at,supersedes_quote_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'active',$22,$23,$24)",
+        "INSERT INTO quotes (quote_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,created_by,direction,from_currency,to_currency,input_amount,output_amount,market_mid,from_mid,to_mid,customer_rate,buy_or_sell_side,fee_cad,spread_cad,rate_board_publication_id,market_snapshot_id,rate_source_type,status,expires_at,created_at,supersedes_quote_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'active',$24,$25,$26)",
         [
           quoteId,
           ...scope(actor),
           request.customerId,
           actor.userId,
-          request.direction,
+          shape,
           request.from,
           request.to,
           fixed(input),
           fixed(output),
+          /* `market_mid` stays what it always was — the single rate this
+             deal is valued at — so every reader downstream keeps working.
+             On a cross that is the incoming side's mid. */
           fixed(mid, 12),
+          /* Both mids are frozen only where both are real. On an ordinary
+             deal the home side's rate is 1 by definition and storing it
+             would invite somebody to tamper-check against a constant. */
+          shape === "customer_cross" ? fixed(terms.fromMid, 12) : null,
+          shape === "customer_cross" ? fixed(terms.toMid, 12) : null,
           fixed(rate, 12),
           terms.buyOrSellSide,
           fixed(fee),
@@ -388,13 +442,29 @@ export class QuoteService {
           "OVERRIDE_LIMIT_EXCEEDED",
           "Override exceeds policy limit.",
         );
+      /* What the overridden deal is worth to the desk, on both sides, in
+         its own home currency. A cross has a real rate on each side and
+         they are frozen on the quote; an ordinary deal has the home side
+         at 1 by definition. Reading one mid for both — which is what
+         testing against the literal "CAD" amounted to — values a
+         foreign-to-foreign deal one-for-one. */
+      const home = (await resolvePack(client, actor.legalEntityId))
+        .homeCurrency;
+      const mid = new Decimal(q.market_mid);
+      const sideMid = (currency: string, frozen: string | null) =>
+        frozen != null
+          ? new Decimal(frozen)
+          : currency === home
+            ? new Decimal(1)
+            : mid;
       const input = new Decimal(q.input_amount),
-        mid = new Decimal(q.market_mid),
         output = input.mul(rate).toDecimalPlaces(2),
-        inputCad =
-          q.from_currency === "CAD" ? input : input.mul(mid).toDecimalPlaces(2),
-        outputCad =
-          q.to_currency === "CAD" ? output : output.mul(mid).toDecimalPlaces(2),
+        inputCad = input
+          .mul(sideMid(q.from_currency, q.from_mid))
+          .toDecimalPlaces(2),
+        outputCad = output
+          .mul(sideMid(q.to_currency, q.to_mid))
+          .toDecimalPlaces(2),
         spread = inputCad.sub(outputCad).toDecimalPlaces(2);
       if (spread.lt(0))
         throw new LedgerError(
@@ -480,6 +550,8 @@ export class QuoteService {
           inputAmount: q.input_amount,
           outputAmount: value.outputAmount,
           marketMid: q.market_mid,
+          fromMid: q.from_mid ?? null,
+          toMid: q.to_mid ?? null,
           customerRate: value.customerRate,
           feeCad: q.fee_cad,
           spreadCad: value.spreadCad,

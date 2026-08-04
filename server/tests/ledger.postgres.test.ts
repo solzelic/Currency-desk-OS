@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
+let handle: DbHandle;
 let pool: pg.Pool;
 let service: LedgerService;
 const teller: LedgerActor = {
@@ -31,28 +31,42 @@ async function reset() {
 
 postgres("real PostgreSQL ledger posting", () => {
   beforeAll(async () => {
+    /* The whole schema, not three hand-picked files. Posting now asks the
+       legal entity's jurisdiction pack what currency the book is kept in
+       and whether a pair may be traded, so the pack tables have to exist
+       here rather than only in whichever suite happened to run first. */
+    process.env.DATABASE_URL = url;
+    handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
     service = new LedgerService(pool);
+    /* A desk whose jurisdiction genuinely forbids foreign-to-foreign deals.
+       This file's entity is deliberately one of those, so the refusal it
+       asserts is a rule somebody configured rather than a constant in the
+       code. */
     await pool.query(
-      await readFile(resolve(process.cwd(), "src/ledger/migration.sql"), "utf8"),
+      `INSERT INTO jurisdiction_packs
+         (pack_id,jurisdiction,version,name,home_currency,regulator,
+          report_name,report_threshold,id_threshold,report_currency,
+          allow_cross_currency)
+       VALUES ('pack-nocross-v1','ZZ',1,'No Cross','CAD','TESTREG',
+               'NIL',10000,3000,'CAD',false)
+       ON CONFLICT (pack_id) DO NOTHING`,
     );
     await pool.query(
-      await readFile(
-        resolve(
-          process.cwd(),
-          "src/db/migrations/005_transaction_compliance_capture.sql",
-        ),
-        "utf8",
-      ),
+      "INSERT INTO tenants (id,name) VALUES ('tenant-1','Ledger tests') ON CONFLICT DO NOTHING",
     );
     await pool.query(
-      await readFile(
-        resolve(process.cwd(), "src/db/migrations/006_till_control.sql"),
-        "utf8",
-      ),
+      `INSERT INTO legal_entities
+         (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
+       VALUES ('le-1','tenant-1','Ledger tests','CAD','pack-nocross-v1',1)
+       ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-nocross-v1'`,
     );
   });
-  afterAll(async () => pool.end());
+  afterAll(async () => {
+    await handle.close();
+    await pool.end();
+    delete process.env.DATABASE_URL;
+  });
   beforeEach(reset);
 
   it("persists an atomic transaction, balanced journal, separate CAD fee and audit", async () => {
@@ -86,13 +100,14 @@ postgres("real PostgreSQL ledger posting", () => {
     expect((await pool.query("SELECT * FROM ledger_transactions")).rowCount).toBe(1);
   });
 
-  it("rolls back failed writes and enforces scope and Canadian pairs", async () => {
+  it("rolls back failed writes and enforces scope and the pack's permitted pairs", async () => {
     await expect(service.post(teller, { ...request, inputAmount: "999999.00" })).rejects.toBeInstanceOf(LedgerError);
     for (const table of ["ledger_transactions", "ledger_journal_entries", "ledger_till_movements", "ledger_audit_events", "ledger_idempotency"]) {
       expect((await pool.query(`SELECT count(*) FROM ${table}`)).rows[0].count).toBe("0");
     }
     await expect(service.post({ ...teller, branchId: "other", authorizedBranchIds: ["other"] }, { ...request, idempotencyKey: "branch" })).rejects.toMatchObject({ code: "SCOPE_DENIED" });
     await expect(service.post({ ...teller, tenantId: "other" }, { ...request, idempotencyKey: "tenant" })).rejects.toMatchObject({ code: "SCOPE_DENIED" });
+    // this entity's pack has allow_cross_currency off, and the refusal says so
     await expect(service.post(teller, { ...request, from: "USD", to: "EUR", idempotencyKey: "pair" })).rejects.toMatchObject({ code: "UNSUPPORTED_CURRENCY_PAIR" });
   });
 

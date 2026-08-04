@@ -391,27 +391,30 @@ postgres("quote service against real PostgreSQL", () => {
     expect(retry.json().transactionId).toBe(first.json().transactionId);
     expect((await pool.query("SELECT purpose,source_of_funds FROM ledger_transactions WHERE transaction_id=$1", [first.json().transactionId])).rows[0]).toEqual({ purpose: "Personal travel", source_of_funds: "Employment income" });
   });
-  it("enforces the Canadian pilot pairs and matching direction", async () => {
+  /* This used to be called "the Canadian pilot pairs" and asserted that
+     USD/EUR was refused. That was the pilot's limitation written down as a
+     rule: a customer with dollars who wants euros is ordinary business, and
+     whether a desk may do it in one deal is now the pack's answer. What is
+     still enforced is that the stated direction agrees with the currencies. */
+  it("takes the shape of a deal from the currencies and the desk's home currency", async () => {
     for (const valid of [
       { from: "CAD", to: "USD", direction: "customer_buy_foreign" },
       { from: "USD", to: "CAD", direction: "customer_sell_foreign" },
       { from: "CAD", to: "EUR", direction: "customer_buy_foreign" },
       { from: "EUR", to: "CAD", direction: "customer_sell_foreign" },
+      { from: "USD", to: "EUR", direction: "customer_cross" },
+      { from: "GBP", to: "USD", direction: "customer_cross" },
     ]) {
       expect((await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: { ...body, ...valid } })).statusCode).toBe(201);
     }
-    for (const invalid of [
-      { from: "USD", to: "EUR", direction: "customer_buy_foreign" },
-      { from: "GBP", to: "USD", direction: "customer_sell_foreign" },
-      { from: "CAD", to: "CAD", direction: "customer_buy_foreign" },
-    ]) {
-      const response = await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: { ...body, ...invalid } });
-      expect(response.statusCode).toBe(422);
-      expect(response.json().code).toBe("UNSUPPORTED_CURRENCY_PAIR");
-    }
+    const same = await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: { ...body, from: "CAD", to: "CAD", direction: "customer_buy_foreign" } });
+    expect(same.statusCode).toBe(422);
+    expect(same.json().code).toBe("UNSUPPORTED_CURRENCY_PAIR");
     for (const invalidDirection of [
       { from: "USD", to: "CAD", direction: "customer_buy_foreign" },
       { from: "CAD", to: "USD", direction: "customer_sell_foreign" },
+      { from: "USD", to: "EUR", direction: "customer_buy_foreign" },
+      { from: "CAD", to: "USD", direction: "customer_cross" },
     ]) {
       const response = await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: { ...body, ...invalidDirection } });
       expect(response.statusCode).toBe(400);
