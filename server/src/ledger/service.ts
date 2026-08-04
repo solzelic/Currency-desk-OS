@@ -5,6 +5,7 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { acquire, currentBasis, dispose, ensureBasis } from "./cost-basis.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
@@ -58,6 +59,10 @@ export class LedgerError extends Error {
     super(message);
   }
 }
+
+/* The pilot books in CAD. Named rather than inlined so the jurisdiction
+   work has one place to change when home currency becomes per-entity. */
+const HOME_CURRENCY = "CAD";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -249,13 +254,106 @@ export class LedgerService {
           "INSUFFICIENT_TILL_LIQUIDITY",
           "Insufficient till liquidity.",
         );
-      const journal = [
-        [`till:${quote.from}`, "debit", inputCad],
-        ["till:CAD", "debit", fee],
-        [`till:${quote.to}`, "credit", outputCad],
-        ["revenue:fx_spread", "credit", spread],
-        ["revenue:fee", "credit", fee],
-      ] as const;
+      /* ---------------- COST BASIS ----------------
+         One side of this exchange is home currency and the other is not
+         (the Canadian pilot requires it), so exactly one side is inventory:
+
+           customer pays foreign  → the desk ACQUIRES it, at what it paid
+           customer takes foreign → the desk DISPOSES of it, and the margin
+                                    between the proceeds and what those
+                                    units actually cost is realized here
+
+         The journal that follows carries the inventory leg AT COST rather
+         than at the market mid it used to use. A mid is a reference price
+         nobody paid; carrying stock at it books a gain the instant a trade
+         happens and leaves the desk unable to say whether it made money on
+         a currency over a week. See docs/COST_BASIS.md. */
+      const costScope = {
+        tenantId: actor.tenantId,
+        legalEntityId: actor.legalEntityId,
+        branchId: actor.branchId,
+        locationKind: "till" as const,
+        locationId: actor.tillId,
+      };
+      const acquiring = quote.from !== HOME_CURRENCY;   // foreign came in
+      const disposing = quote.to !== HOME_CURRENCY;     // foreign went out
+      const basis = disposing
+        ? await currentBasis(client, { ...costScope, currency: quote.to })
+        : null;
+      if (disposing && basis && basis.avgCost === null && basis.quantity.gt(0)) {
+        /* Stock the desk held before cost tracking existed. The market mid
+           this trade is priced against is the best figure available, and the
+           event records that it was an estimate. */
+        basis.avgCost = await ensureBasis(
+          client,
+          { ...costScope, currency: quote.to },
+          {
+            fallbackUnitCostHome: mid,
+            quantity: basis.quantity,
+            avgCost: null,
+            actorId: actor.userId,
+            now: new Date(),
+            sourceKind: "quote",
+            sourceId: quote.quoteId,
+          },
+        );
+      }
+      const acquiredBasis = acquiring
+        ? await currentBasis(client, { ...costScope, currency: quote.from })
+        : null;
+      if (acquiring && acquiredBasis && acquiredBasis.avgCost === null && acquiredBasis.quantity.gt(0)) {
+        /* Stock already in the drawer with no recorded cost. Without this,
+           a small purchase would silently become the average for the whole
+           pile — re-pricing cash it had nothing to do with. Give what was
+           already there its own estimated basis first, so the purchase
+           blends against it instead of overwriting it. */
+        acquiredBasis.avgCost = await ensureBasis(
+          client,
+          { ...costScope, currency: quote.from },
+          {
+            fallbackUnitCostHome: mid,
+            quantity: acquiredBasis.quantity,
+            avgCost: null,
+            actorId: actor.userId,
+            now: new Date(),
+            sourceKind: "quote",
+            sourceId: quote.quoteId,
+          },
+        );
+      }
+
+      /* What the desk actually gave up, and actually received, in home
+         currency — the customer's rate, not the mid. The fee is charged on
+         top and is fee revenue, not part of the exchange. */
+      const proceedsHome = disposing ? inputCad : null;   // they paid us this
+      const paidHome = acquiring ? outputCad : null;      // we paid them this
+
+      const costOfSale =
+        disposing && basis
+          ? output.mul(basis.avgCost ?? new Decimal(0)).toDecimalPlaces(2)
+          : new Decimal(0);
+      const realized =
+        disposing && proceedsHome ? proceedsHome.minus(costOfSale) : new Decimal(0);
+
+      const journal = disposing
+        ? ([
+            // sold foreign: home currency in, stock out AT COST, margin realized.
+            // The exchange and the fee stay separate lines — they are separate
+            // things, and a journal you cannot read them apart in is worse.
+            ["till:CAD", "debit", inputCad],
+            ["till:CAD", "debit", fee],
+            [`till:${quote.to}`, "credit", costOfSale],
+            ["revenue:fx_trading", realized.gte(0) ? "credit" : "debit", realized.abs()],
+            ["revenue:fee", "credit", fee],
+          ] as const)
+        : ([
+            // bought foreign: stock in AT WHAT WE PAID, home currency out.
+            // Nothing is earned buying — the margin comes when it is sold.
+            [`till:${quote.from}`, "debit", paidHome ?? inputCad],
+            ["till:CAD", "debit", fee],
+            ["till:CAD", "credit", paidHome ?? outputCad],
+            ["revenue:fee", "credit", fee],
+          ] as const);
       const debits = journal
         .filter((x) => x[1] === "debit")
         .reduce((s, x) => s.add(x[2]), new Decimal(0));
@@ -302,7 +400,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)",
         [
           transactionId,
           transactionRef,
@@ -329,6 +427,10 @@ export class LedgerService {
           quote.rateSourceType,
           quote.quoteOverrideId,
           now,
+          // what the desk actually made on this deal, and what the cash it
+          // handed over had cost it. Null on a purchase — buying earns nothing.
+          disposing ? fixed(realized) : null,
+          disposing ? fixed(costOfSale) : null,
         ],
       );
       for (const [account, side, value] of journal)
@@ -356,6 +458,38 @@ export class LedgerService {
           "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
           [transactionId, currency, direction, fixed(value), now],
         );
+      }
+
+      /* The basis moves with the cash. Quantities have just changed, so the
+         pre-move figures captured above are what the weighted average is
+         taken against — an average computed against a balance that has
+         already moved is the wrong number, quietly. */
+      if (disposing && basis) {
+        await dispose(client, { ...costScope, currency: quote.to }, {
+          quantity: output,
+          quantityBefore: basis.quantity,
+          avgCostBefore: basis.avgCost,
+          proceedsHome: proceedsHome ?? undefined,
+          eventKind: "sale",
+          sourceKind: "transaction",
+          sourceId: transactionId,
+          actorId: actor.userId,
+          now,
+        });
+      }
+      if (acquiring && acquiredBasis) {
+        await acquire(client, { ...costScope, currency: quote.from }, {
+          quantity: input,
+          // what a unit actually cost: the home currency handed over for it
+          unitCostHome: (paidHome ?? new Decimal(0)).div(input),
+          quantityBefore: acquiredBasis.quantity,
+          avgCostBefore: acquiredBasis.avgCost,
+          eventKind: "purchase",
+          sourceKind: "transaction",
+          sourceId: transactionId,
+          actorId: actor.userId,
+          now,
+        });
       }
       await client.query(
         "INSERT INTO ledger_audit_events (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,action,target_id,correlation_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,'transaction.post',$7,$8,$9)",

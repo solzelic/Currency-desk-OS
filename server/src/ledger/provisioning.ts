@@ -278,6 +278,11 @@ export class LedgerProvisioningService {
           marketMid: row.market_mid ?? null,
           feeCad: row.fee_cad,
           spreadCad: row.spread_cad,
+          /* What the deal actually earned, against what the cash it handed
+             over had cost — null on a purchase, because buying earns
+             nothing. See docs/COST_BASIS.md. */
+          costOfSaleHome: row.cost_of_sale_home ?? null,
+          realizedPnlHome: row.realized_pnl_home ?? null,
           purpose: row.purpose,
           sourceOfFunds: row.source_of_funds,
           thirdParty: row.third_party ?? false,

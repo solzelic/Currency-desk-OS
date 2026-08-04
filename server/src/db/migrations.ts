@@ -15,6 +15,7 @@ const migrations: readonly Migration[] = [
   ["007_stripe_billing", "src/db/migrations/007_stripe_billing.sql"],
   ["008_password_reset", "src/db/migrations/008_password_reset.sql"],
   ["009_vault_control", "src/db/migrations/009_vault_control.sql"],
+  ["010_cost_basis", "src/db/migrations/010_cost_basis.sql"],
 ] as const;
 
 export async function runMigrations(
