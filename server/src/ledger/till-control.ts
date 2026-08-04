@@ -3,6 +3,7 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
+import { applyVaultLeg } from "./vault-control.js";
 
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
 type Counts = Partial<Record<Currency, string>>;
@@ -422,6 +423,32 @@ export class TillControlService {
       }
       const now = new Date();
       const movementId = `cash_move_${randomUUID()}`;
+      /* THE OTHER HALF OF THE FLOAT.
+         Cash into a drawer came out of the branch's strong room, so the
+         strong room is debited here, in this transaction, against the same
+         locks. Either both boxes move or neither does — the till can no
+         longer be floated from a vault that did not have the money.
+         A branch that has never stated a vault opening position returns
+         null: nothing is balanced, because balancing against an unstated
+         position would be inventing a number for somebody else's cash. */
+      let vaultLegId: string | null = null;
+      if (input.counterpartyType === "vault") {
+        vaultLegId = await applyVaultLeg(client, {
+          tenantId: actor.tenantId,
+          legalEntityId: actor.legalEntityId,
+          branchId: actor.branchId,
+          direction: input.direction === "in" ? "out" : "in",
+          currency: input.currency,
+          amount: fixed(amount),
+          counterpartyType: "till",
+          counterpartyRef: actor.tillId,
+          relatedMovementId: movementId,
+          reason: input.reason,
+          actorId: actor.userId,
+          idempotencyKey: input.idempotencyKey,
+          now,
+        });
+      }
       const movement = await client.query(
         `INSERT INTO ledger_operational_cash_movements
           (movement_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
@@ -497,7 +524,20 @@ export class TillControlService {
     row: Record<string, unknown>,
   ) {
     const balances = await this.lockBalances(client, actor);
+    // both sides of the movement come back together — a float that shows the
+    // drawer going up without the vault coming down is half a story
+    const vault = await client.query(
+      `SELECT currency,available_amount
+         FROM ledger_vault_balances
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        ORDER BY currency`,
+      [actor.tenantId, actor.legalEntityId, actor.branchId],
+    );
     return {
+      vaultTracked: vault.rowCount! > 0,
+      vaultBalances: Object.fromEntries(
+        vault.rows.map((entry) => [entry.currency.trim(), entry.available_amount]),
+      ),
       movement: {
         movementId: row.movement_id,
         sessionId: row.session_id,

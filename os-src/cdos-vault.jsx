@@ -113,13 +113,19 @@
   }
 
   /* ===================== POSITION (fully derived) ===================== */
-  function Position({ rows, baseline, receipts, settings }) {
+  function Position({ rows, baseline, receipts, settings, ledgerVault }) {
     const atCost = !!(settings && settings.vaultBasis === 'cost');   // Settings → Vault · valuation basis
     const rowsAll = VCCYS.map(c => {
       const p = posOf(c, rows, baseline, receipts);
-      const mkt = cadVal(p.units, c);
-      const basis = p.units * p.cost;
-      return { c, units: p.units, cost: p.cost, mkt, basis, upl: mkt - basis, st: bandStatus(c, p.units, settings) };
+      /* Where the ledger carries this currency, ITS figure is what is in the
+         safe — the derived one is an estimate of the same thing and the two
+         must not be shown side by side as if both were true. Cost basis stays
+         derived either way: the ledger records how much, not what it cost. */
+      const onLedger = ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c);
+      const units = onLedger ? Number(ledgerVault[c]) : p.units;
+      const mkt = cadVal(units, c);
+      const basis = units * p.cost;
+      return { c, units, cost: p.cost, mkt, basis, upl: mkt - basis, st: bandStatus(c, units, settings) };
     });
     const rows2 = rowsAll.filter(r => r.units > 0.5).sort((a, b) => b.mkt - a.mkt);
     const total = rows2.reduce((s, r) => s + r.mkt, 0);
@@ -293,6 +299,45 @@
       {assigning && <AssignModal tellers={tellers} tills={tills} branchCode={myB && myB.code} fc={fc} availOf={availOf} vaultAvailOf={vaultAvailOf} onClose={() => setAssigning(false)} onAssign={doAssign} onIssueTill={doIssueTill} />}
       {settling && <SettleModal shift={settling} expectedFor={expectedFor} onClose={() => setSettling(null)} onSettle={doSettle} />}
     </div>);
+  }
+
+  /* ===================== THE OPENING POSITION =====================
+     Stated once, by a person who has counted the safe. From then on the
+     figure only moves through a recorded movement — which is the whole
+     reason the ledger can refuse a float the vault cannot cover. */
+  function OpeningPositionModal({ fc, onClose, onSave }) {
+    const [amounts, setAmounts] = useState(() => Object.fromEntries(fc.map(c => [c, ''])));
+    const [err, setErr] = useState('');
+    const [saving, setSaving] = useState(false);
+    const entered = fc.filter(c => String(amounts[c] ?? '').trim() !== '' && +amounts[c] >= 0);
+    const totalCad = entered.reduce((t, c) => t + cadVal(+amounts[c] || 0, c), 0);
+    const submit = async () => {
+      if (!entered.length || saving) return;
+      setSaving(true); setErr('');
+      try {
+        const result = await onSave(Object.fromEntries(entered.map(c => [c, (+amounts[c] || 0).toFixed(2)])));
+        if (result && result.ok === false) setErr(result.message || 'That opening position was refused.');
+        else onClose();
+      } catch (e) {
+        setErr((e && e.message) || 'That opening position was refused.');
+      } finally { setSaving(false); }
+    };
+    return (<Modal onClose={onClose} icon="vaultsafe" title="What’s in the safe" sub="Counted once, to put this vault on the ledger. Everything after this is a recorded movement.">
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {fc.map(c => (<div key={c}>
+          <div className="flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 9 }}>
+            <span className="px-2.5 text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono', borderRight: `1px solid ${CD.line}` }}>{flagOf(c)} {c}</span>
+            <input type="number" value={amounts[c] ?? ''} onChange={e => setAmounts(o => ({ ...o, [c]: e.target.value }))} placeholder="0" className="flex-1 min-w-0 px-2.5 py-2 text-right outline-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
+          </div>
+        </div>))}
+      </div>
+      <div className="text-[11px] px-3 py-2 mb-3" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Leave a currency blank if the safe holds none of it. This can only be set once — after that, corrections are movements, so the trail stays honest.</div>
+      {err && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{err}</span></div>}
+      <div className="flex items-center justify-between pt-1">
+        <div className="text-[12px]" style={{ color: CD.mute }}>Opening value <b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(totalCad, 'CAD')}</b></div>
+        <button disabled={!entered.length || saving} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: entered.length ? CD.ink : CD.faint, borderRadius: 9, cursor: !entered.length ? 'not-allowed' : saving ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {saving ? 'Recording…' : 'Put the vault on the ledger'}</button>
+      </div>
+    </Modal>);
   }
 
   function AssignModal({ tellers, tills, branchCode, fc, availOf, vaultAvailOf, onClose, onAssign, onIssueTill }) {
@@ -587,17 +632,29 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings, branches, station, onMoveCash, onOpenBranches, moves, onOrderReceived, onIssueTill }) {
+  function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings, branches, station, onMoveCash, onOpenBranches, moves, onOrderReceived, onIssueTill, serverBacked, vaultTracked, onOpenVaultPosition, cashVersion }) {
     const [tab, setTab] = useState('position');
     const [shifts, setShifts] = useState(seedShifts);
     const [ordering, setOrdering] = useState(null);   // null | { ccy?, units?, order? }
     const [notifOpen, setNotifOpen] = useState(false);
+    const [openingVault, setOpeningVault] = useState(false);   // stating what is in the safe
+    /* On a server-backed desk the strong room's contents are the LEDGER's
+       figure, not one derived here from transactions — the same rule the
+       drawer already lives by. It is mirrored onto this branch's record by
+       the OS after every recorded movement, so reading it here needs no
+       fetch of its own. */
+    const thisBranch = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
+    const ledgerVault = (serverBacked && vaultTracked && thisBranch)
+      ? (thisBranch.vault || {}) : null;
+    const ledgerCcys = ledgerVault ? Object.keys(ledgerVault) : [];
+    const vaultUnitsOf = (c) => ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c)
+      ? Number(ledgerVault[c]) : heldOf(c, rows, baseline, receipts);
     useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(shifts)); } catch (e) {} }, [shifts]);
 
-    const total = VCCYS.reduce((s, c) => s + cadVal(heldOf(c, rows, baseline, receipts), c), 0);
+    const total = VCCYS.reduce((s, c) => s + cadVal(vaultUnitsOf(c), c), 0);
     // low-stock notifications honour Settings → Vault: the alert switch + the owner's floors
     const lowAlert = !settings || settings.vaultLowAlert !== false;
-    const lowList = !lowAlert ? [] : VCCYS.map(c => { const units = heldOf(c, rows, baseline, receipts); const min = floorOf(c, settings); const b = BANDS[c] || {}; if (!min || units >= min) return null; return { c, units, need: Math.max((b.target || min * 2) - units, 0) }; }).filter(Boolean);
+    const lowList = !lowAlert ? [] : VCCYS.map(c => { const units = vaultUnitsOf(c); const min = floorOf(c, settings); const b = BANDS[c] || {}; if (!min || units >= min) return null; return { c, units, need: Math.max((b.target || min * 2) - units, 0) }; }).filter(Boolean);
     const pending = (receipts || []).filter(o => o.status === 'pending').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const onOrderCcys = new Set(pending.map(o => o.ccy));
     const notifs = [
@@ -641,7 +698,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="vaultsafe" s={17} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(total, 'CAD')} on hand{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
+            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(total, 'CAD')} on hand{ledgerVault ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : ''}{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
           </div>
           <div className="flex items-center gap-2" style={{ position: 'relative' }}>
             {/* notifications */}
@@ -682,8 +739,23 @@
         </div>
       </div>
 
+      {/* A server-backed desk whose strong room has never been declared. The
+          ledger will not police what nobody has stated, so it says so plainly
+          rather than quietly balancing against zero. */}
+      {serverBacked && !vaultTracked && (
+        <div className="flex items-center gap-3 px-4 py-2.5 flex-none" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}` }}>
+          <span className="grid place-items-center flex-none" style={{ width: 28, height: 28, borderRadius: 8, background: CD.brass }}><Ic n="vaultsafe" s={15} c="var(--cd-on-ink)" /></span>
+          <div className="flex-1 min-w-0 leading-tight">
+            <div className="text-[12.5px] font-semibold" style={{ color: CD.ink }}>This vault isn’t on the ledger yet</div>
+            <div className="text-[11px]" style={{ color: CD.mute }}>Count the safe once and record it. After that every float, delivery and run is checked against it, and a drawer can’t be floated with money the vault doesn’t have.</div>
+          </div>
+          <button onClick={() => setOpeningVault(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="check" s={14} c="var(--cd-on-ink)" /> Record what’s in the safe</button>
+        </div>
+      )}
+      {openingVault && <OpeningPositionModal fc={DEFAULT_FC} onClose={() => setOpeningVault(false)} onSave={onOpenVaultPosition} />}
+
       <div className="flex-1 overflow-auto">
-        {tab === 'position' && <Position rows={rows} baseline={baseline} receipts={receipts} settings={settings} />}
+        {tab === 'position' && <Position rows={rows} baseline={baseline} receipts={receipts} settings={settings} ledgerVault={ledgerVault} />}
         {tab === 'shifts' && <Shifts rows={rows} baseline={baseline} receipts={receipts} me={me} log={log} shifts={shifts} setShifts={setShifts} settings={settings} setSettings={setSettings} branches={branches} station={station} onIssueTill={onIssueTill} />}
         {tab === 'receive' && <Orders receipts={receipts} pending={pending} onOrder={onOrder} onCancel={onCancel} />}
         {tab === 'history' && (() => {

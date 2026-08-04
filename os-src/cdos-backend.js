@@ -34,6 +34,9 @@
         TILL_ALREADY_CLOSED: "This till session is already closed.",
         INCOMPLETE_TILL_COUNT: "Count every server-backed currency before closing the till.",
         TILL_SESSION_NOT_FOUND: "That till session no longer exists on the server. Reload the drawer.",
+        INSUFFICIENT_VAULT_LIQUIDITY: "The vault does not hold that much — the movement was refused and nothing moved.",
+        VAULT_NOT_INITIALIZED: "This vault has no opening position on the ledger yet. Record what is in the safe before moving cash through it.",
+        VAULT_ALREADY_INITIALIZED: "This vault already has an opening position. Change it with a recorded movement, not by restating it.",
         TILL_ALREADY_ACTIVE: "This till already has an open session.",
         IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
@@ -207,6 +210,31 @@
           method: "POST",
           body: JSON.stringify(payload),
         });
+      },
+      /* ---- the vault: the branch's strong room, on the ledger ---- */
+      loadVault: function () {
+        return request("/api/ledger/vault");
+      },
+      openVaultPosition: function (balances) {
+        return request("/api/ledger/vault/opening-position", {
+          method: "POST",
+          body: JSON.stringify({ balances: balances }),
+        });
+      },
+      receiveVaultCash: function (payload) {
+        return request("/api/ledger/vault/receipts", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      runVaultCash: function (payload) {
+        return request("/api/ledger/vault/runs", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      loadVaultMovements: function (limit) {
+        return request("/api/ledger/vault/movements?limit=" + (limit || 100));
       },
       getTransactionReceipt: function (transactionId) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/receipt");

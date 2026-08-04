@@ -14,6 +14,7 @@ import {
   type CustomerInput,
 } from "./provisioning.js";
 import { TillControlService } from "./till-control.js";
+import { VaultControlService } from "./vault-control.js";
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
@@ -74,6 +75,33 @@ const cashMovementBody = z.object({
   counterpartyRef: z.string().trim().min(1).max(200),
   reason: z.string().trim().min(1).max(1000),
 }).strict();
+const vaultBalancesBody = z.object({
+  balances: z.object({
+    CAD: monetary("0").optional(),
+    USD: monetary("0").optional(),
+    EUR: monetary("0").optional(),
+    GBP: monetary("0").optional(),
+  }).strict().refine((value) => Object.keys(value).length > 0, "At least one balance is required."),
+}).strict();
+const vaultReceiptBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  direction: z.enum(["in", "out"]),
+  currency: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  amount: monetary("0.01"),
+  counterpartyType: z.enum(["supplier", "bank", "other"]),
+  counterpartyRef: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(1).max(1000),
+}).strict();
+const vaultRunBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  toBranchId: z.string().trim().min(1).max(120),
+  currency: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  amount: monetary("0.01"),
+  reason: z.string().trim().min(1).max(1000),
+}).strict();
+const movementQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
 type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
@@ -81,6 +109,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const service = new LedgerService(pool);
   const provisioning = new LedgerProvisioningService(pool);
   const tillControl = new TillControlService(pool);
+  const vaultControl = new VaultControlService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
@@ -120,6 +149,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "TILL_ALREADY_CLOSED" ||
                 error.code === "TILL_NOT_OPEN" ||
                 error.code === "CUSTOMER_EXTERNAL_REF_CONFLICT" ||
+                error.code === "VAULT_ALREADY_INITIALIZED" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
@@ -295,6 +325,75 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.code(201).send(await tillControl.moveCash(actor, parsed.data))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/vault", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await vaultControl.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/vault/opening-position", async (req, reply) => {
+    const parsed = vaultBalancesBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await vaultControl.initialize(actor, parsed.data.balances))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/vault/receipts", async (req, reply) => {
+    const parsed = vaultReceiptBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await vaultControl.receive(actor, parsed.data))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/vault/runs", async (req, reply) => {
+    const parsed = vaultRunBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await vaultControl.run(actor, parsed.data))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/vault/movements", async (req, reply) => {
+    const parsed = movementQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await vaultControl.movements(actor, parsed.data.limit))
         : undefined;
     } catch (error) {
       return failure(reply, error);

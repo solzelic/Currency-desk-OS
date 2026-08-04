@@ -797,6 +797,58 @@
       }
     };
 
+    /* The vault is the same story one box up. Every screen that shows a
+       strong room — the Vault app, the Branch Network, the Move cash modal's
+       "holds now" — reads branches[].vault, so mirroring the ledger onto that
+       one store makes all of them right at once, rather than teaching each
+       screen to fetch. Untracked branches are left exactly as they are: a
+       desk that has not stated its opening position keeps its own figures
+       until somebody does. */
+    const [vaultTracked, setVaultTracked] = useState(false);
+    /* The branch you are signed in at, as the LEDGER names it. The desk's own
+       branch records were invented client-side long before the server had any
+       ("b01", "b02"), so the two id spaces do not line up and cannot be joined
+       by matching them. What is unambiguous is the branch this session is at:
+       the ledger's answer is about that one, so that is the one it is written
+       onto. Other branches keep their local figures until the desk's branch
+       records carry their server ids — see the note in postTillMovement. */
+    const [serverBranchId, setServerBranchId] = useState(null);
+    const applyVaultResult = (result) => {
+      if (!result) return null;
+      setVaultTracked(!!result.tracked);
+      setServerBranchId(result.branchId || null);
+      const ledger = result.balances || {};
+      if (Object.keys(ledger).length) {
+        const numeric = Object.fromEntries(
+          Object.entries(ledger).map(([ccy2, value]) => [ccy2, Number(value)]));
+        setBranches(list => list.map(b => b.id !== (station && station.branchId) ? b
+          : { ...b, vault: { ...(b.vault || {}), ...numeric } }));
+      }
+      return result;
+    };
+    const syncVaultFromServer = async () => {
+      if (!srvUser || !window.CDOS.Backend) return null;
+      try {
+        return applyVaultResult(await window.CDOS.Backend.loadVault());
+      } catch (error) {
+        log('Vault sync failed', error.message || 'Server vault unavailable');
+        return null;
+      }
+    };
+    // both boxes, one pull — a float changes each of them
+    const syncCashFromServer = async () => {
+      await syncTillFromServer();
+      await syncVaultFromServer();
+    };
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser || !window.CDOS.Backend) { setVaultTracked(false); return; }
+      let cancelled = false;
+      window.CDOS.Backend.loadVault()
+        .then(result => { if (!cancelled) applyVaultResult(result); })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }, [stage, srvUser, station && station.branchId]);
+
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
        posts against it — and there is one door for the first: this function.
@@ -808,28 +860,41 @@
        rail is left untouched and the caller is told why — a movement that only
        happened in this browser is worse than one that did not happen at all. */
     const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];
-    const postTillMovement = async ({ kind, fromB, tId, ccy, amt, fromLabel, toLabel }) => {
+    const movementKey = (kind, ccy) =>
+      `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const postTillMovement = async ({ kind, fromB, toB, tId, ccy, amt, fromLabel, toLabel }) => {
       if (!srvUser || !window.CDOS.Backend) return { ok: true };
-      // the ledger tracks ONE till — the one this session is signed in at
-      if (kind === 'vault') {
-        return { ok: false, message: 'Vault-to-vault runs are not on the server ledger yet. Record it from the Branch Network once that lands.' };
-      }
-      if (!station || tId !== station.tillId || fromB !== station.branchId) {
-        return { ok: false, message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.' };
-      }
       if (LEDGER_CCYS.indexOf(ccy) < 0) {
         return { ok: false, message: `${ccy} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.` };
       }
       try {
-        await window.CDOS.Backend.moveTillCash({
-          idempotencyKey: `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          direction: kind === 'issue' ? 'in' : 'out',
-          currency: ccy,
-          amount: Number(amt).toFixed(2),
-          counterpartyType: 'vault',
-          counterpartyRef: `${fromB}:vault`,
-          reason: `${fromLabel} → ${toLabel}`,
-        });
+        if (kind === 'vault') {
+          /* An armoured run names the receiving branch as the LEDGER knows it.
+             This desk's branch records are its own invention and carry no
+             server id, so the only run that can be addressed today is one
+             leaving the branch this session is signed in at — and there is
+             nowhere truthful to send it until branch records carry their
+             ledger id. Refusing is the honest answer; moving the money in
+             this browser alone is not. */
+          return {
+            ok: false,
+            message: 'Vault runs between branches are on the ledger, but this desk’s branch records don’t carry their ledger ids yet, so the receiving vault can’t be named. Record it at the receiving branch for now.',
+          };
+        } else {
+          // the ledger tracks ONE till — the one this session is signed in at
+          if (!station || tId !== station.tillId || fromB !== station.branchId) {
+            return { ok: false, message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.' };
+          }
+          await window.CDOS.Backend.moveTillCash({
+            idempotencyKey: movementKey(kind, ccy),
+            direction: kind === 'issue' ? 'in' : 'out',
+            currency: ccy,
+            amount: Number(amt).toFixed(2),
+            counterpartyType: 'vault',
+            counterpartyRef: `${fromB}:vault`,
+            reason: `${fromLabel} → ${toLabel}`,
+          });
+        }
         setCashVersion(v => v + 1);
         return { ok: true };
       } catch (error) {
@@ -861,15 +926,55 @@
       if (!parts.length) return { ok: false, message: 'Nothing to issue.' };
       setBranches(list); setBranchMoves(mv);
       log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`);
-      await syncTillFromServer();
+      await syncCashFromServer();
       return { ok: true };
     };
     // wholesale orders land in THIS branch's vault — other locations fill their
     // own sub-vaults by ordering; the main vault stays the network's cash root
-    const creditVault = (ccy2, units, supplier) => {
-      const b = branches.find(x => x.id === station.branchId); if (!b || !units) return;
-      setBranches(list => list.map(x => x.id === b.id ? { ...x, vault: { ...(x.vault || {}), [ccy2]: (((x.vault || {})[ccy2]) || 0) + units } } : x));
+    /* A wholesale delivery is money crossing the desk's outer boundary into
+       the strong room — the one direction where nothing else on the ledger
+       balances against it. It is recorded server-first like every other
+       movement, so a delivery that the ledger refused never shows up as
+       stock the desk does not have. */
+    const creditVault = async (ccy2, units, supplier) => {
+      const b = branches.find(x => x.id === station.branchId);
+      if (!b || !units) return { ok: false, message: 'Nothing to receive.' };
+      if (srvUser && window.CDOS.Backend && vaultTracked) {
+        if (LEDGER_CCYS.indexOf(ccy2) < 0) {
+          return { ok: false, message: `${ccy2} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.` };
+        }
+        try {
+          await window.CDOS.Backend.receiveVaultCash({
+            idempotencyKey: movementKey('receipt', ccy2),
+            direction: 'in',
+            currency: ccy2,
+            amount: Number(units).toFixed(2),
+            counterpartyType: 'supplier',
+            counterpartyRef: supplier || 'Wholesale order',
+            reason: `Wholesale delivery into ${b.code} vault`,
+          });
+        } catch (error) {
+          log('Order receipt failed', error.message || 'The ledger refused the delivery');
+          return { ok: false, message: error.message || 'The ledger refused the delivery. Nothing was received.' };
+        }
+      } else {
+        setBranches(list => list.map(x => x.id === b.id ? { ...x, vault: { ...(x.vault || {}), [ccy2]: (((x.vault || {})[ccy2]) || 0) + units } } : x));
+      }
       setBranchMoves(list => [{ id: 'm' + Date.now(), ref: 'RC-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + (list.filter(m => m.date === TODAY).length + 1).toString().padStart(2, '0'), kind: 'order', from: supplier || 'Wholesale order', to: b.code + ' · Vault', ccy: ccy2, amount: units, cadVal: +((ccy2 === 'CAD' ? units : units * (crossRate(ccy2, 'CAD') || 0))).toFixed(2), date: TODAY, by: me.name }, ...list]);
+      await syncVaultFromServer();
+      return { ok: true };
+    };
+    // stating what is in the safe, once, so the ledger can police it after that
+    const openVaultPosition = async (balances) => {
+      if (!srvUser || !window.CDOS.Backend) return { ok: false, message: 'Not signed in to a server desk.' };
+      try {
+        await window.CDOS.Backend.openVaultPosition(balances);
+        await syncVaultFromServer();
+        log('Vault opening position', Object.entries(balances).map(([c, v]) => `${v} ${c}`).join(' · '));
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, message: error.message || 'The ledger would not accept that opening position.' };
+      }
     };
     const doOsMove = async (payload) => {
       const posted = await postTillMovement(payload);
@@ -882,9 +987,9 @@
       log(r.verb, r.detail);
       setMoveCash(null);
       // applyMove did the arithmetic; this replaces it with the server's answer,
-      // so a drawer that had drifted comes back into line on the next movement
+      // so a box that had drifted comes back into line on the next movement
       // rather than carrying the drift forward forever
-      await syncTillFromServer();
+      await syncCashFromServer();
       return { ok: true };
     };
     useEffect(() => { try { localStorage.setItem('cdos_station_v1', JSON.stringify(station)); } catch (e) {} }, [station]);
@@ -1764,7 +1869,7 @@
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
         case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} />;
-        case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} />;
+        case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
         case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;

@@ -2495,6 +2495,9 @@
         TILL_ALREADY_CLOSED: "This till session is already closed.",
         INCOMPLETE_TILL_COUNT: "Count every server-backed currency before closing the till.",
         TILL_SESSION_NOT_FOUND: "That till session no longer exists on the server. Reload the drawer.",
+        INSUFFICIENT_VAULT_LIQUIDITY: "The vault does not hold that much — the movement was refused and nothing moved.",
+        VAULT_NOT_INITIALIZED: "This vault has no opening position on the ledger yet. Record what is in the safe before moving cash through it.",
+        VAULT_ALREADY_INITIALIZED: "This vault already has an opening position. Change it with a recorded movement, not by restating it.",
         TILL_ALREADY_ACTIVE: "This till already has an open session.",
         IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
@@ -2668,6 +2671,31 @@
           method: "POST",
           body: JSON.stringify(payload),
         });
+      },
+      /* ---- the vault: the branch's strong room, on the ledger ---- */
+      loadVault: function () {
+        return request("/api/ledger/vault");
+      },
+      openVaultPosition: function (balances) {
+        return request("/api/ledger/vault/opening-position", {
+          method: "POST",
+          body: JSON.stringify({ balances: balances }),
+        });
+      },
+      receiveVaultCash: function (payload) {
+        return request("/api/ledger/vault/receipts", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      runVaultCash: function (payload) {
+        return request("/api/ledger/vault/runs", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      loadVaultMovements: function (limit) {
+        return request("/api/ledger/vault/movements?limit=" + (limit || 100));
       },
       getTransactionReceipt: function (transactionId) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/receipt");
@@ -14899,21 +14927,28 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     rows,
     baseline,
     receipts,
-    settings
+    settings,
+    ledgerVault
   }) {
     const atCost = !!(settings && settings.vaultBasis === 'cost'); // Settings → Vault · valuation basis
     const rowsAll = VCCYS.map(c => {
       const p = posOf(c, rows, baseline, receipts);
-      const mkt = cadVal(p.units, c);
-      const basis = p.units * p.cost;
+      /* Where the ledger carries this currency, ITS figure is what is in the
+         safe — the derived one is an estimate of the same thing and the two
+         must not be shown side by side as if both were true. Cost basis stays
+         derived either way: the ledger records how much, not what it cost. */
+      const onLedger = ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c);
+      const units = onLedger ? Number(ledgerVault[c]) : p.units;
+      const mkt = cadVal(units, c);
+      const basis = units * p.cost;
       return {
         c,
-        units: p.units,
+        units,
         cost: p.cost,
         mkt,
         basis,
         upl: mkt - basis,
-        st: bandStatus(c, p.units, settings)
+        st: bandStatus(c, units, settings)
       };
     });
     const rows2 = rowsAll.filter(r => r.units > 0.5).sort((a, b) => b.mkt - a.mkt);
@@ -15459,6 +15494,114 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       onClose: () => setSettling(null),
       onSettle: doSettle
     }));
+  }
+
+  /* ===================== THE OPENING POSITION =====================
+     Stated once, by a person who has counted the safe. From then on the
+     figure only moves through a recorded movement — which is the whole
+     reason the ledger can refuse a float the vault cannot cover. */
+  function OpeningPositionModal({
+    fc,
+    onClose,
+    onSave
+  }) {
+    const [amounts, setAmounts] = useState(() => Object.fromEntries(fc.map(c => [c, ''])));
+    const [err, setErr] = useState('');
+    const [saving, setSaving] = useState(false);
+    const entered = fc.filter(c => String(amounts[c] ?? '').trim() !== '' && +amounts[c] >= 0);
+    const totalCad = entered.reduce((t, c) => t + cadVal(+amounts[c] || 0, c), 0);
+    const submit = async () => {
+      if (!entered.length || saving) return;
+      setSaving(true);
+      setErr('');
+      try {
+        const result = await onSave(Object.fromEntries(entered.map(c => [c, (+amounts[c] || 0).toFixed(2)])));
+        if (result && result.ok === false) setErr(result.message || 'That opening position was refused.');else onClose();
+      } catch (e) {
+        setErr(e && e.message || 'That opening position was refused.');
+      } finally {
+        setSaving(false);
+      }
+    };
+    return /*#__PURE__*/React.createElement(Modal, {
+      onClose: onClose,
+      icon: "vaultsafe",
+      title: "What\u2019s in the safe",
+      sub: "Counted once, to put this vault on the ledger. Everything after this is a recorded movement."
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "grid grid-cols-2 gap-2 mb-3"
+    }, fc.map(c => /*#__PURE__*/React.createElement("div", {
+      key: c
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "px-2.5 text-[12px]",
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono',
+        borderRight: `1px solid ${CD.line}`
+      }
+    }, flagOf(c), " ", c), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: amounts[c] ?? '',
+      onChange: e => setAmounts(o => ({
+        ...o,
+        [c]: e.target.value
+      })),
+      placeholder: "0",
+      className: "flex-1 min-w-0 px-2.5 py-2 text-right outline-none",
+      style: {
+        fontFamily: 'Space Mono',
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }))))), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] px-3 py-2 mb-3",
+      style: {
+        background: 'var(--cd-chip)',
+        borderRadius: 8,
+        color: CD.mute
+      }
+    }, "Leave a currency blank if the safe holds none of it. This can only be set once \u2014 after that, corrections are movements, so the trail stays honest."), err && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 13,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("span", null, err)), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between pt-1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Opening value ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink,
+        fontFamily: 'Space Mono'
+      }
+    }, fmt(totalCad, 'CAD'))), /*#__PURE__*/React.createElement("button", {
+      disabled: !entered.length || saving,
+      onClick: submit,
+      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+      style: {
+        background: entered.length ? CD.ink : CD.faint,
+        borderRadius: 9,
+        cursor: !entered.length ? 'not-allowed' : saving ? 'wait' : 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 15,
+      c: "var(--cd-on-ink)"
+    }), " ", saving ? 'Recording…' : 'Put the vault on the ledger')));
   }
   function AssignModal({
     tellers,
@@ -16479,22 +16622,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onOpenBranches,
     moves,
     onOrderReceived,
-    onIssueTill
+    onIssueTill,
+    serverBacked,
+    vaultTracked,
+    onOpenVaultPosition,
+    cashVersion
   }) {
     const [tab, setTab] = useState('position');
     const [shifts, setShifts] = useState(seedShifts);
     const [ordering, setOrdering] = useState(null); // null | { ccy?, units?, order? }
     const [notifOpen, setNotifOpen] = useState(false);
+    const [openingVault, setOpeningVault] = useState(false); // stating what is in the safe
+    /* On a server-backed desk the strong room's contents are the LEDGER's
+       figure, not one derived here from transactions — the same rule the
+       drawer already lives by. It is mirrored onto this branch's record by
+       the OS after every recorded movement, so reading it here needs no
+       fetch of its own. */
+    const thisBranch = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
+    const ledgerVault = serverBacked && vaultTracked && thisBranch ? thisBranch.vault || {} : null;
+    const ledgerCcys = ledgerVault ? Object.keys(ledgerVault) : [];
+    const vaultUnitsOf = c => ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c) ? Number(ledgerVault[c]) : heldOf(c, rows, baseline, receipts);
     useEffect(() => {
       try {
         localStorage.setItem(SKEY, JSON.stringify(shifts));
       } catch (e) {}
     }, [shifts]);
-    const total = VCCYS.reduce((s, c) => s + cadVal(heldOf(c, rows, baseline, receipts), c), 0);
+    const total = VCCYS.reduce((s, c) => s + cadVal(vaultUnitsOf(c), c), 0);
     // low-stock notifications honour Settings → Vault: the alert switch + the owner's floors
     const lowAlert = !settings || settings.vaultLowAlert !== false;
     const lowList = !lowAlert ? [] : VCCYS.map(c => {
-      const units = heldOf(c, rows, baseline, receipts);
+      const units = vaultUnitsOf(c);
       const min = floorOf(c, settings);
       const b = BANDS[c] || {};
       if (!min || units >= min) return null;
@@ -16641,7 +16798,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, fmt(total, 'CAD'), " on hand", lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(total, 'CAD'), " on hand", ledgerVault ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : '', lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2",
       style: {
         position: 'relative'
@@ -16854,13 +17011,59 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           marginLeft: 2
         }
       }, badge));
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), serverBacked && !vaultTracked && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-3 px-4 py-2.5 flex-none",
+      style: {
+        background: CD.brassSoft,
+        borderBottom: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        background: CD.brass
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "vaultsafe",
+      s: 15,
+      c: "var(--cd-on-ink)"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 min-w-0 leading-tight"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "This vault isn\u2019t on the ledger yet"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Count the safe once and record it. After that every float, delivery and run is checked against it, and a drawer can\u2019t be floated with money the vault doesn\u2019t have.")), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setOpeningVault(true),
+      className: "flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold text-white flex-none",
+      style: {
+        background: CD.ink,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 14,
+      c: "var(--cd-on-ink)"
+    }), " Record what\u2019s in the safe")), openingVault && /*#__PURE__*/React.createElement(OpeningPositionModal, {
+      fc: DEFAULT_FC,
+      onClose: () => setOpeningVault(false),
+      onSave: onOpenVaultPosition
+    }), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'position' && /*#__PURE__*/React.createElement(Position, {
       rows: rows,
       baseline: baseline,
       receipts: receipts,
-      settings: settings
+      settings: settings,
+      ledgerVault: ledgerVault
     }), tab === 'shifts' && /*#__PURE__*/React.createElement(Shifts, {
       rows: rows,
       baseline: baseline,
@@ -56842,6 +57045,67 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     };
 
+    /* The vault is the same story one box up. Every screen that shows a
+       strong room — the Vault app, the Branch Network, the Move cash modal's
+       "holds now" — reads branches[].vault, so mirroring the ledger onto that
+       one store makes all of them right at once, rather than teaching each
+       screen to fetch. Untracked branches are left exactly as they are: a
+       desk that has not stated its opening position keeps its own figures
+       until somebody does. */
+    const [vaultTracked, setVaultTracked] = useState(false);
+    /* The branch you are signed in at, as the LEDGER names it. The desk's own
+       branch records were invented client-side long before the server had any
+       ("b01", "b02"), so the two id spaces do not line up and cannot be joined
+       by matching them. What is unambiguous is the branch this session is at:
+       the ledger's answer is about that one, so that is the one it is written
+       onto. Other branches keep their local figures until the desk's branch
+       records carry their server ids — see the note in postTillMovement. */
+    const [serverBranchId, setServerBranchId] = useState(null);
+    const applyVaultResult = result => {
+      if (!result) return null;
+      setVaultTracked(!!result.tracked);
+      setServerBranchId(result.branchId || null);
+      const ledger = result.balances || {};
+      if (Object.keys(ledger).length) {
+        const numeric = Object.fromEntries(Object.entries(ledger).map(([ccy2, value]) => [ccy2, Number(value)]));
+        setBranches(list => list.map(b => b.id !== (station && station.branchId) ? b : {
+          ...b,
+          vault: {
+            ...(b.vault || {}),
+            ...numeric
+          }
+        }));
+      }
+      return result;
+    };
+    const syncVaultFromServer = async () => {
+      if (!srvUser || !window.CDOS.Backend) return null;
+      try {
+        return applyVaultResult(await window.CDOS.Backend.loadVault());
+      } catch (error) {
+        log('Vault sync failed', error.message || 'Server vault unavailable');
+        return null;
+      }
+    };
+    // both boxes, one pull — a float changes each of them
+    const syncCashFromServer = async () => {
+      await syncTillFromServer();
+      await syncVaultFromServer();
+    };
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser || !window.CDOS.Backend) {
+        setVaultTracked(false);
+        return;
+      }
+      let cancelled = false;
+      window.CDOS.Backend.loadVault().then(result => {
+        if (!cancelled) applyVaultResult(result);
+      }).catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [stage, srvUser, station && station.branchId]);
+
     /* ===================== THE CASH RAIL, SERVER-FIRST =====================
        Money reaches a till exactly two ways — the vault issues it, or a deal
        posts against it — and there is one door for the first: this function.
@@ -56852,9 +57116,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        rail is left untouched and the caller is told why — a movement that only
        happened in this browser is worse than one that did not happen at all. */
     const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];
+    const movementKey = (kind, ccy) => `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const postTillMovement = async ({
       kind,
       fromB,
+      toB,
       tId,
       ccy,
       amt,
@@ -56864,19 +57130,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (!srvUser || !window.CDOS.Backend) return {
         ok: true
       };
-      // the ledger tracks ONE till — the one this session is signed in at
-      if (kind === 'vault') {
-        return {
-          ok: false,
-          message: 'Vault-to-vault runs are not on the server ledger yet. Record it from the Branch Network once that lands.'
-        };
-      }
-      if (!station || tId !== station.tillId || fromB !== station.branchId) {
-        return {
-          ok: false,
-          message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.'
-        };
-      }
       if (LEDGER_CCYS.indexOf(ccy) < 0) {
         return {
           ok: false,
@@ -56884,15 +57137,36 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         };
       }
       try {
-        await window.CDOS.Backend.moveTillCash({
-          idempotencyKey: `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          direction: kind === 'issue' ? 'in' : 'out',
-          currency: ccy,
-          amount: Number(amt).toFixed(2),
-          counterpartyType: 'vault',
-          counterpartyRef: `${fromB}:vault`,
-          reason: `${fromLabel} → ${toLabel}`
-        });
+        if (kind === 'vault') {
+          /* An armoured run names the receiving branch as the LEDGER knows it.
+             This desk's branch records are its own invention and carry no
+             server id, so the only run that can be addressed today is one
+             leaving the branch this session is signed in at — and there is
+             nowhere truthful to send it until branch records carry their
+             ledger id. Refusing is the honest answer; moving the money in
+             this browser alone is not. */
+          return {
+            ok: false,
+            message: 'Vault runs between branches are on the ledger, but this desk’s branch records don’t carry their ledger ids yet, so the receiving vault can’t be named. Record it at the receiving branch for now.'
+          };
+        } else {
+          // the ledger tracks ONE till — the one this session is signed in at
+          if (!station || tId !== station.tillId || fromB !== station.branchId) {
+            return {
+              ok: false,
+              message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.'
+            };
+          }
+          await window.CDOS.Backend.moveTillCash({
+            idempotencyKey: movementKey(kind, ccy),
+            direction: kind === 'issue' ? 'in' : 'out',
+            currency: ccy,
+            amount: Number(amt).toFixed(2),
+            counterpartyType: 'vault',
+            counterpartyRef: `${fromB}:vault`,
+            reason: `${fromLabel} → ${toLabel}`
+          });
+        }
         setCashVersion(v => v + 1);
         return {
           ok: true
@@ -56970,23 +57244,57 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setBranches(list);
       setBranchMoves(mv);
       log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`);
-      await syncTillFromServer();
+      await syncCashFromServer();
       return {
         ok: true
       };
     };
     // wholesale orders land in THIS branch's vault — other locations fill their
     // own sub-vaults by ordering; the main vault stays the network's cash root
-    const creditVault = (ccy2, units, supplier) => {
+    /* A wholesale delivery is money crossing the desk's outer boundary into
+       the strong room — the one direction where nothing else on the ledger
+       balances against it. It is recorded server-first like every other
+       movement, so a delivery that the ledger refused never shows up as
+       stock the desk does not have. */
+    const creditVault = async (ccy2, units, supplier) => {
       const b = branches.find(x => x.id === station.branchId);
-      if (!b || !units) return;
-      setBranches(list => list.map(x => x.id === b.id ? {
-        ...x,
-        vault: {
-          ...(x.vault || {}),
-          [ccy2]: ((x.vault || {})[ccy2] || 0) + units
+      if (!b || !units) return {
+        ok: false,
+        message: 'Nothing to receive.'
+      };
+      if (srvUser && window.CDOS.Backend && vaultTracked) {
+        if (LEDGER_CCYS.indexOf(ccy2) < 0) {
+          return {
+            ok: false,
+            message: `${ccy2} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.`
+          };
         }
-      } : x));
+        try {
+          await window.CDOS.Backend.receiveVaultCash({
+            idempotencyKey: movementKey('receipt', ccy2),
+            direction: 'in',
+            currency: ccy2,
+            amount: Number(units).toFixed(2),
+            counterpartyType: 'supplier',
+            counterpartyRef: supplier || 'Wholesale order',
+            reason: `Wholesale delivery into ${b.code} vault`
+          });
+        } catch (error) {
+          log('Order receipt failed', error.message || 'The ledger refused the delivery');
+          return {
+            ok: false,
+            message: error.message || 'The ledger refused the delivery. Nothing was received.'
+          };
+        }
+      } else {
+        setBranches(list => list.map(x => x.id === b.id ? {
+          ...x,
+          vault: {
+            ...(x.vault || {}),
+            [ccy2]: ((x.vault || {})[ccy2] || 0) + units
+          }
+        } : x));
+      }
       setBranchMoves(list => [{
         id: 'm' + Date.now(),
         ref: 'RC-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + (list.filter(m => m.date === TODAY).length + 1).toString().padStart(2, '0'),
@@ -56999,6 +57307,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         date: TODAY,
         by: me.name
       }, ...list]);
+      await syncVaultFromServer();
+      return {
+        ok: true
+      };
+    };
+    // stating what is in the safe, once, so the ledger can police it after that
+    const openVaultPosition = async balances => {
+      if (!srvUser || !window.CDOS.Backend) return {
+        ok: false,
+        message: 'Not signed in to a server desk.'
+      };
+      try {
+        await window.CDOS.Backend.openVaultPosition(balances);
+        await syncVaultFromServer();
+        log('Vault opening position', Object.entries(balances).map(([c, v]) => `${v} ${c}`).join(' · '));
+        return {
+          ok: true
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          message: error.message || 'The ledger would not accept that opening position.'
+        };
+      }
     };
     const doOsMove = async payload => {
       const posted = await postTillMovement(payload);
@@ -57012,9 +57344,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       log(r.verb, r.detail);
       setMoveCash(null);
       // applyMove did the arithmetic; this replaces it with the server's answer,
-      // so a drawer that had drifted comes back into line on the next movement
+      // so a box that had drifted comes back into line on the next movement
       // rather than carrying the drift forward forever
-      await syncTillFromServer();
+      await syncCashFromServer();
       return {
         ok: true
       };
@@ -59002,7 +59334,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             onOpenBranches: () => openApp('branches'),
             moves: branchMoves,
             onOrderReceived: creditVault,
-            onIssueTill: issueToTill
+            onIssueTill: issueToTill,
+            serverBacked: !!srvUser,
+            vaultTracked: vaultTracked,
+            onOpenVaultPosition: openVaultPosition,
+            cashVersion: cashVersion
           });
         case 'branches':
           return /*#__PURE__*/React.createElement(Branches, {
