@@ -162,7 +162,14 @@
       F('agg_type', 'Aggregation type', '‡', 'ENGINE', aggType),
       F('win_start', '24-hour period — start', '‡', 'ENGINE', winStart ? fmtWindowEdge(winStart, tz) : 'Not applicable'),
       F('win_end', '24-hour period — end', '‡', 'ENGINE', winEnd ? fmtWindowEdge(winEnd, tz) : 'Not applicable'),
-      F('directive', 'Ministerial directive', '†', 'CONFIG', '', { hint: 'Blank unless under directive' }),
+      /* Tagged CONFIG and fed the literal '' — there is no such setting
+         anywhere in the desk, so CONFIG was a claim about where a value
+         came from when no value came from anywhere. It is a question for
+         whoever is filing: they know whether this transaction falls under
+         a directive and the desk does not. It becomes CONFIG honestly the
+         day a desk under a standing directive can record one. */
+      F('directive', 'Ministerial directive', '†', settings.ministerialDirective ? 'CONFIG' : 'PROMPT', settings.ministerialDirective || '',
+        settings.ministerialDirective ? {} : { prompt: true, hint: 'Leave blank unless this transaction falls under a directive' }),
     ];
 
     /* per-transaction blocks */
@@ -198,7 +205,14 @@
           F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)),
           F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : { prompt: true, hint: 'Employment / asset sale / gift, if known' }),
           F('sa_source', 'Source-of-cash info obtained? (Y/N)', '‡', cap ? 'LEDGER' : 'PROMPT', cap ? (cap.source ? 'Y' : 'N') : '', cap ? {} : { prompt: true, hint: 'Y if you have the source person/entity' }),
-          F('sa_deposit', 'Deposit to a business account? (Y/N)', '‡', 'LEDGER', 'No'),
+          /* The worst provenance defect the form had: a hardcoded "No",
+             tagged LEDGER, on a ‡ field — one the regulator rejects the
+             whole report without. Nothing in a transaction record answers
+             whether the cash went into a business account; the ledger was
+             being credited with a value it never held, on the one class of
+             field where being wrong is not survivable. It is a question,
+             so it is a PROMPT and the filer answers it. */
+          F('sa_deposit', 'Deposit to a business account? (Y/N)', '‡', 'PROMPT', '', { prompt: true, hint: 'Y only if this cash was deposited into a business account' }),
           { divider: 'Conductor — who physically did it' },
           F('cd_surname', 'Surname', '*', 'KYC', np.surname),
           F('cd_given', 'Given name', '*', 'KYC', np.given),
@@ -218,6 +232,14 @@
       });
       // Section 4 — completing action (value out) + beneficiary
       const benName = report.basis === 'beneficiary' ? report.subject : (r.beneficiary || report.beneficiary || '');
+      /* Over the counter the beneficiary IS the conductor — the person who
+         handed the cash over walked out with the other currency. A blank
+         PROMPT here asked the teller to re-type a name the desk already
+         knew, and a prompt somebody skips is a beneficiary the report does
+         not name. It is derived, so it says ENGINE, which is true. A wire
+         is a different matter: there the beneficiary is genuinely somebody
+         else and a missing one stays a question. */
+      const overCounter = !isWire && !benName && report.basis !== 'beneficiary';
       completeInstances.push({
         label: `${r.ref} · value out`,
         fields: [
@@ -225,7 +247,10 @@
           F('ca_amount', 'Amount disposed', '*', 'LEDGER', num(r.outAmt)),
           F('ca_currency', 'Currency — report ORIGINAL', '*', 'LEDGER', r.outCcy),
           F('ca_account', 'Account / reference info', '†', 'LEDGER', '', { hint: 'N/A for over-the-counter exchange' }),
-          F('be_name', 'Beneficiary — who received the value', '†', benName ? 'LEDGER' : 'PROMPT', benName, { prompt: !benName, hint: 'Who the value is destined for' }),
+          F('be_name', 'Beneficiary — who received the value', '†',
+            benName ? 'LEDGER' : overCounter ? 'ENGINE' : 'PROMPT',
+            benName || (overCounter ? r.customer : ''),
+            overCounter ? { hint: 'Counter exchange — the conductor took the value away themselves' } : { prompt: !benName, hint: 'Who the value is destined for' }),
           F('be_other', 'Other person/entity in completing action', '†', 'PROMPT', '', { prompt: true, hint: 'If anyone else involved' }),
         ],
       });
@@ -303,6 +328,8 @@
     const inputRefs = useRef({});
     const [filing, setFiling] = useState(false);     // showing the mark-filed step
     const [receipt, setReceipt] = useState('');
+    const [sealing, setSealing] = useState(false);   // the seal is in flight
+    const [sealError, setSealError] = useState('');  // and why it was refused
     const [shown, setShown] = useState(false);
     useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r); }, []);
 
@@ -350,9 +377,24 @@
       return { ...f, value: v, missing: f.missing && !v, filledByTeller: f.prompt || f.missing || edited };
     }) })) }));
 
-    const doFile = () => {
-      if (!receipt.trim()) return;
-      onFile({ map: resolve(), prompts: vals, ticks, fwrReceipt: receipt.trim() });
+    /* Sealing can be refused, and a refusal has to be visible.
+
+       The seal used to be pure browser state — it could not fail, so nothing
+       here could report a failure, and the sealed copy went to localStorage
+       whether or not anything durable had recorded the filing. It now goes to
+       the ledger first. The two refusals a filer will actually meet are the
+       ledger being unreachable and this obligation already being sealed (a
+       correction is filed as a new linked report, never as a replacement),
+       and both of them mean the worksheet stays open with the words on it. */
+    const doFile = async () => {
+      if (!receipt.trim() || sealing) return;
+      setSealing(true); setSealError('');
+      try {
+        await onFile({ map: resolve(), prompts: vals, ticks, fwrReceipt: receipt.trim() });
+      } catch (error) {
+        setSealing(false);
+        setSealError((error && error.message) || 'The filing could not be sealed. Nothing was recorded.');
+      }
     };
 
     const SourceTag = ({ s }) => {
@@ -487,11 +529,17 @@
               <button onClick={() => setFiling(true)} disabled={reqLeft > 0} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: (reqLeft > 0) ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: (reqLeft > 0) ? 'not-allowed' : 'pointer' }}><Ic n="lock" s={15} c="var(--cd-on-ink)" /> Mark filed & seal</button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex-none text-[11.5px] font-medium" style={{ color: CD.ink }}>FWR acknowledgement #</div>
-              <input value={receipt} onChange={e => setReceipt(e.target.value)} autoFocus placeholder="Paste the FWR receipt number…" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontFamily: 'Space Mono, monospace' }} onKeyDown={e => { if (e.key === 'Enter') doFile(); }} />
-              <button onClick={() => setFiling(false)} className="px-3 py-2 text-[12px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.mute }}>Back</button>
-              <button onClick={doFile} disabled={!receipt.trim()} className="px-4 py-2 text-sm font-semibold text-white flex-none" style={{ background: receipt.trim() ? CD.green : 'var(--cd-disabled)', borderRadius: 8, cursor: receipt.trim() ? 'pointer' : 'not-allowed' }}>Seal filed copy</button>
+            <div>
+              {sealError && <div className="flex items-start gap-2 mb-2 px-3 py-2 text-[11.5px]" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 8, color: CD.flag }}>
+                <Ic n="alert" s={14} c={CD.flag} />
+                <span><b>Not sealed — nothing was recorded.</b> {sealError}</span>
+              </div>}
+              <div className="flex items-center gap-2">
+                <div className="flex-none text-[11.5px] font-medium" style={{ color: CD.ink }}>FWR acknowledgement #</div>
+                <input value={receipt} onChange={e => setReceipt(e.target.value)} autoFocus placeholder="Paste the FWR receipt number…" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontFamily: 'Space Mono, monospace' }} onKeyDown={e => { if (e.key === 'Enter') doFile(); }} />
+                <button onClick={() => setFiling(false)} className="px-3 py-2 text-[12px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.mute }}>Back</button>
+                <button onClick={doFile} disabled={!receipt.trim() || sealing} className="px-4 py-2 text-sm font-semibold text-white flex-none" style={{ background: (receipt.trim() && !sealing) ? CD.green : 'var(--cd-disabled)', borderRadius: 8, cursor: (receipt.trim() && !sealing) ? 'pointer' : 'not-allowed' }}>{sealing ? 'Sealing…' : 'Seal filed copy'}</button>
+              </div>
             </div>
           )}
         </div>
@@ -531,6 +579,7 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
 .ft .lbl{width:46%;color:#444;}.ft .pr{font-family:'Space Mono';font-size:8px;background:#f3e7c8;color:#6b5119;padding:1px 4px;border-radius:3px;}
 .ft .val{font-family:'Space Mono';color:#0a0a0a;}.ft .val.empty{color:#bbb;}
 .ft .dv{font-family:'Space Mono';font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#999;padding-top:7px;}
+.amd{margin:-8px 0 16px;padding:8px 12px;background:#fdf1ee;border:1px solid #b4472f;border-radius:9px;font-size:11.5px;color:#8c2f1c;}
 .lnk{margin-top:10px;padding:10px 12px;background:#faf9f6;border:1px solid #e4e2da;border-radius:9px;font-size:11px;}
 .lk{font-family:'Space Mono';font-size:10.5px;background:#0a0a0a;color:#fff;border-radius:5px;padding:2px 7px;margin-right:4px;display:inline-block;}
 .ft2{margin-top:14px;font-size:10px;color:#888;border-top:1px solid #e4e2da;padding-top:10px;}
@@ -550,6 +599,7 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
   <div class="kpi"><div class="l">Filed by</div><div class="v">${esc(filing.filedBy)}</div></div>
   <div class="kpi"><div class="l">Filed at</div><div class="v" style="font-size:11px;">${esc(filing.filedAt)}</div></div>
 </div>
+${filing.amendsAck ? `<div class="amd"><b>Correction.</b> This report supersedes the copy filed under acknowledgement <b>${esc(filing.amendsAck)}</b> — which remains on the record, unchanged, as it was submitted.</div>` : ''}
 ${(filing.map || []).map(blockHTML).join('')}
 <div class="lnk"><b>Linked records</b> — this filing was triggered by, and is welded to: ${links || '—'}${filing.subject ? ` · client <b>${esc(filing.subject)}</b>` : ''}</div>
 <div class="ft2">Immutable filed copy. A correction is filed as a new linked report — this record is never edited. Retain ≥ ${(settings && settings.retentionYears) || 5} years per ${esc(regime.authority)} record-keeping. Times in ${esc((settings && settings.timezone) || 'America/Toronto')} with UTC offset. Foreign amounts shown in original currency; ${esc(regime.currency)} equivalents are threshold-test references only.</div>

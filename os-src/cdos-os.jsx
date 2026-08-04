@@ -548,18 +548,62 @@
      hop between the TILLS at THIS location only. Changing store means signing
      out and back in — there is deliberately no cross-store switch here.
      lockTill (rule R5): till-scope roles (cashier/trainee) can't self-serve
-     a till switch — their drawer is their assignment. */
-  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate }) {
+     a till switch — their drawer is their assignment.
+
+     ON A SERVER-BACKED DESK THIS SWITCHES THE LEDGER, NOT A LABEL.
+     The tills it offers are the ones the ledger has for this branch, named
+     the way the ledger names them, and picking one re-points every subsequent
+     read and write. It used to offer the browser's own demo tills instead:
+     the header changed to "Till 2 — Express" while the workspace header on
+     every request stayed on Till 1, so a count saved afterwards was written
+     against the drawer the teller had just left. The local list is still what
+     a desk with no ledger sees — there, those tills are the only book there
+     is — but nothing in either mode claims an operator the server has not
+     named. See tillOccupant in cdos-backend.js. */
+  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate, ledgerScope, onSelectLedgerTill }) {
     const [open, setOpen] = useState(false);
-    const [pending, setPending] = useState(null);   // till id awaiting confirmation
+    const [pending, setPending] = useState(null);   // option key awaiting confirmation
+    const [err, setErr] = useState('');
     const ref = useRef(null);
     useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
-    const tills = ((ab && ab.tills) || []).filter(t => t.status !== 'closed');
-    const at = ab && (ab.tills || []).find(t => t.id === station.tillId);
-    const canSwitch = !lockTill && tills.length >= 1;
-    const pick = (tId) => { if (tId === station.tillId) { setOpen(false); return; } setPending(tId); setOpen(false); };
-    const confirmPick = () => { const tId = pending; setPending(null); if (!tId) return; (gate || ((fn) => fn()))(() => { setStation({ branchId: ab.id, tillId: tId }); const t = (ab.tills || []).find(x => x.id === tId) || {}; if (t.operator) log && log('Till handover', `${t.operator} → you · ${ab.code} ${t.name}`); log && log('Till switched', (ab.name || '') + ' · ' + (t.name || '')); }); };
+    const occupantOf = (session) => (window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '');
+    /* One list, whichever book is in charge. `onLedger` says which, because a
+       key from the local list must never be handed to the server as a
+       workspace and a workspace id means nothing to the local station. */
+    const onLedger = !!(ledgerScope && (ledgerScope.workspaces || []).length && onSelectLedgerTill);
+    const options = onLedger
+      ? ledgerScope.workspaces.map(w => ({
+          key: w.workspaceId,
+          name: w.tillId,
+          occupant: occupantOf(w.session),
+          // no session on the ledger means the book cannot say who is there
+          note: w.session && w.session.status === 'open' ? '' : (w.session ? 'not open' : 'never opened'),
+          on: !!(ledgerScope.active && ledgerScope.active.workspaceId === w.workspaceId),
+        }))
+      : ((ab && ab.tills) || []).filter(t => t.status !== 'closed').map(t => ({
+          key: t.id,
+          name: t.name,
+          // the desk's own record of who is POSTED here, said as that and not
+          // as a live session — this browser cannot know who is sitting down
+          occupant: '',
+          note: t.teller ? 'posted to ' + t.teller : '',
+          on: station.tillId === t.id,
+        }));
+    const at = options.find(o => o.on) || null;
+    const canSwitch = !lockTill && options.length >= 1;
+    const pick = (key) => { setOpen(false); setErr(''); if (!at || key !== at.key) setPending(key); };
+    const confirmPick = () => {
+      const key = pending; setPending(null);
+      if (!key) return;
+      (gate || ((fn) => fn()))(() => {
+        if (onLedger) { onSelectLedgerTill(key).catch(error => setErr(error.message || 'The ledger refused the switch.')); return; }
+        setStation({ branchId: ab.id, tillId: key });
+        const t = (ab.tills || []).find(x => x.id === key) || {};
+        log && log('Till switched', (ab.name || '') + ' · ' + (t.name || ''));
+      });
+    };
+    const pendingOption = pending ? options.find(o => o.key === pending) : null;
     return (<div ref={ref} style={{ position: 'relative' }}>
       <button onClick={() => canSwitch && setOpen(o => !o)} title={canSwitch ? 'Switch till at this location' : (lockTill ? 'Your assigned till — ask a manager to move you' : 'Your station')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: open ? 'var(--cd-hover)' : 'transparent', border: 0, padding: '2px 6px', margin: '0 -6px', borderRadius: 7, cursor: canSwitch ? 'pointer' : 'default', color: 'inherit' }}>
         <span style={{ width: 6, height: 6, borderRadius: 999, background: ab && ab.status === 'open' ? CD.green : CD.faint, flex: 'none' }}></span>
@@ -568,16 +612,17 @@
         {canSwitch && <span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={11} c={CD.faint} /></span>}
       </button>
       {open && canSwitch && (<div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 7, width: 250, background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12, boxShadow: '0 16px 44px var(--cd-shade)', zIndex: 9999, overflow: 'hidden' }}>
-        <div style={{ padding: '9px 12px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{ab ? ab.name : ''} · switch till</div>
-        {tills.map(t => { const on = station.tillId === t.id; return (
-          <button key={t.id} onClick={() => pick(t.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}>
-            <Ic n="wallet" s={13} c={on ? CD.ink : CD.mute} />
-            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{t.name}<span style={{ color: CD.faint }}>{on ? ' · you' : (t.operator ? ' · ' + t.operator + ' on now' : ' · free')}</span></span>
-            {on && <Ic n="check" s={13} c={CD.ink} />}
-          </button>); })}
+        <div style={{ padding: '9px 12px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{(onLedger && ledgerScope.active && ledgerScope.active.branchName) || (ab ? ab.name : '')} · switch till</div>
+        {options.map(o => (
+          <button key={o.key} onClick={() => pick(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}>
+            <Ic n="wallet" s={13} c={o.on ? CD.ink : CD.mute} />
+            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}<span style={{ color: CD.faint }}>{o.on ? ' · you' : (o.occupant ? ' · ' + o.occupant + ' on now' : (o.note ? ' · ' + o.note : ''))}</span></span>
+            {o.on && <Ic n="check" s={13} c={CD.ink} />}
+          </button>))}
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10.5, color: CD.faint, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n="logout" s={11} c={CD.faint} /> To change store, sign out &amp; back in.</div>
       </div>)}
-      {pending && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && React.createElement(window.CDOS._stations.ConfirmStationModal, { branch: ab, till: (ab.tills || []).find(x => x.id === pending), me, onClose: () => setPending(null), onConfirm: confirmPick })}
+      {err && <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 7, width: 250, background: CD.flagSoft, color: CD.flag, border: `1px solid ${CD.flag}`, borderRadius: 10, padding: '8px 10px', fontSize: 11, zIndex: 9999 }} onClick={() => setErr('')}>{err}</div>}
+      {pendingOption && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && React.createElement(window.CDOS._stations.ConfirmStationModal, { branch: { name: (onLedger && ledgerScope.active && ledgerScope.active.branchName) || (ab && ab.name) }, till: { name: pendingOption.name, operator: pendingOption.occupant }, me, onClose: () => setPending(null), onConfirm: confirmPick })}
     </div>);
   }
 
@@ -780,13 +825,30 @@
        wrote your count onto that other drawer's balance.
 
        This asks the server what tills the branch actually has and names one on
-       every subsequent call. With a single workspace that is simply the truth.
-       With more than one the desk cannot say which local till is which server
-       till — that reconciliation does not exist yet — so it holds the first by
-       till id (stable across reloads) and the Cash Drawer says out loud which
-       drawer it is counting, rather than letting somebody count Till 2 against
-       Till 1's expected. */
+       every subsequent call, and the till switcher moves THIS pointer rather
+       than a local label. The server's tills are the only ones offered: the
+       list is scoped to the branch this session is posted at, so a drawer the
+       signed-in person is not authorized for never appears in the menu.
+
+       The choice is remembered (wkey below) because losing it on reload put a
+       teller back on Till 1 without a word — they had said where they were
+       sitting and the desk quietly disagreed. It is a POINTER, not money: what
+       is stored is which drawer to ask about, and every figure still comes from
+       the server. A stored id that is no longer in the list (a till removed, or
+       somebody moved to another branch) falls back to the first and says so
+       rather than carrying a stale scope into a count.
+
+       Keyed by the signed-in staff id, because a shared machine is the normal
+       case at a counter: the next person to sign in gets their own last
+       drawer rather than whoever used this browser before them. And
+       deliberately outside the `cdos_`/`yorkfx_` prefixes that CDOS_PERSIST
+       replicates to the tenant's saved state — which drawer somebody is
+       standing at is a fact about this machine, not something head office
+       should be told and certainly not something another terminal's copy
+       should merge back over. */
+    const wkey = (user) => 'cdesk.ledger.till.' + ((user && user.id) || 'anon');
     const [ledgerScope, setLedgerScope] = useState(null);
+    const [ledgerSwitching, setLedgerSwitching] = useState(false);
     useEffect(() => {
       if (stage !== 'desktop' || !srvUser || !window.CDOS.Backend) {
         if (window.CDOS.Backend) window.CDOS.Backend.setWorkspace(null);
@@ -798,8 +860,17 @@
         .then(result => {
           if (cancelled) return;
           const list = (result && result.workspaces) || [];
-          const active = list[0] || null;
+          let remembered = null;
+          try { remembered = localStorage.getItem(wkey(srvUser)); } catch (e) {}
+          const held = remembered ? list.find(w => w.workspaceId === remembered) : null;
+          const active = held || list[0] || null;
+          if (remembered && !held && list.length) {
+            log('Till selection reset', `The ledger no longer offers ${remembered} at this branch — the desk is on ${active.tillId}.`);
+          }
           window.CDOS.Backend.setWorkspace(active ? active.workspaceId : null);
+          try {
+            if (active) localStorage.setItem(wkey(srvUser), active.workspaceId); else localStorage.removeItem(wkey(srvUser));
+          } catch (e) {}
           setLedgerScope({ workspaces: list, active, ambiguous: list.length > 1 });
         })
         .catch(error => {
@@ -812,6 +883,45 @@
         });
       return () => { cancelled = true; };
     }, [stage, srvUser]);
+
+    /* MOVING TO ANOTHER DRAWER.
+
+       The order here is the whole point. The server is asked first, naming the
+       target workspace on that one request only; the desk's own pointer moves
+       afterwards, in the same tick as the state that renames the screen. So
+       there is no moment in which the header says one till and the requests
+       carry another — which is exactly what used to happen, for as long as the
+       teller stayed on the wrong screen, and is how a count saved after a
+       switch landed on the till they had just left.
+
+       If the server refuses, nothing on screen moves. A switch that was not
+       agreed to is not a switch. */
+    const selectLedgerTill = async (workspaceId) => {
+      if (!window.CDOS.Backend || !ledgerScope || ledgerSwitching) return null;
+      const target = (ledgerScope.workspaces || []).find(w => w.workspaceId === workspaceId);
+      if (!target || (ledgerScope.active && ledgerScope.active.workspaceId === workspaceId)) return null;
+      setLedgerSwitching(true);
+      try {
+        const resolved = await window.CDOS.Backend.selectWorkspace(workspaceId);
+        window.CDOS.Backend.setWorkspace(resolved.workspaceId);
+        try { localStorage.setItem(wkey(srvUser), resolved.workspaceId); } catch (e) {}
+        const next = { ...target, session: resolved.session || null };
+        setLedgerScope(scope => scope && ({
+          ...scope,
+          workspaces: (scope.workspaces || []).map(w => w.workspaceId === next.workspaceId ? next : w),
+          active: next,
+        }));
+        // every screen that reads server money re-reads against the new till
+        setCashVersion(v => v + 1);
+        log('Till switched', `Ledger till ${resolved.tillId}${target.branchName ? ' · ' + target.branchName : ''}`);
+        return resolved;
+      } catch (error) {
+        log('Till switch refused', error.message || 'The ledger would not move this session to that till.');
+        throw error;
+      } finally {
+        setLedgerSwitching(false);
+      }
+    };
     // the id the header carries; screens that fetch server money key their
     // refetch on it so they re-read once the workspace is known
     const ledgerWorkspaceId = (ledgerScope && ledgerScope.active && ledgerScope.active.workspaceId) || null;
@@ -1933,7 +2043,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
@@ -2116,7 +2226,7 @@
           </div>
           <div className="tenant-meta">
             <span className="tenant-name">{settings.operatingName || settings.bizName || 'Exchange house'}</span>
-            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} />
+            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
           </div>
         </div>
         <div className="tenant-right">

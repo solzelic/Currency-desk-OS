@@ -83,7 +83,15 @@ coverage:
   the others are shown as untracked, never silently merged with ledger figures.
 - Only currency exchange posts today. Cheque cashing, pay out, money orders,
   bill payment and remittance move drawer cash without reaching the ledger.
-- Branch and till identifiers are not yet reconciled between the desk and the
-  server, so only the till a session is signed in at can be addressed.
-- Average cost, and therefore unrealized P&L, is still derived in the browser;
-  the ledger records quantity, not what it was bought for.
+- Branch and till identifiers are still not reconciled between the desk and the
+  server. Any till in the signed-in branch can now be addressed — the switcher
+  names the ledger's tills and moves the workspace the server answers for, so
+  the drawer on screen and the drawer being written to are the same one — but
+  a session cannot reach another BRANCH's tills, because a workspace is
+  resolved from the user's home branch rather than from the branches they are
+  authorized on. An owner with two locations must have somebody at each.
+- The ledger now carries cost — a per-location average, the lots behind it, and
+  every event that moved it, under weighted average or FIFO as the desk
+  chooses (see COST_BASIS.md). What has not moved is the SCREENS: the Vault's
+  average-cost column and unrealized P&L are still computed in the browser, so
+  a desk can be shown a basis the ledger would not agree with.

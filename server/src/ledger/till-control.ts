@@ -116,6 +116,130 @@ export class TillControlService {
     }
   }
 
+  /* WHO IS ON WHICH DRAWER, ACCORDING TO THE BOOK.
+
+     The desk used to answer this from a roster baked into the browser:
+     "Till 2 — Express · M. Costa on now", for a till that had never held a
+     session and a person the ledger has never heard of. A teller reads that
+     line to decide where to sit, and a handover recorded against the wrong
+     drawer is a cash defect with a name attached to it.
+
+     So occupancy is a server fact or it is nothing. The latest session per
+     workspace is returned with its status; a workspace absent from the map
+     has never been opened, and the client is expected to say exactly that
+     rather than fill the gap.
+
+     Scoped by branch rather than by actor because the caller — the workspace
+     list — is answering "what tills does this branch have", a question that
+     by definition spans workspaces the actor is not currently in. It carries
+     no cash: a session number, a status and the id of whoever opened it. */
+  async branchOccupancy(scopeIn: {
+    tenantId: string;
+    legalEntityId: string;
+    branchId: string;
+  }) {
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (workspace_id)
+              workspace_id,till_id,session_id,session_number,status,
+              opened_by,opened_at,closed_by,closed_at
+         FROM ledger_till_sessions
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        ORDER BY workspace_id,session_number DESC`,
+      [scopeIn.tenantId, scopeIn.legalEntityId, scopeIn.branchId],
+    );
+    return new Map(
+      result.rows.map((row) => [
+        String(row.workspace_id),
+        sessionJson(row as Record<string, unknown>),
+      ]),
+    );
+  }
+
+  /* MOVING TO ANOTHER DRAWER, ON THE RECORD.
+
+     The Cash Drawer's till switcher promises, in the confirmation modal,
+     that "the switch is stamped to the audit trail with your name and the
+     time". Nothing was written: the browser renamed a label, kept sending
+     the old workspace header, and a count taken at Till 2 was recorded
+     against Till 1 with a large invented variance on an innocent drawer.
+
+     This is the server end of the switch. It exists so that the client has
+     something to await before it changes what the screen says — the actor,
+     the target workspace and the authorization are all checked here, and
+     the audit row is written here, so a switch that appears on screen is a
+     switch the book agreed to. The response carries the new till's session
+     and balances so the drawer never renders the new name over the old
+     money.
+
+     WHY IT DOES NOT REFUSE A SWITCH AWAY FROM AN OPEN, UNCOUNTED TILL.
+
+     The tempting rule is "you may not leave a drawer you have not counted".
+     It is the wrong rule here, for three reasons:
+
+       · The switch is not the event. A person physically moving to another
+         drawer has already happened; refusing only stops the LEDGER from
+         following them, which recreates precisely the divergence this whole
+         change exists to remove — screen on one till, requests on another.
+       · A session is not a lock. Sessions deliberately outlive a teller and
+         a shift; a till sitting open and uncounted is an ordinary state, not
+         an error, and two tellers on two drawers of the same branch is the
+         case a second till exists for.
+       · The refusal that matters already exists, at the point where an
+         uncounted currency could overwrite real money: the CLOSE refuses
+         (INCOMPLETE_TILL_COUNT) unless every ledger currency has a real
+         count. Moving that refusal earlier would not protect any cash it
+         does not already protect.
+
+     A count typed in and not yet saved is the one genuine hazard, and it is
+     a client-side one: those figures belong to the drawer they were counted
+     at. The browser discards them on a switch rather than carrying them, and
+     says so — see cdos-till.jsx. Discarding is safe because nothing was
+     posted; carrying is a count recorded against the wrong till. */
+  async selectTill(actor: LedgerActor) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "ledger:view");
+      const now = new Date();
+      await this.audit(
+        client,
+        actor,
+        "till.select",
+        actor.workspaceId,
+        `operator moved to ${actor.tillId}`,
+        now,
+      );
+      const state = await this.currentWithClient(client, actor);
+      const balances = await client.query(
+        `SELECT currency,available_amount
+           FROM ledger_till_balances
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5
+          ORDER BY currency`,
+        scope(actor),
+      );
+      await client.query("COMMIT");
+      return {
+        workspaceId: actor.workspaceId,
+        tillId: actor.tillId,
+        branchId: actor.branchId,
+        selectedAt: now.toISOString(),
+        ...state,
+        balances: Object.fromEntries(
+          balances.rows.map((row) => [
+            row.currency.trim(),
+            row.available_amount,
+          ]),
+        ),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async open(actor: LedgerActor) {
     const client = await this.pool.connect();
     try {

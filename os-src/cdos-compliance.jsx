@@ -134,6 +134,29 @@
     const we = new Date(ws.getTime() + (H || 24) * 3600000);
     return { start: ws, end: we, key: ws.toISOString() };
   }
+  /* A short, stable fingerprint of a transaction SET.
+
+     An aggregate used to be identified by who and which day and nothing
+     else, so a report filed over four cash-ins silently absorbed the fifth:
+     the same person on the same day produced the same cluster id, that id
+     was already marked filed, and the card went on reading "6 cash-ins ·
+     $16,600 · ✓ filed FWR-AGG-RC-0001" over a sealed copy that covered
+     $14,100. There was no File button and no warning — the desk did not
+     merely miss a report, it asserted compliance over an under-report.
+
+     Folding the set into the identity makes a changed set a DIFFERENT
+     obligation, which is what it is. The who-and-when identity survives
+     alongside it as `groupId`, so the new obligation can find what was
+     already filed over the same person's day and link to it rather than
+     arriving as an unrelated report that says nothing about the four deals
+     already covered. */
+  function setFingerprint(ids) {
+    const s = (ids || []).map(String).sort().join('|');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
+  }
+
   // generic core: aggregate a list of normalized cash-in/transfer-out events
   // ({ id, ref, date, time, t:Date, amt, customer, beneficiary }) over the static
   // window, by conductor AND beneficiary. `kind` is the report code stamped on
@@ -157,7 +180,8 @@
           const total = txs.reduce((s, o) => s + o.amt, 0);
           if (txs.length < 2 || total < TH) return null;
           const endRow = txs[txs.length - 1];
-          return { id: 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey, kind, basis, subject, customer: subject, txs, total, end: endRow.date + ' ' + (endRow.time || ''), endRow, windowStart: w.start.toISOString(), windowEnd: w.end.toISOString(), windowLabel };
+          const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey;
+          return { id: groupId + '-' + setFingerprint(txs.map(t => t.id)), groupId, kind, basis, subject, customer: subject, txs, total, end: endRow.date + ' ' + (endRow.time || ''), endRow, windowStart: w.start.toISOString(), windowEnd: w.end.toISOString(), windowLabel };
         }).filter(Boolean);
       };
       const conductors = mk('conductor', e => e.customer);
@@ -185,7 +209,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, dt },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, dt, setFingerprint },
     getRegime,
     jurisdictionViolations,
   });

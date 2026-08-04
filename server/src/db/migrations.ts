@@ -20,6 +20,7 @@ const migrations: readonly Migration[] = [
   ["012_jurisdiction_reports", "src/db/migrations/012_jurisdiction_reports.sql"],
   ["013_cross_currency_quotes", "src/db/migrations/013_cross_currency_quotes.sql"],
   ["014_cost_method_fifo", "src/db/migrations/014_cost_method_fifo.sql"],
+  ["015_report_filing_record", "src/db/migrations/015_report_filing_record.sql"],
 ] as const;
 
 export async function runMigrations(

@@ -23,8 +23,18 @@
        the default object wholesale, so merging the two here is what keeps
        content-type on every POST that also needs the workspace header. */
     var init = Object.assign({ credentials: "same-origin" }, options || {});
-    init.headers = Object.assign({ "content-type": "application/json" }, (options && options.headers) || {});
-    if (activeWorkspaceId) init.headers["x-workspace-id"] = activeWorkspaceId;
+    /* The active till is a DEFAULT here, not an override: a caller that names
+       x-workspace-id itself wins. Only one call does, and it is the one that
+       switches tills — it has to reach the target workspace while the screen,
+       and therefore every other request in flight, still belongs to the one
+       being left. Applying the module's id last would have made that call
+       impossible to express, and the alternative (flip the module id, then
+       ask) is the defect this fixes: for the length of one round trip the
+       header would name a till the screen had not moved to yet. */
+    init.headers = Object.assign(
+      { "content-type": "application/json" },
+      activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
+      (options && options.headers) || {});
     try {
       response = await fetch(path, init);
     } catch (cause) {
@@ -53,6 +63,9 @@
         VAULT_ALREADY_INITIALIZED: "This vault already has an opening position. Change it with a recorded movement, not by restating it.",
         TILL_ALREADY_ACTIVE: "This till already has an open session.",
         IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
+        OBLIGATION_ALREADY_FILED: "This report has already been sealed on the ledger. A correction is filed as a new report linked to the original — the sealed copy is never replaced.",
+        REPORT_NOT_IN_PACK: "Your jurisdiction pack has no such report, so this desk cannot file one.",
+        FILING_NOT_FOUND: "That filed report is not on this desk's record.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
         REVERSAL_ALREADY_EXISTS: "This transaction has already been reversed.",
       })[body.code] || "The ledger server rejected this request. Nothing was posted.");
@@ -61,6 +74,20 @@
       throw error;
     }
     return body;
+  }
+
+  /* WHO IS ON A TILL, ACCORDING TO THE BOOK — or nobody at all.
+
+     Both till switchers used to answer this from a roster compiled into the
+     browser ("Till 2 — Express · M. Costa on now") for drawers that had never
+     held a session, naming a person the ledger has never heard of. So the only
+     answer either of them may render comes from here: the actor on the till's
+     latest session, and only while that session is open. Anything else — no
+     session, a closed one, a session with no actor — is the empty string, and
+     the screen is expected to show nothing rather than guess. */
+  function tillOccupant(session) {
+    if (!session || session.status !== "open") return "";
+    return String(session.openedBy || "").split(":").pop() || "";
   }
 
   function customerPayload(name, record) {
@@ -165,10 +192,27 @@
       setWorkspace: setWorkspace,
       getWorkspace: getWorkspace,
       // the tills this session's branch has on the ledger, as the server names
-      // them — the desk's own branch records cannot answer this
+      // them — the desk's own branch records cannot answer this. The roster
+      // adds who is on each drawer; the desk used to answer that from a demo
+      // roster and named a person the ledger has never heard of.
       loadWorkspaces: function () {
-        return request("/api/ledger/workspaces");
+        return request("/api/ledger/till-roster");
       },
+      /* Move the operator to another till.
+         The target is named on THIS request only — `activeWorkspaceId` is
+         deliberately left alone until the server has agreed, so there is no
+         moment when the id the desk is sending and the till the screen shows
+         are different tills. The caller commits with setWorkspace(id) on the
+         resolved response, which also carries that till's session and
+         balances so the new name and the new money land together. */
+      selectWorkspace: function (workspaceId) {
+        return request("/api/ledger/till-selection", {
+          method: "POST",
+          headers: { "x-workspace-id": workspaceId },
+          body: "{}",
+        });
+      },
+      tillOccupant: tillOccupant,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {
@@ -273,6 +317,77 @@
       },
       mergeRows: mergeRows,
       asMoney: asMoney,
+      /* ---- filed regulatory reports ----
+
+         The sealed five-year copy of a report used to live in localStorage,
+         which is a place a compliance record cannot live: it dies with the
+         browser profile, the second till holds a different set of filings
+         from the first, and the store is bounded — a busy desk eventually
+         writes one filing more than fits and the quota error lands in a
+         swallowed catch while the screen says "sealed". These make the
+         ledger the record and the browser a cache of it. */
+      loadReportFilings: function (limit) {
+        return request("/api/ledger/report-filings?limit=" + (limit || 200));
+      },
+      /* One filing WITH its payload — every field as submitted. The list
+         above leaves the payload out because a sealed worksheet is tens of
+         kilobytes and the Filings screen renders one line per report. */
+      loadReportFiling: function (filingId) {
+        return request("/api/ledger/report-filings/" + encodeURIComponent(filingId));
+      },
+      /* Seal a filing. There is no update and no delete beside this: the
+         database refuses to change a filed row, and a correction is a new
+         filing carrying `amendsFilingId`. */
+      fileReport: function (payload) {
+        return request("/api/ledger/report-filings", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+
+      /* ---- what the desk earned, and what it is holding ----
+
+         Every summary screen used to answer these for itself, in the
+         browser, off a demo seed: the Dashboard announced 38 deals and
+         $130,566 of volume for a desk that had done one $1,000 trade, and
+         the FX exposure panel had it SHORT the euros it was long. Nothing
+         disagreed, because nothing else was asking.
+
+         Read docs/ABSENT_FIGURES.md before rendering any of this. Every
+         money field can be null and null is not zero — it means the ledger
+         has no answer, and the screen owes the reader a "—" and a reason
+         rather than a confident total. */
+
+      /* Totals over a window. `from` and `to` are ISO instants and BOTH
+         are optional; omitting them means "everything this till has ever
+         posted", which is the only window that needs no timezone to be
+         right. The server deliberately does not decide where a day starts
+         — see businessDayWindow() in cdos-base.jsx, which builds the
+         window from the till session's own business date. */
+      loadLedgerSummary: function (window) {
+        var query = [];
+        if (window && window.from) query.push("from=" + encodeURIComponent(window.from));
+        if (window && window.to) query.push("to=" + encodeURIComponent(window.to));
+        return request("/api/ledger/summary" + (query.length ? "?" + query.join("&") : ""));
+      },
+
+      /* What this branch physically holds, till and vault together, with
+         cost basis and — only where both halves are genuinely known —
+         unrealized P&L. This is the answer to "are we long or short",
+         which the Dashboard was previously deriving from the net of the
+         day's deals: a completely different question with a plausible
+         enough answer that nobody noticed. */
+      loadLedgerPosition: function () {
+        return request("/api/ledger/position");
+      },
+
+      /* The rules this desk trades under — home currency, the regulator's
+         report name, the reporting and identification thresholds. One
+         source for a number the browser used to hardcode as 10,000
+         Canadian dollars in one place and read from settings in another. */
+      loadJurisdiction: function () {
+        return request("/api/ledger/jurisdiction");
+      },
     },
   });
 })();

@@ -161,7 +161,7 @@
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     /* ---------------- SERVER TILL SESSION ----------------
@@ -299,9 +299,75 @@
     useEffect(() => { if (!tillMenu) return; const h = (e) => { if (tillMenuRef.current && !tillMenuRef.current.contains(e.target)) setTillMenu(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [tillMenu]);
     const _ab = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
     const _tills = ((_ab && _ab.tills) || []).filter(t => t.status !== 'closed');
-    const [pendingTill, setPendingTill] = useState(null);   // till id awaiting switch confirmation
-    const pickTill = (tId) => { setTillMenu(false); if (!station || tId === station.tillId) return; setPendingTill(tId); };
-    const confirmPickTill = () => { const tId = pendingTill; setPendingTill(null); if (!tId) return; setStation && setStation({ branchId: _ab.id, tillId: tId }); const t = (_ab.tills || []).find(x => x.id === tId) || {}; if (t.operator && t.operator !== me.name) log && log('Till handover', `${t.operator} → ${me.name} · ${_ab.code} ${t.name}`); log && log('Till switched', (_ab.name || '') + ' · ' + (t.name || '')); };
+    const [pendingTill, setPendingTill] = useState(null);   // option key awaiting switch confirmation
+    const [switchNote, setSwitchNote] = useState('');       // what the last switch did to the screen
+    /* THE TILLS THIS MENU MAY OFFER.
+       On a server-backed desk they are the ledger's, named the way the ledger
+       names them, and picking one re-points the ledger. The menu used to list
+       this browser's own demo tills and announce who was on them from a roster
+       compiled into the page — "Till 2 — Express · M. Costa on now" for a
+       drawer that had never held a session and a person the ledger has never
+       heard of. Occupancy now comes from the till's session or is left blank;
+       see tillOccupant in cdos-backend.js. */
+    const onLedgerTills = !!(ledgerScope && (ledgerScope.workspaces || []).length && onSelectLedgerTill);
+    const occupantOf = (session) => (window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '');
+    const tillOptions = onLedgerTills
+      ? ledgerScope.workspaces.map(w => ({
+          key: w.workspaceId,
+          name: w.tillId,
+          occupant: occupantOf(w.session),
+          note: w.session && w.session.status === 'open' ? '' : (w.session ? 'not open' : 'never opened'),
+          on: !!(ledgerTill && ledgerTill.workspaceId === w.workspaceId),
+        }))
+      : _tills.map(t => ({
+          key: t.id,
+          name: t.name,
+          // the desk's own record of who is POSTED here, said as that rather
+          // than as a live session this browser has no way to know about
+          occupant: '',
+          note: t.teller ? 'posted to ' + t.teller : '',
+          on: !!(station && station.tillId === t.id),
+        }));
+    const activeOption = tillOptions.find(o => o.on) || null;
+    const pickTill = (key) => { setTillMenu(false); if (activeOption && key === activeOption.key) return; setPendingTill(key); };
+    const confirmPickTill = async () => {
+      const key = pendingTill;
+      setPendingTill(null);
+      if (!key) return;
+      if (!onLedgerTills) {
+        setStation && setStation({ branchId: _ab.id, tillId: key });
+        const t = (_ab.tills || []).find(x => x.id === key) || {};
+        log && log('Till switched', (_ab.name || '') + ' · ' + (t.name || ''));
+        return;
+      }
+      try {
+        const resolved = await onSelectLedgerTill(key);
+        if (!resolved) return;
+        /* A count typed into these fields and not yet saved was counted at
+           the drawer being left, and it is the one thing on this screen that
+           could still be carried onto the wrong till. Nothing was posted, so
+           dropping it loses no record; carrying it would put one drawer's
+           cash into another drawer's variance. The fields are then rehydrated
+           from whatever the NEW till last recorded, which is the only count
+           that belongs to it. */
+        const dropped = countedCcys.slice();
+        clearAllCounts();
+        setMode({});
+        setLastSaved({});
+        try { localStorage.setItem('cdos_till_lastcount_v1', '{}'); localStorage.setItem('cdos_till_mode', '{}'); } catch (e) {}
+        setServerBalances(resolved.balances || {});
+        setServerBalanceError('');
+        applySession(resolved);
+        setSessionErr('');
+        setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length
+          ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at — count this one afresh.`
+          : ''));
+      } catch (error) {
+        // the OS logs the refusal; the drawer says it out loud, because the
+        // screen deliberately did not move and that needs explaining
+        setSessionErr(error.message || 'The ledger would not move this session to that till.');
+      }
+    };
     const [ccy, setCcy] = useState('CAD');
     const [counts, setCounts] = useState(() => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}') || {}; } catch (e) { return {}; } });
     const [quick, setQuick] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_quick') || '{}') || {}; } catch (e) { return {}; } });
@@ -317,7 +383,10 @@
     const [history, setHistory] = useState(seedHistory);
     // ---- shift operator (who's on the drawer) ----
     const tillId = (station && station.tillId) || 'main';
-    const tillNm = stationTill || (((_ab && _ab.tills) || []).find(t => t.id === tillId) || {}).name || 'This till';
+    // what to call this drawer in a log line: the ledger's name for it when
+    // there is a ledger, because that is the drawer the entry is about
+    const tillNm = (serverBacked && ledgerTill && ledgerTill.tillId)
+      || stationTill || (((_ab && _ab.tills) || []).find(t => t.id === tillId) || {}).name || 'This till';
     const roster = useMemo(() => ((settings && settings.employees && settings.employees.length ? settings.employees : STAFF) || []).filter(s => s.active !== false), [settings]);
     const requireCount = !!(settings && settings.requireCountOnHandoff);
     // blind count: expected float stays blurred until revealed (Settings › Cash drawer)
@@ -331,15 +400,31 @@
     useEffect(() => { try { localStorage.setItem('cdos_till_strip_open', stripOpen ? '1' : '0'); } catch (e) {} }, [stripOpen]);
     useEffect(() => { try { localStorage.setItem(SHIFT_KEY, JSON.stringify(shifts)); } catch (e) {} }, [shifts]);
     useEffect(() => { try { localStorage.setItem(HANDOFF_KEY, JSON.stringify(handoffs)); } catch (e) {} }, [handoffs]);
-    const current = shifts[tillId];
-    // seed the operator for this till on first view — from the till's assigned teller, else me
+    /* WHO IS ON THIS DRAWER.
+
+       On a server-backed desk the answer is the session's, and only the
+       session's: the person who opened this till, at the time the ledger
+       recorded. The strip used to read a local shift map seeded from the demo
+       roster's `teller` field, so switching drawers renamed the operator to
+       "M. Costa" while A. Singh was signed in and the server was recording
+       actor_id = a.singh — the screen and the audit trail naming two different
+       people over the same cash. When the ledger has no open session for this
+       till there is no operator to name, and the strip says so rather than
+       falling back to a roster. */
+    const serverShift = serverBacked && serverSession && serverSession.status === 'open'
+      ? { operator: personOf(serverSession.openedBy), role: '', since: new Date(serverSession.openedAt).getTime() }
+      : null;
+    const current = serverBacked ? serverShift : shifts[tillId];
+    // seed the operator for this till on first view — from the till's assigned
+    // teller, else me. Local desks only: with a ledger, see above.
     useEffect(() => {
+      if (serverBacked) return;
       if (!shifts[tillId] && tillId) {
         const seededName = (((_ab && _ab.tills) || []).find(t => t.id === tillId) || {}).teller || me.name;
         const r = roster.find(s => s.name === seededName);
         setShifts(o => ({ ...o, [tillId]: { operator: seededName, role: r ? r.role : (seededName === me.name ? me.role : 'Cashier'), since: Date.now() } }));
       }
-    }, [tillId]);
+    }, [tillId, serverBacked]);
     const doHandoff = (rec) => {
       setHandoffs(h => [rec, ...h].slice(0, 200));
       setShifts(o => ({ ...o, [tillId]: { operator: rec.to, role: rec.toRole, since: rec.atMs } }));
@@ -549,11 +634,14 @@
           <div className="min-w-0"><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
             {stationName ? <b style={{ color: CD.ink }}>{stationName}</b> : null}
             {stationName ? <span>·</span> : null}
-            {_tills.length ? (<span ref={tillMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
-              <button onClick={() => setTillMenu(o => !o)} title="Switch till at this location" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, border: 0, background: tillMenu ? 'var(--cd-hover)' : 'transparent', borderRadius: 6, padding: '1px 5px', margin: '0 -3px', cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>{stationTill || (_ab && _ab.tills[0] && _ab.tills[0].name) || 'Till'}<span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={10} c={CD.faint} /></span></button>
+            {/* The title of this window IS the ledger's name for the drawer
+                when there is a ledger. It used to be a local till name that
+                could — and did — say "Till 2 — Express" over Till 1's money. */}
+            {tillOptions.length ? (<span ref={tillMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+              <button onClick={() => setTillMenu(o => !o)} title="Switch till at this location" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, border: 0, background: tillMenu ? 'var(--cd-hover)' : 'transparent', borderRadius: 6, padding: '1px 5px', margin: '0 -3px', cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>{(activeOption && activeOption.name) || (onLedgerTills ? 'Till' : stationTill || 'Till')}<span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={10} c={CD.faint} /></span></button>
               {tillMenu && (<div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 5, width: 230, background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 14px 36px var(--cd-shade)', zIndex: 9999, overflow: 'hidden' }}>
-                <div style={{ padding: '8px 11px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{_ab ? _ab.name : ''} · switch till</div>
-                {_tills.map(t => { const on = station && station.tillId === t.id; return (<button key={t.id} onClick={() => pickTill(t.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px', background: on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}><Ic n="wallet" s={12} c={on ? CD.ink : CD.mute} /><span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{t.name}{t.teller ? <span style={{ color: CD.faint }}> · {t.teller}</span> : null}</span>{on && <Ic n="check" s={12} c={CD.ink} />}</button>); })}
+                <div style={{ padding: '8px 11px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{(onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab ? _ab.name : '')} · switch till</div>
+                {tillOptions.map(o => (<button key={o.key} onClick={() => pickTill(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}><Ic n="wallet" s={12} c={o.on ? CD.ink : CD.mute} /><span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}{o.on ? <span style={{ color: CD.faint }}> · you</span> : (o.occupant ? <span style={{ color: CD.faint }}> · {o.occupant} on now</span> : (o.note ? <span style={{ color: CD.faint }}> · {o.note}</span> : null))}</span>{o.on && <Ic n="check" s={12} c={CD.ink} />}</button>))}
                 <div style={{ padding: '7px 11px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10, color: CD.faint, display: 'flex', alignItems: 'center', gap: 5 }}><Ic n="logout" s={10} c={CD.faint} /> To change store, sign out &amp; back in.</div>
               </div>)}
             </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
@@ -596,17 +684,25 @@
           No session is not an error state — it is the state before someone
           opens the till. */}
       {serverBacked && (<>
-        {/* More server tills than this desk can tell apart. Everything below —
-            the expected figures, the counts, the close — is about the one named
-            here, whatever the picker in the header happens to say. */}
+        {/* This branch runs more than one drawer, so say which one plainly.
+            The picker above now names the ledger's tills, so the title and the
+            money agree by construction — this is a reminder of which drawer is
+            being counted, not a warning that two things disagree. */}
         {ledgerAmbiguous && ledgerTill && (
           <div className="flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="alert" s={13} c={CD.brass} />
             <span className="flex-1 min-w-0">
-              The ledger is answering for <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
-              {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''} — this branch has {ledgerScope.workspaces.length} tills on the server and the till picker above names this desk’s own tills, which the server does not know by those names.
-              <span style={{ color: CD.mute }}> Every balance, count and close on this screen belongs to {ledgerTill.tillId}, whichever till the header shows.</span>
+              This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
+              {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''}.
+              <span style={{ color: CD.mute }}> Use the till name in the header to move to another drawer; the ledger moves with it.</span>
             </span>
+          </div>
+        )}
+        {switchNote && (
+          <div className="flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+            <Ic n="wallet" s={13} c={CD.brass} />
+            <span className="flex-1 min-w-0">{switchNote}</span>
+            <button onClick={() => setSwitchNote('')} className="flex-none grid place-items-center" style={{ width: 22, height: 22, borderRadius: 6, border: 0, background: 'transparent', color: CD.mute }}><Ic n="x" s={12} c={CD.mute} /></button>
           </div>
         )}
         {!serverSession && serverBalancesReady && (
@@ -642,18 +738,30 @@
       </>)}
 
       {/* who's on the drawer — mom-and-pop operator strip (dismissible to a chip) */}
-      {pendingTill && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && React.createElement(window.CDOS._stations.ConfirmStationModal, { branch: _ab, till: ((_ab && _ab.tills) || []).find(x => x.id === pendingTill), me, onClose: () => setPendingTill(null), onConfirm: confirmPickTill })}
+      {/* The modal promises the switch is stamped to the audit trail with your
+          name and the time. It is: confirmPickTill awaits the ledger's own
+          till-selection call, which writes that row before the screen moves. */}
+      {pendingTill && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && (() => {
+        const opt = tillOptions.find(o => o.key === pendingTill);
+        return opt ? React.createElement(window.CDOS._stations.ConfirmStationModal, {
+          branch: { name: (onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab && _ab.name) },
+          till: { name: opt.name, operator: opt.occupant },
+          me,
+          onClose: () => setPendingTill(null),
+          onConfirm: confirmPickTill,
+        }) : null;
+      })()}
       {stripOpen ? (
       <div className="flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
             <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: CD.mute }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: CD.faint }}> · {current.role}</span> : null}</div>
-            <div className="text-[10.5px]" style={{ color: CD.faint }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : 'unassigned'}{requireCount ? ' · count required at handoff' : ''}</div>
+            <div className="text-[10.5px]" style={{ color: CD.faint }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
-          <button onClick={() => setHandoffOpen(true)} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>
+          <button onClick={() => setHandoffOpen(true)} title={serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session — close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator'} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>
           <button onClick={() => setStripOpen(false)} title="Hide operator bar" className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${CD.line}`, background: CD.panel, color: CD.mute }}><Ic n="x" s={13} c={CD.mute} /></button>
         </div>
       </div>

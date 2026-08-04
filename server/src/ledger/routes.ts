@@ -16,6 +16,8 @@ import {
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
+import { ReportFilingService, type FilingInput } from "./report-filings.js";
+import { LedgerReportingService } from "./reporting.js";
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
@@ -134,6 +136,50 @@ const movementQuery = z.object({
 const costMethodBody = z.object({
   method: z.enum(["weighted_average", "fifo", "pack_default"]),
 }).strict();
+/* A sealed regulatory filing arriving from the worksheet.
+
+   `payload` is left as an opaque object on purpose: it is the regulator's
+   form, and every jurisdiction's form is a different shape. Validating its
+   contents here would mean this file knowing what an LCTR looks like,
+   which is the hardcoding the jurisdiction packs exist to undo — the form
+   is data, and it is transcribed in `jurisdiction_reports`.
+
+   The acknowledgement is required because a filing without one is a desk
+   claiming it filed with nothing to show for it. */
+const iso8601 = z.string().datetime({ offset: true });
+const filingBody = z.object({
+  reportCode: z.string().trim().min(1).max(40),
+  obligationId: z.string().trim().min(1).max(400),
+  obligationGroupId: z.string().trim().min(1).max(400),
+  reportRef: z.string().trim().min(1).max(200),
+  subjectName: z.string().trim().min(1).max(300),
+  reportedAmount: decimalString.nullable().default(null),
+  reportedCurrency: z.string().trim().length(3).nullable().default(null),
+  transactionRefs: z.array(z.string().trim().min(1).max(120)).max(500).default([]),
+  aggregationBasis: z.string().trim().max(40).nullable().default(null),
+  windowStart: iso8601.nullable().default(null),
+  windowEnd: iso8601.nullable().default(null),
+  acknowledgementRef: z.string().trim().min(1).max(200),
+  payload: z.unknown(),
+  amendsFilingId: z.string().trim().min(1).max(120).nullable().default(null),
+}).strict();
+const filingQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+});
+/* The window a summary covers, as two instants.
+
+   The caller states them because a business day belongs to a branch's
+   clock, not to this server's — see the note on LedgerReportingService
+   .summary. Both are optional and omitting both means "everything this
+   till has ever posted", which is the only window that needs no timezone
+   to be right. */
+const summaryQuery = z.object({
+  from: iso8601.optional(),
+  to: iso8601.optional(),
+}).refine(
+  (value) => !value.from || !value.to || value.from < value.to,
+  { message: "The window has to start before it ends.", path: ["to"] },
+);
 type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
@@ -143,6 +189,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
+  const reportFilings = new ReportFilingService(pool);
+  const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
@@ -176,6 +224,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
+              error.code === "FILING_NOT_FOUND" ||
               error.code === "TILL_SESSION_NOT_FOUND" ? 404
               : error.code === "IDEMPOTENCY_IN_PROGRESS" ||
                 error.code === "IDEMPOTENCY_CONFLICT" ||
@@ -184,6 +233,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "TILL_NOT_OPEN" ||
                 error.code === "CUSTOMER_EXTERNAL_REF_CONFLICT" ||
                 error.code === "VAULT_ALREADY_INITIALIZED" ||
+                error.code === "OBLIGATION_ALREADY_FILED" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
@@ -220,40 +270,121 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
      single-workspace fallback was carrying the whole desk; the day a branch got
      a second till every ledger and quote call would have started failing with
      nothing to tell the client which id to send. Scope still comes only from the
-     session record — the request cannot name a tenant, entity or branch. */
+     session record — the request cannot name a tenant, entity or branch.
+
+     Which also means a till this session is not posted at is never in the
+     answer, so a till switcher built on this list cannot offer somebody a
+     drawer they are not authorized to sit at. */
+  type SessionUser = NonNullable<Awaited<ReturnType<typeof resolveSession>>>;
+  /* Sorted by till id so a client that has to pick one picks the same one on
+     every reload rather than following whatever order the database returned. */
+  async function branchTills(user: SessionUser) {
+    const rows = await db
+      .select({ workspace: schema.workspaces, branch: schema.branches })
+      .from(schema.workspaces)
+      .innerJoin(schema.branches, eq(schema.workspaces.branchId, schema.branches.id))
+      .where(and(
+        eq(schema.workspaces.tenantId, user.tenantId),
+        eq(schema.workspaces.legalEntityId, user.legalEntityId),
+        eq(schema.workspaces.branchId, user.branchId),
+      ));
+    return rows
+      .map((row) => ({
+        workspaceId: row.workspace.id,
+        tillId: row.workspace.tillId,
+        branchId: row.branch.id,
+        branchName: row.branch.name,
+      }))
+      .sort((a, b) => a.tillId.localeCompare(b.tillId));
+  }
+
+  /* The gate both of them sit behind. Same three refusals, in the same order,
+     because the roster is the same disclosure as the list. */
+  async function tillListUser(
+    req: FastifyRequest,
+    reply: { code(status: number): { send(value: unknown): unknown } },
+  ): Promise<SessionUser | null> {
+    const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!user) {
+      reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+      return null;
+    }
+    if ((await tenantPlan(db, user.tenantId)) === "basic") {
+      reply.code(403).send({
+        code: "PLAN_NOT_ENTITLED",
+        message: "The ledger is a Pro feature — upgrade the plan to use it.",
+      });
+      return null;
+    }
+    if (!user.authorizedBranchIds.includes(user.branchId)) {
+      reply.code(403).send({ code: "SCOPE_DENIED" });
+      return null;
+    }
+    return user;
+  }
+
   app.get("/api/ledger/workspaces", async (req, reply) => {
     try {
-      const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
-      if (!user) return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
-      if ((await tenantPlan(db, user.tenantId)) === "basic") {
-        return reply.code(403).send({
-          code: "PLAN_NOT_ENTITLED",
-          message: "The ledger is a Pro feature — upgrade the plan to use it.",
-        });
-      }
-      if (!user.authorizedBranchIds.includes(user.branchId)) {
-        return reply.code(403).send({ code: "SCOPE_DENIED" });
-      }
-      const rows = await db
-        .select({ workspace: schema.workspaces, branch: schema.branches })
-        .from(schema.workspaces)
-        .innerJoin(schema.branches, eq(schema.workspaces.branchId, schema.branches.id))
-        .where(and(
-          eq(schema.workspaces.tenantId, user.tenantId),
-          eq(schema.workspaces.legalEntityId, user.legalEntityId),
-          eq(schema.workspaces.branchId, user.branchId),
-        ));
-      // sorted by till id so a client that has to pick one picks the same one on
-      // every reload rather than following whatever order the database returned
-      const workspaces = rows
-        .map((row) => ({
-          workspaceId: row.workspace.id,
-          tillId: row.workspace.tillId,
-          branchId: row.branch.id,
-          branchName: row.branch.name,
-        }))
-        .sort((a, b) => a.tillId.localeCompare(b.tillId));
-      return reply.send({ workspaces });
+      const user = await tillListUser(req, reply);
+      return user ? reply.send({ workspaces: await branchTills(user) }) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The same tills, plus who is on each one according to the book.
+
+     Separate from the list above only because that response shape is what
+     other callers already read; this is the one the till switcher uses, and
+     the switcher is the reason occupancy has to come from the server at all.
+     It used to come from a roster baked into the browser, which announced
+     "Till 2 — Express · M. Costa on now" for a till that had never held a
+     session and a person the ledger has never heard of. A teller reads that
+     line to decide which drawer to sit at.
+
+     `session` is the LATEST session for the till, with its status, or null
+     when the till has never been opened. Null means "the book cannot say" —
+     the client renders nothing there, never "free". */
+  app.get("/api/ledger/till-roster", async (req, reply) => {
+    try {
+      const user = await tillListUser(req, reply);
+      if (!user) return undefined;
+      const tills = await branchTills(user);
+      const occupancy = await tillControl.branchOccupancy({
+        tenantId: user.tenantId,
+        legalEntityId: user.legalEntityId,
+        branchId: user.branchId,
+      });
+      return reply.send({
+        workspaces: tills.map((till) => ({
+          ...till,
+          session: occupancy.get(till.workspaceId) ?? null,
+        })),
+      });
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Moving the operator to another drawer, recorded.
+
+     The client sends the target workspace in x-workspace-id like every other
+     ledger call, so this goes through exactly the same resolution and the same
+     refusal as the money routes do: a workspace outside this session's branch,
+     or a branch the principal is not authorized for, is SCOPE_DENIED here
+     before anything is written or shown.
+
+     It exists so the browser has something to AWAIT before it renames the
+     screen. The old switcher changed a label and kept sending the previous
+     workspace header, so the header said Till 2 while every read and write
+     went to Till 1 — a count saved in that state overwrote an innocent till's
+     figures. Now the name on screen only changes after the server has agreed,
+     stamped the audit row the confirmation modal promises, and handed back the
+     new till's session and balances in the same response. */
+  app.post("/api/ledger/till-selection", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await tillControl.selectTill(actor)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }
@@ -439,6 +570,100 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
             ),
           )
         : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The desk's filed reports. Scoped to the legal entity, not the till:
+     these used to live in one browser's localStorage, which meant two
+     counters held two disjoint sets of the same entity's filings and a
+     cleared browser held none. */
+  app.get("/api/ledger/report-filings", async (req, reply) => {
+    const parsed = filingQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await reportFilings.list(actor, parsed.data.limit))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/report-filings/:filingId", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(
+            await reportFilings.get(
+              actor,
+              (req.params as { filingId: string }).filingId,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Sealing a report. There is no PUT and no DELETE beside this on purpose:
+     a filed report is evidence, the database refuses to let one be edited,
+     and a correction arrives here as a new filing naming what it corrects. */
+  app.post("/api/ledger/report-filings", async (req, reply) => {
+    const parsed = filingBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await reportFilings.file(actor, parsed.data as FilingInput))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* ---- the reads every summary screen was inventing for itself ----
+
+     The Dashboard, the Ledger header, the Vault position and the close-out
+     each derived their headline figures in the browser from a demo seed,
+     and each of them was wrong in a different direction. These three
+     answer the same questions out of the ledger instead. Read-only, and
+     behind the same `ledger:view` gate as every other book read.
+
+     Everything they cannot answer comes back null — see
+     docs/ABSENT_FIGURES.md and the note at the top of reporting.ts. */
+  app.get("/api/ledger/summary", async (req, reply) => {
+    const parsed = summaryQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await reporting.summary(actor, parsed.data)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/position", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await reporting.position(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/jurisdiction", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await reporting.jurisdiction(actor)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }
