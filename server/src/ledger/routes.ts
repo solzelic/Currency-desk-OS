@@ -527,6 +527,16 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* The direct-post path, kept for development only — production and staging
+     refuse it below, because a real deal must come from a frozen quote.
+
+     It also books NO COST BASIS. It still credits `revenue:fx_spread` against
+     a market mid, which is the model docs/COST_BASIS.md replaced, so anything
+     posted here creates inventory the ledger has no purchase price for. That
+     is survivable in a scratch database — `ensureBasis` gives such stock a
+     labelled estimate the first time it is sold — and would not be survivable
+     anywhere else. If this is ever opened up, it needs the cost treatment in
+     `postFrozenQuote` first, not a wider gate. */
   app.post("/api/ledger/exchanges", async (req, reply) => {
     if (process.env.NODE_ENV === "production" || process.env.STAGING === "true") return reply.code(410).send({ code: "QUOTE_REQUIRED" });
     const parsed = postBody.safeParse(req.body);
