@@ -5,6 +5,7 @@ import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
+import { withSerializationRetry } from "./retry.js";
 import {
   applyVaultLeg,
   boardUnitCostHome,
@@ -240,7 +241,11 @@ export class TillControlService {
     }
   }
 
-  async open(actor: LedgerActor) {
+  open(actor: LedgerActor) {
+    return withSerializationRetry(() => this.openOnce(actor));
+  }
+
+  private async openOnce(actor: LedgerActor) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
@@ -297,7 +302,12 @@ export class TillControlService {
     }
   }
 
-  async recordCount(
+  recordCount(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
+    return withSerializationRetry(() =>
+      this.recordCountOnce(actor, idempotencyKey, counts));
+  }
+
+  private async recordCountOnce(
     actor: LedgerActor,
     idempotencyKey: string,
     counts: Counts,
@@ -380,7 +390,18 @@ export class TillControlService {
     }
   }
 
-  async close(
+  close(
+    actor: LedgerActor,
+    sessionId: string,
+    idempotencyKey: string,
+    counts: Counts,
+    note: string,
+  ) {
+    return withSerializationRetry(() =>
+      this.closeOnce(actor, sessionId, idempotencyKey, counts, note));
+  }
+
+  private async closeOnce(
     actor: LedgerActor,
     sessionId: string,
     idempotencyKey: string,
@@ -501,7 +522,16 @@ export class TillControlService {
     }
   }
 
-  async moveCash(actor: LedgerActor, input: MovementInput) {
+  /* Retried, because SERIALIZABLE asks callers to. The cash rail is the
+     most contended thing on the desk — a float, a top-up and the screen
+     refreshing its balances all touch the same rows — and an abort here
+     used to reach the teller as "Unexpected server error" on a movement
+     that was never wrong. See retry.ts. */
+  moveCash(actor: LedgerActor, input: MovementInput) {
+    return withSerializationRetry(() => this.moveCashOnce(actor, input));
+  }
+
+  private async moveCashOnce(actor: LedgerActor, input: MovementInput) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");

@@ -180,7 +180,148 @@
   /* ---- domain constants ---- */
   const TYPES = ['Currency Exchange', 'Remittance — Send', 'Remittance — Receive', 'Cheque Cashing', 'Money Order', 'Bill Payment'];
   const CCY = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY', 'MXN', 'AED'];
-  const THRESHOLD = 10000, TODAY = '2026-06-18';
+  /* ============================================================
+     TWO KINDS OF "TODAY", AND THEY ARE NOT THE SAME THING
+
+     This line used to read `const TODAY = '2026-06-18'`. Every New
+     Transaction ticket was headed with that date while the server posted
+     the deal under the real one; cash-rail movements were minted with
+     references like MV-260618-01; and the drawer's history table labelled
+     the 2026-06-18 row TODAY under a session banner showing the real
+     date. A teller read a seven-week-old date back to a customer, and an
+     audit trail carried it.
+
+     There are two distinct questions behind the word, and a call site
+     wants exactly one of them:
+
+       wallClock()     what time is it, on this machine, right now.
+                       For "posted at 14:32", for greeting somebody good
+                       morning, for the clock in a receipt footer.
+
+       businessDate()  which TRADING DAY the desk is working in. The till
+                       session carries it (`business_date`), the server
+                       decides it, and it is what belongs on a movement
+                       reference, a day's close-out and anything that has
+                       to line up with the book afterwards. A branch that
+                       opened its session before midnight is still on
+                       yesterday's business date at 00:05, and that is the
+                       correct answer, not a bug.
+
+     They coincide most of the time, which is precisely why getting them
+     confused is cheap to do and expensive to find.
+
+     `TODAY` remains exported as the wall-clock date so that files this
+     change does not own keep working — but it is a SNAPSHOT taken when
+     the page loaded. Anything that must survive a desk left open
+     overnight should call wallClock() or businessDate() instead. */
+  const wallClock = () => new Date().toLocaleDateString('en-CA');   // YYYY-MM-DD, local
+  /* What the server says this till's trading day is. Null until a session
+     has been read — and null means "not known yet", so businessDate()
+     falls back to the wall clock rather than to a made-up date. */
+  let _businessDate = null;
+  const businessDate = () => _businessDate || wallClock();
+  const setBusinessDate = (date) => {
+    const next = date ? String(date).slice(0, 10) : null;
+    if (next === _businessDate) return _businessDate;
+    _businessDate = next;
+    try { window.dispatchEvent(new CustomEvent('cdos-business-date', { detail: { date: _businessDate } })); } catch (e) {}
+    return _businessDate;
+  };
+  /* Ask the ledger which trading day this till is in. Cheap, idempotent,
+     and safe before sign-in — an unauthenticated answer simply leaves the
+     business date unknown and the wall clock standing in for it. */
+  async function refreshBusinessDate() {
+    try {
+      const B = window.CDOS && window.CDOS.Backend;
+      if (!B) return businessDate();
+      const answer = await B.loadTillSession();
+      if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
+    } catch (e) { /* no session, no server, or not signed in: the clock stands in */ }
+    return businessDate();
+  }
+  /* The window a "today" figure covers, as two instants, from the desk's
+     own midnight. The server deliberately refuses to guess this — see the
+     note on LedgerReportingService.summary — because a business day
+     belongs to a branch's clock and this browser is standing in the
+     branch. `days` looks back that many days from the business date. */
+  function businessDayWindow(days) {
+    const end = new Date(businessDate() + 'T00:00:00');
+    end.setDate(end.getDate() + 1);
+    const start = new Date(end);
+    start.setDate(start.getDate() - Math.max(1, days || 1));
+    return { from: start.toISOString(), to: end.toISOString() };
+  }
+  const TODAY = wallClock();
+
+  /* ============================================================
+     THE REPORTING LINE — one number, in the desk's own money
+
+     `const THRESHOLD = 10000` sat here, hardcoded, in Canadian dollars.
+     The Ledger flagged reportable rows against it, warned the teller
+     against it and printed it in the report footer; Reports used it in
+     four more places. Meanwhile Compliance, LCTR, KYC and the Dashboard
+     all honoured `settings.threshold` through getRegime(). The same desk
+     flagged at two different numbers on two different screens, and a UAE
+     desk operating on 55,000 AED got a Canadian figure with a dollar sign
+     in front of it.
+
+     reportingLimit() is the one answer. In precedence order:
+
+       1. what the owner has set          settings.threshold
+       2. what the jurisdiction pack says the server's pack, per entity
+       3. what the regime engine says     getRegime(), the browser's packs
+
+     and the currency comes from the pack first, because home currency is
+     the pack's to state — it is the whole point of shipping a Canada pack
+     and a UK pack rather than hardcoding one country.
+
+     `amount` is null when nothing can answer. A screen showing a
+     threshold it cannot state must say so; flagging every deal against a
+     number nobody chose is how this went wrong the first time. */
+  let _pack = null;
+  const deskPack = () => _pack;
+  const setDeskPack = (pack) => {
+    _pack = pack || null;
+    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack } })); } catch (e) {}
+    return _pack;
+  };
+  async function refreshJurisdiction() {
+    try {
+      const B = window.CDOS && window.CDOS.Backend;
+      if (!B) return _pack;
+      const answer = await B.loadJurisdiction();
+      if (answer && answer.pack) setDeskPack(answer.pack);
+    } catch (e) { /* not signed in, or a desk with no pack yet */ }
+    return _pack;
+  }
+  const _positive = (v) => v != null && v !== '' && !isNaN(v) && +v > 0;
+  function reportingLimit(settings) {
+    const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
+    const amount = _positive(settings && settings.threshold) ? +settings.threshold
+      : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
+      : (regime && _positive(regime.threshold)) ? +regime.threshold
+      : null;
+    const currency = (_pack && _pack.homeCurrency)
+      || (settings && settings.baseCurrency)
+      || (regime && regime.currency)
+      || null;
+    return {
+      amount,
+      currency,
+      /* What the regulator calls the report this line triggers — "LCTR"
+         in Canada, "CTR" in the United States. Screens print it; none of
+         them should be spelling it out for themselves. */
+      code: (regime && regime.largeCode) || (_pack && _pack.reportName) || 'report',
+      label: amount == null || !currency ? '—' : fmt(amount, currency),
+    };
+  }
+  /* Is this deal over the line? Null-safe on purpose: with no threshold to
+     compare against, the honest answer is "cannot say", and a screen that
+     turns that into `false` has quietly cleared a deal nobody checked. */
+  const overReportingLimit = (homeAmount, settings) => {
+    const limit = reportingLimit(settings);
+    return limit.amount == null ? null : (+homeAmount || 0) >= limit.amount;
+  };
   /* Staff directory seed. Per the Branch & Access Model spec: a role carries
      capabilities (ROLE_CAPS) AND a scope (ROLE_SCOPE); assignments say WHERE
      the role applies — branches: '*' (owner) or an array of branch ids, with
@@ -270,62 +411,59 @@
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
 
   /* ============================================================
-     SINGLE SOURCE OF TRUTH — physical cash position
-     position(c, rows, baseline, receipts) is a PURE function of its
-     arguments (no closure over module state) so every reader — the
-     Till's "expected" and the Vault's "position" — computes the
-     identical number and they physically cannot disagree. Stock is
-     DERIVED from posted records, never stored:
+     THE SECOND BOOK — THIS IS ITS HEADSTONE
 
-        units(c) = baseline(c) + Σ receipts(c) + ledgerIn(c) − ledgerOut(c)
+     What stood here was `position(c, rows, baseline, receipts)`: a pure
+     function that DERIVED the desk's cash from an opening baseline plus
+     every posted record. It was a good function and it was the wrong
+     idea. The server ledger STORES cash — a row in ledger_till_balances
+     and ledger_vault_balances that movements update — and neither model
+     was ever declared authoritative over the other. Every cash defect
+     this project has had lived exactly where the two met, and none of
+     them crashed. Two books do not crash; they disagree quietly, and the
+     daily close overwrites the evidence. See
+     docs/CASH_OWNERSHIP_INVARIANTS.md.
 
-     Voids leave the books. Cost basis is the weighted average of every
-     REAL inflow — opening baseline, wholesale receipts, AND customer
-     sell-ins (a walk-in selling us USD is a real acquisition at the CAD
-     we paid). Selling reduces quantity, never the per-unit basis; basis
-     clamps to 0 if a position is run flat or short. Wholesale receipts
-     live in their own treasury store (not the customer ledger) so a BMO
-     banknote purchase never trips a KYC/AML flag or inflates FX margin —
-     but they feed THIS function, so the till counts against them too. */
-  function defaultBaseline() {
-    return {
-      anchor: '2026-06-01',
-      units: { CAD: 238500, USD: 34200, EUR: 11600, GBP: 6400, INR: 4180000, PHP: 1760000, CNY: 96000, MXN: 372000, AED: 61500 },
-      cost: { CAD: 1, USD: 1.351, EUR: 1.502, GBP: 1.690, INR: 0.01588, PHP: 0.02455, CNY: 0.1902, MXN: 0.07410, AED: 0.3731 }
-    };
-  }
-  function defaultReceipts() {
-    return [
-      { id: 1, ccy: 'USD', units: 50000, costCad: 68200, unitCost: 1.364, supplier: 'Bank of Montreal — Wholesale Notes', ref: 'WO-260605-USD', date: '2026-06-05', by: 'J. Masri', status: 'received' },
-      { id: 2, ccy: 'EUR', units: 20000, costCad: 30100, unitCost: 1.505, supplier: 'Continental Cash Services', ref: 'WO-260610-EUR', date: '2026-06-10', by: 'J. Masri', status: 'received' }
-    ];
-  }
-  const _cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) * (crossRate(c, 'CAD') || 0);
-  // chronological inflow/outflow events for one currency (void-aware), so the
-  // cost-basis walk and the short-cross clamp are correct, not just for seeds
-  function _holdEvents(c, rows, receipts) {
-    const evs = [];
-    (rows || []).forEach(r => {
-      if (r.status === 'void') return;
-      if (r.inCcy === c) { const u = +r.inAmt || 0; const cad = _cadOf(r.outAmt, r.outCcy); evs.push({ k: (r.date || '') + ' ' + (r.time || '00:00'), dir: 'in', u, uc: u ? cad / u : 0 }); }
-      if (r.outCcy === c) { evs.push({ k: (r.date || '') + ' ' + (r.time || '00:00'), dir: 'out', u: +r.outAmt || 0 }); }
-    });
-    (receipts || []).forEach(o => { if (o.ccy === c && o.status === 'received') { const u = +o.units || 0; evs.push({ k: (o.date || '') + ' 12:00', dir: 'in', u, uc: u ? (+o.costCad || 0) / u : 0 }); } });
-    evs.sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
-    return evs;
-  }
-  function position(c, rows, baseline, receipts) {
-    const b = baseline || defaultBaseline();
-    let qty = (b.units && b.units[c]) || 0;
-    let avg = (b.cost && b.cost[c] != null) ? b.cost[c] : 0;
-    _holdEvents(c, rows, receipts).forEach(e => {
-      if (e.dir === 'in') { const q2 = qty + e.u; avg = q2 > 0 ? (qty * avg + e.u * e.uc) / q2 : e.uc; qty = q2; }
-      else { qty -= e.u; if (qty <= 0) { qty = Math.max(0, qty); if (qty === 0) avg = 0; } }
-    });
-    if (c === 'CAD') avg = 1;
-    return { units: qty, cost: +(+avg).toFixed(6) };
-  }
-  const holdings = (c, rows, baseline, receipts) => position(c, rows, baseline, receipts).units;
+     The baseline it started from was a demo seed — 238,500 CAD and eight
+     other currencies nobody had counted — which is how the Vault came to
+     announce $594,124.00 on hand for a safe that was empty, and how the
+     Dashboard reported the desk SHORT the euros it was long.
+
+     There is nothing here now. Cash comes from GET /api/ledger/position
+     and GET /api/ledger/till-balances, and a figure the ledger has no row
+     for is shown as absent rather than derived. See docs/ABSENT_FIGURES.md.
+
+     `defaultBaseline` and `defaultReceipts` survive as EMPTY only because
+     two call sites in files this change does not own invoke them
+     unconditionally at start-up, and deleting them would black-screen the
+     desk rather than fix it:
+
+       os-src/cdos-os.jsx:769-770  — the `baseline` / `receipts` state
+       os-src/cdos-os.jsx:1799-1800, 1869 — the same on tenant switch/reset
+
+     Those states, and every prop threading them down to the Till, the
+     Vault, Reports and Compliance, are the remaining work. They now carry
+     nothing, so nothing reads a cash figure out of them. */
+  function defaultBaseline() { return { anchor: null, units: {}, cost: {} }; }
+  function defaultReceipts() { return []; }
+  /* Deriving stock from transactions is the second book, so there is no
+     derivation left to call. It answers null — "the ledger has no figure
+     here" — rather than a number, because null is the one answer a screen
+     cannot mistake for money. One caller in a file this change does not
+     own still reaches for it:
+
+       os-src/cdos-till.jsx:485 — the drawer's `expectedOf` in the
+       standalone (no-server) mode. It should read
+
+         const expectedOf = (c) => serverBalances &&
+           Object.prototype.hasOwnProperty.call(serverBalances, c)
+             ? Number(serverBalances[c]) : null;
+
+       and render null as "—". A desk that cannot reach the ledger has no
+       expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
+       there is no offline mode, and an invented expected figure is what a
+       teller reconciles a real drawer against. */
+  const holdings = () => null;
 
   /* ============================================================
      TWO-SIDED PRICING — the defining act of the desk, one pure function
@@ -409,7 +547,9 @@
   function newTx(over = {}) {
     return Object.assign({
       id: Date.now() + Math.floor(Math.random() * 1000),
-      ref: '', date: TODAY, time: nowTime(),
+      /* the TRADING day, not the wall clock — a record's date is what it
+         has to line up with in the book afterwards */
+      ref: '', date: businessDate(), time: nowTime(),
       customer: '', beneficiary: '', type: 'Currency Exchange',
       inCcy: 'CAD', inAmt: '', rate: crossRate('CAD', 'USD'), outCcy: 'USD', outAmt: '', fee: '',
       midRate: null, spreadCad: null, side: null,   /* two-sided pricing: booked margin vs mid */
@@ -444,72 +584,26 @@
     }
   } catch (e) {}
 
-  const seedRows = () => [
-    { id: 1, ref: 'LT-260618-001', date: '2026-06-18', time: '09:41', customer: 'Jakob Miller', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 2400, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(2400*crossRate('CAD','USD')).toFixed(2), fee: 18, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-18 09:41' },
-    { id: 2, ref: 'LT-260618-002', date: '2026-06-18', time: '10:12', customer: 'Rachel Carter', beneficiary: 'M. Carter · Cebu', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 600, rate: crossRate('CAD','PHP'), outCcy: 'PHP', outAmt: +(600*crossRate('CAD','PHP')).toFixed(2), fee: 9.99, teller: 'M. Costa', notes: 'Cebu pickup', status: 'posted', thread: [{ ts: '2026-06-18 10:12', user: 'M. Costa', text: 'Beneficiary: M. Carter, Cebu branch pickup.' }], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-18 10:12' },
-    { id: 3, ref: 'LT-260617-014', date: '2026-06-17', time: '15:28', customer: 'Northbridge Imports', type: 'Currency Exchange', inCcy: 'USD', inAmt: 14500, rate: crossRate('USD','CAD'), outCcy: 'CAD', outAmt: +(14500*crossRate('USD','CAD')).toFixed(2), fee: 120, teller: 'R. Haddad', notes: 'Invoice settlement', status: 'posted', thread: [{ ts: '2026-06-17 15:30', user: 'R. Haddad', text: 'Large Cash Transaction Report filed with FINTRAC — invoice settlement, source of funds verified.' }], filed: true, filedInfo: { ref: 'LCTR-0461', by: 'R. Haddad', at: '2026-06-17 15:30' }, ackStr: false, ackStrInfo: null, tagged: true, tagInfo: { by: 'J. Masri', at: '2026-06-17 16:02', note: 'Owner review — recurring corporate client' }, createdBy: 'R. Haddad', createdAt: '2026-06-17 15:28' },
-    { id: 4, ref: 'LT-260617-009', date: '2026-06-17', time: '11:05', customer: 'Jakob Miller', type: 'Cheque Cashing', inCcy: 'CAD', inAmt: 1850, rate: 1, outCcy: 'CAD', outAmt: 1813, fee: 37, teller: 'A. Singh', notes: 'Payroll cheque', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-17 11:05' },
-    { id: 5, ref: 'LT-260616-021', date: '2026-06-16', time: '16:44', customer: 'Brooke Lawson', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 9400, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(9400*crossRate('CAD','USD')).toFixed(2), fee: 70, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-16 16:44' },
-    { id: 6, ref: 'LT-260618-006', date: '2026-06-18', time: '13:20', customer: 'Brooke Lawson', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 9200, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(9200*crossRate('CAD','USD')).toFixed(2), fee: 68, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, tagged: true, tagInfo: { by: 'A. Singh', at: '2026-06-18 13:25', note: 'Watching — two near-$10k deals this week' }, createdBy: 'M. Costa', createdAt: '2026-06-18 13:20' },
-    { id: 7, ref: 'LT-260616-008', date: '2026-06-16', time: '10:33', customer: 'Rachel Carter', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 950, rate: crossRate('CAD','EUR'), outCcy: 'EUR', outAmt: +(950*crossRate('CAD','EUR')).toFixed(2), fee: 12, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-16 10:33' },
-    /* ---- 24-hour aggregation demos (all 2026-06-18) ----
-       Beneficiary axis: three different conductors each send sub-$10k to ONE
-       beneficiary — no single person is reportable, but the beneficiary total
-       is. Only the by-beneficiary aggregation catches it. */
-    { id: 8, ref: 'LT-260618-008', date: '2026-06-18', time: '11:14', customer: 'Tyler Bennett', beneficiary: 'M. Carter · Cebu', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 4200, rate: crossRate('CAD','PHP'), outCcy: 'PHP', outAmt: +(4200*crossRate('CAD','PHP')).toFixed(2), fee: 19.99, teller: 'A. Singh', notes: 'Cebu pickup', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-18 11:14' },
-    { id: 9, ref: 'LT-260618-009', date: '2026-06-18', time: '12:48', customer: 'Megan Foster', beneficiary: 'M. Carter · Cebu', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 4300, rate: crossRate('CAD','PHP'), outCcy: 'PHP', outAmt: +(4300*crossRate('CAD','PHP')).toFixed(2), fee: 19.99, teller: 'M. Costa', notes: 'Cebu pickup', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-18 12:48' },
-    { id: 10, ref: 'LT-260618-010', date: '2026-06-18', time: '15:02', customer: 'Ashley Turner', beneficiary: 'M. Carter · Cebu', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 4100, rate: crossRate('CAD','PHP'), outCcy: 'PHP', outAmt: +(4100*crossRate('CAD','PHP')).toFixed(2), fee: 19.99, teller: 'A. Singh', notes: 'Cebu pickup', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-18 15:02' },
-    /* Conductor axis: one person splits a buy into two sub-$10k cash-ins inside the window. */
-    { id: 11, ref: 'LT-260618-011', date: '2026-06-18', time: '10:36', customer: 'Brooke Lawson', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 4300, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(4300*crossRate('CAD','USD')).toFixed(2), fee: 32, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-18 10:36' },
-    /* ---- a full week of ordinary back-office flow (2026-06-12 → 06-18) ---- */
-    { id: 12, ref: 'LT-260612-003', date: '2026-06-12', time: '09:55', customer: 'Jakob Miller', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 1200, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(1200*crossRate('CAD','USD')).toFixed(2), fee: 14, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-12 09:55' },
-    { id: 13, ref: 'LT-260612-005', date: '2026-06-12', time: '11:20', customer: 'Emily Park', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 3200, rate: crossRate('CAD','CNY'), outCcy: 'CNY', outAmt: +(3200*crossRate('CAD','CNY')).toFixed(2), fee: 26, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-12 11:20' },
-    { id: 14, ref: 'LT-260612-007', date: '2026-06-12', time: '13:40', customer: 'Kevin Doyle', beneficiary: 'A. Doyle · Dubai', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 850, rate: crossRate('CAD','AED'), outCcy: 'AED', outAmt: +(850*crossRate('CAD','AED')).toFixed(2), fee: 12.99, teller: 'S. Iqbal', notes: 'Dubai payout', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-12 13:40' },
-    { id: 15, ref: 'LT-260612-009', date: '2026-06-12', time: '15:10', customer: 'Sarah Whitman', type: 'Cheque Cashing', inCcy: 'CAD', inAmt: 920, rate: 1, outCcy: 'CAD', outAmt: 892, fee: 28, teller: 'A. Singh', notes: 'Payroll cheque', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-12 15:10' },
-    { id: 16, ref: 'LT-260612-012', date: '2026-06-12', time: '16:30', customer: 'Golden Crescent Travel', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 6800, rate: crossRate('CAD','EUR'), outCcy: 'EUR', outAmt: +(6800*crossRate('CAD','EUR')).toFixed(2), fee: 54, teller: 'R. Haddad', notes: 'Group travel float', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'R. Haddad', createdAt: '2026-06-12 16:30' },
-    { id: 17, ref: 'LT-260613-002', date: '2026-06-13', time: '10:05', customer: 'Jordan Blake', beneficiary: 'S. Blake · Mumbai', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 1500, rate: crossRate('CAD','INR'), outCcy: 'INR', outAmt: +(1500*crossRate('CAD','INR')).toFixed(2), fee: 14.99, teller: 'M. Costa', notes: 'Mumbai deposit', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-13 10:05' },
-    { id: 18, ref: 'LT-260613-004', date: '2026-06-13', time: '12:15', customer: 'Lauren Bishop', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 2100, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(2100*crossRate('CAD','USD')).toFixed(2), fee: 19, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-13 12:15' },
-    { id: 19, ref: 'LT-260613-006', date: '2026-06-13', time: '14:50', customer: 'Chris Delaney', beneficiary: 'R. Delaney · Guadalajara', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 1100, rate: crossRate('CAD','MXN'), outCcy: 'MXN', outAmt: +(1100*crossRate('CAD','MXN')).toFixed(2), fee: 12.99, teller: 'S. Iqbal', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-13 14:50' },
-    { id: 20, ref: 'LT-260613-008', date: '2026-06-13', time: '15:35', customer: 'Nicole Hayes', type: 'Bill Payment', inCcy: 'CAD', inAmt: 340, rate: 1, outCcy: 'CAD', outAmt: 340, fee: 4.99, teller: 'M. Costa', notes: 'Utility bill', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-13 15:35' },
-    { id: 21, ref: 'LT-260614-002', date: '2026-06-14', time: '11:40', customer: 'Brandon Cole', type: 'Money Order', inCcy: 'CAD', inAmt: 600, rate: 1, outCcy: 'CAD', outAmt: 600, fee: 6.99, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-14 11:40' },
-    { id: 22, ref: 'LT-260614-004', date: '2026-06-14', time: '13:05', customer: 'Rachel Carter', beneficiary: 'M. Carter · Cebu', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 700, rate: crossRate('CAD','PHP'), outCcy: 'PHP', outAmt: +(700*crossRate('CAD','PHP')).toFixed(2), fee: 9.99, teller: 'M. Costa', notes: 'Cebu pickup', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-14 13:05' },
-    { id: 23, ref: 'LT-260615-002', date: '2026-06-15', time: '09:30', customer: 'Marcus Reed', type: 'Currency Exchange', inCcy: 'EUR', inAmt: 1800, rate: crossRate('EUR','CAD'), outCcy: 'CAD', outAmt: +(1800*crossRate('EUR','CAD')).toFixed(2), fee: 22, teller: 'R. Haddad', notes: 'Tourist buy-back', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'R. Haddad', createdAt: '2026-06-15 09:30' },
-    { id: 24, ref: 'LT-260615-004', date: '2026-06-15', time: '10:45', customer: 'Maple Leaf Logistics Inc.', type: 'Currency Exchange', inCcy: 'USD', inAmt: 8200, rate: crossRate('USD','CAD'), outCcy: 'CAD', outAmt: +(8200*crossRate('USD','CAD')).toFixed(2), fee: 78, teller: 'R. Haddad', notes: 'Carrier settlement', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'R. Haddad', createdAt: '2026-06-15 10:45' },
-    { id: 25, ref: 'LT-260615-006', date: '2026-06-15', time: '12:00', customer: 'Emily Park', beneficiary: 'L. Park · Shanghai', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 2600, rate: crossRate('CAD','CNY'), outCcy: 'CNY', outAmt: +(2600*crossRate('CAD','CNY')).toFixed(2), fee: 18.99, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-15 12:00' },
-    { id: 26, ref: 'LT-260615-009', date: '2026-06-15', time: '14:20', customer: 'Jakob Miller', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 500, rate: crossRate('CAD','GBP'), outCcy: 'GBP', outAmt: +(500*crossRate('CAD','GBP')).toFixed(2), fee: 8, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-15 14:20' },
-    { id: 27, ref: 'LT-260615-012', date: '2026-06-15', time: '16:10', customer: 'Kevin Doyle', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 3400, rate: crossRate('CAD','AED'), outCcy: 'AED', outAmt: +(3400*crossRate('CAD','AED')).toFixed(2), fee: 28, teller: 'S. Iqbal', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-15 16:10' },
-    { id: 28, ref: 'LT-260616-005', date: '2026-06-16', time: '09:50', customer: 'Sarah Whitman', type: 'Remittance — Receive', inCcy: 'USD', inAmt: 1200, rate: crossRate('USD','CAD'), outCcy: 'CAD', outAmt: +(1200*crossRate('USD','CAD')).toFixed(2), fee: 11, teller: 'M. Costa', notes: 'Inbound from US', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-16 09:50' },
-    { id: 29, ref: 'LT-260616-011', date: '2026-06-16', time: '11:25', customer: 'Jordan Blake', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 1750, rate: crossRate('CAD','INR'), outCcy: 'INR', outAmt: +(1750*crossRate('CAD','INR')).toFixed(2), fee: 15, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-16 11:25' },
-    { id: 30, ref: 'LT-260616-015', date: '2026-06-16', time: '13:15', customer: 'Chris Delaney', type: 'Cheque Cashing', inCcy: 'CAD', inAmt: 1320, rate: 1, outCcy: 'CAD', outAmt: 1287, fee: 33, teller: 'S. Iqbal', notes: 'Payroll cheque', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-16 13:15' },
-    { id: 31, ref: 'LT-260616-018', date: '2026-06-16', time: '15:55', customer: 'Golden Crescent Travel', beneficiary: 'Hotel Andalus · Sevilla', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 5200, rate: crossRate('CAD','EUR'), outCcy: 'EUR', outAmt: +(5200*crossRate('CAD','EUR')).toFixed(2), fee: 44, teller: 'R. Haddad', notes: 'Hotel block deposit', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'R. Haddad', createdAt: '2026-06-16 15:55' },
-    { id: 32, ref: 'LT-260617-003', date: '2026-06-17', time: '10:20', customer: 'Lauren Bishop', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 2800, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(2800*crossRate('CAD','USD')).toFixed(2), fee: 24, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-17 10:20' },
-    { id: 33, ref: 'LT-260617-006', date: '2026-06-17', time: '12:40', customer: 'Nicole Hayes', beneficiary: 'A. Hayes · Dubai', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 980, rate: crossRate('CAD','AED'), outCcy: 'AED', outAmt: +(980*crossRate('CAD','AED')).toFixed(2), fee: 12.99, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-17 12:40' },
-    { id: 34, ref: 'LT-260617-011', date: '2026-06-17', time: '14:30', customer: 'Brandon Cole', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 4100, rate: crossRate('CAD','USD'), outCcy: 'USD', outAmt: +(4100*crossRate('CAD','USD')).toFixed(2), fee: 33, teller: 'S. Iqbal', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-17 14:30' },
-    { id: 35, ref: 'LT-260617-016', date: '2026-06-17', time: '16:15', customer: 'Northbridge Imports', type: 'Currency Exchange', inCcy: 'USD', inAmt: 6200, rate: crossRate('USD','CAD'), outCcy: 'CAD', outAmt: +(6200*crossRate('USD','CAD')).toFixed(2), fee: 58, teller: 'R. Haddad', notes: 'Invoice settlement', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'R. Haddad', createdAt: '2026-06-17 16:15' },
-    { id: 36, ref: 'LT-260618-013', date: '2026-06-18', time: '09:20', customer: 'Marcus Reed', type: 'Money Order', inCcy: 'CAD', inAmt: 450, rate: 1, outCcy: 'CAD', outAmt: 450, fee: 5.99, teller: 'A. Singh', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'A. Singh', createdAt: '2026-06-18 09:20' },
-    { id: 37, ref: 'LT-260618-015', date: '2026-06-18', time: '14:10', customer: 'Emily Park', type: 'Currency Exchange', inCcy: 'CAD', inAmt: 1900, rate: crossRate('CAD','CNY'), outCcy: 'CNY', outAmt: +(1900*crossRate('CAD','CNY')).toFixed(2), fee: 16, teller: 'M. Costa', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'M. Costa', createdAt: '2026-06-18 14:10' },
-    { id: 38, ref: 'LT-260618-017', date: '2026-06-18', time: '16:25', customer: 'Chris Delaney', beneficiary: 'R. Delaney · Guadalajara', type: 'Remittance — Send', inCcy: 'CAD', inAmt: 1250, rate: crossRate('CAD','MXN'), outCcy: 'MXN', outAmt: +(1250*crossRate('CAD','MXN')).toFixed(2), fee: 12.99, teller: 'S. Iqbal', notes: '', status: 'posted', thread: [], filed: false, filedInfo: null, ackStr: false, ackStrInfo: null, createdBy: 'S. Iqbal', createdAt: '2026-06-18 16:25' }
-  ];
-  const seedClients = () => ({
-    'Jakob Miller': { kind: 'individual', idType: "Driver's Licence", idNum: 'DL 8841-220', idExpiry: '2028-04-01', photo: null, email: 'jakob.miller@email.com', phone: '(416) 555-0142', dob: '1989-03-22', occupation: 'Electrician', address: '88 Lansdowne Ave', city: 'Toronto', province: 'ON', postal: 'M6K 2W2', risk: 'Standard' },
-    'Rachel Carter': { kind: 'individual', idType: 'Passport', idNum: 'X4521889', idExpiry: '2027-11-12', photo: null, email: 'rachel.carter@email.com', phone: '(647) 555-0198', dob: '1994-07-09', occupation: 'Nurse', address: '12 Bloor St W', city: 'Toronto', province: 'ON', postal: 'M4W 1A8', risk: 'Standard', notes: 'Regular monthly remittance to family in Cebu.' },
-    'Northbridge Imports': { kind: 'corporate', idType: 'Business Number', idNum: 'BN 77120', idExpiry: '2030-01-01', photo: null, email: 'accounts@northbridge.ca', phone: '(905) 555-0110', incorpDate: '2014-02-18', jurisdiction: 'Ontario, Canada', business: 'Import / export of industrial goods', contactName: 'Priya Nair', contactTitle: 'Controller', address: '4500 Dixie Rd', city: 'Mississauga', province: 'ON', postal: 'L4W 1V6', risk: 'Enhanced', notes: 'Recurring corporate FX — source of funds verified via invoices.' },
-    'Brooke Lawson': { kind: 'individual', idType: '', idNum: '', idExpiry: '', photo: null, phone: '(416) 555-0077' },
-    'Tyler Bennett': { kind: 'individual', idType: "Driver's Licence", idNum: 'DL 5521-907', idExpiry: '2029-06-01', photo: null, email: 'tyler.bennett@email.com', phone: '(416) 555-0211', dob: '1986-11-02', occupation: 'Warehouse supervisor', address: '210 Jane St', city: 'Toronto', province: 'ON', postal: 'M6S 3Z9', risk: 'Standard', notes: 'Sends to family in Cebu.' },
-    'Megan Foster': { kind: 'individual', idType: 'Passport', idNum: 'P7783201', idExpiry: '2028-03-15', photo: null, email: 'megan.foster@email.com', phone: '(647) 555-0212', dob: '1991-05-19', occupation: 'Caregiver', address: '55 Dundas St E', city: 'Toronto', province: 'ON', postal: 'M5B 1C6', risk: 'Standard' },
-    'Ashley Turner': { kind: 'individual', idType: 'PR Card', idNum: 'PR 99213', idExpiry: '2027-09-09', photo: null, email: 'ashley.turner@email.com', phone: '(437) 555-0213', dob: '1989-08-23', occupation: 'Accountant', address: '88 Sheppard Ave E', city: 'Toronto', province: 'ON', postal: 'M2N 6Z1', risk: 'Standard' },
-    'Kevin Doyle': { kind: 'individual', idType: 'Passport', idNum: 'A1290734', idExpiry: '2030-01-20', photo: null, email: 'kevin.doyle@email.com', phone: '(416) 555-0244', dob: '1983-02-14', occupation: 'Contractor', address: '301 Markham Rd', city: 'Scarborough', province: 'ON', postal: 'M1J 3R4', risk: 'Standard', notes: 'Regular AED remittances to Dubai.' },
-    'Emily Park': { kind: 'individual', idType: 'Passport', idNum: 'E55129003', idExpiry: '2029-12-01', photo: null, email: 'emily.park@email.com', phone: '(647) 555-0255', dob: '1990-07-07', occupation: 'Software developer', address: '120 Yonge St', city: 'Toronto', province: 'ON', postal: 'M5C 1T4', risk: 'Standard' },
-    'Brandon Cole': { kind: 'individual', idType: "Driver's Licence", idNum: 'DL 7741-330', idExpiry: '2028-08-08', photo: null, email: 'brandon.cole@email.com', phone: '(416) 555-0266', dob: '1987-09-30', occupation: 'Registered nurse', address: '44 Eglinton Ave W', city: 'Toronto', province: 'ON', postal: 'M4R 1A1', risk: 'Standard' },
-    'Lauren Bishop': { kind: 'individual', idType: 'Passport', idNum: 'TK4459021', idExpiry: '2031-04-04', photo: null, email: 'lauren.bishop@email.com', phone: '(437) 555-0277', dob: '1993-01-12', occupation: 'Graphic designer', address: '15 Queen St W', city: 'Toronto', province: 'ON', postal: 'M5H 2M9', risk: 'Standard' },
-    'Chris Delaney': { kind: 'individual', idType: "Driver's Licence", idNum: 'DL 2231-118', idExpiry: '2026-07-01', photo: null, email: 'chris.delaney@email.com', phone: '(416) 555-0288', dob: '1985-03-08', occupation: 'Landscaper', address: '17 Weston Rd', city: 'Toronto', province: 'ON', postal: 'M6N 3P1', risk: 'Standard', notes: 'ID expires soon — re-verify on next visit.' },
-    'Nicole Hayes': { kind: 'individual', idType: 'Passport', idNum: 'FK7781299', idExpiry: '2029-05-05', photo: null, email: 'nicole.hayes@email.com', phone: '(647) 555-0299', dob: '1992-10-21', occupation: 'Pharmacist', address: '70 Birchmount Rd', city: 'Scarborough', province: 'ON', postal: 'M1N 3J6', risk: 'Standard' },
-    'Jordan Blake': { kind: 'individual', idType: "Driver's Licence", idNum: 'DL 6612-455', idExpiry: '2030-02-02', photo: null, email: 'jordan.blake@email.com', phone: '(905) 555-0301', dob: '1985-04-17', occupation: 'Taxi driver', address: '900 Markham Rd', city: 'Scarborough', province: 'ON', postal: 'M1H 2Y2', risk: 'Standard', notes: 'Monthly remittance to Mumbai.' },
-    'Sarah Whitman': { kind: 'individual', idType: 'PR Card', idNum: 'PR 44871', idExpiry: '2028-11-11', photo: null, email: 'sarah.whitman@email.com', phone: '(437) 555-0312', dob: '1994-12-03', occupation: 'Graduate student', address: '21 College St', city: 'Toronto', province: 'ON', postal: 'M5G 1K2', risk: 'Standard' },
-    'Marcus Reed': { kind: 'individual', idType: 'Passport', idNum: 'CZ9920184', idExpiry: '2026-05-15', photo: null, email: 'marcus.reed@email.com', phone: '(416) 555-0323', dob: '1988-06-25', occupation: 'Engineer (visitor)', address: 'Hotel — 320 King St W', city: 'Toronto', province: 'ON', postal: 'M5V 1J5', risk: 'Standard', notes: 'Visitor — tourist buy-back.' },
-    'Maple Leaf Logistics Inc.': { kind: 'corporate', idType: 'Business Number', idNum: 'BN 88231', idExpiry: '2031-01-01', photo: null, email: 'fx@mapleleaflogistics.ca', phone: '(905) 555-0233', incorpDate: '2011-05-09', jurisdiction: 'Ontario, Canada', business: 'Freight & logistics', contactName: 'Dave Brooks', contactTitle: 'CFO', address: '7100 Airport Rd', city: 'Mississauga', province: 'ON', postal: 'L4T 2H3', risk: 'Enhanced', notes: 'Recurring carrier settlements in USD.' },
-    'Golden Crescent Travel': { kind: 'corporate', idType: 'Business Number', idNum: 'BN 90455', idExpiry: '2030-10-10', photo: null, email: 'accounts@gctravel.ca', phone: '(416) 555-0289', incorpDate: '2016-09-12', jurisdiction: 'Ontario, Canada', business: 'Travel agency', contactName: 'Amira Said', contactTitle: 'Owner', address: '500 Bloor St W', city: 'Toronto', province: 'ON', postal: 'M5S 1Y3', risk: 'Standard', notes: 'Group travel FX floats.' }
-  });
+  /* ============================================================
+     THE DEMO BOOK — ALSO GONE
+
+     `seedRows()` returned thirty-eight invented transactions dated
+     2026-06-18, and `seedClients()` the eighteen people who supposedly
+     made them. They were the browser's whole book before the server had
+     one, and they are the reason a desk that had posted a single $1,000
+     trade opened on a Ledger header reading "38 records · $130,566.36
+     pay-in · $1,051.86 fees" and a Dashboard claiming $1,150 earned.
+
+     A brand-new desk must not come up showing York FX's trading. The book
+     is GET /api/ledger/transactions and nothing else; a desk with nothing
+     posted shows nothing posted, which is both true and the thing an
+     owner needs to see on their first morning.
+
+     Both survive as empty because cdos-os.jsx:714-715 calls them to
+     initialise its `rows` and `clients` state before any server round
+     trip. Empty is the correct starting value for that state. */
+  const seedRows = () => [];
+  const seedClients = () => ({});
 
   /* ---- brand UI effects: a chime + click-pop + double-click guard for any
      permanent action (everything that writes to the audit trail). One global
@@ -592,6 +686,59 @@
       </button>
     );
   }
+
+  /* ---- the two facts every screen needs before it can render honestly ----
+     Which trading day this till is in, and which rules the desk trades
+     under. Both live on the server, both are cheap, and both are cached in
+     module state — so this hook asks for them once per mounted screen and
+     returns a version number that changes when either arrives. Put it in a
+     memo's dependencies and the figures re-derive when the answer lands
+     instead of a moment too late.
+
+     Deliberately NOT a hard dependency: a screen renders immediately with
+     the wall-clock date and no threshold, and reportingLimit() reports "—"
+     until the pack is known. A dash for half a second beats a Canadian
+     10,000 on a UAE desk forever. */
+  function useDeskFacts() {
+    const [version, setVersion] = React.useState(0);
+    React.useEffect(() => {
+      let live = true;
+      const bump = () => { if (live) setVersion(v => v + 1); };
+      window.addEventListener('cdos-jurisdiction', bump);
+      window.addEventListener('cdos-business-date', bump);
+      Promise.all([refreshJurisdiction(), refreshBusinessDate()]).then(bump, bump);
+      return () => {
+        live = false;
+        window.removeEventListener('cdos-jurisdiction', bump);
+        window.removeEventListener('cdos-business-date', bump);
+      };
+    }, []);
+    return version;
+  }
+
+  /* ---- a figure the ledger has no answer for ----------------------------
+     One dash, one reason, everywhere. The rule is written down in
+     docs/ABSENT_FIGURES.md and it is short: a figure with no server row is
+     shown as absent, visibly — never as zero, never as a demo number,
+     never as a confident-looking total. "—" with a line saying why beats a
+     bold $594,124.00 that is fiction.
+
+     The `why` is not optional and not decoration. "—" on its own reads as
+     a rendering fault; "— nothing posted yet today" reads as an answer,
+     and it is one. Keep it short and factual: what is missing, and what
+     would fill it in. */
+  function Absent({ why, size, align }) {
+    return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', lineHeight: 1.25 }}>
+      <span style={{ fontSize: size || 20, fontWeight: 700, color: CD.faint, fontFamily: 'Space Mono, monospace' }}>—</span>
+      {why && <span style={{ fontSize: 10.5, color: CD.faint, marginTop: 2, textAlign: align === 'right' ? 'right' : 'left' }}>{why}</span>}
+    </span>);
+  }
+  /* Render a server money field, or say it is absent. `value` is whatever
+     the ledger sent: a decimal string, or null. There is deliberately no
+     "default to 0" branch — that default is the bug this exists to stop. */
+  const money = (value, currency, why, opts) => value == null
+    ? <Absent why={why} size={(opts && opts.size) || 20} align={opts && opts.align} />
+    : fmt(value, currency || 'CAD');
 
   // ---- client risk rating (staff-set compliance tier; light V1) ----------------
   // Every contact carries one tier. Staff set it in the profile's Edit mode; it feeds
@@ -686,13 +833,18 @@
       </div>, document.body);
   }
 
+
   window.CDOS = Object.assign(window.CDOS || {}, {
-    CD, ICONS, Ic, TYPES, CCY, THRESHOLD, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
+    CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
-    CommitBtn, APP_ACCENT, PinPrompt,
+    CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     crossRate, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
-    defaultBaseline, defaultReceipts, position, holdings,
+    defaultBaseline, defaultReceipts, holdings,
+    /* the two "todays", kept apart on purpose — see the note above */
+    wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
+    /* the one reporting line, and the pack it comes from */
+    reportingLimit, overReportingLimit, deskPack, setDeskPack, refreshJurisdiction, useDeskFacts,
     spreadOf, unitCadMid, buyUnitCad, sellUnitCad, roundPayout, priceDeal, dealMargin
   });
 })();

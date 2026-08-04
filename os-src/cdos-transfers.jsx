@@ -17,7 +17,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, THRESHOLD } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
@@ -188,7 +188,12 @@
     const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
 
     const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    const reportable = cadEquiv >= (settings.threshold || THRESHOLD);   // cross-border EFT ≥ $10k
+    /* The desk's own reporting line, from the jurisdiction pack. Null-safe:
+       with no threshold to compare against the honest answer is "cannot
+       say", and treating that as "not reportable" clears a deal nobody
+       checked. */
+    const limit = reportingLimit(settings);
+    const reportable = limit.amount != null && cadEquiv >= limit.amount;
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
     const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
     const needBen = direction === 'send';
@@ -317,7 +322,7 @@
           {(reportable || idRequired) && (
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
-              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(cadEquiv, 'CAD')} (≥ {fmt(settings.threshold || THRESHOLD, 'CAD')}). An international EFT report will be required.</div>}
+              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(cadEquiv, 'CAD')} (≥ {limit.label}). An international EFT report will be required.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>

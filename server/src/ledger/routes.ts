@@ -16,6 +16,7 @@ import {
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
+import { isRetryable } from "./retry.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 
@@ -214,6 +215,18 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   }
 
   function failure(reply: { code(status: number): { send(value: unknown): unknown } }, error: unknown) {
+    /* A serialization failure that survived its retries is contention, not
+       a fault: the transaction rolled back whole and nothing was written.
+       Saying "unexpected server error" about it is wrong in both halves —
+       it is expected, and nothing is in error — and it sends a teller
+       looking for a problem with a movement that was perfectly good. */
+    if (isRetryable(error)) {
+      app.log.warn(error, "ledger contention after retries");
+      return reply.code(409).send({
+        code: "LEDGER_BUSY",
+        message: "The ledger is handling another change to this till. Nothing was posted — try again.",
+      });
+    }
     if (!(error instanceof LedgerError)) {
       app.log.error(error, "ledger route failure");
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });

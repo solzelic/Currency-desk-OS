@@ -483,9 +483,16 @@
     // there is no session, because the ledger will refuse to post — but only a
     // genuinely closed session earns the closed-out screen.
     const bookClosed = serverBacked ? sessionClosed : !!(day && day.closed);
-    const expectedOf = (c) => serverBacked
-      ? (serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : 0)
-      : window.CDOS.holdings(c, allRows, baseline, receipts);
+    /* What the drawer is expected to hold, or null when nothing can say.
+       Null, not zero: zero is a claim about somebody's cash and only the
+       ledger gets to make it. A currency the ledger has never heard of, and
+       a desk running with no ledger at all, both have no expected float —
+       and a count sheet that prints 0.00 there invites a teller to write a
+       variance against a number nobody stood behind. See ABSENT_FIGURES.md. */
+    const expectedOf = (c) => serverBacked && serverBalances
+      && Object.prototype.hasOwnProperty.call(serverBalances, c)
+      ? Number(serverBalances[c])
+      : null;
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = (c) => {
       try {
@@ -892,8 +899,8 @@
             <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-                <td className="px-3 py-2 text-right" title={serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'Server ledger' : num((baseline && baseline.units && baseline.units[r.c]) || 0)}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(r.expected)}</td>
+                <td className="px-3 py-2 text-right" title={serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'Server ledger' : '—'}</td>
+                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.expected == null ? CD.faint : CD.ink }}>{r.expected == null ? '—' : num(r.expected)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : '— never'}</td>
                 <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>

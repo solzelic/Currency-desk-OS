@@ -5,6 +5,7 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { withSerializationRetry } from "./retry.js";
 import {
   acquire,
   currentBasis,
@@ -141,7 +142,17 @@ export class LedgerService {
     }
   }
 
-  async postFrozenQuote(
+  /* Retried on a serialization failure, like every other write here. A
+     post takes the till's balance rows and the session at SERIALIZABLE, so
+     it aborts whenever anything else touches the same drawer — including
+     the screen behind the teller refreshing. Nothing is committed when it
+     does, and the idempotency key makes a second attempt safe. */
+  postFrozenQuote(actor: LedgerActor, quote: FrozenQuote, idempotencyKey: string) {
+    return withSerializationRetry(() =>
+      this.postFrozenQuoteOnce(actor, quote, idempotencyKey));
+  }
+
+  private async postFrozenQuoteOnce(
     actor: LedgerActor,
     quote: FrozenQuote,
     idempotencyKey: string,
@@ -613,7 +624,11 @@ export class LedgerService {
     }
   }
 
-  async post(actor: LedgerActor, request: PostRequest) {
+  post(actor: LedgerActor, request: PostRequest) {
+    return withSerializationRetry(() => this.postOnce(actor, request));
+  }
+
+  private async postOnce(actor: LedgerActor, request: PostRequest) {
     if (!request.idempotencyKey || request.from === request.to)
       throw new LedgerError(
         "INVALID_REQUEST",
@@ -846,7 +861,17 @@ export class LedgerService {
     }
   }
 
-  async reverse(
+  reverse(
+    actor: LedgerActor,
+    transactionId: string,
+    idempotencyKey: string,
+    reason: string,
+  ) {
+    return withSerializationRetry(() =>
+      this.reverseOnce(actor, transactionId, idempotencyKey, reason));
+  }
+
+  private async reverseOnce(
     actor: LedgerActor,
     transactionId: string,
     idempotencyKey: string,

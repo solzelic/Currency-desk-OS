@@ -7,25 +7,35 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, THRESHOLD, TODAY, crossRate, perCadLive, fmt, num, dDiff } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff } = window.CDOS;
 
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
     const live = rows.filter(r => r.status !== 'void');   /* voided records leave the books */
-    // threshold + 24h window come from the active jurisdiction pack (regime) so the
-    // same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime
-    const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null) || { threshold: (settings && +settings.threshold) || THRESHOLD, aggHours: 24 };
-    const TH = regime.threshold;
+    /* The 24h window comes from the active jurisdiction pack (regime) so the
+       same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
+
+       The LINE itself comes from reportingLimit(), which is one answer for
+       the whole product: the owner's setting, else the jurisdiction pack
+       the server states, in the desk's own currency. It used to fall back
+       to a hardcoded 10,000 Canadian dollars, which is how this engine and
+       the Ledger's own row flags came to disagree on the same desk.
+
+       A null limit means no line has been stated. Nothing is flagged then,
+       and the screens say so — flagging every deal against a number nobody
+       chose is not the safe direction, it is noise that gets ignored. */
+    const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null) || { aggHours: 24 };
+    const TH = reportingLimit(settings).amount;
     const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const single = cadIn(row) >= TH;
+      const single = TH != null && cadIn(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cadIn(o), 0);
-      const str = !single && agg >= TH;
+      const str = TH != null && !single && agg >= TH;
       // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
       // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
       const end = dt(row);
@@ -34,10 +44,10 @@
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
       const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cadIn(o) >= 0);
-      const agg24 = !single && agg24Sum >= TH && isClusterEnd;
+      const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
-      else if (rec.idExpiry && rec.idExpiry < TODAY) kyc = 'ID expired';
+      else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';
       else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the

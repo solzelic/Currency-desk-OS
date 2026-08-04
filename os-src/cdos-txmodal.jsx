@@ -11,7 +11,7 @@
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
   const {
-    CD, Ic, CCY, THRESHOLD, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
+    CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
 
@@ -230,7 +230,9 @@
       : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
       : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-    const over = s.windowCad >= THRESHOLD, near = !over && s.windowCad >= THRESHOLD * 0.7;
+    const line = reportingLimit(settings).amount;
+    const over = line != null && s.windowCad >= line;
+    const near = line != null && !over && s.windowCad >= line * 0.7;
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return (
       <div className="mt-2 overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: 'var(--cd-panel)' }}>
@@ -421,19 +423,24 @@
     // floor must come from settings (via getRegime), not the bare fallback constants,
     // so this screen never drifts from the Ledger/Compliance desk when the owner
     // tunes them in Settings → Compliance & jurisdiction.
-    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: 'LCTR', threshold: THRESHOLD, idAt: 3000 };
-    const TH = regime.threshold || THRESHOLD;
+    const limit = reportingLimit(settings);
+    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: limit.code, threshold: limit.amount, idAt: 3000 };
+    const TH = limit.amount;
     const idFloor = regime.idAt || 3000;
     const rec = clients[customer];
     const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
-    const single = inCadEquiv >= TH;
+    /* Null-safe: with no threshold the honest answer is "cannot say", and
+       coercing it makes `>= null` mean `>= 0` — every deal reportable. A
+       compliance screen that flags everything gets ignored, which is how a
+       real reportable transaction walks past somebody. */
+    const single = TH != null && inCadEquiv >= TH;
     const idRequired = single || inCadEquiv >= idFloor || isSend;   // remittance always needs sender ID
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
       return live.filter(o => o.customer === customer).reduce((s, o) => s + (o.inCcy === 'CAD' ? (+o.inAmt || 0) : (+o.inAmt || 0) / (crossRate('CAD', o.inCcy) || 1)), 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
-    const structuring = !single && customer && recentTotal >= TH;
+    const structuring = TH != null && !single && customer && recentTotal >= TH;
 
     // ---- per-type requirement checklist (the "make it green" list) ----
     const reqs = [];
@@ -448,7 +455,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${fmt(TH, 'CAD')}` : isSend ? 'for remittance' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -639,7 +646,7 @@
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge &&
-                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + (inCadEquiv >= TH) + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
 
               {/* ---------------- EXCHANGE ---------------- */}
               {isExchange && (
@@ -782,7 +789,7 @@
               {single && (
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
-                  <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {fmt(TH, 'CAD')}. Capture now while the customer is here — it pre-fills the filing.</div>
+                  <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
                   <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
                   <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                   <div><Lbl>Acting for someone else?</Lbl>

@@ -1,39 +1,85 @@
 /* ============================================================
    CurrencyDesk OS — Cash on Hand · Vault
-   The treasury pillar. ONE NUMBER: the vault never stores a balance —
-   every position is DERIVED from the shared window.CDOS.position(),
-   the same pure function the Till's "expected" calls, off the same
-   posted records. Stock and flow physically cannot disagree.
-     • Position   — derived inventory, CAD valuation, FX exposure,
-                    concentration, reorder bands.
-     • Shifts     — per-teller float accountability. Assigning a float
-                    is a LOCATION/accountability record, not a stock
-                    change (total holdings are invariant across it).
-                    Blind-count enforced at settle. Active float
-                    currencies are a setting.
-     • Orders     — place a wholesale order (optional, on-order), then
-                    mark it received; receiving posts to inventory and
-                    re-weights cost basis. Low stock raises a notification.
-     • P&L        — realized profit on real (derived) cost basis vs the
-                    old mid-spread estimate, with the gap shown.
-   The vault owns only accountability records (shifts). Holdings,
-   baseline and receipts live in the shared layer; the vault reads them.
+   The treasury pillar, reading the one book.
+
+   THIS SCREEN USED TO DERIVE THE SAFE'S CONTENTS IN THE BROWSER, from a
+   demo opening baseline plus every posted record, and it announced
+   $594,124.00 across nine currencies for a vault that was empty until
+   somebody counted it. The Assign modal showed three different balances
+   for the same safe on one screen — GBP 6,111.05 on the "to a person"
+   tab, 8,000 on the "to a till" tab, 8,000 behind it on Position, and 0
+   in the ledger — and a red bar two lines under the 8,000 read "The vault
+   holds 0.00 GBP". And the P&L tab printed "Unrealized +$4,813.65" over
+   currencies whose avg_cost is NULL on the server.
+
+   Every one of those is the same defect: a second book. So:
+
+     • Position  — GET /api/ledger/position. Quantity, average cost and
+                   unrealized P&L as the ledger states them, with "—" and
+                   a reason wherever it has no answer. Nothing here
+                   multiplies a quantity by a rate for itself.
+     • Floats    — one source for every balance on the screen. The assign
+                   modal reads the same vault figures the Position tab
+                   does, so one currency cannot show two numbers.
+     • Orders    — a delivery is a recorded movement into the safe.
+     • P&L       — GET /api/ledger/summary. Realized profit from the
+                   figure the disposal wrote, per docs/COST_BASIS.md,
+                   never a spread against a market mid.
+
+   The vault owns only accountability records (shifts). Cash is the
+   ledger's — see docs/CASH_OWNERSHIP_INVARIANTS.md — and an absent
+   figure is shown as absent, per docs/ABSENT_FIGURES.md.
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, crossRate, perCadLive, TODAY, STAFF } = window.CDOS;
+  const { CD, Ic, fmt, num, crossRate, Absent, businessDate, useDeskFacts, STAFF } = window.CDOS;
 
-  const VCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY', 'MXN', 'AED'];
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
-  // CAD value of 1 unit at the live board (valuation only — never stock)
+  /* Display-only conversion, for totalling a float across currencies in
+     the assign modal. It never produces a HOLDING — every quantity on
+     this screen came from the ledger. */
   const cadPer = (c) => c === 'CAD' ? 1 : (crossRate(c, 'CAD') || 0);
   const cadVal = (units, c) => (+units || 0) * cadPer(c);
-  // derived position straight from the shared source of truth
-  const posOf = (c, rows, baseline, receipts) => window.CDOS.position(c, rows, baseline, receipts);
-  const heldOf = (c, rows, baseline, receipts) => window.CDOS.holdings(c, rows, baseline, receipts);
+
+  /* ---- the branch's position, from the book ----
+     One fetch, shared by every tab, re-read whenever cash has moved
+     (`cashVersion` ticks on each recorded movement). `error` is rendered,
+     not swallowed: a screen that fails to reach the ledger and shows its
+     last figures anyway is the second book coming back. */
+  function useLedgerPosition(serverBacked, cashVersion) {
+    const [state, setState] = useState({ loading: true, data: null, error: '' });
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) {
+        setState({ loading: false, data: null, error: 'This desk is not signed in to the ledger, so it cannot say what the safe holds.' });
+        return;
+      }
+      let live = true;
+      setState(s => ({ ...s, loading: true }));
+      window.CDOS.Backend.loadLedgerPosition()
+        .then(data => { if (live) setState({ loading: false, data, error: '' }); })
+        .catch(error => { if (live) setState({ loading: false, data: null, error: (error && error.message) || 'The ledger could not be reached.' }); });
+      return () => { live = false; };
+    }, [serverBacked, cashVersion]);
+    return state;
+  }
+
+  /* What the SAFE holds, per currency, as the ledger states it. Returns
+     null for a currency the vault has no row for — which is not zero, and
+     the callers below are careful about the difference. */
+  function vaultRowsOf(position) {
+    if (!position || !position.vaultTracked) return null;
+    return (position.currencies || [])
+      .filter(row => row.vault)
+      .map(row => ({ c: row.currency, ...row.vault, marketUnitHome: row.marketUnitHome }));
+  }
 
   const SKEY = 'cdos_vault_shifts';
   const DEFAULT_FC = ['CAD', 'USD', 'EUR', 'GBP'];
+  /* What a wholesale order can be placed in. The ledger carries these four
+     today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
+     offering the other five would let somebody record a delivery the book
+     cannot take. The nine-currency list this replaced was the demo seed's. */
+  const ORDER_CCYS = DEFAULT_FC;
   const floatCcysOf = (settings) => (settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length) ? settings.floatCcys : DEFAULT_FC;
 
   /* reorder bands — min (reorder point) / target / max in UNITS */
@@ -49,27 +95,17 @@
     AED: { min: 35000, target: 70000, max: 120000 },
   };
 
-  /* seed ~3 weeks of settled shifts so "variance by person" has a track record.
-     Shifts are accountability records only — they never touch holdings. */
-  function seedShifts() {
-    try { const ex = JSON.parse(localStorage.getItem(SKEY) || 'null'); if (ex && ex.length) return ex; } catch (e) {}
-    const tellers = STAFF.filter(s => s.role !== 'Owner').map(s => s.name);
-    const out = [];
-    const rnd = (seed) => ((Math.sin(seed * 91.7) * 43758.5) % 1 + 1) % 1;
-    const start = new Date(TODAY); start.setDate(start.getDate() - 1);
-    let id = 1;
-    for (let d = 0; d < 16; d++) {
-      const day = new Date(start); day.setDate(start.getDate() - d);
-      if (day.getDay() === 0) continue;
-      const dk = day.toISOString().slice(0, 10);
-      const who = tellers[(d + Math.floor(rnd(d) * 3)) % tellers.length];
-      const open = { CAD: 5000, USD: 2000 };
-      const off = rnd(d * 7) < 0.32 ? Math.round((rnd(d * 13) - 0.5) * 24) : 0;
-      const counted = { CAD: 5000 + off, USD: 2000 };
-      out.push({ id: id++, teller: who, date: dk, openedAt: dk + ' 09:02', openedBy: 'J. Masri', opening: open, status: 'settled', counted, settledAt: dk + ' 17:36', settledBy: who, varCad: off, blind: true });
-    }
-    try { localStorage.setItem(SKEY, JSON.stringify(out)); } catch (e) {}
-    return out;
+  /* Shifts are accountability records — who had which float on the desk —
+     and they are this screen's own, kept on the device.
+
+     Sixteen invented settled shifts used to be WRITTEN INTO localStorage
+     here on first render, so "variance by person" opened with three weeks
+     of track record for people who had never worked a day and drawers
+     that had never been counted. A real desk starts with none, and the
+     empty state below says so. */
+  function loadShifts() {
+    try { const saved = JSON.parse(localStorage.getItem(SKEY) || 'null'); return Array.isArray(saved) ? saved : []; }
+    catch (e) { return []; }
   }
 
   /* floors: the owner's Settings → Vault floors override the built-in reorder bands.
@@ -112,76 +148,112 @@
     </div>);
   }
 
-  /* ===================== POSITION (fully derived) ===================== */
-  function Position({ rows, baseline, receipts, settings, ledgerVault }) {
-    const atCost = !!(settings && settings.vaultBasis === 'cost');   // Settings → Vault · valuation basis
-    const rowsAll = VCCYS.map(c => {
-      const p = posOf(c, rows, baseline, receipts);
-      /* Where the ledger carries this currency, ITS figure is what is in the
-         safe — the derived one is an estimate of the same thing and the two
-         must not be shown side by side as if both were true. Cost basis stays
-         derived either way: the ledger records how much, not what it cost. */
-      const onLedger = ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c);
-      const units = onLedger ? Number(ledgerVault[c]) : p.units;
-      const mkt = cadVal(units, c);
-      const basis = units * p.cost;
-      return { c, units, cost: p.cost, mkt, basis, upl: mkt - basis, st: bandStatus(c, units, settings) };
-    });
-    const rows2 = rowsAll.filter(r => r.units > 0.5).sort((a, b) => b.mkt - a.mkt);
-    const total = rows2.reduce((s, r) => s + r.mkt, 0);
-    const totalBasis = rows2.reduce((s, r) => s + r.basis, 0);
-    const fxExposure = rows2.filter(r => r.c !== 'CAD').reduce((s, r) => s + r.mkt, 0);
-    const top = rows2[0] || { c: '—', mkt: 0 };
-    const lowN = rows2.filter(r => r.st.level === 'low').length;
-    const totalUpl = total - totalBasis;
+  /* ===================== POSITION (the ledger's, not ours) ===================== */
+  function Position({ position, loading, error, settings, vaultTracked, onRecordOpening }) {
+    const home = (position && position.homeCurrency) || 'CAD';
+    const rows = vaultRowsOf(position);
+
+    /* Three genuinely different states, and they used to render the same.
+       A vault nobody has declared is not an empty vault, and an empty
+       vault is not a vault worth $594,124. */
+    if (loading) return <div className="p-8 text-center text-[12px]" style={{ color: CD.faint }}>Reading the vault off the ledger…</div>;
+    if (error) return (<div className="p-4">
+      <div className="flex items-start gap-2 px-3 py-2.5 text-[12px]" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 10 }}>
+        <Ic n="alert" s={14} c={CD.flag} /><span>{error} Nothing is shown here rather than a figure from somewhere else.</span>
+      </div>
+    </div>);
+    if (!rows) return (<div className="p-8 text-center">
+      <Absent why="" size={30} />
+      <div className="text-[12.5px] mt-1" style={{ color: CD.mute, maxWidth: 420, margin: '0 auto' }}>
+        This vault has no opening position on the ledger, so there is nothing it can say the safe holds. Count it once and record it — after that every float, delivery and run is checked against it.
+      </div>
+      {onRecordOpening && <button onClick={onRecordOpening} className="inline-flex items-center gap-1.5 px-3.5 py-2 mt-3 text-[12.5px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="check" s={14} c="var(--cd-on-ink)" /> Record what’s in the safe</button>}
+    </div>);
+
+    const totals = (position && position.vaultTotals) || { currencies: 0, marketValueHome: null, costBasisHome: null, unrealizedPnlHome: null };
+    const held = rows.filter(r => Number(r.quantity) > 0);
+    /* Concentration and the FX share are shares of a total, so they mean
+       nothing unless the total does. Where the ledger could not value
+       every currency it says so instead of dividing by a partial sum. */
+    const totalMkt = totals.marketValueHome == null ? null : Number(totals.marketValueHome);
+    const fxMkt = totalMkt == null ? null : held
+      .filter(r => r.c !== home)
+      .reduce((sum, r) => sum + Number(r.marketValueHome || 0), 0);
+    const top = held.slice().sort((a, b) => Number(b.marketValueHome || 0) - Number(a.marketValueHome || 0))[0] || null;
+    const unvalued = (position.unvaluedCurrencies || []).filter(c => held.some(r => r.c === c));
+    const unpriced = (position.unpricedCurrencies || []).filter(c => held.some(r => r.c === c));
+    const lowN = held.filter(r => bandStatus(r.c, Number(r.quantity), settings).level === 'low').length;
+    const pct = (part) => totalMkt ? Math.round((part / totalMkt) * 100) : null;
 
     return (<div className="p-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3">
-        <Stat big label={atCost ? 'Total on hand · at cost' : 'Total on hand · CAD'} value={fmt(atCost ? totalBasis : total, 'CAD')} sub={`${atCost ? 'cost basis' : 'market value'} · ${rows2.length} currencies`} />
-        <Stat label="FX exposure" value={`${total ? Math.round(fxExposure / total * 100) : 0}%`} sub={`${fmt(fxExposure, 'CAD')} not in CAD`} tone={fxExposure / total > 0.7 ? CD.amber : CD.ink} />
-        <Stat label="Top concentration" value={`${total ? Math.round(top.mkt / total * 100) : 0}%`} sub={`${top.c} ${flagOf(top.c)}`} />
-        <Stat label="Unrealized P&L" value={(totalUpl >= 0 ? '+' : '') + fmt(totalUpl, 'CAD')} sub="market vs cost basis" tone={totalUpl >= 0 ? CD.green : CD.flag} />
+        <Stat big label={`Total on hand · ${home}`}
+          value={totals.marketValueHome == null
+            ? <Absent why={unvalued.length ? `no board rate for ${unvalued.join(', ')}` : 'the ledger cannot value this safe'} size={26} />
+            : fmt(totals.marketValueHome, home)}
+          sub={`market value · ${held.length} currenc${held.length === 1 ? 'y' : 'ies'} on the ledger`} />
+        <Stat label="FX exposure"
+          value={pct(fxMkt) == null ? <Absent why="needs a full valuation" size={19} /> : pct(fxMkt) + '%'}
+          sub={fxMkt == null ? 'unknown' : `${fmt(fxMkt, home)} not in ${home}`}
+          tone={pct(fxMkt) != null && pct(fxMkt) > 70 ? CD.amber : CD.ink} />
+        <Stat label="Top concentration"
+          value={!top || pct(Number(top.marketValueHome || 0)) == null ? <Absent why="needs a full valuation" size={19} /> : pct(Number(top.marketValueHome)) + '%'}
+          sub={top ? `${top.c} ${flagOf(top.c)}` : ''} />
+        {/* The tile that used to be pure fiction: it printed +$4,461.13 over
+            currencies whose average cost is NULL on the server. There is no
+            honest figure to put there and now there isn't one. */}
+        <Stat label="Unrealized P&L"
+          value={totals.unrealizedPnlHome == null
+            ? <Absent why={unpriced.length ? `no cost basis for ${unpriced.join(', ')}` : 'market value or basis unknown'} size={19} />
+            : (Number(totals.unrealizedPnlHome) >= 0 ? '+' : '') + fmt(totals.unrealizedPnlHome, home)}
+          sub="market vs cost basis"
+          tone={totals.unrealizedPnlHome == null ? CD.faint : Number(totals.unrealizedPnlHome) >= 0 ? CD.green : CD.flag} />
       </div>
 
-      <div className="p-3 mb-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      {totalMkt != null && (<div className="p-3 mb-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Concentration by value</span>
         </div>
-        <ConcBar parts={rows2} total={total} />
+        <ConcBar parts={held.map(r => ({ c: r.c, mkt: Number(r.marketValueHome || 0) }))} total={totalMkt} />
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-          {rows2.slice(0, 6).map(r => <span key={r.c} className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{flagOf(r.c)} {r.c} {total ? Math.round(r.mkt / total * 100) : 0}%</span>)}
+          {held.slice(0, 6).map(r => <span key={r.c} className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{flagOf(r.c)} {r.c} {pct(Number(r.marketValueHome || 0))}%</span>)}
         </div>
-      </div>
+      </div>)}
 
       <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 12 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
             <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">On hand</th>
-            <th className="px-3 py-2 text-right">Avg cost</th><th className="px-3 py-2 text-right">{atCost ? 'At cost · CAD' : 'Market · CAD'}</th>
+            <th className="px-3 py-2 text-right">Avg cost</th><th className="px-3 py-2 text-right">{`Market · ${home}`}</th>
             <th className="px-3 py-2 text-right">Unrlzd P&L</th><th className="px-3 py-2 text-right" style={{ width: 130 }}>Status</th>
           </tr></thead>
-          <tbody>{rows2.map(r => (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+          <tbody>{held.map(r => { const st = bandStatus(r.c, Number(r.quantity), settings); const upl = r.unrealizedPnlHome; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
             <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(r.units))}</td>
-            <td className="px-3 py-2.5 text-right text-[12px]" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{r.c === 'CAD' ? '—' : r.cost.toFixed(r.cost < 0.1 ? 5 : 4)}</td>
-            <td className="px-3 py-2.5 text-right font-semibold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(atCost ? r.basis : r.mkt))}</td>
-            <td className="px-3 py-2.5 text-right text-[12px] font-semibold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: r.c === 'CAD' ? CD.faint : (r.upl >= 0 ? CD.green : CD.flag) }}>{r.c === 'CAD' ? '—' : (r.upl >= 0 ? '+' : '') + num(Math.round(r.upl))}</td>
-            <td className="px-3 py-2.5 text-right"><StatusPill level={r.st.level} /></td>
-          </tr>))}</tbody>
+            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(Number(r.quantity)))}</td>
+            {/* an average nobody recorded is a dash, not a guess */}
+            <td className="px-3 py-2.5 text-right text-[12px]" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.mute }} title={r.avgCost == null && r.c !== home ? 'This cash reached the safe without a recorded price. Record a delivery invoice to give it one.' : ''}>{r.c === home ? '—' : r.avgCost == null ? '—' : Number(r.avgCost).toFixed(Number(r.avgCost) < 0.1 ? 5 : 4)}</td>
+            <td className="px-3 py-2.5 text-right font-semibold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: r.marketValueHome == null ? CD.faint : CD.ink }} title={r.marketValueHome == null ? 'This branch has never published a rate for ' + r.c + ', so the ledger cannot value it.' : ''}>{r.marketValueHome == null ? '—' : num(Math.round(Number(r.marketValueHome)))}</td>
+            <td className="px-3 py-2.5 text-right text-[12px] font-semibold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: upl == null ? CD.faint : (Number(upl) >= 0 ? CD.green : CD.flag) }}>{upl == null ? '—' : (Number(upl) >= 0 ? '+' : '') + num(Math.round(Number(upl)))}</td>
+            <td className="px-3 py-2.5 text-right"><StatusPill level={st.level} /></td>
+          </tr>); })}
+          {!held.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-[12px]" style={{ color: CD.faint }}>This vault is on the ledger and holds nothing.</td></tr>}
+          </tbody>
           <tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}>
-            <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td><td></td><td></td>
-            <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(atCost ? totalBasis : total))}</td>
-            <td className="px-3 py-2 text-right font-bold text-[12px]" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: totalUpl >= 0 ? CD.green : CD.flag }}>{(totalUpl >= 0 ? '+' : '') + num(Math.round(totalUpl))}</td>
+            <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>{`Total · ${home}`}</td><td></td><td></td>
+            <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: totals.marketValueHome == null ? CD.faint : CD.ink }}>{totals.marketValueHome == null ? '—' : num(Math.round(Number(totals.marketValueHome)))}</td>
+            <td className="px-3 py-2 text-right font-bold text-[12px]" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: totals.unrealizedPnlHome == null ? CD.faint : Number(totals.unrealizedPnlHome) >= 0 ? CD.green : CD.flag }}>{totals.unrealizedPnlHome == null ? '—' : (Number(totals.unrealizedPnlHome) >= 0 ? '+' : '') + num(Math.round(Number(totals.unrealizedPnlHome)))}</td>
             <td></td>
           </tr></tfoot>
         </table>
       </div>
-      <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>On hand is derived live — opening baseline + received orders + posted ledger legs (voids excluded) — the same figure the Till reconciles its physical count against. {atCost ? 'Valued at weighted-average cost actually paid (Settings → Vault).' : 'Market value is live; cost basis is the weighted average actually paid.'} Reorder floors follow Settings → Vault.</p>
+      <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>
+        Every figure here is the ledger's — the safe's recorded balance, the average it actually paid, and the branch's own published board. A dash means the book has no answer, not zero: {unpriced.length ? `${unpriced.join(', ')} reached the safe without a recorded price` : 'nothing is missing a price'}{unvalued.length ? ` · no board rate published for ${unvalued.join(', ')}` : ''}. Reorder floors follow Settings → Vault{lowN ? ` · ${lowN} below floor` : ''}.
+      </p>
     </div>);
   }
 
   /* ===================== SHIFTS (per-teller float + blind count) ===================== */
-  function Shifts({ rows, baseline, receipts, me, log, shifts, setShifts, settings, setSettings, branches, station, onIssueTill }) {
+  function Shifts({ rows, position, me, log, shifts, setShifts, settings, setSettings, branches, station, onIssueTill }) {
     const [assigning, setAssigning] = useState(false);
     const [settling, setSettling] = useState(null);
     const fc = floatCcysOf(settings);
@@ -190,7 +262,22 @@
     const roster = ((settings && settings.employees && settings.employees.length ? settings.employees : STAFF) || []).filter(e => e.active !== false && e.role !== 'Owner');
     const tellers = roster.filter(e => e.branches === '*' || !myB || !Array.isArray(e.branches) || e.branches.includes(myB.id));
     const tills = ((myB && myB.tills) || []).filter(t => t.status !== 'closed');
-    const vaultAvailOf = (c) => (myB && myB.vault && myB.vault[c]) || 0;
+    /* ONE SOURCE FOR WHAT THE SAFE HOLDS.
+
+       There used to be two functions here — `vaultAvailOf` reading this
+       branch's local record for the "to a till" tab, and `availOf`
+       deriving a pooled figure for the "to a person" tab — so the same
+       modal showed GBP 6,111.05 on one tab and 8,000 on the other, over a
+       vault the ledger said held nothing. Both tabs now read the ledger's
+       vault row, and a currency with no row answers null so the modal can
+       say "the ledger has no figure" instead of "0". */
+    const vaultRows = vaultRowsOf(position);
+    const vaultAvailOf = (c) => {
+      if (!vaultRows) return null;
+      const row = vaultRows.find(r => r.c === c);
+      return row ? Number(row.quantity) : null;
+    };
+    const ccyChoices = Array.from(new Set([...(DEFAULT_FC), ...fc, ...((vaultRows || []).map(r => r.c))]));
     const open = shifts.filter(s => s.status === 'open');
     const settled = shifts.filter(s => s.status === 'settled').sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''));
 
@@ -208,12 +295,10 @@
       const outSum = rows.filter(r => r.status !== 'void' && r.teller === shift.teller && r.date === shift.date && r.outCcy === c).reduce((s, r) => s + (+r.outAmt || 0), 0);
       return opening + inSum - outSum;
     };
-    const availOf = (c) => heldOf(c, rows, baseline, receipts);
-
     // assigning a float is accountability + location only: total holdings are
     // INVARIANT across it (the cash was already in the pool). No setVault here.
     const doAssign = (teller, opening) => {
-      const sh = { id: Date.now(), teller, date: TODAY, openedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), openedBy: me.name, opening: { ...opening }, status: 'open', blind: true };
+      const sh = { id: Date.now(), teller, date: businessDate(), openedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), openedBy: me.name, opening: { ...opening }, status: 'open', blind: true };
       setShifts(s => [sh, ...s]);
       log && log('Shift float assigned', `${teller} · ${fmt(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0), 'CAD')} on the desk (accountability — holdings unchanged)`);
       setAssigning(false);
@@ -251,7 +336,7 @@
       {/* active float currencies — a setting (Tel Aviv shop sets its own) */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Active float currencies</span>
-        {VCCYS.map(c => { const on = fc.includes(c); const locked = c === 'CAD'; return (
+        {ccyChoices.map(c => { const on = fc.includes(c); const locked = c === 'CAD'; return (
           <button key={c} onClick={() => toggleFc(c)} disabled={locked} title={locked ? 'Base currency — always active' : (on ? 'Active' : 'Inactive')} className="px-2 py-1 text-[11px]" style={{ borderRadius: 7, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.faint, fontFamily: 'Space Mono, monospace', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.85 : 1 }}>{c}</button>); })}
       </div>
 
@@ -287,7 +372,7 @@
           </tr></thead>
           <tbody>{settled.slice(0, 30).map(s => { const floatCad = Object.keys(s.opening || {}).reduce((t, c) => t + cadVal(s.opening[c] || 0, c), 0); const off = Math.abs(+s.varCad || 0) >= 0.5; return (
             <tr key={s.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <td className="px-3 py-2 font-medium" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{s.date}{s.date === TODAY && <span className="ml-2 text-[9px] px-1.5 py-0.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 4, fontFamily: 'Space Mono' }}>TODAY</span>}</td>
+              <td className="px-3 py-2 font-medium" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{s.date}{s.date === businessDate() && <span className="ml-2 text-[9px] px-1.5 py-0.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 4, fontFamily: 'Space Mono' }}>TODAY</span>}</td>
               <td className="px-3 py-2" style={{ color: CD.ink }}>{s.teller}</td>
               <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', color: CD.mute }}>{num(Math.round(floatCad))}</td>
               <td className="px-3 py-2 text-right font-semibold" style={{ fontFamily: 'Space Mono, monospace', color: off ? (s.varCad > 0 ? CD.amber : CD.flag) : CD.green }}>{off ? (s.varCad > 0 ? '+' : '') + num(s.varCad) : '✓ 0'}</td>
@@ -296,7 +381,7 @@
         </table>
       </div>
 
-      {assigning && <AssignModal tellers={tellers} tills={tills} branchCode={myB && myB.code} fc={fc} availOf={availOf} vaultAvailOf={vaultAvailOf} onClose={() => setAssigning(false)} onAssign={doAssign} onIssueTill={doIssueTill} />}
+      {assigning && <AssignModal tellers={tellers} tills={tills} branchCode={myB && myB.code} fc={fc} vaultTracked={!!vaultRows} vaultAvailOf={vaultAvailOf} onClose={() => setAssigning(false)} onAssign={doAssign} onIssueTill={doIssueTill} />}
       {settling && <SettleModal shift={settling} expectedFor={expectedFor} onClose={() => setSettling(null)} onSettle={doSettle} />}
     </div>);
   }
@@ -331,7 +416,14 @@
           </div>
         </div>))}
       </div>
-      <div className="text-[11px] px-3 py-2 mb-3" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Leave a currency blank if the safe holds none of it. This can only be set once — after that, corrections are movements, so the trail stays honest.</div>
+      <div className="text-[11px] px-3 py-2 mb-3" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Leave a currency blank if the safe holds none of it — only what you type is recorded, and a currency you leave out stays absent from the book rather than being set to zero. This can only be set once; after that, corrections are movements, so the trail stays honest.</div>
+      {/* An opening position states a QUANTITY. What that cash cost is a
+          separate question, and one this desk may genuinely not be able to
+          answer — the safe can predate the software. Saying so here is
+          better than the P&L tab silently reading "—" next week with no
+          explanation of why. The ledger accepts a unit cost alongside these
+          balances; wiring the field is tracked work. */}
+      <div className="text-[11px] px-3 py-2 mb-3 flex items-start gap-1.5" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="info" s={13} c={CD.brass} /><span>This records how much is in the safe, not what it cost. Until a priced delivery arrives, the Position tab will show these currencies with no average cost and no unrealized P&L — which is the truth, not a gap.</span></div>
       {err && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{err}</span></div>}
       <div className="flex items-center justify-between pt-1">
         <div className="text-[12px]" style={{ color: CD.mute }}>Opening value <b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(totalCad, 'CAD')}</b></div>
@@ -340,16 +432,32 @@
     </Modal>);
   }
 
-  function AssignModal({ tellers, tills, branchCode, fc, availOf, vaultAvailOf, onClose, onAssign, onIssueTill }) {
+  /* ONE MODAL, ONE SAFE, ONE NUMBER PER CURRENCY.
+
+     Both tabs read `vaultAvailOf`, which is the ledger's vault row and
+     nothing else. It answers null for a currency the vault has no row
+     for, and null is rendered "—", never 0: the modal used to print
+     "vault holds 8,000" on the row while a red bar two lines below read
+     "The vault holds 0.00 GBP — this movement would overdraw it".
+
+     The float amounts start EMPTY. They used to be pre-filled with 5,000
+     CAD and 2,000 USD, which is somebody else's opening float and reads
+     as a recommendation from the software about a drawer it knows
+     nothing about. */
+  function AssignModal({ tellers, tills, branchCode, fc, vaultTracked, vaultAvailOf, onClose, onAssign, onIssueTill }) {
     const [target, setTarget] = useState('person');   // 'person' = accountability · 'till' = cash moves on the rail
     const [teller, setTeller] = useState(tellers[0] ? tellers[0].name : '');
     const [tillId, setTillId] = useState(tills && tills[0] ? tills[0].id : '');
-    const [opening, setOpening] = useState(() => Object.fromEntries(fc.map(c => [c, c === 'CAD' ? 5000 : c === 'USD' ? 2000 : 0])));
+    const [opening, setOpening] = useState(() => Object.fromEntries(fc.map(c => [c, ''])));
     const floatCad = fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0);
-    const availFn = target === 'till' ? vaultAvailOf : availOf;
-    const short = fc.filter(c => (+opening[c] || 0) > availFn(c));
+    /* Short only where the ledger has a figure to be short against. A
+       currency it cannot answer for blocks the movement separately below
+       — refusing is right, but calling it "short" would imply the safe
+       was counted and came up empty. */
+    const short = fc.filter(c => { const have = vaultAvailOf(c); return have != null && (+opening[c] || 0) > have; });
+    const unknown = fc.filter(c => (+opening[c] || 0) > 0 && vaultAvailOf(c) == null);
     const tillOk = target !== 'till' || !!tillId;
-    const valid = tillOk && (target === 'till' || !!teller) && short.length === 0 && floatCad > 0;
+    const valid = tillOk && (target === 'till' || !!teller) && short.length === 0 && unknown.length === 0 && floatCad > 0;
     const [issueErr, setIssueErr] = useState('');
     const [issuing, setIssuing] = useState(false);
     const submit = async () => {
@@ -385,10 +493,11 @@
             <span className="px-2.5 text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono', borderRight: `1px solid ${CD.line}` }}>{flagOf(c)} {c}</span>
             <input type="number" value={opening[c] ?? ''} onChange={e => setOpening(o => ({ ...o, [c]: e.target.value }))} placeholder="0" className="flex-1 min-w-0 px-2.5 py-2 text-right outline-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
           </div>
-          <div className="text-[9px] text-right mt-0.5 pr-1" style={{ color: short.includes(c) ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{target === 'till' ? 'vault holds ' : 'avail '}{num(availFn(c))}</div>
+          <div className="text-[9px] text-right mt-0.5 pr-1" style={{ color: short.includes(c) ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>vault holds {vaultAvailOf(c) == null ? '—' : num(vaultAvailOf(c))}</div>
         </div>))}
       </div>
-      {short.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>{target === 'till' ? 'The vault is short on ' : 'Pool is short on '}{short.join(', ')} — reduce the amount or replenish first.</div>}
+      {short.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>The vault is short on {short.join(', ')} — reduce the amount or replenish first.</div>}
+      {unknown.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}>{vaultTracked ? `This vault has no ${unknown.join(', ')} on the ledger, so nothing can be issued from it. Record a delivery first.` : 'This vault has no opening position on the ledger yet — count the safe and record it before moving cash out of it.'}</div>}
       {issueErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{issueErr}</span></div>}
       <div className="flex items-center justify-between pt-1">
         <div className="text-[12px]" style={{ color: CD.mute }}>{target === 'person' ? 'Float value ' : 'Moving '}<b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(floatCad, 'CAD')}</b></div>
@@ -516,7 +625,7 @@
     return (<Modal onClose={done ? undefined : onClose} icon={receiving ? 'checkcircle' : 'plus'} title={receiveOnly ? 'Receive order' : 'New banknote order'} sub={receiveOnly ? 'Confirm what arrived and what you paid — this posts the cash into inventory.' : 'Record a wholesale order. You’ll mark it received when the cash arrives.'}>
       <div className="mb-3">
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Currency</div>
-        <div className="flex flex-wrap gap-1.5">{VCCYS.filter(c => c !== 'CAD').map(c => <button key={c} disabled={receiveOnly} onClick={() => setCcy(c)} className="px-2.5 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${ccy === c ? CD.ink : CD.line}`, background: ccy === c ? CD.ink : 'transparent', color: ccy === c ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono', cursor: receiveOnly ? 'default' : 'pointer', opacity: receiveOnly && ccy !== c ? 0.4 : 1 }}>{flagOf(c)} {c}</button>)}</div>
+        <div className="flex flex-wrap gap-1.5">{ORDER_CCYS.filter(c => c !== 'CAD').map(c => <button key={c} disabled={receiveOnly} onClick={() => setCcy(c)} className="px-2.5 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${ccy === c ? CD.ink : CD.line}`, background: ccy === c ? CD.ink : 'transparent', color: ccy === c ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono', cursor: receiveOnly ? 'default' : 'pointer', opacity: receiveOnly && ccy !== c ? 0.4 : 1 }}>{flagOf(c)} {c}</button>)}</div>
       </div>
       <div className={receiving ? 'grid grid-cols-2 gap-2 mb-3' : 'mb-3'}>
         <div>
@@ -554,63 +663,76 @@
     </Modal>);
   }
 
-  /* ===================== P&L (real, derived cost basis vs estimate) ===================== */
-  function PnL({ rows, baseline, receipts }) {
-    const live = rows.filter(r => r.status !== 'void' && r.outCcy !== 'CAD' && r.inCcy === 'CAD');
-    // derived cost basis per currency (same source of truth)
-    const basisOf = (c) => posOf(c, rows, baseline, receipts).cost;
-    const perCcy = {};
-    let realTot = 0, estTot = 0, soldCad = 0;
-    live.forEach(r => {
-      const out = +r.outAmt || 0, inAmt = +r.inAmt || 0, fee = +r.fee || 0;
-      const basis = basisOf(r.outCcy) || cadPer(r.outCcy);
-      const cost = out * basis;
-      const proceeds = inAmt + fee;
-      const realized = proceeds - cost;
-      const est = fee + (inAmt - out * cadPer(r.outCcy));   // old mid-spread estimate
-      realTot += realized; estTot += est; soldCad += proceeds;
-      const k = r.outCcy; (perCcy[k] = perCcy[k] || { c: k, n: 0, real: 0, est: 0, vol: 0 });
-      perCcy[k].n++; perCcy[k].real += realized; perCcy[k].est += est; perCcy[k].vol += proceeds;
-    });
-    const list = Object.values(perCcy).sort((a, b) => b.real - a.real);
-    const delta = realTot - estTot;
-    const margin = soldCad ? (realTot / soldCad * 100) : 0;
+  /* ===================== P&L (the figure the disposal wrote) =====================
+     What a desk earns is the difference between what it paid for a
+     currency and what it sold it for, and nothing else is profit. That
+     number is decided once, by dispose(), and stored on the transaction
+     — so this tab reads it rather than recomputing anything.
+
+     What was here before computed a cost basis in the browser from a demo
+     baseline, compared it against a "mid-spread estimate", and presented
+     the gap between two guesses as an insight. See docs/COST_BASIS.md. */
+  function PnL({ summary, loading, error, rangeLabel }) {
+    if (loading) return <div className="p-8 text-center text-[12px]" style={{ color: CD.faint }}>Reading the book…</div>;
+    if (error) return (<div className="p-4"><div className="flex items-start gap-2 px-3 py-2.5 text-[12px]" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 10 }}><Ic n="alert" s={14} c={CD.flag} /><span>{error}</span></div></div>);
+
+    const home = (summary && summary.homeCurrency) || 'CAD';
+    const list = ((summary && summary.byCurrency) || []).filter(r => r.deals > 0);
+    const realized = summary ? summary.realizedPnlHome : null;
+    const cost = summary ? summary.costOfSaleHome : null;
+    const fees = summary ? summary.feesHome : null;
+    const volume = summary ? summary.volumeHome : null;
+    const posted = summary ? summary.posted : 0;
+    const priced = summary ? summary.pricedDeals : 0;
+    /* Margin is a ratio of two ledger figures, and it is only a ratio
+       when both exist. A zero denominator used to render 0.00%, which
+       reads as "we made nothing on a busy day" rather than "nothing has
+       been posted". */
+    const margin = (realized != null && volume != null && Number(volume) > 0)
+      ? (Number(realized) / Number(volume)) * 100 : null;
+    const why = posted === 0 ? 'nothing posted in this period' : 'no cost basis on these deals';
 
     return (<div className="p-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3">
-        <Stat big label="Realized P&L · cost basis" value={(realTot >= 0 ? '+' : '') + fmt(realTot, 'CAD')} sub={`${live.length} sales valued at real cost`} tone={realTot >= 0 ? CD.green : CD.flag} />
-        <Stat label="Mid-spread estimate" value={(estTot >= 0 ? '+' : '') + fmt(estTot, 'CAD')} sub="the old approximation" />
-        <Stat label="Estimate gap" value={(delta >= 0 ? '+' : '') + fmt(delta, 'CAD')} sub={delta >= 0 ? 'cost basis ran richer' : 'estimate overstated'} tone={delta >= 0 ? CD.green : CD.flag} />
-        <Stat label="Net margin" value={`${margin.toFixed(2)}%`} sub={`on ${fmt(soldCad, 'CAD')} sold`} />
+        <Stat big label={`Realized P&L · ${rangeLabel}`}
+          value={realized == null ? <Absent why={why} size={26} /> : (Number(realized) >= 0 ? '+' : '') + fmt(realized, home)}
+          sub={realized == null ? '' : `${priced} of ${posted} deal${posted === 1 ? '' : 's'} costed`}
+          tone={realized == null ? CD.faint : Number(realized) >= 0 ? CD.green : CD.flag} />
+        <Stat label="Cost of what was sold"
+          value={cost == null ? <Absent why={why} size={19} /> : fmt(cost, home)}
+          sub="what the notes actually cost" />
+        <Stat label="Commission"
+          value={fees == null ? <Absent why="nothing posted in this period" size={19} /> : fmt(fees, home)}
+          sub="fees charged" />
+        <Stat label="Margin on volume"
+          value={margin == null ? <Absent why={why} size={19} /> : margin.toFixed(2) + '%'}
+          sub={volume == null ? '' : `on ${fmt(volume, home)} taken in`} />
       </div>
 
       <div className="p-3 mb-3" style={{ background: CD.brassSoft, borderRadius: 12 }}>
         <div className="flex items-start gap-2">
           <Ic n="info" s={15} c={CD.brass} />
-          <p className="text-[11.5px]" style={{ color: 'var(--cd-brass-text)' }}>Cost basis is derived from every real acquisition — wholesale receipts and customer sell-ins alike — weighted-averaged per currency. The old estimate marked every sale against the live mid, ignoring whether the notes were bought cheaper or dearer.</p>
+          <p className="text-[11.5px]" style={{ color: 'var(--cd-brass-text)' }}>Every figure here is the one the sale itself booked — proceeds minus what those notes cost, decided at the moment of the disposal and stored on the transaction. It is not a spread against a market mid, and nothing on this screen recomputes it. {priced < posted && posted > 0 ? `${posted - priced} deal${posted - priced === 1 ? '' : 's'} in this period carr${posted - priced === 1 ? 'ies' : 'y'} no cost basis and ${posted - priced === 1 ? 'is' : 'are'} left out of the profit above.` : ''}</p>
         </div>
       </div>
 
       <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 12 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-            <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Sales</th><th className="px-3 py-2 text-right">Volume · CAD</th><th className="px-3 py-2 text-right">Cost basis</th><th className="px-3 py-2 text-right">P&L (real)</th><th className="px-3 py-2 text-right">vs estimate</th>
+            <th className="px-3 py-2">Currency sold</th><th className="px-3 py-2 text-right">Deals</th><th className="px-3 py-2 text-right">Units out</th><th className="px-3 py-2 text-right">Costed</th><th className="px-3 py-2 text-right">Realized P&L</th>
           </tr></thead>
-          <tbody>{list.map(r => { const d = r.real - r.est; const cb = basisOf(r.c); return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-            <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}>{flagOf(r.c)} {r.c}</td>
-            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono', color: CD.mute }}>{r.n}</td>
-            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(r.vol))}</td>
-            <td className="px-3 py-2.5 text-right text-[12px]" style={{ fontFamily: 'Space Mono', color: CD.mute }}>{cb.toFixed(cb < 0.1 ? 5 : 4)}</td>
-            <td className="px-3 py-2.5 text-right font-semibold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: r.real >= 0 ? CD.green : CD.flag }}>{(r.real >= 0 ? '+' : '') + num(Math.round(r.real))}</td>
-            <td className="px-3 py-2.5 text-right text-[12px]" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: Math.abs(d) < 1 ? CD.faint : (d > 0 ? CD.green : CD.flag) }}>{Math.abs(d) < 1 ? '—' : (d > 0 ? '+' : '') + num(Math.round(d))}</td>
-          </tr>); })}
-          {!list.length && <tr><td colSpan={6} className="px-3 py-6 text-center text-[12px]" style={{ color: CD.faint }}>No outbound foreign-currency sales in the ledger yet.</td></tr>}
+          <tbody>{list.map(r => (<tr key={r.currency} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+            <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}>{flagOf(r.currency)} {r.currency}</td>
+            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono', color: CD.mute }}>{r.deals}</td>
+            <td className="px-3 py-2.5 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(Number(r.sold)))}</td>
+            <td className="px-3 py-2.5 text-right text-[12px]" style={{ fontFamily: 'Space Mono', color: r.pricedDeals < r.deals ? CD.amber : CD.mute }}>{r.pricedDeals}/{r.deals}</td>
+            <td className="px-3 py-2.5 text-right font-semibold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: r.realizedPnlHome == null ? CD.faint : Number(r.realizedPnlHome) >= 0 ? CD.green : CD.flag }}>{r.realizedPnlHome == null ? '—' : (Number(r.realizedPnlHome) >= 0 ? '+' : '') + num(Math.round(Number(r.realizedPnlHome)))}</td>
+          </tr>))}
+          {!list.length && <tr><td colSpan={5} className="px-3 py-6 text-center text-[12px]" style={{ color: CD.faint }}>No foreign currency has left this till in {rangeLabel.toLowerCase()}.</td></tr>}
           </tbody>
           {list.length > 0 && <tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}>
-            <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total</td><td></td>
-            <td className="px-3 py-2 text-right font-semibold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(Math.round(soldCad))}</td><td></td>
-            <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: realTot >= 0 ? CD.green : CD.flag }}>{(realTot >= 0 ? '+' : '') + num(Math.round(realTot))}</td>
-            <td className="px-3 py-2 text-right font-bold text-[12px]" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: delta >= 0 ? CD.green : CD.flag }}>{(delta >= 0 ? '+' : '') + num(Math.round(delta))}</td>
+            <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total</td><td></td><td></td><td></td>
+            <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: realized == null ? CD.faint : Number(realized) >= 0 ? CD.green : CD.flag }}>{realized == null ? '—' : (Number(realized) >= 0 ? '+' : '') + num(Math.round(Number(realized)))}</td>
           </tr></tfoot>}
         </table>
       </div>
@@ -634,27 +756,50 @@
   /* ===================== ROOT ===================== */
   function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings, branches, station, onMoveCash, onOpenBranches, moves, onOrderReceived, onIssueTill, serverBacked, vaultTracked, onOpenVaultPosition, cashVersion }) {
     const [tab, setTab] = useState('position');
-    const [shifts, setShifts] = useState(seedShifts);
+    const [shifts, setShifts] = useState(loadShifts);
     const [ordering, setOrdering] = useState(null);   // null | { ccy?, units?, order? }
     const [notifOpen, setNotifOpen] = useState(false);
     const [openingVault, setOpeningVault] = useState(false);   // stating what is in the safe
-    /* On a server-backed desk the strong room's contents are the LEDGER's
-       figure, not one derived here from transactions — the same rule the
-       drawer already lives by. It is mirrored onto this branch's record by
-       the OS after every recorded movement, so reading it here needs no
-       fetch of its own. */
-    const thisBranch = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
-    const ledgerVault = (serverBacked && vaultTracked && thisBranch)
-      ? (thisBranch.vault || {}) : null;
-    const ledgerCcys = ledgerVault ? Object.keys(ledgerVault) : [];
-    const vaultUnitsOf = (c) => ledgerVault && Object.prototype.hasOwnProperty.call(ledgerVault, c)
-      ? Number(ledgerVault[c]) : heldOf(c, rows, baseline, receipts);
+    /* THE STRONG ROOM, READ FROM THE BOOK.
+
+       This used to read `branches[].vault` — a record the OS mirrors the
+       ledger onto — and fall back to a figure derived here from the
+       browser's transactions when the ledger had no row. Two problems, and
+       both were live: the mirror is a MERGE, so recording an opening
+       position for CAD/USD/EUR left the branch record's pre-existing demo
+       INR, PHP, CNY and GBP standing beside the three real ones under a
+       header reading "on the ledger"; and the fallback meant a vault the
+       ledger knew nothing about still showed a confident total.
+
+       Asking the server directly fixes both at once. What is not here is
+       not shown. */
+    const deskFacts = useDeskFacts();   // the trading day, from the till session
+    const { data: position, loading: posLoading, error: posError } = useLedgerPosition(serverBacked, cashVersion);
+    const ledgerRows = vaultRowsOf(position);
+    const onLedger = !!ledgerRows;
     useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(shifts)); } catch (e) {} }, [shifts]);
 
-    const total = VCCYS.reduce((s, c) => s + cadVal(vaultUnitsOf(c), c), 0);
-    // low-stock notifications honour Settings → Vault: the alert switch + the owner's floors
+    /* The desk's earnings over the trading day this till is in. The window
+       comes from the till session's own business date — see the note on
+       businessDate() in cdos-base.jsx. */
+    const [summary, setSummary] = useState({ loading: true, data: null, error: '' });
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) { setSummary({ loading: false, data: null, error: 'This desk is not signed in to the ledger.' }); return; }
+      let live = true;
+      window.CDOS.refreshBusinessDate()
+        .then(() => window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(30)))
+        .then(data => { if (live) setSummary({ loading: false, data, error: '' }); })
+        .catch(error => { if (live) setSummary({ loading: false, data: null, error: (error && error.message) || 'The ledger could not be reached.' }); });
+      return () => { live = false; };
+    }, [serverBacked, cashVersion]);
+
+    const totalOnHand = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
+    // low-stock notifications honour Settings → Vault: the alert switch + the
+    // owner's floors, and they are raised only for currencies the safe
+    // actually has a ledger row for — a floor cannot be breached by a
+    // currency nobody has told the book about.
     const lowAlert = !settings || settings.vaultLowAlert !== false;
-    const lowList = !lowAlert ? [] : VCCYS.map(c => { const units = vaultUnitsOf(c); const min = floorOf(c, settings); const b = BANDS[c] || {}; if (!min || units >= min) return null; return { c, units, need: Math.max((b.target || min * 2) - units, 0) }; }).filter(Boolean);
+    const lowList = !lowAlert || !ledgerRows ? [] : ledgerRows.map(r => { const units = Number(r.quantity); const min = floorOf(r.c, settings); const b = BANDS[r.c] || {}; if (!min || units >= min) return null; return { c: r.c, units, need: Math.max((b.target || min * 2) - units, 0) }; }).filter(Boolean);
     const pending = (receipts || []).filter(o => o.status === 'pending').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const onOrderCcys = new Set(pending.map(o => o.ccy));
     const notifs = [
@@ -671,7 +816,7 @@
     const onOrder = (init) => { setNotifOpen(false); setOrdering(init || {}); };
     const onPlace = (p) => {
       const units = +p.units || 0; if (!units) return;
-      const ord = { id: Date.now(), ccy: p.ccy, units, costCad: 0, unitCost: 0, supplier: p.supplier || 'Wholesale notes', ref: 'WO-' + TODAY.slice(2).replace(/-/g, '') + '-' + p.ccy, date: TODAY, by: me.name, status: 'pending' };
+      const ord = { id: Date.now(), ccy: p.ccy, units, costCad: 0, unitCost: 0, supplier: p.supplier || 'Wholesale notes', ref: 'WO-' + businessDate().slice(2).replace(/-/g, '') + '-' + p.ccy, date: businessDate(), by: me.name, status: 'pending' };
       setReceipts(list => [ord, ...(list || [])]);
       log && log('Order placed', `${num(units)} ${p.ccy} from ${ord.supplier} — on order`);
       setOrdering(null); setTab('receive');
@@ -680,9 +825,9 @@
       const units = +p.units || 0, costCad = +p.costCad || 0; if (!units || !costCad) return;
       const unitCost = +(costCad / units).toFixed(6);
       if (p.id) {
-        setReceipts(list => (list || []).map(o => o.id === p.id ? { ...o, ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier, status: 'received', date: TODAY, receivedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '') } : o));
+        setReceipts(list => (list || []).map(o => o.id === p.id ? { ...o, ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier, status: 'received', date: businessDate(), receivedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '') } : o));
       } else {
-        const rec = { id: Date.now(), ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier || 'Wholesale notes', ref: 'WO-' + TODAY.slice(2).replace(/-/g, '') + '-' + p.ccy, date: TODAY, by: me.name, status: 'received' };
+        const rec = { id: Date.now(), ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier || 'Wholesale notes', ref: 'WO-' + businessDate().slice(2).replace(/-/g, '') + '-' + p.ccy, date: businessDate(), by: me.name, status: 'received' };
         setReceipts(list => [rec, ...(list || [])]);
       }
       log && log('Order received', `${num(units)} ${p.ccy} @ ${fmt(unitCost, 'CAD')} · ${fmt(costCad, 'CAD')} posted to inventory`);
@@ -698,7 +843,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="vaultsafe" s={17} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(total, 'CAD')} on hand{ledgerVault ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : ''}{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
+            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{totalOnHand == null ? '—' : fmt(totalOnHand, (position && position.homeCurrency) || 'CAD')} on hand{onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : ''}{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
           </div>
           <div className="flex items-center gap-2" style={{ position: 'relative' }}>
             {/* notifications */}
@@ -742,7 +887,7 @@
       {/* A server-backed desk whose strong room has never been declared. The
           ledger will not police what nobody has stated, so it says so plainly
           rather than quietly balancing against zero. */}
-      {serverBacked && !vaultTracked && (
+      {serverBacked && !posLoading && !onLedger && (
         <div className="flex items-center gap-3 px-4 py-2.5 flex-none" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 28, height: 28, borderRadius: 8, background: CD.brass }}><Ic n="vaultsafe" s={15} c="var(--cd-on-ink)" /></span>
           <div className="flex-1 min-w-0 leading-tight">
@@ -755,13 +900,13 @@
       {openingVault && <OpeningPositionModal fc={DEFAULT_FC} onClose={() => setOpeningVault(false)} onSave={onOpenVaultPosition} />}
 
       <div className="flex-1 overflow-auto">
-        {tab === 'position' && <Position rows={rows} baseline={baseline} receipts={receipts} settings={settings} ledgerVault={ledgerVault} />}
-        {tab === 'shifts' && <Shifts rows={rows} baseline={baseline} receipts={receipts} me={me} log={log} shifts={shifts} setShifts={setShifts} settings={settings} setSettings={setSettings} branches={branches} station={station} onIssueTill={onIssueTill} />}
+        {tab === 'position' && <Position position={position} loading={posLoading} error={posError} settings={settings} vaultTracked={onLedger} onRecordOpening={serverBacked ? () => setOpeningVault(true) : null} />}
+        {tab === 'shifts' && <Shifts rows={rows} position={position} me={me} log={log} shifts={shifts} setShifts={setShifts} settings={settings} setSettings={setSettings} branches={branches} station={station} onIssueTill={onIssueTill} />}
         {tab === 'receive' && <Orders receipts={receipts} pending={pending} onOrder={onOrder} onCancel={onCancel} />}
         {tab === 'history' && (() => {
           const vLabel = myB ? myB.code + ' · Vault' : '';
           const vMoves = (moves || []).filter(m => m.from === vLabel || m.to === vLabel);
-          const today = vMoves.filter(m => m.date === TODAY);
+          const today = vMoves.filter(m => m.date === businessDate());
           const inToday = today.filter(m => m.to === vLabel).reduce((s, m) => s + (m.cadVal || 0), 0);
           const outToday = today.filter(m => m.from === vLabel).reduce((s, m) => s + (m.cadVal || 0), 0);
           const KB = { issue: 'Float issued', return: 'Cash returned', vault: 'Vault run', order: 'Order received', branch: 'Vault run' };
@@ -776,7 +921,7 @@
                   <span className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 7, background: out ? CD.lineSoft : CD.greenSoft }}><Ic n={out ? 'arrowup' : 'arrowdown'} s={14} c={out ? CD.mute : CD.green} /></span>
                   <div className="flex-1 min-w-0 leading-tight">
                     <div className="text-[12.5px]" style={{ color: CD.ink }}><b>{KB[m.kind] || 'Movement'}</b> <span style={{ color: CD.faint }}>{out ? '→' : '←'}</span> {other}</div>
-                    <div className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{m.ref} · {m.date === TODAY ? 'today' : m.date} · {m.by}</div>
+                    <div className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{m.ref} · {m.date === businessDate() ? 'today' : m.date} · {m.by}</div>
                   </div>
                   <span className="flex-none text-right text-[13px] font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: out ? CD.mute : CD.green }}>{out ? '−' : '+'}{num(m.amount)} {m.ccy}</span>
                 </div>); }) : <div className="px-4 py-10 text-center text-[12px]" style={{ color: CD.faint }}>Nothing on the rail yet — issue a float, receive an order, or run cash between vaults.</div>}
@@ -784,7 +929,7 @@
             <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Every dollar in and out of this vault, recorded forever — floats to tills, returns at close, wholesale orders received, and runs to other branches. The full network view lives in <button onClick={() => onOpenBranches && onOpenBranches()} style={{ color: CD.mute, textDecoration: 'underline', border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }}>Branch Network</button>.</p>
           </div>);
         })()}
-        {tab === 'pnl' && <PnL rows={rows} baseline={baseline} receipts={receipts} />}
+        {tab === 'pnl' && <PnL summary={summary.data} loading={summary.loading} error={summary.error} rangeLabel="past 30 days" />}
       </div>
 
       {ordering && <OrderModal init={ordering} onClose={() => setOrdering(null)} onPlace={onPlace} onReceive={onReceive} />}

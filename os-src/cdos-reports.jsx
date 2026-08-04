@@ -10,8 +10,13 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const HKEY = 'cdos_report_history_v1';
   const AKEY = 'cdos_report_access_v1';
-  const { CD, Ic, TYPES, THRESHOLD, TODAY, crossRate, perCadLive, fmt, num, dDiff, dealMargin, CCY } = window.CDOS;
-  const holdingsOf = (c, rows, baseline, receipts) => (window.CDOS.holdings ? window.CDOS.holdings(c, rows, baseline, receipts) : 0);
+  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, dDiff, dealMargin, CCY,
+    businessDate, reportingLimit, useDeskFacts } = window.CDOS;
+  /* The desk's own reporting line, in the desk's own currency. This file
+     used to print `THRESHOLD` — a hardcoded 10,000 Canadian dollars — in
+     four places, including the sentence claiming what the law requires,
+     while the rest of the product honoured the owner's setting. */
+  const limitOf = (settings) => reportingLimit(settings);
 
   // ---- role-based report access ----
   const ROLES = ['Owner', 'Manager', 'Compliance', 'Senior teller', 'Cashier'];
@@ -143,6 +148,46 @@
      ============================================================ */
   function Reports({ rows, clients, settings, me, baseline, receipts, day, station, branches, openSignal }) {
     const [range, setRange] = useState('today');
+    /* The trading day and the jurisdiction pack, from the server. Reports
+       print, get signed and get filed, so both of these being right is not
+       cosmetic: a close-out sheet headed with the wrong date and a
+       threshold sentence quoting the wrong country's number is a document
+       somebody keeps for five years. */
+    const deskFacts = useDeskFacts();
+    const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
+    const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null)
+      || { authority: 'the regulator', largeLabel: 'Large cash transaction report', aggHours: 24 };
+    /* WHAT THE DESK IS HOLDING AT CLOSE — the ledger's figure.
+
+       The End-of-Day Sign-Off used to fill this column by DERIVING each
+       currency from a demo opening baseline plus the browser's records,
+       which is how a sign-off sheet came to be printed and signed over
+       nine currencies the desk did not have. A report whose cash column
+       cannot be sourced prints "—", which is the honest thing for a
+       document that gets filed. */
+    const [held, setHeld] = useState({ loading: true, position: null, error: '' });
+    /* And what the desk earned over the trading day this till is in. The
+       close-out sheet is the document that gets signed and filed, so its
+       headline has to be the book's figure: fees plus the realized margin
+       the disposal booked, not a spread re-estimated against a market mid.
+       See docs/COST_BASIS.md. */
+    const [dayBook, setDayBook] = useState({ loading: true, summary: null, error: '' });
+    useEffect(() => {
+      const backend = window.CDOS.Backend;
+      if (!backend) {
+        setHeld({ loading: false, position: null, error: 'not signed in to the ledger' });
+        setDayBook({ loading: false, summary: null, error: 'not signed in to the ledger' });
+        return;
+      }
+      let live = true;
+      backend.loadLedgerPosition()
+        .then(position => { if (live) setHeld({ loading: false, position, error: '' }); })
+        .catch(error => { if (live) setHeld({ loading: false, position: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
+        .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
+        .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      return () => { live = false; };
+    }, [deskFacts]);
     const [active, setActive] = useState(null);
     const [menu, setMenu] = useState(false);
     const [access, setAccess] = useState(loadAccess);
@@ -168,7 +213,7 @@
     const inRange = (date) => {
       const days = (RANGES.find(r => r[0] === range) || [])[2];
       if (days == null) return range === 'all';
-      const ago = dDiff(date, TODAY);
+      const ago = dDiff(date, businessDate());
       return ago >= -0.0001 && ago <= days + 0.0001;
     };
     const allRange = range === 'all';
@@ -191,9 +236,13 @@
       useCustomDates && `${scope.from || '…'} → ${scope.to || '…'}`
     ].filter(Boolean);
     DOC_SCOPE = activeFilters.join(' · ');
-    const effRangeLabel = useCustomDates ? `${scope.from || 'start'} → ${scope.to || TODAY}` : rangeLabel;
+    const effRangeLabel = useCustomDates ? `${scope.from || 'start'} → ${scope.to || businessDate()}` : rangeLabel;
 
-    const flags = useMemo(() => window.CDOS.computeFlags(rows, clients, settings), [rows, clients, settings]);
+    /* The currency this desk keeps its books in, as the pack states it —
+       not a "CAD" literal. */
+    const homeCcy = (held.position && held.position.homeCurrency) || limit.currency || 'CAD';
+
+    const flags = useMemo(() => window.CDOS.computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
 
     const data = useMemo(() => {
       const inP = rows.filter(r => inWindow(r.date) && matchesScope(r));
@@ -226,19 +275,30 @@
         byCcy: sortE(byCcy), byType: sortE(byType), feeTeller: sortE(feeTeller), feeType: sortE(feeType),
         reportable, stru, kycGaps, drawer, perTx,
         filed: reportable.filter(r => r.filed).length,
-        // cash position at close — expected on-hand per currency (shared source of truth),
-        // auto-matched against the till's actual physical count snapshot for TODAY.
+        /* Cash on hand at close — the LEDGER's balance for each box the
+           desk actually has, matched against the till's own physical count
+           snapshot for the trading day. A currency the book has no row for
+           is simply not a line on the sheet; a currency it can hold but
+           cannot value prints its units and a dash for the home value. */
         cash: (() => {
           let counted = {};
-          try { counted = ((JSON.parse(localStorage.getItem('cdos_till_history_v2') || '{}') || {})[TODAY] || {}).byCcy || {}; } catch (e) {}
-          return (CCY || []).map(c => {
-            const u = holdingsOf(c, rows, baseline, receipts);
-            const ct = (c in counted) ? +counted[c] : null;
-            return { ccy: c, units: u, cad: cadOf(u, c), counted: ct, variance: ct == null ? null : +(ct - u).toFixed(2) };
-          }).filter(x => Math.abs(x.units) > 0.005 || x.counted != null || x.ccy === 'CAD');
+          try { counted = ((JSON.parse(localStorage.getItem('cdos_till_history_v2') || '{}') || {})[businessDate()] || {}).byCcy || {}; } catch (e) {}
+          const position = held.position;
+          if (!position) return [];
+          return (position.currencies || []).map(row => {
+            const units = Number(row.quantity);
+            const ct = (row.currency in counted) ? +counted[row.currency] : null;
+            return {
+              ccy: row.currency,
+              units,
+              home: row.marketValueHome == null ? null : Number(row.marketValueHome),
+              counted: ct,
+              variance: ct == null ? null : +(ct - units).toFixed(2),
+            };
+          });
         })()
       };
-    }, [rows, clients, settings, range, flags, scope]);
+    }, [rows, clients, settings, range, flags, scope, held.position]);
 
     // Every freshly generated report is snapshotted (rendered HTML frozen) into an
     // immutable history log — surfaced in the Compliance ▸ History tab, never silently changing.
@@ -259,7 +319,7 @@
     }, [active, range]);
 
     const csvFor = (id) => {
-      if (id === 'endofday') return [['Currency', 'Units expected', 'CAD value'], ...data.cash.map(x => [x.ccy, x.units.toFixed(2), x.cad.toFixed(2)]),
+      if (id === 'endofday') return [['Currency', 'On the ledger', `${homeCcy} value`], ...data.cash.map(x => [x.ccy, x.units.toFixed(2), x.home == null ? '' : x.home.toFixed(2)]),
         [], ['Transactions', data.n], ['Pay-in volume CAD', data.vol.toFixed(2)], ['Fees CAD', data.fees.toFixed(2)], ['FX spread CAD', data.spread.toFixed(2)], ['Revenue CAD', data.rev.toFixed(2)], ['Reportable', data.reportable.length], ['Open LCTRs', data.reportable.length - data.filed]];
       if (id === 'pnl') { const hstRate = (settings && settings.hstRate != null) ? +settings.hstRate : 13; return [['Line', 'CAD'], ['Commission & fees', data.fees.toFixed(2)], ['FX spread', data.spread.toFixed(2)], ['Gross revenue', data.rev.toFixed(2)], [`GST/HST on commission (${hstRate}%)`, (data.fees * hstRate / 100).toFixed(2)], ['Net revenue to business', data.rev.toFixed(2)]]; }
       if (id === 'summary') return [['Currency', 'Pay-in volume CAD'], ...data.byCcy.map(([c, v]) => [c, v.toFixed(2)])];
@@ -273,7 +333,7 @@
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)]));
         return [['Client', 'ID type', 'ID number', 'Expiry', 'Status', 'Tx in period', 'Volume CAD'],
           ...names.map(n => { const c = clients[n] || {}; const tx = data.live.filter(r => r.customer === n); const v = tx.reduce((s, r) => s + cadOf(r.inAmt, r.inCcy), 0);
-            const st = (!c.idType || !c.idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'verified');
+            const st = (!c.idType || !c.idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
             return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, v.toFixed(2)]; })];
       }
       return [];
@@ -286,35 +346,48 @@
       const tillName = (station && station.tillId) ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
 
       if (id === 'endofday') {
-        const totalCashCad = data.cash.reduce((s, x) => s + x.cad, 0);
+        /* A total is only a total when every line has a figure. Where one
+           currency could not be valued the sheet prints a dash and names
+           the reason rather than a sum that quietly omits it. */
+        const cashComplete = data.cash.length > 0 && data.cash.every(x => x.home != null);
+        const totalCashHome = cashComplete ? data.cash.reduce((s, x) => s + x.home, 0) : null;
         const openRpt = data.reportable.length - data.filed;
         return (<div>
-          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${(() => { try { return new Date(TODAY + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return TODAY; } })()} · Day ${day && day.num || 1}`} rangeLabel={effRangeLabel} />
+          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${(() => { try { return new Date(businessDate() + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return businessDate(); } })()} · Day ${day && day.num || 1}`} rangeLabel={effRangeLabel} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 14px', background: CD.greenSoft, border: `1px solid ${CD.green}`, borderRadius: 9 }}>
             <span style={{ width: 26, height: 26, borderRadius: '50%', background: CD.green, display: 'grid', placeItems: 'center', flex: 'none' }}><span style={{ color: 'var(--cd-on-ink)', fontSize: 14 }}>✓</span></span>
             <div style={{ fontSize: 12.5, color: '#14543a' }}><b>Close-out summary</b> — review every drawer against expected, then sign below. Filed to the day's permanent record.</div>
           </div>
+          {/* THE CLOSE-OUT FIGURES, FROM THE BOOK. These used to be summed
+              in the browser over a demo seed — the sheet read "Earned today
+              $223.00 · Transactions 10" for a desk that had posted one deal
+              and voided it. A dash here is correct and signable; a wrong
+              number is not. */}
           <KpiRow items={[
-            { label: 'Transactions', value: data.n },
-            { label: 'Pay-in volume', value: fmt(data.vol, 'CAD') },
-            { label: 'Revenue (fees + spread)', value: fmt(data.rev, 'CAD'), accent: CD.green },
-            { label: 'Cash on hand', value: fmt(totalCashCad, 'CAD'), sub: 'expected at close' }
+            { label: 'Transactions', value: dayBook.summary ? dayBook.summary.posted : '—', sub: dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null },
+            { label: 'Pay-in volume', value: dayBook.summary && dayBook.summary.volumeHome != null ? fmt(dayBook.summary.volumeHome, homeCcy) : '—', sub: dayBook.summary && dayBook.summary.volumeHome == null ? 'nothing posted today' : null },
+            { label: 'Earned today', value: dayBook.summary && dayBook.summary.earningsHome != null ? fmt(dayBook.summary.earningsHome, homeCcy) : '—', accent: CD.green, sub: dayBook.summary && dayBook.summary.earningsHome != null ? 'commission + realized margin' : (dayBook.error || 'nothing posted today') },
+            { label: 'Cash on hand', value: totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy), sub: totalCashHome == null ? (held.error || (held.position ? 'not every currency has a board rate' : 'no ledger balances')) : 'the ledger’s balance at close' }
           ]} />
           <Card pad={0}>
-            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.cash.length} drawer(s)`}>Cash on hand at close — expected vs. counted</SecTitle></div>
-            <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>Units expected</th><th style={{ ...thS, textAlign: 'right' }}>CAD value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th></tr></thead>
+            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.cash.length} currenc${data.cash.length === 1 ? 'y' : 'ies'}`}>Cash on hand at close — the ledger vs. the count</SecTitle></div>
+            {!data.cash.length ? (
+              <div style={{ padding: '10px 16px 14px', fontSize: 11.5, color: CD.faint }}>{held.loading ? 'Reading the ledger…' : `This desk has no cash balances on the ledger${held.error ? ' — ' + held.error : ''}. Nothing is printed here rather than a figure from somewhere else.`}</div>
+            ) : (<>
+            <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>On the ledger</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th></tr></thead>
               <tbody>{data.cash.map(x => { const off = x.variance != null && Math.abs(x.variance) > 0.005; return (<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(x.units)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(x.cad, 'CAD')}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : num(x.counted)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance))}</td>
               </tr>); })}
               {(() => { const ctTot = data.cash.reduce((s, x) => s + (x.counted == null ? 0 : cadOf(x.counted, x.ccy)), 0); const vTot = data.cash.reduce((s, x) => s + (x.variance == null ? 0 : cadOf(x.variance, x.ccy)), 0); const anyCounted = data.cash.some(x => x.counted != null); const off = Math.abs(vTot) > 0.005; return (
-                <tr><td style={{ ...tdS, fontWeight: 700 }} colSpan={2}>Total · CAD</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(totalCashCad, 'CAD')}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{anyCounted ? fmt(ctTot, 'CAD') : '—'}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !anyCounted ? CD.faint : off ? CD.flag : CD.green }}>{anyCounted ? (Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, 'CAD')) : '—'}</td></tr>
+                <tr><td style={{ ...tdS, fontWeight: 700 }} colSpan={2}>{`Total · ${homeCcy}`}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy)}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{anyCounted ? fmt(ctTot, 'CAD') : '—'}</td><td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !anyCounted ? CD.faint : off ? CD.flag : CD.green }}>{anyCounted ? (Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, 'CAD')) : '—'}</td></tr>
               ); })()}
               </tbody></table>
-            <div style={{ fontSize: 10.5, color: CD.faint, padding: '8px 16px 2px' }}>Counted &amp; variance are pulled automatically from the till's drawer count. Currencies not yet counted show “— not counted”; count them in Till &amp; Cash Drawer for a complete close.</div>
+            <div style={{ fontSize: 10.5, color: CD.faint, padding: '8px 16px 2px' }}>“On the ledger” is the server's balance for this branch's drawer and safe — not a figure derived here. Counted &amp; variance come from the till's own drawer count; currencies not yet counted show “— not counted”, and a currency the branch has never published a rate for cannot be valued and says so.</div>
+            </>)}
           </Card>
           <Cols>
             <Card><SecTitle>Activity by type</SecTitle><Bars data={data.byType} fmtV={v => fmt(v, 'CAD')} /></Card>
@@ -413,13 +486,13 @@
         return (<div>
           <DocHead title="FINTRAC / LCTR Compliance Pack" subtitle="Large Cash Transaction Reports, structuring watch and KYC exceptions" rangeLabel={effRangeLabel} />
           <KpiRow items={[
-            { label: 'Reportable deals', value: data.reportable.length, sub: `≥ ${fmt(THRESHOLD, 'CAD')}` },
+            { label: 'Reportable deals', value: data.reportable.length, sub: `≥ ${limit.label}` },
             { label: 'LCTRs filed', value: data.filed, accent: CD.green },
             { label: 'Open / unfiled', value: data.reportable.length - data.filed, accent: data.reportable.length - data.filed ? CD.flag : CD.green },
             { label: 'Structuring watch', value: data.stru.length, accent: data.stru.length ? CD.amber : CD.ink }
           ]} />
           <Card pad={0}>
-            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.reportable.length} record(s)`}>Reportable transactions — LCTR ≥ {fmt(THRESHOLD, 'CAD')}</SecTitle></div>
+            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.reportable.length} record(s)`}>Reportable transactions — {limit.code} ≥ {limit.label}</SecTitle></div>
             <table><thead><tr><th style={thS}>Ref</th><th style={thS}>Date</th><th style={thS}>Customer</th><th style={{ ...thS, textAlign: 'right' }}>Amount</th><th style={{ ...thS, textAlign: 'right' }}>CAD equiv</th><th style={{ ...thS, textAlign: 'center' }}>Status</th></tr></thead>
               <tbody>{data.reportable.map(r => (<tr key={r.id}>
                 <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{r.ref}</td>
@@ -450,7 +523,7 @@
             </Card>
           </Cols>
           <div style={{ fontSize: 11, color: CD.faint, lineHeight: 1.6, padding: '4px 2px' }}>
-            Prepared for FINTRAC record-keeping under the PCMLTFA. Large Cash Transaction Reports are required for single cash amounts of {fmt(THRESHOLD, 'CAD')} or more, with 24-hour aggregation. This pack is a working summary — verify each filing in the official portal.
+            Prepared for {regime.authority} record-keeping. {regime.largeLabel}s are required for single cash amounts of {limit.label} or more, with {regime.aggHours}-hour aggregation — this desk's own line, from its jurisdiction pack. This pack is a working summary; verify each filing in the official portal.
           </div>
           <Attest />
         </div>);
@@ -509,12 +582,12 @@
               {data.inP.length === 0 && <tr><td style={tdS} colSpan={9}>No records in this period.</td></tr>}
               </tbody></table>
           </Card>
-          <div style={{ fontSize: 11, color: CD.faint, padding: '2px' }}>RPT = reportable ≥ {fmt(THRESHOLD, 'CAD')} · STR = structuring watch · ID = KYC exception. Voided records are retained, struck through, and never deleted.</div>
+          <div style={{ fontSize: 11, color: CD.faint, padding: '2px' }}>RPT = reportable ≥ {limit.label} · STR = structuring watch · ID = KYC exception. Voided records are retained, struck through, and never deleted.</div>
         </div>);
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < TODAY) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
@@ -523,7 +596,7 @@
                 <td style={{ ...tdS, fontWeight: 500 }}>{n}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{c.idType || '—'}</td>
                 <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{c.idNum || '—'}</td>
-                <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < TODAY ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
+                <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: col, background: bg, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{st.toUpperCase()}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tx.length}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{v ? fmt(v, 'CAD') : '—'}</td>
@@ -605,8 +678,8 @@
             <div>
               <div style={{ fontSize: 11, color: CD.mute, marginBottom: 5 }}>Custom date range <span style={{ color: CD.faint }}>· overrides the period</span></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input type="date" value={scope.from} max={TODAY} onChange={e => setScope(s => ({ ...s, from: e.target.value }))} style={selSty} />
-                <input type="date" value={scope.to} max={TODAY} onChange={e => setScope(s => ({ ...s, to: e.target.value }))} style={selSty} />
+                <input type="date" value={scope.from} max={businessDate()} onChange={e => setScope(s => ({ ...s, from: e.target.value }))} style={selSty} />
+                <input type="date" value={scope.to} max={businessDate()} onChange={e => setScope(s => ({ ...s, to: e.target.value }))} style={selSty} />
               </div>
             </div>
           </div>

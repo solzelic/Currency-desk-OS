@@ -41,12 +41,86 @@ function filings(page: Page) {
   };
 }
 
-/* The four sub-threshold remittances the seeded book sends to one
-   beneficiary on one day — three different senders, none of them near the
-   line, and a beneficiary who collects $13,200. It is the case the whole
-   aggregation engine exists for, so it is the one worth filing here. */
+/* Four sub-threshold remittances to one beneficiary on one day — three
+   different senders, none of them near the line, and a beneficiary who
+   collects $13,200. It is the case the whole aggregation engine exists
+   for, so it is the one worth filing here.
+
+   THIS FILE WRITES THEM ITSELF, and that is a statement about the product
+   rather than a convenience. It used to lean on four rows of the demo book
+   the desk shipped with; that book has been deleted, because a new owner
+   should not have to work out which of the numbers on their screen are
+   fiction. What replaced it is the ledger — and a remittance still does
+   not reach the ledger. Cheque cashing, pay out, money orders, bill
+   payment and remittance all move drawer cash without posting (see
+   CASH_OWNERSHIP_INVARIANTS.md, "known scope limits"), so `cdos_rows_v1`
+   is genuinely where a remittance lives today and writing one here is
+   writing it where the desk keeps it.
+
+   When those deal types post, this setup should post them instead, and
+   the assertions below should not need to change at all. */
 const BENEFICIARY = "M. Carter · Cebu";
 const SEEDED_REFS = ["LT-260618-002", "LT-260618-008", "LT-260618-009", "LT-260618-010"];
+
+const SENDERS = ["Priya Nair", "Daniel Okafor", "Ana Ruiz", "Priya Nair"];
+const AMOUNTS = [3400, 3600, 3100, 3100];
+
+/** Put the day's four remittances in the desk's book, once. */
+async function seedTheAggregate(page: Page) {
+  const write = () =>
+    page.evaluate(
+      ({ refs, senders, amounts, beneficiary }) => {
+        const rows = JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]");
+        if (rows.some((r: any) => r.ref === refs[0])) return;
+        /* TODAY, not a fixed date. The desk used to carry `TODAY =
+           '2026-06-18'` and the demo book was written against it; the date
+           is the real clock now, and the whole point of a 24-hour window is
+           that it is 24 hours — deals from seven weeks ago are correctly
+           outside it and correctly not an obligation. */
+        const day = new Date().toISOString().slice(0, 10);
+        refs.forEach((ref: string, i: number) => {
+          rows.unshift({
+            id: 98000 + i, ref, date: day, time: `1${i}:05`,
+            customer: senders[i], beneficiary,
+            type: "Remittance — Send", inCcy: "CAD", inAmt: amounts[i], rate: 1,
+            outCcy: "PHP", outAmt: amounts[i] * 40, fee: 9.99, teller: "R. Haddad",
+            notes: "", status: "posted", thread: [], filed: false, filedInfo: null,
+            ackStr: false, ackStrInfo: null, createdBy: "R. Haddad",
+            createdAt: `${day} 1${i}:05`,
+          });
+        });
+        localStorage.setItem("cdos_rows_v1", JSON.stringify(rows));
+      },
+      { refs: SEEDED_REFS, senders: SENDERS, amounts: AMOUNTS, beneficiary: BENEFICIARY },
+    );
+  const present = () =>
+    page.evaluate(
+      (ref) =>
+        JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]")
+          .some((r: any) => r && r.ref === ref),
+      SEEDED_REFS[0],
+    );
+
+  /* Written more than once, on purpose. The desk replicates its `cdos_*`
+     stores to the server as tenant state and restores them a beat after the
+     page comes up — so a book written before that lands is replaced by the
+     restored copy rather than added to. There is no event to wait on, so
+     this writes, checks it survived, and writes again if it did not.
+
+     The retry is the honest shape of the thing: this is a deal type that
+     does not reach the ledger, so the only place to put it is a store the
+     desk itself is still syncing. When remittances post (see
+     CASH_OWNERSHIP_INVARIANTS.md, "known scope limits") this becomes a
+     POST and the race disappears with it. */
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await write();
+    await page.waitForTimeout(750);
+    if (await present()) break;
+  }
+  expect(await present(), "the desk's book kept the remittances").toBe(true);
+  await page.reload();
+  await expect.poll(present, { timeout: 30_000 }).toBe(true);
+}
 
 async function openCompliance(page: Page) {
   await page.getByText(/^Compliance$/).first().click();
@@ -91,6 +165,7 @@ test("a report sealed at the counter is a row on the ledger", async ({ page }) =
   const book = filings(page);
   expect((await book.all()).filings).toHaveLength(0);
 
+  await seedTheAggregate(page);
   await openCompliance(page);
   await tab(page, /aggregation/i).click();
   await rendered(page, /The 24-hour rule, handled for you/i);
@@ -162,26 +237,18 @@ test("a filed aggregate that takes on a later deal reopens, and the sealed origi
      Waited for first: the OS restores its saved state a beat after the page
      comes up, and writing the book before it has been restored replaces it
      with a one-row book instead of adding to it. */
-  await expect
-    .poll(
-      () =>
-        page.evaluate(
-          () => JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]").length,
-        ),
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(5);
+  await seedTheAggregate(page);   // idempotent; this test signs in fresh
   await page.evaluate(() => {
     const rows = JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]");
     if (rows.some((r: any) => r.ref === "LT-260618-099")) return;
     rows.unshift({
-      id: 99001, ref: "LT-260618-099", date: "2026-06-18", time: "16:40",
+      id: 99001, ref: "LT-260618-099", date: new Date().toISOString().slice(0, 10), time: "16:40",
       customer: "Priya Nair", beneficiary: "M. Carter · Cebu",
       type: "Remittance — Send", inCcy: "CAD", inAmt: 2500, rate: 1,
       outCcy: "PHP", outAmt: 100000, fee: 9.99, teller: "R. Haddad",
       notes: "", status: "posted", thread: [], filed: false, filedInfo: null,
       ackStr: false, ackStrInfo: null, createdBy: "R. Haddad",
-      createdAt: "2026-06-18 16:40",
+      createdAt: new Date().toISOString().slice(0, 10) + " 16:40",
     });
     localStorage.setItem("cdos_rows_v1", JSON.stringify(rows));
   });

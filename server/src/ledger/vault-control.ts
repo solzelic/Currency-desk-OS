@@ -32,6 +32,7 @@ import type pg from "pg";
 import { acquire, currentBasis, dispose, ensureBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
+import { withSerializationRetry } from "./retry.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 
 export type VaultCurrency = "CAD" | "USD" | "EUR" | "GBP";
@@ -495,7 +496,11 @@ export class VaultControlService {
   /* Money crossing the desk's outer boundary: a wholesale delivery in, a
      bank deposit out. Nothing else on the ledger balances against it,
      which is exactly what makes it the boundary. */
-  async receive(actor: LedgerActor, input: ReceiveInput) {
+  receive(actor: LedgerActor, input: ReceiveInput) {
+    return withSerializationRetry(() => this.receiveOnce(actor, input));
+  }
+
+  private async receiveOnce(actor: LedgerActor, input: ReceiveInput) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
@@ -662,7 +667,11 @@ export class VaultControlService {
 
   /* An armoured run between two branches. Two legs, one transaction: the
      money is never in both strong rooms and never in neither. */
-  async run(actor: LedgerActor, input: RunInput) {
+  run(actor: LedgerActor, input: RunInput) {
+    return withSerializationRetry(() => this.runOnce(actor, input));
+  }
+
+  private async runOnce(actor: LedgerActor, input: RunInput) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");

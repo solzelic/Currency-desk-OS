@@ -6,7 +6,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate, THRESHOLD } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, crossRate, reportingLimit } = window.CDOS;
   const T = window.CDOS._transfers;
   const { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load,
     FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, cadOf, flagOf,
@@ -23,7 +23,8 @@
     const [filter, setFilter] = useState('active');
     const benName = (id) => { const b = beneficiaries.find(x => x.id === id); return b ? b.name : null; };
     const corOf = (id) => corridors.find(c => c.id === id) || {};
-    const threshold = (settings && settings.threshold) || THRESHOLD;   // cross-border reporting line (Settings › Transfers)
+    const limit = reportingLimit(settings);   // cross-border reporting line, from the desk's pack
+    const threshold = limit.amount;
     const counts = useMemo(() => {
       const c = { active: 0, hold: 0, paid: 0, all: transfers.length };
       transfers.forEach(t => { if (t.status === 'hold') c.hold++; else if (t.status === 'paid') c.paid++; else if (t.status !== 'cancelled') c.active++; });
@@ -44,7 +45,7 @@
         <button onClick={onNew} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> New transfer</button>
       </div>
 
-      {reportableOpen > 0 && <div className="flex items-center gap-2 px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}><Ic n="shield" s={14} c={CD.flag} /><span className="text-[12px]">{reportableOpen} open transfer{reportableOpen === 1 ? '' : 's'} ≥ {fmt(THRESHOLD, 'CAD')} — file the cross-border EFT report before month-end.</span></div>}
+      {reportableOpen > 0 && <div className="flex items-center gap-2 px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}><Ic n="shield" s={14} c={CD.flag} /><span className="text-[12px]">{reportableOpen} open transfer{reportableOpen === 1 ? '' : 's'} ≥ {reportingLimit(settings).label} — file the cross-border EFT report before month-end.</span></div>}
 
       <div className="flex flex-wrap gap-1.5 mb-3">
         {FILTERS.map(([id, label, n]) => <button key={id} onClick={() => setFilter(id)} className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" style={{ borderRadius: 8, border: `1px solid ${filter === id ? 'transparent' : CD.line}`, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute }}>{label}{n > 0 && <span className="text-[10px] px-1 py-0.5" style={{ background: filter === id ? 'var(--cd-on-ink-faint)' : CD.lineSoft, borderRadius: 4, fontFamily: 'Space Mono' }}>{n}</span>}</button>)}
@@ -145,7 +146,7 @@
   function Reports({ transfers, beneficiaries, corridors, settings, me, log }) {
     const benName = (id) => { const b = beneficiaries.find(x => x.id === id); return b ? b.name : '—'; };
     const corOf = (id) => corridors.find(c => c.id === id) || {};
-    const threshold = settings.threshold || THRESHOLD;
+    const threshold = reportingLimit(settings).amount;
     const eft = useMemo(() => transfers.filter(t => t.status !== 'cancelled').map(t => ({ t, cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD') })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
 

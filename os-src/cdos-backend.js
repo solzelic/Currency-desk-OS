@@ -63,6 +63,7 @@
         VAULT_ALREADY_INITIALIZED: "This vault already has an opening position. Change it with a recorded movement, not by restating it.",
         TILL_ALREADY_ACTIVE: "This till already has an open session.",
         IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
+        LEDGER_BUSY: "Another change to this till is being recorded. Nothing was posted — try again in a moment.",
         OBLIGATION_ALREADY_FILED: "This report has already been sealed on the ledger. A correction is filed as a new report linked to the original — the sealed copy is never replaced.",
         REPORT_NOT_IN_PACK: "Your jurisdiction pack has no such report, so this desk cannot file one.",
         FILING_NOT_FOUND: "That filed report is not on this desk's record.",

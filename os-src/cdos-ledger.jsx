@@ -10,9 +10,25 @@
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
   const {
-    CD, Ic, TYPES, CCY, THRESHOLD, TODAY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
-    computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn
+    CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
+    computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
+    Absent, businessDate, reportingLimit, useDeskFacts
   } = window.CDOS;
+
+  /* THE REPORTING LINE, ONCE.
+
+     This file used to flag rows, warn tellers, size a stat card and print
+     a report footer against `THRESHOLD` — a hardcoded 10,000 in Canadian
+     dollars — while Compliance, LCTR, KYC and the Dashboard all honoured
+     the owner's setting through getRegime(). The same desk flagged at two
+     different numbers on two different screens, and a UAE desk on 55,000
+     AED got a Canadian figure with a dollar sign in front of it.
+
+     `limitOf(settings).amount` is null when no line has been stated, and
+     every call site below is careful about it: a threshold nobody set
+     flags nothing and SAYS so, rather than flagging everything against a
+     number the desk never chose. */
+  const limitOf = (settings) => reportingLimit(settings);
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   // overlays portal to the document root so the window's stacking context
@@ -93,20 +109,21 @@
       });
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
-      const daysSince = lastVisit ? Math.round((Date.parse(TODAY) - Date.parse(lastVisit)) / 86400000) : null;
+      const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;
       return { count: h.length, total, windowCad, winDays, lastVisit, daysSince, topCcy };
     }, [name, live, settings]);
 
     const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
+    const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
     const idOk = !idMissing && !idExpired;
     const idTone = idOk ? CD.green : CD.flag;
     const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID verified';
     const maskedId = rec && rec.idNum ? '••••' + String(rec.idNum).slice(-3) : '';
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-    const nearThreshold = s.windowCad >= THRESHOLD * 0.7 && s.windowCad < THRESHOLD;
-    const overThreshold = s.windowCad >= THRESHOLD;
+    const limit = limitOf(settings);
+    const nearThreshold = limit.amount != null && s.windowCad >= limit.amount * 0.7 && s.windowCad < limit.amount;
+    const overThreshold = limit.amount != null && s.windowCad >= limit.amount;
     const lastLabel = s.daysSince == null ? 'First visit' : s.daysSince === 0 ? 'In today already' : s.daysSince === 1 ? 'Yesterday' : `${s.daysSince} days ago`;
 
     return (
@@ -134,7 +151,7 @@
         {(overThreshold || nearThreshold) && (
           <div className="flex items-center gap-1.5 px-3.5 py-2 text-[11px]" style={{ borderTop: `1px solid ${CD.lineSoft}`, background: overThreshold ? CD.flagSoft : CD.amberSoft, color: overThreshold ? CD.flag : 'var(--cd-brass-text)' }}>
             <Ic n="shield" s={12} c={overThreshold ? CD.flag : 'var(--cd-brass-text)'} />
-            {overThreshold ? `Already ${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — watch for structuring on this deal.` : `${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — getting close to the ${fmt(THRESHOLD, 'CAD')} line.`}
+            {overThreshold ? `Already ${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — watch for structuring on this deal.` : `${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — getting close to the ${limit.label} line.`}
           </div>
         )}
       </div>
@@ -272,13 +289,14 @@
     // changing the pair invalidates a lock and any hand-price
     const resetPricing = () => { setLock(null); setOverride(false); setManualRate(''); };
     const swap = () => { setInCcy(outCcy); setOutCcy(inCcy); resetPricing(); };
-    const lockRate = () => { const mins = (settings && settings.rateLockMins) || 15; const seq = live.filter(r => r.date === TODAY).length + 1; setOverride(false); setManualRate(''); setLock({ rate: pricing.deskRate, until: Date.now() + mins * 60000, ref: 'Q-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0'), mins }); };
+    const lockRate = () => { const mins = (settings && settings.rateLockMins) || 15; const seq = live.filter(r => r.date === businessDate()).length + 1; setOverride(false); setManualRate(''); setLock({ rate: pricing.deskRate, until: Date.now() + mins * 60000, ref: 'Q-' + String(businessDate()).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0'), mins }); };
     const lockSecsLeft = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
     // live compliance preview (in CAD-equivalent for the threshold test)
     const inCadEquiv = inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1);
-    const single = inCadEquiv >= THRESHOLD;
+    const limit = limitOf(settings);
+    const single = limit.amount != null && inCadEquiv >= limit.amount;
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
       return live.filter(o => o.customer === customer).reduce((s, o) => {
@@ -286,11 +304,11 @@
         return s + cad;
       }, 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
-    const structuring = !single && customer && recentTotal >= THRESHOLD;
+    const structuring = !single && customer && limit.amount != null && recentTotal >= limit.amount;
     const rec = clients[customer];
     const kyc = newClient
       ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
-      : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < TODAY ? 'ID expired' : 'ok'));
+      : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok'));
     const idRequired = single || inCadEquiv >= 3000;     // FINTRAC: ID at $3k, LCTR at $10k
     const idBlocked = idRequired && kyc !== 'ok';
 
@@ -308,8 +326,8 @@
         setClients(c => ({ ...c, [customer]: { idType: nc.idType, idNum: nc.idNum, idExpiry: nc.idExpiry, photo: null } }));
         log('Client created', `${customer} · ${nc.idType || 'no ID'}`);
       }
-      const seq = live.filter(r => r.date === TODAY).length + 1;
-      const ref = mkRef(TODAY, seq);
+      const seq = live.filter(r => r.date === businessDate()).length + 1;
+      const ref = mkRef(businessDate(), seq);
       const tx = newTx({
         ref, type, customer: customer || 'Walk-in (no client)',
         inCcy, inAmt: amtN, rate: isCheque ? 1 : rateN, outCcy: isCheque ? inCcy : outCcy,
@@ -330,10 +348,10 @@
       // a cashed cheque feeds the SAME clearance system the Cheques desk uses
       if (isCheque && setCheques && _K) {
         const net = +(amtN - chequeFee).toFixed(2);
-        const holdUntil = _K.addDays(TODAY, chequeType.holdDays || 0);
-        const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
-        const cref = 'CHQ-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqC).padStart(3, '0');
-        const chq = { id: 'c' + Date.now(), ref: cref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer || 'Walk-in (no client)', typeId: chequeType.id, typeLabel: chequeType.label, ccy: 'CAD', amount: amtN, feeCad: chequeFee, netCad: net, endorsed: true, image: null, holdDays: chequeType.holdDays || 0, receivedDate: TODAY, holdUntil, status: 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cashed at the till · ${(chequeType.holdDays || 0) === 0 ? 'no hold' : chequeType.holdDays + '-day hold'}` }], txId: tx.id, txRef: ref, createdBy: me.name };
+        const holdUntil = _K.addDays(businessDate(), chequeType.holdDays || 0);
+        const seqC = (cheques || []).filter(c => c.receivedDate === businessDate()).length + 1;
+        const cref = 'CHQ-' + String(businessDate()).slice(2).replace(/-/g, '') + '-' + String(seqC).padStart(3, '0');
+        const chq = { id: 'c' + Date.now(), ref: cref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer || 'Walk-in (no client)', typeId: chequeType.id, typeLabel: chequeType.label, ccy: 'CAD', amount: amtN, feeCad: chequeFee, netCad: net, endorsed: true, image: null, holdDays: chequeType.holdDays || 0, receivedDate: businessDate(), holdUntil, status: 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cashed at the till · ${(chequeType.holdDays || 0) === 0 ? 'no hold' : chequeType.holdDays + '-day hold'}` }], txId: tx.id, txRef: ref, createdBy: me.name };
         setCheques(list => [chq, ...(list || [])]);
       }
       log('Transaction recorded', `${ref} · ${customer || 'walk-in'} · ${num(amtN)} ${inCcy} → ${num(tx.outAmt)} ${tx.outCcy}${isCheque ? ' · cheque on hold' : ''}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor override' : ''}`);
@@ -343,7 +361,7 @@
     // printable customer quote — the rate-lock take-away
     const printQuote = () => {
       const lk = lockLive; const mins = (settings && settings.rateLockMins) || 15;
-      const ref = lk ? lk.ref : 'Q-' + String(TODAY).slice(2).replace(/-/g, '') + '-PRE';
+      const ref = lk ? lk.ref : 'Q-' + String(businessDate()).slice(2).replace(/-/g, '') + '-PRE';
       const until = lk ? new Date(lk.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : `${mins} min from print`;
       const sideLabel = pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy} cross`;
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
@@ -382,7 +400,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
           {/* header */}
           <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="plus" s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {TODAY}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="plus" s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {businessDate()}</div></div></div>
             <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
@@ -404,7 +422,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < TODAY ? 'ID expired' : 'verified'); const ok = st === 'verified'; return (
+                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'verified'); const ok = st === 'verified'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
                         <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
                       </button>); })}
@@ -470,7 +488,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   </div>
                   <Field label="Maker (who wrote it)"><input value={maker} onChange={e => setMaker(e.target.value)} placeholder="Payer name / business" className="w-full text-sm px-2.5 py-2 outline-none" style={inputSty} /></Field>
                   <div className="flex items-center justify-between gap-2 p-2.5" style={{ background: CD.amberSoft, borderRadius: 9 }}>
-                    <span className="text-[11px]" style={{ color: 'var(--cd-brass-text)' }}>{amtN > 0 ? <>Front <b>{fmt(outAmt, 'CAD')}</b> · keep <b>{fmt(chequeFee, 'CAD')}</b>{(chequeType.holdDays || 0) > 0 && _K ? <> · holds to {_K.addDays(TODAY, chequeType.holdDays)}</> : ' · no hold'}</> : 'Enter the cheque amount'}</span>
+                    <span className="text-[11px]" style={{ color: 'var(--cd-brass-text)' }}>{amtN > 0 ? <>Front <b>{fmt(outAmt, 'CAD')}</b> · keep <b>{fmt(chequeFee, 'CAD')}</b>{(chequeType.holdDays || 0) > 0 && _K ? <> · holds to {_K.addDays(businessDate(), chequeType.holdDays)}</> : ' · no hold'}</> : 'Enter the cheque amount'}</span>
                     {onOpenCheques && <button onClick={() => { onClose(); onOpenCheques(); }} className="text-[11px] font-medium flex-none flex items-center gap-1" style={{ color: CD.ink }}><Ic n="arrowright" s={12} /> Full capture</button>}
                   </div>
                 </div>
@@ -543,7 +561,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {(single || structuring || idRequired) && (
               <div className="p-3 space-y-2" style={{ background: single ? CD.flagSoft : structuring ? CD.amberSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${single ? CD.flag : structuring ? CD.amber : CD.line}` }}>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
-                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable — pay-in ≈ {fmt(inCadEquiv, 'CAD')} (≥ {fmt(THRESHOLD, 'CAD')}). A Large Cash Transaction Report will be required.</div>}
+                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable — pay-in ≈ {fmt(inCadEquiv, 'CAD')} (≥ {limit.label}). A Large Cash Transaction Report will be required.</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmt(recentTotal, 'CAD')} with this deal.</div>}
                 {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
               </div>
@@ -552,7 +570,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {single && (
               <div className="p-3 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 10 }}>
                 <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {(window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'LCTR')}</span></div>
-                <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {fmt(THRESHOLD, 'CAD')}. Capture these now, while the customer is here — it pre-fills the filing in Compliance so nothing is chased down later.</div>
+                <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture these now, while the customer is here — it pre-fills the filing in Compliance so nothing is chased down later.</div>
                 <Field label="Purpose of transaction"><input value={cap.purpose} onChange={e => setCap(s => ({ ...s, purpose: e.target.value }))} placeholder="e.g. vacation funds, invoice settlement, family support" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.purpose.trim() ? CD.line : CD.flag }} /></Field>
                 <Field label="Source of funds"><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, business revenue, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></Field>
                 <div>
@@ -772,7 +790,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       if (!isDuplicate) {
         const corrected = newTx({
           ...row, id: Date.now() + Math.floor(Math.random() * 1000), ref: newRef,
-          date: TODAY, time: nowTime(), inCcy, outCcy, inAmt: amtN, rate: effRate, outAmt,
+          date: businessDate(), time: nowTime(), inCcy, outCcy, inAmt: amtN, rate: effRate, outAmt,
           fee: feeN, customer: customer || 'Walk-in (no client)',
           midRate: sameCcy ? row.midRate : (priced ? priced.midRate : null),
           spreadCad: sameCcy ? row.spreadCad : (priced ? priced.marginCad : null),
@@ -1321,6 +1339,12 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   ===================================================================== */
   function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
+    /* The desk's own trading day and its own reporting line, both from the
+       server. `deskFacts` changes when either arrives, which is what makes
+       the flags below re-derive against the real threshold rather than
+       against the "—" this screen paints for its first half second. */
+    const deskFacts = useDeskFacts();
+    const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
     const [q, setQ] = useState('');
     const [tf, setTf] = useState('All');
     const [view, setView] = useState('open');     // open (posted) | RPT | STR | ID | void | all
@@ -1370,14 +1394,14 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [rangeMenu, setRangeMenu] = useState(false);
     const rangeRef = useRef(null);
     useEffect(() => { if (!rangeMenu) return; const h = (e) => { if (rangeRef.current && !rangeRef.current.contains(e.target)) setRangeMenu(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [rangeMenu]);
-    const years = useMemo(() => { const ys = new Set(rows.map(r => +String(r.date).slice(0, 4))); const cur = +String(TODAY).slice(0, 4); for (let y = cur; y >= cur - 6; y--) ys.add(y); return Array.from(ys).filter(Boolean).sort((a, b) => b - a); }, [rows]);
+    const years = useMemo(() => { const ys = new Set(rows.map(r => +String(r.date).slice(0, 4))); const cur = +String(businessDate()).slice(0, 4); for (let y = cur; y >= cur - 6; y--) ys.add(y); return Array.from(ys).filter(Boolean).sort((a, b) => b - a); }, [rows]);
     const rangeLabel = typeof range === 'number' ? String(range) : (RANGES.find(r => r[0] === range) || [, 'All time'])[1];
     const inRange = (date) => {
       if (range === 'all') return true;
       if (typeof range === 'number') return String(date).slice(0, 4) === String(range);
       const days = (RANGES.find(r => r[0] === range) || [])[2];
       if (days == null) return true;
-      const ago = dDiff(date, TODAY);
+      const ago = dDiff(date, businessDate());
       return ago >= -0.0001 && ago <= days;
     };
 
@@ -1409,7 +1433,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     // day-closed guard: block opening the New-Transaction modal
     const openNew = () => { if (dayClosed) { onOpenDayClose && onOpenDayClose(); return; } setModal(true); };
 
-    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
+    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     const detail = detailId != null ? rows.find(r => r.id === detailId) : null;
     // surface a Back control in the window title bar (next to the traffic
     // lights) whenever a transaction page is open over the list.
@@ -1538,7 +1562,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
 <div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume (CAD)</div><div class="v">${fmt(vol, 'CAD')}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${fmt(fees, 'CAD')}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date / time</th><th>Customer</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th>Teller</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="9" style="padding:14px;color:#999;">No records match the current filters.</td></tr>'}</tbody></table>
-<div class="ft">RPT = reportable ≥ ${fmt(THRESHOLD, 'CAD')} · STR = structuring watch · ID = KYC exception. Volume shown in CAD-equivalent at live spot. ${n} posted of ${recs.length} shown.</div>
+<div class="ft">RPT = reportable ≥ ${esc(limit.label)} · STR = structuring watch · ID = KYC exception. Volume shown in CAD-equivalent at live spot. ${n} posted of ${recs.length} shown.</div>
 </body></html>`);
       w.document.close();
       setTimeout(() => { w.focus(); w.print(); }, 400);
@@ -1588,9 +1612,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             </div>
           )}
         </div>
-        <StatCard label="Pay-in volume" value={fmt(stats.vol, 'CAD')} sub="view breakdown ›" onClick={() => setBreakdown('volume')} />
-        <StatCard label="Fees collected" value={fmt(stats.fees, 'CAD')} sub="view earnings ›" onClick={() => setBreakdown('fees')} />
-        <StatCard label={`Reportable ≥ ${fmt(THRESHOLD, 'CAD')}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
+        {/* Absent, not zero. A range with no records has no volume and no
+            fees; "$0.00" is a claim that the desk took in nothing, which
+            is a different statement and the one that used to be made over
+            a demo book. See docs/ABSENT_FIGURES.md. */}
+        <StatCard label="Pay-in volume" value={stats.n ? fmt(stats.vol, 'CAD') : '—'} sub={stats.n ? 'view breakdown ›' : 'nothing posted in this range'} onClick={() => stats.n && setBreakdown('volume')} />
+        <StatCard label="Fees collected" value={stats.n ? fmt(stats.fees, 'CAD') : '—'} sub={stats.n ? 'view earnings ›' : 'nothing posted in this range'} onClick={() => stats.n && setBreakdown('fees')} />
+        <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>
 
       {/* toolbar */}
@@ -1657,8 +1685,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         <div className="ml-auto flex items-center gap-3 text-[11.5px]" style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>
           <span><b style={{ color: CD.ink }}>{result.count}</b> {result.count === 1 ? 'record' : 'records'}</span>
           <span style={{ width: 1, height: 11, background: CD.line }}></span>
-          <span>{fmt(result.vol, 'CAD')} <span style={{ color: CD.faint }}>vol</span></span>
-          <span>{fmt(result.fees, 'CAD')} <span style={{ color: CD.faint }}>fees</span></span>
+          <span>{result.posted ? fmt(result.vol, 'CAD') : '—'} <span style={{ color: CD.faint }}>vol</span></span>
+          <span>{result.posted ? fmt(result.fees, 'CAD') : '—'} <span style={{ color: CD.faint }}>fees</span></span>
         </div>
       </div>
 
@@ -1714,7 +1742,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
      TAGGED — desktop app: every transaction flagged for follow-up
   ===================================================================== */
   function Tagged({ rows, clients, settings, onOpen }) {
-    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
+    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     const tagged = useMemo(() => rows.filter(r => r.tagged).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows]);
     return (<div className="p-4">
       <div className="flex items-center gap-2 mb-3">

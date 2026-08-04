@@ -17,7 +17,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate, THRESHOLD } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, crossRate } = window.CDOS;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
   const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));

@@ -90,8 +90,31 @@ coverage:
   a session cannot reach another BRANCH's tills, because a workspace is
   resolved from the user's home branch rather than from the branches they are
   authorized on. An owner with two locations must have somebody at each.
-- The ledger now carries cost — a per-location average, the lots behind it, and
+- The ledger carries cost — a per-location average, the lots behind it, and
   every event that moved it, under weighted average or FIFO as the desk
-  chooses (see COST_BASIS.md). What has not moved is the SCREENS: the Vault's
-  average-cost column and unrealized P&L are still computed in the browser, so
-  a desk can be shown a basis the ledger would not agree with.
+  chooses (see COST_BASIS.md). The screens now read it: the Vault's
+  average-cost column, its unrealized P&L and the Dashboard's earnings all
+  come from `GET /api/ledger/position` and `GET /api/ledger/summary`. Where a
+  basis was never recorded there is none to show, and the screen says so
+  rather than inventing one — see ABSENT_FIGURES.md.
+- The Till's "expected" figure in the standalone (no-server) mode still calls
+  `window.CDOS.holdings`, which no longer derives anything and answers null.
+  A desk that cannot reach the ledger has no expected float and that screen
+  should say so — `os-src/cdos-till.jsx:485`.
+
+## Where the figures come from
+
+There is one book, and these are the reads against it. Nothing on a screen
+may compute a cash figure for itself:
+
+| question | route |
+|---|---|
+| what is in this drawer | `GET /api/ledger/till-balances` |
+| what is in this safe | `GET /api/ledger/vault` |
+| what does this branch hold, and what did it cost | `GET /api/ledger/position` |
+| what was posted, and what did it earn | `GET /api/ledger/summary` |
+| which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
+
+What a screen does when one of those has no answer is its own rule, and it
+is written down in `ABSENT_FIGURES.md`. The short version: absent, visibly —
+never zero.

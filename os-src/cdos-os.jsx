@@ -709,11 +709,13 @@
     const hydratedRef = useRef(false);              // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
 
-    // №02 (Roadmap v2): the book + client roster persist like every other store.
-    // The seed is a first-run fallback only — refresh no longer resets the desk;
-    // wiping is the explicit "Reset demo data" control in Settings → Business.
-    const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) && r.length ? r : seedRows(); } catch (e) { return seedRows(); } });
-    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) && Object.keys(r).length ? r : seedClients(); } catch (e) { return seedClients(); } });
+    /* The book and the client roster. There is no seed any more: a desk that
+       has posted nothing shows nothing, rather than 38 invented deals and 18
+       invented customers that a new owner has to recognise as fiction before
+       they can trust anything else on the screen. What is here is filled from
+       the ledger — see `loadLedger` below. */
+    const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
+    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
     useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
@@ -979,8 +981,15 @@
       if (Object.keys(ledger).length) {
         const numeric = Object.fromEntries(
           Object.entries(ledger).map(([ccy2, value]) => [ccy2, Number(value)]));
+        /* REPLACE, never merge. Spreading the ledger's balances OVER the
+           branch record's kept every currency the ledger had never heard of:
+           a desk that recorded CAD, USD and EUR into its safe came back with
+           INR, PHP, CNY and GBP still standing underneath, under a header
+           reading "on the ledger". Six invented figures and three real ones,
+           indistinguishable, on the screen that says what is in the safe.
+           What the ledger returns is the whole of what the safe holds. */
         setBranches(list => list.map(b => b.id !== (station && station.branchId) ? b
-          : { ...b, vault: { ...(b.vault || {}), ...numeric } }));
+          : { ...b, vault: numeric }));
       }
       return result;
     };
@@ -1801,7 +1810,22 @@
     // their own, so only the always-mounted stores need reseating here.
     const reseatFromStorage = () => {
       const rd = (k, f) => { try { const v = localStorage.getItem(k); return v == null ? f : JSON.parse(v); } catch (e) { return f; } };
-      setRows(rd('cdos_rows_v1', []));
+      /* The saved blob is a THIRD copy of the transaction list, behind the
+         ledger and the Ledger app's own fetch of it. Reseating it wholesale
+         raced that fetch and won: the Ledger showed one record while the
+         ledger held two. So anything already carrying a server id is kept —
+         the book is the book — and the blob supplies only what the ledger has
+         never heard of, which today is every deal type that does not post
+         yet: cheques, remittances, money orders, bill payments. When those
+         post, this whole store goes. */
+      setRows(current => {
+        const saved = rd('cdos_rows_v1', []);
+        if (!Array.isArray(saved)) return current;
+        const fromLedger = (current || []).filter(r => r && r.serverTransactionId);
+        if (!fromLedger.length) return saved;
+        const known = new Set(fromLedger.map(r => r.serverTransactionId));
+        return fromLedger.concat(saved.filter(r => !r || !known.has(r.serverTransactionId)));
+      });
       setClients(rd('cdos_clients_v1', {}));
       const svS = rd('cdos_settings', null);
       if (svS) setSettings(s => ({ ...s, ...svS, billingPlan: s.billingPlan || svS.billingPlan }));
@@ -2042,7 +2066,7 @@
         case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig }} />;
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
-        case 'dashboard': return <Dashboard rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
+        case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
         case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
