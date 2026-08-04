@@ -6,6 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { acquire, currentBasis, dispose, ensureBasis } from "./cost-basis.js";
+import { pairAllowed, resolvePack } from "./jurisdiction.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
@@ -60,9 +61,6 @@ export class LedgerError extends Error {
   }
 }
 
-/* The pilot books in CAD. Named rather than inlined so the jurisdiction
-   work has one place to change when home currency becomes per-entity. */
-const HOME_CURRENCY = "CAD";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -268,6 +266,15 @@ export class LedgerService {
          nobody paid; carrying stock at it books a gain the instant a trade
          happens and leaves the desk unable to say whether it made money on
          a currency over a week. See docs/COST_BASIS.md. */
+      /* What currency is this desk's book kept in? Asked, not assumed. A
+         London entity carries pack-gb-v1 and books in GBP; the same code
+         path serves both because nothing here knows what Canada is. */
+      const pack = await resolvePack(client, actor.legalEntityId);
+      const home = pack.homeCurrency;
+      const permitted = pairAllowed(pack, quote.from, quote.to);
+      if (!permitted.ok)
+        throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
+
       const costScope = {
         tenantId: actor.tenantId,
         legalEntityId: actor.legalEntityId,
@@ -275,8 +282,8 @@ export class LedgerService {
         locationKind: "till" as const,
         locationId: actor.tillId,
       };
-      const acquiring = quote.from !== HOME_CURRENCY;   // foreign came in
-      const disposing = quote.to !== HOME_CURRENCY;     // foreign went out
+      const acquiring = quote.from !== home;   // foreign came in
+      const disposing = quote.to !== home;     // foreign went out
       const basis = disposing
         ? await currentBasis(client, { ...costScope, currency: quote.to })
         : null;

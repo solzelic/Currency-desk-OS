@@ -187,6 +187,13 @@ export const legalEntities = pgTable(
     // MSB registration lives at the legal-entity level (per-jurisdiction)
     msbNumber: text("msb_number"),
     jurisdiction: text("jurisdiction").notNull().default("FINTRAC"),
+    /* Which country's rules this entity operates under, and the currency it
+       keeps its books in. Installed from the country chosen at onboarding —
+       see server/src/ledger/jurisdiction.ts. Nullable because entities
+       created before packs existed are backfilled by migration 011. */
+    homeCurrency: text("home_currency"),
+    jurisdictionPackId: text("jurisdiction_pack_id"),
+    jurisdictionPackVersion: integer("jurisdiction_pack_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],

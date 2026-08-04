@@ -37,7 +37,7 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     .where(and(eq(schema.tenants.id, DEMO.tenantId), isNull(schema.tenants.siteSlug)));
   await db
     .insert(schema.legalEntities)
-    .values({ id: DEMO.legalEntityId, tenantId: DEMO.tenantId, name: "York Currency Exchange Inc.", msbNumber: "M12345678", jurisdiction: "FINTRAC" })
+    .values({ id: DEMO.legalEntityId, tenantId: DEMO.tenantId, name: "York Currency Exchange Inc.", msbNumber: "M12345678", jurisdiction: "FINTRAC", homeCurrency: "CAD", jurisdictionPackId: "pack-ca-v1", jurisdictionPackVersion: 1 })
     .onConflictDoNothing();
   await db
     .insert(schema.branches)

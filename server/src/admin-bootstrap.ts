@@ -8,6 +8,7 @@
    ============================================================ */
 import { eq } from "drizzle-orm";
 import { schema } from "./db/index.js";
+import { packForCountry } from "./ledger/jurisdiction.js";
 import type { Db } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
 
@@ -20,7 +21,7 @@ export async function ensurePlatformAdmin(db: Db, email: string, password: strin
   const branchId = "br-platform";
   const workspaceId = "ws-platform-till";
   await db.insert(schema.tenants).values({ id: tenantId, name: "CurrencyDesk Platform", plan: "premium", siteSlug: "platform" }).onConflictDoNothing();
-  await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: "CurrencyDesk", jurisdiction: "FINTRAC" }).onConflictDoNothing();
+  await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: "CurrencyDesk", homeCurrency: packForCountry("CA").homeCurrency, jurisdictionPackId: packForCountry("CA").packId, jurisdictionPackVersion: 1, jurisdiction: "FINTRAC" }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "HQ" }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
   const id = `${tenantId}:${email}`;

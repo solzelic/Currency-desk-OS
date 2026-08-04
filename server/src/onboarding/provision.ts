@@ -18,6 +18,7 @@
 import { and, eq, notInArray } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
+import { packForCountry } from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
@@ -229,8 +230,15 @@ export async function provisionDesk(
   await db.insert(schema.tenants).values({
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup: spec.setup,
   }).onConflictDoNothing();
+  /* The country they picked installs the jurisdiction: its regulator, its
+     reporting thresholds, and the currency this desk keeps its books in.
+     Nothing downstream asks "is this Canada" — it asks the pack. */
+  const pack = packForCountry((spec.setup as Record<string, unknown>)?.country as string);
   await db.insert(schema.legalEntities).values({
     id: legalEntityId, tenantId, name: spec.legalName, msbNumber: spec.msbNumber, jurisdiction: spec.regulator,
+    homeCurrency: pack.homeCurrency,
+    jurisdictionPackId: pack.packId,
+    jurisdictionPackVersion: pack.version,
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();

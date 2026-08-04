@@ -14,6 +14,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
+import { packForCountry } from "../ledger/jurisdiction.js";
 import { publishStartingBoard } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessions.js";
@@ -1376,7 +1377,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if ((await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, b.ownerEmail)).limit(1)).length) return reply.code(409).send({ error: "email_in_use", detail: "That email already owns a desk." });
     const tenantId = "tnt-" + b.slug, legalEntityId = "le-" + b.slug, branchId = "br-" + b.slug + "-main", workspaceId = "ws-" + b.slug + "-till-01";
     await db.insert(schema.tenants).values({ id: tenantId, name: b.businessName, plan: b.plan, siteSlug: b.slug }).onConflictDoNothing();
-    await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, jurisdiction: "FINTRAC" }).onConflictDoNothing();
+    await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, homeCurrency: packForCountry("CA").homeCurrency, jurisdictionPackId: packForCountry("CA").packId, jurisdictionPackVersion: 1, jurisdiction: "FINTRAC" }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
     await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
     // a desk made by hand still has to arrive able to trade — same as one

@@ -150,6 +150,12 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   name text NOT NULL,
   msb_number text,
   jurisdiction text NOT NULL DEFAULT 'FINTRAC',
+  -- which country's rules this entity operates under, and the currency it
+  -- keeps its books in. Migration 011 adds these to existing databases; they
+  -- are here so a freshly created one has them from the start.
+  home_currency char(3),
+  jurisdiction_pack_id text,
+  jurisdiction_pack_version integer,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS legal_entities_tenant_idx ON legal_entities(tenant_id);
