@@ -194,6 +194,11 @@ export const legalEntities = pgTable(
     homeCurrency: text("home_currency"),
     jurisdictionPackId: text("jurisdiction_pack_id"),
     jurisdictionPackVersion: integer("jurisdiction_pack_version"),
+    /* How this desk costs its inventory — 'weighted_average' or 'fifo'.
+       Nullable on purpose: NULL is not a missing value, it means "follow
+       whatever the jurisdiction pack suggests", which is where a desk starts
+       and stays until an owner decides otherwise. See migration 014. */
+    costMethod: text("cost_method"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],

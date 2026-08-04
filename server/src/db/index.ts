@@ -156,8 +156,14 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   home_currency char(3),
   jurisdiction_pack_id text,
   jurisdiction_pack_version integer,
+  -- how this desk costs its inventory: 'weighted_average' or 'fifo'. NULL
+  -- means "follow the jurisdiction pack's suggestion". Migration 014 adds it
+  -- to existing databases; it is here because the test database is built from
+  -- this constant rather than from the migrations.
+  cost_method text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS cost_method text;
 CREATE INDEX IF NOT EXISTS legal_entities_tenant_idx ON legal_entities(tenant_id);
 CREATE TABLE IF NOT EXISTS branches (
   id text PRIMARY KEY,

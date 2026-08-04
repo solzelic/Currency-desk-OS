@@ -29,6 +29,11 @@ export type JurisdictionPack = {
   reportCurrency: string;
   allowCrossCurrency: boolean;
   permittedCurrencies: string[];
+  /* What this country's pack SUGGESTS inventory is costed by. A suggestion
+     only — `legal_entities.cost_method` overrides it, and an owner anywhere
+     may run FIFO whether their pack proposes it or not. See
+     server/src/ledger/cost-method.ts. */
+  defaultCostMethod: "weighted_average" | "fifo";
 };
 
 /* The pilot's pack, used only when an entity has somehow not been given one
@@ -48,6 +53,7 @@ const PILOT: JurisdictionPack = {
   reportCurrency: "CAD",
   allowCrossCurrency: true,
   permittedCurrencies: [],
+  defaultCostMethod: "weighted_average",
 };
 
 const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
@@ -65,6 +71,8 @@ const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
   permittedCurrencies: Array.isArray(row.permitted_currencies)
     ? (row.permitted_currencies as string[]).map((c) => String(c).toUpperCase())
     : [],
+  defaultCostMethod:
+    row.default_cost_method === "fifo" ? "fifo" : "weighted_average",
 });
 
 /**
