@@ -15,7 +15,7 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import { createSession, resolveSession, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { createSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { looksLikeCdId, normalizeCdId } from "../auth/cdid.js";
 import { tenantPlan } from "./tenant.js";
@@ -393,7 +393,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.get("/api/auth/me", async (req, reply) => {
-    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    /* A blocked desk's sessions stop working everywhere (see
+       auth/sessions.ts), and everywhere else that reads as a plain 401. On
+       the one call the OS makes to find out who it is talking to, say which
+       of the two it is — otherwise a suspended desk looks to its owner like
+       a browser that forgot them, and they ring up about the wrong thing. */
+    const resolved = await resolveSessionState(db, req.cookies[SESSION_COOKIE]);
+    if (resolved.state === "suspended") {
+      return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+    }
+    const who = resolved.state === "active" ? resolved.user : null;
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     return {
       user: {

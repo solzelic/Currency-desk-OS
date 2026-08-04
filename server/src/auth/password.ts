@@ -22,6 +22,17 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${N}$${r}$${p}$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
+/* A password somebody has to read down a phone line or copy off a screen.
+   No vowels, so it cannot form a word by accident; none of the characters
+   that look like each other when spoken or written down. Temporary by
+   construction — whoever receives it is made to pick their own. */
+export function temporaryPassword(): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = randomBytes(14);
+  const body = [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
+  return `${body.slice(0, 5)}-${body.slice(5, 10)}-${body.slice(10)}`;
+}
+
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split("$");
   if (parts.length !== 6 || parts[0] !== "scrypt") return false;

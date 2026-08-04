@@ -34,12 +34,41 @@ export interface SessionUser {
   mustChangePassword: boolean;
 }
 
-export async function resolveSession(db: Db, token: string | undefined): Promise<SessionUser | null> {
-  if (!token) return null;
+/* Why a session did not resolve, for the one caller that has something
+   useful to say about it. Everything else takes `resolveSession`, which
+   collapses both refusals into "no session" and so cannot be got wrong
+   by omission. */
+export type SessionState =
+  | { state: "none" }
+  | { state: "suspended"; user: SessionUser }
+  | { state: "active"; user: SessionUser };
+
+/* SUSPENSION IS CHECKED HERE, ON EVERY REQUEST, AND NOT BY DESTROYING SESSIONS.
+
+   Blocking a desk in the platform panel used to set `tenants.suspended` and
+   stop there. A new sign-in was refused, and every session already open kept
+   full write access until its cookie expired — so a desk blocked at ten in
+   the morning for publishing a 9% board went on publishing it all day. The
+   panel's own words are "blocking takes a desk offline", and they were false.
+
+   The alternative fix — revoke every session the moment somebody presses
+   Block — was rejected twice over. It races: a sign-in that lands a
+   millisecond after the revoke sweep, or a suspension applied by anything
+   that does not know to sweep (a support script, a restore, the next admin
+   route somebody writes), leaves the desk open with nothing to say so. And
+   it is destructive in a way blocking is not supposed to be: an operator who
+   blocks the wrong desk for ten minutes would have signed out every teller
+   mid-shift with drawers open, and unblocking cannot give those sessions
+   back. Reading the flag on the way past makes `tenants.suspended` the whole
+   truth — offline within one request, and back exactly as it was, cookies
+   and all, when the block is lifted. */
+export async function resolveSessionState(db: Db, token: string | undefined): Promise<SessionState> {
+  if (!token) return { state: "none" };
   const rows = await db
-    .select({ user: schema.staffUsers })
+    .select({ user: schema.staffUsers, suspended: schema.tenants.suspended })
     .from(schema.sessions)
     .innerJoin(schema.staffUsers, eq(schema.sessions.userId, schema.staffUsers.id))
+    .innerJoin(schema.tenants, eq(schema.staffUsers.tenantId, schema.tenants.id))
     .where(
       and(
         eq(schema.sessions.tokenHash, sha256(token)),
@@ -50,9 +79,9 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
     )
     .limit(1);
   const row = rows[0];
-  if (!row) return null;
+  if (!row) return { state: "none" };
   const u = row.user;
-  return {
+  const user: SessionUser = {
     id: u.id,
     staffId: u.staffId,
     name: u.name,
@@ -63,6 +92,12 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
     authorizedBranchIds: u.authorizedBranchIds,
     mustChangePassword: u.mustChangePassword,
   };
+  return row.suspended ? { state: "suspended", user } : { state: "active", user };
+}
+
+export async function resolveSession(db: Db, token: string | undefined): Promise<SessionUser | null> {
+  const resolved = await resolveSessionState(db, token);
+  return resolved.state === "active" ? resolved.user : null;
 }
 
 export async function revokeSession(db: Db, token: string | undefined): Promise<void> {

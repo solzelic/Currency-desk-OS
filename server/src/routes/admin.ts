@@ -17,7 +17,7 @@ import { schema } from "../db/index.js";
 import { packForCountry } from "../ledger/jurisdiction.js";
 import { publishStartingBoard } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
-import { resolveSession, revokeAllSessions, SESSION_COOKIE } from "../auth/sessions.js";
+import { resolveSessionState, revokeAllSessions, SESSION_COOKIE, type SessionState } from "../auth/sessions.js";
 import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
 import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
@@ -222,6 +222,15 @@ const staffRecipient = (p: typeof schema.staffUsers.$inferSelect, deskName: stri
 const publicOrigin = (): string =>
   (process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
 
+/* A session the panel may look at. `resolveSession` collapses "no session"
+   and "the desk is blocked" into null, which is right for every route a desk
+   user touches and wrong for exactly one caller — this one. See `gate`. */
+function platformSession(resolved: SessionState) {
+  return resolved.state === "none"
+    ? null
+    : { ...resolved.user, suspendedDesk: resolved.state === "suspended" };
+}
+
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
   // (having already sent 401/403).
@@ -229,12 +238,25 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      member of the platform team", which is right for the read-only shell
      around everything else. */
   async function gate(req: any, reply: any, need?: Permission) {
-    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
     if (!who) {
       reply.code(401).send({ error: "unauthenticated" });
       return null;
     }
     const me = await member(db, who.staffId);
+    /* Suspension is checked on the way past every request, and a platform
+       operator's own staff account sits on some tenant like anybody else's.
+       So the panel deliberately resolves a session whose DESK is blocked —
+       but only far enough to ask whether the person is on the platform team.
+       Somebody who is not gets nothing, exactly as they would anywhere else.
+
+       Without this an operator who blocks the desk their own account lives
+       on locks themselves out of the panel and cannot unblock it, which is
+       a support call to somebody with database access. */
+    if (!me && who.suspendedDesk) {
+      reply.code(401).send({ error: "unauthenticated" });
+      return null;
+    }
     if (me) memberCache.set(me.email, me.role as PlatformRole);
     else memberCache.delete((who.staffId ?? "").toLowerCase());
     if (!me) {
@@ -252,7 +274,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   // lightweight probe the UI calls to decide whether to show the admin app
   app.get("/api/admin/me", async (req, reply) => {
-    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    // same reasoning as `gate`: the panel is the one caller that must still
+    // recognise an operator whose own desk is blocked
+    const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
     /* Ask the table, not the cache: this is usually the FIRST admin call a
        browser makes, and the cache is only warm once a gated route has run.
        Reading it here answered "no" to the owner on every fresh page load. */
