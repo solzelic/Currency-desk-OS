@@ -126,6 +126,87 @@ describe("what the application already answered", () => {
   });
 });
 
+/* Fourteen screens of questions are worth nothing if the desk opens on
+   different numbers. Two of them were being dropped on the floor: the
+   margin was collected, echoed back ("you'd earn about 35 CAD"), previewed
+   on a live board — and then the desk published at a hardcoded 1.5%. */
+describe("the answers reaching the desk that was opened", () => {
+  const answers = {
+    operatingName: "Kensington Currency Exchange",
+    bizName: "Kensington FX Inc.",
+    ownerName: "Nadia Haddad",
+    ownerEmail: "nadia@kensingtonfx.test",
+    country: "CA",
+    spreadAll: "3.5",
+    idOver: 5000,
+    currencies: ["USD", "INR"],
+  };
+
+  it("carries the margin and both thresholds, kept apart", () => {
+    const spec = specFromAnswers(resolve(answers, {}), {});
+    const setup = spec.setup as Record<string, unknown>;
+    expect(setup.spreadAll).toBe("3.5");
+    /* The regulator's line and the shop's own ID policy are different
+       numbers and the desk needs both. Onboarding says so on the screen —
+       "the regulator's number, not ours to move" — next to a question
+       asking when to ask for ID. */
+    expect(setup.reportThreshold).toBe(10000);
+    expect(setup.idThreshold).toBe(5000);
+  });
+
+  /** A tenant, entity and branch for the board to hang off. */
+  async function marginDesk(branchId: string) {
+    const { schema } = await import("../src/db/index.js");
+    await handle.db.insert(schema.tenants)
+      .values({ id: "tnt-margin", name: "Margin Test" })
+      .onConflictDoNothing();
+    await handle.db.insert(schema.legalEntities)
+      .values({ id: "le-margin", tenantId: "tnt-margin", name: "Margin Test Inc." })
+      .onConflictDoNothing();
+    await handle.db.insert(schema.branches)
+      .values({ id: branchId, tenantId: "tnt-margin", legalEntityId: "le-margin", name: branchId })
+      .onConflictDoNothing();
+  }
+
+  it("opens the board at the margin they set, not at ours", async () => {
+    const { schema } = await import("../src/db/index.js");
+    const { publishStartingBoard } = await import("../src/rates/starting-board.js");
+    const branchId = "br-margin-test";
+    await marginDesk(branchId);
+    const published = await publishStartingBoard(handle.db, {
+      tenantId: "tnt-margin", legalEntityId: "le-margin", branchId,
+      currencies: ["USD"], homeCurrency: "CAD", spreadAll: "3.5",
+    });
+    expect(published.published).toBe(true);
+
+    const board = (await handle.db.select().from(schema.rateBoards))
+      .find((row) => row.branchId === branchId)!;
+    expect(Number(board.buyMargin)).toBeCloseTo(0.035, 6);
+    expect(Number(board.sellMargin)).toBeCloseTo(0.035, 6);
+  });
+
+  it("falls back rather than publishing a board nobody meant", async () => {
+    const { schema } = await import("../src/db/index.js");
+    const { publishStartingBoard } = await import("../src/rates/starting-board.js");
+    /* A blank answer, and a "spread" that is far past any retail margin —
+       much more likely a fraction somebody typed as a percentage than a
+       desk that means to take 40%. Neither is worth guessing from. */
+    for (const [branchId, spreadAll] of [
+      ["br-margin-blank", undefined],
+      ["br-margin-silly", "40"],
+    ] as const) {
+      await marginDesk(branchId);
+      await publishStartingBoard(handle.db, {
+        tenantId: "tnt-margin", legalEntityId: "le-margin", branchId,
+        currencies: ["USD"], homeCurrency: "CAD", spreadAll,
+      });
+      const board = (await handle.db.select().from(schema.rateBoards))
+        .find((row) => row.branchId === branchId)!;
+      expect(Number(board.buyMargin)).toBeCloseTo(0.015, 6);
+    }
+  });
+});
+
 describe("the desk address, which the design never asks for", () => {
   it("makes one out of the shop name", () => {
     expect(slugFrom("York Currency Exchange")).toBe("york-currency-exchange");

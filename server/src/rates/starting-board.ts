@@ -27,10 +27,37 @@ export const INDICATIVE_PER_CAD: Readonly<Record<string, number>> = {
   PLN: 2.931, TRY: 23.82, SAR: 2.749, PKR: 204.3,
 };
 
+/** What the desk opens at when nobody said. */
+const FALLBACK_MARGIN = 0.015;
+
+/**
+ * The margin the desk asked for, as a fraction.
+ *
+ * Onboarding asks "what's your margin on an exchange?", shows the answer
+ * back ("on a 1,000 CAD exchange you'd earn about 35 CAD"), draws the live
+ * board preview at it — and the desk then opened at a hardcoded 1.5%
+ * regardless. On the volumes this product profiles, opening two points
+ * under your intended spread is real money a day, and the owner has no
+ * reason to check: they typed 3.5 and were shown 3.5.
+ *
+ * The stored answer is a percentage typed by a person, so it is read
+ * defensively: anything unparseable, negative, or above a quarter — which
+ * is far past any legitimate retail spread and much more likely to be a
+ * fraction someone entered as a percentage — falls back rather than
+ * publishing a board nobody meant.
+ */
+function marginFrom(spreadAll: unknown): number {
+  const percent = Number(String(spreadAll ?? "").trim());
+  if (!Number.isFinite(percent) || percent <= 0) return FALLBACK_MARGIN;
+  const fraction = percent / 100;
+  return fraction > 0.25 ? FALLBACK_MARGIN : fraction;
+}
+
 /**
  * Publish a branch's first board. Currencies come from what the desk said
  * they trade; anything we have no rate for is left off rather than guessed,
  * and the home currency is never a row — it is the base the board is in.
+ * The margin is the one they set in onboarding.
  *
  * Idempotent by branch: a branch that already has a board keeps it.
  */
@@ -42,6 +69,8 @@ export async function publishStartingBoard(
     branchId: string;
     currencies: readonly string[];
     homeCurrency?: string;
+    /** the `spreadAll` answer, a percentage as typed */
+    spreadAll?: unknown;
     publishedBy?: string;
   },
 ): Promise<{ published: boolean; currencies: string[] }> {
@@ -79,8 +108,8 @@ export async function publishStartingBoard(
     tenantId: args.tenantId,
     legalEntityId: args.legalEntityId,
     branchId: args.branchId,
-    buyMargin: 0.015,
-    sellMargin: 0.015,
+    buyMargin: marginFrom(args.spreadAll),
+    sellMargin: marginFrom(args.spreadAll),
     boardRows: rows,
     boardOrder: Object.keys(rows),
     publishedBy: args.publishedBy ?? "system:provisioning",

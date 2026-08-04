@@ -1729,12 +1729,27 @@
       const addr = (a0 && typeof a0 === 'object') ? a0
         : { street: typeof a0 === 'string' ? a0 : '', city: setup.city || '', region: setup.region || '', postal: setup.postal || '' };
       const homeCcy = setup.homeCurrency || 'CAD';
-      const threshold = typeof setup.idThreshold === 'number' ? setup.idThreshold : 10000;
+      /* Two different numbers, and they were being crossed.
+         `reportThreshold` is the REGULATOR'S line — onboarding shows it as
+         derived, "not ours to move". `idThreshold` is the shop's own, tighter,
+         policy: "when should the desk ask for ID?".
+
+         This read idThreshold into `threshold` (the reporting line), so a desk
+         that chose to ask for ID at 5,000 came up claiming deals were
+         reportable to FINTRAC at 5,000. Then `idRequiredOver` was set to
+         min(3000, that) — a hardcoded 3,000 against the wrong number, so no
+         answer on the ID screen except the lowest could ever survive.
+
+         The one real constraint between them is that the desk may ask for ID
+         sooner than the regulator requires a report, never later. */
+      const num = (v, fallback) => (typeof v === 'number' && v > 0 ? v : fallback);
+      const reportOver = num(setup.reportThreshold, 10000);
+      const idOver = Math.min(num(setup.idThreshold, reportOver), reportOver);
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
-        baseCurrency: homeCcy, threshold: threshold, idRequiredOver: Math.min(3000, threshold),
+        baseCurrency: homeCcy, threshold: reportOver, idRequiredOver: idOver,
         receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
         employees: [owner] };
       // a fresh desk holds NO cash — zero every vault/till balance and clear the

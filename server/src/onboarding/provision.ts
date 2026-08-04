@@ -261,6 +261,8 @@ export async function provisionDesk(
     tenantId, legalEntityId, branchId,
     currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
     homeCurrency: typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined,
+    // the margin they set, shown back to them, and previewed on screen 12
+    spreadAll: setup.spreadAll,
   });
   await seedOpeningFloat(db, {
     tenantId, legalEntityId, branchId, workspaceId, tillId: "till-01",
