@@ -36,3 +36,11 @@ screenshots/
 server/node_modules/
 server/.pgdata/
 server/.env
+
+# Throwaway driver scripts — walking a flow in a real browser to see whether
+# the product works is routine here, and those scripts are notes, not code.
+# Committing them would leave the repo littered with half-finished probes
+# that read like tests and are not maintained as any.
+_scratch_*.mjs
+drive-*.mjs
+walk*.mjs
