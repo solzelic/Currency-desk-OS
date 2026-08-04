@@ -15,6 +15,7 @@ import {
 } from "./provisioning.js";
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
+import { CostMethodService } from "./cost-method-control.js";
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
@@ -127,6 +128,12 @@ const vaultRunBody = z.object({
 const movementQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
+/* `pack_default` rather than a null: a client that means "hand this back to
+   the jurisdiction pack" should have to say so, because a null arriving in a
+   JSON body is just as often a field somebody forgot to fill in. */
+const costMethodBody = z.object({
+  method: z.enum(["weighted_average", "fifo", "pack_default"]),
+}).strict();
 type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
@@ -135,6 +142,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const provisioning = new LedgerProvisioningService(pool);
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
+  const costMethod = new CostMethodService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
@@ -167,6 +175,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
+              error.code === "LEGAL_ENTITY_NOT_FOUND" ||
               error.code === "TILL_SESSION_NOT_FOUND" ? 404
               : error.code === "IDEMPOTENCY_IN_PROGRESS" ||
                 error.code === "IDEMPOTENCY_CONFLICT" ||
@@ -397,6 +406,38 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.code(201).send(await tillControl.moveCash(actor, parsed.data))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* How the desk costs its inventory. A setting, not a preference: it lives
+     on the legal entity in the book, not in the browser's saved state, because
+     it decides what every future sale reports as profit. */
+  app.get("/api/ledger/cost-method", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await costMethod.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/ledger/cost-method", async (req, reply) => {
+    const parsed = costMethodBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(
+            await costMethod.set(
+              actor,
+              parsed.data.method === "pack_default" ? null : parsed.data.method,
+            ),
+          )
         : undefined;
     } catch (error) {
       return failure(reply, error);

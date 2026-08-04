@@ -85,7 +85,7 @@ postgres("cost basis against real PostgreSQL", () => {
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE ledger_cost_events CASCADE");
+    await pool.query("TRUNCATE ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events CASCADE");
     await pool.query("DELETE FROM ledger_till_balances WHERE till_id=$1", [SCOPE.locationId]);
   });
 

@@ -260,6 +260,17 @@
       getTransactionReceipt: function (transactionId) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/receipt");
       },
+      /* ---- how the desk costs what it sells ---- */
+      loadCostMethod: function () {
+        return request("/api/ledger/cost-method");
+      },
+      /* "weighted_average", "fifo", or "pack_default" to follow the jurisdiction. */
+      setCostMethod: function (method) {
+        return request("/api/ledger/cost-method", {
+          method: "PUT",
+          body: JSON.stringify({ method: method }),
+        });
+      },
       mergeRows: mergeRows,
       asMoney: asMoney,
     },

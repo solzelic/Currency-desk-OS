@@ -46,7 +46,7 @@ const scope = [
 
 async function reset(authorized: string[] = [DEMO.branchId]) {
   await pool.query(
-    "TRUNCATE ledger_cost_events,ledger_vault_movements,ledger_vault_balances,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_principals CASCADE",
+    "TRUNCATE ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,ledger_vault_movements,ledger_vault_balances,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_principals CASCADE",
   );
   await pool.query(
     `INSERT INTO ledger_principals

@@ -56,7 +56,7 @@ const scope = [
 
 async function reset(authorized: string[] = [DEMO.branchId]) {
   await pool.query(
-    "TRUNCATE ledger_cost_events,ledger_vault_movements,ledger_vault_balances,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_rates,ledger_principals CASCADE",
+    "TRUNCATE ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,ledger_vault_movements,ledger_vault_balances,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_rates,ledger_principals CASCADE",
   );
   await pool.query(
     `INSERT INTO ledger_principals
@@ -190,7 +190,7 @@ postgres("cost basis through the vault and the till", () => {
        so a branch left holding USD and no CAD makes their next CAD float
        overdraw a strong room they never asked for. */
     await pool.query(
-      "TRUNCATE ledger_cost_events,ledger_vault_movements,ledger_vault_balances CASCADE",
+      "TRUNCATE ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,ledger_vault_movements,ledger_vault_balances CASCADE",
     );
     await app.close();
     await handle.close();

@@ -55,6 +55,76 @@
   const Money = ({ k }) => { const { settings, set, base } = React.useContext(SettingsCtx); return (<div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" value={settings[k] ?? ''} onChange={e => set(k, +e.target.value)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>); };
   const Inp = ({ k, placeholder, type }) => { const { settings, set } = React.useContext(SettingsCtx); return <input type={type || 'text'} value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} />; };
 
+  /* ---------- cost basis method (server-backed, NOT a saved preference) ----------
+     Every other control on this screen writes the shared `settings` object the
+     browser persists. This one does not, and must not: it decides how the
+     ledger prices every future sale, so it lives on the legal entity in the
+     book and only a manager may change it. Reading and writing it here keeps
+     the switch and the number it moves in the same place. */
+  function CostMethodRow() {
+    const [status, setStatus] = useState('loading');   // loading | ready | offline
+    const [setting, setSetting] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    /* Through Backend, never a bare fetch. Every ledger route decides which
+       till it is answering for from x-workspace-id, and the header is the
+       Backend client's job — a raw fetch omits it, so on any branch with more
+       than one till the server refuses the scope and this row would have sat
+       there reading "unavailable" with nothing wrong with the desk. */
+    const api = window.CDOS && window.CDOS.Backend;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') { setStatus('offline'); return; }
+      let alive = true;
+      api.loadCostMethod()
+        .then(j => { if (alive) { setSetting(j); setStatus('ready'); } })
+        .catch(() => { if (alive) setStatus('offline'); });
+      return () => { alive = false; };
+    }, []);
+    const fifo = !!setting && setting.method === 'fifo';
+    const flip = async () => {
+      if (busy || status !== 'ready') return;
+      setBusy(true); setErr('');
+      try {
+        setSetting(await api.setCostMethod(fifo ? 'weighted_average' : 'fifo'));
+      } catch (e) {
+        setErr(e && e.status === 403
+          ? 'Only an owner or manager can change how stock is costed.'
+          : e && e.code === 'NETWORK_ERROR'
+            ? 'Could not reach the desk — nothing was changed.'
+            : 'Could not save that — nothing was changed.');
+      }
+      finally { setBusy(false); }
+    };
+    const tip = (<window.CDOS.InfoTip
+      w={300}
+      title="First in, first out"
+      body="How the desk values the cash it sells. Today it uses a weighted average: every US dollar in the drawer is treated as having cost the same, whatever you actually paid on the day. FIFO instead treats the dollars you bought first as the ones that just went out the door. The trades are identical either way and so is the money in the bank — what changes is when the profit lands in your books. Both are accepted practice; ask your accountant which one they file you under."
+      lines={[
+        { k: 'Average', v: 'the 1,000 sold cost 1.38 each — the blend of both buys — so you earned 70' },
+        { k: 'FIFO', v: "the 1,000 sold were Monday's, at 1.34, so you earned 110" },
+        { k: 'Later', v: "FIFO still holds Wednesday's dearer dollars, so the next sale earns less. Over a few months the two land in the same place." },
+      ]}
+      example="Buy 2,000 USD at 1.34 on Monday and 2,000 at 1.42 on Wednesday, sell 1,000 at 1.45 on Friday"
+    />);
+    return (<div>
+      <Row
+        title={<span className="flex items-center gap-1.5">Cost stock first-in, first-out {tip}</span>}
+        desc="Off, the desk costs a sale at the average of everything you paid. On, it costs it against your oldest cash. Changes reported profit, so the change is recorded in the audit trail."
+      >
+        {status === 'ready'
+          ? <Sw on={fifo} click={flip} />
+          : <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{status === 'loading' ? 'reading…' : 'unavailable'}</span>}
+      </Row>
+      {status === 'ready' && setting.entityChoice === null && (
+        <div className="text-[10.5px] -mt-1.5 mb-1" style={{ color: CD.faint }}>Following your jurisdiction's suggestion ({setting.packDefault === 'fifo' ? 'first in, first out' : 'weighted average'}) until you choose.</div>
+      )}
+      {status === 'offline' && (
+        <div className="text-[10.5px] -mt-1.5 mb-1" style={{ color: CD.faint }}>Available on the hosted desk, where the ledger keeps the books.</div>
+      )}
+      {err && <div className="text-[10.5px] -mt-1.5 mb-1" style={{ color: CD.flag }}>{err}</div>}
+    </div>);
+  }
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = (settings) => (settings.cards) || [
     { id: 'card_visa', num: '4242 4242 4242 4242', exp: '04/27', name: (settings.billingName || 'Jordan Masri'), postal: 'M5V 2T6', role: 'primary' },
@@ -765,6 +835,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <Row title="Low-stock alerts" desc="Raise a Vault notification when a currency drops below its floor."><Sw on={settings.vaultLowAlert !== false} click={() => set('vaultLowAlert', !(settings.vaultLowAlert !== false), 'Vault low-stock alert')} /></Row>
           <Row title={`${base} reserve floor`} desc="Keep at least this much base currency on hand at all times."><Money k="vaultReserveCad" /></Row>
           <Row title="Valuation basis" desc="How the Vault values its holdings."><Seg value={settings.vaultBasis || 'cost'} onPick={v => set('vaultBasis', v, `vault basis ${v}`)} opts={[['cost', 'At cost'], ['mid', 'At mid']]} /></Row>
+          <CostMethodRow />
           <div className="mt-4">
             <div className="text-sm font-medium mb-1" style={{ color: CD.ink }}>Per-currency low-stock floor</div>
             <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Units of each currency to keep on hand. Blank = the built-in reorder band.</div>
