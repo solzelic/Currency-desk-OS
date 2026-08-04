@@ -437,8 +437,9 @@ export class TillControlService {
         actor.legalEntityId,
         actor.branchId,
       );
-      let tillBefore = null;
-      let vaultBefore = null;
+      type Basis = { quantity: Decimal; avgCost: Decimal | null };
+      let tillBefore: Basis | null = null;
+      let vaultBefore: Basis | null = null;
       if (carriesCost) {
         tillBefore = await currentBasis(client, {
           ...tillBox,

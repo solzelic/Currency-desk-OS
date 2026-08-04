@@ -28,6 +28,12 @@ export type CostEventKind =
   | "withdrawal"
   | "reversal";
 
+/* A till is identified here by its till id rather than its workspace id,
+   while `ledger_till_balances` is keyed by both. That is safe only because
+   `workspaces_branch_till_idx` makes (branch, till) unique — so within a
+   branch a till id names exactly one row. If that index is ever relaxed,
+   this scope must carry the workspace id too, or one till's basis would be
+   read while both tills' rows were written. */
 type Scope = {
   tenantId: string;
   legalEntityId: string;

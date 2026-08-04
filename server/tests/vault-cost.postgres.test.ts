@@ -185,6 +185,13 @@ postgres("cost basis through the vault and the till", () => {
   });
 
   afterAll(async () => {
+    /* Hand the database back empty. The suites share one, and the older
+       ledger suites truncate the till tables without touching the vault —
+       so a branch left holding USD and no CAD makes their next CAD float
+       overdraw a strong room they never asked for. */
+    await pool.query(
+      "TRUNCATE ledger_cost_events,ledger_vault_movements,ledger_vault_balances CASCADE",
+    );
     await app.close();
     await handle.close();
     await pool.end();
