@@ -49,7 +49,19 @@ export default defineConfig({
          no customer runs, which is the whole mistake this suite exists to
          stop repeating. */
       SITE_INDEX: "web/index.html",
-      // a database that exists only for this run
+      /* A database that exists only for this run — unless a real PostgreSQL
+         is offered for the seam suite.
+
+         The ledger routes only register when a database URL is configured
+         (`app.ts`), so with the embedded database this server has NO LEDGER
+         AT ALL. That is why every cash defect in this project survived a
+         green end-to-end run: the suite walked the desk with the book torn
+         out. Point SEAM_DATABASE_URL at a real PostgreSQL and the server
+         comes up in the shape Render runs — one database holding both the
+         application tables and the ledger — so a test can drive the screen
+         and then ask the ledger whether it agrees. Left unset, everything
+         below behaves exactly as before. */
+      DATABASE_URL: process.env.SEAM_DATABASE_URL ?? "",
       PGLITE_MEMORY: "1",
       SEED_PASSWORD: "yorkville",
       PLATFORM_ADMIN_EMAILS: "j.masri",

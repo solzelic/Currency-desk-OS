@@ -78,6 +78,57 @@ export const test = base.extend<{ page: Page }>({
 
 export const expect = test.expect;
 
+/* ============================================================
+   SEAM HELPERS
+
+   A cash figure exists in two places during any of these tests: on the
+   screen, and in the ledger. The whole point of a seam test is to read
+   both and assert they say the same thing — a server test and a browser
+   test, run side by side, will each pass while the two disagree.
+
+   These run only when SEAM_DATABASE_URL names a real PostgreSQL, because
+   the embedded database has no ledger routes at all.
+   ============================================================ */
+export const hasLedger = !!process.env.SEAM_DATABASE_URL;
+
+/** Sign in at the desk as a till operator and land on the OS. */
+export async function signInAtDesk(page: Page, staffId = "a.singh"): Promise<void> {
+  await page.goto("/app");
+  const status = await page.evaluate(async (id) => {
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: id, password: "yorkville", tenantId: "tnt-yorkfx" }),
+    });
+    return r.status;
+  }, staffId);
+  if (status !== 200) throw new Error(`desk sign-in failed: ${status}`);
+  await page.reload();
+}
+
+/** Ask the ledger directly, from inside the signed-in page. */
+export function ledger(page: Page) {
+  const get = (url: string) => page.evaluate((u) => fetch(u).then((r) => r.json()), url);
+  return {
+    till: () => get("/api/ledger/till-balances").then((r: any) => r.balances ?? {}),
+    session: () => get("/api/ledger/till-session").then((r: any) => r.session ?? null),
+    vault: () => get("/api/ledger/vault"),
+    /* Put the desk in a known state through its own endpoints rather than
+       fixture SQL — setup that lies about how the product works is setup
+       that stops catching the product breaking. */
+    async ensureOpeningBalances(balances: Record<string, string>) {
+      return page.evaluate(async (b) => {
+        const r = await fetch("/api/ledger/opening-balances", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ balances: b }),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      }, balances);
+    },
+  };
+}
+
 /* Sign in as the platform operator. The panel's own form takes an email
    address and the seeded owner is a staff id, so this goes through the
    API the form posts to — the session cookie is what the panel reads. */
