@@ -7,7 +7,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
   const C = window.CDOS._compliance;
-  const { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, cadIn } = C;
+  const { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const SUBKEY = 'cdos_submissions_v1';
@@ -169,7 +169,10 @@
     const xr = (ccy) => window.CDOS.crossRate('CAD', ccy) || 1;
     const out = [];
     // single cash transactions at/over threshold (filed individually)
-    rows.filter(r => r.status !== 'void').forEach(r => { const f = flags[r.id] || {}; if (f.single) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cadIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
+    /* `cashIn`, not `cadIn` — the figure on a large-CASH report is the
+       cash the customer put on the counter. `f.single` is raised from
+       the same number, so a deal that took no cash never reaches here. */
+    rows.filter(r => r.status !== 'void').forEach(r => { const f = flags[r.id] || {}; if (f.single) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
     // LCTR 24h aggregates (cash)
     aggClusters(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     // single international transfers at/over threshold
@@ -374,9 +377,12 @@
       });
       return [...m.values()].map(e => ({
         ...e,
-        sum: e.txs.reduce((s, t) => s + cadIn(t), 0),
-        avg: e.txs.length ? e.txs.reduce((s, t) => s + cadIn(t), 0) / e.txs.length : 0,
-        pct: regime.threshold ? (e.txs.reduce((s, t) => s + cadIn(t), 0) / e.txs.length) / regime.threshold : 0,
+        /* Structuring is splitting CASH to stay under the cash line, so
+           these totals count cash and not deal size — same rule as the
+           `str` flag they are describing. */
+        sum: e.txs.reduce((s, t) => s + cashIn(t), 0),
+        avg: e.txs.length ? e.txs.reduce((s, t) => s + cashIn(t), 0) / e.txs.length : 0,
+        pct: regime.threshold ? (e.txs.reduce((s, t) => s + cashIn(t), 0) / e.txs.length) / regime.threshold : 0,
         acked: e.open === 0,
       })).sort((a, b) => (a.acked - b.acked) || (b.agg - a.agg));
     }, [rows, flags, regime]);

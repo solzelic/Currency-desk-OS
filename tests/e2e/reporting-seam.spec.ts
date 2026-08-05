@@ -299,6 +299,19 @@ test("a figure the ledger cannot answer is shown as absent", async ({ page }) =>
 /* ------------------------------------------------------------------
    4. THE WALK THE OWNER ASKED FOR
    ------------------------------------------------------------------ */
+/* A ledger figure written the way the screen writes it.
+
+   This used to round to whole units before looking for the number, which
+   holds only while every deal on the book happens to be a round amount.
+   The moment a remittance receive was on it — a 16,000 peso payout that
+   came to $382.97 — the book said 7,232.97, the screen said 7,232.97,
+   and the test went looking for "7,233" and failed them both. */
+const onScreen = (amount: string | number | null | undefined) =>
+  Number(amount).toLocaleString("en-CA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 test("posting one deal moves every headline, and voiding it moves them back", async ({ page }) => {
   await signInAtDesk(page);
   /* Asserted, like the top-up below. Two fixtures in this file used to
@@ -342,7 +355,7 @@ test("posting one deal moves every headline, and voiding it moves them back", as
      goes green the instant the window paints and reads the header before
      the ledger fetch has landed. That is the shape of assertion this whole
      file exists to stop trusting. */
-  const wantVolume = Math.round(Number(after.volumeHome)).toLocaleString("en-CA");
+  const wantVolume = onScreen(after.volumeHome);
   await expect.poll(() => bodyText(page), { timeout: 25_000 }).toContain(wantVolume);
   expect(await bodyText(page)).toContain(`${after.posted} record`);
 
@@ -351,7 +364,10 @@ test("posting one deal moves every headline, and voiding it moves them back", as
   if (after.earningsHome != null) {
     /* The masthead's headline: commission plus the realized margin the
        disposal booked. Polled on the figure itself, for the same reason
-       as above. */
+       as above — and in whole units, where the volume above carries
+       cents, because the two screens genuinely print differently. Each
+       is matched against how it actually renders rather than against one
+       house style. */
     const earned = Math.round(Number(after.earningsHome)).toLocaleString("en-CA");
     await expect.poll(() => bodyText(page), { timeout: 25_000 }).toContain(earned);
   }

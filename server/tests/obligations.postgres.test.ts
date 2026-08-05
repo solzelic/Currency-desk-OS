@@ -140,13 +140,20 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
     service = new ObligationService(pool);
+    /* Its own jurisdiction code, and a conflict clause that covers every
+       constraint rather than the primary key alone. `jurisdiction_packs`
+       is UNIQUE on (jurisdiction, version) as well as on `pack_id`, and
+       the whole server suite shares one database — so a second test file
+       registering a pack under a jurisdiction somebody else had already
+       taken fails on a constraint its ON CONFLICT never mentioned. That
+       is exactly how this fixture broke the first time. */
     await pool.query(
       `INSERT INTO jurisdiction_packs
          (pack_id,jurisdiction,version,name,home_currency,regulator,
           report_name,report_threshold,id_threshold,report_currency,allow_cross_currency)
-       VALUES ('pack-obl-v1','ZZ',1,'Obligation tests','CAD','TESTREG',
+       VALUES ('pack-obl-v1','ZO',1,'Obligation tests','CAD','TESTREG',
                'LCTR',10000,3000,'CAD',true)
-       ON CONFLICT (pack_id) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
     );
     await pool.query(
       "INSERT INTO tenants (id,name) VALUES ('tenant-1','Obligation tests') ON CONFLICT DO NOTHING",

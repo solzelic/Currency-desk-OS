@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff, counterCashIn } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -38,23 +38,33 @@
        quoted per Canadian dollar so it can only answer for a Canadian desk;
        a receipt that printed a Canadian figure under a foreign symbol is
        the thing this replaces. */
-    const cadIn = (r) => { const home = homeCcy(); if (!home) return null; if (r.inCcy === home) return Number(r.inAmt) || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', r.inCcy); return rate ? (Number(r.inAmt) || 0) / rate : null; };
+    const inHome = (amount, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return Number(amount) || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', ccy); return rate ? (Number(amount) || 0) / rate : null; };
+    const cadIn = (r) => inHome(r.inAmt, r.inCcy);
+    /* The deal's size and the CASH it took in are two different figures,
+       and the large-cash rules below are about the second one. A
+       remittance receive's `inAmt` is the foreign sum a sender abroad
+       dispatched and a cheque cashing's is the face of a cheque —
+       neither is money anybody put on this counter, and counting them
+       raised reportables against customers who handed the desk nothing.
+       See COUNTER_CASH in cdos-base.jsx, which mirrors the server's
+       recorded `cash_in_home`. */
+    const cashIn = (r) => { const c = counterCashIn(r); return c ? inHome(c.amount, c.ccy) : 0; };
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const single = TH != null && cadIn(row) >= TH;
+      const single = TH != null && cashIn(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
-        .reduce((s, o) => s + cadIn(o), 0);
+        .reduce((s, o) => s + cashIn(o), 0);
       const str = TH != null && !single && agg >= TH;
       // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
       // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
       const end = dt(row);
       const cluster = live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= (regime.aggHours || 24); })());
-      const agg24Sum = cluster.reduce((s, o) => s + cadIn(o), 0);
+      const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cadIn(o) >= 0);
+      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
       const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';

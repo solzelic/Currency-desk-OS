@@ -264,6 +264,133 @@
   /* ---- domain constants ---- */
   const TYPES = ['Currency Exchange', 'Remittance — Send', 'Remittance — Receive', 'Cheque Cashing', 'Money Order', 'Bill Payment'];
   const CCY = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY', 'MXN', 'AED'];
+
+  /* ============================================================
+     WHAT ACTUALLY CROSSED THE COUNTER, IN CASH
+      A row's `inAmt`/`inCcy` is what the deal was FOR. It is not
+     necessarily cash, and on one line it is not even money that moved
+     in this shop: a remittance RECEIVE carries the foreign sum a sender
+     abroad dispatched — 16,000 pesos — while the only thing that
+     crossed this counter is the smaller home-currency payout, going the
+     other way.
+      The large-cash report is a report about CASH RECEIVED. Built on
+     `inAmt` it reads that payout as 16,000 pesos taken in and files a
+     cash report against a customer who handed the desk nothing; a
+     cheque cashing files one against a customer who handed over a
+     cheque. Both are false filings, and the second is the kind a desk
+     is asked to explain.
+      The server settles this. `cash_in_home` and `cash_out_home` on
+     `ledger_transactions` (migration 018) are the RECORDED figures and
+     they are the authority — this table exists only because the
+     browser's compliance engine still reasons over its own row store,
+     and it must say the same thing the book does. It is written as a
+     table rather than a rule so the two can be checked against each
+     other by eye.
+      An unknown type is treated as cash in. That is deliberate: the
+     failure this table prevents is over-reporting, and the failure it
+     could introduce is under-reporting. Only one of those gets a desk
+     fined, so anything not named here keeps the old behaviour and
+     shows up in a report somebody reads.
+     ============================================================ */
+  const COUNTER_CASH = {
+    /* cash over the counter both ways */
+    'Currency Exchange': {
+      in: true,
+      out: true
+    },
+    /* cash in; what leaves is a wire to a corridor partner */
+    'Remittance — Send': {
+      in: true,
+      out: false
+    },
+    /* nothing in; the desk counts out the payout */
+    'Remittance — Receive': {
+      in: false,
+      out: true
+    },
+    /* a cheque is not cash. The desk pays cash out against it */
+    'Cheque Cashing': {
+      in: false,
+      out: true
+    },
+    /* cash in; what leaves is the instrument itself */
+    'Money Order': {
+      in: true,
+      out: false
+    },
+    /* cash in; what leaves is a credit to somebody's account */
+    'Bill Payment': {
+      in: true,
+      out: false
+    }
+  };
+  /** The cash a row took in, as `{ amount, ccy }`, or null if none did. */
+  function counterCashIn(row) {
+    if (!row) return null;
+    const rule = COUNTER_CASH[row.type];
+    if (rule && !rule.in) return null;
+    return {
+      amount: Number(row.inAmt) || 0,
+      ccy: row.inCcy
+    };
+  }
+  /** The cash a row paid out, as `{ amount, ccy }`, or null if none did. */
+  function counterCashOut(row) {
+    if (!row) return null;
+    const rule = COUNTER_CASH[row.type];
+    if (rule && !rule.out) return null;
+    return {
+      amount: Number(row.outAmt) || 0,
+      ccy: row.outCcy
+    };
+  }
+
+  /* ============================================================
+     THE HOME-CURRENCY SIZE OF A DEAL
+      One rule, and it is the server's: a deal's size in the desk's own
+     money is whichever of its two legs IS that currency. The note above
+     `volume_home` in server/src/ledger/reporting.ts states it, and this
+     is here so the browser can say the same thing rather than a similar
+     thing.
+      What it replaced converted the IN leg at today's board mid whatever
+     currency that leg was in, and that is wrong twice over. A
+     foreign-to-foreign cross has no home leg at all, and a mid between
+     two foreign currencies multiplied out is a number in neither of
+     them. And a remittance receive's in-leg is the foreign sum a sender
+     abroad dispatched: 16,000 pesos re-priced at today's mid came to
+     $388.82 while the book carried $382.97, the amount the desk actually
+     counted out. The Ledger's Pay-in volume and the ledger's own summary
+     differed by exactly that — two books for one headline, which is what
+     docs/CASH_OWNERSHIP_INVARIANTS.md exists to forbid.
+      Null means this book cannot value that deal. Not zero, and not a
+     price nobody quoted — docs/ABSENT_FIGURES.md.
+     ============================================================ */
+  function dealHome(row, home) {
+    if (!row || !home) return null;
+    if (row.inCcy === home) return Number(row.inAmt) || 0;
+    if (row.outCcy === home) return Number(row.outAmt) || 0;
+    return null;
+  }
+  /** Volume over a set of rows, and how many of them it could not value. */
+  function sumDealHome(rows, home) {
+    let total = 0,
+      valued = 0,
+      unvalued = 0;
+    (rows || []).forEach(row => {
+      const v = dealHome(row, home);
+      if (v == null) {
+        unvalued += 1;
+        return;
+      }
+      total += v;
+      valued += 1;
+    });
+    return {
+      total: valued ? total : null,
+      valued,
+      unvalued
+    };
+  }
   /* ============================================================
      TWO KINDS OF "TODAY", AND THEY ARE NOT THE SAME THING
       This line used to read `const TODAY = '2026-06-18'`. Every New
@@ -1574,6 +1701,11 @@
     RISK_TIERS,
     normalizeRisk,
     riskTone,
+    COUNTER_CASH,
+    counterCashIn,
+    counterCashOut,
+    dealHome,
+    sumDealHome,
     CD_THEMES,
     theme: {
       get: themePref,
@@ -1708,6 +1840,10 @@
         FILING_NOT_FOUND: "That filed report is not on this desk's record.",
         REVERSAL_NOT_ALLOWED: "The till cannot support this reversal. Reconcile the affected currency before trying again.",
         REVERSAL_ALREADY_EXISTS: "This transaction has already been reversed.",
+        CHEQUE_NOT_FOUND: "That cheque is not on this branch's register.",
+        CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
+        CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
+        COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
       })[body.code] || "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
@@ -1751,6 +1887,21 @@
     });
   }
 
+  /* What the ledger's `dealKind` is called on a desk screen.
+     Every server row used to be labelled "Currency Exchange" because an
+     exchange was the only thing the book could hold. It holds cheque
+     cashings now, and a screen that calls one an exchange is misnaming a
+     deal type on the same line it prints the amount — which is how the
+     compliance worksheet came to assert "Method of transaction: Cash"
+     about deals that were nothing of the sort. An unrecognised kind falls
+     back to the exchange label rather than rendering a raw identifier,
+     because this map is the client's and the server may learn a new kind
+     before this file does. */
+  var DEAL_TYPE_LABEL = {
+    exchange: "Currency Exchange",
+    cheque_cashing: "Cheque Cashing",
+  };
+
   function transactionToRow(transaction, customerName, compliance) {
     var posted = new Date(transaction.postedAt);
     var reversal = transaction.reversal || null;
@@ -1764,7 +1915,15 @@
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",
-      type: "Currency Exchange",
+      type: DEAL_TYPE_LABEL[transaction.dealKind] || "Currency Exchange",
+      /* What physically crossed the counter, carried through from the
+         book. The amount columns cannot answer it: a cashed cheque reads
+         CAD 1,000 in and CAD 965 out and not one dollar of cash came in.
+         Read docs/CHEQUE_CASHING.md before using these to decide whether
+         anything is reportable — the direction of the cash is a fact, and
+         what a jurisdiction does about it is the pack's question. */
+      receivedInstrument: transaction.receivedInstrument || "cash",
+      disbursedInstrument: transaction.disbursedInstrument || "cash",
       inCcy: transaction.from,
       inAmt: Number(transaction.inputAmount),
       rate: Number(transaction.rate),
@@ -1955,6 +2114,59 @@
           body: JSON.stringify({ method: method }),
         });
       },
+      /* ---- cheque cashing ----
+
+         Cashing a cheque hands a customer real money out of a real
+         drawer, and until now it did that entirely in the browser: a
+         row pushed into an array and a cheque written to
+         `cdos_cheques_v1`. The ledger never heard about the cash, and
+         the desk's own "cash at risk" figure — its credit exposure —
+         was totalled from a store that dies with a browser profile and
+         that the second till cannot see.
+
+         So the server is the record and `cdos_cheques_v1` is a cache of
+         it, exactly as `cdos_submissions_v1` is a cache of the filed
+         reports. If the server refuses, NOTHING is cashed and the
+         screen says why: a cheque record the ledger does not know about
+         is the defect, not the fallback.
+
+         The amounts are the desk's; the DATES, the reference number and
+         the resulting balances are the server's. A hold-until worked
+         out in a browser is a client computing something load-bearing
+         about money, and the reference number computed from the length
+         of a local list is how two tills both minted CHQ-260618-003. */
+      loadCheques: function (limit) {
+        return request("/api/ledger/cheques?limit=" + (limit || 200));
+      },
+      cashCheque: function (payload) {
+        return request("/api/ledger/cheques", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      clearCheque: function (chequeId, payload) {
+        return request("/api/ledger/cheques/" + encodeURIComponent(chequeId) + "/clearance", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      /* A return and a reversal are separate calls because they are
+         separate things: a return is money genuinely lost and the desk
+         keeps its fee, a reversal is a cashing that should never have
+         happened and the fee goes back with the cash. See the long note
+         in server/src/ledger/cheques.ts. */
+      returnCheque: function (chequeId, payload) {
+        return request("/api/ledger/cheques/" + encodeURIComponent(chequeId) + "/return", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      reverseCheque: function (chequeId, payload) {
+        return request("/api/ledger/cheques/" + encodeURIComponent(chequeId) + "/reversal", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
       mergeRows: mergeRows,
       asMoney: asMoney,
       /* ---- filed regulatory reports ----
@@ -2057,8 +2269,316 @@
           body: JSON.stringify(changes),
         });
       },
+
+      /* ---- the four lines that are cash on one side and a promise on
+             the other ----
+
+         A remittance, a bill payment and a money order all used to
+         happen entirely here: the teller took the money, an array grew
+         by one, and `ledger_till_balances` never heard about it. By the
+         end of a day the drawer on this screen and the drawer on the
+         server disagreed by whatever the shop had taken in.
+
+         Each of these posts the money and comes back with the ledger's
+         own record of it — a transaction, and the OBLIGATION the deal
+         left behind. Nothing is applied optimistically: a movement that
+         succeeded here and never reached the server is a loss, so the
+         browser record is written only after the server has agreed.
+
+         Read docs/OBLIGATION_LINES.md before touching any of them. The
+         short version: the desk does not know what a payout will cost
+         until it buys it from the corridor partner, so no margin is
+         claimed at the counter and the fee is the only thing booked as
+         earned. Do not send a `spreadCad` — there isn't one, and the
+         server would ignore it. */
+      postRemittanceSend: function (payload) {
+        return request("/api/ledger/remittances/send", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      postRemittanceReceive: function (payload) {
+        return request("/api/ledger/remittances/receive", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      postBillPayment: function (payload) {
+        return request("/api/ledger/bill-payments", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      postMoneyOrder: function (payload) {
+        return request("/api/ledger/money-orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+
+      /* What the desk owes and what it is owed, as the book has it.
+         `outstanding` is one figure per side and either of them may be
+         null — a desk that has never taken a remittance has no payable
+         position, and "0.00" is a claim about a book nobody has written
+         in. See docs/ABSENT_FIGURES.md. */
+      loadObligations: function (options) {
+        var query = [];
+        if (options && options.status) query.push("status=" + encodeURIComponent(options.status));
+        query.push("limit=" + ((options && options.limit) || 200));
+        return request("/api/ledger/obligations?" + query.join("&"));
+      },
+
+      /* The promise was honoured, for a real price — and the difference
+         between that price and what the book carried is the first
+         honest margin figure in the deal's life. */
+      settleObligation: function (obligationId, payload) {
+        return request("/api/ledger/obligations/" + encodeURIComponent(obligationId) + "/settlement", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      /* The counterparty did not perform, and the desk is out the money.
+         Emphatically not the same call as the one below it: a write-off
+         is a loss and a reversal is a deal that never happened, and a
+         screen that offers them as one control will get them confused. */
+      writeOffObligation: function (obligationId, payload) {
+        return request("/api/ledger/obligations/" + encodeURIComponent(obligationId) + "/write-off", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      reverseObligationDeal: function (transactionId, payload) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/reversal", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
     },
   });
+
+  /* ============================================================
+     THE DESK'S CUSTOMER FILES
+
+     Every customer file used to live in this browser, in localStorage
+     under `cdos_clients_v1`, keyed BY THE CUSTOMER'S NAME. Two people
+     called David Chen were one file; correcting a spelling moved the key
+     and orphaned a person's history; the second till was a different
+     shop; and the passport scans inside it were the largest single
+     contributor to a four-megabyte ceiling that, when reached, stopped
+     the desk saving ANYTHING.
+
+     These are the routes that replace it. `desk_clients` is scoped to
+     the LEGAL ENTITY, so what one counter collects every counter sees,
+     at every location the business ever opens.
+
+     Appended as its own object rather than folded into `Backend` above
+     so that the two halves of this file stay separable — this is a
+     different subject from posting money, and the only thing it shares
+     is `request`.
+     ============================================================ */
+  var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
+  var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
+
+  /* One server record, in the shape every screen that has not moved yet
+     still reads: a flat object keyed by name, with the primary identity
+     document flattened onto it as idType / idNum / idIssued / idExpiry.
+
+     `local` is whatever that screen already had. It matters for exactly
+     one field: a scan the server does not hold stays where it is, so a
+     desk mid-upgrade never loses a picture. Where the server DOES hold
+     it, the browser stops holding it — which is the whole point, because
+     that is the byte weight that was stopping the desk saving. */
+  function toDeskRecord(record, local) {
+    local = local || {};
+    var documents = record.documents || [];
+    var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
+    var extra = documents.filter(function (d) { return !d.isPrimary; });
+    var serverHasPrimaryScan = !!(primary && primary.hasScan);
+    return {
+      /* The stable identity. Nothing about it is derived from the name,
+         which is the entire reason a rename is now safe. */
+      clientId: record.clientId,
+      serverBacked: true,
+      kind: record.kind === "business" ? "corporate" : "individual",
+      legalName: record.legalName,
+      aliases: (record.aliases || []).map(function (a) { return a.alias; }),
+      dob: record.dateOfBirth || "",
+      email: record.email || "",
+      phone: record.phone || "",
+      address: record.addressLine || "",
+      city: record.city || "",
+      province: record.region || "",
+      postal: record.postalCode || "",
+      country: record.country || "",
+      occupation: record.occupation || "",
+      notes: record.notes || "",
+      risk: RISK_OUT[record.riskRating] || "Normal",
+      verificationStatus: record.verificationStatus,
+      screeningOutcome: record.screeningOutcome || null,
+      screeningMatched: record.screeningMatched || null,
+      incorpDate: record.incorporationDate || "",
+      jurisdiction: record.incorporationJurisdiction || "",
+      business: record.natureOfBusiness || "",
+      contactName: record.contactName || "",
+      contactTitle: record.contactTitle || "",
+      /* Said on every read, not only at creation: a desk with two David
+         Chens should be reminded every time it opens either of them. */
+      possibleDuplicate: !!record.possibleDuplicate,
+      duplicateReason: record.duplicateReason || null,
+      sameNameClientIds: record.sameNameClientIds || [],
+      idType: primary ? primary.docType : "",
+      idNum: primary ? (primary.docNumber || "") : "",
+      idIssued: primary ? (primary.issuedOn || "") : "",
+      idExpiry: primary ? (primary.expiresOn || "") : "",
+      primaryDocumentId: primary ? primary.documentId : null,
+      primaryHasScan: serverHasPrimaryScan,
+      /* NOT the bytes. A covered placeholder is drawn from `hasScan`, and
+         the picture arrives only from a request that records who asked. */
+      photo: serverHasPrimaryScan ? null : (local.photo || null),
+      hasPhotograph: !!record.photograph,
+      avatar: record.photograph ? null : (local.avatar || null),
+      ids: extra.map(function (d) {
+        return {
+          documentId: d.documentId,
+          type: d.docType,
+          num: d.docNumber || "",
+          issued: d.issuedOn || "",
+          expiry: d.expiresOn || "",
+          hasScan: !!d.hasScan,
+          photo: d.hasScan ? null : null,
+        };
+      }),
+      documents: documents,
+      /* Supporting documents, extra photographs and the beneficiary list
+         have NOT moved and are still the browser's. Carried through
+         untouched so this projection never deletes them. */
+      docs: local.docs || [],
+      gallery: local.gallery || [],
+      ledgerCustomerId: local.ledgerCustomerId || null,
+      ledgerExternalRef: local.ledgerExternalRef || null,
+      createdAt: (record.createdAt || "").slice(0, 10),
+      updatedAt: (record.updatedAt || "").slice(0, 10),
+    };
+  }
+
+  /* The other direction: the flat fields a screen edits, as the fields
+     the customer record actually has. Only what was named is sent — a
+     PATCH that carried the whole record would let a stale screen quietly
+     undo somebody else's edit to a field it was not even showing. */
+  function fromDeskFields(patch) {
+    var map = {
+      kind: function (v) { return ["kind", v === "corporate" ? "business" : "individual"]; },
+      dob: function (v) { return ["dateOfBirth", v || null]; },
+      email: function (v) { return ["email", v]; },
+      phone: function (v) { return ["phone", v]; },
+      address: function (v) { return ["addressLine", v]; },
+      city: function (v) { return ["city", v]; },
+      province: function (v) { return ["region", v]; },
+      postal: function (v) { return ["postalCode", v]; },
+      country: function (v) { return ["country", v]; },
+      occupation: function (v) { return ["occupation", v]; },
+      notes: function (v) { return ["notes", v]; },
+      risk: function (v) { return ["riskRating", RISK_IN[v] || "normal"]; },
+      incorpDate: function (v) { return ["incorporationDate", v || null]; },
+      jurisdiction: function (v) { return ["incorporationJurisdiction", v]; },
+      business: function (v) { return ["natureOfBusiness", v]; },
+      contactName: function (v) { return ["contactName", v]; },
+      contactTitle: function (v) { return ["contactTitle", v]; },
+      legalName: function (v) { return ["legalName", v]; },
+    };
+    var out = {};
+    Object.keys(patch || {}).forEach(function (key) {
+      if (!map[key]) return;
+      var pair = map[key](patch[key]);
+      out[pair[0]] = pair[1];
+    });
+    return out;
+  }
+
+  /* Which of the flat fields belong to the primary IDENTITY DOCUMENT
+     rather than to the person. Keeping the two apart is the point of the
+     whole change; this is where a screen that still edits them as one
+     object gets routed to the right place. */
+  var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn" };
+
+  window.CDOS.Backend.Clients = {
+    RISK_IN: RISK_IN,
+    RISK_OUT: RISK_OUT,
+    DOCUMENT_FIELDS: DOCUMENT_FIELDS,
+    toDeskRecord: toDeskRecord,
+    fromDeskFields: fromDeskFields,
+    list: function () { return request("/api/clients"); },
+    get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
+    /* More than one answer is a legitimate answer: two people share a
+       name, and the caller chooses rather than this picking one and
+       being quietly wrong about somebody's compliance history. */
+    lookup: function (name) { return request("/api/clients/lookup?name=" + encodeURIComponent(name)); },
+    create: function (input) {
+      return request("/api/clients", { method: "POST", body: JSON.stringify(input) });
+    },
+    update: function (clientId, changes) {
+      return request("/api/clients/" + encodeURIComponent(clientId), {
+        method: "PATCH", body: JSON.stringify(changes),
+      });
+    },
+    addAlias: function (clientId, alias) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/aliases", {
+        method: "POST", body: JSON.stringify({ alias: alias }),
+      });
+    },
+    addDocument: function (clientId, input) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/documents", {
+        method: "POST", body: JSON.stringify(input),
+      });
+    },
+    updateDocument: function (clientId, documentId, input) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/documents/" + encodeURIComponent(documentId), {
+        method: "PATCH", body: JSON.stringify(input),
+      });
+    },
+    removeDocument: function (clientId, documentId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/documents/" + encodeURIComponent(documentId), {
+        method: "DELETE",
+      });
+    },
+    /* THE AUDITED REVEAL. The only way to the bytes of an identity
+       document, and it writes "who looked at this customer's passport,
+       and when" in the same transaction that hands them over. A POST
+       rather than a GET on purpose: a GET is what a cache repeats. */
+    revealDocument: function (clientId, documentId, purpose) {
+      return request(
+        "/api/clients/" + encodeURIComponent(clientId) + "/documents/" + encodeURIComponent(documentId) + "/reveal",
+        { method: "POST", body: JSON.stringify(purpose ? { purpose: purpose } : {}) });
+    },
+    /* Take the picture off the file, keeping the document. Its own call
+       because it is its own act — the desk still holds the number and
+       the expiry, it no longer holds the photograph of the page — and it
+       is audited for the same reason a reveal is. */
+    removeDocumentScan: function (clientId, documentId) {
+      return request(
+        "/api/clients/" + encodeURIComponent(clientId) + "/documents/" + encodeURIComponent(documentId) + "/scan",
+        { method: "DELETE" });
+    },
+    disclosures: function (clientId, limit) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/disclosures?limit=" + (limit || 100));
+    },
+    setPhotograph: function (clientId, dataUrl) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/photograph", {
+        method: "PUT", body: JSON.stringify({ dataUrl: dataUrl }),
+      });
+    },
+    photograph: function (clientId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/photograph");
+    },
+    /* This person, as the till's own counter record — the `customerId`
+       the posting path wants. The join between the desk's file and the
+       ledger's row, made explicit so no caller has to guess it. */
+    counterRecord: function (clientId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/counter-record", {
+        method: "POST", body: "{}",
+      });
+    },
+  };
 })();
 
 
@@ -2240,7 +2760,8 @@
     perCadLive,
     fmt,
     num,
-    dDiff
+    dDiff,
+    counterCashIn
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -2274,13 +2795,26 @@
        quoted per Canadian dollar so it can only answer for a Canadian desk;
        a receipt that printed a Canadian figure under a foreign symbol is
        the thing this replaces. */
-    const cadIn = r => {
+    const inHome = (amount, ccy) => {
       const home = homeCcy();
       if (!home) return null;
-      if (r.inCcy === home) return Number(r.inAmt) || 0;
+      if (ccy === home) return Number(amount) || 0;
       if (home !== 'CAD') return null;
-      const rate = crossRate('CAD', r.inCcy);
-      return rate ? (Number(r.inAmt) || 0) / rate : null;
+      const rate = crossRate('CAD', ccy);
+      return rate ? (Number(amount) || 0) / rate : null;
+    };
+    const cadIn = r => inHome(r.inAmt, r.inCcy);
+    /* The deal's size and the CASH it took in are two different figures,
+       and the large-cash rules below are about the second one. A
+       remittance receive's `inAmt` is the foreign sum a sender abroad
+       dispatched and a cheque cashing's is the face of a cheque —
+       neither is money anybody put on this counter, and counting them
+       raised reportables against customers who handed the desk nothing.
+       See COUNTER_CASH in cdos-base.jsx, which mirrors the server's
+       recorded `cash_in_home`. */
+    const cashIn = r => {
+      const c = counterCashIn(r);
+      return c ? inHome(c.amount, c.ccy) : 0;
     };
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
@@ -2295,9 +2829,9 @@
         };
         return;
       }
-      const single = TH != null && cadIn(row) >= TH;
+      const single = TH != null && cashIn(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cadIn(o), 0);
+      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashIn(o), 0);
       const str = TH != null && !single && agg >= TH;
       // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
       // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
@@ -2306,10 +2840,10 @@
         const h = (end - dt(o)) / 3600000;
         return h >= 0 && h <= (regime.aggHours || 24);
       })());
-      const agg24Sum = cluster.reduce((s, o) => s + cadIn(o), 0);
+      const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cadIn(o) >= 0);
+      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
       const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = 'ok';
@@ -20390,6 +20924,368 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     children
   }) => ReactDOM.createPortal(children, document.body);
 
+  /* ============================================================
+     THE CUSTOMER FILE IS NOT IN THIS BROWSER ANY MORE
+      It used to be. `cdos_clients_v1`, in localStorage, keyed BY THE
+     CUSTOMER'S NAME — which meant two people called David Chen were one
+     file, correcting a spelling orphaned a person's history, the second
+     till was a different shop, and the passport scans inside it were the
+     largest single contributor to a four-megabyte saving ceiling that,
+     when reached, stopped this desk saving ANYTHING.
+      The record now lives on the server, keyed by an id that is never a
+     name, scoped to the legal entity so every counter and every branch
+     sees it. See server/src/clients/records.ts and
+     docs/CLIENT_RECORDS.md.
+      WHAT THE OLD `clients` OBJECT IS NOW. It is a PROJECTION of what the
+     server holds, in the shape the screens that have not moved yet still
+     read — the Ledger, the transaction modal, compliance, reports, the
+     dashboard. Those files are not being rewritten in this change and
+     must not break, so the server record is flattened back into the old
+     name-keyed form on every load and handed to `setClients`.
+      Two rules that projection obeys, and both matter:
+        • It never DELETES anything it did not put there. A record the
+         server has never heard of — created on a desk with no ledger
+         database, or before this change — stays exactly where it is.
+       • It drops a scan only when the SERVER holds that scan. That is
+         the byte weight that was breaking saving, and it is the one
+         thing this projection is allowed to take away.
+      A desk that cannot reach these routes keeps the browser-only store
+     it has always had, silently, because that is what it had yesterday.
+     A desk that reaches them and gets a fault says so, because a shared
+     record quietly falling back to a private one is the failure nobody
+     notices until two tills disagree.
+     ============================================================ */
+  const ClientRecords = function () {
+    const api = () => window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+    let records = null; // server records, or null before any answer
+    let mode = 'unknown'; // 'unknown' | 'server' | 'local'
+    let trouble = ''; // a fault worth a sentence on screen
+    let inflight = null;
+    let listeners = [];
+    const key = name => String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const announce = () => listeners.slice().forEach(fn => {
+      try {
+        fn();
+      } catch (e) {}
+    });
+    function load(force) {
+      const client = api();
+      if (!client) {
+        mode = 'local';
+        announce();
+        return Promise.resolve(null);
+      }
+      if (inflight && !force) return inflight;
+      inflight = client.list().then(body => {
+        records = body.clients || [];
+        mode = 'server';
+        trouble = '';
+        return records;
+      }).catch(err => {
+        records = null;
+        mode = 'local';
+        /* 401 / 403 / a route that is not there are all "this desk is
+           not server-backed", which is an ordinary state. A 5xx is a
+           fault, and a fault that silently degrades to a private store
+           is how two tills come to hold different customers without
+           anybody being told. */
+        trouble = err && err.status >= 500 ? 'CurrencyDesk could not load this desk’s customer records from the server. What is on screen is this browser’s own copy, and it is not shared with the other tills.' : '';
+        return null;
+      }).then(result => {
+        inflight = null;
+        announce();
+        return result;
+      });
+      return inflight;
+    }
+    const all = () => records || [];
+    const byId = clientId => all().filter(r => r.clientId === clientId)[0] || null;
+    /* Every client whose CURRENT name or any ALIAS matches. More than
+       one is a legitimate answer — two people share a name — and the
+       caller is expected to say so rather than silently pick one. */
+    const byName = name => {
+      const want = key(name);
+      return all().filter(r => key(r.legalName) === want || (r.aliases || []).some(a => key(a.alias) === want));
+    };
+
+    /* An identity document, where one was described. The desk's flat
+       `idType` / `idNum` / `photo` fields are three different things now
+       — a document, its number and a picture of it — and this is where a
+       caller who still holds them as one object gets them filed
+       correctly. */
+    async function applyDocument(clientId, rec) {
+      const client = api();
+      if (!client || !clientId) return;
+      if (!rec || !rec.idType && !rec.idNum && !rec.photo) return;
+      await client.addDocument(clientId, {
+        docType: rec.idType || 'Not stated',
+        docNumber: rec.idNum || null,
+        issuedOn: rec.idIssued || null,
+        expiresOn: rec.idExpiry || null,
+        isPrimary: true,
+        scanDataUrl: rec.photo || null
+      });
+    }
+
+    /* The server's records, flattened into the old name-keyed shape and
+       laid over whatever the browser already had. */
+    function project(previous) {
+      const client = api();
+      if (mode !== 'server' || !client || !records) return previous;
+      const next = Object.assign({}, previous || {});
+      /* A record that was renamed on the server leaves a stale entry
+         under its old name here. The alias rows are exactly what
+         identifies it, which is the reason they exist. */
+      records.forEach(record => {
+        (record.aliases || []).forEach(alias => {
+          if (key(alias.alias) !== key(record.legalName)) delete next[alias.alias];
+        });
+      });
+      records.forEach(record => {
+        next[record.legalName] = client.toDeskRecord(record, (previous || {})[record.legalName] || {});
+      });
+      return next;
+    }
+    return {
+      load,
+      all,
+      byId,
+      byName,
+      project,
+      key,
+      mode: () => mode,
+      trouble: () => trouble,
+      serverBacked: () => mode === 'server',
+      subscribe(fn) {
+        listeners.push(fn);
+        return () => {
+          listeners = listeners.filter(f => f !== fn);
+        };
+      },
+      /* Open a file on somebody, from a screen that is not this one —
+         the new-contact flow in cdos-kyc.jsx runs at the till and from
+         the transaction modal, and a contact made there used to exist in
+         one browser and nowhere else.
+          It ALWAYS creates. It deliberately does not attach to an
+         existing record with the same name, and that is the whole
+         subject of this change: silently folding a second David Chen
+         into the first one's file is precisely the defect being
+         removed. Somebody who reaches for "add a new contact" is saying
+         this is a new person; the record comes back knowing who else
+         shares the name and the profile says so on screen. Choosing an
+         EXISTING customer is what the picker is for.
+          Returns the created record, or null when this desk is not
+         server-backed. */
+      async open(name, deskRecord) {
+        const client = api();
+        if (!client || mode === 'local') return null;
+        const rec = deskRecord || {};
+        const created = await client.create(Object.assign({
+          legalName: String(name).trim(),
+          kind: rec.kind === 'corporate' ? 'business' : 'individual'
+        }, client.fromDeskFields(rec)));
+        await applyDocument(created.clientId, rec);
+        await load(true);
+        return created;
+      },
+      /* Fold what a verification read off the document into a file that
+         already exists — the same record, not a second one. */
+      async record(clientId, deskRecord) {
+        const client = api();
+        if (!client || mode === 'local' || !clientId) return null;
+        const rec = deskRecord || {};
+        const changes = client.fromDeskFields(rec);
+        const updated = Object.keys(changes).length ? await client.update(clientId, changes) : null;
+        await applyDocument(clientId, rec);
+        await load(true);
+        return updated;
+      }
+    };
+  }();
+
+  /* Redraw whenever the server record changes under us. */
+  function useClientRecords() {
+    const [, bump] = useState(0);
+    useEffect(() => ClientRecords.subscribe(() => bump(n => n + 1)), []);
+    return ClientRecords;
+  }
+
+  /* ---- changing a customer file --------------------------------------
+      One object, so that every editor on this screen writes through the
+     same place and none of them has to know whether this desk is
+     server-backed.
+      The routing is the interesting part, and it is the identifying /
+     signal split showing through into the UI. The old editors treat a
+     customer as ONE flat object — `idType` sits next to `occupation`
+     next to `photo` — because the blob was one flat object. It is not
+     one thing any more: the person, their identity DOCUMENTS and the
+     PICTURES of those documents are three tables with three different
+     retention answers, and `field()` below is where a screen that has
+     not caught up gets sent to the right one.
+      What is deliberately NOT sent to the server: supporting documents,
+     the extra photo gallery and the ledger ids the till caches. Those
+     have not moved in this change and are still the browser's, so they
+     fall through to the local setter untouched rather than being
+     silently dropped. */
+  const stampToday = () => new Date().toISOString().slice(0, 10);
+  function clientWriter({
+    name,
+    rec,
+    setClients,
+    reload,
+    onError
+  }) {
+    const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+    rec = rec || {};
+    const clientId = rec.clientId;
+    const onServer = !!(api && clientId && ClientRecords.serverBacked());
+    const localSet = (k, v) => setClients(c => ({
+      ...c,
+      [name]: {
+        ...(c[name] || {}),
+        [k]: v,
+        updatedAt: stampToday()
+      }
+    }));
+    /* Every server write refreshes and every failure is SAID. A save
+       that failed into a swallowed catch, while the screen went on
+       showing the new value, is the shape of defect this project keeps
+       finding — the teller believes the file is updated and the next
+       till sees the old one. */
+    const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
+    const extraDoc = i => (rec.ids || [])[i] || {};
+    function field(k, v) {
+      if (!onServer) return localSet(k, v);
+      const DOC = api.DOCUMENT_FIELDS;
+      if (DOC[k]) {
+        const patch = {};
+        patch[DOC[k]] = v || null;
+        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        /* Typing a document's details when the file has none is how a
+           document gets created — the same gesture the old flat editor
+           made, landing in the right table. */
+        return send(() => api.addDocument(clientId, Object.assign({
+          docType: k === 'idType' ? v || 'Not stated' : rec.idType || 'Not stated',
+          isPrimary: true
+        }, k === 'idType' ? {} : patch)));
+      }
+      if (k === 'photo') {
+        if (!v) return rec.primaryDocumentId && rec.primaryHasScan ? send(() => api.removeDocumentScan(clientId, rec.primaryDocumentId)) : localSet(k, null);
+        return scan(v);
+      }
+      if (k === 'avatar') {
+        return v ? send(() => api.setPhotograph(clientId, v)) : localSet(k, null);
+      }
+      const changes = api.fromDeskFields({
+        [k]: v
+      });
+      /* Nothing this record has a column for — supporting documents, the
+         gallery, cached ledger ids. Still the browser's. */
+      if (!Object.keys(changes).length) return localSet(k, v);
+      return send(() => api.update(clientId, changes));
+    }
+    function scan(dataUrl) {
+      if (!onServer) return localSet('photo', dataUrl);
+      if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, {
+        scanDataUrl: dataUrl
+      }));
+      return send(() => api.addDocument(clientId, {
+        docType: rec.idType || 'Not stated',
+        isPrimary: true,
+        scanDataUrl: dataUrl
+      }));
+    }
+    function addId() {
+      if (!onServer) return setClients(c => {
+        const cur = c[name] || {};
+        return {
+          ...c,
+          [name]: {
+            ...cur,
+            ids: (cur.ids || []).concat({
+              type: '',
+              num: '',
+              issued: '',
+              expiry: '',
+              photo: null
+            }),
+            updatedAt: stampToday()
+          }
+        };
+      });
+      /* 'Not stated' rather than a guessed type. A document this desk
+         has asserted is a passport, because the form needed a default,
+         is a worse record than one that says nobody has said yet. */
+      return send(() => api.addDocument(clientId, {
+        docType: 'Not stated',
+        isPrimary: false
+      }));
+    }
+    function setId(i, k, v) {
+      if (!onServer) return setClients(c => {
+        const cur = c[name] || {};
+        const ids = (cur.ids || []).slice();
+        ids[i] = {
+          ...(ids[i] || {}),
+          [k]: v
+        };
+        return {
+          ...c,
+          [name]: {
+            ...cur,
+            ids,
+            updatedAt: stampToday()
+          }
+        };
+      });
+      const document = extraDoc(i);
+      if (!document.documentId) return;
+      const columns = {
+        type: 'docType',
+        num: 'docNumber',
+        issued: 'issuedOn',
+        expiry: 'expiresOn'
+      };
+      if (k === 'photo') {
+        return v ? send(() => api.updateDocument(clientId, document.documentId, {
+          scanDataUrl: v
+        })) : send(() => api.removeDocumentScan(clientId, document.documentId));
+      }
+      if (!columns[k]) return;
+      const patch = {};
+      patch[columns[k]] = v || null;
+      return send(() => api.updateDocument(clientId, document.documentId, patch));
+    }
+    function rmId(i) {
+      if (!onServer) return setClients(c => {
+        const cur = c[name] || {};
+        const ids = (cur.ids || []).slice();
+        ids.splice(i, 1);
+        return {
+          ...c,
+          [name]: {
+            ...cur,
+            ids,
+            updatedAt: stampToday()
+          }
+        };
+      });
+      const document = extraDoc(i);
+      if (!document.documentId) return;
+      return send(() => api.removeDocument(clientId, document.documentId));
+    }
+    return {
+      onServer,
+      clientId,
+      field,
+      scan,
+      addId,
+      setId,
+      rmId,
+      localSet
+    };
+  }
+
   /* Photo affordance — a badge that opens a small menu: take a photo (live
      camera) or upload one. onPhoto receives a data-URL string either way. */
   function PhotoCaptureMenu({
@@ -20669,10 +21565,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   /* A total across currencies, or nothing. One leg this desk cannot price
      makes the whole total unknown; a sum quietly missing a currency looks
      complete and is the shape of wrong this project keeps finding. */
-  const sumHome = parts => {
-    const v = parts.map(([a, c]) => homeOf(a, c));
-    return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null;
-  };
   const fmtHome = v => v == null ? '—' : fmt(v, homeCcy());
   const initials = n => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = dob => {
@@ -20736,7 +21628,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       fees += +r.fee || 0;
       if (r.date > last) last = r.date;
     });
-    const vol = sumHome(mine.map(r => [r.inAmt, r.inCcy]));
+    /* The leg that IS the desk's own currency, which is what the book
+       counts — not the in-leg re-priced at today's mid. dealHome in
+       cdos-base.jsx, and the note there on why the two differ. */
+    const vol = window.CDOS.sumDealHome(mine, homeCcy()).total;
     return {
       n: mine.length,
       vol,
@@ -20746,6 +21641,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
 
   /* ---------- atoms ---------- */
+  /* A photograph the desk took of the customer, cached for as long as
+     this component is mounted. Deliberately NOT audited the way an
+     identity document is: it is a different thing for a different
+     purpose — recognising a regular at the counter — and treating a face
+     the desk photographed itself as equivalent to a government document
+     would fill the ID trail with noise and make the rows that matter
+     harder to find. See docs/CLIENT_RECORDS.md. */
+  const photoCache = {};
   function Avatar({
     rec,
     name,
@@ -20759,8 +21662,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       borderRadius: corp ? Math.round(size * 0.22) : '50%',
       flex: 'none'
     };
-    if (rec && rec.avatar) return /*#__PURE__*/React.createElement("img", {
-      src: rec.avatar,
+    const clientId = rec && rec.clientId;
+    const wanted = !!(rec && rec.hasPhotograph && !rec.avatar && clientId);
+    const [fetched, setFetched] = useState(() => clientId && photoCache[clientId] || null);
+    useEffect(() => {
+      if (!wanted || fetched) return;
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+      if (!api) return;
+      let live = true;
+      api.photograph(clientId).then(body => {
+        photoCache[clientId] = body.dataUrl;
+        if (live) setFetched(body.dataUrl);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [clientId, wanted]);
+    const picture = rec && rec.avatar || fetched;
+    if (picture) return /*#__PURE__*/React.createElement("img", {
+      src: picture,
       alt: name,
       style: {
         ...st,
@@ -21004,14 +21924,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       autoComplete: "postal-code"
     }))));
   }
+  /* `who` and `log` are threaded in rather than closed over. They used to
+     be neither: this component referenced a bare `name` (which resolved
+     to `window.name` — the empty string) and a bare `log` (which was not
+     defined at all, so rendering a client who had a scan on file threw).
+     A covered ID that crashes the profile is the worst of both. */
   function KycEditor({
     rec,
     set,
     kind,
     onUpload,
-    canEdit
+    canEdit,
+    who,
+    log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -21024,7 +21952,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
+      key: stated
+    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
     }, t)))), /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Business / document #' : 'ID number'
@@ -21055,13 +21985,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "ID document scan",
       full: true
-    }, rec.photo ? /*#__PURE__*/React.createElement("div", {
+    }, rec.photo || rec.primaryHasScan ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
+      clientId: rec.clientId,
+      documentId: rec.primaryDocumentId,
+      hasScan: rec.primaryHasScan,
       height: 64,
-      who: name,
-      what: "primary ID",
+      who: who,
+      what: rec.idType || 'primary ID',
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => set('photo', null),
@@ -21096,9 +22029,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     setId,
     rmId,
     uploadId,
-    canEdit
+    canEdit,
+    clientId,
+    who,
+    log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
@@ -21133,7 +22070,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
+      key: stated
+    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
     }, t)))), /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document #' : 'ID number'
@@ -21164,12 +22103,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Document scan",
       full: true
-    }, doc.photo ? /*#__PURE__*/React.createElement("div", {
+    }, doc.photo || doc.hasScan ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: doc.photo,
+      clientId: clientId,
+      documentId: doc.documentId,
+      hasScan: doc.hasScan,
       height: 64,
-      who: name,
+      who: who,
       what: doc.type || "additional ID",
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
@@ -21591,13 +22533,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: inSty
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "ID scan"
-    }, rec.photo ? /*#__PURE__*/React.createElement("div", {
+    }, rec.photo || rec.primaryHasScan ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
+      clientId: rec.clientId,
+      documentId: rec.primaryDocumentId,
+      hasScan: rec.primaryHasScan,
       height: 36,
       who: name,
-      what: "primary ID",
+      what: rec.idType || 'primary ID',
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setField('photo', null),
@@ -22011,6 +22956,19 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      which is the honest control: "who looked at this customer's passport,
      and when" is a question a regulator asks, and the answer used to be
      that nobody could say.
+      WHAT CHANGED. That trace used to be a line in the browser's own audit
+     list, which is a place a disclosure record cannot live: it dies with
+     the browser profile, and — worse — the bytes were sitting in
+     localStorage the whole time, so "recorded" was a promise this file
+     made and any reader of the JSON could decline.
+      Now the picture is on the server and there is no other copy. Clicking
+     asks for it; the server writes who asked, when, at which till, and
+     about which document, in the SAME transaction that returns the bytes.
+     There is no path to the picture that does not write the row, because
+     there is no other path to the picture.
+      A desk with no server keeps the old behaviour — a local `src` and a
+     local log line — because that is what it had yesterday and losing the
+     scan would be worse than logging it locally.
       It re-covers when it unmounts, so walking away from the screen does
      not leave a document uncovered on it. */
   function IdScan({
@@ -22019,24 +22977,55 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     height,
     who,
     what,
-    log
+    log,
+    clientId,
+    documentId,
+    hasScan
   }) {
     const [shown, setShown] = useState(false);
-    if (!src) return null;
+    const [fetched, setFetched] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+    const fromServer = !!(api && clientId && documentId && hasScan !== false);
+    const picture = fetched || src;
+    if (!fromServer && !src) return null;
     const box = {
       border: `1px solid ${CD.line}`,
       borderRadius: 8,
       display: 'block',
       maxHeight: height || 120
     };
+    const reveal = async () => {
+      if (!fromServer) {
+        setShown(true);
+        log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim());
+        return;
+      }
+      setBusy(true);
+      setErr('');
+      try {
+        const opened = await api.revealDocument(clientId, documentId, what || '');
+        setFetched(opened.dataUrl);
+        setShown(true);
+        /* The desk's own activity list still gets a line, because a
+           teller watching that list should see this happen. The RECORD,
+           though, is the server's row — this is a courtesy copy. */
+        log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''} · recorded on the server`.trim());
+      } catch (e) {
+        setErr(e && e.message || 'CurrencyDesk could not open that document.');
+      } finally {
+        setBusy(false);
+      }
+    };
     if (!shown) {
-      return /*#__PURE__*/React.createElement("button", {
+      return /*#__PURE__*/React.createElement("span", {
+        className: "inline-flex flex-col items-start gap-1"
+      }, /*#__PURE__*/React.createElement("button", {
         type: "button",
-        title: "Covered. Click to view \u2014 the desk records that it was opened.",
-        onClick: () => {
-          setShown(true);
-          log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim());
-        },
+        disabled: busy,
+        title: fromServer ? 'Covered. Click to view — the desk records who opened it, and when.' : 'Covered. Click to view — the desk records that it was opened.',
+        onClick: reveal,
         className: "relative grid place-items-center cursor-pointer",
         style: {
           ...box,
@@ -22045,7 +23034,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           overflow: 'hidden',
           background: CD.panel
         }
-      }, /*#__PURE__*/React.createElement("img", {
+      }, src && /*#__PURE__*/React.createElement("img", {
         src: src,
         alt: "",
         "aria-hidden": "true",
@@ -22070,23 +23059,153 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         n: "lock",
         s: 11,
         c: CD.mute
-      }), " Show ID"));
+      }), " ", busy ? 'Opening…' : 'Show ID')), err && /*#__PURE__*/React.createElement("span", {
+        className: "text-[10.5px]",
+        style: {
+          color: CD.flag,
+          maxWidth: 220
+        }
+      }, err));
     }
     return /*#__PURE__*/React.createElement("span", {
       className: "inline-flex flex-col items-start gap-1"
     }, /*#__PURE__*/React.createElement("img", {
-      src: src,
+      src: picture,
       alt: alt || 'Identity document',
       style: box
-    }), /*#__PURE__*/React.createElement("button", {
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: () => setShown(false),
+      onClick: () => {
+        setShown(false);
+        setFetched(null);
+      },
       className: "text-[10.5px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Hide"));
+    }, "Hide"), fromServer && /*#__PURE__*/React.createElement("span", {
+      className: "text-[10.5px]",
+      style: {
+        color: CD.faint
+      }
+    }, "opening recorded")));
+  }
+
+  /* ---- the same document, from anywhere else in the desk ----------------
+      The owner wants a teller to be able to open a customer's ID from the
+     TRANSACTION screen, not only from the client file — which is where
+     they actually are when the question comes up.
+      This is that, as one component. It takes the only thing the till has
+     to hand — the customer's NAME — and resolves it to a client record
+     through `lookup`, which searches aliases too, so a customer whose
+     name was corrected last month still resolves from a transaction
+     filed under the old spelling.
+      More than one match is shown as more than one match. Two people
+     share a name; picking one and rendering their passport beside
+     somebody else's deal is the exact defect this whole change exists to
+     end, and it would be a much worse version of it.
+      Drop-in from cdos-txmodal.jsx, immediately after the CustomerCard:
+        {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
+     */
+  function ClientIdViewer({
+    name,
+    rec,
+    log,
+    height,
+    compact
+  }) {
+    const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+    const [state, setState] = useState({
+      status: 'idle',
+      clients: []
+    });
+    useEffect(() => {
+      let live = true;
+      if (!api || !name || !String(name).trim()) {
+        setState({
+          status: 'none',
+          clients: []
+        });
+        return;
+      }
+      setState({
+        status: 'loading',
+        clients: []
+      });
+      api.lookup(String(name).trim()).then(body => {
+        if (live) setState({
+          status: 'ready',
+          clients: body.clients || []
+        });
+      })
+      /* A desk with no server, or a till whose session has gone, shows
+         nothing here rather than an error beside a deal in progress —
+         the client file is one click away and this is a convenience. */.catch(() => {
+        if (live) setState({
+          status: 'none',
+          clients: []
+        });
+      });
+      return () => {
+        live = false;
+      };
+    }, [name]);
+    if (state.status !== 'ready' || !state.clients.length) return null;
+    const withScans = state.clients.map(c => ({
+      client: c,
+      documents: (c.documents || []).filter(d => d.hasScan)
+    })).filter(entry => entry.documents.length);
+    if (!withScans.length) return null;
+    const ambiguous = state.clients.length > 1;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 p-3",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 11,
+        background: 'var(--cd-panel)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 mb-2"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 13,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Identity documents on file")), ambiguous && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-2 px-2 py-1.5",
+      style: {
+        background: CD.amberSoft,
+        color: CD.ink,
+        borderRadius: 7
+      }
+    }, "This desk has ", state.clients.length, " customers named ", name, ". Check you are looking at the right file before you open a document."), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-3"
+    }, withScans.map(entry => entry.documents.map(document => /*#__PURE__*/React.createElement("div", {
+      key: document.documentId,
+      className: "flex flex-col gap-1"
+    }, /*#__PURE__*/React.createElement(IdScan, {
+      clientId: entry.client.clientId,
+      documentId: document.documentId,
+      hasScan: true,
+      height: height || (compact ? 72 : 110),
+      who: entry.client.legalName,
+      what: document.docType,
+      log: log
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "text-[10px]",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, document.docType, document.expiresOn ? ` · exp ${document.expiresOn}` : ''))))));
   }
 
   /* ---------- FULL PROFILE (double click) ---------- */
@@ -22106,18 +23225,22 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     onOpenLedger,
     onClose,
     log,
-    highlightTx
+    highlightTx,
+    reload
   }) {
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
-    const set = (k, v) => setClients(c => ({
-      ...c,
-      [name]: {
-        ...(c[name] || {}),
-        [k]: v,
-        updatedAt: new Date().toISOString().slice(0, 10)
-      }
-    }));
     const [intakeErr, setIntakeErr] = useState('');
+    /* Every editor below writes through here, and where it lands — the
+       person, an identity document, or a picture of one — is decided in
+       one place rather than in each control. See clientWriter. */
+    const writer = clientWriter({
+      name,
+      rec,
+      setClients,
+      reload,
+      onError: setIntakeErr
+    });
+    const set = (k, v) => writer.field(k, v);
     const upload = async (k, file) => {
       const taken = await window.CDOS.intakeIdImage(file);
       if (!taken.ok) {
@@ -22161,54 +23284,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       };
     });
     const stamp = () => new Date().toISOString().slice(0, 10);
-    // additional identity documents (the primary top-level ID drives KYC status; these are extra IDs on file)
-    const addId = () => setClients(c => {
-      const cur = c[name] || {};
-      const ids = (cur.ids || []).concat({
-        type: '',
-        num: '',
-        issued: '',
-        expiry: '',
-        photo: null
-      });
-      return {
-        ...c,
-        [name]: {
-          ...cur,
-          ids,
-          updatedAt: stamp()
-        }
-      };
-    });
-    const setId = (i, k, v) => setClients(c => {
-      const cur = c[name] || {};
-      const ids = (cur.ids || []).slice();
-      ids[i] = {
-        ...(ids[i] || {}),
-        [k]: v
-      };
-      return {
-        ...c,
-        [name]: {
-          ...cur,
-          ids,
-          updatedAt: stamp()
-        }
-      };
-    });
-    const rmId = i => setClients(c => {
-      const cur = c[name] || {};
-      const ids = (cur.ids || []).slice();
-      ids.splice(i, 1);
-      return {
-        ...c,
-        [name]: {
-          ...cur,
-          ids,
-          updatedAt: stamp()
-        }
-      };
-    });
+    /* Additional identity documents. Each is a ROW of its own now — the
+       old shape had a "primary" ID as loose fields and the rest in an
+       array, so the first one was structurally different from every
+       other and every screen had to special-case it. */
+    const addId = () => writer.addId();
+    const setId = (i, k, v) => writer.setId(i, k, v);
+    const rmId = i => writer.rmId(i);
     const uploadId = async (i, file) => {
       const taken = await window.CDOS.intakeIdImage(file);
       if (!taken.ok) {
@@ -22450,7 +23532,28 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       s: 18
     })))), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto px-6 py-5"
-    }, /*#__PURE__*/React.createElement(ClientCompliance, {
+    }, (rec.possibleDuplicate || (rec.sameNameClientIds || []).length > 0) && /*#__PURE__*/React.createElement("div", {
+      className: "mb-4 flex items-start gap-2.5 px-3.5 py-3",
+      style: {
+        background: CD.amberSoft,
+        border: `1px solid ${CD.amber}`,
+        borderRadius: 11
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 16,
+      c: CD.amber
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, (rec.sameNameClientIds || []).length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "This desk has ", (rec.sameNameClientIds || []).length + 1, " customers called ", name, "."), " They are separate files with separate histories. Check you are on the right one."), rec.duplicateReason && /*#__PURE__*/React.createElement("div", {
+      className: "mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, rec.duplicateReason))), /*#__PURE__*/React.createElement(ClientCompliance, {
       name: name,
       rec: rec,
       mine: mine,
@@ -22664,18 +23767,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       set: set,
       kind: rec.kind || 'individual',
       onUpload: upload,
-      canEdit: canEdit
+      canEdit: canEdit,
+      who: name,
+      log: log
     }), (rec.ids || []).length > 0 && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 space-y-3"
     }, (rec.ids || []).map((d, i) => /*#__PURE__*/React.createElement(IdEditorRow, {
-      key: i,
+      key: d.documentId || i,
       doc: d,
       i: i,
       kind: rec.kind || 'individual',
       setId: setId,
       rmId: rmId,
       uploadId: uploadId,
-      canEdit: canEdit
+      canEdit: canEdit,
+      clientId: rec.clientId,
+      who: name,
+      log: log
     })))), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
@@ -22918,13 +24026,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "calendar",
       label: "Expiry",
       value: rec.idExpiry
-    }), rec.photo && /*#__PURE__*/React.createElement("div", {
+    }), (rec.photo || rec.primaryHasScan) && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
+      clientId: rec.clientId,
+      documentId: rec.primaryDocumentId,
+      hasScan: rec.primaryHasScan,
       height: 120,
       who: name,
-      what: "primary ID",
+      what: rec.idType || 'primary ID',
       log: log
     })), (rec.ids || []).map((d, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
@@ -22951,10 +24062,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "calendar",
       label: "Expiry",
       value: d.expiry
-    }), d.photo && /*#__PURE__*/React.createElement("div", {
+    }), (d.photo || d.hasScan) && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: d.photo,
+      clientId: rec.clientId,
+      documentId: d.documentId,
+      hasScan: d.hasScan,
       height: 100,
       who: name,
       what: d.type || "additional ID",
@@ -23243,6 +24357,31 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
     const canEdit = can('canEditKYC');
     const canExport = can('canExport');
+    const store = useClientRecords();
+    const [saveErr, setSaveErr] = useState('');
+
+    /* Pull the desk's customer files from the server and lay them over
+       whatever this browser had, in the old shape, so that every screen
+       which has not moved yet — the Ledger, the transaction modal,
+       compliance, reports — keeps reading the object it always read.
+        `setClients` is only called when the projection actually differs,
+       because it feeds a localStorage write and a replication cycle; a
+       projection that re-fires on every load would keep the desk saving
+       forever. */
+    const projected = useRef('');
+    const reload = React.useCallback(async force => {
+      await ClientRecords.load(force);
+      setClients(previous => {
+        const next = ClientRecords.project(previous);
+        const signature = JSON.stringify(next);
+        if (signature === projected.current) return previous;
+        projected.current = signature;
+        return next;
+      });
+    }, [setClients]);
+    useEffect(() => {
+      reload(true);
+    }, [reload]);
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('all'); // all | individual | corporate | verified | attention
     const [quick, setQuick] = useState(null);
@@ -23316,31 +24455,55 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const onDbl = name => {
       setProfile(name);
     };
-    const setField = (name, k, v) => setClients(c => ({
-      ...c,
-      [name]: {
-        ...(c[name] || {}),
-        [k]: v,
-        updatedAt: new Date().toISOString().slice(0, 10)
+    const setField = (name, k, v) => clientWriter({
+      name,
+      rec: clients[name],
+      setClients,
+      reload,
+      onError: setSaveErr
+    }).field(k, v);
+    /* Through the same ceiling as every other intake. An oversized scan
+       used to be accepted here with a bare FileReader and then silently
+       lost when the desk's state would not save — see intakeIdImage in
+       cdos-base.jsx and tests/e2e/id-intake-seam.spec.ts. */
+    const upload = async (name, k, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setSaveErr(taken.why);
+        return;
       }
-    }));
-    const upload = (name, k, file) => {
-      const r = new FileReader();
-      r.onload = () => {
-        setField(name, k, r.result);
-        log && log('ID scan saved', name);
-      };
-      r.readAsDataURL(file);
+      setSaveErr('');
+      setField(name, k, taken.dataUrl);
+      log && log('ID scan saved', name);
     };
-    const createContact = (name, kind) => {
-      setClients(c => ({
-        ...c,
-        [name]: {
-          ...(c[name] || {}),
-          kind,
-          createdAt: new Date().toISOString().slice(0, 10)
+    const createContact = async (name, kind) => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+      if (api && ClientRecords.serverBacked()) {
+        try {
+          /* A name COLLISION is not refused. Two people called David
+             Chen are two customers, and a product that will not let the
+             second one exist is the same defect as one that merges them
+             wearing a warning label. The record comes back saying who
+             else shares the name, and the profile says so on screen. */
+          await api.create({
+            legalName: name,
+            kind: kind === 'corporate' ? 'business' : 'individual'
+          });
+          await reload(true);
+        } catch (e) {
+          setSaveErr(e && e.message || 'CurrencyDesk could not create that contact. Nothing was saved.');
+          return;
         }
-      }));
+      } else {
+        setClients(c => ({
+          ...c,
+          [name]: {
+            ...(c[name] || {}),
+            kind,
+            createdAt: new Date().toISOString().slice(0, 10)
+          }
+        }));
+      }
       log && log('Contact created', `${name} · ${kind}`);
       setAdding(false);
       setProfile(name);
@@ -23394,7 +24557,26 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "userplus",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " New contact")), /*#__PURE__*/React.createElement("div", {
+    }), " New contact")), (saveErr || store.trouble()) && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-start gap-2 px-4 py-2.5 flex-none text-[12px]",
+      style: {
+        background: CD.flagSoft
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 14,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: CD.ink
+      }
+    }, saveErr || store.trouble()), saveErr && /*#__PURE__*/React.createElement("button", {
+      onClick: () => setSaveErr(''),
+      className: "ml-auto text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Dismiss")), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap items-center gap-1.5 px-4 py-2.5 flex-none",
       style: {
         borderBottom: `1px solid ${CD.lineSoft}`
@@ -23603,13 +24785,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setHighlightTx(null);
       },
       log: log,
-      highlightTx: highlightTx
+      highlightTx: highlightTx,
+      reload: reload
     })), adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow ? /*#__PURE__*/React.createElement(window.CDOS.KYC.NewContactFlow, {
       by: me && me.name,
       setClients: setClients,
       onClose: () => setAdding(false),
-      onDone: n => {
+      onDone: async n => {
         setAdding(false);
+        try {
+          await reload(true);
+        } catch (e) {/* the file still opens; it just opens on what the browser has */}
         setProfile(n);
       }
     }) : /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(NewContact, {
@@ -23618,8 +24804,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       onClose: () => setAdding(false)
     }))));
   }
+
+  /* `ClientIdViewer` is exported so the TRANSACTION screen can open a
+     customer's ID without opening their file — which is where a teller
+     actually is when the question comes up. One line, and the reveal it
+     performs writes the same server audit row as the client file's:
+        {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
+      `ClientRecords` is exported for the new-contact flow in
+     cdos-kyc.jsx, which can run from screens that never mount this
+     one. */
   window.CDOS = Object.assign(window.CDOS || {}, {
-    Clients
+    Clients,
+    ClientIdViewer,
+    ClientRecords,
+    IdScan
   });
 })();
 
@@ -24136,7 +25334,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     businessDate,
     reportingLimit,
     useDeskFacts,
-    deskPack
+    deskPack,
+    sumDealHome
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY, ONCE.
@@ -24165,12 +25364,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return rate ? (+amt || 0) / rate : null;
   };
   const fmtHome = v => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
-  /* A total across currencies, or nothing. One unpriceable leg makes the
-     whole sum unknown — a total quietly missing a currency looks complete. */
-  const sumHome = parts => {
-    const v = parts.map(([a, c]) => homeOf(a, c));
-    return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null;
-  };
+  /* `sumHome` stood here — a total that converted every leg at today's
+     board mid. Every figure that used it now goes through `sumDealHome`,
+     which counts the leg that IS the desk's own currency and counts
+     nothing else, exactly as the ledger's own summary does. */
 
   /* THE REPORTING LINE, ONCE.
       This file used to flag rows, warn tellers, size a stat card and print
@@ -24490,8 +25687,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) ccyCount[c] = (ccyCount[c] || 0) + 1;
       });
-      const total = sumHome(h.map(r => [r.inAmt, r.inCcy]));
-      const windowCad = sumHome(h.filter(r => r.date >= cutoff).map(r => [r.inAmt, r.inCcy]));
+      /* The deal's home leg, which is what the book counts — never the
+         in-leg re-priced at today's mid. See dealHome in cdos-base.jsx. */
+      const total = sumDealHome(h, home).total;
+      const windowCad = sumDealHome(h.filter(r => r.date >= cutoff), home).total;
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
       const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;
@@ -27272,7 +28471,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           kind: window.CDOS.getRegime(settings).largeCode,
           subject: row.customer,
           beneficiary: row.beneficiary,
-          amount: homeOf(row.inAmt, row.inCcy),
+          amount: (() => {
+            const c = window.CDOS.counterCashIn(row);
+            return c ? homeOf(c.amount, c.ccy) : 0;
+          })(),
           refs: [row.ref],
           basis: null
         });
@@ -27945,6 +29147,14 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       hour12: false
     }).replace(',', '');
     const cadIn = r => homeOf(r.inAmt, r.inCcy);
+    /* The amount on a large-CASH filing is the cash the customer put on
+       the counter, which is not the deal's size — see COUNTER_CASH in
+       cdos-base.jsx. `flags[].single` is raised from the same figure, so
+       nothing that took no cash reaches this button. */
+    const cashInHome = r => {
+      const c = window.CDOS.counterCashIn(r);
+      return c ? homeOf(c.amount, c.ccy) : 0;
+    };
     const fileLCTR = r => {
       const reg = window.CDOS.getRegime(settings);
       onFileLCTR && onFileLCTR({
@@ -27952,7 +29162,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         kind: reg.largeCode,
         subject: r.customer,
         beneficiary: r.beneficiary,
-        amount: cadIn(r),
+        amount: cashInHome(r),
         refs: [r.ref],
         basis: null
       });
@@ -28545,10 +29755,13 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         }
         if (f.str && !r.ackStr) str.add(r.customer);
       });
-      // pay-in volume in CAD-equivalent so mixed currencies sum correctly
+      // pay-in volume in the desk's own money — the home leg of each deal,
+      // and a count of the deals that have no home leg to take. See dealHome.
+      const volume = sumDealHome(src, homeCcy());
       return {
         n: src.length,
-        vol: sumHome(src.map(x => [x.inAmt, x.inCcy])),
+        vol: volume.total,
+        unvalued: volume.unvalued,
         fees: src.reduce((s, x) => s + (+x.fee || 0), 0),
         rpt,
         openRpt,
@@ -28567,7 +29780,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       liveRows.forEach(r => {
         fees += +r.fee || 0;
       });
-      vol = sumHome(liveRows.map(r => [r.inAmt, r.inCcy]));
+      vol = sumDealHome(liveRows, homeCcy()).total;
       return {
         count: filtered.length,
         posted,
@@ -28615,7 +29828,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       liveRecs.forEach(r => {
         fees += +r.fee || 0;
       });
-      vol = sumHome(liveRecs.map(r => [r.inAmt, r.inCcy]));
+      vol = sumDealHome(liveRecs, homeCcy()).total;
       const chips = filterChips();
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
         '&': '&amp;',
@@ -28881,7 +30094,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })))), /*#__PURE__*/React.createElement(StatCard, {
       label: "Pay-in volume",
       value: stats.n ? fmtHome(stats.vol) : '—',
-      sub: stats.n ? 'view breakdown ›' : 'nothing posted in this range',
+      sub: !stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›',
       onClick: () => stats.n && setBreakdown('volume')
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: "Fees collected",
@@ -30835,6 +32048,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
 
+    /* ---- the key that says "this attempt, and no other" ----
+        The idempotency key used to be built from `ref` — mkRef(TODAY,
+       seq), where seq counts THIS browser's rows for today. That number
+       restarts at 1 whenever local state does, so the second money order
+       ever posted from a freshly signed-in till carried the same key as
+       the first: the ledger recognised it as a replay, returned the
+       first deal's response, and moved no cash. The screen said posted,
+       the drawer never changed, and nothing anywhere said so.
+        One key per ticket instead. It survives a refusal — a deal the
+       ledger REFUSED leaves no idempotency row behind, so re-submitting
+       the corrected ticket under the same key is exactly right — and a
+       new ticket gets a new one. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
+
     // customer
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
@@ -31323,10 +32554,155 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setServerBusy(false);
       }
     };
-    const record = () => {
-      if (!canSave) return;
+
+    /* ---- money order and bill payment reach the ledger ----
+        Both are cash over the counter against a promise the desk then
+       owes — a biller waiting to be remitted, a payee waiting to present
+       an instrument — and both used to be a row in an array and nothing
+       else. The drawer on the server never moved, so a day of them left
+       the till and the book disagreeing by exactly what the shop had
+       taken in.
+        The ledger goes first and the browser row follows it. What is
+       booked as earned is the fee and only the fee; the obligation is
+       carried at the face the desk undertook to deliver. See
+       docs/OBLIGATION_LINES.md.
+        Deliberately narrow: this posts the two lines it names and leaves
+       every other type on the path it was already on. A cheque is the
+       other agent's, an exchange goes through the frozen-quote path
+       above, and a remittance is posted from the Transfers app where its
+       corridor, partner and beneficiary actually live. */
+    const postObligationDeal = async ref => {
+      const B = window.CDOS.Backend;
+      const synced = await B.syncCustomer(customer, rec);
+      setClients(list => ({
+        ...list,
+        [customer]: {
+          ...(list[customer] || {}),
+          ledgerCustomerId: synced.customerId,
+          ledgerExternalRef: synced.externalRef
+        }
+      }));
+      const capture = {
+        purpose: purpose.trim(),
+        sourceOfFunds: cap.source.trim(),
+        thirdParty: !!cap.thirdParty,
+        thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined
+      };
+      return isMO ? B.postMoneyOrder({
+        idempotencyKey: 'web:mo:' + attemptKey(),
+        customerId: synced.customerId,
+        reference: ref,
+        faceAmount: B.asMoney(amtN),
+        feeAmount: B.asMoney(feeN),
+        payee: payee.trim(),
+        /* The desk's own reference stands in for the instrument's
+           serial. This screen has no serial field — a money order is
+           issued from a pre-printed book and its number is on the
+           paper — so what is recorded is the reference the desk can
+           actually produce, not a number nobody typed. Named as a
+           missing field in docs/OBLIGATION_LINES.md. */
+        serial: ref,
+        ...capture
+      }) : B.postBillPayment({
+        idempotencyKey: 'web:bill:' + attemptKey(),
+        customerId: synced.customerId,
+        reference: ref,
+        billAmount: B.asMoney(amtN),
+        feeAmount: B.asMoney(feeN),
+        biller: biller.trim(),
+        accountRef: account.trim(),
+        ...capture
+      });
+    };
+
+    /* ---- a cheque cashed from this ticket is the same cheque ----
+        The Cheques desk posts to the ledger; this screen used to write a
+       browser row and a local cheque record, so the very same act — a
+       customer cashing a payroll cheque — reached the book from one
+       screen and not from the other. That is not a missing feature, it
+       is two implementations of one rule, and the drawer disagrees with
+       itself depending on which door the customer came through.
+        So it calls the SAME service, through the same module that owns
+       the cheque record, and maps the server's answer with the same
+       `fromServer` the register uses. Nothing about a cheque is decided
+       here: the hold date, the reference and the net are the server's,
+       and this screen contributes the capture the teller typed. See
+       docs/CHEQUE_CASHING.md. */
+    const postCheque = async () => {
+      const book = _K.ledger();
+      const synced = await window.CDOS.Backend.syncCustomer(customer.trim(), rec);
+      setClients(list => ({
+        ...list,
+        [customer]: {
+          ...(list[customer] || {}),
+          ledgerCustomerId: synced.customerId,
+          ledgerExternalRef: synced.externalRef
+        }
+      }));
+      const posted = await book.cashCheque({
+        idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${window.CDOS.Backend.asMoney(amtN)}:${Date.now()}`,
+        customerId: synced.customerId,
+        chequeNumber: chequeNumber.trim(),
+        maker: maker.trim(),
+        draweeBank: draweeBank.trim() || undefined,
+        chequeType: chequeType.id,
+        typeLabel: chequeType.label,
+        currency: 'CAD',
+        faceAmount: window.CDOS.Backend.asMoney(amtN),
+        feeAmount: window.CDOS.Backend.asMoney(chequeFee),
+        holdDays: chequeType.holdDays || 0,
+        endorsed: endorsed
+      });
+      /* The image never leaves the browser — see the note in
+         017_cheque_cashing.sql about not putting a megabyte of JPEG
+         inside a SERIALIZABLE money transaction — so it is carried onto
+         the mapped record rather than being lost on the way through. */
+      const mapped = _K.fromServer(Object.assign({
+        customerName: customer.trim()
+      }, posted.cheque));
+      if (chequeImage) mapped.image = chequeImage;
+      setCheques && setCheques(list => [mapped, ...(list || []).filter(c => c.chequeId !== mapped.chequeId)]);
+      return {
+        transactionId: posted.transactionId,
+        transactionRef: posted.transactionRef,
+        obligationId: null
+      };
+    };
+    const record = async () => {
+      if (!canSave || serverBusy) return;
       const seq = live.filter(r => r.date === TODAY).length + 1;
-      const ref = mkRef(TODAY, seq);
+      let ref = mkRef(TODAY, seq);
+      let posted = null;
+      const chequeOnLedger = serverBacked && isCheque && _K && _K.ledger();
+      if (chequeOnLedger) {
+        setServerBusy(true);
+        setServerError('');
+        try {
+          posted = await postCheque();
+          ref = posted.transactionRef;
+        } catch (error) {
+          setServerError(error.message || 'The cheque was not cashed.');
+          setServerBusy(false);
+          return;
+        }
+        setServerBusy(false);
+      } else if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
+        setServerBusy(true);
+        setServerError('');
+        try {
+          posted = await postObligationDeal(ref);
+          ref = posted.transactionRef;
+        } catch (error) {
+          /* Nothing was written anywhere. There is no offline mode —
+             docs/CASH_OWNERSHIP_INVARIANTS.md — so a deal the ledger
+             refused is a deal that did not happen, and recording it here
+             would be inventing money. */
+          setServerError(error.message || 'The transaction was not posted.');
+          setServerBusy(false);
+          return;
+        }
+        setServerBusy(false);
+      }
       const base = {
         ref,
         type,
@@ -31447,6 +32823,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           notes: `Bill: ${biller.trim()} · acct ${account.trim()}${memo ? ' · ' + memo : ''}`
         });
       }
+      /* Where the ledger holds it, the browser row carries the book's own
+         names for the deal and for the promise it left behind, so the two
+         can be joined. It carries no cash figure of its own. */
+      if (posted) {
+        tx.serverTransactionId = posted.transactionId;
+        tx.serverObligationId = posted.obligationId;
+      }
       // house auto-tag rules (Settings → Tagged) — applied once, as the deal posts
       const _atOver = +(settings || {}).autoTagOver > 0 && collectCad >= +settings.autoTagOver;
       const _atRiskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /enhanced|high/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
@@ -31461,7 +32844,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         };
       }
       setRows(r => [tx, ...r]);
-      if (isCheque && setCheques && _K) {
+      /* The local cheque register is written HERE only when the ledger
+         did not take it — `postCheque` above has already put the server's
+         own record in place, and minting a second one beside it is the
+         two-books problem in miniature. */
+      if (isCheque && setCheques && _K && !posted) {
         const net = +(amtN - chequeFee).toFixed(2);
         const holdUntil = _K.addDays(TODAY, chequeType.holdDays || 0);
         const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
@@ -31502,6 +32889,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (tq && isExchange) {
         tgRedeem(tq.ref, ref);
         log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone);
+      }
+      /* The drawer just moved on the server, so the screen behind this
+         modal is showing yesterday's figure until it is told. */
+      if (posted && onServerPosted) {
+        try {
+          await onServerPosted();
+        } catch (refreshError) {
+          log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open');
+        }
       }
       onDone && onDone(tx.id);
     };
@@ -31660,6 +33056,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rec: clients[customer],
       live: live,
       settings: settings
+    }), customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, {
+      name: customer,
+      rec: clients[customer],
+      log,
+      compact: true
     }), customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && React.createElement(window.CDOS.KYC.VerificationNudge, {
       key: customer + ':' + single + ':' + idRequired,
       name: customer,
@@ -32630,7 +34031,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "smartphone",
       s: 15
-    }), " Show customer the quote"), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+    }), " Show customer the quote"), serverError && !isExchange && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "px-3 py-2 text-[11px]",
+      style: {
+        background: CD.flagSoft,
+        borderRadius: 9,
+        color: CD.flag
+      }
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -33471,6 +34880,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     rows,
     setRows,
     clients,
+    setClients,
     settings,
     me,
     log,
@@ -33480,8 +34890,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     transfers,
     setTransfers,
     onClose,
-    onDone
+    onDone,
+    serverBacked,
+    onServerPosted
   }) {
+    /* One idempotency key per ticket — see the long note on `attemptKey`
+       in cdos-txmodal.jsx. The key used to be the browser's guessed
+       TR-<date>-NNN, which restarts at 001 on every fresh sign-in, so a
+       till's second-ever transfer replayed its first and moved no cash
+       while the screen said posted. A refused deal leaves no idempotency
+       row, so re-submitting a corrected ticket under the same key is
+       right; a new ticket gets a new one. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const [direction, setDirection] = useState('send');
     const [senderName, setSenderName] = useState('');
     const [benId, setBenId] = useState('');
@@ -33496,6 +34920,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
+    /* The post is a round trip now, so the button has to be able to say
+       so and the modal has to be able to refuse. There is no offline
+       mode — docs/CASH_OWNERSHIP_INVARIANTS.md — so a transfer the
+       ledger did not accept is a transfer that did not happen, and the
+       browser record is not written. */
+    const [busy, setBusy] = useState(false);
+    const [serverError, setServerError] = useState('');
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients));
       rows.forEach(r => r.customer && s.add(r.customer));
@@ -33565,18 +34996,104 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
-    const create = () => {
-      if (!canSave) return;
+
+    /* ---- creating a transfer ----
+        This used to be a synchronous function that pushed two objects
+       into two arrays. The cash it represented never reached the server,
+       so a shop that did twenty of these closed the day with a drawer
+       that disagreed with its own ledger by whatever it had taken in,
+       and the compliance aggregate could not see any of it.
+        Now the LEDGER goes first and the browser record follows it. On a
+       send the desk takes cash and books a payout it owes the corridor
+       partner; on a receive it counts cash out against what the partner
+       owes it. Neither claims a rate margin, because the partner's price
+       is not a thing this product knows — see docs/OBLIGATION_LINES.md,
+       which also names the one field it would need to. The fee is the
+       only thing booked as earned.
+        If the server refuses, nothing at all is recorded here. A movement
+       that succeeded in the browser and never reached the server is a
+       loss, and there is no offline mode to fall back on. */
+    const create = async () => {
+      if (!canSave || busy) return;
       const seqT = transfers.filter(t => t.date === TODAY).length + 1;
       const ref = 'TR-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqT).padStart(3, '0');
       const pin = Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899);
-      // post the ledger row — this is the money movement (one source of truth)
       const seqL = rows.filter(r => r.date === TODAY && r.status !== 'void').length + 1;
       const lref = mkRef(TODAY, seqL);
       const lin = direction === 'send' ? 'CAD' : recvCcy,
         lout = direction === 'send' ? recvCcy : 'CAD';
+      const feeN = parseFloat(fee) || 0;
+      const B = serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
+      let posted = null;
+      if (B) {
+        setBusy(true);
+        setServerError('');
+        try {
+          const synced = await B.syncCustomer(senderName, clients[senderName]);
+          setClients && setClients(list => ({
+            ...list,
+            [senderName]: {
+              ...(list[senderName] || {}),
+              ledgerCustomerId: synced.customerId,
+              ledgerExternalRef: synced.externalRef
+            }
+          }));
+          const capture = {
+            purpose: (purpose || '').trim(),
+            sourceOfFunds: (sourceOfFunds || '').trim()
+            /* The server decides whether these were NEEDED, against the
+               desk's own reporting line. Sending them unconditionally
+               and letting one authority judge them is the whole point —
+               a second threshold in this file is a second rule to drift. */
+          };
+          posted = direction === 'send' ? await B.postRemittanceSend({
+            idempotencyKey: 'web:transfer:' + attemptKey(),
+            customerId: synced.customerId,
+            reference: ref,
+            principalAmount: B.asMoney(amtN),
+            feeAmount: B.asMoney(feeN),
+            payoutCurrency: recvCcy,
+            payoutAmount: B.asMoney(recvAmt),
+            corridor: corridorId,
+            partner: partner,
+            beneficiaryName: ben ? ben.name : senderName,
+            ...capture
+          }) : await B.postRemittanceReceive({
+            idempotencyKey: 'web:transfer:' + attemptKey(),
+            customerId: synced.customerId,
+            reference: ref,
+            sentCurrency: recvCcy,
+            sentAmount: B.asMoney(amtN),
+            payoutAmount: B.asMoney(recvAmt),
+            feeAmount: B.asMoney(feeN),
+            corridor: corridorId,
+            partner: partner,
+            ...capture
+          });
+        } catch (error) {
+          setServerError(error.message || 'The transfer was not posted.');
+          setBusy(false);
+          return;
+        }
+        setBusy(false);
+      }
+
+      /* The transfer's reference, and whose it is.
+          `ref` above is a guess: it counts THIS browser's transfer list,
+         which is empty on a till that has just been signed into and on
+         every other machine in the shop. Two tills doing their first
+         remittance of the day both guessed TR-<date>-001, and the second
+         one was refused by the ledger's uniqueness rule as an
+         "Unexpected server error" — a teller holding the customer's cash
+         and no way to know whose fault it was.
+          So the book names it, exactly as it already names transactions,
+         and what is used from here down is the name that came back. The
+         guess survives only as the reference the desk quoted at the
+         counter, which the ledger keeps on the obligation's opening
+         event. */
+      const oref = posted ? posted.obligationRef : ref;
       const tx = newTx({
-        ref: lref,
+        ref: posted ? posted.transactionRef : lref,
         type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
         customer: senderName,
         inCcy: lin,
@@ -33584,20 +35101,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         rate: pricing.rate,
         outCcy: lout,
         outAmt: recvAmt,
-        fee: parseFloat(fee) || 0,
+        fee: feeN,
         midRate: pricing.midRate,
-        spreadCad: pricing.marginCad,
+        /* Null where the ledger holds the deal, because the ledger books
+           no spread on a remittance and a figure here that the book does
+           not have is the second opinion this product keeps deleting. */
+        spreadCad: posted ? null : pricing.marginCad,
         side: pricing.side,
         teller: me.name,
-        notes: `${ref} · ${direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName} (${cor.country}) · ${partner}`,
-        transferRef: ref,
+        notes: `${oref} · ${direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName} (${cor.country}) · ${partner}`,
+        transferRef: oref,
         createdBy: me.name,
-        createdAt: stamp()
+        createdAt: stamp(),
+        serverTransactionId: posted ? posted.transactionId : null,
+        serverObligationId: posted ? posted.obligationId : null
       });
       setRows(r => [tx, ...r]);
       const transfer = {
         id: 't' + Date.now(),
-        ref,
+        ref: oref,
         pin,
         direction,
         senderName,
@@ -33610,14 +35132,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         recvAmt,
         rate: pricing.rate,
         midRate: pricing.midRate,
-        spreadCad: pricing.marginCad,
-        fee: parseFloat(fee) || 0,
+        spreadCad: posted ? null : pricing.marginCad,
+        fee: feeN,
         purpose,
         sourceOfFunds,
         date: TODAY,
         status: 'created',
         txId: tx.id,
-        txRef: lref,
+        txRef: posted ? posted.transactionRef : lref,
+        /* The ledger's own names for this deal and the promise it left
+           behind, so the browser record and the book can be joined. The
+           browser holds no cash figure of its own. */
+        serverTransactionId: posted ? posted.transactionId : null,
+        serverObligationId: posted ? posted.obligationId : null,
         timeline: [{
           status: 'created',
           ts: stamp(),
@@ -33626,7 +35153,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         createdBy: me.name
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${ref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      if (posted && onServerPosted) {
+        try {
+          await onServerPosted();
+        } catch (refreshError) {
+          log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open');
+        }
+      }
       onDone && onDone(transfer.id);
     };
     const saveBen = b => {
@@ -33728,6 +35262,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), /*#__PURE__*/React.createElement("input", {
       value: senderName,
       onFocus: () => setSenderOpen(true),
+      onBlur: () => setSenderOpen(false),
       onChange: e => {
         setSenderName(e.target.value);
         setSenderOpen(true);
@@ -33962,7 +35497,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, "Spread captured ", /*#__PURE__*/React.createElement("b", {
+    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "Booked now: ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.green
+      }
+    }, fmt(parseFloat(fee) || 0, 'CAD')), " fee \xB7 ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: CD.faint
+      }
+    }, "rate margin at settlement")) : /*#__PURE__*/React.createElement(React.Fragment, null, "Spread captured ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.green
       }
@@ -33970,12 +35513,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.faint
       }
-    }, " \xB7 +", fmt(fee, 'CAD'), " fee")), direction === 'send' && /*#__PURE__*/React.createElement("span", {
+    }, " \xB7 +", fmt(fee, 'CAD'), " fee"))), direction === 'send' && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] font-medium",
       style: {
         color: CD.ink
       }
-    }, "Collect ", fmt(payCad, 'CAD')))), (reportable || idRequired) && /*#__PURE__*/React.createElement("div", {
+    }, "Collect ", fmt(payCad, 'CAD'))), serverError && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.flagSoft,
+        border: `1px solid ${CD.flag}`,
+        borderRadius: 9,
+        color: CD.flag
+      }
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError)), (reportable || idRequired) && /*#__PURE__*/React.createElement("div", {
       className: "p-3 space-y-2",
       style: {
         background: reportable ? CD.flagSoft : CD.lineSoft,
@@ -34029,18 +35580,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, ben ? ben.name : direction === 'receive' ? senderName : 'beneficiary')) : 'Enter an amount to begin'), /*#__PURE__*/React.createElement("button", {
       onClick: create,
-      disabled: !canSave,
+      disabled: !canSave || busy,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
-        background: canSave ? CD.ink : 'var(--cd-disabled)',
+        background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: canSave ? 'pointer' : 'not-allowed'
+        cursor: canSave && !busy ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "send",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " Create transfer")))), addBen && /*#__PURE__*/React.createElement(BeneficiaryModal, {
+    }), " ", busy ? 'Posting…' : 'Create transfer')))), addBen && /*#__PURE__*/React.createElement(BeneficiaryModal, {
       sender: senderName,
       corridors: corridors,
       onClose: () => setAddBen(false),
@@ -35601,7 +37152,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     beneficiaries: pBen,
     setBeneficiaries: pSetBen,
     corridors: pCor,
-    setCorridors: pSetCor
+    setCorridors: pSetCor,
+    serverBacked,
+    onTillChanged
   }) {
     const [tab, setTab] = useState('pipeline');
     // beneficiaries + corridors are lifted to the OS shell so Clients shares them;
@@ -35790,6 +37343,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       rows,
       setRows,
       clients,
+      setClients,
       settings,
       me,
       log,
@@ -35798,6 +37352,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       setBeneficiaries,
       transfers,
       setTransfers,
+      serverBacked,
+      onServerPosted: onTillChanged,
       onClose: () => setModal(false),
       onDone: id => {
         setModal(false);
@@ -35834,8 +37390,32 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        i.e. what's actually at risk right now.
      • NSF / fraud — flag a held cheque, record the return as a loss.
      • Fee schedule — fee % / minimum / hold days per cheque type.
-   Cashing posts a ledger row (Cheque Cashing) so cash, fees and the
-   audit trail stay on the one source of truth; the risk layer lives here.
+
+   ---- WHERE A CHEQUE ACTUALLY LIVES ----
+
+   On the ledger. `cdos_cheques_v1` is a cache of it.
+
+   This header used to claim that "cashing posts a ledger row … so cash,
+   fees and the audit trail stay on the one source of truth", and none of
+   it was true: `save()` built a browser transaction, pushed it into an
+   array, wrote the cheque into localStorage, and the server never heard
+   about a dollar of it. The desk paid out real money from a real drawer
+   and the book that the drawer is counted against went on showing the
+   figure from before.
+
+   Now every one of the four money events — cashing, clearing, a return,
+   and a reversal of a cashing done in error — is a server call, and the
+   server answers with the cheque and with the drawer's new balances.
+   Nothing here computes cash, and nothing here is applied optimistically:
+   if the ledger refuses, nothing is cashed and the screen says why. See
+   docs/CHEQUE_CASHING.md for the three journals and
+   docs/CASH_OWNERSHIP_INVARIANTS.md for why there is only one book.
+
+   The one thing still held locally is the cheque IMAGE, deliberately —
+   images are being dealt with separately and there is a ceiling on intake
+   (tests/e2e/id-intake-seam.spec.ts). It lives in its own small store
+   keyed by the ledger's cheque id, so refreshing the register from the
+   server cannot silently drop the scans.
    ============================================================ */
 (function () {
   const {
@@ -35954,6 +37534,17 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       soft: CD.flagSoft,
       ink: CD.flag,
       icon: 'ban'
+    },
+    /* A cashing that should never have happened, undone. Its own state and
+       not a shade of "returned": a returned cheque cost the desk the face
+       amount, a reversed one cost it nothing, and a screen that showed
+       them the same would put a mis-key into the losses figure. */
+    reversed: {
+      label: 'Reversed',
+      tone: CD.mute,
+      soft: CD.lineSoft,
+      ink: CD.mute,
+      icon: 'x'
     }
   };
 
@@ -36067,7 +37658,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     })];
   }
   const KKEY = 'cdos_cheques_v1',
-    SKEY = 'cdos_cheque_schedule_v1';
+    SKEY = 'cdos_cheque_schedule_v1',
+    IKEY = 'cdos_cheque_images_v1';
   const load = (k, def) => {
     try {
       const r = JSON.parse(localStorage.getItem(k) || 'null');
@@ -36076,6 +37668,78 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       return def();
     }
   };
+
+  /* ---- talking to the book ----
+      `ledger()` answers null on a desk that has no server — a standalone
+     demonstration, or a plan without the ledger. That desk keeps the
+     screens and keeps its local store, and the difference is stated on
+     screen rather than hidden: a browser copy is not a record. */
+  const ledger = () => window.CDOS.Backend && window.CDOS.Backend.cashCheque ? window.CDOS.Backend : null;
+
+  /* The cheque image, held apart from the cheque. A scan is tens of
+     kilobytes and is not going to the server in this change, so it cannot
+     live on the cached cheque object — the cache is replaced wholesale
+     every time the register is re-read and the images would go with it.
+     Keyed by the LEDGER's cheque id, which is the only identifier both
+     sides agree on. */
+  const images = () => {
+    try {
+      return JSON.parse(localStorage.getItem(IKEY) || '{}') || {};
+    } catch (e) {
+      return {};
+    }
+  };
+  const keepImage = (chequeId, dataUrl) => {
+    if (!chequeId || !dataUrl) return;
+    try {
+      const all = images();
+      all[chequeId] = dataUrl;
+      localStorage.setItem(IKEY, JSON.stringify(all));
+    } catch (e) {}
+  };
+
+  /* One cheque from the ledger, in the shape these screens already speak.
+     Money arrives as decimal strings and is turned into numbers only for
+     rendering — the figures themselves are the server's and nothing here
+     recomputes one of them. */
+  function fromServer(c, imgs) {
+    const held = imgs || images();
+    return {
+      id: c.chequeId,
+      chequeId: c.chequeId,
+      ref: c.ref,
+      chequeNumber: c.chequeNumber,
+      maker: c.maker,
+      draweeBank: c.draweeBank || '',
+      customer: c.customerName || c.customerId,
+      customerId: c.customerId,
+      typeId: c.chequeType,
+      typeLabel: c.typeLabel,
+      ccy: c.currency,
+      amount: Number(c.faceAmount),
+      feeCad: Number(c.feeAmount),
+      netCad: Number(c.netAmount),
+      endorsed: !!c.endorsed,
+      image: held[c.chequeId] || null,
+      holdDays: c.holdDays,
+      holdUntil: c.holdUntil,
+      receivedDate: c.receivedDate,
+      status: c.status,
+      nsf: !!c.nsf,
+      fraud: !!c.fraud,
+      returnedReason: c.returnedReason || '',
+      timeline: (c.timeline || []).map(e => ({
+        status: e.status,
+        ts: String(e.at || '').replace('T', ' ').slice(0, 19),
+        by: String(e.actorId || '').split(':').pop(),
+        note: e.note || ''
+      })),
+      txId: c.cashingTransactionId,
+      txRef: c.cashingTransactionRef,
+      createdBy: String(c.createdBy || '').split(':').pop(),
+      server: true
+    };
+  }
 
   /* ===================== atoms ===================== */
   const inputSty = {
@@ -36159,7 +37823,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     cheques,
     setCheques,
     onClose,
-    onDone
+    onDone,
+    onTillChanged
   }) {
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients || {}));
@@ -36205,64 +37870,80 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       setImgErr('');
       setImage(taken.dataUrl);
     };
-    const save = () => {
-      if (!canSave) return;
-      const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
-      const ref = 'CHQ-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqC).padStart(3, '0');
-      // ledger row: cheque cashed — cash fronted out of the drawer (one source of truth)
-      const seqL = (rows || []).filter(r => r.date === TODAY && r.status !== 'void').length + 1;
-      const lref = mkRef(TODAY, seqL);
-      const tx = newTx({
-        ref: lref,
-        type: 'Cheque Cashing',
-        customer,
-        inCcy: 'CAD',
-        inAmt: amtN,
-        rate: 1,
-        outCcy: 'CAD',
-        outAmt: net,
-        fee,
-        teller: me.name,
-        notes: `${ref} · ${type.label} cheque #${chequeNumber} · ${maker} (${draweeBank})`,
-        chequeRef: ref,
-        createdBy: me.name,
-        createdAt: stamp()
-      });
-      setRows(r => [tx, ...r]);
-      const chq = {
-        id: 'c' + Date.now(),
-        ref,
-        chequeNumber: chequeNumber.trim(),
-        maker: maker.trim(),
-        draweeBank: draweeBank.trim(),
-        customer: customer.trim(),
-        typeId,
-        typeLabel: type.label,
-        ccy: 'CAD',
-        amount: amtN,
-        feeCad: fee,
-        netCad: net,
-        endorsed,
-        image,
-        holdDays,
-        receivedDate: TODAY,
-        holdUntil,
-        status: holdDays === 0 ? 'held' : 'held',
-        nsf: false,
-        fraud: false,
-        timeline: [{
-          status: 'held',
-          ts: stamp(),
-          by: me.name,
-          note: `Cash fronted ${fmt(net, 'CAD')} · ${holdDays === 0 ? 'no hold' : holdDays + '-day hold'}`
-        }],
-        txId: tx.id,
-        txRef: lref,
-        createdBy: me.name
-      };
-      setCheques(list => [chq, ...list]);
-      log && log('Cheque cashed', `${ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(net, 'CAD')} · hold to ${holdUntil}`);
-      onDone && onDone(chq.id);
+
+    /* Cashing, which is a movement of money and therefore a server call.
+        The whole of this used to happen in the browser — a transaction row
+       pushed into an array, a cheque written to localStorage, and a
+       reference number minted from the length of the local list, which
+       meant two tills cashing at the same moment both produced
+       CHQ-260618-003 for different money. None of it reached the ledger,
+       so the drawer on screen fell and the drawer on the server did not.
+        Nothing is applied here until the server has agreed, and nothing is
+       applied optimistically afterwards either: the cheque, its reference,
+       its dates and the drawer's new balances all come back in the
+       response and are rendered as sent. The ledger row shows up in the
+       Ledger the same way every other posted deal does, by re-reading it
+       from the book. */
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const save = async () => {
+      if (!canSave || busy) return;
+      const book = ledger();
+      if (!book) {
+        setErr('This desk has no ledger to post to, so a cheque cannot be cashed here. Nothing was recorded.');
+        return;
+      }
+      setBusy(true);
+      setErr('');
+      try {
+        /* The ledger's own customer record. A cheque cashing is a deal
+           against a named person — the identification line is enforced
+           on the server against THIS record — so the desk's client is
+           mirrored across before the money moves. */
+        const synced = await book.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
+        const posted = await book.cashCheque({
+          idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${book.asMoney(amtN)}:${Date.now()}`,
+          customerId: synced.customerId,
+          chequeNumber: chequeNumber.trim(),
+          maker: maker.trim(),
+          draweeBank: draweeBank.trim() || undefined,
+          chequeType: typeId,
+          typeLabel: type.label,
+          /* The desk's home currency, which is what the capture form
+             offers and the only thing the server will take. A cheque in
+             anything else is an exchange as well as a cheque and belongs
+             on the quote path; the server refuses it by name. */
+          currency: 'CAD',
+          faceAmount: book.asMoney(amtN),
+          feeAmount: book.asMoney(fee),
+          holdDays: holdDays,
+          endorsed: endorsed
+        });
+        keepImage(posted.cheque.chequeId, image);
+        const chq = fromServer(Object.assign({
+          customerName: customer.trim()
+        }, posted.cheque));
+        setCheques(list => [chq, ...(list || []).filter(c => c.chequeId !== chq.chequeId)]);
+        /* The posted row belongs to the Ledger, and the Ledger reads it
+           from the book rather than being handed a copy — a locally
+           minted row would sit beside the server's own for the same deal,
+           which is the two-books problem in miniature. */
+        if (book.loadLedger && setRows) {
+          try {
+            const serverRows = await book.loadLedger();
+            setRows(current => book.mergeRows(current, serverRows));
+          } catch (refreshError) {
+            log && log('Ledger refresh failed', refreshError.message || 'The cashed cheque will appear on the next ledger open');
+          }
+        }
+        onTillChanged && onTillChanged(posted.balances);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), 'CAD')} · hold to ${posted.cheque.holdUntil}`);
+        onDone && onDone(chq.id);
+      } catch (error) {
+        setErr(error.message || 'The cheque was not cashed.');
+      } finally {
+        setBusy(false);
+      }
     };
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
@@ -36565,7 +38246,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         background: holdDays === d ? CD.ink : 'transparent',
         color: holdDays === d ? 'var(--cd-on-ink)' : CD.mute
       }
-    }, d === 0 ? 'None' : d + 'd'))))), /*#__PURE__*/React.createElement("div", {
+    }, d === 0 ? 'None' : d + 'd'))))), err && /*#__PURE__*/React.createElement("div", {
+      className: "flex-none px-5 pb-2 text-[12px]",
+      style: {
+        color: CD.flag
+      },
+      role: "alert"
+    }, err), /*#__PURE__*/React.createElement("div", {
       className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -36587,18 +38274,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }
     }, fmt(fee, 'CAD'))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
       onClick: save,
-      disabled: !canSave,
+      disabled: !canSave || busy,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
-        background: canSave ? CD.ink : 'var(--cd-disabled)',
+        background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: canSave ? 'pointer' : 'not-allowed'
+        cursor: canSave && !busy ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " Cash & hold")))));
+    }), " ", busy ? 'Posting…' : 'Cash & hold')))));
   }
 
   /* ===================== DETAIL DRAWER ===================== */
@@ -36607,35 +38294,70 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     me,
     log,
     setCheques,
-    onClose
+    onClose,
+    onTillChanged
   }) {
     const overdue = c.status === 'held' && c.holdUntil < TODAY;
-    const update = (patch, action, note) => {
-      setCheques(list => list.map(x => x.id === c.id ? {
-        ...x,
-        ...patch,
-        timeline: [...(x.timeline || []), {
-          status: patch.status || x.status,
-          ts: stamp(),
-          by: me.name,
-          note
-        }]
-      } : x));
-      log && log(action, `${c.ref} · ${note || ''}`);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+
+    /* Every one of these is a posting. A clearance moves a receivable to
+       the bank, a return books the face amount as a loss, and a reversal
+       puts the cash back in the drawer — three journals, none of which a
+       browser may write for itself. This used to be a `setCheques` call
+       that patched a status in localStorage and told nobody. */
+    const act = async (kind, call, action, note) => {
+      const book = ledger();
+      if (!book) {
+        setErr('This desk has no ledger to post to. Nothing was recorded.');
+        return;
+      }
+      if (busy) return;
+      setBusy(kind);
+      setErr('');
+      try {
+        const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
+        /* The status and the timeline come back from the register rather
+           than being guessed at here — a cheque somebody else has already
+           dealt with reads correctly instead of showing this teller's
+           optimistic patch over the top of it. */
+        const refreshed = await book.loadCheques();
+        setCheques(() => (refreshed.cheques || []).map(x => fromServer(x)));
+        if (answer && answer.balances) onTillChanged && onTillChanged(answer.balances);
+        log && log(action, `${c.ref} · ${note}`);
+        onClose && onClose();
+      } catch (error) {
+        setErr(error.message || 'The ledger refused this. Nothing was posted.');
+      } finally {
+        setBusy('');
+      }
     };
-    const clear = () => update({
-      status: 'cleared'
-    }, 'Cheque cleared', 'Funds confirmed by drawee bank');
-    const returnNsf = () => update({
-      status: 'returned',
-      nsf: true,
-      returnedReason: 'NSF — insufficient funds'
-    }, 'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
-    const returnFraud = () => update({
-      status: 'returned',
-      fraud: true,
-      returnedReason: 'Fraud — suspect cheque'
-    }, 'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    const clear = () => act('clear', (book, key) => book.clearCheque(c.chequeId, {
+      idempotencyKey: key
+    }), 'Cheque cleared', 'Funds confirmed by drawee bank');
+    const returnNsf = () => act('nsf', (book, key) => book.returnCheque(c.chequeId, {
+      idempotencyKey: key,
+      reason: 'NSF — insufficient funds',
+      nsf: true
+    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
+    const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
+      idempotencyKey: key,
+      reason: 'Fraud — suspect cheque',
+      fraud: true
+    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    /* Undoing a cashing done in error, which is NOT the same act as an
+       NSF and does not share its button. The cash comes back into the
+       drawer and the fee is reversed with it, because the desk did not
+       perform a service it can charge for. On a bounced cheque the money
+       is genuinely gone and the fee stays. */
+    const reverse = () => {
+      const why = window.prompt('Why is this cashing being reversed? The cash goes back into the drawer and the fee is refunded.');
+      if (!why || !why.trim()) return;
+      return act('reverse', (book, key) => book.reverseCheque(c.chequeId, {
+        idempotencyKey: key,
+        reason: why.trim()
+      }), 'Cheque cashing reversed', why.trim());
+    };
     const sched = STATUS[c.status] || STATUS.held;
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex justify-end",
@@ -36827,17 +38549,19 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       className: "flex flex-wrap gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: clear,
+      disabled: !!busy,
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
-        background: CD.green,
+        background: busy ? 'var(--cd-disabled)' : CD.green,
         borderRadius: 8
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "checkcircle",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " Mark cleared"), /*#__PURE__*/React.createElement("button", {
+    }), " ", busy === 'clear' ? 'Posting…' : 'Mark cleared'), /*#__PURE__*/React.createElement("button", {
       onClick: returnNsf,
+      disabled: !!busy,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
       style: {
         border: `1px solid ${CD.flagSoft}`,
@@ -36849,8 +38573,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "ban",
       s: 15,
       c: CD.flag
-    }), " Return NSF"), /*#__PURE__*/React.createElement("button", {
+    }), " ", busy === 'nsf' ? 'Posting…' : 'Return NSF'), /*#__PURE__*/React.createElement("button", {
       onClick: returnFraud,
+      disabled: !!busy,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
       style: {
         border: `1px solid ${CD.line}`,
@@ -36861,7 +38586,26 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "alert",
       s: 15,
       c: CD.flag
-    }), " Flag fraud")), c.txRef && /*#__PURE__*/React.createElement("div", {
+    }), " ", busy === 'fraud' ? 'Posting…' : 'Flag fraud'), /*#__PURE__*/React.createElement("button", {
+      onClick: reverse,
+      disabled: !!busy,
+      className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
+      style: {
+        border: `1px dashed ${CD.line}`,
+        color: CD.mute,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 15,
+      c: CD.mute
+    }), " ", busy === 'reverse' ? 'Posting…' : 'Reverse cashing')), err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.flag
+      },
+      role: "alert"
+    }, err), c.txRef && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.faint
@@ -36874,7 +38618,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       defaultCheques,
       KKEY,
       SKEY,
+      IKEY,
       load,
+      ledger,
+      fromServer,
       STATUS,
       RISK_TONE,
       feeFor,
@@ -37322,12 +39069,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     setCheques: pSetChq,
     schedule: pSched,
     setSchedule: pSetSched,
-    captureSignal
+    captureSignal,
+    serverBacked,
+    onTillChanged,
+    onRefreshCheques
   }) {
     const [tab, setTab] = useState('clearing');
     // cheques + schedule are lifted to the OS shell so the Ledger shares them;
     // fall back to local stores if mounted standalone.
-    const [lChq, lSetChq] = useState(() => load(KKEY, defaultCheques));
+    const [lChq, lSetChq] = useState(() => K.ledger() ? [] : load(KKEY, defaultCheques));
     const [lSched, lSetSched] = useState(() => load(SKEY, defaultSchedule));
     const cheques = pChq || lChq,
       setCheques = pSetChq || lSetChq;
@@ -37458,6 +39208,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       log,
       cheques,
       setCheques,
+      onTillChanged,
       onClose: () => setModal(false),
       onDone: id => {
         setModal(false);
@@ -37469,6 +39220,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       me: me,
       log: log,
       setCheques: setCheques,
+      onTillChanged: onTillChanged,
       onClose: () => setDetailId(null)
     }));
   }
@@ -37507,12 +39259,25 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     fmt,
     num,
     TODAY,
-    crossRate
+    crossRate,
+    counterCashIn
   } = window.CDOS;
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
-  const cadIn = r => r.inCcy === 'CAD' ? Number(r.inAmt) || 0 : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
+  const home = (amount, ccy) => ccy === 'CAD' ? Number(amount) || 0 : (Number(amount) || 0) / (crossRate('CAD', ccy) || 1);
+  /** What the deal was FOR, in home money. A size, not a cash movement. */
+  const cadIn = r => home(r.inAmt, r.inCcy);
+  /* What the customer actually put on the counter, in home money — zero
+     where they put nothing there. The large-cash report is a report
+     about cash RECEIVED, and `cadIn` is not that: on a remittance
+     receive it is the foreign sum a sender abroad dispatched, and on a
+     cheque cashing it is the face of a cheque. See COUNTER_CASH in
+     cdos-base.jsx, which mirrors the server's own `cash_in_home`. */
+  const cashIn = r => {
+    const c = counterCashIn(r);
+    return c ? home(c.amount, c.ccy) : 0;
+  };
   const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
 
   /* ============================================================
@@ -38003,13 +39768,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }
   // LCTR — cash-in from the ledger
   function aggClusters(rows, regime, settings) {
-    const events = (rows || []).filter(r => r.status !== 'void' && cadIn(r) > 0).map(r => ({
+    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(r => ({
       id: r.id,
       ref: r.ref,
       date: r.date,
       time: r.time,
       t: dt(r),
-      amt: cadIn(r),
+      amt: cashIn(r),
       customer: r.customer,
       beneficiary: r.beneficiary
     }));
@@ -38048,6 +39813,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       aggClusters,
       aggClustersEFT,
       cadIn,
+      cashIn,
       dt,
       setFingerprint
     },
@@ -39454,7 +41220,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     STAT,
     aggClusters,
     aggClustersEFT,
-    cadIn
+    cadIn,
+    cashIn
   } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', {
@@ -39651,6 +41418,9 @@ ${(filing.map || []).map(blockHTML).join('')}
     const xr = ccy => window.CDOS.crossRate('CAD', ccy) || 1;
     const out = [];
     // single cash transactions at/over threshold (filed individually)
+    /* `cashIn`, not `cadIn` — the figure on a large-CASH report is the
+       cash the customer put on the counter. `f.single` is raised from
+       the same number, so a deal that took no cash never reaches here. */
     rows.filter(r => r.status !== 'void').forEach(r => {
       const f = flags[r.id] || {};
       if (f.single) out.push({
@@ -39659,7 +41429,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         kind: regime.largeCode,
         subject: r.customer,
         beneficiary: r.beneficiary,
-        amount: cadIn(r),
+        amount: cashIn(r),
         detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`,
         date: r.date,
         refs: [r.ref]
@@ -40427,9 +42197,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return [...m.values()].map(e => ({
         ...e,
-        sum: e.txs.reduce((s, t) => s + cadIn(t), 0),
-        avg: e.txs.length ? e.txs.reduce((s, t) => s + cadIn(t), 0) / e.txs.length : 0,
-        pct: regime.threshold ? e.txs.reduce((s, t) => s + cadIn(t), 0) / e.txs.length / regime.threshold : 0,
+        /* Structuring is splitting CASH to stay under the cash line, so
+           these totals count cash and not deal size — same rule as the
+           `str` flag they are describing. */
+        sum: e.txs.reduce((s, t) => s + cashIn(t), 0),
+        avg: e.txs.length ? e.txs.reduce((s, t) => s + cashIn(t), 0) / e.txs.length : 0,
+        pct: regime.threshold ? e.txs.reduce((s, t) => s + cashIn(t), 0) / e.txs.length / regime.threshold : 0,
         acked: e.open === 0
       })).sort((a, b) => a.acked - b.acked || b.agg - a.agg);
     }, [rows, flags, regime]);
@@ -43496,11 +45269,64 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }));
     };
-    // escape hatch: create the contact without running (or paying for) a verification
-    const saveManual = () => {
+
+    /* And on the SERVER, which is where a customer file actually lives
+       now. This flow runs from the till and from the transaction modal,
+       not only from the Clients screen, so a contact created here used
+       to exist in one browser and nowhere else — invisible at the next
+       counter, and gone with the browser profile. See
+       server/src/clients/records.ts and docs/CLIENT_RECORDS.md.
+        Deliberately not awaited into the wizard's own flow: a teller
+       mid-transaction should not be held up by it, and the local write
+       above has already happened, so the worst case is a record that
+       reaches the server on the next load rather than one that is lost.
+       A genuine failure is reported rather than swallowed. */
+    const publishedId = useRef(null);
+    const publishContact = (nm, extra) => {
+      const shared = window.CDOS.ClientRecords;
+      /* A promise either way, so `await publishContact(...)` behaves the
+         same on a desk with no server behind it. */
+      if (!shared || !shared.serverBacked()) return Promise.resolve(null);
+      const details = Object.assign({
+        kind,
+        phone: phone.trim(),
+        email: email.trim(),
+        photo
+      }, extra || {});
+      /* The first call opens the file; every later one — the identity a
+         verification read off the document — lands on THAT file rather
+         than opening a second one under the same name. */
+      const done = publishedId.current ? shared.record(publishedId.current, details) : shared.open(nm, details).then(created => {
+        if (created) publishedId.current = created.clientId;
+        return created;
+      });
+      /* Returned as well as guarded, so the ONE caller that needs to know
+         it landed can wait for it. Everything else still fires and
+         forgets — see above. */
+      return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', err && err.message || err));
+    };
+    const [saving, setSaving] = useState(false);
+    /* Escape hatch: create the contact without running (or paying for) a
+       verification.
+        This ONE path waits for the server, unlike the mid-transaction
+       paths above. What happens immediately afterwards is that the new
+       file is opened on screen, and the single most important thing a
+       brand-new file can say — that somebody else on this desk already
+       has that name — is a fact only the server holds. Handing the
+       teller the browser's copy meant handing them a file with that
+       warning missing, which is the exact defect these records moved to
+       the server to end. One round-trip at the end of the wizard, and
+       the button says it is working. */
+    const saveManual = async () => {
       const nm = name.trim();
-      if (!nm) return;
+      if (!nm || saving) return;
       writeContact(nm);
+      setSaving(true);
+      try {
+        await publishContact(nm);
+      } finally {
+        setSaving(false);
+      }
       if (onDone) onDone(nm);
       onClose();
     };
@@ -43530,6 +45356,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           createdAt: c[nm] && c[nm].createdAt || new Date().toISOString().slice(0, 10)
         }
       }));
+      publishContact(nm);
       const chk = createCheck({
         subject: nm,
         kind,
@@ -43557,6 +45384,10 @@ ${(filing.map || []).map(blockHTML).join('')}
             idVerifiedAt: check.result.completedAt
           }
         }));
+        /* What the provider read off the document belongs on the
+           server record too, or the desk's proof of who it identified
+           lives in one browser. */
+        if (ex) publishContact(name.trim(), ex);
         setStep('done');
       }
     }, [check && check.status]);
@@ -44021,16 +45852,16 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Back"), !requireId && /*#__PURE__*/React.createElement("button", {
       onClick: saveManual,
-      disabled: !name.trim(),
+      disabled: !name.trim() || saving,
       title: "Skip verification \u2014 not recommended",
       className: "px-2.5 py-2.5 text-[12px] font-medium",
       style: {
         color: CD.faint,
         textDecoration: 'underline',
         textUnderlineOffset: 2,
-        cursor: name.trim() ? 'pointer' : 'not-allowed'
+        cursor: name.trim() && !saving ? 'pointer' : 'not-allowed'
       }
-    }, "Save without verifying"), /*#__PURE__*/React.createElement("div", {
+    }, saving ? 'Saving…' : 'Save without verifying'), /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }), /*#__PURE__*/React.createElement("button", {
       onClick: () => setStep('choose'),
@@ -59301,13 +61132,28 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // ---- cheques + fee schedule: shared so the Ledger's "Cheque Cashing" opens
     // the SAME capture/clearance system the Cheques desk uses (one source of truth) ----
     const _K = window.CDOS._cheques;
+    /* A desk with a ledger starts with NOTHING here and waits for the
+       register. The four seeded cheques below it are a demonstration, and
+       a demonstration in this particular store is not harmless: the
+       Cheques desk and the Dashboard both total "cash at risk" off it, so
+       a real desk would open on $9,300 of exposure it does not have — the
+       same shape of defect as the thirty-eight demo deals the Dashboard
+       used to announce. See docs/CASH_OWNERSHIP_INVARIANTS.md. */
     const [cheques, setCheques] = useState(() => {
+      let cached = null;
       try {
         const r = localStorage.getItem(_K.KKEY);
-        return r ? JSON.parse(r) : _K.defaultCheques();
-      } catch (e) {
-        return _K.defaultCheques();
-      }
+        cached = r ? JSON.parse(r) : null;
+      } catch (e) {}
+      if (!_K.ledger()) return cached || _K.defaultCheques();
+      /* With a ledger, the only cache worth trusting is one that CAME from
+         the ledger — `server: true` is stamped on every cheque read back
+         from the register. Anything else in this store is either the
+         demonstration set or cheques a browser cashed for itself before
+         this was a server call, and rendering either would put exposure on
+         screen that the book has never heard of. Empty until the register
+         lands, and the register is re-read on every desktop mount. */
+      return (cached || []).filter(c => c && c.server);
     });
     const [chequeSchedule, setChequeSchedule] = useState(() => {
       try {
@@ -59318,6 +61164,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     });
     const [chequeCaptureSig, setChequeCaptureSig] = useState(0);
+    /* The register, read from the book. What is kept in `cdos_cheques_v1`
+       afterwards is a cache of it, the way `cdos_submissions_v1` caches
+       the filed reports — so a desk that loses its ledger connection can
+       still SEE what it is carrying, and can post nothing. */
+    const refreshCheques = React.useCallback(async () => {
+      const book = _K.ledger();
+      if (!book) return;
+      try {
+        const answer = await book.loadCheques();
+        setCheques((answer.cheques || []).map(c => _K.fromServer(c)));
+      } catch (error) {
+        log('Cheque register unavailable', error.message || 'The desk cannot read its cheques from the ledger');
+      }
+    }, []);
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser) return;
+      refreshCheques();
+    }, [stage, srvUser, ledgerWorkspaceId, refreshCheques]);
     useEffect(() => {
       try {
         localStorage.setItem(_K.KKEY, JSON.stringify(cheques));
@@ -61174,7 +63038,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             beneficiaries,
             setBeneficiaries,
             corridors,
-            setCorridors
+            setCorridors,
+            serverBacked: !!srvUser,
+            onTillChanged: syncTillFromServer
           });
         case 'cheques':
           return /*#__PURE__*/React.createElement(Cheques, {
@@ -61188,7 +63054,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             setCheques,
             schedule: chequeSchedule,
             setSchedule: setChequeSchedule,
-            captureSignal: chequeCaptureSig
+            captureSignal: chequeCaptureSig,
+            serverBacked: !!srvUser,
+            onTillChanged: syncTillFromServer,
+            onRefreshCheques: refreshCheques
           });
         case 'compliance':
           return /*#__PURE__*/React.createElement(Compliance, {

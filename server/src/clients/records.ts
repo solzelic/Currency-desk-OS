@@ -564,6 +564,7 @@ export class ClientRecordService {
         clientId,
         `${input.docType.trim()}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
       );
+      await this.refreshVerification(client, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -616,6 +617,7 @@ export class ClientRecordService {
         clientId,
         `${documentId} · changed: ${names.join(", ") || "scan"}`,
       );
+      await this.refreshVerification(client, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -639,6 +641,7 @@ export class ClientRecordService {
         clientId,
         `${removed.rows[0]!.doc_type} removed`,
       );
+      await this.refreshVerification(client, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -958,6 +961,40 @@ export class ClientRecordService {
       ],
     );
     return customerId;
+  }
+
+  /**
+   * What the papers on file now say about this identity.
+   *
+   * Derived from the documents rather than typed, because a status
+   * somebody has to remember to change is a status that goes stale — the
+   * old store's `idStatus` was recomputed in the browser on every render
+   * for exactly that reason, and then only in the browser.
+   *
+   * `verified` is never touched here. It means a provider authenticated
+   * the document and was paid to do it; no amount of adding and removing
+   * rows in this table can grant that, and nothing here may quietly take
+   * it away either. The three states this DOES own are the ones that
+   * follow mechanically from what the desk is holding.
+   */
+  private async refreshVerification(client: pg.PoolClient, clientId: string) {
+    await client.query(
+      `UPDATE desk_clients c
+          SET verification_status = CASE
+            WHEN NOT EXISTS (
+              SELECT 1 FROM desk_client_identity_documents d
+               WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
+            ) THEN 'unverified'
+            WHEN EXISTS (
+              SELECT 1 FROM desk_client_identity_documents d
+               WHERE d.client_id=c.client_id AND d.is_primary
+                 AND d.expires_on IS NOT NULL AND d.expires_on < current_date
+            ) THEN 'expired'
+            ELSE 'identified'
+          END
+        WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
+      [clientId],
+    );
   }
 
   private async hasPrimary(client: pg.PoolClient, clientId: string) {

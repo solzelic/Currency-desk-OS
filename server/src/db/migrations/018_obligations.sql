@@ -127,14 +127,17 @@ ALTER TABLE ledger_transactions
      false, which is true of every exchange already on the book. */
   ADD COLUMN IF NOT EXISTS cross_border boolean NOT NULL DEFAULT false;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ledger_transactions_cash_home_check') THEN
-    ALTER TABLE ledger_transactions ADD CONSTRAINT ledger_transactions_cash_home_check
-      CHECK ((cash_in_home IS NULL OR cash_in_home >= 0)
-         AND (cash_out_home IS NULL OR cash_out_home >= 0));
-  END IF;
-END $$;
+/* Dropped and re-added rather than guarded by `IF NOT EXISTS (… conname
+   = …)`. That guard is how a constraint silently fails to be created —
+   017 hit it from the other side and renamed its own constraint so this
+   migration could not skip past a stale one — and a rule that quietly
+   did not get applied is worse than no rule, because everything
+   downstream is written as though it had been. */
+ALTER TABLE ledger_transactions DROP CONSTRAINT IF EXISTS ledger_transactions_cash_home_check;
+ALTER TABLE ledger_transactions
+  ADD CONSTRAINT ledger_transactions_cash_home_check
+  CHECK ((cash_in_home IS NULL OR cash_in_home >= 0)
+     AND (cash_out_home IS NULL OR cash_out_home >= 0));
 
 /* ---- what the desk owes, and what is owed to the desk ---- */
 

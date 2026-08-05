@@ -119,6 +119,25 @@
         || (r.aliases || []).some(a => key(a.alias) === want));
     };
 
+    /* An identity document, where one was described. The desk's flat
+       `idType` / `idNum` / `photo` fields are three different things now
+       — a document, its number and a picture of it — and this is where a
+       caller who still holds them as one object gets them filed
+       correctly. */
+    async function applyDocument(clientId, rec) {
+      const client = api();
+      if (!client || !clientId) return;
+      if (!rec || (!rec.idType && !rec.idNum && !rec.photo)) return;
+      await client.addDocument(clientId, {
+        docType: rec.idType || 'Not stated',
+        docNumber: rec.idNum || null,
+        issuedOn: rec.idIssued || null,
+        expiresOn: rec.idExpiry || null,
+        isPrimary: true,
+        scanDataUrl: rec.photo || null,
+      });
+    }
+
     /* The server's records, flattened into the old name-keyed shape and
        laid over whatever the browser already had. */
     function project(previous) {
@@ -150,21 +169,44 @@
       trouble: () => trouble,
       serverBacked: () => mode === 'server',
       subscribe(fn) { listeners.push(fn); return () => { listeners = listeners.filter(f => f !== fn); }; },
-      /* Make sure a customer somebody typed a name for exists as a
-         record. Used by the new-contact flow in cdos-kyc.jsx, which can
-         run from screens that never open this one. Returns the server
-         record, or null when this desk is not server-backed. */
-      async ensure(name, deskRecord) {
+      /* Open a file on somebody, from a screen that is not this one —
+         the new-contact flow in cdos-kyc.jsx runs at the till and from
+         the transaction modal, and a contact made there used to exist in
+         one browser and nowhere else.
+
+         It ALWAYS creates. It deliberately does not attach to an
+         existing record with the same name, and that is the whole
+         subject of this change: silently folding a second David Chen
+         into the first one's file is precisely the defect being
+         removed. Somebody who reaches for "add a new contact" is saying
+         this is a new person; the record comes back knowing who else
+         shares the name and the profile says so on screen. Choosing an
+         EXISTING customer is what the picker is for.
+
+         Returns the created record, or null when this desk is not
+         server-backed. */
+      async open(name, deskRecord) {
         const client = api();
         if (!client || mode === 'local') return null;
-        const existing = byName(name);
-        if (existing.length) return existing[0];
         const rec = deskRecord || {};
         const created = await client.create(Object.assign(
           { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
           client.fromDeskFields(rec)));
+        await applyDocument(created.clientId, rec);
         await load(true);
         return created;
+      },
+      /* Fold what a verification read off the document into a file that
+         already exists — the same record, not a second one. */
+      async record(clientId, deskRecord) {
+        const client = api();
+        if (!client || mode === 'local' || !clientId) return null;
+        const rec = deskRecord || {};
+        const changes = client.fromDeskFields(rec);
+        const updated = Object.keys(changes).length ? await client.update(clientId, changes) : null;
+        await applyDocument(clientId, rec);
+        await load(true);
+        return updated;
       },
     };
   })();
@@ -369,7 +411,6 @@
   /* A total across currencies, or nothing. One leg this desk cannot price
      makes the whole total unknown; a sum quietly missing a currency looks
      complete and is the shape of wrong this project keeps finding. */
-  const sumHome = (parts) => { const v = parts.map(([a, c]) => homeOf(a, c)); return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null; };
   const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy());
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(window.CDOS.wallClock()); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
@@ -417,7 +458,10 @@
     const mine = rows.filter(r => r.customer === name && r.status !== 'void');
     let fees = 0, last = '';
     mine.forEach(r => { fees += (+r.fee || 0); if (r.date > last) last = r.date; });
-    const vol = sumHome(mine.map(r => [r.inAmt, r.inCcy]));
+    /* The leg that IS the desk's own currency, which is what the book
+       counts — not the in-leg re-priced at today's mid. dealHome in
+       cdos-base.jsx, and the note there on why the two differ. */
+    const vol = window.CDOS.sumDealHome(mine, homeCcy()).total;
     return { n: mine.length, vol, fees, last };
   }
 
@@ -1359,8 +1403,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
       {quick && <Portal><QuickCard name={quick} rec={quickRec} rows={rows} flags={computeFlags(rows, clients, settings)} settings={settings} me={me} canEdit={canEdit} beneficiaries={beneficiaries} corridors={corridors} setField={(k, v) => setField(quick, k, v)} onUpload={(k, f) => upload(quick, k, f)} onExpand={() => { setProfile(quick); setQuick(null); }} onOpenLedger={(n) => { setQuick(null); openLedgerForClient(n); }} onClose={() => setQuick(null)} /></Portal>}
       {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
+      {/* The reload below is AWAITED before the profile opens. It was fired
+          and forgotten, so the file that came up was whatever the browser
+          happened to be holding — and the one fact a brand-new file has
+          that the browser cannot know is that somebody else on this desk
+          already has that name. A teller opened a second David Chen and
+          was not told there was a first, which is the whole reason these
+          records moved to the server. */}
       {adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow
-        ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={(n) => { setAdding(false); reload(true); setProfile(n); }} />
+        ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={async (n) => { setAdding(false); try { await reload(true); } catch (e) { /* the file still opens; it just opens on what the browser has */ } setProfile(n); }} />
         : <Portal><NewContact existing={Object.keys(clients)} onCreate={createContact} onClose={() => setAdding(false)} /></Portal>)}
     </div>);
   }

@@ -154,6 +154,21 @@
 
   /* ===================== NEW TRANSFER MODAL ===================== */
   function TransferModal({ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, onClose, onDone, serverBacked, onServerPosted }) {
+    /* One idempotency key per ticket — see the long note on `attemptKey`
+       in cdos-txmodal.jsx. The key used to be the browser's guessed
+       TR-<date>-NNN, which restarts at 001 on every fresh sign-in, so a
+       till's second-ever transfer replayed its first and moved no cash
+       while the screen said posted. A refused deal leaves no idempotency
+       row, so re-submitting a corrected ticket under the same key is
+       right; a new ticket gets a new one. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current)
+        attempt.current = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const [direction, setDirection] = useState('send');
     const [senderName, setSenderName] = useState('');
     const [benId, setBenId] = useState('');
@@ -257,7 +272,7 @@
           };
           posted = direction === 'send'
             ? await B.postRemittanceSend({
-                idempotencyKey: 'web:transfer:' + ref,
+                idempotencyKey: 'web:transfer:' + attemptKey(),
                 customerId: synced.customerId,
                 reference: ref,
                 principalAmount: B.asMoney(amtN),
@@ -270,7 +285,7 @@
                 ...capture,
               })
             : await B.postRemittanceReceive({
-                idempotencyKey: 'web:transfer:' + ref,
+                idempotencyKey: 'web:transfer:' + attemptKey(),
                 customerId: synced.customerId,
                 reference: ref,
                 sentCurrency: recvCcy,
@@ -289,6 +304,22 @@
         setBusy(false);
       }
 
+      /* The transfer's reference, and whose it is.
+
+         `ref` above is a guess: it counts THIS browser's transfer list,
+         which is empty on a till that has just been signed into and on
+         every other machine in the shop. Two tills doing their first
+         remittance of the day both guessed TR-<date>-001, and the second
+         one was refused by the ledger's uniqueness rule as an
+         "Unexpected server error" — a teller holding the customer's cash
+         and no way to know whose fault it was.
+
+         So the book names it, exactly as it already names transactions,
+         and what is used from here down is the name that came back. The
+         guess survives only as the reference the desk quoted at the
+         counter, which the ledger keeps on the obligation's opening
+         event. */
+      const oref = posted ? posted.obligationRef : ref;
       const tx = newTx({
         ref: posted ? posted.transactionRef : lref,
         type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
@@ -298,14 +329,14 @@
            no spread on a remittance and a figure here that the book does
            not have is the second opinion this product keeps deleting. */
         spreadCad: posted ? null : pricing.marginCad, side: pricing.side,
-        teller: me.name, notes: `${ref} · ${direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName} (${cor.country}) · ${partner}`,
-        transferRef: ref, createdBy: me.name, createdAt: stamp(),
+        teller: me.name, notes: `${oref} · ${direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName} (${cor.country}) · ${partner}`,
+        transferRef: oref, createdBy: me.name, createdAt: stamp(),
         serverTransactionId: posted ? posted.transactionId : null,
         serverObligationId: posted ? posted.obligationId : null,
       });
       setRows(r => [tx, ...r]);
       const transfer = {
-        id: 't' + Date.now(), ref, pin, direction, senderName, beneficiaryId: benId || null, corridor: corridorId, ccy: recvCcy,
+        id: 't' + Date.now(), ref: oref, pin, direction, senderName, beneficiaryId: benId || null, corridor: corridorId, ccy: recvCcy,
         method, partner, payAmt: amtN, recvAmt, rate: pricing.rate, midRate: pricing.midRate,
         spreadCad: posted ? null : pricing.marginCad,
         fee: feeN, purpose, sourceOfFunds, date: TODAY, status: 'created', txId: tx.id,
@@ -318,7 +349,7 @@
         timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${ref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
       if (posted && onServerPosted) {
         try { await onServerPosted(); }
         catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }

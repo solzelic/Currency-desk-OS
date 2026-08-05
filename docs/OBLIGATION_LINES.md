@@ -397,3 +397,44 @@ number per side. It is scoped to the legal entity rather than the till, because
 the teller who took the remittance goes home and the payout still has to be
 funded. Where a side has nothing open it answers `null`, not `0.00` —
 `ABSENT_FIGURES.md`.
+
+---
+
+## Who names an obligation
+
+The book does. `obligation_ref` — `TR-260805-9F3A1C`, `MO-…`, `BP-…` — is
+minted inside the posting transaction and returned to the browser, which
+adopts it.
+
+It used to come up from the browser, built by counting the local transfer
+list: `transfers.filter(t => t.date === TODAY).length + 1`. That counter is
+per browser profile. A second till doing its first remittance of the day
+minted `TR-260805-001` as well, and so did the same till after anybody
+signed in on another machine or cleared local state.
+`ledger_obligations_ref_idx` is unique per branch, so the second one was
+refused — as an unhandled unique violation, which the desk read as
+"Nothing was posted. Unexpected server error." The teller had the
+customer's cash on the counter and no way to tell whose problem it was.
+
+The desk's own reference is kept, in two places that are not the same
+place:
+
+| what | where | unique |
+|---|---|---|
+| the book's name for the obligation | `ledger_obligations.obligation_ref` | yes, per branch |
+| the corridor's tracking number, the biller's account, the money order's serial | `ledger_obligations.reference` | no |
+| the reference the desk quoted at the counter | the opening row of `ledger_obligation_events` | no |
+
+The same rule now covers the **idempotency key**, which was built from the
+same guessed reference and is the more dangerous of the two: a collision
+there is not a refusal, it is the ledger correctly replaying the first
+deal's response. The screen would have said posted and no cash would have
+moved. Each ticket now carries one key of its own, minted when the ticket
+is opened and kept across a refusal — a refused deal leaves no idempotency
+row behind, so re-submitting a corrected ticket under the same key is
+exactly right.
+
+The regression guard is `tests/e2e/obligation-seam.spec.ts`, where the
+second test runs in a fresh browser context against a book that already
+carries the first test's deal. That is the shape of a real shop, and it is
+what caught both.

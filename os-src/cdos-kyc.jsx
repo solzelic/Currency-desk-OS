@@ -658,15 +658,46 @@
        above has already happened, so the worst case is a record that
        reaches the server on the next load rather than one that is lost.
        A genuine failure is reported rather than swallowed. */
+    const publishedId = useRef(null);
     const publishContact = (nm, extra) => {
       const shared = window.CDOS.ClientRecords;
-      if (!shared || !shared.serverBacked()) return;
-      shared.ensure(nm, Object.assign({ kind, phone: phone.trim(), email: email.trim() }, extra || {}))
-        .then(() => shared.load(true))
-        .catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', (err && err.message) || err));
+      /* A promise either way, so `await publishContact(...)` behaves the
+         same on a desk with no server behind it. */
+      if (!shared || !shared.serverBacked()) return Promise.resolve(null);
+      const details = Object.assign({ kind, phone: phone.trim(), email: email.trim(), photo }, extra || {});
+      /* The first call opens the file; every later one — the identity a
+         verification read off the document — lands on THAT file rather
+         than opening a second one under the same name. */
+      const done = publishedId.current
+        ? shared.record(publishedId.current, details)
+        : shared.open(nm, details).then(created => { if (created) publishedId.current = created.clientId; return created; });
+      /* Returned as well as guarded, so the ONE caller that needs to know
+         it landed can wait for it. Everything else still fires and
+         forgets — see above. */
+      return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', (err && err.message) || err));
     };
-    // escape hatch: create the contact without running (or paying for) a verification
-    const saveManual = () => { const nm = name.trim(); if (!nm) return; writeContact(nm); publishContact(nm); if (onDone) onDone(nm); onClose(); };
+    const [saving, setSaving] = useState(false);
+    /* Escape hatch: create the contact without running (or paying for) a
+       verification.
+
+       This ONE path waits for the server, unlike the mid-transaction
+       paths above. What happens immediately afterwards is that the new
+       file is opened on screen, and the single most important thing a
+       brand-new file can say — that somebody else on this desk already
+       has that name — is a fact only the server holds. Handing the
+       teller the browser's copy meant handing them a file with that
+       warning missing, which is the exact defect these records moved to
+       the server to end. One round-trip at the end of the wizard, and
+       the button says it is working. */
+    const saveManual = async () => {
+      const nm = name.trim();
+      if (!nm || saving) return;
+      writeContact(nm);
+      setSaving(true);
+      try { await publishContact(nm); } finally { setSaving(false); }
+      if (onDone) onDone(nm);
+      onClose();
+    };
     // create the contact, fire the chosen verification, then watch it complete
     const startCheck = () => {
       const nm = name.trim(); if (!nm) return;
@@ -770,7 +801,7 @@
           </>)}
           {step === 'details' && (<>
             <button onClick={() => setStep('id')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
-            {!requireId && <button onClick={saveManual} disabled={!name.trim()} title="Skip verification — not recommended" className="px-2.5 py-2.5 text-[12px] font-medium" style={{ color: CD.faint, textDecoration: 'underline', textUnderlineOffset: 2, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>Save without verifying</button>}
+            {!requireId && <button onClick={saveManual} disabled={!name.trim() || saving} title="Skip verification — not recommended" className="px-2.5 py-2.5 text-[12px] font-medium" style={{ color: CD.faint, textDecoration: 'underline', textUnderlineOffset: 2, cursor: (name.trim() && !saving) ? 'pointer' : 'not-allowed' }}>{saving ? 'Saving…' : 'Save without verifying'}</button>}
             <div className="flex-1" />
             <button onClick={() => setStep('choose')} disabled={!name.trim()} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: name.trim() ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
           </>)}

@@ -117,6 +117,34 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
   });
   await app.register(cookie);
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });
+
+  /* NOTHING THE API ANSWERS MAY BE CACHED BY A BROWSER.
+
+     These responses carried no caching headers at all, which leaves a
+     browser free to apply its own heuristic to a drawer balance. Every
+     figure under /api is a statement about money as it stands right now;
+     none of it is cacheable by anything, and no caller can be expected to
+     remember `cache: "no-store"` on each read of a number that moves. So
+     it is answered here, once. Static assets are untouched and still
+     cache normally.
+
+     Honest provenance, because the comment that stood here claimed
+     otherwise: this was added while chasing a till that read 25,000 both
+     before and after a remittance took 609.99 across the counter. It was
+     NOT the cause. With the header in place and the test's own fetch back
+     to its original form the read still came back stale, and printing
+     both readings showed a plain fetch microseconds later returning the
+     new figure — a commit becoming visible between two reads, not a
+     cached response. The seam test polls for that (see
+     tests/e2e/obligation-seam.spec.ts). This hook stays because it is
+     correct on its own terms and was verified doing its job on a
+     read-after-write, not because it fixed that. */
+  app.addHook("onSend", async (req, reply) => {
+    if (req.url.startsWith("/api/")) {
+      reply.header("cache-control", "no-store, no-cache, must-revalidate");
+      reply.header("pragma", "no-cache");
+    }
+  });
   await refreshSiteDomains(db);
 
   app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));

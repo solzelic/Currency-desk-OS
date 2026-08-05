@@ -12,7 +12,7 @@
   const {
     CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
     computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
-    Absent, businessDate, reportingLimit, useDeskFacts, deskPack
+    Absent, businessDate, reportingLimit, useDeskFacts, deskPack, sumDealHome
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY, ONCE.
@@ -33,9 +33,10 @@
   const homeCcy = () => { const pack = deskPack(); return (pack && pack.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const homeOf = (amt, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return +amt || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', ccy); return rate ? (+amt || 0) / rate : null; };
   const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
-  /* A total across currencies, or nothing. One unpriceable leg makes the
-     whole sum unknown — a total quietly missing a currency looks complete. */
-  const sumHome = (parts) => { const v = parts.map(([a, c]) => homeOf(a, c)); return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null; };
+  /* `sumHome` stood here — a total that converted every leg at today's
+     board mid. Every figure that used it now goes through `sumDealHome`,
+     which counts the leg that IS the desk's own currency and counts
+     nothing else, exactly as the ledger's own summary does. */
 
   /* THE REPORTING LINE, ONCE.
 
@@ -131,8 +132,10 @@
         const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null);
         if (c) ccyCount[c] = (ccyCount[c] || 0) + 1;
       });
-      const total = sumHome(h.map(r => [r.inAmt, r.inCcy]));
-      const windowCad = sumHome(h.filter(r => r.date >= cutoff).map(r => [r.inAmt, r.inCcy]));
+      /* The deal's home leg, which is what the book counts — never the
+         in-leg re-priced at today's mid. See dealHome in cdos-base.jsx. */
+      const total = sumDealHome(h, home).total;
+      const windowCad = sumDealHome(h.filter(r => r.date >= cutoff), home).total;
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
       const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;
@@ -1096,7 +1099,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <div className="px-3 py-2.5 mb-2" style={{ background: isFiled ? CD.greenSoft : CD.flagSoft, borderRadius: 9 }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[12px] font-medium" style={{ color: isFiled ? CD.green : CD.flag }}><div className="flex items-center gap-1.5"><Ic n={isFiled ? 'checkcircle' : 'alert'} s={14} /> Reportable — LCTR{isFiled ? ' filed & sealed' : ' required'}</div>{isFiled && <div className="text-[10px] mt-0.5" style={{ color: CD.mute }}>FWR {filing.ackNo} · {filing.by} · {filing.submittedAt}</div>}</div>
-                    {!isVoid && !isFiled && <button onClick={() => { onClose(); onFileLCTR && onFileLCTR({ id: 'L-' + row.ref, kind: window.CDOS.getRegime(settings).largeCode, subject: row.customer, beneficiary: row.beneficiary, amount: homeOf(row.inAmt, row.inCcy), refs: [row.ref], basis: null }); }} className="flex-none whitespace-nowrap text-xs px-2.5 py-1.5 font-semibold" style={{ borderRadius: 7, background: CD.ink, color: 'var(--cd-on-ink)' }}>File {(deskPack() && deskPack().reportName) || window.CDOS.getRegime(settings).largeCode} →</button>}
+                    {!isVoid && !isFiled && <button onClick={() => { onClose(); onFileLCTR && onFileLCTR({ id: 'L-' + row.ref, kind: window.CDOS.getRegime(settings).largeCode, subject: row.customer, beneficiary: row.beneficiary, amount: (() => { const c = window.CDOS.counterCashIn(row); return c ? homeOf(c.amount, c.ccy) : 0; })(), refs: [row.ref], basis: null }); }} className="flex-none whitespace-nowrap text-xs px-2.5 py-1.5 font-semibold" style={{ borderRadius: 7, background: CD.ink, color: 'var(--cd-on-ink)' }}>File {(deskPack() && deskPack().reportName) || window.CDOS.getRegime(settings).largeCode} →</button>}
                   </div>
                 </div>
               )}
@@ -1326,7 +1329,12 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   function LedgerCompliance({ rows, flags, settings, clients, me, setRows, log, onOpenDetail, onOpenClient, onOpenFocus, onOpenCompliance, onOpenAccount, onOpenRecordsWindow, onFileLCTR }) {
     const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
     const cadIn = (r) => homeOf(r.inAmt, r.inCcy);
-    const fileLCTR = (r) => { const reg = window.CDOS.getRegime(settings); onFileLCTR && onFileLCTR({ id: 'L-' + r.ref, kind: reg.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cadIn(r), refs: [r.ref], basis: null }); };
+    /* The amount on a large-CASH filing is the cash the customer put on
+       the counter, which is not the deal's size — see COUNTER_CASH in
+       cdos-base.jsx. `flags[].single` is raised from the same figure, so
+       nothing that took no cash reaches this button. */
+    const cashInHome = (r) => { const c = window.CDOS.counterCashIn(r); return c ? homeOf(c.amount, c.ccy) : 0; };
+    const fileLCTR = (r) => { const reg = window.CDOS.getRegime(settings); onFileLCTR && onFileLCTR({ id: 'L-' + r.ref, kind: reg.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashInHome(r), refs: [r.ref], basis: null }); };
     const live = rows.filter(r => r.status !== 'void');
     const toFile = live.filter(r => (flags[r.id] || {}).single && !r.filed);
     const strWatch = live.filter(r => (flags[r.id] || {}).str && !r.ackStr);
@@ -1532,8 +1540,10 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const src = (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.status !== 'void' && inRange(r.date));
       let rpt = 0, openRpt = 0, str = new Set();
       src.forEach(r => { const f = flags[r.id] || {}; if (f.single) { rpt++; if (!r.filed) openRpt++; } if (f.str && !r.ackStr) str.add(r.customer); });
-      // pay-in volume in CAD-equivalent so mixed currencies sum correctly
-      return { n: src.length, vol: sumHome(src.map(x => [x.inAmt, x.inCcy])), fees: src.reduce((s, x) => s + (+x.fee || 0), 0), rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
+      // pay-in volume in the desk's own money — the home leg of each deal,
+      // and a count of the deals that have no home leg to take. See dealHome.
+      const volume = sumDealHome(src, homeCcy());
+      return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: src.reduce((s, x) => s + (+x.fee || 0), 0), rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
 
     // live summary of exactly what's on screen (CAD-equivalent)
@@ -1542,7 +1552,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const liveRows = filtered.filter(r => r.status !== 'void');
       posted = liveRows.length;
       liveRows.forEach(r => { fees += (+r.fee || 0); });
-      vol = sumHome(liveRows.map(r => [r.inAmt, r.inCcy]));
+      vol = sumDealHome(liveRows, homeCcy()).total;
       return { count: filtered.length, posted, vol, fees };
     }, [filtered]);
 
@@ -1568,7 +1578,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const liveRecs = recs.filter(r => r.status !== 'void');
       n = liveRecs.length;
       liveRecs.forEach(r => { fees += (+r.fee || 0); });
-      vol = sumHome(liveRecs.map(r => [r.inAmt, r.inCcy]));
+      vol = sumDealHome(liveRecs, homeCcy()).total;
       const chips = filterChips();
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
       const body = recs.map(r => {
@@ -1665,7 +1675,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             fees; "$0.00" is a claim that the desk took in nothing, which
             is a different statement and the one that used to be made over
             a demo book. See docs/ABSENT_FIGURES.md. */}
-        <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={stats.n ? 'view breakdown ›' : 'nothing posted in this range'} onClick={() => stats.n && setBreakdown('volume')} />
+        {/* A deal with no leg in the desk's own currency is left OUT of
+            the total and counted here instead. Folding it in at a mid
+            between two foreign currencies would produce a number in
+            neither of them, and a total quietly missing a deal reads as
+            complete — docs/ABSENT_FIGURES.md. */}
+        <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={!stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›'} onClick={() => stats.n && setBreakdown('volume')} />
         <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={stats.n ? 'view earnings ›' : 'nothing posted in this range'} onClick={() => stats.n && setBreakdown('fees')} />
         <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>

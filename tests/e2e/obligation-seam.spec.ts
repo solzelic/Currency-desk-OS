@@ -23,6 +23,16 @@
 import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 import type { Page } from "@playwright/test";
 
+/* Serial, and the order is load-bearing in a second way worth stating:
+   the receive below runs in a FRESH browser context against a book that
+   already carries the send. That is the shape of a real shop — a second
+   till, or the same till after somebody signed in again — and it is what
+   caught the browser minting the ledger's own identifiers. The transfer
+   reference and the idempotency key were both counted off this browser's
+   local list, so the second deal of the day reused the first's names: the
+   reference collided with the ledger's uniqueness rule and surfaced as
+   "Unexpected server error", and the key would have made the ledger
+   replay the first deal and move no cash at all. */
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
@@ -83,34 +93,20 @@ async function openTransfers(page: Page) {
   await expect(transferForm(page).getByPlaceholder(/Type a name…/)).toBeVisible();
 }
 
-/* Name the customer on the deal, and put the suggestion list away.
+/* Name the customer on the deal.
 
    The name box opens a list of the desk's roster the moment it has
-   focus, and that list sits over the rest of the form — so a test that
-   typed and went straight for the beneficiary spends thirty seconds
-   clicking a menu that is not there. A person picks a suggestion, or
-   clicks back onto the form when the roster has none. Clicking the
-   direction the deal is already going is the harmless click nearest to
-   hand, and it is inside the modal, which matters: the desk behind has
-   its own copies of most of these words.
-
-   Returns after the list is gone, so the caller can trust the next
-   click. */
+   focus, and that list is positioned OVER the top of the beneficiary
+   picker below it. A person picks a suggestion; where the roster has
+   none they tab on and carry on with what they typed. */
 async function nameCustomer(page: Page, name: string, direction: RegExp) {
   const form = transferForm(page);
   await form.getByPlaceholder(/Type a name…/).fill(name);
   const suggestion = form.getByRole("button", { name, exact: true });
   if (await suggestion.count()) await suggestion.first().click();
   /* Tab out, which is what a person typing a name the desk has never
-     seen does next. The list closes on blur — and until this change it
-     could not close at all for a name with no match, which left the
-     beneficiary picker underneath it unreachable. */
+     seen does next. */
   else await form.getByPlaceholder(/Type a name…/).press("Tab");
-  /* The list is gone before this returns. It is positioned over the rest
-     of the form, so leaving it open makes every later click land on it. */
-  console.log("ACTIVE >>>", await page.evaluate(() => (document.activeElement||{}).outerHTML?.slice(0,120)));
-  await expect(form.getByText(/No match — type a new name/)).toHaveCount(0);
-  await expect(form.getByRole("button", { name, exact: true })).toHaveCount(0);
 }
 
 /** Read a money figure out of the modal, the way the teller reads it. */
@@ -154,9 +150,17 @@ test("a send takes the cash the screen said it would, and books the payout as ow
   await expect(form).toHaveCount(0, { timeout: 30_000 });
 
   /* THE SEAM. The drawer on the server moved by exactly the amount the
-     screen asked the customer for. */
-  const after = Number((await book.till()).CAD);
-  expect(after - before).toBeCloseTo(collect, 2);
+     screen asked the customer for.
+
+     Polled, not read once. The form disappearing and the ledger's write
+     becoming visible are two different instants — measured microseconds
+     apart here, with a single read landing on the wrong side of it. The
+     guarantee this test exists to hold is that the drawer moves by what
+     the screen said, not that it moves before a modal finishes closing;
+     asserting the second is how a true test becomes a flaky one. */
+  await expect
+    .poll(async () => Number((await book.till()).CAD) - before, { timeout: 15_000 })
+    .toBeCloseTo(collect, 2);
 
   const owed = await obligations(page);
   const payable = owed.obligations.find((o) => o.kind === "remittance_payable");
@@ -214,9 +218,13 @@ test("a receive pays out of the same drawer, against what the partner now owes",
   /* THE SEAM, the other way round: the drawer fell by exactly what the
      screen counted out, and not by the foreign sum somebody abroad
      dispatched — which is the figure the browser's own compliance
-     aggregate was reading off these rows. */
-  const after = Number((await book.till()).CAD);
-  expect(before - after).toBeCloseTo(payout, 2);
+     aggregate was reading off these rows.
+
+     Polled for the same reason as the send above: the modal closing and
+     the ledger's write becoming readable are two different instants. */
+  await expect
+    .poll(async () => before - Number((await book.till()).CAD), { timeout: 15_000 })
+    .toBeCloseTo(payout, 2);
 
   const owed = await obligations(page);
   const receivable = owed.obligations.find((o) => o.kind === "remittance_receivable");

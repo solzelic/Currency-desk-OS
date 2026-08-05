@@ -143,6 +143,41 @@ const OBLIGATION_ACCOUNTS: Record<
   },
 };
 
+/* ============================================================
+   WHO NAMES AN OBLIGATION
+
+   The browser used to. `os-src/cdos-transfers.jsx` built a reference by
+   counting its OWN list — `transfers.filter(t => t.date === TODAY).length
+   + 1` — and sent TR-260805-001 up as the obligation's name. That
+   counter is per browser profile. A second till doing its first
+   remittance of the day mints TR-260805-001 as well; so does the same
+   till after somebody signs in on a different machine, and so does any
+   browser whose local state was cleared.
+
+   `ledger_obligations_ref_idx` is unique per branch, so the second one
+   is refused — and it was refused as an unhandled unique violation, which
+   the desk saw as "Nothing was posted. Unexpected server error." The
+   teller had the cash on the counter and no way to tell whether the
+   problem was theirs.
+
+   So the book names its own obligations, exactly as it already names its
+   own transactions. What the browser sends is kept — as the deal's
+   `reference`, which is what it actually was: the corridor's tracking
+   number, the biller's account, the money order's serial. It is not
+   unique and was never meant to be.
+
+   Allocated by trying candidates against the index inside the posting
+   transaction. Under SERIALIZABLE a concurrent claim on the same
+   reference surfaces as a serialization failure, which the retry
+   wrapper around every entry point re-runs — it does not become a
+   duplicate. */
+const OBLIGATION_REF_PREFIX: Record<ObligationKind, string> = {
+  remittance_payable: "TR",
+  remittance_receivable: "TR",
+  bill_payable: "BP",
+  money_order_payable: "MO",
+};
+
 /* The desk's bank, which this ledger does not carry a balance for. A
    corridor partner is funded by wire and a biller is remitted by wire,
    and neither touches a drawer. Naming the account rather than leaving
@@ -457,6 +492,37 @@ export class ObligationService {
     );
   }
 
+  /* The book's own name for an obligation — see OBLIGATION_REF_PREFIX.
+     Candidates are checked against the branch's index rather than being
+     inserted hopefully, so a collision costs a query and not a rolled
+     back deal with a customer's cash already counted. */
+  private async allocateObligationRef(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    kind: ObligationKind,
+    now: Date,
+  ): Promise<string> {
+    const day = now.toISOString().slice(2, 10).replace(/-/g, "");
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = `${OBLIGATION_REF_PREFIX[kind]}-${day}-${randomUUID()
+        .replace(/-/g, "")
+        .slice(0, 6)
+        .toUpperCase()}`;
+      const taken = await client.query(
+        "SELECT 1 FROM ledger_obligations WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND obligation_ref=$4",
+        [...entityScope(actor), candidate],
+      );
+      if (!taken.rowCount) return candidate;
+    }
+    /* Eight collisions on six random hex characters is not chance. It is
+       the ledger being unable to answer, and a deal that cannot be named
+       is not posted half-named. */
+    throw new LedgerError(
+      "LEDGER_BUSY",
+      "Could not allocate a reference for this deal. Try again.",
+    );
+  }
+
   /* ---- the one posting path all four share ---- */
 
   private async postDeal(
@@ -642,6 +708,12 @@ export class ObligationService {
       );
 
       const obligationId = `obl_${randomUUID()}`;
+      const obligationRef = await this.allocateObligationRef(
+        client,
+        actor,
+        spec.obligation.kind,
+        now,
+      );
       await client.query(
         `INSERT INTO ledger_obligations
            (obligation_id,obligation_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
@@ -650,7 +722,7 @@ export class ObligationService {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'open',$19,$20)`,
         [
           obligationId,
-          spec.obligationRef.trim(),
+          obligationRef,
           ...scope(actor),
           spec.customerId,
           transactionId,
@@ -674,6 +746,11 @@ export class ObligationService {
           obligationId,
           transactionId,
           fixed(spec.obligation.carryingHome),
+          /* The reference the DESK used at the counter, kept as the
+             provenance of this step — the same column a settlement puts
+             its wire number in. The book's own name for the obligation
+             is `obligation_ref` on the row above, and the two are
+             deliberately not the same field. */
           spec.obligationRef.trim(),
           actor.userId,
           now,
@@ -685,7 +762,9 @@ export class ObligationService {
         transactionId,
         transactionRef,
         obligationId,
-        obligationRef: spec.obligationRef.trim(),
+        /* The book's name for it, minted here — the browser adopts this
+           rather than keeping the one it guessed. */
+        obligationRef,
         obligationKind: spec.obligation.kind,
         obligationStatus: "open",
         postedAt: now.toISOString(),

@@ -308,6 +308,29 @@
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
 
+    /* ---- the key that says "this attempt, and no other" ----
+
+       The idempotency key used to be built from `ref` — mkRef(TODAY,
+       seq), where seq counts THIS browser's rows for today. That number
+       restarts at 1 whenever local state does, so the second money order
+       ever posted from a freshly signed-in till carried the same key as
+       the first: the ledger recognised it as a replay, returned the
+       first deal's response, and moved no cash. The screen said posted,
+       the drawer never changed, and nothing anywhere said so.
+
+       One key per ticket instead. It survives a refusal — a deal the
+       ledger REFUSED leaves no idempotency row behind, so re-submitting
+       the corrected ticket under the same key is exactly right — and a
+       new ticket gets a new one. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current)
+        attempt.current = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
+
     // customer
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
@@ -593,7 +616,7 @@
       const capture = { purpose: purpose.trim(), sourceOfFunds: cap.source.trim(), thirdParty: !!cap.thirdParty, thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined };
       return isMO
         ? B.postMoneyOrder({
-            idempotencyKey: 'web:mo:' + ref,
+            idempotencyKey: 'web:mo:' + attemptKey(),
             customerId: synced.customerId,
             reference: ref,
             faceAmount: B.asMoney(amtN),
@@ -609,7 +632,7 @@
             ...capture,
           })
         : B.postBillPayment({
-            idempotencyKey: 'web:bill:' + ref,
+            idempotencyKey: 'web:bill:' + attemptKey(),
             customerId: synced.customerId,
             reference: ref,
             billAmount: B.asMoney(amtN),
@@ -620,12 +643,68 @@
           });
     };
 
+    /* ---- a cheque cashed from this ticket is the same cheque ----
+
+       The Cheques desk posts to the ledger; this screen used to write a
+       browser row and a local cheque record, so the very same act — a
+       customer cashing a payroll cheque — reached the book from one
+       screen and not from the other. That is not a missing feature, it
+       is two implementations of one rule, and the drawer disagrees with
+       itself depending on which door the customer came through.
+
+       So it calls the SAME service, through the same module that owns
+       the cheque record, and maps the server's answer with the same
+       `fromServer` the register uses. Nothing about a cheque is decided
+       here: the hold date, the reference and the net are the server's,
+       and this screen contributes the capture the teller typed. See
+       docs/CHEQUE_CASHING.md. */
+    const postCheque = async () => {
+      const book = _K.ledger();
+      const synced = await window.CDOS.Backend.syncCustomer(customer.trim(), rec);
+      setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
+      const posted = await book.cashCheque({
+        idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${window.CDOS.Backend.asMoney(amtN)}:${Date.now()}`,
+        customerId: synced.customerId,
+        chequeNumber: chequeNumber.trim(),
+        maker: maker.trim(),
+        draweeBank: draweeBank.trim() || undefined,
+        chequeType: chequeType.id,
+        typeLabel: chequeType.label,
+        currency: 'CAD',
+        faceAmount: window.CDOS.Backend.asMoney(amtN),
+        feeAmount: window.CDOS.Backend.asMoney(chequeFee),
+        holdDays: chequeType.holdDays || 0,
+        endorsed: endorsed,
+      });
+      /* The image never leaves the browser — see the note in
+         017_cheque_cashing.sql about not putting a megabyte of JPEG
+         inside a SERIALIZABLE money transaction — so it is carried onto
+         the mapped record rather than being lost on the way through. */
+      const mapped = _K.fromServer(Object.assign({ customerName: customer.trim() }, posted.cheque));
+      if (chequeImage) mapped.image = chequeImage;
+      setCheques && setCheques(list => [mapped, ...(list || []).filter(c => c.chequeId !== mapped.chequeId)]);
+      return { transactionId: posted.transactionId, transactionRef: posted.transactionRef, obligationId: null };
+    };
+
     const record = async () => {
       if (!canSave || serverBusy) return;
       const seq = live.filter(r => r.date === TODAY).length + 1;
       let ref = mkRef(TODAY, seq);
       let posted = null;
-      if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
+      const chequeOnLedger = serverBacked && isCheque && _K && _K.ledger();
+      if (chequeOnLedger) {
+        setServerBusy(true);
+        setServerError('');
+        try {
+          posted = await postCheque();
+          ref = posted.transactionRef;
+        } catch (error) {
+          setServerError(error.message || 'The cheque was not cashed.');
+          setServerBusy(false);
+          return;
+        }
+        setServerBusy(false);
+      } else if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
         setServerBusy(true);
         setServerError('');
         try {
@@ -677,7 +756,11 @@
         tx.tagInfo = { by: 'Auto-rule', at: stamp(), note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, 'CAD')}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client' };
       }
       setRows(r => [tx, ...r]);
-      if (isCheque && setCheques && _K) {
+      /* The local cheque register is written HERE only when the ledger
+         did not take it — `postCheque` above has already put the server's
+         own record in place, and minting a second one beside it is the
+         two-books problem in miniature. */
+      if (isCheque && setCheques && _K && !posted) {
         const net = +(amtN - chequeFee).toFixed(2);
         const holdUntil = _K.addDays(TODAY, chequeType.holdDays || 0);
         const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
@@ -729,6 +812,13 @@
               {/* customer (sender/purchaser/payer) */}
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
+              {/* The customer's ID, where the teller actually is when the
+                  question comes up. Covered until it is clicked, and the
+                  click writes a server audit row — same component, same
+                  rules, as the client file's. Renders nothing at all when
+                  the name resolves to no record with a scan on it. */}
+              {customer && window.CDOS.ClientIdViewer &&
+                React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge &&
                 React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
 

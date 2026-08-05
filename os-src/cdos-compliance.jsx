@@ -17,9 +17,18 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, crossRate, counterCashIn } = window.CDOS;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
-  const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
+  const home = (amount, ccy) => ccy === 'CAD' ? (Number(amount) || 0) : (Number(amount) || 0) / (crossRate('CAD', ccy) || 1);
+  /** What the deal was FOR, in home money. A size, not a cash movement. */
+  const cadIn = (r) => home(r.inAmt, r.inCcy);
+  /* What the customer actually put on the counter, in home money — zero
+     where they put nothing there. The large-cash report is a report
+     about cash RECEIVED, and `cadIn` is not that: on a remittance
+     receive it is the foreign sum a sender abroad dispatched, and on a
+     cheque cashing it is the face of a cheque. See COUNTER_CASH in
+     cdos-base.jsx, which mirrors the server's own `cash_in_home`. */
+  const cashIn = (r) => { const c = counterCashIn(r); return c ? home(c.amount, c.ccy) : 0; };
   const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
 
   /* ============================================================
@@ -314,7 +323,7 @@
   }
   // LCTR — cash-in from the ledger
   function aggClusters(rows, regime, settings) {
-    const events = (rows || []).filter(r => r.status !== 'void' && cadIn(r) > 0).map(r => ({ id: r.id, ref: r.ref, date: r.date, time: r.time, t: dt(r), amt: cadIn(r), customer: r.customer, beneficiary: r.beneficiary }));
+    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(r => ({ id: r.id, ref: r.ref, date: r.date, time: r.time, t: dt(r), amt: cashIn(r), customer: r.customer, beneficiary: r.beneficiary }));
     return aggregateEvents(events, regime, settings, regime.largeCode);
   }
   // EFTR — international electronic transfers. Same $10k / 24h machinery, wires not cash.
@@ -328,7 +337,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, dt, setFingerprint },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, cashIn, dt, setFingerprint },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

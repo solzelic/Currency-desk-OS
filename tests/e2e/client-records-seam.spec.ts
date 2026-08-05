@@ -21,7 +21,7 @@
    exactly how every defect in this project so far survived a fully green
    run. See docs/CASH_OWNERSHIP_INVARIANTS.md, "testing standard".
    ============================================================ */
-import { test, expect, hasLedger, signInAtDesk, landOnDesktop, rendered } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop, ledger, rendered } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
@@ -97,23 +97,93 @@ const named = (clients: any[], name: string) => clients.filter((c) => c.legalNam
    buildless shell — the same source the bundle is compiled FROM — and
    says so in the run output. After a rebuild, /app is what gets walked
    and this branch never fires. */
+let warnedAboutBundle = false;
+
 async function openDesk(page: Page, staffId = "a.singh") {
   await signInAtDesk(page, staffId);
-  const compiledIsCurrent = await page.evaluate(() => !!(window as any).CDOS?.ClientIdViewer);
-  if (compiledIsCurrent) return;
-  console.warn(
-    "[client-records-seam] web/app is older than os-src — walking the buildless shell. " +
-      "Run `npm run build:os` and this walks the compiled bundle instead.",
-  );
+  if (await page.evaluate(() => !!(window as any).CDOS?.ClientIdViewer)) return;
+  if (!warnedAboutBundle) {
+    warnedAboutBundle = true;
+    console.warn(
+      "[client-records-seam] web/app is older than os-src — walking the buildless shell instead. " +
+        "Run `npm run build:os` and this walks the compiled bundle.",
+    );
+  }
+  await useBuildlessShell(page);
+}
+
+/* The buildless shell needs one thing the compiled app does not: a
+   stylesheet.
+
+   It pulls Tailwind from a CDN at runtime, and the shared fixture
+   answers that request with an empty body — deliberately, because a CDN
+   is not what any of this is testing. The compiled app does not care;
+   it ships `web/app/tw.css`. The buildless one does: without those
+   utilities `fixed inset-0` is nothing, `z-index` has no positioned
+   element to apply to, and every modal renders in normal flow BEHIND the
+   desktop. Playwright then reports a button that is "visible, enabled and
+   stable" and refuses to click it because the desktop is on top — which
+   is a real thing to know about this page, and a miserable thing to
+   discover from a CI log.
+
+   `web/app/tw.css` is generated from these same sources, so attaching it
+   is not a substitute for the product's styling. It IS the product's
+   styling. */
+async function useBuildlessShell(page: Page) {
   await page.goto("/CurrencyDesk%20OS.html");
+  await page.addStyleTag({ url: "/web/app/tw.css" });
   await landOnDesktop(page);
   const loaded = await page.evaluate(() => !!(window as any).CDOS?.ClientIdViewer);
   expect(loaded, "the buildless shell did not load the client records code either").toBe(true);
+  const positioned = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "fixed inset-0";
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).position;
+    probe.remove();
+    return value;
+  });
+  expect(positioned, "web/app/tw.css did not attach — every modal will render behind the desktop").toBe("fixed");
+}
+
+/* Any reload puts an owner back on the station chooser, and a reload on
+   the buildless path also drops the stylesheet above. Both are handled
+   here so no test has to remember either. */
+async function reopenDesk(page: Page) {
+  const buildless = page.url().includes("CurrencyDesk");
+  await page.reload();
+  if (buildless) {
+    await page.addStyleTag({ url: "/web/app/tw.css" });
+  }
+  await landOnDesktop(page);
 }
 
 async function openClients(page: Page) {
   await page.getByText(/^Clients · KYC$|^Clients$/).first().click();
   await rendered(page, /New contact|contacts$/);
+}
+
+/* Creating a contact leaves their profile open over the whole screen —
+   which is what a teller wants and what a second `New contact` click
+   cannot get past. The profile closes on a click outside itself; there
+   is no Escape handler on it, and pressing Escape looked like it worked
+   right up until the next click timed out against the scrim. */
+async function closeProfile(page: Page) {
+  const scrim = page.locator("div.fixed.inset-0").last();
+  if (!(await scrim.isVisible().catch(() => false))) return;
+  await scrim.click({ position: { x: 6, y: 6 } });
+  await scrim.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+}
+
+/* The card in the contacts grid, not merely "some element with this text
+   on it". A customer's name appears on several — a ledger row's own link
+   to their file sits behind the grid and matched first, which Playwright
+   then spent ninety seconds refusing to click because the grid is on top
+   of it. The grid card is the thing a person clicks. */
+async function openClientCard(page: Page, name: string) {
+  const card = page.locator('div[role="button"]').filter({ hasText: name }).first();
+  await card.waitFor({ state: "visible", timeout: 20_000 });
+  await card.click();
 }
 
 /* Create a client the way a teller does: the New-contact wizard, skipping
@@ -127,9 +197,17 @@ async function addContact(page: Page, name: string) {
   await field.waitFor({ state: "visible", timeout: 15_000 });
   await field.fill(name);
   await page.getByText(/^Save without verifying$/).click();
-  /* The profile opens on the new contact. Waiting for it is what makes
-     the next step's assertions about a real record rather than a race. */
-  await page.getByText(name).first().waitFor({ state: "visible", timeout: 20_000 });
+  /* The PROFILE opens on the new contact, and it is the profile this
+     waits for — not merely the name, which is also on the grid card
+     sitting behind it. Waiting for the name let this return while the
+     profile was still being fetched, so `closeProfile` found nothing to
+     close and the modal then opened over the next step's button and
+     swallowed its clicks for ninety seconds. */
+  await page
+    .locator("div.fixed.inset-0")
+    .filter({ hasText: name })
+    .first()
+    .waitFor({ state: "visible", timeout: 20_000 });
 }
 
 test("a client created at the counter is on the server, not just on the screen", async ({ page }) => {
@@ -172,6 +250,20 @@ test("renaming somebody does not orphan their transactions", async ({ page }) =>
   expect(counter.status, JSON.stringify(counter.body)).toBe(200);
   const customerId = counter.body.customerId as string;
   expect(customerId).toBeTruthy();
+
+  /* Something in the drawer to trade with. Through the product's own
+     route, and the answer is READ: the seam database outlives a run, so
+     the honest outcomes are "set" and "already set" — anything else is a
+     fault, and a fixture that shrugged at it would leave the real
+     failure looking like the assertion three lines down. */
+  const opened = await ledger(page).ensureOpeningBalances({
+    CAD: "5000.00", USD: "5000.00", EUR: "1000.00", GBP: "1000.00",
+  });
+  expect(
+    [200, 201].includes(opened.status) ||
+      ["OPENING_BALANCES_ALREADY_SET", "TILL_ALREADY_ACTIVE"].includes(opened.body?.code),
+    `opening balances: ${opened.status} ${JSON.stringify(opened.body)}`,
+  ).toBe(true);
 
   /* Put a real deal in the book against them, through the product's own
      quote-and-post path. Fixture SQL that lies about how the product
@@ -241,10 +333,9 @@ test("renaming somebody does not orphan their transactions", async ({ page }) =>
 
   /* And the desk's own screen shows the deal on the renamed file. Both
      sides of the seam, not one. */
-  await page.reload();
-  await landOnDesktop(page);
+  await reopenDesk(page);
   await openClients(page);
-  await page.getByText(RENAMED_AFTER).first().click();
+  await openClientCard(page, RENAMED_AFTER);
   await expect(page.getByText(transactionRef).first()).toBeVisible({ timeout: 20_000 });
 });
 
@@ -253,7 +344,7 @@ test("two people with the same name are two files, and the desk is told", async 
   const server = desk(page);
   await openClients(page);
   await addContact(page, TWIN);
-  await page.keyboard.press("Escape");
+  await closeProfile(page);
   await addContact(page, TWIN);
 
   await expect
@@ -310,10 +401,9 @@ test("opening an identity document writes a server audit row", async ({ page }) 
 
   /* Open it the way a person does — the covered placeholder on the
      client's own file, clicked. */
-  await page.reload();
-  await landOnDesktop(page);
+  await reopenDesk(page);
   await openClients(page);
-  await page.getByText(DOCUMENTED).first().click();
+  await openClientCard(page, DOCUMENTED);
   const cover = page.getByRole("button", { name: /Show ID/ }).first();
   await cover.waitFor({ state: "visible", timeout: 20_000 });
   await cover.click();
@@ -333,6 +423,54 @@ test("opening an identity document writes a server audit row", async ({ page }) 
      designed to be read widely and kept for years. */
   expect(views[0].detail).not.toContain(`PA-${RUN}`);
   expect(new Date(views[0].at).getTime()).toBeGreaterThan(Date.now() - 5 * 60_000);
+});
+
+/* The drop-in the transaction screen is meant to use.
+
+   `cdos-txmodal.jsx` is held by another change, so the call site cannot
+   be added here — but the component it will call can be proved, and the
+   line reported, so that adding it is a one-line change with nothing to
+   discover. This mounts it exactly as that line does:
+
+     {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
+
+   It is given only the customer's NAME, which is all the till has. */
+test("a teller can open the ID from a customer's name alone", async ({ page }) => {
+  await openDesk(page);
+  const server = desk(page);
+  const [record] = named(await server.clients(), DOCUMENTED);
+  expect(record, "the documented client from the previous test").toBeTruthy();
+  const before = (await server.disclosures(record.clientId)).filter(
+    (e) => e.action === "client.document.view",
+  ).length;
+
+  const mounted = await page.evaluate((name) => {
+    const CDOS = (window as any).CDOS;
+    if (!CDOS?.ClientIdViewer) return "no ClientIdViewer on window.CDOS";
+    const host = document.createElement("div");
+    host.id = "txmodal-callsite-probe";
+    document.body.appendChild(host);
+    (window as any).ReactDOM.render(
+      (window as any).React.createElement(CDOS.ClientIdViewer, { name, rec: {}, log: () => {} }),
+      host,
+    );
+    return "";
+  }, DOCUMENTED);
+  expect(mounted, mounted).toBe("");
+
+  const probe = page.locator("#txmodal-callsite-probe");
+  await expect(probe.getByText(/Identity documents on file/i)).toBeVisible({ timeout: 20_000 });
+  await probe.getByRole("button", { name: /Show ID/ }).first().click();
+  await expect(probe.getByText(/opening recorded/i)).toBeVisible({ timeout: 20_000 });
+
+  /* Same component, same audited route: opening a passport from the
+     transaction screen leaves the same row as opening it from the client
+     file, because it is the same reveal. */
+  const after = (await server.disclosures(record.clientId)).filter(
+    (e) => e.action === "client.document.view",
+  );
+  expect(after.length).toBe(before + 1);
+  expect(after[0].detail).toContain("Passport");
 });
 
 test("the same document opens from a second till, and stays inside the business", async ({ page }) => {

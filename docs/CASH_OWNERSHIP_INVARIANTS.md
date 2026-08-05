@@ -47,6 +47,35 @@ the daily close overwrites the evidence that they did.
   same holds for a vault run between branches. Half a movement is never
   written, and never rendered.
 
+- **The book names things, the browser does not.** A transaction's
+  reference, an obligation's reference and the key that makes a post
+  idempotent are all minted server-side. The browser used to count its own
+  local list for them — `transfers.filter(t => t.date === TODAY).length + 1`
+  — and that counter restarts at 1 on every fresh sign-in and runs
+  independently on every till. The second remittance of a day was refused
+  by the ledger's uniqueness rule as an "Unexpected server error", and the
+  idempotency key would have made the ledger replay the first deal and move
+  no cash while the screen said posted. An identifier a second browser can
+  mint again is not an identifier.
+
+- **A cash figure is the cash that crossed the counter.** Not the size of
+  the deal, which is a different number on two of the six lines: a
+  remittance receive's input is the foreign sum a sender abroad
+  dispatched, and a cheque cashing's is the face of a cheque. The server
+  records both separately — `cash_in_home` and `cash_out_home` on
+  `ledger_transactions` — and the browser's compliance engine mirrors the
+  same table (`COUNTER_CASH` in `os-src/cdos-base.jsx`). A large-CASH
+  report built on the deal's size files against customers who handed the
+  desk nothing.
+
+- **The home-currency size of a deal is the leg that IS the home
+  currency.** Never a translation at a mid. A cross between two foreign
+  currencies has no such leg, and is counted as unvalued and said so —
+  not folded in at a price nobody quoted. `dealHome` in
+  `os-src/cdos-base.jsx` and `volume_home` in
+  `server/src/ledger/reporting.ts` are the same rule stated twice, which
+  is what stops the Ledger's headline and the ledger's summary drifting.
+
 - **Balances are never invented for an unstated position.** A branch that has
   not declared its vault opening position is reported as untracked, not as
   zero. Zero is a claim about somebody's cash; only they can make it.
@@ -81,19 +110,23 @@ coverage:
 
 - The ledger carries a subset of the currencies the desk trades. Amounts in
   the others are shown as untracked, never silently merged with ledger figures.
-- Currency exchange and cheque cashing post today. Pay out, money orders,
-  bill payment and remittance still move drawer cash without reaching the
-  ledger. Cheque cashing was the first of those five to come across and
-  the shape it set is written down in CHEQUE_CASHING.md — a cashing, a
+- Every deal line the desk trades now posts: currency exchange, cheque
+  cashing, remittance send, remittance receive, bill payment and money
+  order. Cheque cashing was the first of the five to come across and the
+  shape it set is written down in CHEQUE_CASHING.md — a cashing, a
   clearance, a return and a reversal are each a server call that returns
   the drawer's new state, the cheque register lives in `ledger_cheques`
   and the browser keeps a cache, and the cheque IMAGE is deliberately
-  still local while intake is dealt with separately.
-- The Ledger's own New Transaction ticket still has a cheque path of its
-  own (`os-src/cdos-txmodal.jsx`), and that one has not been moved: it
-  writes a browser row and a local cheque record exactly as the Cheques
-  desk used to. A desk cashing a cheque from that screen is still cashing
-  it off the book. Named here rather than left to be discovered.
+  still local while intake is dealt with separately. The other four are
+  cash on one side and a promise on the other, and their promises live in
+  `ledger_obligations` — OBLIGATION_LINES.md.
+- The Ledger's own New Transaction ticket had a cheque path of its own,
+  which wrote a browser row and a local cheque record exactly as the
+  Cheques desk used to — one act reaching the book through one door and
+  not the other. It now calls the same service through the same module
+  (`os-src/cdos-txmodal.jsx`, `postCheque`), so which screen the customer
+  came through no longer decides whether the drawer hears about it. The
+  cheque IMAGE is still the exception and is still deliberately local.
 - Branch and till identifiers are still not reconciled between the desk and the
   server. Any till in the signed-in branch can now be addressed — the switcher
   names the ledger's tills and moves the workspace the server answers for, so
@@ -125,6 +158,7 @@ may compute a cash figure for itself:
 | what does this branch hold, and what did it cost | `GET /api/ledger/position` |
 | what was posted, and what did it earn | `GET /api/ledger/summary` |
 | what cash is out on cheques that have not cleared | `GET /api/ledger/cheques` |
+| what this desk owes, and what it is owed | `GET /api/ledger/obligations` |
 | which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
 | what does this desk report and identify at | `GET /api/ledger/desk-thresholds` |
 

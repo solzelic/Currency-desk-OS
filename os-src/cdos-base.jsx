@@ -180,6 +180,106 @@
   /* ---- domain constants ---- */
   const TYPES = ['Currency Exchange', 'Remittance — Send', 'Remittance — Receive', 'Cheque Cashing', 'Money Order', 'Bill Payment'];
   const CCY = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY', 'MXN', 'AED'];
+
+  /* ============================================================
+     WHAT ACTUALLY CROSSED THE COUNTER, IN CASH
+
+     A row's `inAmt`/`inCcy` is what the deal was FOR. It is not
+     necessarily cash, and on one line it is not even money that moved
+     in this shop: a remittance RECEIVE carries the foreign sum a sender
+     abroad dispatched — 16,000 pesos — while the only thing that
+     crossed this counter is the smaller home-currency payout, going the
+     other way.
+
+     The large-cash report is a report about CASH RECEIVED. Built on
+     `inAmt` it reads that payout as 16,000 pesos taken in and files a
+     cash report against a customer who handed the desk nothing; a
+     cheque cashing files one against a customer who handed over a
+     cheque. Both are false filings, and the second is the kind a desk
+     is asked to explain.
+
+     The server settles this. `cash_in_home` and `cash_out_home` on
+     `ledger_transactions` (migration 018) are the RECORDED figures and
+     they are the authority — this table exists only because the
+     browser's compliance engine still reasons over its own row store,
+     and it must say the same thing the book does. It is written as a
+     table rather than a rule so the two can be checked against each
+     other by eye.
+
+     An unknown type is treated as cash in. That is deliberate: the
+     failure this table prevents is over-reporting, and the failure it
+     could introduce is under-reporting. Only one of those gets a desk
+     fined, so anything not named here keeps the old behaviour and
+     shows up in a report somebody reads.
+     ============================================================ */
+  const COUNTER_CASH = {
+    /* cash over the counter both ways */
+    'Currency Exchange':    { in: true,  out: true },
+    /* cash in; what leaves is a wire to a corridor partner */
+    'Remittance — Send':    { in: true,  out: false },
+    /* nothing in; the desk counts out the payout */
+    'Remittance — Receive': { in: false, out: true },
+    /* a cheque is not cash. The desk pays cash out against it */
+    'Cheque Cashing':       { in: false, out: true },
+    /* cash in; what leaves is the instrument itself */
+    'Money Order':          { in: true,  out: false },
+    /* cash in; what leaves is a credit to somebody's account */
+    'Bill Payment':         { in: true,  out: false },
+  };
+  /** The cash a row took in, as `{ amount, ccy }`, or null if none did. */
+  function counterCashIn(row) {
+    if (!row) return null;
+    const rule = COUNTER_CASH[row.type];
+    if (rule && !rule.in) return null;
+    return { amount: Number(row.inAmt) || 0, ccy: row.inCcy };
+  }
+  /** The cash a row paid out, as `{ amount, ccy }`, or null if none did. */
+  function counterCashOut(row) {
+    if (!row) return null;
+    const rule = COUNTER_CASH[row.type];
+    if (rule && !rule.out) return null;
+    return { amount: Number(row.outAmt) || 0, ccy: row.outCcy };
+  }
+
+  /* ============================================================
+     THE HOME-CURRENCY SIZE OF A DEAL
+
+     One rule, and it is the server's: a deal's size in the desk's own
+     money is whichever of its two legs IS that currency. The note above
+     `volume_home` in server/src/ledger/reporting.ts states it, and this
+     is here so the browser can say the same thing rather than a similar
+     thing.
+
+     What it replaced converted the IN leg at today's board mid whatever
+     currency that leg was in, and that is wrong twice over. A
+     foreign-to-foreign cross has no home leg at all, and a mid between
+     two foreign currencies multiplied out is a number in neither of
+     them. And a remittance receive's in-leg is the foreign sum a sender
+     abroad dispatched: 16,000 pesos re-priced at today's mid came to
+     $388.82 while the book carried $382.97, the amount the desk actually
+     counted out. The Ledger's Pay-in volume and the ledger's own summary
+     differed by exactly that — two books for one headline, which is what
+     docs/CASH_OWNERSHIP_INVARIANTS.md exists to forbid.
+
+     Null means this book cannot value that deal. Not zero, and not a
+     price nobody quoted — docs/ABSENT_FIGURES.md.
+     ============================================================ */
+  function dealHome(row, home) {
+    if (!row || !home) return null;
+    if (row.inCcy === home) return Number(row.inAmt) || 0;
+    if (row.outCcy === home) return Number(row.outAmt) || 0;
+    return null;
+  }
+  /** Volume over a set of rows, and how many of them it could not value. */
+  function sumDealHome(rows, home) {
+    let total = 0, valued = 0, unvalued = 0;
+    (rows || []).forEach(row => {
+      const v = dealHome(row, home);
+      if (v == null) { unvalued += 1; return; }
+      total += v; valued += 1;
+    });
+    return { total: valued ? total : null, valued, unvalued };
+  }
   /* ============================================================
      TWO KINDS OF "TODAY", AND THEY ARE NOT THE SAME THING
 
@@ -1024,6 +1124,7 @@
 
   window.CDOS = Object.assign(window.CDOS || {}, {
     CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
+    COUNTER_CASH, counterCashIn, counterCashOut, dealHome, sumDealHome,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
