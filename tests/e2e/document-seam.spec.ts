@@ -112,6 +112,38 @@ async function ensureDrawerHas(page: Page, wanted: Record<string, number>) {
   }, wanted);
 }
 
+/* A published rate board, because a quote cannot be priced without one and
+   a desk that has never published is a real state — the seam database is
+   fresh on a first run and carries whatever earlier files left on a later
+   one. Published through the desk's own route, and ASSERTED: a fixture that
+   fails quietly leaves the real assertion below failing for a reason that
+   has nothing to do with what is being tested.
+
+   `rates:change` is a manager's permission, so this signs in as one, does
+   the publish, and hands the page back to whoever the test is walking as. */
+async function ensureBoard(page: Page) {
+  return page.evaluate(async () => {
+    const priced = await fetch("/api/rates").then((r) => r.json()).catch(() => null);
+    if (priced?.board?.rows?.USD) return "already published";
+    const manager = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
+    });
+    if (!manager.ok) return `manager sign-in: ${manager.status}`;
+    const published = await fetch("/api/rates/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        buyMargin: 0.02,
+        sellMargin: 0.03,
+        rows: { USD: { mid: 1.4, show: true }, EUR: { mid: 1.5, show: true } },
+      }),
+    });
+    return published.ok ? "published" : `publish: ${published.status} ${await published.text()}`;
+  });
+}
+
 /* One real deal, posted the way the counter posts one: freeze a quote,
    then post it. */
 async function postOneDeal(page: Page, key: string) {
@@ -229,6 +261,11 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   expect(session, `the till would not open: ${session}`).toBe("open");
   const topUp = await ensureDrawerHas(page, { CAD: 5000, USD: 2000 });
   expect(topUp, `the drawer could not be topped up: ${topUp}`).not.toMatch(/\d{3}/);
+  const board = await ensureBoard(page);
+  expect(board, `no rate board to price a quote against: ${board}`).toMatch(/published/);
+  /* The publish above signed in as the manager; come back as the operator
+     this walk is about, so the deal is attributed to them. */
+  await signInAtDesk(page);
 
   const key = `doc-seam-${Date.now()}`;
   const deal = await postOneDeal(page, key);

@@ -184,14 +184,22 @@ export const CATALOGUE: readonly KeyShape[] = [
   { key: "yorkfx_board_order", kind: "preference", what: "Currency order on the board" },
   { key: "yorkfx_rate_provider", kind: "preference", what: "Which rate source is selected" },
 
-  /* Markers saying "this desk has already been given its demonstration
-     data", so a reload does not seed it twice. They carry no record of
-     anything and are the first things that should stop being saved to the
-     server at all — a flag about the browser has no business in a document
-     we back up. Catalogued rather than ignored, because the point of the
-     catalogue is that nothing in here is a mystery. */
-  { key: "cdos_kyc_seed_v3", kind: "preference", what: "Marker: the KYC demonstration data has been seeded" },
-  { key: "cdos_report_history_seed_v3", kind: "preference", what: "Marker: the report history demonstration data has been seeded" },
+  /* `cdos_kyc_seed_v3` and `cdos_report_history_seed_v3` were catalogued
+     here: markers saying "this desk has already been given its
+     demonstration data", so a reload did not seed it twice.
+
+     Both seeds are gone and so are the markers. What they guarded was not
+     demonstration data in any harmless sense — `seedFakeHistory()` wrote
+     four sealed compliance filings with invented regulator acknowledgement
+     numbers into the report history, and `seedDemo()` fabricated eleven
+     completed identity verifications against named people. Neither belongs
+     in a browser at any stage of a product's life; see
+     docs/GENERATED_DOCUMENTS.md.
+
+     Removed from the catalogue rather than left behind, because a
+     catalogue entry for a key nothing writes is a claim about the product
+     that is no longer true — which is precisely what the test below
+     exists to catch, and it caught this. */
 ] as const;
 
 const BY_KEY = new Map(CATALOGUE.map((k) => [k.key, k]));
