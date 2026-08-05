@@ -811,6 +811,110 @@
      a rendering fault; "— nothing posted yet today" reads as an answer,
      and it is one. Keep it short and factual: what is missing, and what
      would fill it in. */
+
+  /* ---- taking a photograph of somebody's identity document ----------------
+
+     Every scan the desk captures used to go straight into storage as a
+     base64 data URL at whatever resolution the camera or the phone
+     produced, with no ceiling anywhere. One photograph of a passport is
+     three to five megabytes raw and about a third larger again once
+     base64'd, against a four-megabyte limit on the whole desk's saved
+     state — so a single ID scan could take the tenant past it, and the
+     bridge treats that refusal as terminal: "Nothing is being saved."
+     Every client, every filing and every setting after it was then
+     browser-only until somebody intervened. A teller doing exactly their
+     job could stop the shop saving anything.
+
+     So there is one way in, and it downscales. Sixteen hundred pixels on
+     the long edge is comfortably enough to read a document number off a
+     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
+     four-megabyte photograph to something in the low hundreds of
+     kilobytes. Anything that is still too big afterwards is refused, out
+     loud, rather than accepted and silently lost.
+
+     This is a ceiling, not a cure. Scans belong in object storage with a
+     row pointing at them, not in the desk's state document at all — see
+     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
+     from stopping a shop. */
+  /* 1200 on the long edge is about 150 DPI across a passport, which reads
+     a document number comfortably and is what the image is FOR. It was
+     1600 first; measured against a worst-case scan that came out at 240 KB
+     apiece, which is only sixteen clients before a desk is at its saving
+     limit. This is the honest trade — a scan you can read, small enough
+     that a shop gets through a working week — and it is still a stopgap.
+     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+  const ID_IMAGE_MAX_EDGE = 1200;
+  const ID_IMAGE_QUALITY = 0.55;
+  /* Refused above this AFTER downscaling. A scan that will not come under
+     it is not a scan, it is a scanner set to something strange. */
+  const ID_IMAGE_MAX_BYTES = 700 * 1024;
+  /* A PDF or a Word file cannot be downscaled, so a supporting document
+     gets a flat limit and an honest refusal. */
+  const ATTACHMENT_MAX_BYTES = 900 * 1024;
+
+  const dataUrlBytes = (url) => Math.ceil((String(url || '').length - (String(url || '').indexOf(',') + 1)) * 3 / 4);
+  const readableSize = (bytes) => bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(new Error('That file could not be read.'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  /* Downscale and re-encode. Resolves { ok, dataUrl } or { ok: false, why }
+     — never throws at a call site that is holding somebody's passport. */
+  async function intakeIdImage(file) {
+    if (!file) return { ok: false, why: 'No file was chosen.' };
+    if (!/^image\//.test(file.type || '')) {
+      return { ok: false, why: 'That is not an image. Use Documents for a PDF or a scan from a machine.' };
+    }
+    let source;
+    try { source = await readAsDataUrl(file); } catch (e) { return { ok: false, why: e.message }; }
+    const shrunk = await shrinkDataUrl(source);
+    const bytes = dataUrlBytes(shrunk);
+    if (bytes > ID_IMAGE_MAX_BYTES) {
+      return { ok: false, why: `That image is still ${readableSize(bytes)} after resizing, which is too large to store. Try a photograph rather than a full-resolution scan.` };
+    }
+    return { ok: true, dataUrl: shrunk, bytes };
+  }
+
+  /* The same treatment for an image the desk produced itself — a camera
+     frame is already a data URL and still wants the ceiling. */
+  async function shrinkDataUrl(dataUrl) {
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error('unreadable'));
+        i.src = dataUrl;
+      });
+      const longest = Math.max(img.width, img.height) || 1;
+      const scale = Math.min(1, ID_IMAGE_MAX_EDGE / longest);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.width * scale));
+      cv.height = Math.max(1, Math.round(img.height * scale));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      return cv.toDataURL('image/jpeg', ID_IMAGE_QUALITY);
+    } catch (e) {
+      /* Better the original than nothing — the size check still stands
+         after this, so an unreadable image is refused rather than stored. */
+      return dataUrl;
+    }
+  }
+
+  async function intakeAttachment(file) {
+    if (!file) return { ok: false, why: 'No file was chosen.' };
+    if (/^image\//.test(file.type || '')) return intakeIdImage(file);
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      return { ok: false, why: `${file.name || 'That file'} is ${readableSize(file.size)}. Documents are limited to ${readableSize(ATTACHMENT_MAX_BYTES)} — attach a smaller copy.` };
+    }
+    try { return { ok: true, dataUrl: await readAsDataUrl(file), bytes: file.size }; }
+    catch (e) { return { ok: false, why: e.message }; }
+  }
+
   function Absent({ why, size, align }) {
     return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', lineHeight: 1.25 }}>
       <span style={{ fontSize: size || 20, fontWeight: 700, color: CD.faint, fontFamily: 'Space Mono, monospace' }}>—</span>
@@ -922,6 +1026,7 @@
     CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
+    intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
     crossRate, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,

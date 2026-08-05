@@ -1101,6 +1101,139 @@
      a rendering fault; "— nothing posted yet today" reads as an answer,
      and it is one. Keep it short and factual: what is missing, and what
      would fill it in. */
+
+  /* ---- taking a photograph of somebody's identity document ----------------
+      Every scan the desk captures used to go straight into storage as a
+     base64 data URL at whatever resolution the camera or the phone
+     produced, with no ceiling anywhere. One photograph of a passport is
+     three to five megabytes raw and about a third larger again once
+     base64'd, against a four-megabyte limit on the whole desk's saved
+     state — so a single ID scan could take the tenant past it, and the
+     bridge treats that refusal as terminal: "Nothing is being saved."
+     Every client, every filing and every setting after it was then
+     browser-only until somebody intervened. A teller doing exactly their
+     job could stop the shop saving anything.
+      So there is one way in, and it downscales. Sixteen hundred pixels on
+     the long edge is comfortably enough to read a document number off a
+     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
+     four-megabyte photograph to something in the low hundreds of
+     kilobytes. Anything that is still too big afterwards is refused, out
+     loud, rather than accepted and silently lost.
+      This is a ceiling, not a cure. Scans belong in object storage with a
+     row pointing at them, not in the desk's state document at all — see
+     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
+     from stopping a shop. */
+  /* 1200 on the long edge is about 150 DPI across a passport, which reads
+     a document number comfortably and is what the image is FOR. It was
+     1600 first; measured against a worst-case scan that came out at 240 KB
+     apiece, which is only sixteen clients before a desk is at its saving
+     limit. This is the honest trade — a scan you can read, small enough
+     that a shop gets through a working week — and it is still a stopgap.
+     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+  const ID_IMAGE_MAX_EDGE = 1200;
+  const ID_IMAGE_QUALITY = 0.55;
+  /* Refused above this AFTER downscaling. A scan that will not come under
+     it is not a scan, it is a scanner set to something strange. */
+  const ID_IMAGE_MAX_BYTES = 700 * 1024;
+  /* A PDF or a Word file cannot be downscaled, so a supporting document
+     gets a flat limit and an honest refusal. */
+  const ATTACHMENT_MAX_BYTES = 900 * 1024;
+  const dataUrlBytes = url => Math.ceil((String(url || '').length - (String(url || '').indexOf(',') + 1)) * 3 / 4);
+  const readableSize = bytes => bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(new Error('That file could not be read.'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  /* Downscale and re-encode. Resolves { ok, dataUrl } or { ok: false, why }
+     — never throws at a call site that is holding somebody's passport. */
+  async function intakeIdImage(file) {
+    if (!file) return {
+      ok: false,
+      why: 'No file was chosen.'
+    };
+    if (!/^image\//.test(file.type || '')) {
+      return {
+        ok: false,
+        why: 'That is not an image. Use Documents for a PDF or a scan from a machine.'
+      };
+    }
+    let source;
+    try {
+      source = await readAsDataUrl(file);
+    } catch (e) {
+      return {
+        ok: false,
+        why: e.message
+      };
+    }
+    const shrunk = await shrinkDataUrl(source);
+    const bytes = dataUrlBytes(shrunk);
+    if (bytes > ID_IMAGE_MAX_BYTES) {
+      return {
+        ok: false,
+        why: `That image is still ${readableSize(bytes)} after resizing, which is too large to store. Try a photograph rather than a full-resolution scan.`
+      };
+    }
+    return {
+      ok: true,
+      dataUrl: shrunk,
+      bytes
+    };
+  }
+
+  /* The same treatment for an image the desk produced itself — a camera
+     frame is already a data URL and still wants the ceiling. */
+  async function shrinkDataUrl(dataUrl) {
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error('unreadable'));
+        i.src = dataUrl;
+      });
+      const longest = Math.max(img.width, img.height) || 1;
+      const scale = Math.min(1, ID_IMAGE_MAX_EDGE / longest);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.width * scale));
+      cv.height = Math.max(1, Math.round(img.height * scale));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      return cv.toDataURL('image/jpeg', ID_IMAGE_QUALITY);
+    } catch (e) {
+      /* Better the original than nothing — the size check still stands
+         after this, so an unreadable image is refused rather than stored. */
+      return dataUrl;
+    }
+  }
+  async function intakeAttachment(file) {
+    if (!file) return {
+      ok: false,
+      why: 'No file was chosen.'
+    };
+    if (/^image\//.test(file.type || '')) return intakeIdImage(file);
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      return {
+        ok: false,
+        why: `${file.name || 'That file'} is ${readableSize(file.size)}. Documents are limited to ${readableSize(ATTACHMENT_MAX_BYTES)} — attach a smaller copy.`
+      };
+    }
+    try {
+      return {
+        ok: true,
+        dataUrl: await readAsDataUrl(file),
+        bytes: file.size
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        why: e.message
+      };
+    }
+  }
   function Absent({
     why,
     size,
@@ -1453,6 +1586,11 @@
     PinPrompt,
     Absent,
     money,
+    intakeIdImage,
+    intakeAttachment,
+    shrinkDataUrl,
+    dataUrlBytes,
+    readableSize,
     crossRate,
     perCadLive,
     fmt,
@@ -5099,7 +5237,7 @@
       setTimeout(() => setPwForm(null), 1600);
     };
     const NAV_KEYWORDS = {
-      business: 'logo msb fintrac reporting entity reset demo name address',
+      business: 'logo msb fintrac reporting entity name address',
       locations: 'branch till teller station',
       localization: 'currency timezone date time format region',
       compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code',
@@ -5123,17 +5261,26 @@
       if (!q) return true;
       return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q);
     };
-    // №02: the explicit, deliberate demo wipe — replaces "refresh" as the reset.
-    const [resetArm, setResetArm] = useState(false);
-    const resetDemo = () => {
-      try {
-        Object.keys(localStorage).forEach(k => {
-          if (k.indexOf('cdos_') === 0 && k !== 'cdos_theme') localStorage.removeItem(k);
-        });
-        localStorage.removeItem('yorkfx_rates_locked');
-      } catch (e) {}
-      location.reload();
-    };
+    /* "Reset demo data" IS GONE, and it is worth saying why rather than
+       leaving a gap somebody fills back in.
+        It cleared every cdos_ key and called location.reload(). The reload
+       fires beforeunload, and the persistence bridge flushes on
+       beforeunload with keepalive:true — so the now-empty snapshot raced
+       the navigation to the server. One of two things happened, decided by
+       a race nobody could see: the flush landed and the tenant's server
+       document was erased — clients, filings, settings, all of it,
+       permanently — or the flush lost and the button appeared to do
+       nothing at all.
+        So it was a non-deterministic wipe of real customer data behind a
+       word that said "demo". And there is no demo data left to reset: the
+       seeded book, clients, baseline and shifts were deleted when the
+       screens moved onto the ledger.
+        A desk that genuinely wants a shop full of believable data for a
+       sales demo needs a DEMO TENANT — provisioned server-side, with real
+       ledger rows somebody can post against and void — not a button that
+       stuffs fiction into a real desk's browser and calls the difference a
+       reset. That is a feature, and it belongs to whoever runs the
+       platform, not to a shop's Settings screen. */
     // appearance (light / dark / auto) — persisted per device by the theme controller
     const [appearance, setAppearance] = useState(() => window.CDOS.theme ? window.CDOS.theme.get() : 'light');
     const pickAppearance = v => {
@@ -5262,10 +5409,19 @@
       log('Permission changed', `Teller · ${k}`);
     };
     const base = settings.baseCurrency || 'CAD';
-    const uploadLogo = file => {
-      const r = new FileReader();
-      r.onload = () => set('logo', r.result, 'business logo');
-      r.readAsDataURL(file);
+    /* The logo goes on every receipt and into the desk's saved state on
+       every write, so a full-resolution upload is a second standing
+       contributor to the four-megabyte ceiling after ID scans. Same
+       intake, same refusal. */
+    const [logoErr, setLogoErr] = useState('');
+    const uploadLogo = async file => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setLogoErr(taken.why);
+        return;
+      }
+      setLogoErr('');
+      set('logo', taken.dataUrl, 'business logo');
     };
     // ---- locations / tills / people setup (single source: branches) ----
     const setBranchF = (id, patch) => setBranches && setBranches(list => list.map(b => b.id === id ? {
@@ -7939,7 +8095,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       accept: "image/*",
       className: "hidden",
       onChange: e => e.target.files[0] && uploadLogo(e.target.files[0])
-    })), settings.logo && /*#__PURE__*/React.createElement("button", {
+    })), logoErr && /*#__PURE__*/React.createElement("span", {
+      className: "text-[11px]",
+      style: {
+        color: CD.flag
+      }
+    }, logoErr), settings.logo && /*#__PURE__*/React.createElement("button", {
       onClick: () => set('logo', null, 'logo removed'),
       className: "text-xs px-2.5 py-1.5",
       style: {
@@ -8267,71 +8428,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "fintracContactName",
       placeholder: "Compliance officer name"
-    })))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 pt-4",
-      style: {
-        borderTop: `1px solid ${CD.line}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] uppercase tracking-widest mb-1",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Demo data"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-3",
-      style: {
-        color: CD.mute,
-        maxWidth: 560
-      }
-    }, "The book, clients, cheques, transfers, till counts and settings all persist on this device \u2014 refreshing never resets them. Wiping back to the seeded demo book is a deliberate act, done here."), !resetArm ? /*#__PURE__*/React.createElement("button", {
-      onClick: () => setResetArm(true),
-      className: "text-xs px-3 py-2",
-      style: {
-        border: `1px solid ${CD.flag}`,
-        borderRadius: 8,
-        color: CD.flag,
-        background: CD.panel,
-        fontWeight: 600
-      }
-    }, "Reset demo data\u2026") : /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5",
-      style: {
-        border: `1.5px solid ${CD.flag}`,
-        borderRadius: 12,
-        background: CD.flagSoft
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[13px] font-semibold mb-1",
-      style: {
-        color: CD.ink
-      }
-    }, "Wipe this device and restore the demo book?"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-3",
-      style: {
-        color: CD.mute
-      }
-    }, "Every transaction, client, cheque, transfer, till count, filing and setting stored on this device is erased and the seeded demo returns. This cannot be undone."), /*#__PURE__*/React.createElement("div", {
-      className: "flex gap-2"
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: resetDemo,
-      className: "text-xs px-3 py-2",
-      style: {
-        background: CD.flag,
-        color: '#fff',
-        borderRadius: 8,
-        fontWeight: 700
-      }
-    }, "Erase & reset"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setResetArm(false),
-      className: "text-xs px-3 py-2",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        color: CD.mute,
-        background: CD.panel
-      }
-    }, "Cancel"))))), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    }))))), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "wallet",
       title: "Locations, tills & people",
       sub: "Set up each branch, add its tills, then assign a staff member to each till. The header station switcher, the Till and the Branch Network all read this one list."
@@ -20350,22 +20447,29 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setCamErr(e && e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser, or upload a photo instead.' : 'No camera available on this device. Upload a photo instead.');
       }
     };
-    const capture = () => {
+    /* Both ways in go through the same ceiling. A camera frame is already
+       a data URL and still wants downscaling — a 1280-wide sensor frame is
+       not small — and an uploaded phone photo is the case that could stop
+       the whole desk saving. See intakeIdImage in cdos-base.jsx. */
+    const capture = async () => {
       const v = videoRef.current;
       if (!v || !v.videoWidth) return;
       const cv = document.createElement('canvas');
       cv.width = v.videoWidth;
       cv.height = v.videoHeight;
       cv.getContext('2d').drawImage(v, 0, 0);
-      onPhoto(cv.toDataURL('image/jpeg', 0.85));
+      onPhoto(await window.CDOS.shrinkDataUrl(cv.toDataURL('image/jpeg', 0.85)));
       closeCamera();
     };
-    const onFile = file => {
+    const onFile = async file => {
       if (!file) return;
-      const r = new FileReader();
-      r.onload = () => onPhoto(r.result);
-      r.readAsDataURL(file);
       setMenu(false);
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setCamErr(taken.why);
+        return;
+      }
+      onPhoto(taken.dataUrl);
     };
     useEffect(() => () => closeCamera(), []);
     useEffect(() => {
@@ -20953,14 +21057,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       full: true
     }, rec.photo ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3"
-    }, /*#__PURE__*/React.createElement("img", {
+    }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
-      alt: "ID",
-      className: "h-16",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8
-      }
+      height: 64,
+      who: name,
+      what: "primary ID",
+      log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => set('photo', null),
       className: "text-xs font-medium",
@@ -21064,14 +21166,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       full: true
     }, doc.photo ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3"
-    }, /*#__PURE__*/React.createElement("img", {
+    }, /*#__PURE__*/React.createElement(IdScan, {
       src: doc.photo,
-      alt: "ID",
-      className: "h-16",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8
-      }
+      height: 64,
+      who: name,
+      what: doc.type || "additional ID",
+      log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => setId(i, 'photo', null),
@@ -21493,14 +21593,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       label: "ID scan"
     }, rec.photo ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
-    }, /*#__PURE__*/React.createElement("img", {
+    }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
-      alt: "ID",
-      className: "h-9",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 6
-      }
+      height: 36,
+      who: name,
+      what: "primary ID",
+      log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setField('photo', null),
       className: "text-[11px]",
@@ -21901,6 +21999,96 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     })));
   }
 
+  /* ---- an identity document on screen ------------------------------------
+      A scan of somebody's passport is the most sensitive thing this desk
+     holds, and it used to sit rendered on any screen that happened to show
+     the client — over the shoulder of whoever is at the counter, on a
+     monitor a customer can see, for as long as the tab is open.
+      So it is obscured until somebody asks for it, and asking is recorded.
+     Not a permission — anybody who can open the client file can already
+     see this if they want to, and pretending otherwise would be theatre.
+     What it changes is that looking becomes deliberate and leaves a trace,
+     which is the honest control: "who looked at this customer's passport,
+     and when" is a question a regulator asks, and the answer used to be
+     that nobody could say.
+      It re-covers when it unmounts, so walking away from the screen does
+     not leave a document uncovered on it. */
+  function IdScan({
+    src,
+    alt,
+    height,
+    who,
+    what,
+    log
+  }) {
+    const [shown, setShown] = useState(false);
+    if (!src) return null;
+    const box = {
+      border: `1px solid ${CD.line}`,
+      borderRadius: 8,
+      display: 'block',
+      maxHeight: height || 120
+    };
+    if (!shown) {
+      return /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        title: "Covered. Click to view \u2014 the desk records that it was opened.",
+        onClick: () => {
+          setShown(true);
+          log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim());
+        },
+        className: "relative grid place-items-center cursor-pointer",
+        style: {
+          ...box,
+          width: 168,
+          height: height || 120,
+          overflow: 'hidden',
+          background: CD.panel
+        }
+      }, /*#__PURE__*/React.createElement("img", {
+        src: src,
+        alt: "",
+        "aria-hidden": "true",
+        style: {
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          filter: 'blur(14px)',
+          opacity: 0.55
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "relative flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-semibold",
+        style: {
+          background: CD.panel,
+          color: CD.mute,
+          borderRadius: 7,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "lock",
+        s: 11,
+        c: CD.mute
+      }), " Show ID"));
+    }
+    return /*#__PURE__*/React.createElement("span", {
+      className: "inline-flex flex-col items-start gap-1"
+    }, /*#__PURE__*/React.createElement("img", {
+      src: src,
+      alt: alt || 'Identity document',
+      style: box
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setShown(false),
+      className: "text-[10.5px]",
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Hide"));
+  }
+
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({
     name,
@@ -21929,31 +22117,36 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         updatedAt: new Date().toISOString().slice(0, 10)
       }
     }));
-    const upload = (k, file) => {
-      const r = new FileReader();
-      r.onload = () => {
-        set(k, r.result);
-        log && log(k === 'photo' ? 'ID scan saved' : 'Photo added', name);
-      };
-      r.readAsDataURL(file);
+    const [intakeErr, setIntakeErr] = useState('');
+    const upload = async (k, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setIntakeErr(taken.why);
+        return;
+      }
+      setIntakeErr('');
+      set(k, taken.dataUrl);
+      log && log(k === 'photo' ? 'ID scan saved' : 'Photo added', name);
     };
-    const addGallery = file => {
-      const r = new FileReader();
-      r.onload = () => {
-        setClients(c => {
-          const cur = c[name] || {};
-          const g = (cur.gallery || []).concat(r.result);
-          return {
-            ...c,
-            [name]: {
-              ...cur,
-              gallery: g
-            }
-          };
-        });
-        log && log('Photo added', name);
-      };
-      r.readAsDataURL(file);
+    const addGallery = async file => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setIntakeErr(taken.why);
+        return;
+      }
+      setIntakeErr('');
+      setClients(c => {
+        const cur = c[name] || {};
+        const g = (cur.gallery || []).concat(taken.dataUrl);
+        return {
+          ...c,
+          [name]: {
+            ...cur,
+            gallery: g
+          }
+        };
+      });
+      log && log('Photo added', name);
     };
     const rmGallery = i => setClients(c => {
       const cur = c[name] || {};
@@ -22016,24 +22209,31 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         }
       };
     });
-    const uploadId = (i, file) => {
-      const r = new FileReader();
-      r.onload = () => {
-        setId(i, 'photo', r.result);
-        log && log('ID document added', name);
-      };
-      r.readAsDataURL(file);
+    const uploadId = async (i, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setIntakeErr(taken.why);
+        return;
+      }
+      setIntakeErr('');
+      setId(i, 'photo', taken.dataUrl);
+      log && log('ID document added', name);
     };
     // supporting documents (proof of address, source of funds, corporate filings, …)
-    const addDoc = file => {
-      const r = new FileReader();
-      r.onload = () => setClients(c => {
+    const addDoc = async file => {
+      const taken = await window.CDOS.intakeAttachment(file);
+      if (!taken.ok) {
+        setIntakeErr(taken.why);
+        return;
+      }
+      setIntakeErr('');
+      setClients(c => {
         const cur = c[name] || {};
         const docs = (cur.docs || []).concat({
           label: (file.name || 'Document').replace(/\.[^.]+$/, ''),
           fileName: file.name || '',
           mime: file.type || '',
-          file: r.result,
+          file: taken.dataUrl,
           addedAt: stamp()
         });
         return {
@@ -22045,7 +22245,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           }
         };
       });
-      r.readAsDataURL(file);
       log && log('Document added', name);
     };
     const setDoc = (i, k, v) => setClients(c => {
@@ -22338,7 +22537,28 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           flex: 'none'
         }
       }), r);
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), intakeErr && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-start gap-2 px-3 py-2.5 mb-4 text-[12px]",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 14,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: CD.ink
+      }
+    }, intakeErr), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setIntakeErr(''),
+      className: "ml-auto text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Dismiss")), /*#__PURE__*/React.createElement("div", {
       className: "mb-5"
     }, window.CDOS.KYC ? /*#__PURE__*/React.createElement(window.CDOS.KYC.SubjectPanel, {
       name: name,
@@ -22700,14 +22920,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       value: rec.idExpiry
     }), rec.photo && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
-    }, /*#__PURE__*/React.createElement("img", {
+    }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
-      alt: "ID document",
-      style: {
-        maxHeight: 120,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8
-      }
+      height: 120,
+      who: name,
+      what: "primary ID",
+      log: log
     })), (rec.ids || []).map((d, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       className: "mt-3 pt-3",
@@ -22735,14 +22953,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       value: d.expiry
     }), d.photo && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
-    }, /*#__PURE__*/React.createElement("img", {
+    }, /*#__PURE__*/React.createElement(IdScan, {
       src: d.photo,
-      alt: "ID",
-      style: {
-        maxHeight: 100,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8
-      }
+      height: 100,
+      who: name,
+      what: d.type || "additional ID",
+      log: log
     }))))), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
@@ -35976,10 +36192,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
-    const upload = file => {
-      const r = new FileReader();
-      r.onload = () => setImage(r.result);
-      r.readAsDataURL(file);
+
+    /* A cheque image is stored the same way an ID scan is, and used to
+       arrive at whatever size the scanner produced. Same ceiling. */
+    const [imgErr, setImgErr] = useState('');
+    const upload = async file => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        setImgErr(taken.why);
+        return;
+      }
+      setImgErr('');
+      setImage(taken.dataUrl);
     };
     const save = () => {
       if (!canSave) return;
@@ -36233,7 +36457,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       accept: "image/*",
       className: "hidden",
       onChange: e => e.target.files[0] && upload(e.target.files[0])
-    }))), /*#__PURE__*/React.createElement(Field, {
+    })), imgErr && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-1",
+      style: {
+        color: CD.flag
+      }
+    }, imgErr)), /*#__PURE__*/React.createElement(Field, {
       label: "Endorsement"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setEndorsed(v => !v),
@@ -42075,11 +42304,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       onCapture(cv.toDataURL('image/jpeg', 0.85));
       closeCamera();
     };
-    const onFile = file => {
+    const onFile = async file => {
       if (!file) return;
-      const r = new FileReader();
-      r.onload = () => onCapture(r.result);
-      r.readAsDataURL(file);
+      const taken = await window.CDOS.intakeIdImage(file); // see cdos-base.jsx
+      if (taken.ok) onCapture(taken.dataUrl);
     };
     useEffect(() => () => closeCamera(), []);
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
@@ -43202,11 +43430,10 @@ ${(filing.map || []).map(blockHTML).join('')}
     const [via, setVia] = useState('sms');
     const [checkId, setCheckId] = useState(null);
     const applied = useRef(false);
-    const onFile = file => {
+    const onFile = async file => {
       if (!file) return;
-      const r = new FileReader();
-      r.onload = () => setPhoto(r.result);
-      r.readAsDataURL(file);
+      const taken = await window.CDOS.intakeIdImage(file); // see cdos-base.jsx
+      if (taken.ok) setPhoto(taken.dataUrl);
     };
     const [cam, setCam] = useState(false); // live camera capture overlay
     const [camErr, setCamErr] = useState('');

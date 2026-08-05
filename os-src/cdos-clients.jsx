@@ -58,8 +58,24 @@
         attach();
       } catch (e) { setCamErr(e && e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser, or upload a photo instead.' : 'No camera available on this device. Upload a photo instead.'); }
     };
-    const capture = () => { const v = videoRef.current; if (!v || !v.videoWidth) return; const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext('2d').drawImage(v, 0, 0); onPhoto(cv.toDataURL('image/jpeg', 0.85)); closeCamera(); };
-    const onFile = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => onPhoto(r.result); r.readAsDataURL(file); setMenu(false); };
+    /* Both ways in go through the same ceiling. A camera frame is already
+       a data URL and still wants downscaling — a 1280-wide sensor frame is
+       not small — and an uploaded phone photo is the case that could stop
+       the whole desk saving. See intakeIdImage in cdos-base.jsx. */
+    const capture = async () => {
+      const v = videoRef.current; if (!v || !v.videoWidth) return;
+      const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight;
+      cv.getContext('2d').drawImage(v, 0, 0);
+      onPhoto(await window.CDOS.shrinkDataUrl(cv.toDataURL('image/jpeg', 0.85)));
+      closeCamera();
+    };
+    const onFile = async (file) => {
+      if (!file) return;
+      setMenu(false);
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setCamErr(taken.why); return; }
+      onPhoto(taken.dataUrl);
+    };
     useEffect(() => () => closeCamera(), []);
     useEffect(() => { if (!menu) return; const h = (e) => { if (wrapRef.current && wrapRef.current.contains(e.target)) return; if (menuRef.current && menuRef.current.contains(e.target)) return; setMenu(false); }; window.addEventListener('mousedown', h); return () => window.removeEventListener('mousedown', h); }, [menu]);
     return (<span ref={wrapRef} className="relative" style={{ lineHeight: 0 }}>
@@ -217,7 +233,7 @@
       <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="ID document scan" full>
         {rec.photo
-          ? <div className="flex items-center gap-3"><img src={rec.photo} alt="ID" className="h-16" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} height={64} who={name} what="primary ID" log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
           : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload ID document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}
       </EditField>
     </div>);
@@ -235,7 +251,7 @@
         <EditField label="Expiry"><input disabled={!canEdit} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Document scan" full>
           {doc.photo
-            ? <div className="flex items-center gap-3"><img src={doc.photo} alt="ID" className="h-16" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} height={64} who={name} what={doc.type || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
             : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && uploadId(i, e.target.files[0])} /></label>}
         </EditField>
       </div>
@@ -365,7 +381,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
             <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
-            <EditField label="ID scan">{rec.photo ? <div className="flex items-center gap-2"><img src={rec.photo} alt="ID" className="h-9" style={{ border: `1px solid ${CD.line}`, borderRadius: 6 }} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
+            <EditField label="ID scan">{rec.photo ? <div className="flex items-center gap-2"><IdScan src={rec.photo} height={36} who={name} what="primary ID" log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
           </div>
           <div className="flex items-center gap-2 mt-4">
             <button onClick={() => onOpenLedger(name)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="scroll" s={15} c="var(--cd-on-ink)" /> View {st.n} transactions</button>
@@ -457,21 +473,85 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     </div>);
   }
 
+
+  /* ---- an identity document on screen ------------------------------------
+
+     A scan of somebody's passport is the most sensitive thing this desk
+     holds, and it used to sit rendered on any screen that happened to show
+     the client — over the shoulder of whoever is at the counter, on a
+     monitor a customer can see, for as long as the tab is open.
+
+     So it is obscured until somebody asks for it, and asking is recorded.
+     Not a permission — anybody who can open the client file can already
+     see this if they want to, and pretending otherwise would be theatre.
+     What it changes is that looking becomes deliberate and leaves a trace,
+     which is the honest control: "who looked at this customer's passport,
+     and when" is a question a regulator asks, and the answer used to be
+     that nobody could say.
+
+     It re-covers when it unmounts, so walking away from the screen does
+     not leave a document uncovered on it. */
+  function IdScan({ src, alt, height, who, what, log }) {
+    const [shown, setShown] = useState(false);
+    if (!src) return null;
+    const box = { border: `1px solid ${CD.line}`, borderRadius: 8, display: 'block', maxHeight: height || 120 };
+    if (!shown) {
+      return (<button
+        type="button"
+        title="Covered. Click to view — the desk records that it was opened."
+        onClick={() => { setShown(true); log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim()); }}
+        className="relative grid place-items-center cursor-pointer"
+        style={{ ...box, width: 168, height: height || 120, overflow: 'hidden', background: CD.panel }}>
+        <img src={src} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(14px)', opacity: 0.55 }} />
+        <span className="relative flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-semibold" style={{ background: CD.panel, color: CD.mute, borderRadius: 7, fontFamily: 'Space Mono, monospace' }}>
+          <Ic n="lock" s={11} c={CD.mute} /> Show ID
+        </span>
+      </button>);
+    }
+    return (<span className="inline-flex flex-col items-start gap-1">
+      <img src={src} alt={alt || 'Identity document'} style={box} />
+      <button type="button" onClick={() => setShown(false)} className="text-[10.5px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>Hide</button>
+    </span>);
+  }
+
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
     const set = (k, v) => setClients(c => ({ ...c, [name]: { ...(c[name] || {}), [k]: v, updatedAt: new Date().toISOString().slice(0, 10) } }));
-    const upload = (k, file) => { const r = new FileReader(); r.onload = () => { set(k, r.result); log && log(k === 'photo' ? 'ID scan saved' : 'Photo added', name); }; r.readAsDataURL(file); };
-    const addGallery = (file) => { const r = new FileReader(); r.onload = () => { setClients(c => { const cur = c[name] || {}; const g = (cur.gallery || []).concat(r.result); return { ...c, [name]: { ...cur, gallery: g } }; }); log && log('Photo added', name); }; r.readAsDataURL(file); };
+    const [intakeErr, setIntakeErr] = useState('');
+    const upload = async (k, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setIntakeErr(taken.why); return; }
+      setIntakeErr(''); set(k, taken.dataUrl);
+      log && log(k === 'photo' ? 'ID scan saved' : 'Photo added', name);
+    };
+    const addGallery = async (file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setIntakeErr(taken.why); return; }
+      setIntakeErr('');
+      setClients(c => { const cur = c[name] || {}; const g = (cur.gallery || []).concat(taken.dataUrl); return { ...c, [name]: { ...cur, gallery: g } }; });
+      log && log('Photo added', name);
+    };
     const rmGallery = (i) => setClients(c => { const cur = c[name] || {}; const g = (cur.gallery || []).slice(); g.splice(i, 1); return { ...c, [name]: { ...cur, gallery: g } }; });
     const stamp = () => new Date().toISOString().slice(0, 10);
     // additional identity documents (the primary top-level ID drives KYC status; these are extra IDs on file)
     const addId = () => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).concat({ type: '', num: '', issued: '', expiry: '', photo: null }); return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
     const setId = (i, k, v) => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids[i] = { ...(ids[i] || {}), [k]: v }; return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
     const rmId = (i) => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids.splice(i, 1); return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
-    const uploadId = (i, file) => { const r = new FileReader(); r.onload = () => { setId(i, 'photo', r.result); log && log('ID document added', name); }; r.readAsDataURL(file); };
+    const uploadId = async (i, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setIntakeErr(taken.why); return; }
+      setIntakeErr(''); setId(i, 'photo', taken.dataUrl);
+      log && log('ID document added', name);
+    };
     // supporting documents (proof of address, source of funds, corporate filings, …)
-    const addDoc = (file) => { const r = new FileReader(); r.onload = () => setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).concat({ label: (file.name || 'Document').replace(/\.[^.]+$/, ''), fileName: file.name || '', mime: file.type || '', file: r.result, addedAt: stamp() }); return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; }); r.readAsDataURL(file); log && log('Document added', name); };
+    const addDoc = async (file) => {
+      const taken = await window.CDOS.intakeAttachment(file);
+      if (!taken.ok) { setIntakeErr(taken.why); return; }
+      setIntakeErr('');
+      setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).concat({ label: (file.name || 'Document').replace(/\.[^.]+$/, ''), fileName: file.name || '', mime: file.type || '', file: taken.dataUrl, addedAt: stamp() }); return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
+      log && log('Document added', name);
+    };
     const setDoc = (i, k, v) => setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).slice(); docs[i] = { ...(docs[i] || {}), [k]: v }; return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
     const rmDoc = (i) => setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).slice(); docs.splice(i, 1); return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
@@ -517,6 +597,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="inline-flex items-stretch flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, overflow: 'hidden', opacity: canEdit ? 1 : 0.65 }}>{RISK.map((r, i) => { const on = normalizeRisk(rec.risk) === r; const tn = riskTone(r); return <button key={r} type="button" disabled={!canEdit} onClick={() => set('risk', r)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ background: on ? tn.bg : 'transparent', color: on ? tn.c : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', cursor: canEdit ? 'pointer' : 'default' }}><span style={{ width: 6, height: 6, borderRadius: 999, background: tn.c, flex: 'none' }} />{r}</button>; })}</div>
           </div>
           {/* identity verification — partner KYC / sanctions screening (compliance) */}
+          {/* A refused scan has to say so. The whole reason the ceiling
+              exists is that oversized images used to be accepted and then
+              silently lost when the desk's state would not save. */}
+          {intakeErr && (
+            <div className="flex items-start gap-2 px-3 py-2.5 mb-4 text-[12px]" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}>
+              <Ic n="alert" s={14} c={CD.flag} />
+              <span style={{ color: CD.ink }}>{intakeErr}</span>
+              <button onClick={() => setIntakeErr('')} className="ml-auto text-[11px]" style={{ color: CD.mute }}>Dismiss</button>
+            </div>
+          )}
           <div className="mb-5">
             {window.CDOS.KYC ? <window.CDOS.KYC.SubjectPanel name={name} kind={rec.kind || 'individual'} rec={rec} by={me && me.name} setClients={setClients} settings={settings} /> : null}
           </div>
@@ -583,13 +673,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 <KV icon="id" label={corp ? 'Document' : 'ID type'} value={rec.idType} />
                 <KV icon="scroll" label="Number" value={rec.idNum} mono />
                 <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
-                {rec.photo && <div className="mt-2"><img src={rec.photo} alt="ID document" style={{ maxHeight: 120, border: `1px solid ${CD.line}`, borderRadius: 8 }} /></div>}
+                {rec.photo && <div className="mt-2"><IdScan src={rec.photo} height={120} who={name} what="primary ID" log={log} /></div>}
                 {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
                   <KV icon="id" label="Type" value={d.type} />
                   <KV icon="scroll" label="Number" value={d.num} mono />
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
-                  {d.photo && <div className="mt-2"><img src={d.photo} alt="ID" style={{ maxHeight: 100, border: `1px solid ${CD.line}`, borderRadius: 8 }} /></div>}
+                  {d.photo && <div className="mt-2"><IdScan src={d.photo} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>

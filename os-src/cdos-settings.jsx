@@ -628,17 +628,31 @@
       setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
       setTimeout(() => setPwForm(null), 1600);
     };
-    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity reset demo name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
+    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
-    // №02: the explicit, deliberate demo wipe — replaces "refresh" as the reset.
-    const [resetArm, setResetArm] = useState(false);
-    const resetDemo = () => {
-      try {
-        Object.keys(localStorage).forEach(k => { if (k.indexOf('cdos_') === 0 && k !== 'cdos_theme') localStorage.removeItem(k); });
-        localStorage.removeItem('yorkfx_rates_locked');
-      } catch (e) {}
-      location.reload();
-    };
+    /* "Reset demo data" IS GONE, and it is worth saying why rather than
+       leaving a gap somebody fills back in.
+
+       It cleared every cdos_ key and called location.reload(). The reload
+       fires beforeunload, and the persistence bridge flushes on
+       beforeunload with keepalive:true — so the now-empty snapshot raced
+       the navigation to the server. One of two things happened, decided by
+       a race nobody could see: the flush landed and the tenant's server
+       document was erased — clients, filings, settings, all of it,
+       permanently — or the flush lost and the button appeared to do
+       nothing at all.
+
+       So it was a non-deterministic wipe of real customer data behind a
+       word that said "demo". And there is no demo data left to reset: the
+       seeded book, clients, baseline and shifts were deleted when the
+       screens moved onto the ledger.
+
+       A desk that genuinely wants a shop full of believable data for a
+       sales demo needs a DEMO TENANT — provisioned server-side, with real
+       ledger rows somebody can post against and void — not a button that
+       stuffs fiction into a real desk's browser and calls the difference a
+       reset. That is a feature, and it belongs to whoever runs the
+       platform, not to a shop's Settings screen. */
     // appearance (light / dark / auto) — persisted per device by the theme controller
     const [appearance, setAppearance] = useState(() => (window.CDOS.theme ? window.CDOS.theme.get() : 'light'));
     const pickAppearance = (v) => { if (window.CDOS.theme) window.CDOS.theme.set(v); setAppearance(v); log('Appearance changed', v === 'auto' ? 'auto (follow system)' : v + ' mode'); };
@@ -692,7 +706,16 @@
     const toggleSet = (k, label) => { setSettings(s => ({ ...s, [k]: !s[k] })); log('Setting changed', `${label} · ${!settings[k] ? 'on' : 'off'}`); };
     const togglePerm = (k) => { setPerms(p => ({ ...p, Teller: { ...p.Teller, [k]: !p.Teller[k] } })); log('Permission changed', `Teller · ${k}`); };
     const base = settings.baseCurrency || 'CAD';
-    const uploadLogo = (file) => { const r = new FileReader(); r.onload = () => set('logo', r.result, 'business logo'); r.readAsDataURL(file); };
+    /* The logo goes on every receipt and into the desk's saved state on
+       every write, so a full-resolution upload is a second standing
+       contributor to the four-megabyte ceiling after ID scans. Same
+       intake, same refusal. */
+    const [logoErr, setLogoErr] = useState('');
+    const uploadLogo = async (file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setLogoErr(taken.why); return; }
+      setLogoErr(''); set('logo', taken.dataUrl, 'business logo');
+    };
     // ---- locations / tills / people setup (single source: branches) ----
     const setBranchF = (id, patch) => setBranches && setBranches(list => list.map(b => b.id === id ? { ...b, ...patch } : b));
     const removeBranchF = (id) => setBranches && setBranches(list => list.length > 1 ? list.filter(b => b.id !== id) : list);
@@ -1342,7 +1365,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <div className="text-sm font-medium" style={{ color: CD.ink }}>Business logo</div>
               <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Shown in the desk header and on receipts.</div>
               <div className="flex gap-2">
-                <label className="text-xs px-2.5 py-1.5 cursor-pointer flex items-center gap-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 7 }}><Ic n="upload" s={12} c="var(--cd-on-ink)" /> Upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && uploadLogo(e.target.files[0])} /></label>
+                <label className="text-xs px-2.5 py-1.5 cursor-pointer flex items-center gap-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 7 }}><Ic n="upload" s={12} c="var(--cd-on-ink)" /> Upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && uploadLogo(e.target.files[0])} /></label>{logoErr && <span className="text-[11px]" style={{ color: CD.flag }}>{logoErr}</span>}
                 {settings.logo && <button onClick={() => set('logo', null, 'logo removed')} className="text-xs px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.mute }}>Remove</button>}
               </div>
             </div>
@@ -1420,22 +1443,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <Field label="Activity sector"><select value={settings.activitySector || 'Money services business'} onChange={e => set('activitySector', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{['Money services business', 'Foreign exchange dealer', 'Remittance / funds transfer', 'Dealer in precious metals'].map(c => <option key={c}>{c}</option>)}</select></Field>
               <Field label="FINTRAC contact name" desc="Compliance contact; must match FWR."><Inp k="fintracContactName" placeholder="Compliance officer name" /></Field>
             </div>
-          </div>
-          <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
-            <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Demo data</div>
-            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>The book, clients, cheques, transfers, till counts and settings all persist on this device — refreshing never resets them. Wiping back to the seeded demo book is a deliberate act, done here.</div>
-            {!resetArm ? (
-              <button onClick={() => setResetArm(true)} className="text-xs px-3 py-2" style={{ border: `1px solid ${CD.flag}`, borderRadius: 8, color: CD.flag, background: CD.panel, fontWeight: 600 }}>Reset demo data…</button>
-            ) : (
-              <div className="p-3.5" style={{ border: `1.5px solid ${CD.flag}`, borderRadius: 12, background: CD.flagSoft }}>
-                <div className="text-[13px] font-semibold mb-1" style={{ color: CD.ink }}>Wipe this device and restore the demo book?</div>
-                <div className="text-[11px] mb-3" style={{ color: CD.mute }}>Every transaction, client, cheque, transfer, till count, filing and setting stored on this device is erased and the seeded demo returns. This cannot be undone.</div>
-                <div className="flex gap-2">
-                  <button onClick={resetDemo} className="text-xs px-3 py-2" style={{ background: CD.flag, color: '#fff', borderRadius: 8, fontWeight: 700 }}>Erase &amp; reset</button>
-                  <button onClick={() => setResetArm(false)} className="text-xs px-3 py-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.mute, background: CD.panel }}>Cancel</button>
-                </div>
-              </div>
-            )}
           </div>
         </div>)}
 

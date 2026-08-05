@@ -294,7 +294,11 @@
       } catch (e) { setCamErr(e && e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser, or upload a photo instead.' : 'No camera available on this device. Upload a photo instead.'); }
     };
     const capturePhoto = () => { const v = videoRef.current; if (!v || !v.videoWidth) return; const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext('2d').drawImage(v, 0, 0); onCapture(cv.toDataURL('image/jpeg', 0.85)); closeCamera(); };
-    const onFile = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => onCapture(r.result); r.readAsDataURL(file); };
+    const onFile = async (file) => {
+      if (!file) return;
+      const taken = await window.CDOS.intakeIdImage(file);   // see cdos-base.jsx
+      if (taken.ok) onCapture(taken.dataUrl);
+    };
     useEffect(() => () => closeCamera(), []);
     return (<>
       <div className="flex items-center gap-2 mt-2.5">
@@ -617,7 +621,11 @@
     const [via, setVia] = useState('sms');
     const [checkId, setCheckId] = useState(null);
     const applied = useRef(false);
-    const onFile = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => setPhoto(r.result); r.readAsDataURL(file); };
+    const onFile = async (file) => {
+      if (!file) return;
+      const taken = await window.CDOS.intakeIdImage(file);   // see cdos-base.jsx
+      if (taken.ok) setPhoto(taken.dataUrl);
+    };
     const [cam, setCam] = useState(false);          // live camera capture overlay
     const [camErr, setCamErr] = useState('');
     const videoRef = useRef(null);

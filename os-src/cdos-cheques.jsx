@@ -98,7 +98,14 @@
     const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
 
-    const upload = (file) => { const r = new FileReader(); r.onload = () => setImage(r.result); r.readAsDataURL(file); };
+    /* A cheque image is stored the same way an ID scan is, and used to
+       arrive at whatever size the scanner produced. Same ceiling. */
+    const [imgErr, setImgErr] = useState('');
+    const upload = async (file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setImgErr(taken.why); return; }
+      setImgErr(''); setImage(taken.dataUrl);
+    };
 
     const save = () => {
       if (!canSave) return;
@@ -151,6 +158,7 @@
               <Field label="Cheque image">
                 {image ? <div className="flex items-center gap-2"><img src={image} alt="cheque" className="h-12" style={{ border: `1px solid ${CD.line}`, borderRadius: 6 }} /><button onClick={() => setImage(null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button></div>
                   : <label className="flex items-center justify-center gap-1.5 text-[11px] px-2 py-2.5 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="camera" s={13} /> Capture / upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && upload(e.target.files[0])} /></label>}
+                  {imgErr && <div className="text-[11px] mt-1" style={{ color: CD.flag }}>{imgErr}</div>}
               </Field>
               <Field label="Endorsement">
                 <button onClick={() => setEndorsed(v => !v)} className="w-full flex items-center gap-2 px-2.5 py-2" style={{ border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
