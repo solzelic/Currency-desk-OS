@@ -1172,9 +1172,46 @@
     // ---- cheques + fee schedule: shared so the Ledger's "Cheque Cashing" opens
     // the SAME capture/clearance system the Cheques desk uses (one source of truth) ----
     const _K = window.CDOS._cheques;
-    const [cheques, setCheques] = useState(() => { try { const r = localStorage.getItem(_K.KKEY); return r ? JSON.parse(r) : _K.defaultCheques(); } catch (e) { return _K.defaultCheques(); } });
+    /* A desk with a ledger starts with NOTHING here and waits for the
+       register. The four seeded cheques below it are a demonstration, and
+       a demonstration in this particular store is not harmless: the
+       Cheques desk and the Dashboard both total "cash at risk" off it, so
+       a real desk would open on $9,300 of exposure it does not have — the
+       same shape of defect as the thirty-eight demo deals the Dashboard
+       used to announce. See docs/CASH_OWNERSHIP_INVARIANTS.md. */
+    const [cheques, setCheques] = useState(() => {
+      let cached = null;
+      try { const r = localStorage.getItem(_K.KKEY); cached = r ? JSON.parse(r) : null; } catch (e) {}
+      if (!_K.ledger()) return cached || _K.defaultCheques();
+      /* With a ledger, the only cache worth trusting is one that CAME from
+         the ledger — `server: true` is stamped on every cheque read back
+         from the register. Anything else in this store is either the
+         demonstration set or cheques a browser cashed for itself before
+         this was a server call, and rendering either would put exposure on
+         screen that the book has never heard of. Empty until the register
+         lands, and the register is re-read on every desktop mount. */
+      return (cached || []).filter(c => c && c.server);
+    });
     const [chequeSchedule, setChequeSchedule] = useState(() => { try { const r = localStorage.getItem(_K.SKEY); return r ? JSON.parse(r) : _K.defaultSchedule(); } catch (e) { return _K.defaultSchedule(); } });
     const [chequeCaptureSig, setChequeCaptureSig] = useState(0);
+    /* The register, read from the book. What is kept in `cdos_cheques_v1`
+       afterwards is a cache of it, the way `cdos_submissions_v1` caches
+       the filed reports — so a desk that loses its ledger connection can
+       still SEE what it is carrying, and can post nothing. */
+    const refreshCheques = React.useCallback(async () => {
+      const book = _K.ledger();
+      if (!book) return;
+      try {
+        const answer = await book.loadCheques();
+        setCheques((answer.cheques || []).map(c => _K.fromServer(c)));
+      } catch (error) {
+        log('Cheque register unavailable', error.message || 'The desk cannot read its cheques from the ledger');
+      }
+    }, []);
+    useEffect(() => {
+      if (stage !== 'desktop' || !srvUser) return;
+      refreshCheques();
+    }, [stage, srvUser, ledgerWorkspaceId, refreshCheques]);
     useEffect(() => { try { localStorage.setItem(_K.KKEY, JSON.stringify(cheques)); } catch (e) {} }, [cheques]);
     useEffect(() => { try { localStorage.setItem(_K.SKEY, JSON.stringify(chequeSchedule)); } catch (e) {} }, [chequeSchedule]);
     useEffect(() => { try { localStorage.setItem('cdos_settings', JSON.stringify(settings)); } catch (e) {} }, [settings]);
@@ -2069,8 +2106,8 @@
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />
           : <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
-        case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors }} />;
-        case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig }} />;
+        case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
+        case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig, serverBacked: !!srvUser, onTillChanged: syncTillFromServer, onRefreshCheques: refreshCheques }} />;
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;

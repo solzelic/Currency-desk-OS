@@ -102,8 +102,9 @@ ALTER TABLE ledger_transactions
    bill payment leaves as a credit to somebody's account — none of which
    is cash, a cheque or a bank credit to the desk. */
 ALTER TABLE ledger_transactions DROP CONSTRAINT IF EXISTS ledger_transactions_instrument_check;
+ALTER TABLE ledger_transactions DROP CONSTRAINT IF EXISTS ledger_transactions_counter_instruments_check;
 ALTER TABLE ledger_transactions
-  ADD CONSTRAINT ledger_transactions_instrument_check
+  ADD CONSTRAINT ledger_transactions_counter_instruments_check
   CHECK (
     received_instrument IN ('cash', 'cheque', 'bank_credit', 'electronic_funds_transfer', 'money_order', 'bill_credit', 'none')
     AND disbursed_instrument IN ('cash', 'cheque', 'bank_credit', 'electronic_funds_transfer', 'money_order', 'bill_credit', 'none'));
@@ -116,7 +117,15 @@ ALTER TABLE ledger_transactions
    docs/ABSENT_FIGURES.md exists to forbid. Absent, visibly. */
 ALTER TABLE ledger_transactions
   ADD COLUMN IF NOT EXISTS cash_in_home numeric(24,2),
-  ADD COLUMN IF NOT EXISTS cash_out_home numeric(24,2);
+  ADD COLUMN IF NOT EXISTS cash_out_home numeric(24,2),
+  /* Whether the value left the country. An electronic funds transfer
+     report has its own rules for cross-border movements and they are
+     not the large-cash rules, so the engine is handed the fact rather
+     than being left to infer it from a payout currency — a peso payout
+     and a US dollar payout are both cross-border, and a Canadian desk
+     paying Canadian dollars into a Canadian account is not. Defaults to
+     false, which is true of every exchange already on the book. */
+  ADD COLUMN IF NOT EXISTS cross_border boolean NOT NULL DEFAULT false;
 
 DO $$
 BEGIN

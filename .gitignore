@@ -48,3 +48,10 @@ _scratch_*.mjs
 .pw-scratch.*
 drive-*.mjs
 walk*.mjs
+
+# Agent scratch — throwaway drivers and one-off migration runners.
+# Prefixed patterns above missed a plain directory, and a `git add -A`
+# while several agents were writing swept three of these into the repo
+# once already.
+.scratch/
+**/.scratch/

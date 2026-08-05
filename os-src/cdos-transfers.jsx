@@ -153,7 +153,7 @@
   }
 
   /* ===================== NEW TRANSFER MODAL ===================== */
-  function TransferModal({ rows, setRows, clients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, onClose, onDone }) {
+  function TransferModal({ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, onClose, onDone, serverBacked, onServerPosted }) {
     const [direction, setDirection] = useState('send');
     const [senderName, setSenderName] = useState('');
     const [benId, setBenId] = useState('');
@@ -168,6 +168,13 @@
     const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
+    /* The post is a round trip now, so the button has to be able to say
+       so and the modal has to be able to refuse. There is no offline
+       mode — docs/CASH_OWNERSHIP_INVARIANTS.md — so a transfer the
+       ledger did not accept is a transfer that did not happen, and the
+       browser record is not written. */
+    const [busy, setBusy] = useState(false);
+    const [serverError, setServerError] = useState('');
 
     const names = useMemo(() => { const s = new Set(Object.keys(clients)); rows.forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, rows]);
     const myBens = beneficiaries.filter(b => direction === 'send' && (!senderName || b.sender === senderName));
@@ -203,31 +210,119 @@
     useEffect(() => { const h = (e) => { if (senderWrap.current && !senderWrap.current.contains(e.target)) setSenderOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
 
-    const create = () => {
-      if (!canSave) return;
+    /* ---- creating a transfer ----
+
+       This used to be a synchronous function that pushed two objects
+       into two arrays. The cash it represented never reached the server,
+       so a shop that did twenty of these closed the day with a drawer
+       that disagreed with its own ledger by whatever it had taken in,
+       and the compliance aggregate could not see any of it.
+
+       Now the LEDGER goes first and the browser record follows it. On a
+       send the desk takes cash and books a payout it owes the corridor
+       partner; on a receive it counts cash out against what the partner
+       owes it. Neither claims a rate margin, because the partner's price
+       is not a thing this product knows — see docs/OBLIGATION_LINES.md,
+       which also names the one field it would need to. The fee is the
+       only thing booked as earned.
+
+       If the server refuses, nothing at all is recorded here. A movement
+       that succeeded in the browser and never reached the server is a
+       loss, and there is no offline mode to fall back on. */
+    const create = async () => {
+      if (!canSave || busy) return;
       const seqT = transfers.filter(t => t.date === TODAY).length + 1;
       const ref = 'TR-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqT).padStart(3, '0');
       const pin = (Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899));
-      // post the ledger row — this is the money movement (one source of truth)
       const seqL = rows.filter(r => r.date === TODAY && r.status !== 'void').length + 1;
       const lref = mkRef(TODAY, seqL);
       const lin = direction === 'send' ? 'CAD' : recvCcy, lout = direction === 'send' ? recvCcy : 'CAD';
+      const feeN = parseFloat(fee) || 0;
+      const B = serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
+
+      let posted = null;
+      if (B) {
+        setBusy(true);
+        setServerError('');
+        try {
+          const synced = await B.syncCustomer(senderName, clients[senderName]);
+          setClients && setClients(list => ({ ...list, [senderName]: { ...(list[senderName] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
+          const capture = {
+            purpose: (purpose || '').trim(),
+            sourceOfFunds: (sourceOfFunds || '').trim(),
+            /* The server decides whether these were NEEDED, against the
+               desk's own reporting line. Sending them unconditionally
+               and letting one authority judge them is the whole point —
+               a second threshold in this file is a second rule to drift. */
+          };
+          posted = direction === 'send'
+            ? await B.postRemittanceSend({
+                idempotencyKey: 'web:transfer:' + ref,
+                customerId: synced.customerId,
+                reference: ref,
+                principalAmount: B.asMoney(amtN),
+                feeAmount: B.asMoney(feeN),
+                payoutCurrency: recvCcy,
+                payoutAmount: B.asMoney(recvAmt),
+                corridor: corridorId,
+                partner: partner,
+                beneficiaryName: (ben ? ben.name : senderName),
+                ...capture,
+              })
+            : await B.postRemittanceReceive({
+                idempotencyKey: 'web:transfer:' + ref,
+                customerId: synced.customerId,
+                reference: ref,
+                sentCurrency: recvCcy,
+                sentAmount: B.asMoney(amtN),
+                payoutAmount: B.asMoney(recvAmt),
+                feeAmount: B.asMoney(feeN),
+                corridor: corridorId,
+                partner: partner,
+                ...capture,
+              });
+        } catch (error) {
+          setServerError(error.message || 'The transfer was not posted.');
+          setBusy(false);
+          return;
+        }
+        setBusy(false);
+      }
+
       const tx = newTx({
-        ref: lref, type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
+        ref: posted ? posted.transactionRef : lref,
+        type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
         customer: senderName, inCcy: lin, inAmt: amtN, rate: pricing.rate, outCcy: lout, outAmt: recvAmt,
-        fee: parseFloat(fee) || 0, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side,
+        fee: feeN, midRate: pricing.midRate,
+        /* Null where the ledger holds the deal, because the ledger books
+           no spread on a remittance and a figure here that the book does
+           not have is the second opinion this product keeps deleting. */
+        spreadCad: posted ? null : pricing.marginCad, side: pricing.side,
         teller: me.name, notes: `${ref} · ${direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName} (${cor.country}) · ${partner}`,
         transferRef: ref, createdBy: me.name, createdAt: stamp(),
+        serverTransactionId: posted ? posted.transactionId : null,
+        serverObligationId: posted ? posted.obligationId : null,
       });
       setRows(r => [tx, ...r]);
       const transfer = {
         id: 't' + Date.now(), ref, pin, direction, senderName, beneficiaryId: benId || null, corridor: corridorId, ccy: recvCcy,
-        method, partner, payAmt: amtN, recvAmt, rate: pricing.rate, midRate: pricing.midRate, spreadCad: pricing.marginCad,
-        fee: parseFloat(fee) || 0, purpose, sourceOfFunds, date: TODAY, status: 'created', txId: tx.id, txRef: lref,
+        method, partner, payAmt: amtN, recvAmt, rate: pricing.rate, midRate: pricing.midRate,
+        spreadCad: posted ? null : pricing.marginCad,
+        fee: feeN, purpose, sourceOfFunds, date: TODAY, status: 'created', txId: tx.id,
+        txRef: posted ? posted.transactionRef : lref,
+        /* The ledger's own names for this deal and the promise it left
+           behind, so the browser record and the book can be joined. The
+           browser holds no cash figure of its own. */
+        serverTransactionId: posted ? posted.transactionId : null,
+        serverObligationId: posted ? posted.obligationId : null,
         timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${ref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${ref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      if (posted && onServerPosted) {
+        try { await onServerPosted(); }
+        catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }
+      }
       onDone && onDone(transfer.id);
     };
 
@@ -252,7 +347,22 @@
             <div ref={senderWrap} className="relative">
               <div className="flex items-center gap-2 px-2.5 py-2" style={inputSty}>
                 <Ic n="search" s={15} c={CD.mute} />
-                <input value={senderName} onFocus={() => setSenderOpen(true)} onChange={e => { setSenderName(e.target.value); setSenderOpen(true); setBenId(''); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
+                {/* onBlur closes it, and it has to, because the
+                    document-level mousedown listener below cannot.
+                    The modal card stops mousedown propagating (so a
+                    click inside the form does not reach the scrim's
+                    close handler), and React dispatches from the root
+                    container — so that stopPropagation also stops the
+                    listener on `document` ever seeing a click made
+                    INSIDE the form. The list was therefore impossible to
+                    put away without picking a name from it, and it is
+                    positioned over the beneficiary picker: a sender the
+                    desk has never dealt with before left the teller
+                    unable to reach their own beneficiary list.
+                    Safe alongside the suggestions because each of them
+                    preventDefaults its mousedown, which is what stops
+                    the blur firing before the pick registers. */}
+                <input value={senderName} onFocus={() => setSenderOpen(true)} onBlur={() => setSenderOpen(false)} onChange={e => { setSenderName(e.target.value); setSenderOpen(true); setBenId(''); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
                 {senderName && <button onClick={() => { setSenderName(''); setBenId(''); }}><Ic n="x" s={14} c={CD.mute} /></button>}
               </div>
               {senderOpen && (
@@ -313,9 +423,27 @@
               <Field label={requirePurpose ? 'Purpose (required)' : 'Purpose'}><select value={purpose} onChange={e => setPurpose(e.target.value)} className={inputCls} style={{ ...inputSty, borderColor: (requirePurpose && !purpose) ? CD.flag : undefined }}>{requirePurpose && <option value="">Select a purpose…</option>}{PURPOSES.map(p => <option key={p}>{p}</option>)}</select></Field>
             </div>
             {amtN > 0 && (<div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <span className="text-[11px]" style={{ color: CD.mute }}>Spread captured <b style={{ color: CD.green }}>{fmt(pricing.marginCad, 'CAD')}</b>{(parseFloat(fee) || 0) > 0 && <span style={{ color: CD.faint }}> · +{fmt(fee, 'CAD')} fee</span>}</span>
+              {/* What the desk can actually claim to have earned. On the
+                  ledger that is the fee and nothing else: the rate margin
+                  is not knowable until the payout is bought from the
+                  corridor partner, and this product does not carry the
+                  partner's price. Saying "spread captured" over a figure
+                  measured against the market mid told the teller the desk
+                  had made money it had not yet made — the same estimate
+                  docs/COST_BASIS.md records the removal of. It is
+                  recognized on the Settlement tab, against a real price. */}
+              <span className="text-[11px]" style={{ color: CD.mute }}>
+                {serverBacked
+                  ? <>Booked now: <b style={{ color: CD.green }}>{fmt(parseFloat(fee) || 0, 'CAD')}</b> fee · <span style={{ color: CD.faint }}>rate margin at settlement</span></>
+                  : <>Spread captured <b style={{ color: CD.green }}>{fmt(pricing.marginCad, 'CAD')}</b>{(parseFloat(fee) || 0) > 0 && <span style={{ color: CD.faint }}> · +{fmt(fee, 'CAD')} fee</span>}</>}
+              </span>
               {direction === 'send' && <span className="text-[11px] font-medium" style={{ color: CD.ink }}>Collect {fmt(payCad, 'CAD')}</span>}
             </div>)}
+            {serverError && (
+              <div className="mt-2 px-3 py-2 text-[12px]" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 9, color: CD.flag }}>
+                <b>Nothing was posted.</b> {serverError}
+              </div>
+            )}
           </div>
 
           {/* source of funds (reportable) */}
@@ -330,7 +458,7 @@
         </div>
         <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>{cor.flag} {num(recvAmt)} {recvCcy} to <b style={{ color: CD.ink }}>{ben ? ben.name : (direction === 'receive' ? senderName : 'beneficiary')}</b></> : 'Enter an amount to begin'}</div>
-          <button onClick={create} disabled={!canSave} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: canSave ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: canSave ? 'pointer' : 'not-allowed' }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> Create transfer</button>
+          <button onClick={create} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Create transfer'}</button>
         </div>
       </div>
     </div>

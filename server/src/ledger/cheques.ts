@@ -887,7 +887,11 @@ export class ChequeService {
          it from what was actually posted is also what makes that true
          without anybody having to remember it. */
       await client.query(
-        "INSERT INTO ledger_reversal_entries (reversal_id,account_code,side,amount_cad,amount_home,home_currency,created_at) SELECT $1,account_code,CASE side WHEN 'debit' THEN 'credit' ELSE 'debit' END,amount_cad,amount_cad,home_currency,$2 FROM ledger_journal_entries WHERE transaction_id=$3",
+        /* `ledger_reversal_entries` carries only `amount_cad` — migration
+           011's generalized `amount_home` column landed on the journal and
+           not on this table. Nothing is lost: every cheque here is in the
+           home currency by construction. */
+        "INSERT INTO ledger_reversal_entries (reversal_id,account_code,side,amount_cad,created_at) SELECT $1,account_code,CASE side WHEN 'debit' THEN 'credit' ELSE 'debit' END,amount_cad,$2 FROM ledger_journal_entries WHERE transaction_id=$3",
         [reversalId, now, transactionId],
       );
       /* NO COST EVENT IS UNWOUND, because none was ever written. An

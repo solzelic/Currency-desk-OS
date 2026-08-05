@@ -81,8 +81,19 @@ coverage:
 
 - The ledger carries a subset of the currencies the desk trades. Amounts in
   the others are shown as untracked, never silently merged with ledger figures.
-- Only currency exchange posts today. Cheque cashing, pay out, money orders,
-  bill payment and remittance move drawer cash without reaching the ledger.
+- Currency exchange and cheque cashing post today. Pay out, money orders,
+  bill payment and remittance still move drawer cash without reaching the
+  ledger. Cheque cashing was the first of those five to come across and
+  the shape it set is written down in CHEQUE_CASHING.md — a cashing, a
+  clearance, a return and a reversal are each a server call that returns
+  the drawer's new state, the cheque register lives in `ledger_cheques`
+  and the browser keeps a cache, and the cheque IMAGE is deliberately
+  still local while intake is dealt with separately.
+- The Ledger's own New Transaction ticket still has a cheque path of its
+  own (`os-src/cdos-txmodal.jsx`), and that one has not been moved: it
+  writes a browser row and a local cheque record exactly as the Cheques
+  desk used to. A desk cashing a cheque from that screen is still cashing
+  it off the book. Named here rather than left to be discovered.
 - Branch and till identifiers are still not reconciled between the desk and the
   server. Any till in the signed-in branch can now be addressed — the switcher
   names the ledger's tills and moves the workspace the server answers for, so
@@ -113,6 +124,7 @@ may compute a cash figure for itself:
 | what is in this safe | `GET /api/ledger/vault` |
 | what does this branch hold, and what did it cost | `GET /api/ledger/position` |
 | what was posted, and what did it earn | `GET /api/ledger/summary` |
+| what cash is out on cheques that have not cleared | `GET /api/ledger/cheques` |
 | which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
 | what does this desk report and identify at | `GET /api/ledger/desk-thresholds` |
 

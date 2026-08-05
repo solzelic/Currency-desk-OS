@@ -567,10 +567,81 @@
       }
     };
 
-    const record = () => {
-      if (!canSave) return;
+    /* ---- money order and bill payment reach the ledger ----
+
+       Both are cash over the counter against a promise the desk then
+       owes — a biller waiting to be remitted, a payee waiting to present
+       an instrument — and both used to be a row in an array and nothing
+       else. The drawer on the server never moved, so a day of them left
+       the till and the book disagreeing by exactly what the shop had
+       taken in.
+
+       The ledger goes first and the browser row follows it. What is
+       booked as earned is the fee and only the fee; the obligation is
+       carried at the face the desk undertook to deliver. See
+       docs/OBLIGATION_LINES.md.
+
+       Deliberately narrow: this posts the two lines it names and leaves
+       every other type on the path it was already on. A cheque is the
+       other agent's, an exchange goes through the frozen-quote path
+       above, and a remittance is posted from the Transfers app where its
+       corridor, partner and beneficiary actually live. */
+    const postObligationDeal = async (ref) => {
+      const B = window.CDOS.Backend;
+      const synced = await B.syncCustomer(customer, rec);
+      setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
+      const capture = { purpose: purpose.trim(), sourceOfFunds: cap.source.trim(), thirdParty: !!cap.thirdParty, thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined };
+      return isMO
+        ? B.postMoneyOrder({
+            idempotencyKey: 'web:mo:' + ref,
+            customerId: synced.customerId,
+            reference: ref,
+            faceAmount: B.asMoney(amtN),
+            feeAmount: B.asMoney(feeN),
+            payee: payee.trim(),
+            /* The desk's own reference stands in for the instrument's
+               serial. This screen has no serial field — a money order is
+               issued from a pre-printed book and its number is on the
+               paper — so what is recorded is the reference the desk can
+               actually produce, not a number nobody typed. Named as a
+               missing field in docs/OBLIGATION_LINES.md. */
+            serial: ref,
+            ...capture,
+          })
+        : B.postBillPayment({
+            idempotencyKey: 'web:bill:' + ref,
+            customerId: synced.customerId,
+            reference: ref,
+            billAmount: B.asMoney(amtN),
+            feeAmount: B.asMoney(feeN),
+            biller: biller.trim(),
+            accountRef: account.trim(),
+            ...capture,
+          });
+    };
+
+    const record = async () => {
+      if (!canSave || serverBusy) return;
       const seq = live.filter(r => r.date === TODAY).length + 1;
-      const ref = mkRef(TODAY, seq);
+      let ref = mkRef(TODAY, seq);
+      let posted = null;
+      if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
+        setServerBusy(true);
+        setServerError('');
+        try {
+          posted = await postObligationDeal(ref);
+          ref = posted.transactionRef;
+        } catch (error) {
+          /* Nothing was written anywhere. There is no offline mode —
+             docs/CASH_OWNERSHIP_INVARIANTS.md — so a deal the ledger
+             refused is a deal that did not happen, and recording it here
+             would be inventing money. */
+          setServerError(error.message || 'The transaction was not posted.');
+          setServerBusy(false);
+          return;
+        }
+        setServerBusy(false);
+      }
       const base = { ref, type, customer: customer || 'Walk-in (no client)', teller: me.name, createdBy: me.name, createdAt: stamp(),
         capture: single ? { purpose: purpose.trim(), source: cap.source.trim(), thirdParty: cap.thirdParty, thirdPartyName: cap.thirdPartyName.trim(), by: me.name, at: stamp() } : null,
         marginOverride: needOverride ? { by: me.name, at: stamp(), pct: +marginPct.toFixed(2), reason: marginReason.trim() } : null,
@@ -588,6 +659,13 @@
         tx = newTx({ ...base, beneficiary: payee.trim(), inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Money order to ${payee.trim()}${memo ? ' · ' + memo : ''}` });
       } else { // bill
         tx = newTx({ ...base, beneficiary: biller.trim(), inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Bill: ${biller.trim()} · acct ${account.trim()}${memo ? ' · ' + memo : ''}` });
+      }
+      /* Where the ledger holds it, the browser row carries the book's own
+         names for the deal and for the promise it left behind, so the two
+         can be joined. It carries no cash figure of its own. */
+      if (posted) {
+        tx.serverTransactionId = posted.transactionId;
+        tx.serverObligationId = posted.obligationId;
       }
       // house auto-tag rules (Settings → Tagged) — applied once, as the deal posts
       const _atOver = +((settings || {}).autoTagOver) > 0 && collectCad >= +settings.autoTagOver;
@@ -608,6 +686,12 @@
       }
       log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : 'CAD'}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
       if (tq && isExchange) { tgRedeem(tq.ref, ref); log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone); }
+      /* The drawer just moved on the server, so the screen behind this
+         modal is showing yesterday's figure until it is told. */
+      if (posted && onServerPosted) {
+        try { await onServerPosted(); }
+        catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }
+      }
       onDone && onDone(tx.id);
     };
 
@@ -876,6 +960,13 @@
               {/* rail footer actions */}
               <div className="flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
                 {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
+                {/* A refusal from the ledger, wherever it came from. The
+                    exchange path has its own copy inside the branch
+                    below; this one is for the lines that post through
+                    `record` — a money order or a bill payment the server
+                    turned down, where the teller would otherwise get a
+                    button that simply did nothing. */}
+                {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

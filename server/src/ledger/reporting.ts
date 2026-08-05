@@ -32,6 +32,7 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
 import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { type LedgerActor } from "./service.js";
@@ -82,6 +83,12 @@ export class LedgerReportingService {
          counted as unvalued rather than converted at some rate nobody quoted.
          `market_mid` is a price between the two foreign sides; multiplying by
          it produces a number in neither currency. */
+      /* SETTLEMENTS ARE NOT DEALS. A cheque clearance and a cheque return
+         each carry a journal, so each is a transaction row; neither is
+         something a customer did at the counter. Counted here, one cheque
+         cashed and then cleared would read as two deals and twice its own
+         face amount of volume — which is precisely the shape of wrong
+         this whole file exists to have stopped. */
       const totals = await client.query(
         `WITH live AS (
            SELECT t.*,
@@ -94,6 +101,7 @@ export class LedgerReportingService {
             WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
               AND t.workspace_id=$4 AND t.till_id=$5
               AND r.reversal_id IS NULL
+              AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
               AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
               AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
          )
@@ -103,6 +111,7 @@ export class LedgerReportingService {
               JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
              WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
                AND t.workspace_id=$4 AND t.till_id=$5
+               AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
                AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
                AND ($8::timestamptz IS NULL OR t.posted_at <  $8)) AS reversed,
            (SELECT sum(volume_home) FROM live) AS volume_home,
@@ -156,6 +165,7 @@ export class LedgerReportingService {
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
             AND r.reversal_id IS NULL
+            AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
             AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
             AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
           GROUP BY t.actor_id

@@ -1020,13 +1020,33 @@ export class LedgerService {
           );
       }
       const transaction = await client.query(
-        "SELECT 1 FROM ledger_transactions WHERE transaction_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 FOR UPDATE",
+        "SELECT deal_kind FROM ledger_transactions WHERE transaction_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 FOR UPDATE",
         [transactionId, ...scope(actor)],
       );
       if (!transaction.rowCount)
         throw new LedgerError(
           "TRANSACTION_NOT_FOUND",
           "Transaction not found.",
+        );
+      /* This path knows about an exchange and about the cost events an
+         exchange leaves behind. It knows nothing about the OBLIGATION a
+         remittance, a bill payment or a money order leaves behind, and a
+         reversal that mirrored the cash and the journal while leaving the
+         payout still owed would be a hole in the book that balanced
+         perfectly — the worst kind. Those go to
+         ObligationService.reverse, which strikes the promise out as well.
+
+         Named rather than filtered by exclusion: the day a seventh deal
+         type arrives, being refused here is a great deal safer than being
+         silently half-reversed. */
+      if (
+        ["remittance_send", "remittance_receive", "bill_payment", "money_order",
+         "obligation_settlement", "obligation_write_off"]
+          .includes(transaction.rows[0].deal_kind)
+      )
+        throw new LedgerError(
+          "REVERSAL_NOT_ALLOWED",
+          "This deal left an obligation on the book, so it is reversed through the obligation path — see docs/OBLIGATION_LINES.md.",
         );
       const existing = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",

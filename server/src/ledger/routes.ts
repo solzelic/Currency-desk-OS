@@ -21,8 +21,14 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { isRetryable } from "./retry.js";
+import {
+  ChequeService,
+  type ChequeCashInput,
+  type ChequeReturnInput,
+} from "./cheques.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
+import { ObligationService } from "./obligations.js";
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
@@ -211,6 +217,65 @@ const summaryQuery = z.object({
   (value) => !value.from || !value.to || value.from < value.to,
   { message: "The window has to start before it ends.", path: ["to"] },
 );
+/* ---- cashing a cheque ----
+
+   Notably absent: a currency field, and a hold-until date.
+
+   The currency IS on the wire, because the server has to be able to
+   REFUSE a cheque that is not in the desk's home currency by name rather
+   than by silently assuming one — and a field the client cannot send is a
+   refusal that cannot be tested. The desk's screens hardcode the home
+   currency today and nothing in the UI offers a choice.
+
+   The hold date is not on the wire because it is derived: the till
+   session's business date plus the hold the teller chose. The browser
+   used to compute it, along with the cheque's own reference number, from
+   its own local list — which is how two tills cashing at the same moment
+   both minted CHQ-260618-003. Anything a screen can get wrong about money
+   is worked out on the server. */
+const chequeCashBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  customerId: z.string().min(1).max(120),
+  chequeNumber: z.string().trim().min(1).max(60),
+  maker: z.string().trim().min(1).max(200),
+  draweeBank: z.string().trim().max(200).optional(),
+  chequeType: z.string().trim().min(1).max(60),
+  typeLabel: z.string().trim().min(1).max(120),
+  currency: z.string().trim().length(3),
+  faceAmount: monetary("0.01"),
+  feeAmount: monetary("0"),
+  holdDays: z.coerce.number().int().min(0).max(365),
+  endorsed: z.boolean().default(false),
+  purpose: z.string().trim().max(500).default(""),
+  sourceOfFunds: z.string().trim().max(500).default(""),
+}).strict().refine(
+  (value) => new Decimal(value.feeAmount).lte(value.faceAmount),
+  { message: "The fee cannot be larger than the cheque.", path: ["feeAmount"] },
+);
+const chequeClearBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  note: z.string().trim().max(1000).optional(),
+  reference: z.string().trim().max(200).optional(),
+}).strict();
+/* A return needs a reason and a reversal needs a reason, and they are
+   different acts with different journals — see the long note in
+   cheques.ts. Separate bodies so that neither can be posted to the
+   other's route by accident of shape. */
+const chequeReturnBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  reason: z.string().trim().min(1).max(1000),
+  nsf: z.boolean().default(false),
+  fraud: z.boolean().default(false),
+  note: z.string().trim().max(1000).optional(),
+  reference: z.string().trim().max(200).optional(),
+}).strict();
+const chequeReversalBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  reason: z.string().trim().min(1).max(1000),
+}).strict();
+const chequeQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+});
 type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
@@ -222,6 +287,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
   const reportFilings = new ReportFilingService(pool);
+  const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
@@ -269,6 +335,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
               error.code === "FILING_NOT_FOUND" ||
+              error.code === "CHEQUE_NOT_FOUND" ||
+              error.code === "OBLIGATION_NOT_FOUND" ||
               error.code === "TILL_SESSION_NOT_FOUND" ? 404
               : error.code === "IDEMPOTENCY_IN_PROGRESS" ||
                 error.code === "IDEMPOTENCY_CONFLICT" ||
@@ -278,6 +346,15 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "CUSTOMER_EXTERNAL_REF_CONFLICT" ||
                 error.code === "VAULT_ALREADY_INITIALIZED" ||
                 error.code === "OBLIGATION_ALREADY_FILED" ||
+                /* Already cleared, already returned, already reversed —
+                   a state conflict, not a bad request. The teller's
+                   screen is simply out of date about a cheque somebody
+                   else has already dealt with, and 409 is what tells it
+                   to go and look again. */
+                error.code === "CHEQUE_NOT_HELD" ||
+                /* Same story on an obligation somebody has already
+                   settled, written off or reversed. */
+                error.code === "OBLIGATION_NOT_OPEN" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
@@ -714,6 +791,120 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* ---- CHEQUE CASHING ----
+
+     The desk's cheque register, and the three events in a cheque's life.
+
+     All of it used to live in `cdos_cheques_v1` in one browser, which is
+     not a place a cash figure can live: the "Cash at risk" tile on the
+     Cheques desk is the branch's own credit exposure, and it was being
+     totalled from a store that dies with a browser profile and that the
+     second till cannot see. Cashing moved real money out of a real
+     drawer and the ledger never heard about it at all.
+
+     There is no PUT and no DELETE here, for the same reason there is none
+     beside a filed report: a cheque's history is what somebody will be
+     asked about, so a cheque changes by having something HAPPEN to it —
+     it clears, it comes back, or the cashing is reversed — and each of
+     those is its own posting with its own journal. */
+  app.get("/api/ledger/cheques", async (req, reply) => {
+    const parsed = chequeQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await cheques.list(actor, parsed.data.limit))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/cheques", async (req, reply) => {
+    const parsed = chequeCashBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await cheques.cash(actor, parsed.data as ChequeCashInput))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/cheques/:chequeId/clearance", async (req, reply) => {
+    const parsed = chequeClearBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await cheques.clear(
+              actor,
+              (req.params as { chequeId: string }).chequeId,
+              parsed.data,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Two separate routes, and never one with a flag. A return is money the
+     desk has genuinely lost and a reversal is a deal that never happened;
+     they book different journals, one keeps the fee and one gives it
+     back, and a single endpoint distinguishing them by a boolean is one
+     mistyped field away from refunding a fee on every bounced cheque. */
+  app.post("/api/ledger/cheques/:chequeId/return", async (req, reply) => {
+    const parsed = chequeReturnBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await cheques.returnUnpaid(
+              actor,
+              (req.params as { chequeId: string }).chequeId,
+              parsed.data as ChequeReturnInput,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/cheques/:chequeId/reversal", async (req, reply) => {
+    const parsed = chequeReversalBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await cheques.reverseCashing(
+              actor,
+              (req.params as { chequeId: string }).chequeId,
+              parsed.data,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   /* ---- the reads every summary screen was inventing for itself ----
 
      The Dashboard, the Ledger header, the Vault position and the close-out
@@ -912,5 +1103,223 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (current.kind === "scope_denied") return reply.code(403).send({ code: "SCOPE_DENIED" });
       return reply.code(201).send(await service.reverse(current.actor, (req.params as { transactionId: string }).transactionId, parsed.data.idempotencyKey, parsed.data.reason));
     } catch (error) { return failure(reply, error); }
+  });
+
+  /* ============================================================
+     The four deal types that are cash on one side and a promise on the
+     other — remittance send and receive, bill payment, money order.
+
+     They post here rather than through the quote path because none of
+     them is a quoted exchange: no frozen board rate is involved and
+     nothing crosses the drawer in a foreign currency. What each of them
+     leaves behind is an OBLIGATION with a balance, and that balance is
+     money — see docs/OBLIGATION_LINES.md for the journal at every event
+     and why no margin is claimed until settlement.
+
+     Every one of them is idempotent, serializable and retried, refuses
+     when the till is shut, and refuses to pay out cash the drawer has
+     not got. Those are not four implementations of those rules; they
+     are one, in ObligationService.
+     ============================================================ */
+  const obligations = new ObligationService(pool);
+  const idempotencyKey = z.string().trim().min(1).max(200);
+  const reference = z.string().trim().min(1).max(200);
+  const counterparty = z.string().trim().min(1).max(200);
+  /* Purpose and source of funds arrive on every one of these, and are
+     allowed to be empty: the SERVER decides whether they were needed,
+     against the desk's own reporting line, exactly as it does for an
+     exchange. A schema that demanded them here would be a second
+     threshold, in a second place, in a product whose whole history is
+     two copies of one rule drifting apart. */
+  const capture = {
+    purpose: z.string().trim().max(500).default(""),
+    sourceOfFunds: z.string().trim().max(500).default(""),
+    thirdParty: z.boolean().default(false),
+    thirdPartyName: z.string().trim().max(200).optional(),
+  };
+  const thirdPartyPaired = <T extends z.ZodTypeAny>(schema: T) =>
+    schema
+      .refine((value: { thirdParty: boolean; thirdPartyName?: string }) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
+      .refine((value: { thirdParty: boolean; thirdPartyName?: string }) => value.thirdParty || !value.thirdPartyName, { message: "Third-party name requires third-party status.", path: ["thirdPartyName"] });
+  /* A corridor is a country, ISO-3166 alpha-2. Two letters and nothing
+     else, because it ends up in a char(2) column that a report reads. */
+  const corridor = z.string().trim().length(2).regex(/^[A-Z]{2}$/, "A corridor is an ISO country code.");
+  const currency = z.string().trim().length(3).regex(/^[A-Z]{3}$/, "A currency is an ISO code.");
+
+  const remittanceSendBody = thirdPartyPaired(z.object({
+    idempotencyKey,
+    customerId: z.string().min(1).max(120),
+    reference,
+    principalAmount: monetary("0.01"),
+    feeAmount: monetary("0"),
+    payoutCurrency: currency,
+    payoutAmount: monetary("0.01"),
+    corridor,
+    partner: counterparty,
+    beneficiaryName: z.string().trim().min(1).max(200),
+    ...capture,
+  }).strict());
+
+  const remittanceReceiveBody = thirdPartyPaired(z.object({
+    idempotencyKey,
+    customerId: z.string().min(1).max(120),
+    reference,
+    sentCurrency: currency,
+    sentAmount: monetary("0.01"),
+    payoutAmount: monetary("0.01"),
+    feeAmount: monetary("0"),
+    corridor,
+    partner: counterparty,
+    ...capture,
+  }).strict());
+
+  const billPaymentBody = thirdPartyPaired(z.object({
+    idempotencyKey,
+    customerId: z.string().min(1).max(120),
+    reference,
+    billAmount: monetary("0.01"),
+    feeAmount: monetary("0"),
+    biller: counterparty,
+    accountRef: z.string().trim().min(1).max(200),
+    ...capture,
+  }).strict());
+
+  const moneyOrderBody = thirdPartyPaired(z.object({
+    idempotencyKey,
+    customerId: z.string().min(1).max(120),
+    reference,
+    faceAmount: monetary("0.01"),
+    feeAmount: monetary("0"),
+    payee: counterparty,
+    serial: z.string().trim().min(1).max(120),
+    ...capture,
+  }).strict());
+
+  /* A settlement amount may be zero — a corridor partner that nets a
+     payout against what it already owed the desk really did discharge
+     the obligation for nothing — so the floor is 0 and not a cent. What
+     it may not be is absent, because the entire point of settlement is
+     that a real price finally exists. */
+  const settlementBody = z.object({
+    idempotencyKey,
+    amountHome: monetary("0"),
+    reference: z.string().trim().max(200).optional(),
+    note: z.string().trim().max(1000).optional(),
+  }).strict();
+  const writeOffBody = z.object({
+    idempotencyKey,
+    reason: z.string().trim().min(1).max(1000),
+  }).strict();
+  const obligationQuery = z.object({
+    status: z.enum(["open", "settled", "written_off", "reversed"]).optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(200),
+  });
+
+  /* One helper for four routes that differ only in which service method
+     they call. Written out four times it would be four places for the
+     201, the parse failure and the actor gate to drift apart. */
+  function obligationPost<T>(
+    path: string,
+    body: { safeParse(value: unknown): { success: true; data: T } | { success: false } },
+    post: (actor: LedgerActor, input: T) => Promise<unknown>,
+  ) {
+    app.post(path, async (req, reply) => {
+      const parsed = body.safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+      try {
+        const actor = await actorOrReply(req, reply);
+        return actor ? reply.code(201).send(await post(actor, parsed.data)) : undefined;
+      } catch (error) {
+        return failure(reply, error);
+      }
+    });
+  }
+
+  obligationPost("/api/ledger/remittances/send", remittanceSendBody, (actor, input) =>
+    obligations.remittanceSend(actor, input));
+  obligationPost("/api/ledger/remittances/receive", remittanceReceiveBody, (actor, input) =>
+    obligations.remittanceReceive(actor, input));
+  obligationPost("/api/ledger/bill-payments", billPaymentBody, (actor, input) =>
+    obligations.billPayment(actor, input));
+  obligationPost("/api/ledger/money-orders", moneyOrderBody, (actor, input) =>
+    obligations.moneyOrder(actor, input));
+
+  app.get("/api/ledger/obligations", async (req, reply) => {
+    const parsed = obligationQuery.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await obligations.list(actor, parsed.data)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Settling and writing off are separate routes on purpose. They are
+     different acts — one is a promise honoured for a real price, the
+     other is money the desk lost — and a single endpoint with a `kind`
+     field is how they end up sharing a code path and then sharing a
+     figure. See the head of obligations.ts. */
+  app.post("/api/ledger/obligations/:obligationId/settlement", async (req, reply) => {
+    const parsed = settlementBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await obligations.settle(
+              actor,
+              (req.params as { obligationId: string }).obligationId,
+              parsed.data,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/obligations/:obligationId/write-off", async (req, reply) => {
+    const parsed = writeOffBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await obligations.writeOff(
+              actor,
+              (req.params as { obligationId: string }).obligationId,
+              parsed.data,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Undoing a mis-keyed one. Its own route rather than the exchange
+     reversal above, because that one mirrors cost events and knows
+     nothing about an obligation — a remittance reversed through it would
+     leave the payout still owed on a deal whose cash had gone back over
+     the counter. */
+  app.post("/api/ledger/obligation-deals/:transactionId/reversal", async (req, reply) => {
+    const parsed = reverseBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await obligations.reverse(
+              actor,
+              (req.params as { transactionId: string }).transactionId,
+              parsed.data.idempotencyKey,
+              parsed.data.reason,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
   });
 }

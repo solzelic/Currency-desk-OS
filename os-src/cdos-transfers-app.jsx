@@ -371,7 +371,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }
 
   /* ===================== ROOT ===================== */
-  function Transfers({ rows, setRows, clients, setClients, settings, me, log, beneficiaries: pBen, setBeneficiaries: pSetBen, corridors: pCor, setCorridors: pSetCor }) {
+  function Transfers({ rows, setRows, clients, setClients, settings, me, log, beneficiaries: pBen, setBeneficiaries: pSetBen, corridors: pCor, setCorridors: pSetCor, serverBacked, onTillChanged }) {
     const [tab, setTab] = useState('pipeline');
     // beneficiaries + corridors are lifted to the OS shell so Clients shares them;
     // fall back to local stores if mounted standalone.
@@ -426,7 +426,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         {tab === 'reports' && <Reports transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} settings={settings} me={me} log={log} />}
       </div>
 
-      {modal && <TransferModal {...{ rows, setRows, clients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('pipeline'); setDetailId(id); }} />}
+      {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('pipeline'); setDetailId(id); }} />}
       {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
     </div>);
   }

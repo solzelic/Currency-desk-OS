@@ -99,11 +99,11 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Cheques({ rows, setRows, clients, settings, me, log, cheques: pChq, setCheques: pSetChq, schedule: pSched, setSchedule: pSetSched, captureSignal }) {
+  function Cheques({ rows, setRows, clients, settings, me, log, cheques: pChq, setCheques: pSetChq, schedule: pSched, setSchedule: pSetSched, captureSignal, serverBacked, onTillChanged, onRefreshCheques }) {
     const [tab, setTab] = useState('clearing');
     // cheques + schedule are lifted to the OS shell so the Ledger shares them;
     // fall back to local stores if mounted standalone.
-    const [lChq, lSetChq] = useState(() => load(KKEY, defaultCheques));
+    const [lChq, lSetChq] = useState(() => (K.ledger() ? [] : load(KKEY, defaultCheques)));
     const [lSched, lSetSched] = useState(() => load(SKEY, defaultSchedule));
     const cheques = pChq || lChq, setCheques = pSetChq || lSetChq;
     const schedule = pSched || lSched, setSchedule = pSetSched || lSetSched;
@@ -143,8 +143,8 @@
         {tab === 'schedule' && <FeeSchedule schedule={schedule} setSchedule={setSchedule} log={log} />}
       </div>
 
-      {modal && <CaptureModal {...{ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('clearing'); setDetailId(id); }} />}
-      {detail && <ChequeDetail c={detail} me={me} log={log} setCheques={setCheques} onClose={() => setDetailId(null)} />}
+      {modal && <CaptureModal {...{ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques, onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('clearing'); setDetailId(id); }} />}
+      {detail && <ChequeDetail c={detail} me={me} log={log} setCheques={setCheques} onTillChanged={onTillChanged} onClose={() => setDetailId(null)} />}
     </div>);
   }
 

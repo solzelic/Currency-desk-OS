@@ -645,14 +645,35 @@
     const full = tmpl('full');
 
     const writeContact = (nm) => { if (setClients) setClients(c => ({ ...c, [nm]: { ...(c[nm] || {}), kind, phone: phone.trim(), photo: photo || (c[nm] && c[nm].photo) || null, risk: (c[nm] && c[nm].risk) || houseRisk(), createdAt: (c[nm] && c[nm].createdAt) || new Date().toISOString().slice(0, 10) } })); };
+
+    /* And on the SERVER, which is where a customer file actually lives
+       now. This flow runs from the till and from the transaction modal,
+       not only from the Clients screen, so a contact created here used
+       to exist in one browser and nowhere else — invisible at the next
+       counter, and gone with the browser profile. See
+       server/src/clients/records.ts and docs/CLIENT_RECORDS.md.
+
+       Deliberately not awaited into the wizard's own flow: a teller
+       mid-transaction should not be held up by it, and the local write
+       above has already happened, so the worst case is a record that
+       reaches the server on the next load rather than one that is lost.
+       A genuine failure is reported rather than swallowed. */
+    const publishContact = (nm, extra) => {
+      const shared = window.CDOS.ClientRecords;
+      if (!shared || !shared.serverBacked()) return;
+      shared.ensure(nm, Object.assign({ kind, phone: phone.trim(), email: email.trim() }, extra || {}))
+        .then(() => shared.load(true))
+        .catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', (err && err.message) || err));
+    };
     // escape hatch: create the contact without running (or paying for) a verification
-    const saveManual = () => { const nm = name.trim(); if (!nm) return; writeContact(nm); if (onDone) onDone(nm); onClose(); };
+    const saveManual = () => { const nm = name.trim(); if (!nm) return; writeContact(nm); publishContact(nm); if (onDone) onDone(nm); onClose(); };
     // create the contact, fire the chosen verification, then watch it complete
     const startCheck = () => {
       const nm = name.trim(); if (!nm) return;
       const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: nm });
       if (del.missing) return;
       if (setClients) setClients(c => ({ ...c, [nm]: { ...(c[nm] || {}), kind, phone: phone.trim(), email: email.trim() || (c[nm] && c[nm].email) || '', photo: photo || (c[nm] && c[nm].photo) || null, risk: (c[nm] && c[nm].risk) || houseRisk(), createdAt: (c[nm] && c[nm].createdAt) || new Date().toISOString().slice(0, 10) } }));
+      publishContact(nm);
       const chk = createCheck({ subject: nm, kind, template: tplId, channel: del.channel, contact: del.contact, by });
       setCheckId(chk.id); setStep('verifying');
     };
@@ -664,6 +685,10 @@
         applied.current = true;
         const ex = check.result.extracted;
         if (ex && setClients) setClients(c => ({ ...c, [name.trim()]: { ...(c[name.trim()] || {}), ...ex, kind, idVerifiedAt: check.result.completedAt } }));
+        /* What the provider read off the document belongs on the
+           server record too, or the desk's proof of who it identified
+           lives in one browser. */
+        if (ex) publishContact(name.trim(), ex);
         setStep('done');
       }
     }, [check && check.status]);

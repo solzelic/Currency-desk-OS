@@ -35,6 +35,257 @@
   // (and the rate ticker at z-360) can never occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
 
+  /* ============================================================
+     THE CUSTOMER FILE IS NOT IN THIS BROWSER ANY MORE
+
+     It used to be. `cdos_clients_v1`, in localStorage, keyed BY THE
+     CUSTOMER'S NAME — which meant two people called David Chen were one
+     file, correcting a spelling orphaned a person's history, the second
+     till was a different shop, and the passport scans inside it were the
+     largest single contributor to a four-megabyte saving ceiling that,
+     when reached, stopped this desk saving ANYTHING.
+
+     The record now lives on the server, keyed by an id that is never a
+     name, scoped to the legal entity so every counter and every branch
+     sees it. See server/src/clients/records.ts and
+     docs/CLIENT_RECORDS.md.
+
+     WHAT THE OLD `clients` OBJECT IS NOW. It is a PROJECTION of what the
+     server holds, in the shape the screens that have not moved yet still
+     read — the Ledger, the transaction modal, compliance, reports, the
+     dashboard. Those files are not being rewritten in this change and
+     must not break, so the server record is flattened back into the old
+     name-keyed form on every load and handed to `setClients`.
+
+     Two rules that projection obeys, and both matter:
+
+       • It never DELETES anything it did not put there. A record the
+         server has never heard of — created on a desk with no ledger
+         database, or before this change — stays exactly where it is.
+       • It drops a scan only when the SERVER holds that scan. That is
+         the byte weight that was breaking saving, and it is the one
+         thing this projection is allowed to take away.
+
+     A desk that cannot reach these routes keeps the browser-only store
+     it has always had, silently, because that is what it had yesterday.
+     A desk that reaches them and gets a fault says so, because a shared
+     record quietly falling back to a private one is the failure nobody
+     notices until two tills disagree.
+     ============================================================ */
+  const ClientRecords = (function () {
+    const api = () => (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+    let records = null;          // server records, or null before any answer
+    let mode = 'unknown';        // 'unknown' | 'server' | 'local'
+    let trouble = '';            // a fault worth a sentence on screen
+    let inflight = null;
+    let listeners = [];
+
+    const key = (name) => String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const announce = () => listeners.slice().forEach(fn => { try { fn(); } catch (e) {} });
+
+    function load(force) {
+      const client = api();
+      if (!client) { mode = 'local'; announce(); return Promise.resolve(null); }
+      if (inflight && !force) return inflight;
+      inflight = client.list().then(body => {
+        records = body.clients || [];
+        mode = 'server';
+        trouble = '';
+        return records;
+      }).catch(err => {
+        records = null;
+        mode = 'local';
+        /* 401 / 403 / a route that is not there are all "this desk is
+           not server-backed", which is an ordinary state. A 5xx is a
+           fault, and a fault that silently degrades to a private store
+           is how two tills come to hold different customers without
+           anybody being told. */
+        trouble = (err && err.status >= 500)
+          ? 'CurrencyDesk could not load this desk’s customer records from the server. What is on screen is this browser’s own copy, and it is not shared with the other tills.'
+          : '';
+        return null;
+      }).then(result => { inflight = null; announce(); return result; });
+      return inflight;
+    }
+
+    const all = () => records || [];
+    const byId = (clientId) => all().filter(r => r.clientId === clientId)[0] || null;
+    /* Every client whose CURRENT name or any ALIAS matches. More than
+       one is a legitimate answer — two people share a name — and the
+       caller is expected to say so rather than silently pick one. */
+    const byName = (name) => {
+      const want = key(name);
+      return all().filter(r => key(r.legalName) === want
+        || (r.aliases || []).some(a => key(a.alias) === want));
+    };
+
+    /* The server's records, flattened into the old name-keyed shape and
+       laid over whatever the browser already had. */
+    function project(previous) {
+      const client = api();
+      if (mode !== 'server' || !client || !records) return previous;
+      const next = Object.assign({}, previous || {});
+      /* A record that was renamed on the server leaves a stale entry
+         under its old name here. The alias rows are exactly what
+         identifies it, which is the reason they exist. */
+      records.forEach(record => {
+        (record.aliases || []).forEach(alias => {
+          if (key(alias.alias) !== key(record.legalName)) delete next[alias.alias];
+        });
+      });
+      records.forEach(record => {
+        next[record.legalName] = client.toDeskRecord(record, (previous || {})[record.legalName] || {});
+      });
+      return next;
+    }
+
+    return {
+      load,
+      all,
+      byId,
+      byName,
+      project,
+      key,
+      mode: () => mode,
+      trouble: () => trouble,
+      serverBacked: () => mode === 'server',
+      subscribe(fn) { listeners.push(fn); return () => { listeners = listeners.filter(f => f !== fn); }; },
+      /* Make sure a customer somebody typed a name for exists as a
+         record. Used by the new-contact flow in cdos-kyc.jsx, which can
+         run from screens that never open this one. Returns the server
+         record, or null when this desk is not server-backed. */
+      async ensure(name, deskRecord) {
+        const client = api();
+        if (!client || mode === 'local') return null;
+        const existing = byName(name);
+        if (existing.length) return existing[0];
+        const rec = deskRecord || {};
+        const created = await client.create(Object.assign(
+          { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
+          client.fromDeskFields(rec)));
+        await load(true);
+        return created;
+      },
+    };
+  })();
+
+  /* Redraw whenever the server record changes under us. */
+  function useClientRecords() {
+    const [, bump] = useState(0);
+    useEffect(() => ClientRecords.subscribe(() => bump(n => n + 1)), []);
+    return ClientRecords;
+  }
+
+  /* ---- changing a customer file --------------------------------------
+
+     One object, so that every editor on this screen writes through the
+     same place and none of them has to know whether this desk is
+     server-backed.
+
+     The routing is the interesting part, and it is the identifying /
+     signal split showing through into the UI. The old editors treat a
+     customer as ONE flat object — `idType` sits next to `occupation`
+     next to `photo` — because the blob was one flat object. It is not
+     one thing any more: the person, their identity DOCUMENTS and the
+     PICTURES of those documents are three tables with three different
+     retention answers, and `field()` below is where a screen that has
+     not caught up gets sent to the right one.
+
+     What is deliberately NOT sent to the server: supporting documents,
+     the extra photo gallery and the ledger ids the till caches. Those
+     have not moved in this change and are still the browser's, so they
+     fall through to the local setter untouched rather than being
+     silently dropped. */
+  const stampToday = () => new Date().toISOString().slice(0, 10);
+  function clientWriter({ name, rec, setClients, reload, onError }) {
+    const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+    rec = rec || {};
+    const clientId = rec.clientId;
+    const onServer = !!(api && clientId && ClientRecords.serverBacked());
+    const localSet = (k, v) => setClients(c => ({ ...c, [name]: { ...(c[name] || {}), [k]: v, updatedAt: stampToday() } }));
+    /* Every server write refreshes and every failure is SAID. A save
+       that failed into a swallowed catch, while the screen went on
+       showing the new value, is the shape of defect this project keeps
+       finding — the teller believes the file is updated and the next
+       till sees the old one. */
+    const send = (run) => Promise.resolve()
+      .then(run)
+      .then(() => reload(true))
+      .catch(e => onError((e && e.message) || 'CurrencyDesk could not save that change. Nothing was saved.'));
+
+    const extraDoc = (i) => (rec.ids || [])[i] || {};
+
+    function field(k, v) {
+      if (!onServer) return localSet(k, v);
+      const DOC = api.DOCUMENT_FIELDS;
+      if (DOC[k]) {
+        const patch = {}; patch[DOC[k]] = v || null;
+        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        /* Typing a document's details when the file has none is how a
+           document gets created — the same gesture the old flat editor
+           made, landing in the right table. */
+        return send(() => api.addDocument(clientId, Object.assign(
+          { docType: k === 'idType' ? (v || 'Not stated') : (rec.idType || 'Not stated'), isPrimary: true },
+          k === 'idType' ? {} : patch)));
+      }
+      if (k === 'photo') {
+        if (!v) return rec.primaryDocumentId && rec.primaryHasScan
+          ? send(() => api.removeDocumentScan(clientId, rec.primaryDocumentId))
+          : localSet(k, null);
+        return scan(v);
+      }
+      if (k === 'avatar') {
+        return v ? send(() => api.setPhotograph(clientId, v)) : localSet(k, null);
+      }
+      const changes = api.fromDeskFields({ [k]: v });
+      /* Nothing this record has a column for — supporting documents, the
+         gallery, cached ledger ids. Still the browser's. */
+      if (!Object.keys(changes).length) return localSet(k, v);
+      return send(() => api.update(clientId, changes));
+    }
+
+    function scan(dataUrl) {
+      if (!onServer) return localSet('photo', dataUrl);
+      if (rec.primaryDocumentId)
+        return send(() => api.updateDocument(clientId, rec.primaryDocumentId, { scanDataUrl: dataUrl }));
+      return send(() => api.addDocument(clientId, {
+        docType: rec.idType || 'Not stated', isPrimary: true, scanDataUrl: dataUrl,
+      }));
+    }
+
+    function addId() {
+      if (!onServer) return setClients(c => { const cur = c[name] || {}; return { ...c, [name]: { ...cur, ids: (cur.ids || []).concat({ type: '', num: '', issued: '', expiry: '', photo: null }), updatedAt: stampToday() } }; });
+      /* 'Not stated' rather than a guessed type. A document this desk
+         has asserted is a passport, because the form needed a default,
+         is a worse record than one that says nobody has said yet. */
+      return send(() => api.addDocument(clientId, { docType: 'Not stated', isPrimary: false }));
+    }
+
+    function setId(i, k, v) {
+      if (!onServer) return setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids[i] = { ...(ids[i] || {}), [k]: v }; return { ...c, [name]: { ...cur, ids, updatedAt: stampToday() } }; });
+      const document = extraDoc(i);
+      if (!document.documentId) return;
+      const columns = { type: 'docType', num: 'docNumber', issued: 'issuedOn', expiry: 'expiresOn' };
+      if (k === 'photo') {
+        return v
+          ? send(() => api.updateDocument(clientId, document.documentId, { scanDataUrl: v }))
+          : send(() => api.removeDocumentScan(clientId, document.documentId));
+      }
+      if (!columns[k]) return;
+      const patch = {}; patch[columns[k]] = v || null;
+      return send(() => api.updateDocument(clientId, document.documentId, patch));
+    }
+
+    function rmId(i) {
+      if (!onServer) return setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids.splice(i, 1); return { ...c, [name]: { ...cur, ids, updatedAt: stampToday() } }; });
+      const document = extraDoc(i);
+      if (!document.documentId) return;
+      return send(() => api.removeDocument(clientId, document.documentId));
+    }
+
+    return { onServer, clientId, field, scan, addId, setId, rmId, localSet };
+  }
+
   /* Photo affordance — a badge that opens a small menu: take a photo (live
      camera) or upload one. onPhoto receives a data-URL string either way. */
   function PhotoCaptureMenu({ onPhoto, badge, title }) {
@@ -171,10 +422,32 @@
   }
 
   /* ---------- atoms ---------- */
+  /* A photograph the desk took of the customer, cached for as long as
+     this component is mounted. Deliberately NOT audited the way an
+     identity document is: it is a different thing for a different
+     purpose — recognising a regular at the counter — and treating a face
+     the desk photographed itself as equivalent to a government document
+     would fill the ID trail with noise and make the rows that matter
+     harder to find. See docs/CLIENT_RECORDS.md. */
+  const photoCache = {};
   function Avatar({ rec, name, size = 44, ring }) {
     const corp = rec && rec.kind === 'corporate';
     const st = { width: size, height: size, borderRadius: corp ? Math.round(size * 0.22) : '50%', flex: 'none' };
-    if (rec && rec.avatar) return <img src={rec.avatar} alt={name} style={{ ...st, objectFit: 'cover', boxShadow: ring ? `0 0 0 2px ${CD.panel}, 0 0 0 3px ${CD.line}` : 'none' }} />;
+    const clientId = rec && rec.clientId;
+    const wanted = !!(rec && rec.hasPhotograph && !rec.avatar && clientId);
+    const [fetched, setFetched] = useState(() => (clientId && photoCache[clientId]) || null);
+    useEffect(() => {
+      if (!wanted || fetched) return;
+      const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+      if (!api) return;
+      let live = true;
+      api.photograph(clientId)
+        .then(body => { photoCache[clientId] = body.dataUrl; if (live) setFetched(body.dataUrl); })
+        .catch(() => {});
+      return () => { live = false; };
+    }, [clientId, wanted]);
+    const picture = (rec && rec.avatar) || fetched;
+    if (picture) return <img src={picture} alt={name} style={{ ...st, objectFit: 'cover', boxShadow: ring ? `0 0 0 2px ${CD.panel}, 0 0 0 3px ${CD.line}` : 'none' }} />;
     return (<div className="grid place-items-center" style={{ ...st, background: corp ? CD.inkSoft : CD.ink, color: 'var(--cd-on-ink)' }}>
       {corp ? <Ic n="building" s={size * 0.42} c="var(--cd-on-ink)" /> : <span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, fontSize: size * 0.34 }}>{initials(name)}</span>}
     </div>);
@@ -224,34 +497,41 @@
       </div>
     </div>);
   }
-  function KycEditor({ rec, set, kind, onUpload, canEdit }) {
+  /* `who` and `log` are threaded in rather than closed over. They used to
+     be neither: this component referenced a bare `name` (which resolved
+     to `window.name` — the empty string) and a bare `log` (which was not
+     defined at all, so rendering a client who had a scan on file threw).
+     A covered ID that crashes the profile is the worst of both. */
+  function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
       <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Issued"><input disabled={!canEdit} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="ID document scan" full>
-        {rec.photo
-          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} height={64} who={name} what="primary ID" log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+        {(rec.photo || rec.primaryHasScan)
+          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
           : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload ID document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}
       </EditField>
     </div>);
   }
 
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
-  function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit }) {
+  function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
       <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
-        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
+        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
         <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Issued"><input disabled={!canEdit} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Expiry"><input disabled={!canEdit} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Document scan" full>
-          {doc.photo
-            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} height={64} who={name} what={doc.type || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+          {(doc.photo || doc.hasScan)
+            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} clientId={clientId} documentId={doc.documentId} hasScan={doc.hasScan} height={64} who={who} what={doc.type || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
             : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && uploadId(i, e.target.files[0])} /></label>}
         </EditField>
       </div>
@@ -381,7 +661,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
             <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
-            <EditField label="ID scan">{rec.photo ? <div className="flex items-center gap-2"><IdScan src={rec.photo} height={36} who={name} what="primary ID" log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
+            <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
           </div>
           <div className="flex items-center gap-2 mt-4">
             <button onClick={() => onOpenLedger(name)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="scroll" s={15} c="var(--cd-on-ink)" /> View {st.n} transactions</button>
@@ -489,36 +769,169 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      and when" is a question a regulator asks, and the answer used to be
      that nobody could say.
 
+     WHAT CHANGED. That trace used to be a line in the browser's own audit
+     list, which is a place a disclosure record cannot live: it dies with
+     the browser profile, and — worse — the bytes were sitting in
+     localStorage the whole time, so "recorded" was a promise this file
+     made and any reader of the JSON could decline.
+
+     Now the picture is on the server and there is no other copy. Clicking
+     asks for it; the server writes who asked, when, at which till, and
+     about which document, in the SAME transaction that returns the bytes.
+     There is no path to the picture that does not write the row, because
+     there is no other path to the picture.
+
+     A desk with no server keeps the old behaviour — a local `src` and a
+     local log line — because that is what it had yesterday and losing the
+     scan would be worse than logging it locally.
+
      It re-covers when it unmounts, so walking away from the screen does
      not leave a document uncovered on it. */
-  function IdScan({ src, alt, height, who, what, log }) {
+  function IdScan({ src, alt, height, who, what, log, clientId, documentId, hasScan }) {
     const [shown, setShown] = useState(false);
-    if (!src) return null;
+    const [fetched, setFetched] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+    const fromServer = !!(api && clientId && documentId && (hasScan !== false));
+    const picture = fetched || src;
+    if (!fromServer && !src) return null;
+
     const box = { border: `1px solid ${CD.line}`, borderRadius: 8, display: 'block', maxHeight: height || 120 };
+    const reveal = async () => {
+      if (!fromServer) {
+        setShown(true);
+        log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim());
+        return;
+      }
+      setBusy(true); setErr('');
+      try {
+        const opened = await api.revealDocument(clientId, documentId, what || '');
+        setFetched(opened.dataUrl);
+        setShown(true);
+        /* The desk's own activity list still gets a line, because a
+           teller watching that list should see this happen. The RECORD,
+           though, is the server's row — this is a courtesy copy. */
+        log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''} · recorded on the server`.trim());
+      } catch (e) {
+        setErr((e && e.message) || 'CurrencyDesk could not open that document.');
+      } finally { setBusy(false); }
+    };
+
     if (!shown) {
-      return (<button
-        type="button"
-        title="Covered. Click to view — the desk records that it was opened."
-        onClick={() => { setShown(true); log && log('Identity document viewed', `${who || ''}${what ? ' · ' + what : ''}`.trim()); }}
-        className="relative grid place-items-center cursor-pointer"
-        style={{ ...box, width: 168, height: height || 120, overflow: 'hidden', background: CD.panel }}>
-        <img src={src} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(14px)', opacity: 0.55 }} />
-        <span className="relative flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-semibold" style={{ background: CD.panel, color: CD.mute, borderRadius: 7, fontFamily: 'Space Mono, monospace' }}>
-          <Ic n="lock" s={11} c={CD.mute} /> Show ID
-        </span>
-      </button>);
+      return (<span className="inline-flex flex-col items-start gap-1">
+        <button
+          type="button"
+          disabled={busy}
+          title={fromServer
+            ? 'Covered. Click to view — the desk records who opened it, and when.'
+            : 'Covered. Click to view — the desk records that it was opened.'}
+          onClick={reveal}
+          className="relative grid place-items-center cursor-pointer"
+          style={{ ...box, width: 168, height: height || 120, overflow: 'hidden', background: CD.panel }}>
+          {/* Only a LOCAL scan can be blurred behind the cover — a
+              server-held one is not in this browser yet, which is
+              exactly the property that makes the audit row honest. */}
+          {src && <img src={src} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(14px)', opacity: 0.55 }} />}
+          <span className="relative flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-semibold" style={{ background: CD.panel, color: CD.mute, borderRadius: 7, fontFamily: 'Space Mono, monospace' }}>
+            <Ic n="lock" s={11} c={CD.mute} /> {busy ? 'Opening…' : 'Show ID'}
+          </span>
+        </button>
+        {err && <span className="text-[10.5px]" style={{ color: CD.flag, maxWidth: 220 }}>{err}</span>}
+      </span>);
     }
     return (<span className="inline-flex flex-col items-start gap-1">
-      <img src={src} alt={alt || 'Identity document'} style={box} />
-      <button type="button" onClick={() => setShown(false)} className="text-[10.5px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>Hide</button>
+      <img src={picture} alt={alt || 'Identity document'} style={box} />
+      <span className="flex items-center gap-2">
+        <button type="button" onClick={() => { setShown(false); setFetched(null); }} className="text-[10.5px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>Hide</button>
+        {fromServer && <span className="text-[10.5px]" style={{ color: CD.faint }}>opening recorded</span>}
+      </span>
     </span>);
   }
 
+  /* ---- the same document, from anywhere else in the desk ----------------
+
+     The owner wants a teller to be able to open a customer's ID from the
+     TRANSACTION screen, not only from the client file — which is where
+     they actually are when the question comes up.
+
+     This is that, as one component. It takes the only thing the till has
+     to hand — the customer's NAME — and resolves it to a client record
+     through `lookup`, which searches aliases too, so a customer whose
+     name was corrected last month still resolves from a transaction
+     filed under the old spelling.
+
+     More than one match is shown as more than one match. Two people
+     share a name; picking one and rendering their passport beside
+     somebody else's deal is the exact defect this whole change exists to
+     end, and it would be a much worse version of it.
+
+     Drop-in from cdos-txmodal.jsx, immediately after the CustomerCard:
+
+       {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
+     */
+  function ClientIdViewer({ name, rec, log, height, compact }) {
+    const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+    const [state, setState] = useState({ status: 'idle', clients: [] });
+    useEffect(() => {
+      let live = true;
+      if (!api || !name || !String(name).trim()) { setState({ status: 'none', clients: [] }); return; }
+      setState({ status: 'loading', clients: [] });
+      api.lookup(String(name).trim())
+        .then(body => { if (live) setState({ status: 'ready', clients: body.clients || [] }); })
+        /* A desk with no server, or a till whose session has gone, shows
+           nothing here rather than an error beside a deal in progress —
+           the client file is one click away and this is a convenience. */
+        .catch(() => { if (live) setState({ status: 'none', clients: [] }); });
+      return () => { live = false; };
+    }, [name]);
+
+    if (state.status !== 'ready' || !state.clients.length) return null;
+    const withScans = state.clients
+      .map(c => ({ client: c, documents: (c.documents || []).filter(d => d.hasScan) }))
+      .filter(entry => entry.documents.length);
+    if (!withScans.length) return null;
+    const ambiguous = state.clients.length > 1;
+
+    return (<div className="mt-2 p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: 'var(--cd-panel)' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Ic n="id" s={13} c={CD.mute} />
+        <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identity documents on file</span>
+      </div>
+      {/* Said plainly, because a teller about to hand over cash is the
+          person who needs to know it. */}
+      {ambiguous && <div className="text-[11px] mb-2 px-2 py-1.5" style={{ background: CD.amberSoft, color: CD.ink, borderRadius: 7 }}>
+        This desk has {state.clients.length} customers named {name}. Check you are looking at the right file before you open a document.
+      </div>}
+      <div className="flex flex-wrap gap-3">
+        {withScans.map(entry => entry.documents.map(document => (
+          <div key={document.documentId} className="flex flex-col gap-1">
+            <IdScan
+              clientId={entry.client.clientId}
+              documentId={document.documentId}
+              hasScan
+              height={height || (compact ? 72 : 110)}
+              who={entry.client.legalName}
+              what={document.docType}
+              log={log} />
+            <span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>
+              {document.docType}{document.expiresOn ? ` · exp ${document.expiresOn}` : ''}
+            </span>
+          </div>
+        )))}
+      </div>
+    </div>);
+  }
+
   /* ---------- FULL PROFILE (double click) ---------- */
-  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx }) {
+  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
-    const set = (k, v) => setClients(c => ({ ...c, [name]: { ...(c[name] || {}), [k]: v, updatedAt: new Date().toISOString().slice(0, 10) } }));
     const [intakeErr, setIntakeErr] = useState('');
+    /* Every editor below writes through here, and where it lands — the
+       person, an identity document, or a picture of one — is decided in
+       one place rather than in each control. See clientWriter. */
+    const writer = clientWriter({ name, rec, setClients, reload, onError: setIntakeErr });
+    const set = (k, v) => writer.field(k, v);
     const upload = async (k, file) => {
       const taken = await window.CDOS.intakeIdImage(file);
       if (!taken.ok) { setIntakeErr(taken.why); return; }
@@ -534,10 +947,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     };
     const rmGallery = (i) => setClients(c => { const cur = c[name] || {}; const g = (cur.gallery || []).slice(); g.splice(i, 1); return { ...c, [name]: { ...cur, gallery: g } }; });
     const stamp = () => new Date().toISOString().slice(0, 10);
-    // additional identity documents (the primary top-level ID drives KYC status; these are extra IDs on file)
-    const addId = () => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).concat({ type: '', num: '', issued: '', expiry: '', photo: null }); return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
-    const setId = (i, k, v) => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids[i] = { ...(ids[i] || {}), [k]: v }; return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
-    const rmId = (i) => setClients(c => { const cur = c[name] || {}; const ids = (cur.ids || []).slice(); ids.splice(i, 1); return { ...c, [name]: { ...cur, ids, updatedAt: stamp() } }; });
+    /* Additional identity documents. Each is a ROW of its own now — the
+       old shape had a "primary" ID as loose fields and the rest in an
+       array, so the first one was structurally different from every
+       other and every screen had to special-case it. */
+    const addId = () => writer.addId();
+    const setId = (i, k, v) => writer.setId(i, k, v);
+    const rmId = (i) => writer.rmId(i);
     const uploadId = async (i, file) => {
       const taken = await window.CDOS.intakeIdImage(file);
       if (!taken.ok) { setIntakeErr(taken.why); return; }
@@ -589,6 +1005,31 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
         {/* body */}
         <div className="flex-1 overflow-auto px-6 py-5">
+          {/* THE COLLISION, SAID OUT LOUD.
+
+              The old store keyed customers by name, so two people called
+              David Chen were one file and nobody was ever told. They are
+              two records now — which is correct — and the desk is told
+              every time it opens either of them, because the moment that
+              matters is the one where somebody is about to hand cash to
+              the wrong person's compliance history.
+
+              `possibleDuplicate` is the migration's flag on a file whose
+              SHAPE says it may already be two people merged: two
+              documents of one type with different numbers. Nothing was
+              split on the strength of it — splitting on a guess invents
+              a customer who never existed — so it asks for a human. */}
+          {(rec.possibleDuplicate || (rec.sameNameClientIds || []).length > 0) && (
+            <div className="mb-4 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.amberSoft, border: `1px solid ${CD.amber}`, borderRadius: 11 }}>
+              <Ic n="users" s={16} c={CD.amber} />
+              <div className="text-[12.5px]" style={{ color: CD.ink }}>
+                {(rec.sameNameClientIds || []).length > 0 && (
+                  <div><b>This desk has {(rec.sameNameClientIds || []).length + 1} customers called {name}.</b> They are separate files with separate histories. Check you are on the right one.</div>
+                )}
+                {rec.duplicateReason && <div className="mt-1" style={{ color: CD.mute }}>{rec.duplicateReason}</div>}
+              </div>
+            </div>
+          )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
           <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} />
           {/* risk rating — always visible on the profile, set inline without entering edit mode */}
@@ -628,8 +1069,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity documents</div>{canEdit && <button type="button" onClick={addId} className="flex items-center gap-1 text-[12px] font-medium" style={{ color: CD.ink }}><Ic n="plus" s={13} c={CD.ink} /> Add ID</button>}</div>
                 <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · drives KYC status</div>
-                <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} />
-                {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} />)}</div>}
+                <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} />
+                {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="flex items-center justify-between mb-3 gap-3"><div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Documents</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 340 }}>Proof of address, source of funds, corporate filings — anything supporting the file.</div></div>{canEdit && <label className="flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none" style={{ color: CD.ink }}><Ic n="upload" s={13} c={CD.ink} /> Add<input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { if (e.target.files[0]) { addDoc(e.target.files[0]); e.target.value = ''; } }} /></label>}</div>
@@ -673,13 +1114,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 <KV icon="id" label={corp ? 'Document' : 'ID type'} value={rec.idType} />
                 <KV icon="scroll" label="Number" value={rec.idNum} mono />
                 <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
-                {rec.photo && <div className="mt-2"><IdScan src={rec.photo} height={120} who={name} what="primary ID" log={log} /></div>}
+                {(rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={rec.idType || 'primary ID'} log={log} /></div>}
                 {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
                   <KV icon="id" label="Type" value={d.type} />
                   <KV icon="scroll" label="Number" value={d.num} mono />
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
-                  {d.photo && <div className="mt-2"><IdScan src={d.photo} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
+                  {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
@@ -742,6 +1183,31 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
     const canEdit = can('canEditKYC');
     const canExport = can('canExport');
+    const store = useClientRecords();
+    const [saveErr, setSaveErr] = useState('');
+
+    /* Pull the desk's customer files from the server and lay them over
+       whatever this browser had, in the old shape, so that every screen
+       which has not moved yet — the Ledger, the transaction modal,
+       compliance, reports — keeps reading the object it always read.
+
+       `setClients` is only called when the projection actually differs,
+       because it feeds a localStorage write and a replication cycle; a
+       projection that re-fires on every load would keep the desk saving
+       forever. */
+    const projected = useRef('');
+    const reload = React.useCallback(async (force) => {
+      await ClientRecords.load(force);
+      setClients(previous => {
+        const next = ClientRecords.project(previous);
+        const signature = JSON.stringify(next);
+        if (signature === projected.current) return previous;
+        projected.current = signature;
+        return next;
+      });
+    }, [setClients]);
+    useEffect(() => { reload(true); }, [reload]);
+
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('all');   // all | individual | corporate | verified | attention
     const [quick, setQuick] = useState(null);
@@ -781,9 +1247,41 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const onClick = (name) => { setQuick(null); setHighlightTx(null); setProfile(name); };
     const onDbl = (name) => { setProfile(name); };
-    const setField = (name, k, v) => setClients(c => ({ ...c, [name]: { ...(c[name] || {}), [k]: v, updatedAt: new Date().toISOString().slice(0, 10) } }));
-    const upload = (name, k, file) => { const r = new FileReader(); r.onload = () => { setField(name, k, r.result); log && log('ID scan saved', name); }; r.readAsDataURL(file); };
-    const createContact = (name, kind) => { setClients(c => ({ ...c, [name]: { ...(c[name] || {}), kind, createdAt: new Date().toISOString().slice(0, 10) } })); log && log('Contact created', `${name} · ${kind}`); setAdding(false); setProfile(name); };
+    const setField = (name, k, v) =>
+      clientWriter({ name, rec: clients[name], setClients, reload, onError: setSaveErr }).field(k, v);
+    /* Through the same ceiling as every other intake. An oversized scan
+       used to be accepted here with a bare FileReader and then silently
+       lost when the desk's state would not save — see intakeIdImage in
+       cdos-base.jsx and tests/e2e/id-intake-seam.spec.ts. */
+    const upload = async (name, k, file) => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) { setSaveErr(taken.why); return; }
+      setSaveErr('');
+      setField(name, k, taken.dataUrl);
+      log && log('ID scan saved', name);
+    };
+    const createContact = async (name, kind) => {
+      const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+      if (api && ClientRecords.serverBacked()) {
+        try {
+          /* A name COLLISION is not refused. Two people called David
+             Chen are two customers, and a product that will not let the
+             second one exist is the same defect as one that merges them
+             wearing a warning label. The record comes back saying who
+             else shares the name, and the profile says so on screen. */
+          await api.create({ legalName: name, kind: kind === 'corporate' ? 'business' : 'individual' });
+          await reload(true);
+        } catch (e) {
+          setSaveErr((e && e.message) || 'CurrencyDesk could not create that contact. Nothing was saved.');
+          return;
+        }
+      } else {
+        setClients(c => ({ ...c, [name]: { ...(c[name] || {}), kind, createdAt: new Date().toISOString().slice(0, 10) } }));
+      }
+      log && log('Contact created', `${name} · ${kind}`);
+      setAdding(false);
+      setProfile(name);
+    };
 
     const quickRec = quick ? (clients[quick] || {}) : null;
     const profileRec = profile ? (clients[profile] || {}) : null;
@@ -795,6 +1293,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, email, phone, ID number…" className="w-full outline-none text-sm bg-transparent" />{q && <button onClick={() => setQ('')} style={{ color: CD.mute }}><Ic n="x" s={13} /></button>}</div>
         {canEdit && <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="userplus" s={15} c="var(--cd-on-ink)" /> New contact</button>}
       </div>
+      {/* A save that failed, or a shared record that quietly is not one.
+          Both are said out loud: a teller who believes a file is updated
+          when the next till still sees the old one is the failure this
+          whole change exists to end. */}
+      {(saveErr || store.trouble()) && (
+        <div className="flex items-start gap-2 px-4 py-2.5 flex-none text-[12px]" style={{ background: CD.flagSoft }}>
+          <Ic n="alert" s={14} c={CD.flag} />
+          <span style={{ color: CD.ink }}>{saveErr || store.trouble()}</span>
+          {saveErr && <button onClick={() => setSaveErr('')} className="ml-auto text-[11px]" style={{ color: CD.mute }}>Dismiss</button>}
+        </div>
+      )}
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.lineSoft}` }}>
         {FILTERS.map(([id, label, n]) => (
@@ -849,12 +1358,22 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       </div>
 
       {quick && <Portal><QuickCard name={quick} rec={quickRec} rows={rows} flags={computeFlags(rows, clients, settings)} settings={settings} me={me} canEdit={canEdit} beneficiaries={beneficiaries} corridors={corridors} setField={(k, v) => setField(quick, k, v)} onUpload={(k, f) => upload(quick, k, f)} onExpand={() => { setProfile(quick); setQuick(null); }} onOpenLedger={(n) => { setQuick(null); openLedgerForClient(n); }} onClose={() => setQuick(null)} /></Portal>}
-      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} /></Portal>}
+      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
       {adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow
-        ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={(n) => { setAdding(false); setProfile(n); }} />
+        ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={(n) => { setAdding(false); reload(true); setProfile(n); }} />
         : <Portal><NewContact existing={Object.keys(clients)} onCreate={createContact} onClose={() => setAdding(false)} /></Portal>)}
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Clients });
+  /* `ClientIdViewer` is exported so the TRANSACTION screen can open a
+     customer's ID without opening their file — which is where a teller
+     actually is when the question comes up. One line, and the reveal it
+     performs writes the same server audit row as the client file's:
+
+       {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
+
+     `ClientRecords` is exported for the new-contact flow in
+     cdos-kyc.jsx, which can run from screens that never mount this
+     one. */
+  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan });
 })();

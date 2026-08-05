@@ -146,7 +146,17 @@ export const CATALOGUE: readonly KeyShape[] = [
   { key: "cdos_branch_moves_v2", kind: "record", what: "Cash moved between branches" },
   { key: "cdos_settlements_v1", kind: "record", what: "Settlements with counterparties" },
   { key: "cdos_transfers_v1", kind: "record", what: "Outbound transfers" },
-  { key: "cdos_cheques_v1", kind: "record", what: "Cheques taken in" },
+  /* A CACHE now, not the record. The cheques a desk is carrying live in
+     `ledger_cheques` — see docs/CHEQUE_CASHING.md — because outstanding
+     exposure is cash out of the door and a cash figure cannot live in one
+     browser. What is here is a copy so the register still renders while
+     the ledger is being re-read. */
+  { key: "cdos_cheques_v1", kind: "record", what: "Cheques taken in — a cache of the ledger's register" },
+  /* The scan of the cheque, which is deliberately NOT on the server yet:
+     images are being dealt with separately and there is a ceiling on
+     intake. Keyed by the ledger's cheque id so re-reading the register
+     cannot silently drop them. */
+  { key: "cdos_cheque_images_v1", kind: "record", what: "Cheque scans, keyed by the ledger's cheque id" },
   { key: "cdos_cheque_schedule_v1", kind: "record", what: "When cheques are expected to clear" },
   { key: "cdos_baseline_v1", kind: "record", what: "Opening cash position the day is measured against" },
   { key: "cdos_locked_book", kind: "record", what: "The published rate book a trade was priced against" },

@@ -321,6 +321,127 @@ CREATE TABLE IF NOT EXISTS market_rates (
   fetched_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS market_rates_fetched_idx ON market_rates(fetched_at);
+/* ---- the desk's customer files ---------------------------------------
+
+   Mirrors migration 019, which is where all the reasoning lives. These
+   are here because the embedded database is built from this constant and
+   does NOT run migrations, so a table that exists only in a migration
+   file does not exist in dev or in the unit suite at all.
+
+   What is deliberately NOT mirrored here is the one statement in 019
+   that touches ledger_customers — the client_id column that joins
+   the desk's record to the ledger's counter row. That table is created
+   by the ledger migration and so has never existed on the embedded
+   database; adding a column to a table that is not there would fail the
+   bootstrap for every dev machine. It follows that the client ROUTES are
+   registered only where the ledger's are (see app.ts): scoping is per
+   legal entity, but the join is per till and the till's table lives with
+   the migrations.
+
+   The IDENTIFYING / SIGNAL split, why a name is not a key, what a reveal
+   records and what retention obliges are all written down once, in
+   019_client_records.sql and docs/CLIENT_RECORDS.md. Do not restate them
+   here — two copies of that reasoning is how the two halves start
+   disagreeing. */
+CREATE TABLE IF NOT EXISTS desk_clients (
+  client_id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  legal_entity_id text NOT NULL REFERENCES legal_entities(id),
+  -- identifying
+  display_name text NOT NULL,
+  date_of_birth date,
+  address_line text,
+  city text,
+  postal_code text,
+  email text,
+  phone text,
+  notes text,
+  -- signal
+  kind text NOT NULL DEFAULT 'individual' CHECK (kind IN ('individual','business')),
+  region text,
+  country text,
+  occupation text,
+  risk_rating text NOT NULL DEFAULT 'normal' CHECK (risk_rating IN ('low','normal','medium','high')),
+  verification_status text NOT NULL DEFAULT 'unverified'
+    CHECK (verification_status IN ('unverified','identified','verified','expired')),
+  verified_at timestamptz,
+  screening_outcome text CHECK (screening_outcome IS NULL OR screening_outcome IN ('clear','hit','pending')),
+  screening_matched text,
+  screened_at timestamptz,
+  incorporation_date date,
+  incorporation_jurisdiction text,
+  nature_of_business text,
+  contact_name text,
+  contact_title text,
+  -- NOT unique, and must never become unique: two customers legitimately
+  -- share a name. It exists so a collision is visible instead of silent.
+  name_key text GENERATED ALWAYS AS (lower(regexp_replace(btrim(display_name), '\\s+', ' ', 'g'))) STORED,
+  possible_duplicate boolean NOT NULL DEFAULT false,
+  duplicate_reason text,
+  -- reserved for cross-desk matching, written by nothing. See 019.
+  network_match_hash text,
+  network_match_hash_version integer,
+  created_by text,
+  updated_by text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS desk_clients_entity_idx ON desk_clients (tenant_id, legal_entity_id, name_key);
+CREATE INDEX IF NOT EXISTS desk_clients_entity_updated_idx ON desk_clients (tenant_id, legal_entity_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS desk_clients_network_hash_idx ON desk_clients (network_match_hash) WHERE network_match_hash IS NOT NULL;
+CREATE TABLE IF NOT EXISTS desk_client_aliases (
+  alias_id text PRIMARY KEY,
+  client_id text NOT NULL REFERENCES desk_clients(client_id) ON DELETE CASCADE,
+  tenant_id text NOT NULL,
+  legal_entity_id text NOT NULL,
+  alias text NOT NULL,
+  alias_key text GENERATED ALWAYS AS (lower(regexp_replace(btrim(alias), '\\s+', ' ', 'g'))) STORED,
+  alias_kind text NOT NULL DEFAULT 'also_known_as'
+    CHECK (alias_kind IN ('legacy_name_key','former_name','also_known_as')),
+  created_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS desk_client_aliases_unique ON desk_client_aliases (client_id, alias_key, alias_kind);
+CREATE INDEX IF NOT EXISTS desk_client_aliases_lookup_idx ON desk_client_aliases (tenant_id, legal_entity_id, alias_key);
+CREATE TABLE IF NOT EXISTS desk_client_identity_documents (
+  document_id text PRIMARY KEY,
+  client_id text NOT NULL REFERENCES desk_clients(client_id) ON DELETE CASCADE,
+  tenant_id text NOT NULL,
+  legal_entity_id text NOT NULL,
+  doc_type text NOT NULL,
+  doc_number text,
+  issuing_jurisdiction text,
+  issued_on date,
+  expires_on date,
+  is_primary boolean NOT NULL DEFAULT false,
+  created_by text,
+  updated_by text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS desk_client_documents_client_idx ON desk_client_identity_documents (client_id, is_primary DESC, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS desk_client_documents_one_primary ON desk_client_identity_documents (client_id) WHERE is_primary;
+CREATE TABLE IF NOT EXISTS desk_client_images (
+  image_id text PRIMARY KEY,
+  client_id text NOT NULL REFERENCES desk_clients(client_id) ON DELETE CASCADE,
+  tenant_id text NOT NULL,
+  legal_entity_id text NOT NULL,
+  purpose text NOT NULL CHECK (purpose IN ('identity_document','client_photograph')),
+  document_id text REFERENCES desk_client_identity_documents(document_id) ON DELETE CASCADE,
+  content_type text NOT NULL,
+  byte_size integer NOT NULL CHECK (byte_size > 0),
+  sha256 text NOT NULL,
+  bytes bytea NOT NULL,
+  label text,
+  captured_by text,
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT desk_client_images_purpose_shape CHECK (
+    (purpose = 'identity_document' AND document_id IS NOT NULL) OR
+    (purpose = 'client_photograph' AND document_id IS NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS desk_client_images_client_idx ON desk_client_images (client_id, purpose, captured_at DESC);
+CREATE INDEX IF NOT EXISTS desk_client_images_document_idx ON desk_client_images (document_id) WHERE document_id IS NOT NULL;
 `;
 
 export async function createDb(): Promise<DbHandle> {

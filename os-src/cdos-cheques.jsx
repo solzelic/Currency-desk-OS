@@ -11,8 +11,32 @@
        i.e. what's actually at risk right now.
      • NSF / fraud — flag a held cheque, record the return as a loss.
      • Fee schedule — fee % / minimum / hold days per cheque type.
-   Cashing posts a ledger row (Cheque Cashing) so cash, fees and the
-   audit trail stay on the one source of truth; the risk layer lives here.
+
+   ---- WHERE A CHEQUE ACTUALLY LIVES ----
+
+   On the ledger. `cdos_cheques_v1` is a cache of it.
+
+   This header used to claim that "cashing posts a ledger row … so cash,
+   fees and the audit trail stay on the one source of truth", and none of
+   it was true: `save()` built a browser transaction, pushed it into an
+   array, wrote the cheque into localStorage, and the server never heard
+   about a dollar of it. The desk paid out real money from a real drawer
+   and the book that the drawer is counted against went on showing the
+   figure from before.
+
+   Now every one of the four money events — cashing, clearing, a return,
+   and a reversal of a cashing done in error — is a server call, and the
+   server answers with the cheque and with the drawer's new balances.
+   Nothing here computes cash, and nothing here is applied optimistically:
+   if the ledger refuses, nothing is cashed and the screen says why. See
+   docs/CHEQUE_CASHING.md for the three journals and
+   docs/CASH_OWNERSHIP_INVARIANTS.md for why there is only one book.
+
+   The one thing still held locally is the cheque IMAGE, deliberately —
+   images are being dealt with separately and there is a ceiling on intake
+   (tests/e2e/id-intake-seam.spec.ts). It lives in its own small store
+   keyed by the ledger's cheque id, so refreshing the register from the
+   server cannot silently drop the scans.
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
@@ -40,6 +64,11 @@
     held:     { label: 'On hold',  tone: CD.amber, soft: CD.amberSoft, ink: 'var(--cd-brass-text)', icon: 'clock' },
     cleared:  { label: 'Cleared',  tone: CD.green, soft: CD.greenSoft, ink: '#1c5c3a', icon: 'checkcircle' },
     returned: { label: 'Returned', tone: CD.flag,  soft: CD.flagSoft,  ink: CD.flag,  icon: 'ban' },
+    /* A cashing that should never have happened, undone. Its own state and
+       not a shade of "returned": a returned cheque cost the desk the face
+       amount, a reversed one cost it nothing, and a screen that showed
+       them the same would put a mis-key into the losses figure. */
+    reversed: { label: 'Reversed', tone: CD.mute,  soft: CD.lineSoft,  ink: CD.mute,  icon: 'x' },
   };
 
   /* ---- seed cheques across the lifecycle ---- */
@@ -63,8 +92,54 @@
     ];
   }
 
-  const KKEY = 'cdos_cheques_v1', SKEY = 'cdos_cheque_schedule_v1';
+  const KKEY = 'cdos_cheques_v1', SKEY = 'cdos_cheque_schedule_v1', IKEY = 'cdos_cheque_images_v1';
   const load = (k, def) => { try { const r = JSON.parse(localStorage.getItem(k) || 'null'); return r && (Array.isArray(r) ? r.length : true) ? r : def(); } catch (e) { return def(); } };
+
+  /* ---- talking to the book ----
+
+     `ledger()` answers null on a desk that has no server — a standalone
+     demonstration, or a plan without the ledger. That desk keeps the
+     screens and keeps its local store, and the difference is stated on
+     screen rather than hidden: a browser copy is not a record. */
+  const ledger = () => (window.CDOS.Backend && window.CDOS.Backend.cashCheque ? window.CDOS.Backend : null);
+
+  /* The cheque image, held apart from the cheque. A scan is tens of
+     kilobytes and is not going to the server in this change, so it cannot
+     live on the cached cheque object — the cache is replaced wholesale
+     every time the register is re-read and the images would go with it.
+     Keyed by the LEDGER's cheque id, which is the only identifier both
+     sides agree on. */
+  const images = () => { try { return JSON.parse(localStorage.getItem(IKEY) || '{}') || {}; } catch (e) { return {}; } };
+  const keepImage = (chequeId, dataUrl) => {
+    if (!chequeId || !dataUrl) return;
+    try { const all = images(); all[chequeId] = dataUrl; localStorage.setItem(IKEY, JSON.stringify(all)); } catch (e) {}
+  };
+
+  /* One cheque from the ledger, in the shape these screens already speak.
+     Money arrives as decimal strings and is turned into numbers only for
+     rendering — the figures themselves are the server's and nothing here
+     recomputes one of them. */
+  function fromServer(c, imgs) {
+    const held = imgs || images();
+    return {
+      id: c.chequeId, chequeId: c.chequeId, ref: c.ref,
+      chequeNumber: c.chequeNumber, maker: c.maker, draweeBank: c.draweeBank || '',
+      customer: c.customerName || c.customerId, customerId: c.customerId,
+      typeId: c.chequeType, typeLabel: c.typeLabel, ccy: c.currency,
+      amount: Number(c.faceAmount), feeCad: Number(c.feeAmount), netCad: Number(c.netAmount),
+      endorsed: !!c.endorsed, image: held[c.chequeId] || null,
+      holdDays: c.holdDays, holdUntil: c.holdUntil, receivedDate: c.receivedDate,
+      status: c.status, nsf: !!c.nsf, fraud: !!c.fraud, returnedReason: c.returnedReason || '',
+      timeline: (c.timeline || []).map(e => ({
+        status: e.status,
+        ts: String(e.at || '').replace('T', ' ').slice(0, 19),
+        by: String(e.actorId || '').split(':').pop(),
+        note: e.note || '',
+      })),
+      txId: c.cashingTransactionId, txRef: c.cashingTransactionRef,
+      createdBy: String(c.createdBy || '').split(':').pop(), server: true,
+    };
+  }
 
   /* ===================== atoms ===================== */
   const inputSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
@@ -74,7 +149,7 @@
   function StatusPill({ status, small }) { const s = STATUS[status] || STATUS.held; return <span className="inline-flex items-center gap-1.5 font-semibold" style={{ background: s.soft, color: s.ink, borderRadius: 999, fontSize: small ? 10 : 11, padding: small ? '2px 8px' : '3px 10px' }}><Ic n={s.icon} s={small ? 10 : 12} c={s.ink} />{s.label}</span>; }
 
   /* ===================== CAPTURE MODAL ===================== */
-  function CaptureModal({ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques, onClose, onDone }) {
+  function CaptureModal({ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques, onClose, onDone, onTillChanged }) {
     const names = useMemo(() => { const s = new Set(Object.keys(clients || {})); (rows || []).forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, rows]);
     const [customer, setCustomer] = useState('');
     const [typeId, setTypeId] = useState('payroll');
@@ -107,19 +182,78 @@
       setImgErr(''); setImage(taken.dataUrl);
     };
 
-    const save = () => {
-      if (!canSave) return;
-      const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
-      const ref = 'CHQ-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqC).padStart(3, '0');
-      // ledger row: cheque cashed — cash fronted out of the drawer (one source of truth)
-      const seqL = (rows || []).filter(r => r.date === TODAY && r.status !== 'void').length + 1;
-      const lref = mkRef(TODAY, seqL);
-      const tx = newTx({ ref: lref, type: 'Cheque Cashing', customer, inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: net, fee, teller: me.name, notes: `${ref} · ${type.label} cheque #${chequeNumber} · ${maker} (${draweeBank})`, chequeRef: ref, createdBy: me.name, createdAt: stamp() });
-      setRows(r => [tx, ...r]);
-      const chq = { id: 'c' + Date.now(), ref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer.trim(), typeId, typeLabel: type.label, ccy: 'CAD', amount: amtN, feeCad: fee, netCad: net, endorsed, image, holdDays, receivedDate: TODAY, holdUntil, status: holdDays === 0 ? 'held' : 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cash fronted ${fmt(net, 'CAD')} · ${holdDays === 0 ? 'no hold' : holdDays + '-day hold'}` }], txId: tx.id, txRef: lref, createdBy: me.name };
-      setCheques(list => [chq, ...list]);
-      log && log('Cheque cashed', `${ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(net, 'CAD')} · hold to ${holdUntil}`);
-      onDone && onDone(chq.id);
+    /* Cashing, which is a movement of money and therefore a server call.
+
+       The whole of this used to happen in the browser — a transaction row
+       pushed into an array, a cheque written to localStorage, and a
+       reference number minted from the length of the local list, which
+       meant two tills cashing at the same moment both produced
+       CHQ-260618-003 for different money. None of it reached the ledger,
+       so the drawer on screen fell and the drawer on the server did not.
+
+       Nothing is applied here until the server has agreed, and nothing is
+       applied optimistically afterwards either: the cheque, its reference,
+       its dates and the drawer's new balances all come back in the
+       response and are rendered as sent. The ledger row shows up in the
+       Ledger the same way every other posted deal does, by re-reading it
+       from the book. */
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const save = async () => {
+      if (!canSave || busy) return;
+      const book = ledger();
+      if (!book) {
+        setErr('This desk has no ledger to post to, so a cheque cannot be cashed here. Nothing was recorded.');
+        return;
+      }
+      setBusy(true); setErr('');
+      try {
+        /* The ledger's own customer record. A cheque cashing is a deal
+           against a named person — the identification line is enforced
+           on the server against THIS record — so the desk's client is
+           mirrored across before the money moves. */
+        const synced = await book.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
+        const posted = await book.cashCheque({
+          idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${book.asMoney(amtN)}:${Date.now()}`,
+          customerId: synced.customerId,
+          chequeNumber: chequeNumber.trim(),
+          maker: maker.trim(),
+          draweeBank: draweeBank.trim() || undefined,
+          chequeType: typeId,
+          typeLabel: type.label,
+          /* The desk's home currency, which is what the capture form
+             offers and the only thing the server will take. A cheque in
+             anything else is an exchange as well as a cheque and belongs
+             on the quote path; the server refuses it by name. */
+          currency: 'CAD',
+          faceAmount: book.asMoney(amtN),
+          feeAmount: book.asMoney(fee),
+          holdDays: holdDays,
+          endorsed: endorsed,
+        });
+        keepImage(posted.cheque.chequeId, image);
+        const chq = fromServer(Object.assign({ customerName: customer.trim() }, posted.cheque));
+        setCheques(list => [chq, ...(list || []).filter(c => c.chequeId !== chq.chequeId)]);
+        /* The posted row belongs to the Ledger, and the Ledger reads it
+           from the book rather than being handed a copy — a locally
+           minted row would sit beside the server's own for the same deal,
+           which is the two-books problem in miniature. */
+        if (book.loadLedger && setRows) {
+          try {
+            const serverRows = await book.loadLedger();
+            setRows(current => book.mergeRows(current, serverRows));
+          } catch (refreshError) {
+            log && log('Ledger refresh failed', refreshError.message || 'The cashed cheque will appear on the next ledger open');
+          }
+        }
+        onTillChanged && onTillChanged(posted.balances);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), 'CAD')} · hold to ${posted.cheque.holdUntil}`);
+        onDone && onDone(chq.id);
+      } catch (error) {
+        setErr(error.message || 'The cheque was not cashed.');
+      } finally {
+        setBusy(false);
+      }
     };
 
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
@@ -186,21 +320,74 @@
             </div>
           </div>
         </div>
+        {/* What the ledger said when it refused. Shown in full and never
+            swallowed: a cheque that was not cashed must not leave the
+            teller thinking it was, and the server's own words name the
+            reason — the drawer is short, the till is closed, the customer
+            needs identifying, the cheque is in the wrong currency. */}
+        {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
         <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, 'CAD')}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, 'CAD')}</b></> : 'Enter the cheque amount'}</div>
-          <button onClick={save} disabled={!canSave} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: canSave ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: canSave ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> Cash & hold</button>
+          <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
         </div>
       </div>
     </div></Portal>);
   }
 
   /* ===================== DETAIL DRAWER ===================== */
-  function ChequeDetail({ c, me, log, setCheques, onClose }) {
+  function ChequeDetail({ c, me, log, setCheques, onClose, onTillChanged }) {
     const overdue = c.status === 'held' && c.holdUntil < TODAY;
-    const update = (patch, action, note) => { setCheques(list => list.map(x => x.id === c.id ? { ...x, ...patch, timeline: [...(x.timeline || []), { status: patch.status || x.status, ts: stamp(), by: me.name, note }] } : x)); log && log(action, `${c.ref} · ${note || ''}`); };
-    const clear = () => update({ status: 'cleared' }, 'Cheque cleared', 'Funds confirmed by drawee bank');
-    const returnNsf = () => update({ status: 'returned', nsf: true, returnedReason: 'NSF — insufficient funds' }, 'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
-    const returnFraud = () => update({ status: 'returned', fraud: true, returnedReason: 'Fraud — suspect cheque' }, 'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+
+    /* Every one of these is a posting. A clearance moves a receivable to
+       the bank, a return books the face amount as a loss, and a reversal
+       puts the cash back in the drawer — three journals, none of which a
+       browser may write for itself. This used to be a `setCheques` call
+       that patched a status in localStorage and told nobody. */
+    const act = async (kind, call, action, note) => {
+      const book = ledger();
+      if (!book) { setErr('This desk has no ledger to post to. Nothing was recorded.'); return; }
+      if (busy) return;
+      setBusy(kind); setErr('');
+      try {
+        const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
+        /* The status and the timeline come back from the register rather
+           than being guessed at here — a cheque somebody else has already
+           dealt with reads correctly instead of showing this teller's
+           optimistic patch over the top of it. */
+        const refreshed = await book.loadCheques();
+        setCheques(() => (refreshed.cheques || []).map(x => fromServer(x)));
+        if (answer && answer.balances) onTillChanged && onTillChanged(answer.balances);
+        log && log(action, `${c.ref} · ${note}`);
+        onClose && onClose();
+      } catch (error) {
+        setErr(error.message || 'The ledger refused this. Nothing was posted.');
+      } finally {
+        setBusy('');
+      }
+    };
+    const clear = () => act('clear',
+      (book, key) => book.clearCheque(c.chequeId, { idempotencyKey: key }),
+      'Cheque cleared', 'Funds confirmed by drawee bank');
+    const returnNsf = () => act('nsf',
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF — insufficient funds', nsf: true }),
+      'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
+    const returnFraud = () => act('fraud',
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud — suspect cheque', fraud: true }),
+      'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    /* Undoing a cashing done in error, which is NOT the same act as an
+       NSF and does not share its button. The cash comes back into the
+       drawer and the fee is reversed with it, because the desk did not
+       perform a service it can charge for. On a bounced cheque the money
+       is genuinely gone and the fee stays. */
+    const reverse = () => {
+      const why = window.prompt('Why is this cashing being reversed? The cash goes back into the drawer and the fee is refunded.');
+      if (!why || !why.trim()) return;
+      return act('reverse',
+        (book, key) => book.reverseCheque(c.chequeId, { idempotencyKey: key, reason: why.trim() }),
+        'Cheque cashing reversed', why.trim());
+    };
     const sched = STATUS[c.status] || STATUS.held;
     return (<Portal><div className="fixed inset-0 flex justify-end" style={{ background: 'var(--cd-scrim)', zIndex: 9100 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="h-full overflow-auto" style={{ width: 440, maxWidth: '92vw', background: CD.paper, borderLeft: `1px solid ${CD.ink}`, boxShadow: '-12px 0 40px var(--cd-shade)' }}>
@@ -251,11 +438,18 @@
           {/* actions */}
           {c.status === 'held' && (
             <div className="flex flex-wrap gap-2">
-              <button onClick={clear} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.green, borderRadius: 8 }}><Ic n="checkcircle" s={15} c="var(--cd-on-ink)" /> Mark cleared</button>
-              <button onClick={returnNsf} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Return NSF</button>
-              <button onClick={returnFraud} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.flag} /> Flag fraud</button>
+              <button onClick={clear} disabled={!!busy} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: busy ? 'var(--cd-disabled)' : CD.green, borderRadius: 8 }}><Ic n="checkcircle" s={15} c="var(--cd-on-ink)" /> {busy === 'clear' ? 'Posting…' : 'Mark cleared'}</button>
+              <button onClick={returnNsf} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> {busy === 'nsf' ? 'Posting…' : 'Return NSF'}</button>
+              <button onClick={returnFraud} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.flag} /> {busy === 'fraud' ? 'Posting…' : 'Flag fraud'}</button>
+              {/* Set apart from the three above, and worded for what it is.
+                  A return says the cheque failed; this says the CASHING did
+                  — wrong amount, wrong customer, keyed twice — and it is
+                  the only one of the four that puts cash back in the
+                  drawer and hands the fee back with it. */}
+              <button onClick={reverse} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="x" s={15} c={CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
             </div>
           )}
+          {err && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
           {c.txRef && <div className="text-[11px]" style={{ color: CD.faint }}>Ledger {c.txRef}</div>}
         </div>
       </div>
@@ -263,6 +457,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, load, STATUS, RISK_TONE, feeFor, addDays, daysBetween, StatusPill, CaptureModal, ChequeDetail }
+    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, StatusPill, CaptureModal, ChequeDetail }
   });
 })();
