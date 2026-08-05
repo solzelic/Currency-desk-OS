@@ -120,6 +120,49 @@ export class LedgerReportingService {
       );
       const row = totals.rows[0];
 
+      /* "Who earned what" — the line on the close-out sheet that gets
+         signed. It used to be summed in the browser over its own record of
+         the day's deals, and on a desk where one person had traded once
+         and voided it the sign-off named THREE tellers with earnings
+         beside them. Nobody had earned anything; the browser was adding up
+         a seed.
+
+         So it is a GROUP BY over the same rows the totals above cover,
+         with the same reversal exclusion, and the money follows the same
+         rule as everywhere else in this file: fees are known when the
+         column is non-null, realized margin is known only for deals a
+         disposal priced, and a teller whose deals carry neither has
+         `earningsHome: null` rather than a confident nothing. A teller who
+         spent the day buying currency genuinely earned no realized margin
+         — that is not the same fact as a teller who earned zero.
+
+         `actorId` is the principal the ledger recorded, not a display
+         name. Naming is the client's job and it already knows how (see
+         personOf in cdos-till.jsx); inventing a directory here would put
+         a second staff list on the server. */
+      const byActor = await client.query(
+        `SELECT t.actor_id AS actor_id,
+                count(*)::int AS deals,
+                sum(COALESCE(t.fee_amount, t.fee_cad)) AS fees_home,
+                sum(t.realized_pnl_home) FILTER (
+                  WHERE t.realized_pnl_home IS NOT NULL) AS realized_home,
+                count(*) FILTER (
+                  WHERE t.realized_pnl_home IS NOT NULL)::int AS priced,
+                sum(CASE WHEN t.from_currency = $6 THEN t.input_amount
+                         WHEN t.to_currency   = $6 THEN t.output_amount
+                         ELSE NULL END) AS volume_home
+           FROM ledger_transactions t
+           LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+          WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
+            AND t.workspace_id=$4 AND t.till_id=$5
+            AND r.reversal_id IS NULL
+            AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
+            AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
+          GROUP BY t.actor_id
+          ORDER BY t.actor_id`,
+        [...tillScope(actor), home, window.from ?? null, window.to ?? null],
+      );
+
       /* "Which currencies did we make money on" — the question
          docs/COST_BASIS.md says the whole business turns on. Realized P&L
          belongs to the currency that LEFT the desk, because that is the
@@ -186,6 +229,23 @@ export class LedgerReportingService {
         pricedDeals: Number(row.priced),
         firstPostedAt: row.first_at ? new Date(row.first_at).toISOString() : null,
         lastPostedAt: row.last_at ? new Date(row.last_at).toISOString() : null,
+        byActor: byActor.rows.map((item) => {
+          const actorFees = item.fees_home == null ? null : money(item.fees_home);
+          const actorRealized =
+            item.realized_home == null ? null : money(item.realized_home);
+          return {
+            actorId: String(item.actor_id),
+            deals: Number(item.deals),
+            volumeHome: item.volume_home == null ? null : money(item.volume_home),
+            feesHome: actorFees,
+            realizedPnlHome: actorRealized,
+            earningsHome:
+              actorFees === null && actorRealized === null
+                ? null
+                : money(new Decimal(actorFees ?? 0).add(actorRealized ?? 0)),
+            pricedDeals: Number(item.priced),
+          };
+        }),
         byCurrency: byCurrency.rows.map((item) => ({
           currency: String(item.currency).trim(),
           deals: Number(item.deals),
@@ -475,8 +535,56 @@ export class LedgerReportingService {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
       const pack = await resolvePack(client, actor.legalEntityId);
+      /* THE FORMS THIS DESK HAS TO FILE, AND WHERE THEY GO.
+         `jurisdiction_reports` has carried this since migration 012 and
+         nothing served it, so the filing worksheet went on printing "FWR"
+         — the name of Canada's portal — as the place a Dubai desk pastes
+         its goAML report, and "7-digit FINTRAC ID" as the hint on a field
+         a London desk fills with something else entirely.
+         `filingFormat` is the regulator's own words for how the completed
+         report is submitted, and it is null when the pack does not say. A
+         screen with no filing format names no portal; naming the wrong
+         country's is how this went wrong. Highest version of each code
+         wins, for the same reason report-filings.ts resolves that way: a
+         revised form is a new version, not a restatement. */
+      const reports = await client.query(
+        `SELECT DISTINCT ON (code)
+                code, name, kind, trigger_threshold, trigger_currency,
+                aggregation_hours, filing_format, fields, format_rules, version
+           FROM jurisdiction_reports
+          WHERE pack_id=$1
+          ORDER BY code, version DESC`,
+        [pack.packId],
+      );
       await client.query("COMMIT");
-      return { pack };
+      return {
+        pack,
+        reports: reports.rows.map((row) => ({
+          code: String(row.code),
+          name: String(row.name),
+          kind: String(row.kind),
+          triggerThreshold:
+            row.trigger_threshold == null ? null : money(row.trigger_threshold),
+          triggerCurrency:
+            row.trigger_currency == null
+              ? null
+              : String(row.trigger_currency).trim().toUpperCase(),
+          aggregationHours:
+            row.aggregation_hours == null ? null : Number(row.aggregation_hours),
+          filingFormat: row.filing_format == null ? null : String(row.filing_format),
+          /* Seeded EMPTY on purpose for every pack — migration 012 says
+             why, and it is worth restating where a client can see it: a
+             transcribed form is somebody else's paperwork and a guessed
+             one looks official while being wrong. An empty list means
+             "not transcribed yet", and a screen must render that as a
+             gap rather than as a form with no fields. */
+          fields: Array.isArray(row.fields) ? row.fields : [],
+          formatRules:
+            row.format_rules && typeof row.format_rules === "object"
+              ? row.format_rules
+              : {},
+        })),
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

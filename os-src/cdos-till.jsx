@@ -8,7 +8,12 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, crossRate, perCadLive, TODAY, dDiff, STAFF } = window.CDOS;
+  /* `TODAY` is deliberately not imported here. It is a wall-clock snapshot
+     taken when the page loaded, and every date on this screen is a TRADING
+     DAY — the till session's `business_date`, which the server decides. A
+     drawer counted at 00:20 belongs to the session that was open, not to the
+     calendar. See the note on wallClock/businessDate in cdos-base.jsx. */
+  const { CD, Ic, fmt, num, crossRate, perCadLive, dDiff, STAFF } = window.CDOS;
 
   // denominations per currency — { v: face value in that ccy, t: 'bill' | 'coin' }
   const DEN = {
@@ -25,7 +30,14 @@
   const CCYS = Object.keys(DEN);
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const denLabel = (v) => v >= 1 ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : (Math.round(v * 100) + '¢');
-  const cadOf = (amt, ccy) => ccy === 'CAD' ? amt : amt / (crossRate('CAD', ccy) || 1);
+  /* `cadOf` stood here — a module-level conversion into Canadian dollars,
+     used by every total on this screen. It is gone. The rate board is quoted
+     in units per CANADIAN dollar (`PER_CAD`), so a conversion built on it
+     can only produce a total for a desk whose books are kept in that
+     currency; everywhere else it produced a Canadian figure and the screen
+     printed a Canadian symbol in front of it. What replaced it is `homeOf`
+     inside TillDrawer, which returns NULL where it cannot answer, and every
+     total on this screen checks. See docs/ABSENT_FIGURES.md. */
   const HKEY = 'cdos_till_history_v2', CKEY = 'cdos_till_counts';
   const SHIFT_KEY = 'cdos_till_operator_v1', HANDOFF_KEY = 'cdos_till_handoffs_v1';
   const shiftStamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
@@ -34,23 +46,30 @@
   const personOf = (id) => String(id || '').split(':').pop() || '—';
   const clockOf = (ms) => ms ? new Date(ms).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-  /* seed a year of plausible daily history once, so the owner can scroll back */
-  function seedHistory() {
-    try { const ex = JSON.parse(localStorage.getItem(HKEY) || 'null'); if (ex && Object.keys(ex).length > 30) return ex; } catch (e) {}
-    const hist = {};
-    const base = { CAD: 238500, USD: 84000, EUR: 31000, GBP: 6400, PHP: 1760000, INR: 4180000, CNY: 96000, MXN: 372000, AED: 61500 };
-    const start = new Date(TODAY); start.setDate(start.getDate() - 364);
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      const wd = d.getDay(); if (wd === 0) continue; // closed Sundays
-      const key = d.toISOString().slice(0, 10);
-      const wob = (seed) => 0.78 + ((Math.sin(seed * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.5;
-      const byCcy = {}; let grand = 0;
-      CCYS.forEach((c, ci) => { if (!base[c]) return; const amt = Math.round(base[c] * wob(i * 9 + ci)); byCcy[c] = amt; grand += cadOf(amt, c); });
-      hist[key] = { byCcy, grand: Math.round(grand), at: key + ' 17:30', by: 'System' };
-    }
-    try { localStorage.setItem(HKEY, JSON.stringify(hist)); } catch (e) {}
-    return hist;
+  /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
+
+     `seedHistory()` stood here. On first open of the Cash Drawer it wrote
+     a YEAR of invented daily counts into `cdos_till_history_v2` —
+     CAD 238,500, USD 84,000, EUR 31,000 and six more, wobbled by a sine
+     function, one row per non-Sunday, including a row for today.
+
+     It was there so the History tab would have something to scroll. What
+     it actually did was become a second book, and the End-of-Day Sign-Off
+     read out of it: the sheet's "Counted" column was this map, so a desk
+     that had counted nothing printed a full drawer against the ledger's
+     real balances and a variance in the hundreds of thousands, above two
+     signature lines. See docs/CASH_OWNERSHIP_INVARIANTS.md — two books do
+     not crash, they disagree.
+
+     So there is no seed. A drawer that has been counted has rows here; a
+     drawer that has not is empty, and the History tab says so. The
+     authoritative record of a count is the ledger's anyway
+     (`ledger_till_counts`, reachable as `latestCounts` on
+     GET /api/ledger/till-session); this local map is a convenience for
+     the count sheet and nothing on a generated document may read it. */
+  function loadHistory() {
+    try { const saved = JSON.parse(localStorage.getItem(HKEY) || 'null'); return (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {}; }
+    catch (e) { return {}; }
   }
 
   /* One denomination row. Hoisted to module scope (NOT defined inside
@@ -83,11 +102,17 @@
     const [step, setStep] = useState('who');      // who → count? → done
     const [toName, setToName] = useState('');
     const [counts, setCounts] = useState(() => { const o = {}; expected.forEach(x => { o[x.ccy] = ''; }); return o; });
-    const cadOfLocal = (amt, ccy) => ccy === 'CAD' ? amt : amt / (crossRate('CAD', ccy) || 1);
+    /* A handoff variance is a cross-currency total, so it needs the same
+       care as everything else on this screen: it exists in the desk's own
+       money or it does not exist. */
+    const pack = window.CDOS.deskPack();
+    const homeCcy = (pack && pack.homeCurrency) || null;
+    const homeLocal = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? (+amt || 0) : (homeCcy === 'CAD' ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null);
+    const sumHome = (parts) => { const v = parts.map(([a, c]) => homeLocal(a, c)); return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null; };
     const to = roster.find(s => s.name === toName);
-    const expCad = expected.reduce((s, x) => s + cadOfLocal(x.units, x.ccy), 0);
-    const countedCad = expected.reduce((s, x) => s + cadOfLocal(counts[x.ccy] === '' ? x.units : (parseFloat(counts[x.ccy]) || 0), x.ccy), 0);
-    const variance = +(countedCad - expCad).toFixed(2);
+    const expHome = sumHome(expected.map(x => [x.units, x.ccy]));
+    const countedHome = sumHome(expected.map(x => [counts[x.ccy] === '' ? x.units : (parseFloat(counts[x.ccy]) || 0), x.ccy]));
+    const variance = expHome == null || countedHome == null ? null : +(countedHome - expHome).toFixed(2);
     const anyEntered = expected.some(x => counts[x.ccy] !== '' && counts[x.ccy] != null);
 
     const finish = (counted) => {
@@ -95,8 +120,9 @@
         id: 'ho' + Date.now(), tillId, tillName,
         from: current ? current.operator : '—', to: toName, toRole: to ? to.role : '',
         at: shiftStamp(), atMs: Date.now(), by: me.name,
-        counted, expectedCad: +expCad.toFixed(2),
-        countedCad: counted ? +countedCad.toFixed(2) : null,
+        counted, expectedHome: expHome == null ? null : +expHome.toFixed(2),
+        countedHome: counted && countedHome != null ? +countedHome.toFixed(2) : null,
+        currency: homeCcy,
         variance: counted ? variance : null
       };
       onDone(rec);
@@ -136,7 +162,13 @@
 
               {/* compact count: prefilled to expected, edit only what's off */}
               <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden' }}>
-                {expected.map((x, i) => { const val = counts[x.ccy] === '' ? '' : counts[x.ccy]; const cnt = val === '' ? x.units : (parseFloat(val) || 0); const dv = +(cadOfLocal(cnt, x.ccy) - cadOfLocal(x.units, x.ccy)).toFixed(2); const off = Math.abs(dv) > 0.005; return (
+                {expected.map((x, i) => { const val = counts[x.ccy] === '' ? '' : counts[x.ccy]; const cnt = val === '' ? x.units : (parseFloat(val) || 0); /* This row's own over/short. Measured in the drawer's own units when
+                     the desk's currency cannot price it — a variance nobody can
+                     express is still a variance, and hiding it would be worse
+                     than showing it in the currency it is actually in. */
+                  const home = homeLocal(cnt, x.ccy), exp = homeLocal(x.units, x.ccy);
+                  const dv = home == null || exp == null ? +(cnt - (x.units || 0)).toFixed(2) : +(home - exp).toFixed(2);
+                  const off = Math.abs(dv) > 0.005; return (
                   <div key={x.ccy} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                     <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{x.ccy}</span>
                     <span className="flex-1 text-[11px]" style={{ color: CD.mute }}>expected <b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(x.units)}</b></span>
@@ -144,9 +176,9 @@
                   </div>); })}
               </div>
 
-              <div className="flex items-center justify-between mt-3 px-3 py-2.5" style={{ background: Math.abs(variance) > 0.005 ? CD.flagSoft : CD.greenSoft, borderRadius: 10 }}>
-                <span className="text-[12px] font-medium" style={{ color: Math.abs(variance) > 0.005 ? CD.flag : CD.green }}>{anyEntered ? (Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), 'CAD')) : 'Not counted yet'}</span>
-                <span className="text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{fmt(countedCad, 'CAD')}</span>
+              <div className="flex items-center justify-between mt-3 px-3 py-2.5" style={{ background: variance != null && Math.abs(variance) > 0.005 ? CD.flagSoft : variance == null && anyEntered ? 'var(--cd-chip)' : CD.greenSoft, borderRadius: 10 }}>
+                <span className="text-[12px] font-medium" style={{ color: variance != null && Math.abs(variance) > 0.005 ? CD.flag : variance == null && anyEntered ? CD.mute : CD.green }}>{!anyEntered ? 'Not counted yet' : variance == null ? 'Counted — no single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)}</span>
+                <span className="text-[12px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{countedHome == null ? '—' : fmt(countedHome, homeCcy)}</span>
               </div>
             </div>
             <div className="px-5 py-3.5 flex items-center justify-between gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -176,6 +208,39 @@
     const [serverBalances, setServerBalances] = useState(null);
     const [serverSession, setServerSession] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
+    /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
+
+       This screen totalled every drawer "in CAD" and labelled it so — a
+       Canadian answer printed on a London desk's close-out, in front of a
+       pound sign. Home currency is the jurisdiction pack's to state, so it
+       is read from the pack and every total on this screen is labelled with
+       it. A desk whose pack has not arrived says the currency is unknown
+       rather than assuming one; see docs/ABSENT_FIGURES.md.
+
+       `dayEarned` is the trading day's earnings from GET /api/ledger/summary
+       — commission plus the margin each disposal actually booked. The close
+       used to compute this here, as `(mid - paid)` against a live market
+       rate, and store it on the day summary: on a desk with one voided deal
+       the closed banner read "Earned today $223.00". */
+    const deskFacts = window.CDOS.useDeskFacts();
+    const homeCcy = useMemo(() => {
+      const pack = window.CDOS.deskPack();
+      return (pack && pack.homeCurrency) || (window.CDOS.reportingLimit(settings) || {}).currency || null;
+    }, [settings, deskFacts]);
+    /* Every figure this screen totals is a sum across currencies, and a sum
+       across currencies needs a rate. The browser's board is quoted per
+       CANADIAN dollar, so it can only produce that sum for a desk whose
+       home currency IS the Canadian dollar. Elsewhere there is no total to
+       show and the screen says which currencies it is holding instead. */
+    const canTotal = homeCcy === 'CAD';
+    const homeOf = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? (+amt || 0) : (canTotal ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null);
+    const totalHome = (parts) => {
+      const values = parts.map(([amt, ccy]) => homeOf(amt, ccy));
+      return values.length && values.every(v => v != null) ? values.reduce((s, v) => s + v, 0) : null;
+    };
+    /* A total this screen cannot produce, said once. */
+    const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy);
+    const [dayBook, setDayBook] = useState({ loading: true, summary: null, error: '' });
     const [sessionErr, setSessionErr] = useState('');     // last failed till action, shown on screen
     const [tillBusy, setTillBusy] = useState('');         // 'open' | 'count' | 'close'
     /* The till picker below switches THIS DESK's local station — ids this
@@ -216,6 +281,17 @@
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
     };
+    /* What the till earned on the trading day it is in. Re-read whenever the
+       session changes, because the figure on a closed-out banner has to be
+       the one the ledger holds for the day that was just closed. */
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) { setDayBook({ loading: false, summary: null, error: 'this desk is not on the ledger' }); return; }
+      let live = true;
+      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
+        .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
+        .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      return () => { live = false; };
+    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
       return window.CDOS.Backend.loadTill().then(result => {
@@ -368,7 +444,10 @@
         setSessionErr(error.message || 'The ledger would not move this session to that till.');
       }
     };
-    const [ccy, setCcy] = useState('CAD');
+    /* Open on the desk's own currency where the pack has told us what it
+       is. This opened on CAD everywhere, which on a Dubai desk meant the
+       first drawer a teller saw was one they do not keep. */
+    const [ccy, setCcy] = useState(() => { const pack = window.CDOS.deskPack(); return (pack && CCYS.includes(pack.homeCurrency)) ? pack.homeCurrency : 'CAD'; });
     const [counts, setCounts] = useState(() => { try { return JSON.parse(localStorage.getItem(CKEY) || '{}') || {}; } catch (e) { return {}; } });
     const [quick, setQuick] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_quick') || '{}') || {}; } catch (e) { return {}; } });
     const [mode, setMode] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_till_mode') || '{}') || {}; } catch (e) { return {}; } });
@@ -380,7 +459,7 @@
     const [revealExp, setRevealExp] = useState({});
     const [confirmClose, setConfirmClose] = useState(false);
     const [, forceTick] = useState(0); // ticks every 30s so "x min ago" labels stay fresh
-    const [history, setHistory] = useState(seedHistory);
+    const [history, setHistory] = useState(loadHistory);
     // ---- shift operator (who's on the drawer) ----
     const tillId = (station && station.tillId) || 'main';
     // what to call this drawer in a log line: the ledger's name for it when
@@ -428,7 +507,7 @@
     const doHandoff = (rec) => {
       setHandoffs(h => [rec, ...h].slice(0, 200));
       setShifts(o => ({ ...o, [tillId]: { operator: rec.to, role: rec.toRole, since: rec.atMs } }));
-      log && log('Drawer handed off', `${tillNm} · ${rec.from} → ${rec.to}${rec.counted ? (Math.abs(rec.variance || 0) < 0.005 ? ' · counted ✓' : ' · counted · ' + (rec.variance > 0 ? '+' : '') + fmt(rec.variance, 'CAD')) : ' · no count'}`);
+      log && log('Drawer handed off', `${tillNm} · ${rec.from} → ${rec.to}${rec.counted ? (Math.abs(rec.variance || 0) < 0.005 ? ' · counted ✓' : ' · counted · ' + (rec.variance > 0 ? '+' : '') + fmtHome(rec.variance)) : ' · no count'}`);
       setHandoffOpen(false);
     };
     const sinceOperator = current && current.since ? (() => { const m = Math.round((Date.now() - current.since) / 60000); if (m < 1) return 'just now'; if (m < 60) return `${m} min`; const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; })() : '';
@@ -466,7 +545,7 @@
     const ccyTotal = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) || 0) : denTotal(c);
     const isCounted = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) > 0) : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
     const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
-    const grandCad = useMemo(() => countedCcys.reduce((s, c) => s + cadOf(ccyTotal(c), c), 0), [counts, quick, mode, countedCcys]);
+    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
 
     // expected float per currency — DERIVED from the one shared source of truth
     // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
@@ -510,13 +589,19 @@
     const persistLocalSnapshot = () => {
       const now = Date.now();
       const byCcy = {}; let grand = 0;
-      countedCcys.forEach(c => { const t = ccyTotal(c); byCcy[c] = t; grand += cadOf(t, c); });
-      const snap = { byCcy, grand: Math.round(grand), at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
-      setHistory(h => { const n = { ...h, [TODAY]: snap }; try { localStorage.setItem(HKEY, JSON.stringify(n)); } catch (e) {} return n; });
+      countedCcys.forEach(c => { const t = ccyTotal(c); byCcy[c] = t; });
+      const grandLocal = totalHome(countedCcys.map(c => [ccyTotal(c), c]));
+      /* Filed under the TRADING DAY, not the wall clock. A count taken at
+         00:20 on a session opened the previous evening belongs to that
+         session's business date, and filing it under the calendar date is
+         how a drawer's history came to show two rows for one count. */
+      const bookDate = (serverSession && serverSession.businessDate) || window.CDOS.businessDate();
+      const snap = { byCcy, grand: grandLocal == null ? null : Math.round(grandLocal), currency: homeCcy || null, at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
+      setHistory(h => { const n = { ...h, [bookDate]: snap }; try { localStorage.setItem(HKEY, JSON.stringify(n)); } catch (e) {} return n; });
       // remember each currency's saved count — the reconcile table shows this as
       // "last count": the amount that was on record, when, and by whom
       setLastSaved(o => { const n = { ...o }; countedCcys.forEach(c => { n[c] = { amt: ccyTotal(c), ts: now, by: me.name }; }); try { localStorage.setItem('cdos_till_lastcount_v1', JSON.stringify(n)); } catch (e) {} return n; });
-      log && log('Drawer counted', `${fmt(grand, 'CAD')} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
+      log && log('Drawer counted', `${grandLocal == null ? countedCcys.join(', ') : fmt(grandLocal, homeCcy)} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
       setSaved(true);
       savedTimer.current = setTimeout(() => setSaved(false), 1900);
     };
@@ -562,30 +647,65 @@
        Locally it stays the old derived list. */
     const reconCcys = serverBacked
       ? serverCcys
-      : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || ['CAD', 'USD'].includes(c));
+      : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
     const recon = reconCcys.map(c => { const expected = expectedOf(c); const counted = countedCcys.includes(c) ? ccyTotal(c) : null; const variance = counted == null ? null : counted - expected; return { c, expected, counted, variance }; });
     // counted here but not carried by the server ledger — recorded locally only,
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
     // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
-    const tolCad = Math.max(0, +((settings && settings.tillVarianceTol)) || 0);
-    const offOf = (r) => r.variance != null && Math.abs(cadOf(r.variance, r.c)) > tolCad + 0.005;
+    const tolHome = Math.max(0, +((settings && settings.tillVarianceTol)) || 0);
+    /* A drawer is "off" when its variance exceeds the owner's tolerance,
+       measured in the desk's own money. Where this screen cannot express the
+       variance in that money it falls back to the currency's own units — a
+       tolerance nobody can apply is not a reason to declare a drawer clean. */
+    const offOf = (r) => { if (r.variance == null) return false; const home = homeOf(r.variance, r.c); return Math.abs(home == null ? r.variance : home) > tolHome + 0.005; };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
-    const totalExpCad = recon.reduce((s, r) => s + cadOf(r.expected, r.c), 0);
-    const totalCountCad = recon.reduce((s, r) => s + (r.counted != null ? cadOf(r.counted, r.c) : 0), 0);
-    const totalVarCad = recon.reduce((s, r) => s + (r.variance != null ? cadOf(r.variance, r.c) : 0), 0);
+    /* Cross-currency totals for the reconcile footer. Null where any row
+       cannot be expressed in the desk's own money — a total quietly missing
+       two of nine currencies looks complete and is not. */
+    const totalExpHome = totalHome(recon.filter(r => r.expected != null).map(r => [r.expected, r.c]));
+    const totalCountHome = totalHome(recon.filter(r => r.counted != null).map(r => [r.counted, r.c]));
+    const totalVarHome = totalHome(recon.filter(r => r.variance != null).map(r => [r.variance, r.c]));
     const doClose = async () => {
-      const offSumCad = offRows.reduce((s, r) => s + cadOf(r.variance, r.c), 0);
-      // what the desk made today: fees + estimated FX spread, in CAD
-      const spreadOf = (r) => { const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy); const d = mid - (+r.outAmt || 0); return d > 0 ? d / (perCadLive(r.outCcy) || 1) : 0; };
-      const dayRows = rows.filter(r => r.date === TODAY);
-      const earned = dayRows.reduce((s, r) => s + (+r.fee || 0) + spreadOf(r), 0);
-      const summary = { txns: dayRows.length, ccys: recon.length, counted: countedN, offCount: offRows.length, offSum: Math.round(offSumCad), grand: Math.round(grandCad), earned: Math.round(earned), note: offRows.length ? `${offRows.length} drawer(s) off · ${fmt(offSumCad, 'CAD')} net` : 'All counted drawers balanced' };
+      const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
+      /* WHAT THE DESK MADE TODAY IS NOT THIS SCREEN'S TO WORK OUT.
+
+         What stood here summed `(inAmt × mid) − outAmt` over the browser's
+         copy of the day's rows and called it earnings. That is a spread
+         against a market mid, which is a different number from what the
+         desk earned — the desk earns what the disposal booked against the
+         stock's own cost (docs/COST_BASIS.md) — and it was summed over
+         `r.date === TODAY`, the WALL CLOCK, on a screen whose whole subject
+         is the business date. On a till with one voided $1,000 deal the
+         closed banner read "Earned today $223.00".
+
+         The figure now comes from GET /api/ledger/summary over the trading
+         day, and is null when the book has nothing to say. It is carried on
+         the summary as `earnedHome` with its currency beside it, so nothing
+         downstream can render it as a bare dollar amount. */
+      const book = dayBook.summary;
+      const earnedHome = book && book.earningsHome != null ? Number(book.earningsHome) : null;
+      const summary = {
+        txns: book ? book.posted : null,
+        reversed: book ? book.reversed : null,
+        ccys: recon.length,
+        counted: countedN,
+        offCount: offRows.length,
+        offSum: offSumHome == null ? null : Math.round(offSumHome),
+        grand: grandHome == null ? null : Math.round(grandHome),
+        earnedHome,
+        earnedCurrency: (book && book.homeCurrency) || homeCcy || null,
+        earnedWhy: book ? (earnedHome == null ? 'nothing posted on this trading day' : null) : (dayBook.error || 'the ledger could not be reached'),
+        businessDate: (serverSession && serverSession.businessDate) || window.CDOS.businessDate(),
+        note: offRows.length
+          ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}`
+          : 'All counted drawers balanced',
+      };
       if (serverBacked) {
         if (!serverSession || serverSession.status !== 'open') {
           throw new Error('There is no open till session to close. Reload the drawer.');
@@ -629,7 +749,21 @@
 
     /* ---------------- HISTORY ---------------- */
     const histKeys = useMemo(() => Object.keys(history).sort().reverse(), [history]);
-    const histSeries = useMemo(() => Object.keys(history).sort().slice(-90).map(k => history[k].grand), [history]);
+    /* Days whose total this desk cannot express in its own money are left
+       OUT of the sparkline rather than plotted as zero — a dip to nothing on
+       a chart of cash held is a story, and it would be a false one. */
+    const histSeries = useMemo(() => Object.keys(history).sort().slice(-90).map(k => history[k].grand).filter(v => v != null), [history]);
+
+    /* The close-out banner's three figures, each with the reason it is
+       absent when it is. The ledger is asked directly rather than trusting
+       what the close stored, so a screen reopened days later still shows the
+       book's answer for that trading day rather than a frozen copy. */
+    const closedBook = dayBook.summary;
+    const closedEarned = closedBook && closedBook.earningsHome != null ? Number(closedBook.earningsHome)
+      : (day.summary && day.summary.earnedHome != null ? Number(day.summary.earnedHome) : null);
+    const closedEarnedCcy = (closedBook && closedBook.homeCurrency) || (day.summary && day.summary.earnedCurrency) || homeCcy;
+    const closedEarnedWhy = dayBook.error || (day.summary && day.summary.earnedWhy) || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
+    const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
 
@@ -668,10 +802,10 @@
               // server-backed, the drawer holds what the LEDGER says it holds —
               // the local rail figure is a demo store and would quietly disagree
               const _tc = serverBacked
-                ? (serverBalances ? serverCcys.reduce((s, c) => s + cadOf(Number(serverBalances[c]), c), 0) : null)
+                ? (serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null)
                 : (_tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null);
               return (<>
-                {_tc != null && <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmt(_tc, 'CAD')}</b></span>}
+                {_tc != null && <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
                 {/* the drawer's own end of the cash rail — same modal, same
                     ledger movement, preset to this branch and this till */}
                 {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
@@ -805,7 +939,7 @@
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
                 <input type="number" autoFocus value={quick[ccy] ?? ''} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
               </div>
-              {ccy !== 'CAD' && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(cadOf(parseFloat(quick[ccy]) || 0, ccy), 'CAD')}</div>}
+              {ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy)}</div>}
             </div>
           ) : (
           <div className="grid md:grid-cols-2 gap-x-5 gap-y-0">
@@ -835,13 +969,13 @@
                     {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
                   </button>
-                  {ccy !== 'CAD' && isCounted(ccy) && <span>· ≈ {fmt(cadOf(ccyTotal(ccy), ccy), 'CAD')}</span>}
+                  {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
                 </div>
                 <div className="text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
               </div>
               <div className="text-right flex-none">
-                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer · CAD</div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{fmt(grandCad, 'CAD')}</div>
+                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''}>{fmtHome(grandHome)}</div>
                 <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
               </div>
             </div>
@@ -849,23 +983,36 @@
           </div>
         </div>)}
 
+        {/* THE CLOSED-OUT FIGURES. Read from the ledger for the trading day,
+            with the day summary the close wrote as a fallback — and both are
+            allowed to be absent. `day.summary.earned` (a browser-derived
+            spread) is deliberately NOT consulted: the close no longer writes
+            it, and an old one left in localStorage is exactly the stale
+            second figure this pass exists to remove. */}
         {/* ===== RECONCILE / CLOSE ===== */}
         {tab === 'reconcile' && (bookClosed ? (<div className="p-5 flex flex-col" style={{ minHeight: '100%' }}>
           {/* pleasant green closed banner */}
           <div className="flex items-start gap-3 p-4" style={{ background: CD.greenSoft, border: `1px solid ${CD.green}`, borderRadius: 14 }}>
             <span className="grid place-items-center flex-none" style={{ width: 40, height: 40, background: CD.green, borderRadius: 11 }}><Ic n="checkcircle" s={21} c="var(--cd-on-ink)" /></span>
             <div className="flex-1">
-              <div className="text-[15px] font-semibold" style={{ color: '#1c5c3a' }}>Day {day.num || 1} closed — nicely done</div>
-              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? new Date(serverSession.closedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '') : (day.closedAt || '')}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
+              <div className="text-[15px] font-semibold" style={{ color: '#1c5c3a' }}>{serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`} closed — nicely done</div>
+              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? new Date(serverSession.closedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '') : (day.closedAt || '')}{(serverBacked && serverSession) ? ` · trading day ${serverSession.businessDate}` : ''}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
             </div>
-            {(day.summary && day.summary.earned != null) && <div className="text-right flex-none">
+            {/* EARNED TODAY, FROM THE BOOK — and absent when the book has no
+                answer. This tile read "$223.00" for a till whose only deal
+                had been voided, because the figure beside it was summed here
+                against a market mid over the wall-clock date. */}
+            <div className="text-right flex-none">
               <div className="text-[10px] uppercase tracking-widest" style={{ color: '#3a7a56', fontFamily: 'Space Mono, monospace' }}>Earned today</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#1c5c3a', fontVariantNumeric: 'tabular-nums' }}>{fmt(day.summary.earned, 'CAD')}</div>
-            </div>}
+              {closedEarned == null
+                ? <div style={{ fontSize: 22, fontWeight: 800, color: '#7a9a89', fontVariantNumeric: 'tabular-nums' }} title={closedEarnedWhy}>—</div>
+                : <div style={{ fontSize: 22, fontWeight: 800, color: '#1c5c3a', fontVariantNumeric: 'tabular-nums' }}>{fmt(closedEarned, closedEarnedCcy)}</div>}
+              <div className="text-[10px]" style={{ color: '#3a7a56' }}>{closedEarned == null ? closedEarnedWhy : 'commission + realized margin'}</div>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3 mt-4">
-            <Kpi label="Drawer value" value={fmt((day.summary && day.summary.grand) || grandCad, 'CAD')} />
-            <Kpi label="Transactions" value={`${(day.summary && day.summary.txns) ?? rows.filter(r => r.date === TODAY).length}`} />
+            <Kpi label={`Drawer value${homeCcy ? ' · ' + homeCcy : ''}`} value={fmtHome((day.summary && day.summary.grand != null) ? day.summary.grand : grandHome)} />
+            <Kpi label="Transactions" value={closedTxns == null ? '—' : `${closedTxns}`} sub={closedTxns == null ? (dayBook.error || 'the ledger has no answer') : (dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null)} />
             <Kpi label="Drawers off" value={(day.summary && day.summary.offCount) || 0} tone={((day.summary && day.summary.offCount) || 0) > 0 ? CD.flag : CD.green} sub={(day.summary && day.summary.note) || 'balanced'} />
           </div>
 
@@ -904,7 +1051,7 @@
                 <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : '— never'}</td>
                 <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
-              </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{num(totalExpCad)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(totalCountCad)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: Math.abs(totalVarCad) <= tolCad + 0.005 ? CD.green : CD.flag }}>{(totalVarCad > 0 ? '+' : '') + num(totalVarCad)}</td></tr></tfoot></table>
+              </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot></table>
           </div>
           <div className="flex items-center gap-3 mt-3">
             {canCloseDay
@@ -961,32 +1108,32 @@
                         <div className="text-[12.5px]" style={{ color: CD.ink }}><b>{h.from}</b> <span style={{ color: CD.faint }}>→</span> <b>{h.to}</b>{h.tillName ? <span className="text-[11px]" style={{ color: CD.faint }}> · {h.tillName}</span> : null}</div>
                         <div className="text-[10.5px]" style={{ color: CD.faint }}>{h.at} · by {h.by}</div>
                       </div>
-                      <span className="text-[11px] flex-none text-right" style={{ fontFamily: 'Space Mono, monospace', color: h.counted ? (Math.abs(h.variance || 0) < 0.005 ? CD.green : CD.flag) : CD.mute }}>{h.counted ? (Math.abs(h.variance || 0) < 0.005 ? '✓ balanced' : (h.variance > 0 ? '+' : '') + fmt(h.variance, 'CAD')) : 'no count'}</span>
+                      <span className="text-[11px] flex-none text-right" style={{ fontFamily: 'Space Mono, monospace', color: h.counted ? (Math.abs(h.variance || 0) < 0.005 ? CD.green : CD.flag) : CD.mute }}>{h.counted ? (Math.abs(h.variance || 0) < 0.005 ? '✓ balanced' : (h.variance > 0 ? '+' : '') + fmtHome(h.variance)) : 'no count'}</span>
                     </div>))}
                 </div>}
           </div>
           {viewDay ? (<div>
             <button onClick={() => setViewDay(null)} className="flex items-center gap-1.5 text-[12px] mb-3" style={{ color: CD.mute }}><Ic n="arrowleft" s={14} /> All days</button>
-            <div className="text-sm font-semibold mb-1" style={{ color: CD.ink }}>{viewDay} · {fmt(history[viewDay].grand, 'CAD')}</div>
+            <div className="text-sm font-semibold mb-1" style={{ color: CD.ink }}>{viewDay}{history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)}</div>
             <div className="text-[11px] mb-3" style={{ color: CD.faint }}>Counted by {history[viewDay].by} · {history[viewDay].at}</div>
             <div className="grid sm:grid-cols-2 gap-2">
-              {Object.entries(history[viewDay].byCcy).sort((a, b) => cadOf(b[1], b[0]) - cadOf(a[1], a[0])).map(([c, amt]) => (
+              {Object.entries(history[viewDay].byCcy).sort((a, b) => (homeOf(b[1], b[0]) || 0) - (homeOf(a[1], a[0]) || 0)).map(([c, amt]) => (
                 <div key={c} className="flex items-center justify-between px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 9 }}>
                   <span className="flex items-center gap-2 text-sm" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span> {c}</span>
-                  <span className="text-right"><span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(amt)}</span> {c !== 'CAD' && <span className="text-[11px]" style={{ color: CD.mute }}> · {fmt(cadOf(amt, c), 'CAD')}</span>}</span>
+                  <span className="text-right"><span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(amt)}</span> {c !== homeCcy && homeOf(amt, c) != null && <span className="text-[11px]" style={{ color: CD.mute }}> · {fmt(homeOf(amt, c), homeCcy)}</span>}</span>
                 </div>))}
             </div>
           </div>) : (<div>
             {/* 90-day trend */}
             <div className="p-4 mb-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-              <div className="flex items-center justify-between mb-2"><span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Drawer value · last 90 days</span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, fontWeight: 700, color: CD.ink }}>{fmt(histSeries[histSeries.length - 1] || 0, 'CAD')}</span></div>
+              <div className="flex items-center justify-between mb-2"><span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Drawer value · last 90 days</span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, fontWeight: 700, color: CD.ink }}>{fmtHome(histSeries[histSeries.length - 1])}</span></div>
               <HistChart data={histSeries} />
             </div>
             <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
               <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Date</th><th className="px-3 py-2 text-right">Total (CAD)</th><th className="px-3 py-2">Currencies</th><th className="px-3 py-2">Counted by</th></tr></thead>
                 <tbody>{histKeys.slice(0, 60).map(k => { const h = history[k]; return (<tr key={k} onClick={() => setViewDay(k)} className="cursor-pointer" style={{ borderTop: `1px solid ${CD.lineSoft}` }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cd-paper-soft)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td className="px-3 py-2 font-medium" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{k}{k === TODAY && <span className="ml-2 text-[9px] px-1.5 py-0.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 4, fontFamily: 'Space Mono, monospace' }}>TODAY</span>}</td>
-                  <td className="px-3 py-2 text-right font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(h.grand, 'CAD')}</td>
+                  <td className="px-3 py-2 font-medium" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{k}{k === ((serverSession && serverSession.businessDate) || window.CDOS.businessDate()) && <span className="ml-2 text-[9px] px-1.5 py-0.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 4, fontFamily: 'Space Mono, monospace' }}>TODAY</span>}</td>
+                  <td className="px-3 py-2 text-right font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{h.grand == null ? '—' : fmt(h.grand, h.currency || homeCcy)}</td>
                   <td className="px-3 py-2" style={{ color: CD.mute }}>{Object.keys(h.byCcy).length}</td>
                   <td className="px-3 py-2" style={{ color: CD.mute }}>{h.by}</td>
                 </tr>); })}</tbody></table>
@@ -1015,7 +1162,7 @@
                 <td className="py-1.5 text-right text-[11px]" style={{ color: ts ? CD.mute : CD.faint }}>{ts ? `${sinceLabel(ts)} · ${atLabel(ts)}` : '—'}</td>
                 <td className="py-1.5 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
               </tr>); })}</tbody>
-              <tfoot><tr style={{ borderTop: `2px solid ${CD.line}` }}><td className="py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td><td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{num(totalExpCad)}</td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{num(totalCountCad)}</td><td></td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: Math.abs(totalVarCad) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{(totalVarCad > 0 ? '+' : '') + num(totalVarCad)}</td></tr></tfoot>
+              <tfoot><tr style={{ borderTop: `2px solid ${CD.line}` }}><td className="py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td></td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot>
             </table>
             {countedN < recon.length && <div className="mt-3 text-[11.5px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>{recon.length - countedN} drawer(s) not counted yet — they'll lock at expected with no variance. Go back and count them first if you want a true close.</div>}
           </div>
@@ -1025,7 +1172,7 @@
           </div>
         </div>
       </div>)}
-      {handoffOpen && <HandoffModal tillId={tillId} tillName={tillNm} current={current} roster={roster} me={me} requireCount={requireCount} expected={CCYS.map(c => ({ ccy: c, units: expectedOf(c) })).filter(x => Math.abs(x.units) > 0.005 || x.ccy === 'CAD')} onClose={() => setHandoffOpen(false)} onDone={doHandoff} />}
+      {handoffOpen && <HandoffModal tillId={tillId} tillName={tillNm} current={current} roster={roster} me={me} requireCount={requireCount} expected={CCYS.map(c => ({ ccy: c, units: expectedOf(c) })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy)} onClose={() => setHandoffOpen(false)} onDone={doHandoff} />}
     </div>);
   }
 

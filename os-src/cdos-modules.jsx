@@ -9,6 +9,13 @@
   const { useState, useMemo, useRef, useEffect } = React;
   const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff } = window.CDOS;
 
+
+  /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
+     Canadian dollars on every desk in every country. Home currency belongs
+     to the jurisdiction pack; where no pack has arrived the amount is shown
+     with no currency word rather than with the wrong one. Evaluated per
+     call, because the pack lands from the server after this file parses. */
+  const homeCcy = () => { const pack = window.CDOS.deskPack(); return (pack && pack.homeCurrency) || (window.CDOS.reportingLimit(null) || {}).currency || null; };
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -27,7 +34,11 @@
        chose is not the safe direction, it is noise that gets ignored. */
     const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null) || { aggHours: 24 };
     const TH = reportingLimit(settings).amount;
-    const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
+    /* The deal's size in the desk's own money, or nothing. The board is
+       quoted per Canadian dollar so it can only answer for a Canadian desk;
+       a receipt that printed a Canadian figure under a foreign symbol is
+       the thing this replaces. */
+    const cadIn = (r) => { const home = homeCcy(); if (!home) return null; if (r.inCcy === home) return Number(r.inAmt) || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', r.inCcy); return rate ? (Number(r.inAmt) || 0) / rate : null; };
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
@@ -363,7 +374,7 @@
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k="Rate" v={row.rate} /><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={fmt(row.fee, 'CAD')} />
+          <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k="Rate" v={row.rate} /><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'} />}
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}

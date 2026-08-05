@@ -38,7 +38,14 @@
   })();
   const T = {}; Object.keys(T_THEMES.light).forEach(k => { T[k] = 'var(--dt-' + k + ')'; });
   const money0 = (v) => (v < 0 ? '−' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-CA');
-  const cadOf = (a, ccy) => ccy === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', ccy) || 1);
+  /* The desk's own currency, and a conversion into it that refuses to
+     guess. The rate board is quoted in units per CANADIAN dollar, so this
+     can only answer for a desk that keeps its books in that currency —
+     everywhere else it returns null and the panel shows the figure as
+     absent rather than as a Canadian number under a foreign symbol. */
+  const homeCcy = () => { const pack = window.CDOS.deskPack(); return (pack && pack.homeCurrency) || (window.CDOS.reportingLimit(null) || {}).currency || null; };
+  const homeOf = (a, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return +a || 0; if (home !== 'CAD') return null; const r = crossRate('CAD', ccy); return r ? (+a || 0) / r : null; };
+  const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
   const flagEmoji = (code) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(c => c.code === code) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
 
@@ -188,7 +195,7 @@
     }, [range, serverBacked, cashVersion, deskFacts]);
 
     const summary = book.summary;
-    const home = (summary && summary.homeCurrency) || (book.position && book.position.homeCurrency) || 'CAD';
+    const home = (summary && summary.homeCurrency) || (book.position && book.position.homeCurrency) || homeCcy() || 'CAD';
     /* What the desk EARNED: commission plus the realized margin the
        disposal itself booked. Not a spread against a market mid — see
        docs/COST_BASIS.md. Null means the ledger has nothing to total,
@@ -241,18 +248,18 @@
       const live = rows.filter(r => r.status !== 'void' && inWindow(r.date));
 
       const cl = {};
-      live.forEach(r => { const k = r.customer || '—'; const c = cl[k] || (cl[k] = { name: k, vol: 0, earn: 0, n: 0 }); c.vol += cadOf(r.inAmt, r.inCcy); c.earn += earnOf(r); c.n++; });
+      live.forEach(r => { const k = r.customer || '—'; const c = cl[k] || (cl[k] = { name: k, vol: 0, earn: 0, n: 0 }); c.vol += (homeOf(r.inAmt, r.inCcy) || 0); c.earn += earnOf(r); c.n++; });
       const topClients = Object.values(cl).sort((a, b) => b.vol - a.vol).slice(0, 5);
       const tl = {}; live.forEach(r => { tl[r.teller || '—'] = (tl[r.teller || '—'] || 0) + earnOf(r); });
       const tellers = Object.entries(tl).sort((a, b) => b[1] - a[1]);
-      const corrM = {}; live.forEach(r => { const k = r.inCcy + ' → ' + r.outCcy; const c = corrM[k] || (corrM[k] = { route: k, vol: 0, n: 0 }); c.vol += cadOf(r.inAmt, r.inCcy); c.n++; });
+      const corrM = {}; live.forEach(r => { const k = r.inCcy + ' → ' + r.outCcy; const c = corrM[k] || (corrM[k] = { route: k, vol: 0, n: 0 }); c.vol += (homeOf(r.inAmt, r.inCcy) || 0); c.n++; });
       const corridors = Object.values(corrM).sort((a, b) => b.vol - a.vol).slice(0, 5);
 
       const flags = computeFlags(rows, clients, settings);
       let rptOpen = 0, rptFiled = 0; const strSet = new Set(), kycSet = new Set();
       live.forEach(r => { const f = flags[r.id] || {}; if (f.single) { r.filed ? rptFiled++ : rptOpen++; } if (f.str && !r.ackStr) strSet.add(r.customer); if (f.kyc && f.kyc !== 'ok') kycSet.add(r.customer); });
       const recent = [...live].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 6);
-      const movers = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD').map(c => ({ code: c.code, flag: c.flag, chg: +c.chg || 0 })).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).slice(0, 6);
+      const movers = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== homeCcy()).map(c => ({ code: c.code, flag: c.flag, chg: +c.chg || 0 })).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).slice(0, 6);
 
       const bmode = (winDays == null || winDays > 180) ? 'month' : winDays > 31 ? 'week' : 'day';
       const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -271,7 +278,7 @@
       const transfers = J('cdos_transfers_v1', []), cheques = J('cdos_cheques_v1', []), beneficiaries = J('cdos_beneficiaries_v1', []);
       const tInProg = transfers.filter(t => t.status !== 'paid' && t.status !== 'cancelled').length;
       const tHold = transfers.filter(t => t.status === 'hold').length;
-      const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')), 0);
+      const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)), 0);
       const chRisk = cheques.filter(c => c.status === 'held').reduce((s, c) => s + (+c.netCad || 0), 0);
       const chOverdue = cheques.filter(c => c.status === 'held' && c.holdUntil < businessDate()).length;
       const chLoss = cheques.filter(c => c.status === 'returned').reduce((s, c) => s + (+c.netCad || 0), 0);
@@ -288,7 +295,7 @@
       let sanc = 0;
       if (comp) { Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? { threshold: limit.amount } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= limit.amount).length;
+      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
       return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, sanc, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
@@ -549,7 +556,7 @@
                   <span className="grid place-items-center flex-none" style={{ width: 24, height: 24, borderRadius: '50%', background: T.wash, color: T.slate, fontSize: 9, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{initials(r.customer)}</span>
                   <span className="text-[12px] font-medium truncate" style={{ color: CD.ink, flex: 1, minWidth: 0 }}>{r.customer}</span>
                   <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 11.5, color: T.steel, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{num(r.inAmt)} {r.inCcy} <span style={{ color: T.bronze }}>→</span> <span style={{ color: T.green }}>{num(r.outAmt)} {r.outCcy}</span></span>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: T.bronze, width: 54, textAlign: 'right' }}>+{fmt(r.fee, 'CAD')}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 11, color: T.bronze, width: 54, textAlign: 'right' }}>+{fmtHome(r.fee)}</span>
                 </button>
               ))}
             </div>

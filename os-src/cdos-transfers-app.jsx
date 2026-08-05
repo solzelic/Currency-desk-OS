@@ -6,7 +6,23 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate, reportingLimit } = window.CDOS;
+  const { CD, Ic, fmt, num, crossRate, reportingLimit, deskPack, businessDate } = window.CDOS;
+  /* THE DESK'S OWN MONEY, AND ITS OWN REGULATOR.
+
+     Every figure in this module was labelled CAD. The transfer store keeps
+     the local leg of a send in the desk's own currency — which is what
+     `payAmt` has always been — so labelling it "CAD" was correct on one
+     desk and a foreign symbol against a domestic number on every other.
+     The label now comes from the jurisdiction pack, and where no pack has
+     arrived the amount is shown with no currency word rather than with the
+     wrong one. */
+  const homeCcy = () => { const p = deskPack(); return (p && p.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
+  const fmtHome = (v) => { const c = homeCcy(); return c ? fmt(v, c) : num(v); };
+  const authority = () => { const p = deskPack(); return (p && p.regulator) || null; };
+  /* The cross-border report this desk owes, as the pack names it. Canada's
+     is the EFTR; other jurisdictions call it other things, and a pack that
+     carries no wire report means this desk has none to name. */
+  const wireReport = () => { const p = deskPack(); return (p && p.reportName) || null; };
   const T = window.CDOS._transfers;
   const { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load,
     FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, cadOf, flagOf,
@@ -126,7 +142,7 @@
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span style={{ fontSize: 22 }}>{c.flag}</span>
-                <div><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{c.country} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {c.ccy}</span></div><div className="text-[11px]" style={{ color: CD.mute }}>{c.partners.length} partner{c.partners.length === 1 ? '' : 's'}{vol[c.id] ? ` · ${fmt(vol[c.id], 'CAD')} sent` : ''}</div></div>
+                <div><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{c.country} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {c.ccy}</span></div><div className="text-[11px]" style={{ color: CD.mute }}>{c.partners.length} partner{c.partners.length === 1 ? '' : 's'}{vol[c.id] ? ` · ${fmtHome(vol[c.id])} sent` : ''}</div></div>
               </div>
               <button onClick={() => toggle(c.id)} className="w-11 h-6 relative flex-none" style={{ background: c.active ? CD.ink : 'var(--cd-disabled)', borderRadius: 999, transition: 'background .15s' }}><span className="absolute top-0.5 w-5 h-5" style={{ left: c.active ? 22 : 2, background: 'var(--cd-panel)', borderRadius: 999, transition: 'left .15s' }} /></button>
             </div>
@@ -153,7 +169,7 @@
     const print = () => {
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
       const biz = (settings.operatingName || settings.bizName) || 'CurrencyDesk';
-      const rows = eft.map(({ t, cad }) => { const c = corOf(t.corridor); return `<tr><td class="mono">${esc(t.ref)}</td><td>${esc(t.date)}</td><td class="b">${esc(t.senderName)}</td><td>${esc(t.direction === 'send' ? benName(t.beneficiaryId) : 'inbound')}</td><td>${esc(c.flag || '')} ${esc(c.country || '')}</td><td class="mut">${esc(t.partner)}</td><td class="r">${fmt(cad, 'CAD')}</td><td class="r">${num(t.recvAmt)} <span class="mut">${esc(t.ccy)}</span></td><td class="mut">${esc(t.purpose)}</td></tr>`; }).join('');
+      const rows = eft.map(({ t, cad }) => { const c = corOf(t.corridor); return `<tr><td class="mono">${esc(t.ref)}</td><td>${esc(t.date)}</td><td class="b">${esc(t.senderName)}</td><td>${esc(t.direction === 'send' ? benName(t.beneficiaryId) : 'inbound')}</td><td>${esc(c.flag || '')} ${esc(c.country || '')}</td><td class="mut">${esc(t.partner)}</td><td class="r">${esc(fmtHome(cad))}</td><td class="r">${num(t.recvAmt)} <span class="mut">${esc(t.ccy)}</span></td><td class="mut">${esc(t.purpose)}</td></tr>`; }).join('');
       const w = window.open('', '_blank', 'width=1000,height=1100'); if (!w) { log && log('EFT report blocked', 'Allow pop-ups'); return; }
       w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cross-border EFT report</title>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -165,34 +181,38 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
 .ft{margin-top:14px;font-size:10px;color:#999}@page{margin:13mm}</style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Cross-Border EFT Report</div></div>
 <div class="meta"><b>${esc(biz)}</b><div>${esc(settings.msbNumber || '')}</div><div>Generated ${esc(stamp())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
-<div class="note"><b>FINTRAC EFTR</b> — every international electronic funds transfer of ${fmt(threshold, 'CAD')} or more must be reported within five working days. This pack lists qualifying transfers for the period.</div>
-<div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${eft.length}</div></div><div class="kpi"><div class="l">Total value (CAD)</div><div class="v">${fmt(total, 'CAD')}</div></div><div class="kpi"><div class="l">Threshold</div><div class="v">${fmt(threshold, 'CAD')}</div></div></div>
-<table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">CAD value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
-<div class="ft">Generated by CurrencyDesk OS. Cross-border EFTs ≥ ${fmt(threshold, 'CAD')} (FINTRAC EFTR). Retain per record-retention policy.</div>
+<div class="note">${authority()
+  ? `<b>${esc(authority())} cross-border reporting</b> — international electronic funds transfers at or above this desk's reporting line must be reported to ${esc(authority())}. Confirm the deadline and the exact form in ${esc(authority())}'s own guidance; this desk does not assert it.`
+  : `<b>Cross-border reporting</b> — this desk's regulator is not stated on its jurisdiction pack, so no reporting obligation is asserted here. Install the pack for the country you operate in.`}
+${threshold == null ? ' No reporting line has been set for this desk, so nothing on this page is flagged as reportable.' : ` The line used below is ${esc(fmtHome(threshold))}.`}</div>
+<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Money transfers do not post to the server ledger yet (see docs/CASH_OWNERSHIP_INVARIANTS.md, "known scope limits"), so every figure on this page comes from this desk's own transfer records. It is not reconciled against the book and must not be treated as if it were.</div>
+<div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${threshold == null ? '—' : eft.length}</div></div><div class="kpi"><div class="l">Total value${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(total))}</div></div><div class="kpi"><div class="l">Reporting line</div><div class="v">${threshold == null ? '— not set' : esc(fmtHome(threshold))}</div></div></div>
+<table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">${esc(homeCcy() || 'Local')} value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
+<div class="ft">Generated by CurrencyDesk OS${threshold == null ? '' : `. Cross-border transfers ≥ ${esc(fmtHome(threshold))}`}${wireReport() ? ` (${esc(wireReport())})` : ''}. Retain per record-retention policy.</div>
 </body></html>`);
       w.document.close(); setTimeout(() => { w.focus(); w.print(); }, 400);
-      log && log('EFT report generated', `${eft.length} transfers · ${fmt(total, 'CAD')}`);
+      log && log('Cross-border transfer report generated', `${eft.length} transfers · ${fmtHome(total)}`);
     };
 
     return (<div className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Cross-border EFT report</div><div className="text-[11px]" style={{ color: CD.mute }}>International transfers ≥ {fmt(threshold, 'CAD')} — the FINTRAC EFTR filing.</div></div>
+        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Cross-border transfer report</div><div className="text-[11px]" style={{ color: CD.mute }}>{threshold == null ? 'No reporting line is set for this desk, so nothing is flagged.' : <>International transfers ≥ {fmtHome(threshold)}{authority() ? ` — the ${authority()} filing` : ''}.</>}</div></div>
         <button onClick={print} disabled={!eft.length} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: eft.length ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: eft.length ? 'pointer' : 'not-allowed' }}><Ic n="printer" s={15} c="var(--cd-on-ink)" /> Generate report</button>
       </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>Reportable</div><div className="text-xl font-bold" style={{ color: CD.ink }}>{eft.length}</div></div>
-        <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>Total value</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(total, 'CAD')}</div></div>
-        <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>Threshold</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(threshold, 'CAD')}</div></div>
+        <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>Total value</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(total)}</div></div>
+        <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>Reporting line</div><div className="text-xl font-bold" style={{ color: threshold == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{threshold == null ? '— not set' : fmtHome(threshold)}</div></div>
       </div>
       <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
-          <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left"><th className="px-3 py-2">Ref</th><th className="px-3 py-2">Sender</th><th className="px-3 py-2">Destination</th><th className="px-3 py-2 text-right">CAD value</th><th className="px-3 py-2">Status</th></tr></thead>
+          <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left"><th className="px-3 py-2">Ref</th><th className="px-3 py-2">Sender</th><th className="px-3 py-2">Destination</th><th className="px-3 py-2 text-right">{homeCcy() || 'Local'} value</th><th className="px-3 py-2">Status</th></tr></thead>
           <tbody>{eft.map(({ t, cad }) => { const c = corOf(t.corridor); return (
             <tr key={t.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <td className="px-3 py-2" style={{ fontFamily: 'Space Mono', fontSize: 11.5, color: CD.mute }}>{t.ref}</td>
               <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}>{t.senderName}</td>
               <td className="px-3 py-2" style={{ color: CD.mute }}>{c.flag} {c.country}</td>
-              <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{fmt(cad, 'CAD')}</td>
+              <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{fmtHome(cad)}</td>
               <td className="px-3 py-2"><StatusPill status={t.status} dir={t.direction} small /></td>
             </tr>); })}
             {!eft.length && <tr><td colSpan={5} className="px-3 py-8 text-center text-[12px]" style={{ color: CD.faint }}>No transfers reach the reporting threshold.</td></tr>}
@@ -224,10 +244,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 <div class="r"><span class="k">Destination</span><span>${esc(cor.flag || '')} ${esc(cor.country || '')}</span></div>
 <div class="r"><span class="k">Payout</span><span>${esc(window.CDOS._transfers.methodLabel(t.method))} · ${esc(t.partner)}</span></div>
 <div class="pin"><div class="l">Tracking PIN</div><div class="v">${esc(t.pin)}</div></div>
-<div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : 'CAD')}</div></div>
-<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? 'CAD' : t.ccy)}</span></div>
+<div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : (homeCcy() || ''))}</div></div>
+<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? (homeCcy() || '') : t.ccy)}</span></div>
 <div class="r"><span class="k">Rate</span><span>${num(t.rate)}</span></div>
-<div class="r"><span class="k">Fee</span><span>${fmt(t.fee, 'CAD')}</span></div>
+<div class="r"><span class="k">Fee</span><span>${esc(fmtHome(t.fee))}</span></div>
 <div class="r"><span class="k">Status</span><span>${esc(statusLabel(t.status, t.direction))}</span></div>
 <div class="ft">${esc(settings.receiptDisclaimer || 'Keep this receipt. Funds payable on presentation of the tracking PIN and valid ID.')}</div>
 <script>setTimeout(function(){window.focus();window.print();},350)<\/script></body></html>`);
@@ -268,10 +288,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const doSettle = (p, amount, fxRate, note) => {
       const amt = +amount || 0; if (!amt) return;
       const cadCost = +(amt * (fxRate || (crossRate(p.ccy, 'CAD') || 0))).toFixed(2);
-      const ref = 'STL-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + ((settlements || []).filter(s => s.date === TODAY).length + 1).toString().padStart(2, '0');
-      const rec = { id: 's' + Date.now(), ref, partner: p.partner, corridor: p.corridor, ccy: p.ccy, amount: amt, fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6), cadCost, date: TODAY, by: me.name, note: note || '' };
+      /* A settlement reference is minted from the TRADING DAY, not the wall
+         clock. `TODAY` is a snapshot taken when the page loaded, so a desk
+         left open overnight minted this morning's references under
+         yesterday's date and put them on the audit trail. */
+      const bookDate = businessDate();
+      const ref = 'STL-' + String(bookDate).slice(2).replace(/-/g, '') + '-' + ((settlements || []).filter(s => s.date === bookDate).length + 1).toString().padStart(2, '0');
+      const rec = { id: 's' + Date.now(), ref, partner: p.partner, corridor: p.corridor, ccy: p.ccy, amount: amt, fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6), cadCost, date: businessDate(), by: me.name, note: note || '' };
       setSettlements(list => [rec, ...(list || [])]);
-      log && log('Partner settled', `${p.partner} · ${num(amt)} ${p.ccy} · ${fmt(cadCost, 'CAD')}`);
+      log && log('Partner settled', `${p.partner} · ${num(amt)} ${p.ccy} · ${fmtHome(cadCost)}`);
       setSettling(null);
     };
 
@@ -281,12 +306,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="p-3" style={{ background: totalOwed > 0 ? CD.flagSoft : CD.panel, border: `1px solid ${totalOwed > 0 ? CD.flag : CD.line}`, borderRadius: 11 }}>
           <div className="text-[10px] uppercase tracking-widest flex items-center gap-1" style={{ color: totalOwed > 0 ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{totalOwed > 0 && <Ic n="alert" s={11} c={CD.flag} />} Owed to partners</div>
-          <div className="text-xl font-bold" style={{ color: totalOwed > 0 ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(totalOwed, 'CAD')}</div>
+          <div className="text-xl font-bold" style={{ color: totalOwed > 0 ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(totalOwed)}</div>
           <div className="text-[10.5px]" style={{ color: CD.mute }}>payouts not yet funded</div>
         </div>
         <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
           <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Float on deposit</div>
-          <div className="text-xl font-bold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(totalFloat, 'CAD')}</div>
+          <div className="text-xl font-bold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(totalFloat)}</div>
           <div className="text-[10.5px]" style={{ color: CD.mute }}>prefunded with partners</div>
         </div>
       </div>
@@ -302,7 +327,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
               <button onClick={() => setSettling(p)} className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="send" s={13} c="var(--cd-on-ink)" /> Settle</button>
             </div>
             <div className="grid grid-cols-4 gap-2 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              {[['Paid out', `${num(p.payouts)} ${p.ccy}`, CD.ink], ['Settled', `${num(p.settled)} ${p.ccy}`, CD.mute], [owe ? 'We owe' : 'Float left', `${num(Math.abs(p.net))} ${p.ccy}`, owe ? CD.flag : CD.green], ['Corridor margin', fmt(p.margin, 'CAD'), p.margin >= 0 ? CD.green : CD.flag]].map(([l, v, c]) => (
+              {[['Paid out', `${num(p.payouts)} ${p.ccy}`, CD.ink], ['Settled', `${num(p.settled)} ${p.ccy}`, CD.mute], [owe ? 'We owe' : 'Float left', `${num(Math.abs(p.net))} ${p.ccy}`, owe ? CD.flag : CD.green], ['Corridor margin', fmtHome(p.margin), p.margin >= 0 ? CD.green : CD.flag]].map(([l, v, c]) => (
                 <div key={l}><div className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[12.5px] font-semibold" style={{ color: c, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
             </div>
           </div>); })}
@@ -334,7 +359,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           </div>
           <Field label={`Amount to wire (${p.ccy})`}><input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
           <Field label="FX rate (CAD per unit)" hint={`spot ${mid.toFixed(6)}`}><input value={fxRate} onChange={e => setFxRate(e.target.value)} inputMode="decimal" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
-          <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>CAD cost of this wire</span><span className="text-[14px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{fmt(cadCost, 'CAD')}</span></div>
+          <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{homeCcy() ? homeCcy() + ' cost' : 'Local cost'} of this wire</span><span className="text-[14px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{fmtHome(cadCost)}</span></div>
           <Field label="Reference / note"><input value={note} onChange={e => setNote(e.target.value)} placeholder="Wire ref, settlement batch…" className={inputCls} style={inputSty} /></Field>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
@@ -380,7 +405,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="transferarrows" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Transfers</div><div className="text-[11px]" style={{ color: CD.mute }}>{inProgress} in progress{onHold ? ` · ${onHold} on hold` : ''}{owed > 0.5 ? ` · ${fmt(owed, 'CAD')} owed to partners` : ''}</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Transfers</div><div className="text-[11px]" style={{ color: CD.mute }}>{inProgress} in progress{onHold ? ` · ${onHold} on hold` : ''}{owed > 0.5 ? ` · ${fmtHome(owed)} owed to partners` : ''}</div></div>
           </div>
           <button onClick={() => setModal(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> New transfer</button>
         </div>

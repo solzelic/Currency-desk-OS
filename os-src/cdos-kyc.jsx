@@ -47,7 +47,8 @@
   const stampNow = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const money = (n) => '$' + (+n || 0).toFixed(2);
   // house default risk for brand-new contacts (Settings → Clients · KYC)
-  const houseRisk = () => { try { return JSON.parse(localStorage.getItem('cdos_settings') || '{}').defaultClientRisk || 'Normal'; } catch (e) { return 'Normal'; } };
+  const storedSettings = () => { try { return JSON.parse(localStorage.getItem('cdos_settings') || '{}') || {}; } catch (e) { return {}; } };
+  const houseRisk = () => storedSettings().defaultClientRisk || 'Normal';
   const refHash = (id) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36).toUpperCase().padStart(5, '0').slice(-5); };
 
   // Three tiers, each a real check that bills every time it runs — the desk is
@@ -174,23 +175,32 @@
   reconcile();
   setInterval(reconcile, 1200);
 
-  /* ---- demo seed: give a spread of contacts a KYC history so the prototype
-     shows every state (verified / stale→quick / plus / high-risk) out of the box.
-     Runs once (versioned) and is additive — it never removes a real check. ---- */
-  function seedDemo() {
-    const V = 'cdos_kyc_seed_v3';
-    try { if (localStorage.getItem(V)) return; } catch (e) {}
-    const st = (ms) => new Date(ms).toLocaleString('en-CA', { hour12: false }).replace(',', '');
-    const mk = (subject, kind, template, d) => { const t = tmpl(template); const ms = Date.now() - d * 86400000; const id = 'seed_' + template + '_' + subject.replace(/[^A-Za-z]/g, '').slice(0, 14); return { id, subject, kind: kind || 'individual', template, templateLabel: t.label, price: t.price, channel: template === 'quick' ? 'instant' : 'link', contact: { via: 'demo' }, by: 'System', requestedAt: st(ms), ms, dueMs: ms + 1000, matchedOnFile: false, status: 'completed', result: { decision: 'approved', extracted: null, idCheck: t.idv ? 'pass' : 'n/a', matchedOnFile: false, biometric: t.bio ? 'pass' : 'n/a', database: t.db ? 'clear' : 'n/a', pep: 'None found', watchlist: [], reportRef: 'PSA-' + refHash(id), completedAt: st(ms) } }; };
-    const plan = [['Jakob Miller', 'individual', 'verify', 25], ['Kevin Doyle', 'individual', 'verify', 90], ['Nicole Hayes', 'individual', 'verify', 30], ['Rachel Carter', 'individual', 'verify', 210], ['Megan Foster', 'individual', 'verify', 400], ['Brandon Cole', 'individual', 'verify', 200], ['Jordan Blake', 'individual', 'verify', 220], ['Ashley Turner', 'individual', 'plus', 25], ['Lauren Bishop', 'individual', 'plus', 30], ['Maple Leaf Logistics Inc.', 'corporate', 'verify', 250], ['Golden Crescent Travel', 'corporate', 'plus', 40]];
-    const unverified = ['Brooke Lawson', 'Tyler Bennett', 'Emily Park', 'Sarah Whitman', 'Marcus Reed', 'Chris Delaney', 'Northbridge Imports'];
-    Object.keys(STORE).forEach(k => { const s = STORE[k] && STORE[k].subject; if (unverified.indexOf(s) !== -1) delete STORE[k]; });
-    plan.forEach(([s, k, t, d]) => { const c = mk(s, k, t, d); STORE[c.id] = c; });
-    try { const raw = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); if (raw && typeof raw === 'object' && !Array.isArray(raw)) { if (raw['Marcus Reed']) raw['Marcus Reed'].idExpiry = '2026-05-15'; if (raw['Brooke Lawson']) { raw['Brooke Lawson'].idType = ''; raw['Brooke Lawson'].idNum = ''; raw['Brooke Lawson'].idExpiry = ''; } localStorage.setItem('cdos_clients_v1', JSON.stringify(raw)); } } catch (e) {}
-    try { localStorage.setItem(V, '1'); } catch (e) {}
-    persist();
-  }
-  seedDemo();
+  /* ============================================================
+     THE DEMO KYC HISTORY IS GONE, AND THIS IS ITS HEADSTONE
+
+     `seedDemo()` stood here and ran on module load. It fabricated eleven
+     COMPLETED identity verifications against named people — Jakob Miller,
+     Ashley Turner, Maple Leaf Logistics Inc. and eight more — each with a
+     provider reference number ("PSA-…"), each recorded as approved with
+     document authenticity, biometric and database screening all passed,
+     and each pushed into the report history as a sealed certificate
+     footed "retained as a KYC record under the PCMLTFA".
+
+     No provider ever ran those checks. It also reached into the client
+     store and EDITED two real contacts to make the demo look better:
+     blanking Brooke Lawson's ID fields and back-dating Marcus Reed's
+     expiry to 2026-05-15.
+
+     A verification record is the desk's evidence that it identified a
+     customer before moving their money. Inventing eleven of them, with
+     reference numbers, is not a demo fixture — it is the exact artifact a
+     regulator asks for, manufactured. It is gone, and the panel now shows
+     what this desk has actually run, which for a new desk is nothing.
+
+     See docs/GENERATED_DOCUMENTS.md: nothing this application presents as
+     a record of something having happened may be manufactured in the
+     browser.
+     ============================================================ */
 
   function setProvider(name) { PROVIDER = (name || 'Persona').trim() || 'Persona'; try { localStorage.setItem(PKEY, PROVIDER); } catch (e) {} listeners.forEach(l => l()); }
   const getProvider = () => PROVIDER;
@@ -217,7 +227,17 @@
   }
 
   /* ---------------- sealed KYC certificate (opened from History) ---------------- */
-  function certHTML(check) {
+  function certHTML(check, settings) {
+    settings = settings || storedSettings();
+    /* Whose desk, and under whose law. This certificate named "York
+       Currency Exchange (MSB)" and cited the PCMLTFA on every desk in
+       every country that generated one. Both belong to the desk's own
+       settings and its jurisdiction pack; where the pack cannot say, the
+       sentence states the fact it has (a verification was performed) and
+       does not cite a statute it cannot name. */
+    const pack = window.CDOS.deskPack();
+    const bizName = (settings && (settings.operatingName || settings.bizName)) || (pack && pack.name ? pack.name + ' desk' : 'this desk');
+    const authority = (pack && pack.regulator) || null;
     const r = check.result || {}; const t = tmpl(check.template); const dm = decisionMeta(r.decision);
     const P = { ink: '#262216', mute: '#6f6857', faint: '#9a927e', line: '#e4e0d5', soft: '#f1efe7' };
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
@@ -242,7 +262,7 @@
         </table>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:${P.faint};font-family:'Space Mono',monospace;margin-bottom:2px;">Database matches</div>
         ${wl}
-        <div style="margin-top:22px;font-size:11px;color:${P.faint};line-height:1.6;">Verification performed by ${PROVIDER} on behalf of York Currency Exchange (MSB) and retained as a KYC record under the PCMLTFA. This certificate reflects the provider's automated determination; manual review may be required where matches are returned.</div>
+        <div style="margin-top:22px;font-size:11px;color:${P.faint};line-height:1.6;">Verification performed by ${PROVIDER} on behalf of ${esc(bizName)} and retained as a KYC record${authority ? ` under ${esc(authority)} record-keeping requirements` : ''}. This certificate reflects the provider's automated determination; manual review may be required where matches are returned.</div>
       </body></html>`;
   }
   function openWindow(html) { const w = window.open('', '_blank', 'width=900,height=1100'); if (!w) return; w.document.write(html); w.document.close(); setTimeout(() => w.focus(), 200); }
@@ -453,10 +473,12 @@
     if (!name) return null;
     const RECO_DAYS = (settings && +settings.recheckDays) || 180;      // periodic quick-screen cadence
     const REVERIFY_DAYS = (settings && +settings.reverifyDays) || 365;  // full re-verification cadence
-    const TODAY = window.CDOS.TODAY;
+    /* Live, not a snapshot taken at page load — an ID that expires at
+       midnight has expired at 00:01, including on a desk left open. */
+    const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
+    const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/high|enhanced/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
     const highRisk = riskLvl === 'High';
     const done = (demoChecks || checksFor(name)).filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved');
@@ -466,15 +488,22 @@
     const ageAny = lastAny ? daysAgo(lastAny.ms) : null;
     const ageFull = lastFull ? daysAgo(lastFull.ms) : null;
     // pick the recommended tier from the file's state + house parameters
-    const TH = (settings && +settings.threshold) || 10000;
-    const bigDeal = amountCad != null && amountCad >= TH;
+    /* THE LINE THIS DESK TRADES UNDER, not ten thousand Canadian dollars.
+       A desk with no reporting line has no "large transaction" to mandate a
+       check on, and the honest answer is to raise no mandate rather than to
+       apply another country's number silently — the same reasoning as
+       reportingLimit() in cdos-base.jsx and docs/ABSENT_FIGURES.md. */
+    const houseLimit = window.CDOS.reportingLimit(settings);
+    const TH = houseLimit.amount;
+    const THLabel = houseLimit.label;
+    const bigDeal = TH != null && amountCad != null && amountCad >= TH;
     const policy = (settings && settings.largeTxCheck) || 'off';   // off | quick | verify | plus — mandatory check on large deals
     const TIER_NAME = { quick: 'Quick', verify: 'Verified', plus: 'Verified Plus' };
     let level = null, tier = 'quick', title = '', reason = '';
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
-    else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
-    else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} and ${first} has never been verified. Run the full enhanced check.`; }
+    else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
+    else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
     else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`; }
     else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
     else { return null; }

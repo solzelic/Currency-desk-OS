@@ -1,28 +1,73 @@
 /* ============================================================
    CurrencyDesk OS — LCTR / EFTR filing
    Two faces of one immutable record:
-     • FACE 1 — Filing Worksheet: every FWR field in form order,
-       pre-filled from CONFIG (set once) · LEDGER (the transaction)
-       · KYC (the client) · ENGINE (aggregation type, the static
-       24h window, the unique reference numbers). The only blanks
-       are the handful of point-of-sale PROMPTs. Copy-to-clipboard
-       on each field — a teleprompter the owner reads down into
-       their own FWR login.
+     • FACE 1 — Filing Worksheet: every field of the regulator's form
+       in form order, pre-filled from CONFIG (set once) · LEDGER (the
+       transaction) · KYC (the client) · ENGINE (aggregation type, the
+       static aggregation window, the unique reference numbers). The
+       only blanks are the handful of point-of-sale PROMPTs.
+       Copy-to-clipboard on each field — a teleprompter the owner reads
+       down into their own regulator's portal.
      • FACE 2 — Filed Record: the moment it's marked filed and the
-       FWR acknowledgement is pasted back, the worksheet freezes
-       into a sealed PDF — every field as submitted, stamped with
-       the report reference, submission timestamp, who filed it,
-       the FWR receipt, and a link back to the ledger record(s)
-       and client(s) that triggered it. Immutable. The 5-year copy.
+       acknowledgement is pasted back, the worksheet freezes into a
+       sealed PDF — every field as submitted, stamped with the report
+       reference, submission timestamp, who filed it, the receipt, and
+       a link back to the ledger record(s) and client(s) that triggered
+       it. Immutable. The 5-year copy.
 
    Two format traps hard-coded:
      1. time = HH:MM:SS±ZZ:ZZ (UTC offset) everywhere.
      2. foreign cash reported in ORIGINAL currency on the action
-        amounts — CAD conversion is used only to test the $10k line.
+        amounts — the home-currency conversion is used only to test
+        the reporting line.
+
+   WHOSE FORM IS THIS. "FWR" is the name of Canada's filing portal and
+   this worksheet used to print it as a fact everywhere: the field a
+   receipt is pasted into, the sentence explaining what gets rejected,
+   the instruction to read the sheet down into "your FWR login". A Dubai
+   desk files into goAML and a US desk into BSA E-Filing. The portal is
+   a fact about the jurisdiction pack — `jurisdiction_reports.filing_
+   format`, seeded per pack in migration 012 — so it is read from there
+   through GET /api/ledger/jurisdiction, and where the pack does not say,
+   the screen says "the regulator's portal" rather than naming one.
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num } = window.CDOS;
+  const { CD, Ic, fmt, num, deskPack } = window.CDOS;
+
+  /* THE PACK'S OWN CATALOGUE OF FORMS, cached in module state.
+
+     cdos-base.jsx's refreshJurisdiction() keeps `answer.pack` and drops
+     `answer.reports`, so this file asks for itself. That is a duplicate
+     request per session and it is deliberate for now — the alternative is
+     editing a file this change does not own. See the handover note: the
+     right home for this is setDeskPack(answer.pack, answer.reports). */
+  let _reports = null;
+  function deskReports() { return _reports; }
+  function refreshReports() {
+    const B = window.CDOS && window.CDOS.Backend;
+    if (!B || !B.loadJurisdiction) return Promise.resolve(null);
+    return B.loadJurisdiction()
+      .then(answer => { _reports = (answer && answer.reports) || []; return _reports; })
+      .catch(() => null);
+  }
+  refreshReports();
+  /* Which form is this, as the pack describes it — or nothing. */
+  const reportInPack = (code) => (_reports || []).find(r => r.code && code && r.code.toUpperCase() === String(code).toUpperCase()) || null;
+  /* Where the completed report is submitted, in the regulator's own words.
+     Null when the pack does not say, and every call site prints a neutral
+     phrase rather than Canada's. */
+  const portalOf = (code) => { const r = reportInPack(code); return (r && r.filingFormat) || null; };
+  const portalName = (code) => portalOf(code) || 'the regulator’s portal';
+  /* Who regulates this desk. The server pack first: getRegime() falls back
+     to FINTRAC when `settings.regime` is unset, which is how a London desk
+     came to print a Canadian regulator on a filed compliance record. */
+  const authorityName = (regime) => { const p = deskPack(); return (p && p.regulator) || (regime && regime.authority) || 'the regulator'; };
+  /* The country an address or an identity document defaults to. There is
+     no universal default — a blank country is a blank country — but where
+     the pack names the jurisdiction the desk operates in, that is the
+     honest fallback for a record with none. */
+  const homeCountry = () => { const p = deskPack(); return (p && p.name) || ''; };
   const C = window.CDOS._compliance;
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
@@ -31,7 +76,11 @@
   // UTC-offset string for a business timezone, e.g. "-05:00"
   function tzOffset(d, tz) {
     try {
-      const s = new Intl.DateTimeFormat('en-US', { timeZone: tz || 'America/Toronto', timeZoneName: 'shortOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value;
+      /* No timezone set means this machine's, not Toronto's. A filing
+         stamped with an offset the desk does not keep is a wrong
+         timestamp on a regulatory record, and defaulting to one country's
+         zone made it wrong silently everywhere else. */
+      const s = new Intl.DateTimeFormat('en-US', tz ? { timeZone: tz, timeZoneName: 'shortOffset' } : { timeZoneName: 'shortOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value;
       const m = /GMT([+-])(\d{1,2})(?::?(\d{2}))?/.exec(s);
       if (!m) return '+00:00';
       return `${m[1]}${String(+m[2]).padStart(2, '0')}:${m[3] || '00'}`;
@@ -40,7 +89,7 @@
       return `${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
     }
   }
-  // FWR datetime: "YYYY-MM-DD HH:MM:SS±ZZ:ZZ"
+  // regulator datetime format: "YYYY-MM-DD HH:MM:SS±ZZ:ZZ"
   function fmtDateTime(date, time, tz) {
     const t = (time || '00:00').length === 5 ? (time + ':00') : (time || '00:00:00');
     const d = new Date((date || '') + 'T' + ((time || '00:00').length === 5 ? time : (time || '00:00')) + ':00');
@@ -59,9 +108,13 @@
     if (parts.length === 1) return { surname: parts[0], given: 'XXX', other: '' };
     return { surname: parts[parts.length - 1], given: parts[0], other: parts.slice(1, -1).join(' ') };
   }
-  const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, (rec.country && rec.country !== 'Canada') ? rec.country : ''].filter(Boolean).join(', ');
+  /* The country is omitted from an address only when it IS the desk's own
+     country — which the pack states. It used to be omitted whenever it was
+     Canada, so a Canadian client's address filed by a London desk lost its
+     country line. */
+  const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, (rec.country && rec.country !== homeCountry()) ? rec.country : ''].filter(Boolean).join(', ');
 
-  /* ---------- field map (FWR form order) ----------
+  /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
   // human label for a report kind under the active regime
@@ -74,7 +127,7 @@
 
   function buildMap(report, ctx) {
     const { settings, clients, rows, regime } = ctx;
-    const tz = (settings && settings.timezone) || 'America/Toronto';
+    const tz = (settings && settings.timezone) || null;
     const TH = regime.threshold;
     const cur = regime.currency;
     const isWire = report.kind === regime.wireCode;
@@ -97,11 +150,11 @@
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || 'Canada'}` : (subj.country || '');
+      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : (subj.country || '');
       const win = (settings && +settings.structuringDays) || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [
-        F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, { hint: '7-digit FINTRAC ID' }),
+        F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, { hint: `Your reporting entity number with ${authorityName(regime)}` }),
         F('report_ref', 'Report reference number', '‡', 'ENGINE', report.reportRef),
         F('sector', 'Activity sector', '*', 'CONFIG', settings.activitySector, { hint: 'e.g. "Money services business — currency exchange"' }),
         F('contact', 'Compliance contact (name · phone · email)', '*', 'CONFIG', strContact, { hint: 'Compliance contact name · phone · email' }),
@@ -155,10 +208,10 @@
     const aggType = report.basis === 'beneficiary' ? 'beneficiary' : report.basis === 'conductor' ? 'conductor' : 'Not applicable';
     const winStart = report.windowStart, winEnd = report.windowEnd;
     const general = [
-      F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, { hint: '7-digit FINTRAC ID' }),
+      F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, { hint: `Your reporting entity number with ${authorityName(regime)}` }),
       F('report_ref', 'Report reference number', '‡', 'ENGINE', report.reportRef),
       F('sector', 'Activity sector', '*', 'CONFIG', settings.activitySector, { hint: 'e.g. "Money services business — currency exchange"' }),
-      F('contact', 'FINTRAC contact (name · phone · email)', '*', 'CONFIG', contact, { hint: 'Compliance contact name · phone · email' }),
+      F('contact', `${authorityName(regime)} contact (name · phone · email)`, '*', 'CONFIG', contact, { hint: 'Compliance contact name · phone · email' }),
       F('agg_type', 'Aggregation type', '‡', 'ENGINE', aggType),
       F('win_start', '24-hour period — start', '‡', 'ENGINE', winStart ? fmtWindowEdge(winStart, tz) : 'Not applicable'),
       F('win_end', '24-hour period — end', '‡', 'ENGINE', winEnd ? fmtWindowEdge(winEnd, tz) : 'Not applicable'),
@@ -190,13 +243,13 @@
           F('tx_threshold', 'Threshold indicator', '‡', 'LEDGER', above ? 'above' : 'below'),
           F('tx_ref', 'Transaction reference number', '‡', 'ENGINE', r.ref),
           F('tx_purpose', 'Purpose of transaction', '', cap && cap.purpose ? 'LEDGER' : 'PROMPT', cap && cap.purpose ? cap.purpose : '', cap && cap.purpose ? {} : { prompt: true, hint: 'e.g. "GBP for vacation"' }),
-          F('tx_location', 'Reporting entity location number', '*', 'CONFIG', settings.locationNumber, { hint: 'Your branch / location ID on file with FINTRAC' }),
+          F('tx_location', 'Reporting entity location number', '*', 'CONFIG', settings.locationNumber, { hint: `Your branch / location ID on file with ${authorityName(regime)}` }),
         ],
       });
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || 'Canada'}` : (cond.country || '');
+      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : (cond.country || '');
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [
@@ -317,7 +370,7 @@
     const blocks = useMemo(() => buildMap(report, ctx), [report, ctx]);
     const comps = useMemo(() => companions(report, ctx), [report, ctx]);
     const { regime } = ctx;
-    // `vals` overrides EVERY field (pre-filled values are editable); `ticks` marks a field keyed into FWR.
+    // `vals` overrides EVERY field (pre-filled values are editable); `ticks` marks a field keyed into the portal.
     const [vals, setVals] = useState(report.prompts || {});
     const [ticks, setTicks] = useState(report.ticks || {});
     const [focused, setFocused] = useState(null);
@@ -340,7 +393,7 @@
     // every editable (non-divider) field key, in order
     const allKeys = useMemo(() => { const a = []; blocks.forEach(b => b.instances.forEach((inst, ii) => (inst.fields || []).forEach(f => { if (!f.divider) a.push(`${b.key}.${ii}.${f.id}`); }))); return a; }, [blocks]);
     const fieldByKey = useMemo(() => { const m = {}; blocks.forEach(b => b.instances.forEach((inst, ii) => (inst.fields || []).forEach(f => { if (!f.divider) m[`${b.key}.${ii}.${f.id}`] = f; }))); return m; }, [blocks]);
-    // a field can only be "keyed into FWR" once it actually has a value — you can't tick a blank
+    // a field can only be "keyed in" once it actually has a value — you can't tick a blank
     const valueKeys = allKeys.filter(k => { const f = fieldByKey[k]; return f && String(evOf(f, k)).trim(); });
     const ticked = valueKeys.filter(k => ticks[k]).length;
     const allTicked = valueKeys.length > 0 && ticked === valueKeys.length;
@@ -412,7 +465,7 @@
     };
     const fieldHelp = (f) => {
       const [src, srcIcon] = SRC_HELP[f.source] || ['', 'info'];
-      const req = f.cat === '‡' ? 'Required — FWR rejects the whole report without it.' : f.cat === '*' ? 'Mandatory field.' : f.cat === '†' ? 'Only needed when it applies to this deal.' : 'Optional — include it if you have it.';
+      const req = f.cat === '‡' ? `Required — ${portalName(report.kind)} rejects the whole report without it.` : f.cat === '*' ? 'Mandatory field.' : f.cat === '†' ? 'Only needed when it applies to this deal.' : 'Optional — include it if you have it.';
       const reqTone = f.cat === '‡' ? '#ff9b8a' : f.cat === '*' ? '#e7d9b0' : '#c2bdb0';
       return { what: f.help || '', src, srcIcon, req, reqTone };
     };
@@ -457,7 +510,7 @@
         </div>
         <div className="flex items-stretch">
           <input ref={el => { if (el) inputRefs.current[fk] = el; }} value={dv} onChange={e => setVal(fk, e.target.value)} onFocus={() => { setFocused(fk); setHelpFor(null); }} onBlur={() => setFocused(c => c === fk ? null : c)} placeholder={f.hint || (f.prompt ? 'Ask at the counter…' : f.missing ? 'Enter to complete the report…' : '—')} className="flex-1 min-w-0 text-[12.5px] px-2 py-1.5 outline-none" style={{ background: bg, borderTop: `1px solid ${bd}`, borderBottom: `1px solid ${bd}`, borderLeft: `1px solid ${bd}`, borderRight: 'none', borderRadius: '7px 0 0 7px', fontFamily: 'Space Mono, monospace', color: col, transition: 'background .12s, border-color .12s, box-shadow .12s', boxShadow: isFlash ? `0 0 0 3px color-mix(in srgb, ${CD.flag} 33%, transparent)` : 'none' }} />
-          <button onClick={() => { if (!dv.trim()) return; copy(fk, dv); toggleTick(fk); }} disabled={!dv.trim()} title={!dv.trim() ? 'Fill this field first' : done ? 'Keyed into FWR — click to undo' : 'Copy value & mark it keyed'} className="flex-none grid place-items-center" style={{ width: 34, borderRadius: '0 7px 7px 0', border: `1px solid ${(done || isCopied) ? CD.green : bd}`, background: (done || isCopied) ? CD.greenSoft : 'var(--cd-panel)', opacity: dv.trim() ? 1 : 0.4, cursor: dv.trim() ? 'pointer' : 'default', transition: 'background .15s, border-color .15s' }}>
+          <button onClick={() => { if (!dv.trim()) return; copy(fk, dv); toggleTick(fk); }} disabled={!dv.trim()} title={!dv.trim() ? 'Fill this field first' : done ? 'Keyed in — click to undo' : 'Copy value & mark it keyed'} className="flex-none grid place-items-center" style={{ width: 34, borderRadius: '0 7px 7px 0', border: `1px solid ${(done || isCopied) ? CD.green : bd}`, background: (done || isCopied) ? CD.greenSoft : 'var(--cd-panel)', opacity: dv.trim() ? 1 : 0.4, cursor: dv.trim() ? 'pointer' : 'default', transition: 'background .15s, border-color .15s' }}>
             <Ic n={(done || isCopied) ? 'check' : 'copy'} s={14} c={(done || isCopied) ? CD.green : CD.mute} />
           </button>
         </div>
@@ -481,14 +534,14 @@
         {/* teleprompter intro + progress */}
         <div className="px-5 py-2.5 flex-none flex items-center gap-3" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.brass}` }}>
           <Ic n="info" s={15} c={CD.brass} />
-          <div className="text-[11.5px] flex-1" style={{ color: 'var(--cd-brass-text)' }}>Every field is editable — click any value to correct it. Read down, paste each into your FWR login, and <b>tick it off</b> as you go.{missingLeft ? ` ${missingLeft} highlighted field${missingLeft === 1 ? '' : 's'} still need${missingLeft === 1 ? 's' : ''} a value.` : ''}</div>
+          <div className="text-[11.5px] flex-1" style={{ color: 'var(--cd-brass-text)' }}>Every field is editable — click any value to correct it. Read down, paste each into {portalName(report.kind)}, and <b>tick it off</b> as you go.{missingLeft ? ` ${missingLeft} highlighted field${missingLeft === 1 ? '' : 's'} still need${missingLeft === 1 ? 's' : ''} a value.` : ''}</div>
           <button onClick={onProgressAction} title={reqLeft > 0 ? 'Jump to the next field that needs a value' : ''} className="text-[10.5px] font-semibold flex-none px-2 py-1 flex items-center gap-1" style={{ background: reqLeft > 0 ? CD.flag : 'var(--cd-panel)', borderRadius: 7, color: reqLeft > 0 ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${reqLeft > 0 ? CD.flag : CD.brass}`, cursor: 'pointer' }}>{reqLeft > 0 ? <>Fill next <Ic n="arrowdown" s={11} c="var(--cd-on-ink)" /></> : (allTicked ? 'Clear ticks' : 'Tick all')}</button>
           <div className="text-[11px] font-semibold flex-none px-2 py-1" style={{ background: 'var(--cd-panel)', borderRadius: 999, color: allTicked ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{ticked}/{valueKeys.length} keyed</div>
         </div>
 
         {/* body */}
         <div ref={bodyRef} className="flex-1 overflow-auto px-5 py-4">
-          {missingLeft > 0 && <div className="mb-3 px-3 py-2 flex items-center gap-2 text-[11.5px]" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 9, color: CD.flag }}><Ic n="alert" s={14} c={CD.flag} /><span>{missingLeft} mandatory {missingLeft === 1 ? 'field' : 'fields'} normally from CONFIG / KYC came back empty — type {missingLeft === 1 ? 'it' : 'them'} into the highlighted {missingLeft === 1 ? 'box' : 'boxes'} below to complete the report. FWR rejects the filing without {missingLeft === 1 ? 'it' : 'them'}.</span></div>}
+          {missingLeft > 0 && <div className="mb-3 px-3 py-2 flex items-center gap-2 text-[11.5px]" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 9, color: CD.flag }}><Ic n="alert" s={14} c={CD.flag} /><span>{missingLeft} mandatory {missingLeft === 1 ? 'field' : 'fields'} normally from CONFIG / KYC came back empty — type {missingLeft === 1 ? 'it' : 'them'} into the highlighted {missingLeft === 1 ? 'box' : 'boxes'} below to complete the report. {portalName(report.kind)} rejects the filing without {missingLeft === 1 ? 'it' : 'them'}.</span></div>}
           {blocks.map(b => (
             <div key={b.key} className="mb-4">
               <div className="flex items-baseline gap-2 mb-1"><span className="text-[12.5px] font-bold" style={{ color: CD.ink }}>{b.title}</span></div>
@@ -525,7 +578,7 @@
         <div className="flex-none px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
           {!filing ? (
             <div className="flex items-center gap-3">
-              <div className="text-[11.5px] flex-1" style={{ color: reqLeft ? CD.flag : CD.mute }}>{reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed into FWR. Seal the filed copy once submitted.`}</div>
+              <div className="text-[11.5px] flex-1" style={{ color: reqLeft ? CD.flag : CD.mute }}>{reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed in. Seal the filed copy once submitted.`}</div>
               <button onClick={() => setFiling(true)} disabled={reqLeft > 0} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: (reqLeft > 0) ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: (reqLeft > 0) ? 'not-allowed' : 'pointer' }}><Ic n="lock" s={15} c="var(--cd-on-ink)" /> Mark filed & seal</button>
             </div>
           ) : (
@@ -535,8 +588,8 @@
                 <span><b>Not sealed — nothing was recorded.</b> {sealError}</span>
               </div>}
               <div className="flex items-center gap-2">
-                <div className="flex-none text-[11.5px] font-medium" style={{ color: CD.ink }}>FWR acknowledgement #</div>
-                <input value={receipt} onChange={e => setReceipt(e.target.value)} autoFocus placeholder="Paste the FWR receipt number…" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontFamily: 'Space Mono, monospace' }} onKeyDown={e => { if (e.key === 'Enter') doFile(); }} />
+                <div className="flex-none text-[11.5px] font-medium" style={{ color: CD.ink }}>{portalOf(report.kind) ? portalOf(report.kind) + ' acknowledgement #' : 'Acknowledgement #'}</div>
+                <input value={receipt} onChange={e => setReceipt(e.target.value)} autoFocus placeholder={portalOf(report.kind) ? `Paste the ${portalOf(report.kind)} receipt number…` : 'Paste the receipt number the regulator gave you…'} className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontFamily: 'Space Mono, monospace' }} onKeyDown={e => { if (e.key === 'Enter') doFile(); }} />
                 <button onClick={() => setFiling(false)} className="px-3 py-2 text-[12px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.mute }}>Back</button>
                 <button onClick={doFile} disabled={!receipt.trim() || sealing} className="px-4 py-2 text-sm font-semibold text-white flex-none" style={{ background: (receipt.trim() && !sealing) ? CD.green : 'var(--cd-disabled)', borderRadius: 8, cursor: (receipt.trim() && !sealing) ? 'pointer' : 'not-allowed' }}>{sealing ? 'Sealing…' : 'Seal filed copy'}</button>
               </div>
@@ -588,10 +641,10 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
 <div class="hd">
   <div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div>
     <div class="h1">${esc(filing.kindLabel || filing.kind)}</div>
-    <div class="sub">${esc(op)} · ${esc(regime.authority)} · filed copy of record</div></div>
+    <div class="sub">${esc(op)} · ${esc(authorityName(regime))} · filed copy of record</div></div>
   <div class="meta"><div class="seal">● Filed &amp; sealed</div>
     <div style="margin-top:8px;">Report ref <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.reportRef)}</b></div>
-    <div>FWR receipt <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.fwrReceipt)}</b></div></div>
+    <div>${esc(portalOf(filing.kind) || 'Regulator')} receipt <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.fwrReceipt)}</b></div></div>
 </div>
 <div class="kpis">
   <div class="kpi"><div class="l">Subject</div><div class="v">${esc(filing.subject)}</div></div>
@@ -602,7 +655,7 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
 ${filing.amendsAck ? `<div class="amd"><b>Correction.</b> This report supersedes the copy filed under acknowledgement <b>${esc(filing.amendsAck)}</b> — which remains on the record, unchanged, as it was submitted.</div>` : ''}
 ${(filing.map || []).map(blockHTML).join('')}
 <div class="lnk"><b>Linked records</b> — this filing was triggered by, and is welded to: ${links || '—'}${filing.subject ? ` · client <b>${esc(filing.subject)}</b>` : ''}</div>
-<div class="ft2">Immutable filed copy. A correction is filed as a new linked report — this record is never edited. Retain ≥ ${(settings && settings.retentionYears) || 5} years per ${esc(regime.authority)} record-keeping. Times in ${esc((settings && settings.timezone) || 'America/Toronto')} with UTC offset. Foreign amounts shown in original currency; ${esc(regime.currency)} equivalents are threshold-test references only.</div>
+<div class="ft2">Immutable filed copy. A correction is filed as a new linked report — this record is never edited. Retain ≥ ${(settings && settings.retentionYears) || 5} years per ${esc(authorityName(regime))} record-keeping. Times in ${esc((settings && settings.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'this machine’s timezone')} with UTC offset. Foreign amounts shown in original currency; ${esc(regime.currency)} equivalents are threshold-test references only.</div>
 </body></html>`;
   }
   function openSealed(filing, ctx) {

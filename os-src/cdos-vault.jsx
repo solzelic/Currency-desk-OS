@@ -32,7 +32,16 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, crossRate, Absent, businessDate, useDeskFacts, STAFF } = window.CDOS;
+  const { CD, Ic, fmt, num, crossRate, Absent, businessDate, useDeskFacts, STAFF, deskPack, reportingLimit } = window.CDOS;
+
+  /* THE DESK'S OWN CURRENCY. The ledger's `position` and `vault` reads
+     both carry `homeCurrency`, so most of this screen already had the
+     right answer to hand; the float modals, the shift settlements and the
+     order-received log did not, and printed Canadian dollars on every
+     desk. This is the fallback for the handful of places that have no
+     server response in scope. */
+  const homeCcy = () => { const pack = deskPack(); return (pack && pack.homeCurrency) || (reportingLimit(null) || {}).currency || 'CAD'; };
+  const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy());
 
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   /* Display-only conversion, for totalling a float across currencies in
@@ -74,13 +83,19 @@
   }
 
   const SKEY = 'cdos_vault_shifts';
-  const DEFAULT_FC = ['CAD', 'USD', 'EUR', 'GBP'];
+  /* The currencies a shift float is issued in, before the owner has chosen.
+     The desk's own currency belongs on that list wherever the desk is; the
+     other three are a starting suggestion the owner edits. */
+  const DEFAULT_FC = () => Array.from(new Set([homeCcy(), 'USD', 'EUR', 'GBP']));
   /* What a wholesale order can be placed in. The ledger carries these four
      today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
      offering the other five would let somebody record a delivery the book
      cannot take. The nine-currency list this replaced was the demo seed's. */
-  const ORDER_CCYS = DEFAULT_FC;
-  const floatCcysOf = (settings) => (settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length) ? settings.floatCcys : DEFAULT_FC;
+  /* Evaluated per render, not once at module load: the pack arrives from
+     the server after this file has been parsed, so a constant captured here
+     would freeze whatever the fallback said. */
+  const ORDER_CCYS = () => DEFAULT_FC();
+  const floatCcysOf = (settings) => (settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length) ? settings.floatCcys : DEFAULT_FC();
 
   /* reorder bands — min (reorder point) / target / max in UNITS */
   const BANDS = {
@@ -112,7 +127,7 @@
      CAD uses the base-currency reserve floor; others use per-currency floors. */
   const floorOf = (c, settings) => {
     if (settings) {
-      if (c === 'CAD' && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) return +settings.vaultReserveCad;
+      if (c === homeCcy() && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) return +settings.vaultReserveCad;
       const f = settings.vaultFloors && settings.vaultFloors[c];
       if (f != null && f !== '' && +f > 0) return +f;
     }
@@ -144,7 +159,7 @@
     return (<div className="flex" style={{ height: 14, borderRadius: 5, overflow: 'hidden', border: `1px solid ${CD.line}` }}>
       {parts.map((p, i) => { const w = total ? (p.mkt / total) * 100 : 0; if (w < 0.4) return null;
         const shade = `hsl(${(i * 47) % 360} 8% ${22 + (i % 5) * 11}%)`;
-        return <div key={p.c} title={`${p.c} · ${w.toFixed(1)}%`} style={{ width: w + '%', background: p.c === 'CAD' ? CD.ink : shade }}></div>; })}
+        return <div key={p.c} title={`${p.c} · ${w.toFixed(1)}%`} style={{ width: w + '%', background: p.c === homeCcy() ? CD.ink : shade }}></div>; })}
     </div>);
   }
 
@@ -277,7 +292,7 @@
       const row = vaultRows.find(r => r.c === c);
       return row ? Number(row.quantity) : null;
     };
-    const ccyChoices = Array.from(new Set([...(DEFAULT_FC), ...fc, ...((vaultRows || []).map(r => r.c))]));
+    const ccyChoices = Array.from(new Set([...DEFAULT_FC(), ...fc, ...((vaultRows || []).map(r => r.c))]));
     const open = shifts.filter(s => s.status === 'open');
     const settled = shifts.filter(s => s.status === 'settled').sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''));
 
@@ -300,7 +315,7 @@
     const doAssign = (teller, opening) => {
       const sh = { id: Date.now(), teller, date: businessDate(), openedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), openedBy: me.name, opening: { ...opening }, status: 'open', blind: true };
       setShifts(s => [sh, ...s]);
-      log && log('Shift float assigned', `${teller} · ${fmt(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0), 'CAD')} on the desk (accountability — holdings unchanged)`);
+      log && log('Shift float assigned', `${teller} · ${fmtHome(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0))} on the desk (accountability — holdings unchanged)`);
       setAssigning(false);
     };
     // vault → till: real cash, so the modal only closes once the movement has
@@ -317,14 +332,14 @@
       let varCad = 0;
       Object.keys(shift.opening || {}).forEach(c => { varCad += cadVal((+counted[c] || 0) - expectedFor(shift, c), c); });
       setShifts(list => list.map(s => s.id === shift.id ? { ...s, status: 'settled', counted: { ...counted }, varCad: Math.round(varCad), settledAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), settledBy: me.name } : s));
-      log && log('Shift settled', `${shift.teller} · ${Math.abs(varCad) < 0.5 ? 'balanced' : (varCad > 0 ? '+' : '') + fmt(varCad, 'CAD')} variance`);
+      log && log('Shift settled', `${shift.teller} · ${Math.abs(varCad) < 0.5 ? 'balanced' : (varCad > 0 ? '+' : '') + fmtHome(varCad)} variance`);
       setSettling(null);
     };
     const toggleFc = (c) => {
-      if (c === 'CAD') return; // base currency always active
+      if (c === homeCcy()) return; // the desk's own currency is always active
       const cur = fc.slice();
       const next = cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c];
-      setSettings(s => ({ ...s, floatCcys: next.length ? next : ['CAD'] }));
+      setSettings(s => ({ ...s, floatCcys: next.length ? next : [homeCcy()] }));
     };
 
     return (<div className="p-4">
@@ -336,7 +351,7 @@
       {/* active float currencies — a setting (Tel Aviv shop sets its own) */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Active float currencies</span>
-        {ccyChoices.map(c => { const on = fc.includes(c); const locked = c === 'CAD'; return (
+        {ccyChoices.map(c => { const on = fc.includes(c); const locked = c === homeCcy(); return (
           <button key={c} onClick={() => toggleFc(c)} disabled={locked} title={locked ? 'Base currency — always active' : (on ? 'Active' : 'Inactive')} className="px-2 py-1 text-[11px]" style={{ borderRadius: 7, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.faint, fontFamily: 'Space Mono, monospace', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.85 : 1 }}>{c}</button>); })}
       </div>
 
@@ -347,7 +362,7 @@
             <div key={s.id} className="p-3 flex items-center justify-between" style={{ background: CD.panel, border: `1px solid ${CD.ink}`, borderRadius: 12 }}>
               <div>
                 <div className="flex items-center gap-2"><span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: '50%', background: CD.ink, color: 'var(--cd-on-ink)', fontFamily: 'Space Mono', fontSize: 11 }}>{s.teller.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2)}</span><div><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{s.teller}</div><div className="text-[10.5px]" style={{ color: CD.faint }}>since {(s.openedAt || '').slice(-5)}</div></div></div>
-                <div className="text-[11px] mt-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>float {fmt(floatCad, 'CAD')}</div>
+                <div className="text-[11px] mt-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>float {fmtHome(floatCad)}</div>
               </div>
               <button onClick={() => setSettling(s)} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="checkcircle" s={14} /> Settle</button>
             </div>); })}
@@ -426,7 +441,7 @@
       <div className="text-[11px] px-3 py-2 mb-3 flex items-start gap-1.5" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="info" s={13} c={CD.brass} /><span>This records how much is in the safe, not what it cost. Until a priced delivery arrives, the Position tab will show these currencies with no average cost and no unrealized P&L — which is the truth, not a gap.</span></div>
       {err && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{err}</span></div>}
       <div className="flex items-center justify-between pt-1">
-        <div className="text-[12px]" style={{ color: CD.mute }}>Opening value <b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(totalCad, 'CAD')}</b></div>
+        <div className="text-[12px]" style={{ color: CD.mute }}>Opening value <b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmtHome(totalCad)}</b></div>
         <button disabled={!entered.length || saving} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: entered.length ? CD.ink : CD.faint, borderRadius: 9, cursor: !entered.length ? 'not-allowed' : saving ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {saving ? 'Recording…' : 'Put the vault on the ledger'}</button>
       </div>
     </Modal>);
@@ -500,7 +515,7 @@
       {unknown.length > 0 && <div className="text-[11px] px-3 py-2 mb-3" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}>{vaultTracked ? `This vault has no ${unknown.join(', ')} on the ledger, so nothing can be issued from it. Record a delivery first.` : 'This vault has no opening position on the ledger yet — count the safe and record it before moving cash out of it.'}</div>}
       {issueErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{issueErr}</span></div>}
       <div className="flex items-center justify-between pt-1">
-        <div className="text-[12px]" style={{ color: CD.mute }}>{target === 'person' ? 'Float value ' : 'Moving '}<b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmt(floatCad, 'CAD')}</b></div>
+        <div className="text-[12px]" style={{ color: CD.mute }}>{target === 'person' ? 'Float value ' : 'Moving '}<b style={{ color: CD.ink, fontFamily: 'Space Mono' }}>{fmtHome(floatCad)}</b></div>
         <button disabled={!valid || issuing} onClick={submit} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: !valid ? CD.faint : CD.ink, borderRadius: 9, cursor: !valid ? 'not-allowed' : issuing ? 'wait' : 'pointer' }}><Ic n="arrowright" s={15} c="var(--cd-on-ink)" /> {issuing ? 'Issuing…' : target === 'person' ? 'Assign to desk' : 'Issue to till'}</button>
       </div>
     </Modal>);
@@ -534,7 +549,7 @@
         <div>
           <div className="flex items-center justify-between px-3 py-2.5 mb-3" style={{ background: off ? CD.flagSoft : CD.greenSoft, borderRadius: 10 }}>
             <span className="text-[12px] font-medium" style={{ color: off ? CD.flag : '#1c5c3a' }}>{off ? 'Drawer is off' : 'Drawer balanced'}</span>
-            <span className="text-[16px] font-bold" style={{ fontFamily: 'Space Mono', color: off ? CD.flag : '#1c5c3a' }}>{off ? (varCad > 0 ? '+' : '') + fmt(varCad, 'CAD') : '✓ 0.00'}</span>
+            <span className="text-[16px] font-bold" style={{ fontFamily: 'Space Mono', color: off ? CD.flag : '#1c5c3a' }}>{off ? (varCad > 0 ? '+' : '') + fmtHome(varCad) : '✓ 0.00'}</span>
           </div>
           <div className="flex items-center justify-between">
             <button onClick={() => setLocked(false)} className="text-[12px] px-3 py-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>← Recount</button>
@@ -625,7 +640,7 @@
     return (<Modal onClose={done ? undefined : onClose} icon={receiving ? 'checkcircle' : 'plus'} title={receiveOnly ? 'Receive order' : 'New banknote order'} sub={receiveOnly ? 'Confirm what arrived and what you paid — this posts the cash into inventory.' : 'Record a wholesale order. You’ll mark it received when the cash arrives.'}>
       <div className="mb-3">
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Currency</div>
-        <div className="flex flex-wrap gap-1.5">{ORDER_CCYS.filter(c => c !== 'CAD').map(c => <button key={c} disabled={receiveOnly} onClick={() => setCcy(c)} className="px-2.5 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${ccy === c ? CD.ink : CD.line}`, background: ccy === c ? CD.ink : 'transparent', color: ccy === c ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono', cursor: receiveOnly ? 'default' : 'pointer', opacity: receiveOnly && ccy !== c ? 0.4 : 1 }}>{flagOf(c)} {c}</button>)}</div>
+        <div className="flex flex-wrap gap-1.5">{ORDER_CCYS().filter(c => c !== homeCcy()).map(c => <button key={c} disabled={receiveOnly} onClick={() => setCcy(c)} className="px-2.5 py-1.5 text-[12px]" style={{ borderRadius: 8, border: `1px solid ${ccy === c ? CD.ink : CD.line}`, background: ccy === c ? CD.ink : 'transparent', color: ccy === c ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono', cursor: receiveOnly ? 'default' : 'pointer', opacity: receiveOnly && ccy !== c ? 0.4 : 1 }}>{flagOf(c)} {c}</button>)}</div>
       </div>
       <div className={receiving ? 'grid grid-cols-2 gap-2 mb-3' : 'mb-3'}>
         <div>
@@ -830,7 +845,7 @@
         const rec = { id: Date.now(), ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier || 'Wholesale notes', ref: 'WO-' + businessDate().slice(2).replace(/-/g, '') + '-' + p.ccy, date: businessDate(), by: me.name, status: 'received' };
         setReceipts(list => [rec, ...(list || [])]);
       }
-      log && log('Order received', `${num(units)} ${p.ccy} @ ${fmt(unitCost, 'CAD')} · ${fmt(costCad, 'CAD')} posted to inventory`);
+      log && log('Order received', `${num(units)} ${p.ccy} @ ${fmtHome(unitCost)} · ${fmtHome(costCad)} posted to inventory`);
       onOrderReceived && onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes');   // the notes physically land in THIS branch's vault
       setOrdering(null); setTab('receive');
     };
@@ -897,7 +912,7 @@
           <button onClick={() => setOpeningVault(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="check" s={14} c="var(--cd-on-ink)" /> Record what’s in the safe</button>
         </div>
       )}
-      {openingVault && <OpeningPositionModal fc={DEFAULT_FC} onClose={() => setOpeningVault(false)} onSave={onOpenVaultPosition} />}
+      {openingVault && <OpeningPositionModal fc={DEFAULT_FC()} onClose={() => setOpeningVault(false)} onSave={onOpenVaultPosition} />}
 
       <div className="flex-1 overflow-auto">
         {tab === 'position' && <Position position={position} loading={posLoading} error={posError} settings={settings} vaultTracked={onLedger} onRecordOpening={serverBacked ? () => setOpeningVault(true) : null} />}
@@ -912,7 +927,7 @@
           const KB = { issue: 'Float issued', return: 'Cash returned', vault: 'Vault run', order: 'Order received', branch: 'Vault run' };
           return (<div className="p-4">
             <div className="grid grid-cols-3 gap-2 mb-3" style={{ maxWidth: 560 }}>
-              {[['Into this vault · today', fmt(inToday, 'CAD'), CD.green], ['Out of this vault · today', fmt(outToday, 'CAD'), CD.mute], ['Net · today', (inToday - outToday >= 0 ? '+' : '') + fmt(inToday - outToday, 'CAD'), CD.ink]].map(([l, v, c]) => (
+              {[['Into this vault · today', fmtHome(inToday), CD.green], ['Out of this vault · today', fmtHome(outToday), CD.mute], ['Net · today', (inToday - outToday >= 0 ? '+' : '') + fmtHome(inToday - outToday), CD.ink]].map(([l, v, c]) => (
                 <div key={l} className="px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[15px] font-bold" style={{ color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
             </div>
             <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden', background: CD.panel }}>

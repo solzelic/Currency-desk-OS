@@ -16,7 +16,20 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, fmt, num, crossRate, TODAY } = window.CDOS;
+  const { CD, Ic, fmt, num, crossRate, businessDate, deskPack, reportingLimit } = window.CDOS;
+  /* THE DESK'S OWN MONEY.
+
+     Every money figure in this file — a client's lifetime volume, the fees
+     they have paid, the structuring aggregate on a compliance banner, and
+     the printed client report's four headline tiles — was formatted as
+     Canadian dollars. Home currency belongs to the jurisdiction pack.
+
+     `homeOf` returns NULL rather than a number when the desk's books are
+     kept in a currency the browser's rate board cannot convert into: the
+     board is quoted in units per CANADIAN dollar (`PER_CAD`), so it can
+     only produce this total for a Canadian desk. Elsewhere the figure is
+     absent and says so — see docs/ABSENT_FIGURES.md. */
+  const homeCcy = () => { const p = deskPack(); return (p && p.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const computeFlags = window.CDOS.computeFlags;
   // render overlays at the document root so the window's stacking context
   // (and the rate ticker at z-360) can never occlude them
@@ -85,9 +98,14 @@
   const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, (rec.country && rec.country !== 'Canada') ? rec.country : ''].filter(Boolean).join(', ');
   const RISK = window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = window.CDOS.normalizeRisk, riskTone = window.CDOS.riskTone;
-  const cadOf = (a, ccy) => ccy === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', ccy) || 1);
+  const homeOf = (a, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return +a || 0; if (home !== 'CAD') return null; const r = crossRate('CAD', ccy); return r ? (+a || 0) / r : null; };
+  /* A total across currencies, or nothing. One leg this desk cannot price
+     makes the whole total unknown; a sum quietly missing a currency looks
+     complete and is the shape of wrong this project keeps finding. */
+  const sumHome = (parts) => { const v = parts.map(([a, c]) => homeOf(a, c)); return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null; };
+  const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy());
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-  const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(TODAY); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
+  const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(window.CDOS.wallClock()); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
 
   // The highest verification a contact has actually PAID FOR through the provider.
   // Reads the KYC check history — never inferred from typed-in ID fields.
@@ -110,7 +128,11 @@
   // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    const expired = rec && rec.idExpiry && rec.idExpiry < TODAY;
+    /* Has this document expired? A question about the calendar, so the
+       WALL CLOCK — but read now rather than from the snapshot taken when
+       the page loaded, which on a desk left open overnight went on saying
+       an ID expiring at midnight was still valid. */
+    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
     // provider-verified identity — the only true KYC states
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -120,14 +142,15 @@
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(TODAY)) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
+    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
     return ['ID on hand', CD.amber, CD.amberSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
     const mine = rows.filter(r => r.customer === name && r.status !== 'void');
-    let vol = 0, fees = 0, last = '';
-    mine.forEach(r => { vol += cadOf(r.inAmt, r.inCcy); fees += (+r.fee || 0); if (r.date > last) last = r.date; });
+    let fees = 0, last = '';
+    mine.forEach(r => { fees += (+r.fee || 0); if (r.date > last) last = r.date; });
+    const vol = sumHome(mine.map(r => [r.inAmt, r.inCcy]));
     return { n: mine.length, vol, fees, last };
   }
 
@@ -244,7 +267,7 @@
             <td className="px-3 py-2" style={{ color: CD.mute }}>{x.type}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>
             <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
-            {!compact && <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmt(x.fee, 'CAD')}</td>}
+            {!compact && <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmtHome(x.fee)}</td>}
             <td className="px-3 py-2 text-center" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: CD.mute }}>{v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td>
           </tr>); })}</tbody>
       </table>
@@ -252,7 +275,17 @@
   }
 
   /* ---------- printable client report ---------- */
-  function exportClientReport(name, rec, rows, flags) {
+  function exportClientReport(name, rec, rows, flags, settings) {
+    /* The letterhead, the regulator and the reporting line all belong to
+       the desk, not to this file. "York Currency Exchange · MSB" was
+       printed on every client report every customer of this product
+       generated, and the footer asserted FINTRAC record-keeping and a
+       ten-thousand-dollar line under any flag. */
+    const pack = deskPack();
+    const bizName = (settings && (settings.operatingName || settings.bizName)) || (pack && pack.name ? pack.name + ' desk' : 'This desk');
+    const bizLine = (settings && settings.reportFootLine) || 'Registered Money Services Business';
+    const authority = (pack && pack.regulator) || null;
+    const limit = reportingLimit(settings);
     rec = rec || {};
     const mine = rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     const st = clientStats(rows, name);
@@ -261,7 +294,7 @@
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const row = (l, v) => v ? `<tr><td class="k">${esc(l)}</td><td>${esc(v)}</td></tr>` : '';
-    const body = mine.map(r => { const f = flags[r.id] || {}; const v = r.status === 'void'; return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} ${esc(r.inCcy)}</td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} ${esc(r.outCcy)}</td><td class="r">${fmt(r.fee, 'CAD')}</td><td class="c mono">${v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td></tr>`; }).join('');
+    const body = mine.map(r => { const f = flags[r.id] || {}; const v = r.status === 'void'; return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} ${esc(r.inCcy)}</td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} ${esc(r.outCcy)}</td><td class="r">${esc(fmtHome(r.fee))}</td><td class="c mono">${v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td></tr>`; }).join('');
     const addr = fullAddr(rec);
     const w = window.open('', '_blank', 'width=920,height=1100');
     if (!w) return;
@@ -283,8 +316,8 @@ table.tx{border-collapse:collapse;width:100%;}table.tx th{text-align:left;font-s
 table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r{text-align:right;font-variant-numeric:tabular-nums;}.c{text-align:center;}.mono{font-family:'Space Mono',monospace;font-size:10px;color:#666;}.mut{color:#999;}.grn{color:#1f8a4c;}tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}@page{margin:13mm;}</style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">${esc(name)}</div><div class="sub">${corp ? 'Corporate client' : 'Individual client'} · KYC file</div><span class="badge">${esc(stat).toUpperCase()}</span></div>
-<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''))}</div><div>York Currency Exchange · MSB</div></div></div>
-<div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume</div><div class="v">${fmt(st.vol, 'CAD')}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${fmt(st.fees, 'CAD')}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
+<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''))}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
+<div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(st.vol))}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${esc(fmtHome(st.fees))}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
@@ -293,7 +326,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
 <table class="tx"><thead><tr><th>Ref</th><th>Date</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="7" style="padding:14px;color:#999;">No transactions.</td></tr>'}</tbody></table>
-<div class="ft">RPT = reportable ≥ $10,000 · STR = structuring watch · ID = KYC exception. Prepared for FINTRAC record-keeping. Volumes in CAD-equivalent at live mid.</div>
+<div class="ft">RPT = reportable${limit.amount == null ? ' — no reporting line is set for this desk, so nothing here is flagged' : ` ≥ ${esc(limit.label)}`} · STR = structuring watch · ID = KYC exception.${authority ? ` Prepared for ${esc(authority)} record-keeping.` : ' This desk\'s regulator is not stated on its jurisdiction pack, so none is named here.'} ${homeCcy() ? `Volumes in ${esc(homeCcy())}-equivalent at the desk's live mid; a client whose deals include a currency this branch has never published a rate for shows no total.` : 'This desk has no home currency on file, so no cross-currency total is shown.'}</div>
 </body></html>`);
     w.document.close();
     setTimeout(() => { w.focus(); w.print(); }, 400);
@@ -318,7 +351,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Txns</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.n}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Volume</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(st.vol, 'CAD')}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Volume</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(st.vol)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Last seen</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.last || '—'}</div></div>
           </div>
         </div>
@@ -417,7 +450,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       ) : (
         <div className="space-y-2">
           {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable — not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
-          {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmt(strAgg, 'CAD')} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
+          {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
           {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}.`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
         </div>
       )}
@@ -469,7 +502,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
           <div className="flex items-center gap-2 flex-none">
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
-            {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
+            {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
             <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
           </div>
         </div>
@@ -489,7 +522,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
           {/* KPI strip */}
           <div className="grid grid-cols-4 gap-px mb-5" style={{ background: CD.line, border: `1px solid ${CD.line}`, borderRadius: 10, overflow: 'hidden' }}>
-            {[['Transactions', String(st.n)], ['Lifetime volume', fmt(st.vol, 'CAD')], ['Fees paid', fmt(st.fees, 'CAD')], ['Reportable', String(reportable)]].map(([l, v], i) => (
+            {[['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => (
               <div key={i} className="px-4 py-3" style={{ background: CD.panel }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[18px] font-semibold mt-0.5" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>
             ))}
           </div>
@@ -712,7 +745,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </div>
                 {/* rate-board readout: the numbers that matter, in mono */}
                 <div className="grid grid-cols-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  {[['TXNS', String(c.st.n)], ['VOLUME', fmt(c.st.vol, 'CAD')], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => (
+                  {[['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => (
                     <div key={l} className="px-3 py-2.5" style={{ borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none' }}>
                       <div className="text-[8.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div>
                       <div className="text-[12.5px] font-bold truncate" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{v}</div>

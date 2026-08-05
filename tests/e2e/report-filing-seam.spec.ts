@@ -155,7 +155,13 @@ async function completeAndSeal(page: Page, acknowledgement: string) {
     if (((await box.inputValue()) || "").trim() === "") await box.fill("N/A");
   }
   await worksheet.getByRole("button", { name: /Mark filed & seal/i }).click();
-  await worksheet.locator('input[placeholder*="FWR receipt"]').fill(acknowledgement);
+  /* The acknowledgement field, found without naming a country's portal.
+     Its placeholder used to be "Paste the FWR receipt number…" — FWR being
+     Canada's — and is now built from the jurisdiction pack's own
+     `filing_format` ("FWR JSON batch", "goAML", "BSA E-Filing XML"), so a
+     selector matching Canada's wording would pass only on a Canadian desk
+     and hide exactly the defect that change fixed. */
+  await worksheet.locator('input[placeholder*="receipt number"]').fill(acknowledgement);
   await worksheet.getByRole("button", { name: /^Seal filed copy$/i }).click();
   await expect(worksheet.getByText(/FILING WORKSHEET/)).toHaveCount(0, { timeout: 20_000 });
 }
