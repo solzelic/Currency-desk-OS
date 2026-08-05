@@ -35,25 +35,15 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, deskPack } = window.CDOS;
 
-  /* THE PACK'S OWN CATALOGUE OF FORMS, cached in module state.
+  /* THE PACK'S OWN CATALOGUE OF FORMS.
 
-     cdos-base.jsx's refreshJurisdiction() keeps `answer.pack` and drops
-     `answer.reports`, so this file asks for itself. That is a duplicate
-     request per session and it is deliberate for now — the alternative is
-     editing a file this change does not own. See the handover note: the
-     right home for this is setDeskPack(answer.pack, answer.reports). */
-  let _reports = null;
-  function deskReports() { return _reports; }
-  function refreshReports() {
-    const B = window.CDOS && window.CDOS.Backend;
-    if (!B || !B.loadJurisdiction) return Promise.resolve(null);
-    return B.loadJurisdiction()
-      .then(answer => { _reports = (answer && answer.reports) || []; return _reports; })
-      .catch(() => null);
-  }
-  refreshReports();
+     This file used to fetch them for itself, once per session, because
+     refreshJurisdiction() kept `answer.pack` and dropped `answer.reports`
+     from the same response. They travel together now — one request, one
+     answer, one cache — so this reads what the desk already knows. */
+  const deskReports = () => window.CDOS.deskReports();
   /* Which form is this, as the pack describes it — or nothing. */
-  const reportInPack = (code) => (_reports || []).find(r => r.code && code && r.code.toUpperCase() === String(code).toUpperCase()) || null;
+  const reportInPack = (code) => (deskReports() || []).find(r => r.code && code && r.code.toUpperCase() === String(code).toUpperCase()) || null;
   /* Where the completed report is submitted, in the regulator's own words.
      Null when the pack does not say, and every call site prints a neutral
      phrase rather than Canada's. */

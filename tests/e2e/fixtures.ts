@@ -91,7 +91,50 @@ export const expect = test.expect;
    ============================================================ */
 export const hasLedger = !!process.env.SEAM_DATABASE_URL;
 
-/** Sign in at the desk as a till operator and land on the OS. */
+
+/**
+ * Get from wherever the page is to the desk itself.
+ *
+ * An owner is asked where they are working before the desk opens — "Owner
+ * access — every branch, any till" — because they are the one person the
+ * product cannot infer a drawer for. A teller or a manager has one, so they
+ * land straight on the desktop.
+ *
+ * Exported because ANY reload puts an owner back on that screen, and a
+ * helper that reloads mid-test (to open a till, to top up a drawer) leaves
+ * the caller on the chooser with no error to explain why the next click
+ * found nothing. Call this after a reload.
+ */
+export async function landOnDesktop(page: Page): Promise<void> {
+  const chooser = page.getByRole("heading", { name: /Where are you working/i });
+  const desktop = page.getByText(/Rate Board/i).first();
+  /* Waits for whichever arrives. `isVisible()` does NOT wait — it answers
+     about this instant — so asking it straight after a reload answered "no
+     chooser" while the chooser was still rendering. */
+  await Promise.race([
+    chooser.waitFor({ state: "visible", timeout: 45_000 }),
+    desktop.waitFor({ state: "visible", timeout: 45_000 }),
+  ]);
+  if (!(await chooser.isVisible())) return;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    /* A free drawer by preference: the chooser labels each till with who is
+       on it, and a session outlives a browser context, so the obvious first
+       till is often one this same person already holds. */
+    const free = page.getByRole("button", { name: /· free$/ });
+    const anyTill = page.getByRole("button", { name: /^(Till \d|Wholesale)/ });
+    await ((await free.count()) ? free.first() : anyTill.first()).click();
+    await page.getByRole("button", { name: /^Open workspace$/ }).click();
+    /* Somebody may already be on that drawer. The desk asks before taking
+       it, and confirming is what a person does. */
+    const takeOver = page.getByRole("button", { name: /^Take over till$/ });
+    if (await takeOver.isVisible({ timeout: 3_000 }).catch(() => false)) await takeOver.click();
+    if (await desktop.isVisible({ timeout: 15_000 }).catch(() => false)) return;
+  }
+  await desktop.waitFor({ state: "visible", timeout: 45_000 });
+}
+
+/** Sign in at the desk and land on the OS, whoever they are. */
 export async function signInAtDesk(page: Page, staffId = "a.singh"): Promise<void> {
   await page.goto("/app");
   const status = await page.evaluate(async (id) => {
@@ -104,6 +147,8 @@ export async function signInAtDesk(page: Page, staffId = "a.singh"): Promise<voi
   }, staffId);
   if (status !== 200) throw new Error(`desk sign-in failed: ${status}`);
   await page.reload();
+
+  await landOnDesktop(page);
 }
 
 /** Ask the ledger directly, from inside the signed-in page. */

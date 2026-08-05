@@ -289,9 +289,17 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
-  const setDeskPack = (pack) => {
+  /* The forms this jurisdiction files, alongside the pack that defines
+     them — the filing portal, the aggregation window, the trigger amount.
+     They arrive in the same answer as the pack and were being dropped on
+     the floor, so the LCTR worksheet issued its own duplicate request per
+     session to get them back. Kept together because they are one fact. */
+  let _reports = [];
+  const deskReports = () => _reports;
+  const setDeskPack = (pack, reports) => {
     _pack = pack || null;
-    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack } })); } catch (e) {}
+    if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
+    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports } })); } catch (e) {}
     return _pack;
   };
   async function refreshJurisdiction() {
@@ -299,7 +307,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports);
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
@@ -352,7 +360,12 @@
       /* What the regulator calls the report this line triggers — "LCTR"
          in Canada, "CTR" in the United States. Screens print it; none of
          them should be spelling it out for themselves. */
-      code: (regime && regime.largeCode) || (_pack && _pack.reportName) || 'report',
+      /* THE PACK FIRST. getRegime() falls back to FINTRAC whenever
+         settings.regime is unset, so reading it first handed a London desk
+         the code "LCTR" — a Canadian form, named confidently, on a report
+         the desk does not file. The pack is the thing that actually knows
+         which form this jurisdiction uses. */
+      code: (_pack && _pack.reportName) || (regime && regime.largeCode) || 'report',
       label: amount == null || !currency ? '—' : fmt(amount, currency),
     };
   }
@@ -916,7 +929,7 @@
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
-    deskPack, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds, setDeskThresholds, refreshDeskThresholds,
     spreadOf, unitCadMid, buyUnitCad, sellUnitCad, roundPayout, priceDeal, dealMargin

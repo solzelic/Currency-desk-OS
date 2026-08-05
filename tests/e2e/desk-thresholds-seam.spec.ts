@@ -22,11 +22,16 @@
    FINTRAC requires" and "not compliant" are the two things that must
    never be confused with each other.
    ============================================================ */
-import { test, expect, hasLedger, signInAtDesk, rendered } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop, rendered } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
+
+/* The seeded administrator. Moving a reporting line is the owner's and
+   nobody else's — a manager runs a branch, this is the standing policy of
+   the registered business — so this is the only sign-in that may do it. */
+const OWNER = "j.masri";
 
 /** What the ledger says this desk's lines are, asked from inside the page. */
 const thresholds = (page: Page) =>
@@ -96,6 +101,7 @@ async function deskCanTrade(page: Page) {
   const failed = report.filter((note) => !/:ok$|:open$/.test(note));
   expect(failed, `the desk could not be made ready: ${report.join(" · ")}`).toEqual([]);
   await page.reload();
+  await landOnDesktop(page);   // a reload returns an owner to the station chooser
   return report.join(" · ");
 }
 
@@ -194,7 +200,7 @@ async function typeIdThreshold(page: Page, value: string) {
 }
 
 test("the rows show the ledger's lines, not a local default", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
   await openComplianceSettings(page);
 
@@ -214,7 +220,7 @@ test("the rows show the ledger's lines, not a local default", async ({ page }) =
 });
 
 test("tightening the line in Settings is what the ledger then refuses at", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
   await deskCanTrade(page);
   const walkIn = await walkInCustomer(page);
@@ -253,7 +259,7 @@ test("tightening the line in Settings is what the ledger then refuses at", async
 });
 
 test("a stricter desk is told it is stricter, and a looser one that it is not compliant", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
   await openComplianceSettings(page);
 
@@ -275,23 +281,41 @@ test("a stricter desk is told it is stricter, and a looser one that it is not co
   expect(await followThePack(page)).toBe(200);
 });
 
-test("a teller cannot reach the rows, and could not use them if they did", async ({ page }) => {
-  await signInAtDesk(page, "a.singh");
-  await page.getByText(/Rate Board/i).first().waitFor({ timeout: 45_000 });
+/* Where the reporting line sits is the standing policy of the registered
+   business, so it is the owner's alone and everybody else asks.
 
-  // Settings is not a screen a teller has at all, so the rows are unreachable
-  await expect(page.getByText(/^Settings$/i)).toHaveCount(0);
+   The branch manager is the interesting refusal. They run a branch, they
+   open and close its drawers, they may change the rate board and they may
+   choose how stock is costed — and they still may not move the number the
+   whole registered business reports at. That is the separation this
+   permission exists for, so it is the one worth driving. */
+for (const [who, staffId, hasSettings] of [
+  ["a supervisor", "a.singh", false],
+  ["a branch manager", "r.haddad", true],
+] as const) {
+  test(`${who} is refused the reporting line`, async ({ page }) => {
+    await signInAtDesk(page, staffId);
+    await page.getByText(/Rate Board/i).first().waitFor({ timeout: 45_000 });
 
-  /* And the route refuses them anyway. A hidden control is a courtesy, not
-     a permission — anybody signed in can call the endpoint, so what
-     actually protects the desk's reporting line is the server saying no. */
-  const refused = await page.evaluate(() =>
-    fetch("/api/ledger/desk-thresholds", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idThreshold: "50000.00" }),
-    }).then(async (r) => ({ status: r.status, body: await r.json() })),
-  );
-  expect(refused.status).toBe(403);
-  expect((await thresholds(page)).idThreshold.deskChoice).toBeNull();
-});
+    if (hasSettings) {
+      /* A manager HAS Settings — hiding the screen is not what protects
+         the line, and pretending otherwise would test the wrong thing. */
+      await expect(page.getByText(/^Settings$/i).first()).toBeVisible();
+    } else {
+      await expect(page.getByText(/^Settings$/i)).toHaveCount(0);
+    }
+
+    /* The route refuses them either way. A hidden control is a courtesy,
+       not a permission — anybody signed in can call the endpoint, so what
+       actually protects the desk's reporting line is the server saying no. */
+    const refused = await page.evaluate(() =>
+      fetch("/api/ledger/desk-thresholds", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idThreshold: "50000.00" }),
+      }).then(async (r) => ({ status: r.status, body: await r.json() })),
+    );
+    expect(refused.status).toBe(403);
+    expect((await thresholds(page)).idThreshold.deskChoice).toBeNull();
+  });
+}

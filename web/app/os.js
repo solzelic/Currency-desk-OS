@@ -351,23 +351,40 @@
      desk operating on 55,000 AED got a Canadian figure with a dollar sign
      in front of it.
       reportingLimit() is the one answer. In precedence order:
-        1. what the owner has set          settings.threshold
+        1. what the DESK has set           the server's per-entity override
        2. what the jurisdiction pack says the server's pack, per entity
-       3. what the regime engine says     getRegime(), the browser's packs
+       3. what the owner set in Settings  settings.threshold
+       4. what the regime engine says     getRegime(), the browser's packs
       and the currency comes from the pack first, because home currency is
      the pack's to state — it is the whole point of shipping a Canada pack
      and a UK pack rather than hardcoding one country.
+      Note where the owner's setting now sits. It used to be first, and it
+     was browser state: whatever this browser profile last saved. That is
+     the wrong authority for a compliance line — the second till at the
+     same desk held its own copy, a cleared browser held none, and the
+     server enforcing the ID gate could not see any of it. The desk's
+     number now lives on the ledger and comes back at (1); (3) survives
+     only for the standalone build, which has no server to ask.
       `amount` is null when nothing can answer. A screen showing a
      threshold it cannot state must say so; flagging every deal against a
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
-  const setDeskPack = pack => {
+  /* The forms this jurisdiction files, alongside the pack that defines
+     them — the filing portal, the aggregation window, the trigger amount.
+     They arrive in the same answer as the pack and were being dropped on
+     the floor, so the LCTR worksheet issued its own duplicate request per
+     session to get them back. Kept together because they are one fact. */
+  let _reports = [];
+  const deskReports = () => _reports;
+  const setDeskPack = (pack, reports) => {
     _pack = pack || null;
+    if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     try {
       window.dispatchEvent(new CustomEvent('cdos-jurisdiction', {
         detail: {
-          pack: _pack
+          pack: _pack,
+          reports: _reports
         }
       }));
     } catch (e) {}
@@ -378,14 +395,51 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports);
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
+  /* The desk's own lines, as the ledger resolved them: each of
+     reportThreshold / idThreshold / aggregationHours / retentionYears as
+     { effective, deskChoice, packValue, posture }. Cached in module state
+     beside the pack and refreshed by the same hook, because every screen
+     that shows a threshold wants the same answer and none of them should
+     be asking for itself. */
+  let _thresholds = null;
+  const deskThresholds = () => _thresholds;
+  const setDeskThresholds = answer => {
+    _thresholds = answer || null;
+    try {
+      window.dispatchEvent(new CustomEvent('cdos-thresholds', {
+        detail: {
+          thresholds: _thresholds
+        }
+      }));
+    } catch (e) {}
+    return _thresholds;
+  };
+  async function refreshDeskThresholds() {
+    try {
+      const B = window.CDOS && window.CDOS.Backend;
+      if (!B) return _thresholds;
+      const answer = await B.loadDeskThresholds();
+      if (answer && answer.idThreshold) setDeskThresholds(answer);
+    } catch (e) {/* not signed in, or the standalone build with no server */}
+    return _thresholds;
+  }
   const _positive = v => v != null && v !== '' && !isNaN(v) && +v > 0;
+  /* One resolved line off the server's answer, or null. `effective` is
+     already the desk's choice where it made one and the pack's where it
+     did not — the precedence was decided on the server, once, so that the
+     number the screen prints and the number the gate enforces cannot
+     drift apart. */
+  const _serverLine = key => {
+    const line = _thresholds && _thresholds[key];
+    return line && _positive(line.effective) ? +line.effective : null;
+  };
   function reportingLimit(settings) {
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const amount = _positive(settings && settings.threshold) ? +settings.threshold : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
+    const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold') : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
     const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -393,7 +447,12 @@
       /* What the regulator calls the report this line triggers — "LCTR"
          in Canada, "CTR" in the United States. Screens print it; none of
          them should be spelling it out for themselves. */
-      code: regime && regime.largeCode || _pack && _pack.reportName || 'report',
+      /* THE PACK FIRST. getRegime() falls back to FINTRAC whenever
+         settings.regime is unset, so reading it first handed a London desk
+         the code "LCTR" — a Canadian form, named confidently, on a report
+         the desk does not file. The pack is the thing that actually knows
+         which form this jurisdiction uses. */
+      code: _pack && _pack.reportName || regime && regime.largeCode || 'report',
       label: amount == null || !currency ? '—' : fmt(amount, currency)
     };
   }
@@ -404,6 +463,21 @@
     const limit = reportingLimit(settings);
     return limit.amount == null ? null : (+homeAmount || 0) >= limit.amount;
   };
+  /* The line at which this desk asks for identification — the other half
+     of the pair, and the one the LEDGER refuses a deal at. Same
+     precedence, same currency, same null. A screen quoting a different
+     number from the one the server will enforce is how a teller ends up
+     arguing with a refusal they were told would not come. */
+  function identificationLimit(settings) {
+    const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold') : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
+    const currency = _thresholds && _thresholds.currency || _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
+    return {
+      amount,
+      currency,
+      label: amount == null || !currency ? '—' : fmt(amount, currency)
+    };
+  }
   /* Staff directory seed. Per the Branch & Access Model spec: a role carries
      capabilities (ROLE_CAPS) AND a scope (ROLE_SCOPE); assignments say WHERE
      the role applies — branches: '*' (owner) or an array of branch ids, with
@@ -998,11 +1072,19 @@
         if (live) setVersion(v => v + 1);
       };
       window.addEventListener('cdos-jurisdiction', bump);
+      window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
-      Promise.all([refreshJurisdiction(), refreshBusinessDate()]).then(bump, bump);
+      Promise.all([refreshJurisdiction(),
+      /* The desk's own lines, alongside the pack that proposes them. A
+         screen that had the pack but not the override would print the
+         regulator's 10,000 at a desk that had deliberately moved to
+         7,500 — the exact class of disagreement this hook exists to
+         stop, so the two arrive together or the version does not move. */
+      refreshDeskThresholds(), refreshBusinessDate()]).then(bump, bump);
       return () => {
         live = false;
         window.removeEventListener('cdos-jurisdiction', bump);
+        window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
       };
     }, []);
@@ -1396,10 +1478,16 @@
     /* the one reporting line, and the pack it comes from */
     reportingLimit,
     overReportingLimit,
+    identificationLimit,
     deskPack,
+    deskReports,
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
+    /* the desk's own lines, as the ledger resolved them against the pack */
+    deskThresholds,
+    setDeskThresholds,
+    refreshDeskThresholds,
     spreadOf,
     unitCadMid,
     buyUnitCad,
@@ -1802,6 +1890,35 @@
       loadJurisdiction: function () {
         return request("/api/ledger/jurisdiction");
       },
+
+      /* ---- the desk's own thresholds ----
+
+         The pack states what the regulator requires; these are what the
+         desk actually operates at, which it may tighten at any time and
+         not only at sign-up. They live on the ledger because the POSTING
+         path enforces the identification line — a number the server
+         cannot see is a number the server cannot enforce, and it used to
+         be a hardcoded 3,000 for every desk on earth.
+
+         Each line comes back as { effective, deskChoice, packValue,
+         posture }: what the desk operates at, what it chose, what its
+         regulator requires, and where the first stands against the last.
+         `posture` is "following" while the desk has chosen nothing,
+         "stricter" where it asks more of itself than the law does — which
+         is a legitimate decision and not a fault — and "looser" where it
+         is failing to report what it is obliged to report. */
+      loadDeskThresholds: function () {
+        return request("/api/ledger/desk-thresholds");
+      },
+      /* A partial change: name only the lines you are moving. Amounts are
+         decimal strings, windows and years are whole numbers, and the
+         string "pack_default" hands a line back to the jurisdiction. */
+      setDeskThresholds: function (changes) {
+        return request("/api/ledger/desk-thresholds", {
+          method: "PUT",
+          body: JSON.stringify(changes),
+        });
+      },
     },
   });
 })();
@@ -1988,6 +2105,15 @@
     dDiff
   } = window.CDOS;
 
+  /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
+     Canadian dollars on every desk in every country. Home currency belongs
+     to the jurisdiction pack; where no pack has arrived the amount is shown
+     with no currency word rather than with the wrong one. Evaluated per
+     call, because the pack lands from the server after this file parses. */
+  const homeCcy = () => {
+    const pack = window.CDOS.deskPack();
+    return pack && pack.homeCurrency || (window.CDOS.reportingLimit(null) || {}).currency || null;
+  };
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -2006,7 +2132,18 @@
       aggHours: 24
     };
     const TH = reportingLimit(settings).amount;
-    const cadIn = r => r.inCcy === 'CAD' ? Number(r.inAmt) || 0 : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
+    /* The deal's size in the desk's own money, or nothing. The board is
+       quoted per Canadian dollar so it can only answer for a Canadian desk;
+       a receipt that printed a Canadian figure under a foreign symbol is
+       the thing this replaces. */
+    const cadIn = r => {
+      const home = homeCcy();
+      if (!home) return null;
+      if (r.inCcy === home) return Number(r.inAmt) || 0;
+      if (home !== 'CAD') return null;
+      const rate = crossRate('CAD', r.inCcy);
+      return rate ? (Number(r.inAmt) || 0) / rate : null;
+    };
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') {
@@ -3493,7 +3630,7 @@
       v: `${num(row.outAmt)} ${row.outCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Fee",
-      v: fmt(row.fee, 'CAD')
+      v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
     }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'
@@ -3917,6 +4054,301 @@
       }
     }, "Available on the hosted desk, where the ledger keeps the books."), err && /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] -mt-1.5 mb-1",
+      style: {
+        color: CD.flag
+      }
+    }, err));
+  }
+
+  /* ---------- the desk's compliance thresholds (server-backed) ----------
+      These four rows used to write the browser's saved settings and stop
+     there. Which meant the reporting line an owner set at sign-up lived in
+     one browser profile; the second till at the same desk held its own
+     copy; a cleared browser held none; and the ledger — which REFUSES a
+     deal when the customer has not been identified — could not see any of
+     it and compared against a hardcoded 3,000 instead.
+      So they go to the ledger, the same way CostMethodRow does and for the
+     same reason: through window.CDOS.Backend, never a bare fetch, because
+     every ledger route decides which till it is answering for from a
+     header only the Backend client sets.
+      The pack proposes and the desk decides. Each row shows what the desk
+     operates at, what its regulator requires, and — the part the owner
+     asked for — where the first stands against the second, live, as the
+     number changes. Tighter than the mandate is a decision, said plainly.
+     Looser is a compliance failure and looks like one.
+      They are ALSO mirrored back into the saved settings on success. Not
+     as a second source of truth — reportingLimit() prefers the server's
+     answer — but so the standalone build, which has no ledger to ask,
+     keeps working from the last number this desk actually chose. */
+
+  const THRESHOLD_MIRROR = {
+    reportThreshold: 'threshold',
+    idThreshold: 'idRequiredOver',
+    aggregationHours: 'aggHours',
+    retentionYears: 'retentionYears'
+  };
+
+  /* Where one line stands against the mandate. The whole point of the
+     component: "stricter" is a sentence, not a warning. It gets no colour,
+     no icon and no bell, because a desk that identifies at 1,000 where its
+     regulator asks 3,000 has done something deliberate and usually because
+     its bank asked. "Looser" gets all three, because that desk is failing
+     to report what it is legally obliged to report. */
+  function PostureNote({
+    p
+  }) {
+    if (!p) return null;
+    if (p.standing === 'looser') return /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-2 flex items-start gap-1.5",
+      style: {
+        color: CD.flag,
+        marginTop: -2
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 11,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Not compliant."), " ", p.note));
+    const quiet = p.standing === 'stricter';
+    return /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mb-2",
+      style: {
+        color: quiet ? CD.mute : CD.faint,
+        marginTop: -2
+      }
+    }, p.note);
+  }
+
+  /* A money field that only commits when the owner has finished typing.
+     Committed on blur and on Enter rather than per keystroke, because
+     every commit is a round trip and an audit row — typing "10000" one
+     digit at a time would file five changes to the desk's reporting line,
+     four of them nonsense. */
+  function ThresholdInput({
+    value,
+    currency,
+    width,
+    disabled,
+    onCommit
+  }) {
+    const [text, setText] = useState(value == null ? '' : String(value));
+    useEffect(() => {
+      setText(value == null ? '' : String(value));
+    }, [value]);
+    const commit = () => {
+      const clean = String(text).trim().replace(/,/g, '');
+      if (!clean || !/^\d+(\.\d{1,2})?$/.test(clean) || +clean <= 0) {
+        setText(value == null ? '' : String(value)); // put it back; say nothing
+        return;
+      }
+      if (value != null && +clean === +value) return;
+      onCommit(clean);
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center",
+      style: {
+        ...inSty,
+        opacity: disabled ? 0.55 : 1
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "px-2 text-[11px]",
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, currency || '—'), /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      inputMode: "decimal",
+      value: text,
+      disabled: disabled,
+      onChange: e => setText(e.target.value),
+      onBlur: commit,
+      onKeyDown: e => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      },
+      className: "text-sm px-2 py-2 outline-none text-right bg-transparent",
+      style: {
+        width: width || 110,
+        fontVariantNumeric: 'tabular-nums',
+        borderLeft: `1px solid ${CD.line}`
+      }
+    }));
+  }
+  function DeskThresholdRows() {
+    const {
+      settings,
+      setSettings,
+      log
+    } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading'); // loading | ready | offline
+    const [desk, setDesk] = useState(null);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      let alive = true;
+      api.loadDeskThresholds().then(j => {
+        if (!alive) return;
+        setDesk(j);
+        /* Everything else on the desk reads reportingLimit(), which reads
+           this cache. Publishing the answer here as well as on first
+           render means the Ledger and the Dashboard pick up a change the
+           moment it is made, rather than on their next mount. */
+        if (window.CDOS.setDeskThresholds) window.CDOS.setDeskThresholds(j);
+        setStatus('ready');
+      }).catch(() => {
+        if (alive) setStatus('offline');
+      });
+      return () => {
+        alive = false;
+      };
+    }, []);
+    const save = async (field, value, note) => {
+      if (busy) return;
+      setBusy(field);
+      setErr('');
+      try {
+        const answer = await api.setDeskThresholds({
+          [field]: value
+        });
+        setDesk(answer);
+        if (window.CDOS.setDeskThresholds) window.CDOS.setDeskThresholds(answer);
+        const mirror = THRESHOLD_MIRROR[field];
+        const landed = answer[field] && answer[field].effective;
+        if (mirror && landed != null) setSettings(s => ({
+          ...s,
+          [mirror]: +landed
+        }));
+        log('Compliance threshold changed', note);
+      } catch (e) {
+        setErr(e && e.status === 403 ? 'Only the owner can move a reporting line — it is the standing policy of the registered business, not a branch setting.' : e && e.code === 'NETWORK_ERROR' ? 'Could not reach the desk — nothing was changed.' : 'Could not save that — nothing was changed.');
+      } finally {
+        setBusy('');
+      }
+    };
+    const posture = window.CDOS.jurisdictionPosture ? window.CDOS.jurisdictionPosture(settings) : [];
+    const standingOf = settingsField => posture.find(p => p.field === settingsField) || null;
+    const line = field => desk && desk[field] || null;
+    const currency = desk && desk.currency || settings.baseCurrency || 'CAD';
+    const authority = desk && desk.regulator || 'your regulator';
+    const disabled = status !== 'ready' || !!busy;
+
+    /* Hand a line back to the pack. Offered only where the desk has taken
+       one, because "follow the regulator" is not a change a desk already
+       following the regulator can make. */
+    const Release = ({
+      field,
+      label
+    }) => line(field) && line(field).deskChoice != null && status === 'ready' ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: disabled,
+      onClick: () => save(field, 'pack_default', `${label} · back to ${authority}'s figure`),
+      className: "text-[10.5px] mb-2 underline",
+      style: {
+        color: CD.mute,
+        marginTop: -2,
+        cursor: disabled ? 'default' : 'pointer',
+        background: 'none',
+        border: 'none',
+        padding: 0
+      }
+    }, "Use ", authority, "'s figure instead") : null;
+    const unavailable = /*#__PURE__*/React.createElement("span", {
+      className: "text-[11px]",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, status === 'loading' ? 'reading…' : 'unavailable');
+    const reportTip = /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+      w: 320,
+      title: "Where your reporting line sits",
+      body: "Your jurisdiction sets the amount a cash deal has to be reported at, and that figure arrives with your country's pack. You may move the line DOWN \u2014 some banks and auditors want to see a desk reporting sooner than the law requires, and a desk is free to do that. You may not move it up: a line above what your regulator requires means deals you are legally obliged to report going unreported, and the desk is told so here and in the notification bell until it is fixed.",
+      lines: [{
+        k: 'Following',
+        v: "you have not chosen; the pack's figure is in force and moves if the pack is corrected"
+      }, {
+        k: 'Stricter',
+        v: 'your own, lower line. A decision, not a fault — nothing here treats it as one'
+      }, {
+        k: 'Looser',
+        v: 'above the mandate. A compliance failure, flagged until it is back inside'
+      }],
+      example: "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 \u2014 never 12,000"
+    });
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
+      title: /*#__PURE__*/React.createElement("span", {
+        className: "flex items-center gap-1.5"
+      }, "Large cash / reportable threshold ", reportTip),
+      desc: `Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`
+    }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
+      value: line('reportThreshold') && line('reportThreshold').effective,
+      currency: currency,
+      disabled: disabled,
+      onCommit: v => save('reportThreshold', v, `reporting threshold ${fmt(+v, currency)}`)
+    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+      p: standingOf('threshold')
+    }), /*#__PURE__*/React.createElement(Release, {
+      field: "reportThreshold",
+      label: "Reporting threshold"
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Require ID over",
+      desc: "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
+    }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
+      value: line('idThreshold') && line('idThreshold').effective,
+      currency: currency,
+      disabled: disabled,
+      onCommit: v => save('idThreshold', v, `identification threshold ${fmt(+v, currency)}`)
+    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+      p: standingOf('idRequiredOver')
+    }), /*#__PURE__*/React.createElement(Release, {
+      field: "idThreshold",
+      label: "Identification threshold"
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Aggregation window",
+      desc: "Same person, cash-in within this window is summed against the reporting threshold \u2014 automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
+    }, status === 'ready' ? /*#__PURE__*/React.createElement(Seg, {
+      value: String((line('aggregationHours') || {}).effective || 24),
+      onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
+      opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
+    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+      p: standingOf('aggHours')
+    }), /*#__PURE__*/React.createElement(Release, {
+      field: "aggregationHours",
+      label: "Aggregation window"
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Record retention",
+      desc: "How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call."
+    }, status === 'ready' ? /*#__PURE__*/React.createElement("select", {
+      value: (line('retentionYears') || {}).effective || 5,
+      disabled: disabled,
+      onChange: e => save('retentionYears', +e.target.value, `record retention ${e.target.value} years`),
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width: 120
+      }
+    }, [3, 5, 7, 10].map(y => /*#__PURE__*/React.createElement("option", {
+      key: y,
+      value: y
+    }, y, " years"))) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+      p: standingOf('retentionYears')
+    }), /*#__PURE__*/React.createElement(Release, {
+      field: "retentionYears",
+      label: "Record retention"
+    }), status === 'offline' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] -mt-1 mb-2",
+      style: {
+        color: CD.faint
+      }
+    }, "Available on the hosted desk, where the ledger keeps the books and enforces these lines."), err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] -mt-1 mb-2",
       style: {
         color: CD.flag
       }
@@ -4889,10 +5321,15 @@
 
     /* shared controls live at module scope (stable identity → inputs keep
        focus). Value-bearing ones read this via SettingsCtx, provided below. */
+    /* `setSettings` and `log` ride along for DeskThresholdRows, which
+       writes the LEDGER and only mirrors the result here — see its
+       header. Everything else in the context is unchanged. */
     const ctxVal = {
       settings,
       set,
-      base
+      base,
+      setSettings,
+      log
     };
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
     const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
@@ -8273,7 +8710,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }));
         log('Jurisdiction pack applied', `${r.authority} · ${r.country}`);
       };
-      const aggH = +settings.aggHours || (REGIMES[activeRid] ? REGIMES[activeRid].aggHours : 24);
       const isOwner = me.role === 'Owner';
       const recheckDays = +settings.recheckDays || 180;
       const reverifyDays = +settings.reverifyDays || 365;
@@ -8284,21 +8720,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
       const shownRegimes = matched.length ? matched : Object.values(REGIMES);
       const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
-      const jvF = f => jv.find(v => v.field === f);
-      const jvNote = f => {
-        const v = jvF(f);
-        return v ? /*#__PURE__*/React.createElement("div", {
-          className: "text-[11px] mb-2 flex items-center gap-1.5",
-          style: {
-            color: CD.flag,
-            marginTop: -2
-          }
-        }, /*#__PURE__*/React.createElement(Ic, {
-          n: "alert",
-          s: 11,
-          c: CD.flag
-        }), " ", v.detail) : null;
-      };
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
         title: "Compliance & jurisdiction",
@@ -8422,24 +8843,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(Row, {
-        title: "Large cash / reportable threshold",
-        desc: `Deals at or above this (in ${base}) are reportable.`
-      }, /*#__PURE__*/React.createElement(Money, {
-        k: "threshold"
-      })), jvNote('threshold'), /*#__PURE__*/React.createElement(Row, {
-        title: "Require ID over",
-        desc: "Your own ID policy \u2014 collect identification at or above this amount, ahead of the mandatory reportable line. Below it, a missing ID is just an amber note the teller acknowledges, not a compliance warning."
-      }, /*#__PURE__*/React.createElement(Money, {
-        k: "idRequiredOver"
-      })), /*#__PURE__*/React.createElement(Row, {
-        title: "Aggregation window",
-        desc: "Same person, cash-in within this window is summed against the threshold \u2014 automatically."
-      }, /*#__PURE__*/React.createElement(Seg, {
-        value: String(aggH),
-        onPick: v => set('aggHours', +v, `aggregation ${v}h`),
-        opts: [['24', '24h'], ['48', '48h'], ['72', '72h']]
-      })), jvNote('aggHours'), /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -8477,20 +8881,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Sw, {
         on: settings.screenSanctions !== false,
         click: () => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)
-      })), /*#__PURE__*/React.createElement(Row, {
-        title: "Record retention"
-      }, /*#__PURE__*/React.createElement("select", {
-        value: settings.retentionYears || 5,
-        onChange: e => set('retentionYears', +e.target.value),
-        className: "text-sm px-2.5 py-2 outline-none",
-        style: {
-          ...inSty,
-          width: 120
-        }
-      }, [5, 7, 10].map(y => /*#__PURE__*/React.createElement("option", {
-        key: y,
-        value: y
-      }, y, " years")))), jvNote('retentionYears'), /*#__PURE__*/React.createElement("div", {
+      })), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -9365,7 +9756,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     T[k] = 'var(--dt-' + k + ')';
   });
   const money0 = v => (v < 0 ? '−' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-CA');
-  const cadOf = (a, ccy) => ccy === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', ccy) || 1);
+  /* The desk's own currency, and a conversion into it that refuses to
+     guess. The rate board is quoted in units per CANADIAN dollar, so this
+     can only answer for a desk that keeps its books in that currency —
+     everywhere else it returns null and the panel shows the figure as
+     absent rather than as a Canadian number under a foreign symbol. */
+  const homeCcy = () => {
+    const pack = window.CDOS.deskPack();
+    return pack && pack.homeCurrency || (window.CDOS.reportingLimit(null) || {}).currency || null;
+  };
+  const homeOf = (a, ccy) => {
+    const home = homeCcy();
+    if (!home) return null;
+    if (ccy === home) return +a || 0;
+    if (home !== 'CAD') return null;
+    const r = crossRate('CAD', ccy);
+    return r ? (+a || 0) / r : null;
+  };
+  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
   const flagEmoji = code => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(c => c.code === code) || {}).flag : '') || '';
@@ -9862,7 +10270,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       };
     }, [range, serverBacked, cashVersion, deskFacts]);
     const summary = book.summary;
-    const home = summary && summary.homeCurrency || book.position && book.position.homeCurrency || 'CAD';
+    const home = summary && summary.homeCurrency || book.position && book.position.homeCurrency || homeCcy() || 'CAD';
     /* What the desk EARNED: commission plus the realized margin the
        disposal itself booked. Not a spread against a market mid — see
        docs/COST_BASIS.md. Null means the ledger has nothing to total,
@@ -9917,7 +10325,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           earn: 0,
           n: 0
         });
-        c.vol += cadOf(r.inAmt, r.inCcy);
+        c.vol += homeOf(r.inAmt, r.inCcy) || 0;
         c.earn += earnOf(r);
         c.n++;
       });
@@ -9935,7 +10343,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           vol: 0,
           n: 0
         });
-        c.vol += cadOf(r.inAmt, r.inCcy);
+        c.vol += homeOf(r.inAmt, r.inCcy) || 0;
         c.n++;
       });
       const corridors = Object.values(corrM).sort((a, b) => b.vol - a.vol).slice(0, 5);
@@ -9953,7 +10361,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         if (f.kyc && f.kyc !== 'ok') kycSet.add(r.customer);
       });
       const recent = [...live].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 6);
-      const movers = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD').map(c => ({
+      const movers = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== homeCcy()).map(c => ({
         code: c.code,
         flag: c.flag,
         chg: +c.chg || 0
@@ -10015,7 +10423,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         beneficiaries = J('cdos_beneficiaries_v1', []);
       const tInProg = transfers.filter(t => t.status !== 'paid' && t.status !== 'cancelled').length;
       const tHold = transfers.filter(t => t.status === 'hold').length;
-      const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')), 0);
+      const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0), 0);
       const chRisk = cheques.filter(c => c.status === 'held').reduce((s, c) => s + (+c.netCad || 0), 0);
       const chOverdue = cheques.filter(c => c.status === 'held' && c.holdUntil < businessDate()).length;
       const chLoss = cheques.filter(c => c.status === 'returned').reduce((s, c) => s + (+c.netCad || 0), 0);
@@ -10043,7 +10451,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
         threshold: limit.amount
       } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= limit.amount).length;
+      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
       return {
         tInProg,
         tHold,
@@ -11061,7 +11469,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         width: 54,
         textAlign: 'right'
       }
-    }, "+", fmt(r.fee, 'CAD'))))))), /*#__PURE__*/React.createElement("div", {
+    }, "+", fmtHome(r.fee))))))), /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: 'center',
         padding: '2px 0 6px',
@@ -11093,6 +11501,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     useEffect,
     useRef
   } = React;
+  /* `TODAY` is deliberately not imported here. It is a wall-clock snapshot
+     taken when the page loaded, and every date on this screen is a TRADING
+     DAY — the till session's `business_date`, which the server decides. A
+     drawer counted at 00:20 belongs to the session that was open, not to the
+     calendar. See the note on wallClock/businessDate in cdos-base.jsx. */
   const {
     CD,
     Ic,
@@ -11100,7 +11513,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     num,
     crossRate,
     perCadLive,
-    TODAY,
     dDiff,
     STAFF
   } = window.CDOS;
@@ -11126,7 +11538,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }
   };
   const denLabel = v => v >= 1 ? Number.isInteger(v) ? String(v) : v.toFixed(2) : Math.round(v * 100) + '¢';
-  const cadOf = (amt, ccy) => ccy === 'CAD' ? amt : amt / (crossRate('CAD', ccy) || 1);
+  /* `cadOf` stood here — a module-level conversion into Canadian dollars,
+     used by every total on this screen. It is gone. The rate board is quoted
+     in units per CANADIAN dollar (`PER_CAD`), so a conversion built on it
+     can only produce a total for a desk whose books are kept in that
+     currency; everywhere else it produced a Canadian figure and the screen
+     printed a Canadian symbol in front of it. What replaced it is `homeOf`
+     inside TillDrawer, which returns NULL where it cannot answer, and every
+     total on this screen checks. See docs/ABSENT_FIGURES.md. */
   const HKEY = 'cdos_till_history_v2',
     CKEY = 'cdos_till_counts';
   const SHIFT_KEY = 'cdos_till_operator_v1',
@@ -11143,52 +11562,31 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     hour12: true
   }) : '';
 
-  /* seed a year of plausible daily history once, so the owner can scroll back */
-  function seedHistory() {
+  /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
+      `seedHistory()` stood here. On first open of the Cash Drawer it wrote
+     a YEAR of invented daily counts into `cdos_till_history_v2` —
+     CAD 238,500, USD 84,000, EUR 31,000 and six more, wobbled by a sine
+     function, one row per non-Sunday, including a row for today.
+      It was there so the History tab would have something to scroll. What
+     it actually did was become a second book, and the End-of-Day Sign-Off
+     read out of it: the sheet's "Counted" column was this map, so a desk
+     that had counted nothing printed a full drawer against the ledger's
+     real balances and a variance in the hundreds of thousands, above two
+     signature lines. See docs/CASH_OWNERSHIP_INVARIANTS.md — two books do
+     not crash, they disagree.
+      So there is no seed. A drawer that has been counted has rows here; a
+     drawer that has not is empty, and the History tab says so. The
+     authoritative record of a count is the ledger's anyway
+     (`ledger_till_counts`, reachable as `latestCounts` on
+     GET /api/ledger/till-session); this local map is a convenience for
+     the count sheet and nothing on a generated document may read it. */
+  function loadHistory() {
     try {
-      const ex = JSON.parse(localStorage.getItem(HKEY) || 'null');
-      if (ex && Object.keys(ex).length > 30) return ex;
-    } catch (e) {}
-    const hist = {};
-    const base = {
-      CAD: 238500,
-      USD: 84000,
-      EUR: 31000,
-      GBP: 6400,
-      PHP: 1760000,
-      INR: 4180000,
-      CNY: 96000,
-      MXN: 372000,
-      AED: 61500
-    };
-    const start = new Date(TODAY);
-    start.setDate(start.getDate() - 364);
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      const wd = d.getDay();
-      if (wd === 0) continue; // closed Sundays
-      const key = d.toISOString().slice(0, 10);
-      const wob = seed => 0.78 + (Math.sin(seed * 12.9898) * 43758.5453 % 1 + 1) % 1 * 0.5;
-      const byCcy = {};
-      let grand = 0;
-      CCYS.forEach((c, ci) => {
-        if (!base[c]) return;
-        const amt = Math.round(base[c] * wob(i * 9 + ci));
-        byCcy[c] = amt;
-        grand += cadOf(amt, c);
-      });
-      hist[key] = {
-        byCcy,
-        grand: Math.round(grand),
-        at: key + ' 17:30',
-        by: 'System'
-      };
+      const saved = JSON.parse(localStorage.getItem(HKEY) || 'null');
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    } catch (e) {
+      return {};
     }
-    try {
-      localStorage.setItem(HKEY, JSON.stringify(hist));
-    } catch (e) {}
-    return hist;
   }
 
   /* One denomination row. Hoisted to module scope (NOT defined inside
@@ -11309,11 +11707,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       });
       return o;
     });
-    const cadOfLocal = (amt, ccy) => ccy === 'CAD' ? amt : amt / (crossRate('CAD', ccy) || 1);
+    /* A handoff variance is a cross-currency total, so it needs the same
+       care as everything else on this screen: it exists in the desk's own
+       money or it does not exist. */
+    const pack = window.CDOS.deskPack();
+    const homeCcy = pack && pack.homeCurrency || null;
+    const homeLocal = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? +amt || 0 : homeCcy === 'CAD' ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null;
+    const sumHome = parts => {
+      const v = parts.map(([a, c]) => homeLocal(a, c));
+      return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null;
+    };
     const to = roster.find(s => s.name === toName);
-    const expCad = expected.reduce((s, x) => s + cadOfLocal(x.units, x.ccy), 0);
-    const countedCad = expected.reduce((s, x) => s + cadOfLocal(counts[x.ccy] === '' ? x.units : parseFloat(counts[x.ccy]) || 0, x.ccy), 0);
-    const variance = +(countedCad - expCad).toFixed(2);
+    const expHome = sumHome(expected.map(x => [x.units, x.ccy]));
+    const countedHome = sumHome(expected.map(x => [counts[x.ccy] === '' ? x.units : parseFloat(counts[x.ccy]) || 0, x.ccy]));
+    const variance = expHome == null || countedHome == null ? null : +(countedHome - expHome).toFixed(2);
     const anyEntered = expected.some(x => counts[x.ccy] !== '' && counts[x.ccy] != null);
     const finish = counted => {
       const rec = {
@@ -11327,8 +11734,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         atMs: Date.now(),
         by: me.name,
         counted,
-        expectedCad: +expCad.toFixed(2),
-        countedCad: counted ? +countedCad.toFixed(2) : null,
+        expectedHome: expHome == null ? null : +expHome.toFixed(2),
+        countedHome: counted && countedHome != null ? +countedHome.toFixed(2) : null,
+        currency: homeCcy,
         variance: counted ? variance : null
       };
       onDone(rec);
@@ -11477,8 +11885,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, expected.map((x, i) => {
       const val = counts[x.ccy] === '' ? '' : counts[x.ccy];
-      const cnt = val === '' ? x.units : parseFloat(val) || 0;
-      const dv = +(cadOfLocal(cnt, x.ccy) - cadOfLocal(x.units, x.ccy)).toFixed(2);
+      const cnt = val === '' ? x.units : parseFloat(val) || 0; /* This row's own over/short. Measured in the drawer's own units when
+                                                               the desk's currency cannot price it — a variance nobody can
+                                                               express is still a variance, and hiding it would be worse
+                                                               than showing it in the currency it is actually in. */
+      const home = homeLocal(cnt, x.ccy),
+        exp = homeLocal(x.units, x.ccy);
+      const dv = home == null || exp == null ? +(cnt - (x.units || 0)).toFixed(2) : +(home - exp).toFixed(2);
       const off = Math.abs(dv) > 0.005;
       return /*#__PURE__*/React.createElement("div", {
         key: x.ccy,
@@ -11525,21 +11938,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between mt-3 px-3 py-2.5",
       style: {
-        background: Math.abs(variance) > 0.005 ? CD.flagSoft : CD.greenSoft,
+        background: variance != null && Math.abs(variance) > 0.005 ? CD.flagSoft : variance == null && anyEntered ? 'var(--cd-chip)' : CD.greenSoft,
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement("span", {
       className: "text-[12px] font-medium",
       style: {
-        color: Math.abs(variance) > 0.005 ? CD.flag : CD.green
+        color: variance != null && Math.abs(variance) > 0.005 ? CD.flag : variance == null && anyEntered ? CD.mute : CD.green
       }
-    }, anyEntered ? Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), 'CAD') : 'Not counted yet'), /*#__PURE__*/React.createElement("span", {
+    }, !anyEntered ? 'Not counted yet' : variance == null ? 'Counted — no single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)), /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, fmt(countedCad, 'CAD')))), /*#__PURE__*/React.createElement("div", {
+    }, countedHome == null ? '—' : fmt(countedHome, homeCcy)))), /*#__PURE__*/React.createElement("div", {
       className: "px-5 py-3.5 flex items-center justify-between gap-2 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -11616,6 +12029,41 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const [serverBalances, setServerBalances] = useState(null);
     const [serverSession, setServerSession] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
+    /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
+        This screen totalled every drawer "in CAD" and labelled it so — a
+       Canadian answer printed on a London desk's close-out, in front of a
+       pound sign. Home currency is the jurisdiction pack's to state, so it
+       is read from the pack and every total on this screen is labelled with
+       it. A desk whose pack has not arrived says the currency is unknown
+       rather than assuming one; see docs/ABSENT_FIGURES.md.
+        `dayEarned` is the trading day's earnings from GET /api/ledger/summary
+       — commission plus the margin each disposal actually booked. The close
+       used to compute this here, as `(mid - paid)` against a live market
+       rate, and store it on the day summary: on a desk with one voided deal
+       the closed banner read "Earned today $223.00". */
+    const deskFacts = window.CDOS.useDeskFacts();
+    const homeCcy = useMemo(() => {
+      const pack = window.CDOS.deskPack();
+      return pack && pack.homeCurrency || (window.CDOS.reportingLimit(settings) || {}).currency || null;
+    }, [settings, deskFacts]);
+    /* Every figure this screen totals is a sum across currencies, and a sum
+       across currencies needs a rate. The browser's board is quoted per
+       CANADIAN dollar, so it can only produce that sum for a desk whose
+       home currency IS the Canadian dollar. Elsewhere there is no total to
+       show and the screen says which currencies it is holding instead. */
+    const canTotal = homeCcy === 'CAD';
+    const homeOf = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? +amt || 0 : canTotal ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null;
+    const totalHome = parts => {
+      const values = parts.map(([amt, ccy]) => homeOf(amt, ccy));
+      return values.length && values.every(v => v != null) ? values.reduce((s, v) => s + v, 0) : null;
+    };
+    /* A total this screen cannot produce, said once. */
+    const fmtHome = v => v == null ? '—' : fmt(v, homeCcy);
+    const [dayBook, setDayBook] = useState({
+      loading: true,
+      summary: null,
+      error: ''
+    });
     const [sessionErr, setSessionErr] = useState(''); // last failed till action, shown on screen
     const [tillBusy, setTillBusy] = useState(''); // 'open' | 'count' | 'close'
     /* The till picker below switches THIS DESK's local station — ids this
@@ -11677,6 +12125,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
     };
+    /* What the till earned on the trading day it is in. Re-read whenever the
+       session changes, because the figure on a closed-out banner has to be
+       the one the ledger holds for the day that was just closed. */
+    useEffect(() => {
+      if (!serverBacked || !window.CDOS.Backend) {
+        setDayBook({
+          loading: false,
+          summary: null,
+          error: 'this desk is not on the ledger'
+        });
+        return;
+      }
+      let live = true;
+      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1)).then(summary => {
+        if (live) setDayBook({
+          loading: false,
+          summary,
+          error: ''
+        });
+      }).catch(error => {
+        if (live) setDayBook({
+          loading: false,
+          summary: null,
+          error: error && error.message || 'the ledger could not be reached'
+        });
+      });
+      return () => {
+        live = false;
+      };
+    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
       return window.CDOS.Backend.loadTill().then(result => {
@@ -11849,7 +12327,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setSessionErr(error.message || 'The ledger would not move this session to that till.');
       }
     };
-    const [ccy, setCcy] = useState('CAD');
+    /* Open on the desk's own currency where the pack has told us what it
+       is. This opened on CAD everywhere, which on a Dubai desk meant the
+       first drawer a teller saw was one they do not keep. */
+    const [ccy, setCcy] = useState(() => {
+      const pack = window.CDOS.deskPack();
+      return pack && CCYS.includes(pack.homeCurrency) ? pack.homeCurrency : 'CAD';
+    });
     const [counts, setCounts] = useState(() => {
       try {
         return JSON.parse(localStorage.getItem(CKEY) || '{}') || {};
@@ -11891,7 +12375,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const [revealExp, setRevealExp] = useState({});
     const [confirmClose, setConfirmClose] = useState(false);
     const [, forceTick] = useState(0); // ticks every 30s so "x min ago" labels stay fresh
-    const [history, setHistory] = useState(seedHistory);
+    const [history, setHistory] = useState(loadHistory);
     // ---- shift operator (who's on the drawer) ----
     const tillId = station && station.tillId || 'main';
     // what to call this drawer in a log line: the ledger's name for it when
@@ -11983,7 +12467,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           since: rec.atMs
         }
       }));
-      log && log('Drawer handed off', `${tillNm} · ${rec.from} → ${rec.to}${rec.counted ? Math.abs(rec.variance || 0) < 0.005 ? ' · counted ✓' : ' · counted · ' + (rec.variance > 0 ? '+' : '') + fmt(rec.variance, 'CAD') : ' · no count'}`);
+      log && log('Drawer handed off', `${tillNm} · ${rec.from} → ${rec.to}${rec.counted ? Math.abs(rec.variance || 0) < 0.005 ? ' · counted ✓' : ' · counted · ' + (rec.variance > 0 ? '+' : '') + fmtHome(rec.variance) : ' · no count'}`);
       setHandoffOpen(false);
     };
     const sinceOperator = current && current.since ? (() => {
@@ -12094,7 +12578,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
     const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
     const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
-    const grandCad = useMemo(() => countedCcys.reduce((s, c) => s + cadOf(ccyTotal(c), c), 0), [counts, quick, mode, countedCcys]);
+    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
 
     // expected float per currency — DERIVED from the one shared source of truth
     // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
@@ -12166,11 +12650,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       countedCcys.forEach(c => {
         const t = ccyTotal(c);
         byCcy[c] = t;
-        grand += cadOf(t, c);
       });
+      const grandLocal = totalHome(countedCcys.map(c => [ccyTotal(c), c]));
+      /* Filed under the TRADING DAY, not the wall clock. A count taken at
+         00:20 on a session opened the previous evening belongs to that
+         session's business date, and filing it under the calendar date is
+         how a drawer's history came to show two rows for one count. */
+      const bookDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
       const snap = {
         byCcy,
-        grand: Math.round(grand),
+        grand: grandLocal == null ? null : Math.round(grandLocal),
+        currency: homeCcy || null,
         at: new Date().toLocaleString('en-CA', {
           hour12: false
         }).replace(',', ''),
@@ -12180,7 +12670,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setHistory(h => {
         const n = {
           ...h,
-          [TODAY]: snap
+          [bookDate]: snap
         };
         try {
           localStorage.setItem(HKEY, JSON.stringify(n));
@@ -12205,7 +12695,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         } catch (e) {}
         return n;
       });
-      log && log('Drawer counted', `${fmt(grand, 'CAD')} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
+      log && log('Drawer counted', `${grandLocal == null ? countedCcys.join(', ') : fmt(grandLocal, homeCcy)} across ${countedCcys.length} currenc${countedCcys.length === 1 ? 'y' : 'ies'}`);
       setSaved(true);
       savedTimer.current = setTimeout(() => setSaved(false), 1900);
     };
@@ -12248,7 +12738,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        Server-backed, the reconcile table IS the close payload: exactly the
        currencies the server holds a till balance for, no more and no less.
        Locally it stays the old derived list. */
-    const reconCcys = serverBacked ? serverCcys : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || ['CAD', 'USD'].includes(c));
+    const reconCcys = serverBacked ? serverCcys : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
       const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
@@ -12264,34 +12754,56 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
     // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
-    const tolCad = Math.max(0, +(settings && settings.tillVarianceTol) || 0);
-    const offOf = r => r.variance != null && Math.abs(cadOf(r.variance, r.c)) > tolCad + 0.005;
+    const tolHome = Math.max(0, +(settings && settings.tillVarianceTol) || 0);
+    /* A drawer is "off" when its variance exceeds the owner's tolerance,
+       measured in the desk's own money. Where this screen cannot express the
+       variance in that money it falls back to the currency's own units — a
+       tolerance nobody can apply is not a reason to declare a drawer clean. */
+    const offOf = r => {
+      if (r.variance == null) return false;
+      const home = homeOf(r.variance, r.c);
+      return Math.abs(home == null ? r.variance : home) > tolHome + 0.005;
+    };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
-    const totalExpCad = recon.reduce((s, r) => s + cadOf(r.expected, r.c), 0);
-    const totalCountCad = recon.reduce((s, r) => s + (r.counted != null ? cadOf(r.counted, r.c) : 0), 0);
-    const totalVarCad = recon.reduce((s, r) => s + (r.variance != null ? cadOf(r.variance, r.c) : 0), 0);
+    /* Cross-currency totals for the reconcile footer. Null where any row
+       cannot be expressed in the desk's own money — a total quietly missing
+       two of nine currencies looks complete and is not. */
+    const totalExpHome = totalHome(recon.filter(r => r.expected != null).map(r => [r.expected, r.c]));
+    const totalCountHome = totalHome(recon.filter(r => r.counted != null).map(r => [r.counted, r.c]));
+    const totalVarHome = totalHome(recon.filter(r => r.variance != null).map(r => [r.variance, r.c]));
     const doClose = async () => {
-      const offSumCad = offRows.reduce((s, r) => s + cadOf(r.variance, r.c), 0);
-      // what the desk made today: fees + estimated FX spread, in CAD
-      const spreadOf = r => {
-        const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy);
-        const d = mid - (+r.outAmt || 0);
-        return d > 0 ? d / (perCadLive(r.outCcy) || 1) : 0;
-      };
-      const dayRows = rows.filter(r => r.date === TODAY);
-      const earned = dayRows.reduce((s, r) => s + (+r.fee || 0) + spreadOf(r), 0);
+      const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
+      /* WHAT THE DESK MADE TODAY IS NOT THIS SCREEN'S TO WORK OUT.
+          What stood here summed `(inAmt × mid) − outAmt` over the browser's
+         copy of the day's rows and called it earnings. That is a spread
+         against a market mid, which is a different number from what the
+         desk earned — the desk earns what the disposal booked against the
+         stock's own cost (docs/COST_BASIS.md) — and it was summed over
+         `r.date === TODAY`, the WALL CLOCK, on a screen whose whole subject
+         is the business date. On a till with one voided $1,000 deal the
+         closed banner read "Earned today $223.00".
+          The figure now comes from GET /api/ledger/summary over the trading
+         day, and is null when the book has nothing to say. It is carried on
+         the summary as `earnedHome` with its currency beside it, so nothing
+         downstream can render it as a bare dollar amount. */
+      const book = dayBook.summary;
+      const earnedHome = book && book.earningsHome != null ? Number(book.earningsHome) : null;
       const summary = {
-        txns: dayRows.length,
+        txns: book ? book.posted : null,
+        reversed: book ? book.reversed : null,
         ccys: recon.length,
         counted: countedN,
         offCount: offRows.length,
-        offSum: Math.round(offSumCad),
-        grand: Math.round(grandCad),
-        earned: Math.round(earned),
-        note: offRows.length ? `${offRows.length} drawer(s) off · ${fmt(offSumCad, 'CAD')} net` : 'All counted drawers balanced'
+        offSum: offSumHome == null ? null : Math.round(offSumHome),
+        grand: grandHome == null ? null : Math.round(grandHome),
+        earnedHome,
+        earnedCurrency: book && book.homeCurrency || homeCcy || null,
+        earnedWhy: book ? earnedHome == null ? 'nothing posted on this trading day' : null : dayBook.error || 'the ledger could not be reached',
+        businessDate: serverSession && serverSession.businessDate || window.CDOS.businessDate(),
+        note: offRows.length ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}` : 'All counted drawers balanced'
       };
       if (serverBacked) {
         if (!serverSession || serverSession.status !== 'open') {
@@ -12339,7 +12851,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
     /* ---------------- HISTORY ---------------- */
     const histKeys = useMemo(() => Object.keys(history).sort().reverse(), [history]);
-    const histSeries = useMemo(() => Object.keys(history).sort().slice(-90).map(k => history[k].grand), [history]);
+    /* Days whose total this desk cannot express in its own money are left
+       OUT of the sparkline rather than plotted as zero — a dip to nothing on
+       a chart of cash held is a story, and it would be a false one. */
+    const histSeries = useMemo(() => Object.keys(history).sort().slice(-90).map(k => history[k].grand).filter(v => v != null), [history]);
+
+    /* The close-out banner's three figures, each with the reason it is
+       absent when it is. The ledger is asked directly rather than trusting
+       what the close stored, so a screen reopened days later still shows the
+       book's answer for that trading day rather than a frozen copy. */
+    const closedBook = dayBook.summary;
+    const closedEarned = closedBook && closedBook.earningsHome != null ? Number(closedBook.earningsHome) : day.summary && day.summary.earnedHome != null ? Number(day.summary.earnedHome) : null;
+    const closedEarnedCcy = closedBook && closedBook.homeCurrency || day.summary && day.summary.earnedCurrency || homeCcy;
+    const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
+    const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
@@ -12520,7 +13045,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
       // server-backed, the drawer holds what the LEDGER says it holds —
       // the local rail figure is a demo store and would quietly disagree
-      const _tc = serverBacked ? serverBalances ? serverCcys.reduce((s, c) => s + cadOf(Number(serverBalances[c]), c), 0) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
+      const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
       return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
         style: {
@@ -12536,7 +13061,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontFamily: 'Space Mono, monospace',
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(_tc, 'CAD'))), onMoveCash && /*#__PURE__*/React.createElement("button", {
+      }, fmtHome(_tc))), onMoveCash && /*#__PURE__*/React.createElement("button", {
         onClick: () => onMoveCash({
           kind: 'issue',
           bId: _ab && _ab.id,
@@ -12953,12 +13478,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         fontFamily: 'Space Mono, monospace'
       }
-    })), ccy !== 'CAD' && /*#__PURE__*/React.createElement("div", {
+    })), ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[12px]",
       style: {
         color: CD.mute
       }
-    }, "\u2248 ", fmt(cadOf(parseFloat(quick[ccy]) || 0, ccy), 'CAD'))) : /*#__PURE__*/React.createElement("div", {
+    }, "\u2248 ", fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy))) : /*#__PURE__*/React.createElement("div", {
       className: "grid md:grid-cols-2 gap-x-5 gap-y-0"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
@@ -13091,7 +13616,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
-    })), ccy !== 'CAD' && isCounted(ccy) && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(cadOf(ccyTotal(ccy), ccy), 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    })), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mt-1",
       style: {
         color: CD.faint
@@ -13112,15 +13637,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Total drawer \xB7 CAD"), /*#__PURE__*/React.createElement("div", {
+    }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 24,
         fontWeight: 800,
-        color: CD.ink,
+        color: grandHome == null ? CD.faint : CD.ink,
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
-      }
-    }, fmt(grandCad, 'CAD')), /*#__PURE__*/React.createElement("button", {
+      },
+      title: grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''
+    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
       disabled: saved || !sessionOpen || tillBusy === 'count',
       title: !sessionOpen ? 'Open the till before saving a count' : '',
@@ -13172,14 +13698,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#1c5c3a'
       }
-    }, "Day ", day.num || 1, " closed \u2014 nicely done"), /*#__PURE__*/React.createElement("div", {
+    }, serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`, " closed \u2014 nicely done"), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] mt-0.5",
       style: {
         color: '#3a7a56'
       }
     }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
       hour12: false
-    }).replace(',', '') : day.closedAt || '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), day.summary && day.summary.earned != null && /*#__PURE__*/React.createElement("div", {
+    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -13187,21 +13713,35 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: '#3a7a56',
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Earned today"), /*#__PURE__*/React.createElement("div", {
+    }, "Earned today"), closedEarned == null ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        fontWeight: 800,
+        color: '#7a9a89',
+        fontVariantNumeric: 'tabular-nums'
+      },
+      title: closedEarnedWhy
+    }, "\u2014") : /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 22,
         fontWeight: 800,
         color: '#1c5c3a',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(day.summary.earned, 'CAD')))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(closedEarned, closedEarnedCcy)), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px]",
+      style: {
+        color: '#3a7a56'
+      }
+    }, closedEarned == null ? closedEarnedWhy : 'commission + realized margin'))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-3 mt-4"
     }, /*#__PURE__*/React.createElement(Kpi, {
-      label: "Drawer value",
-      value: fmt(day.summary && day.summary.grand || grandCad, 'CAD')
+      label: `Drawer value${homeCcy ? ' · ' + homeCcy : ''}`,
+      value: fmtHome(day.summary && day.summary.grand != null ? day.summary.grand : grandHome)
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Transactions",
-      value: `${(day.summary && day.summary.txns) ?? rows.filter(r => r.date === TODAY).length}`
+      value: closedTxns == null ? '—' : `${closedTxns}`,
+      sub: closedTxns == null ? dayBook.error || 'the ledger has no answer' : dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Drawers off",
       value: day.summary && day.summary.offCount || 0,
@@ -13447,25 +13987,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Total \xB7 CAD"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, "Total", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-semibold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, num(totalExpCad)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    }, num(totalCountCad)), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
-        color: Math.abs(totalVarCad) <= tolCad + 0.005 ? CD.green : CD.flag
+        color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
-    }, (totalVarCad > 0 ? '+' : '') + num(totalVarCad)))))), /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
@@ -13694,7 +14234,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         color: h.counted ? Math.abs(h.variance || 0) < 0.005 ? CD.green : CD.flag : CD.mute
       }
-    }, h.counted ? Math.abs(h.variance || 0) < 0.005 ? '✓ balanced' : (h.variance > 0 ? '+' : '') + fmt(h.variance, 'CAD') : 'no count'))))), viewDay ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    }, h.counted ? Math.abs(h.variance || 0) < 0.005 ? '✓ balanced' : (h.variance > 0 ? '+' : '') + fmtHome(h.variance) : 'no count'))))), viewDay ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
       onClick: () => setViewDay(null),
       className: "flex items-center gap-1.5 text-[12px] mb-3",
       style: {
@@ -13708,14 +14248,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, viewDay, " \xB7 ", fmt(history[viewDay].grand, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, viewDay, history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mb-3",
       style: {
         color: CD.faint
       }
     }, "Counted by ", history[viewDay].by, " \xB7 ", history[viewDay].at), /*#__PURE__*/React.createElement("div", {
       className: "grid sm:grid-cols-2 gap-2"
-    }, Object.entries(history[viewDay].byCcy).sort((a, b) => cadOf(b[1], b[0]) - cadOf(a[1], a[0])).map(([c, amt]) => /*#__PURE__*/React.createElement("div", {
+    }, Object.entries(history[viewDay].byCcy).sort((a, b) => (homeOf(b[1], b[0]) || 0) - (homeOf(a[1], a[0]) || 0)).map(([c, amt]) => /*#__PURE__*/React.createElement("div", {
       key: c,
       className: "flex items-center justify-between px-3 py-2.5",
       style: {
@@ -13741,12 +14281,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, num(amt)), " ", c !== 'CAD' && /*#__PURE__*/React.createElement("span", {
+    }, num(amt)), " ", c !== homeCcy && homeOf(amt, c) != null && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.mute
       }
-    }, " \xB7 ", fmt(cadOf(amt, c), 'CAD'))))))) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, " \xB7 ", fmt(homeOf(amt, c), homeCcy))))))) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "p-4 mb-3",
       style: {
         background: CD.panel,
@@ -13768,7 +14308,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontWeight: 700,
         color: CD.ink
       }
-    }, fmt(histSeries[histSeries.length - 1] || 0, 'CAD'))), /*#__PURE__*/React.createElement(HistChart, {
+    }, fmtHome(histSeries[histSeries.length - 1]))), /*#__PURE__*/React.createElement(HistChart, {
       data: histSeries
     })), /*#__PURE__*/React.createElement("div", {
       className: "overflow-hidden",
@@ -13810,7 +14350,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, k, k === TODAY && /*#__PURE__*/React.createElement("span", {
+      }, k, k === (serverSession && serverSession.businessDate || window.CDOS.businessDate()) && /*#__PURE__*/React.createElement("span", {
         className: "ml-2 text-[9px] px-1.5 py-0.5",
         style: {
           background: CD.greenSoft,
@@ -13824,7 +14364,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(h.grand, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, h.grand == null ? '—' : fmt(h.grand, h.currency || homeCcy)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2",
         style: {
           color: CD.mute
@@ -13967,28 +14507,28 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Total \xB7 CAD"), /*#__PURE__*/React.createElement("td", {
+    }, "Total", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-semibold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, num(totalExpCad)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, num(totalCountCad)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
-        color: Math.abs(totalVarCad) < 0.005 ? CD.green : CD.flag,
+        color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, (totalVarCad > 0 ? '+' : '') + num(totalVarCad))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -14035,7 +14575,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       expected: CCYS.map(c => ({
         ccy: c,
         units: expectedOf(c)
-      })).filter(x => Math.abs(x.units) > 0.005 || x.ccy === 'CAD'),
+      })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy),
       onClose: () => setHandoffOpen(false),
       onDone: doHandoff
     }));
@@ -14177,8 +14717,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     Absent,
     businessDate,
     useDeskFacts,
-    STAFF
+    STAFF,
+    deskPack,
+    reportingLimit
   } = window.CDOS;
+
+  /* THE DESK'S OWN CURRENCY. The ledger's `position` and `vault` reads
+     both carry `homeCurrency`, so most of this screen already had the
+     right answer to hand; the float modals, the shift settlements and the
+     order-received log did not, and printed Canadian dollars on every
+     desk. This is the fallback for the handful of places that have no
+     server response in scope. */
+  const homeCcy = () => {
+    const pack = deskPack();
+    return pack && pack.homeCurrency || (reportingLimit(null) || {}).currency || 'CAD';
+  };
+  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy());
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -14249,13 +14803,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }));
   }
   const SKEY = 'cdos_vault_shifts';
-  const DEFAULT_FC = ['CAD', 'USD', 'EUR', 'GBP'];
+  /* The currencies a shift float is issued in, before the owner has chosen.
+     The desk's own currency belongs on that list wherever the desk is; the
+     other three are a starting suggestion the owner edits. */
+  const DEFAULT_FC = () => Array.from(new Set([homeCcy(), 'USD', 'EUR', 'GBP']));
   /* What a wholesale order can be placed in. The ledger carries these four
      today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
      offering the other five would let somebody record a delivery the book
      cannot take. The nine-currency list this replaced was the demo seed's. */
-  const ORDER_CCYS = DEFAULT_FC;
-  const floatCcysOf = settings => settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length ? settings.floatCcys : DEFAULT_FC;
+  /* Evaluated per render, not once at module load: the pack arrives from
+     the server after this file has been parsed, so a constant captured here
+     would freeze whatever the fallback said. */
+  const ORDER_CCYS = () => DEFAULT_FC();
+  const floatCcysOf = settings => settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length ? settings.floatCcys : DEFAULT_FC();
 
   /* reorder bands — min (reorder point) / target / max in UNITS */
   const BANDS = {
@@ -14326,7 +14886,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      CAD uses the base-currency reserve floor; others use per-currency floors. */
   const floorOf = (c, settings) => {
     if (settings) {
-      if (c === 'CAD' && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) return +settings.vaultReserveCad;
+      if (c === homeCcy() && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) return +settings.vaultReserveCad;
       const f = settings.vaultFloors && settings.vaultFloors[c];
       if (f != null && f !== '' && +f > 0) return +f;
     }
@@ -14450,7 +15010,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         title: `${p.c} · ${w.toFixed(1)}%`,
         style: {
           width: w + '%',
-          background: p.c === 'CAD' ? CD.ink : shade
+          background: p.c === homeCcy() ? CD.ink : shade
         }
       });
     }));
@@ -14753,7 +15313,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const row = vaultRows.find(r => r.c === c);
       return row ? Number(row.quantity) : null;
     };
-    const ccyChoices = Array.from(new Set([...DEFAULT_FC, ...fc, ...(vaultRows || []).map(r => r.c)]));
+    const ccyChoices = Array.from(new Set([...DEFAULT_FC(), ...fc, ...(vaultRows || []).map(r => r.c)]));
     const open = shifts.filter(s => s.status === 'open');
     const settled = shifts.filter(s => s.status === 'settled').sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''));
     const byPerson = useMemo(() => {
@@ -14799,7 +15359,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         blind: true
       };
       setShifts(s => [sh, ...s]);
-      log && log('Shift float assigned', `${teller} · ${fmt(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0), 'CAD')} on the desk (accountability — holdings unchanged)`);
+      log && log('Shift float assigned', `${teller} · ${fmtHome(fc.reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0))} on the desk (accountability — holdings unchanged)`);
       setAssigning(false);
     };
     // vault → till: real cash, so the modal only closes once the movement has
@@ -14836,16 +15396,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }).replace(',', ''),
         settledBy: me.name
       } : s));
-      log && log('Shift settled', `${shift.teller} · ${Math.abs(varCad) < 0.5 ? 'balanced' : (varCad > 0 ? '+' : '') + fmt(varCad, 'CAD')} variance`);
+      log && log('Shift settled', `${shift.teller} · ${Math.abs(varCad) < 0.5 ? 'balanced' : (varCad > 0 ? '+' : '') + fmtHome(varCad)} variance`);
       setSettling(null);
     };
     const toggleFc = c => {
-      if (c === 'CAD') return; // base currency always active
+      if (c === homeCcy()) return; // the desk's own currency is always active
       const cur = fc.slice();
       const next = cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c];
       setSettings(s => ({
         ...s,
-        floatCcys: next.length ? next : ['CAD']
+        floatCcys: next.length ? next : [homeCcy()]
       }));
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -14883,7 +15443,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Active float currencies"), ccyChoices.map(c => {
       const on = fc.includes(c);
-      const locked = c === 'CAD';
+      const locked = c === homeCcy();
       return /*#__PURE__*/React.createElement("button", {
         key: c,
         onClick: () => toggleFc(c),
@@ -14949,7 +15509,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "float ", fmt(floatCad, 'CAD'))), /*#__PURE__*/React.createElement("button", {
+      }, "float ", fmtHome(floatCad))), /*#__PURE__*/React.createElement("button", {
         onClick: () => setSettling(s),
         className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold",
         style: {
@@ -15208,7 +15768,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono'
       }
-    }, fmt(totalCad, 'CAD'))), /*#__PURE__*/React.createElement("button", {
+    }, fmtHome(totalCad))), /*#__PURE__*/React.createElement("button", {
       disabled: !entered.length || saving,
       onClick: submit,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
@@ -15432,7 +15992,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono'
       }
-    }, fmt(floatCad, 'CAD'))), /*#__PURE__*/React.createElement("button", {
+    }, fmtHome(floatCad))), /*#__PURE__*/React.createElement("button", {
       disabled: !valid || issuing,
       onClick: submit,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
@@ -15560,7 +16120,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono',
         color: off ? CD.flag : '#1c5c3a'
       }
-    }, off ? (varCad > 0 ? '+' : '') + fmt(varCad, 'CAD') : '✓ 0.00')), /*#__PURE__*/React.createElement("div", {
+    }, off ? (varCad > 0 ? '+' : '') + fmtHome(varCad) : '✓ 0.00')), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setLocked(false),
@@ -15816,7 +16376,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Currency"), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
-    }, ORDER_CCYS.filter(c => c !== 'CAD').map(c => /*#__PURE__*/React.createElement("button", {
+    }, ORDER_CCYS().filter(c => c !== homeCcy()).map(c => /*#__PURE__*/React.createElement("button", {
       key: c,
       disabled: receiveOnly,
       onClick: () => setCcy(c),
@@ -16421,7 +16981,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         };
         setReceipts(list => [rec, ...(list || [])]);
       }
-      log && log('Order received', `${num(units)} ${p.ccy} @ ${fmt(unitCost, 'CAD')} · ${fmt(costCad, 'CAD')} posted to inventory`);
+      log && log('Order received', `${num(units)} ${p.ccy} @ ${fmtHome(unitCost)} · ${fmtHome(costCad)} posted to inventory`);
       onOrderReceived && onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes'); // the notes physically land in THIS branch's vault
       setOrdering(null);
       setTab('receive');
@@ -16738,7 +17298,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: "var(--cd-on-ink)"
     }), " Record what\u2019s in the safe")), openingVault && /*#__PURE__*/React.createElement(OpeningPositionModal, {
-      fc: DEFAULT_FC,
+      fc: DEFAULT_FC(),
       onClose: () => setOpeningVault(false),
       onSave: onOpenVaultPosition
     }), /*#__PURE__*/React.createElement("div", {
@@ -16787,7 +17347,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           maxWidth: 560
         }
-      }, [['Into this vault · today', fmt(inToday, 'CAD'), CD.green], ['Out of this vault · today', fmt(outToday, 'CAD'), CD.mute], ['Net · today', (inToday - outToday >= 0 ? '+' : '') + fmt(inToday - outToday, 'CAD'), CD.ink]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
+      }, [['Into this vault · today', fmtHome(inToday), CD.green], ['Out of this vault · today', fmtHome(outToday), CD.mute], ['Net · today', (inToday - outToday >= 0 ? '+' : '') + fmtHome(inToday - outToday), CD.ink]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
         key: l,
         className: "px-3 py-2",
         style: {
@@ -19708,8 +20268,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     fmt,
     num,
     crossRate,
-    TODAY
+    businessDate,
+    deskPack,
+    reportingLimit
   } = window.CDOS;
+  /* THE DESK'S OWN MONEY.
+      Every money figure in this file — a client's lifetime volume, the fees
+     they have paid, the structuring aggregate on a compliance banner, and
+     the printed client report's four headline tiles — was formatted as
+     Canadian dollars. Home currency belongs to the jurisdiction pack.
+      `homeOf` returns NULL rather than a number when the desk's books are
+     kept in a currency the browser's rate board cannot convert into: the
+     board is quoted in units per CANADIAN dollar (`PER_CAD`), so it can
+     only produce this total for a Canadian desk. Elsewhere the figure is
+     absent and says so — see docs/ABSENT_FIGURES.md. */
+  const homeCcy = () => {
+    const p = deskPack();
+    return p && p.homeCurrency || (reportingLimit(null) || {}).currency || null;
+  };
   const computeFlags = window.CDOS.computeFlags;
   // render overlays at the document root so the window's stacking context
   // (and the rate ticker at z-360) can never occlude them
@@ -19978,13 +20554,28 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const RISK = window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = window.CDOS.normalizeRisk,
     riskTone = window.CDOS.riskTone;
-  const cadOf = (a, ccy) => ccy === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', ccy) || 1);
+  const homeOf = (a, ccy) => {
+    const home = homeCcy();
+    if (!home) return null;
+    if (ccy === home) return +a || 0;
+    if (home !== 'CAD') return null;
+    const r = crossRate('CAD', ccy);
+    return r ? (+a || 0) / r : null;
+  };
+  /* A total across currencies, or nothing. One leg this desk cannot price
+     makes the whole total unknown; a sum quietly missing a currency looks
+     complete and is the shape of wrong this project keeps finding. */
+  const sumHome = parts => {
+    const v = parts.map(([a, c]) => homeOf(a, c));
+    return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null;
+  };
+  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy());
   const initials = n => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = dob => {
     if (!dob) return null;
     const d = new Date(dob);
     if (isNaN(d)) return null;
-    const t = new Date(TODAY);
+    const t = new Date(window.CDOS.wallClock());
     let a = t.getFullYear() - d.getFullYear();
     const m = t.getMonth() - d.getMonth();
     if (m < 0 || m === 0 && t.getDate() < d.getDate()) a--;
@@ -20012,7 +20603,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    const expired = rec && rec.idExpiry && rec.idExpiry < TODAY;
+    /* Has this document expired? A question about the calendar, so the
+       WALL CLOCK — but read now rather than from the snapshot taken when
+       the page loaded, which on a desk left open overnight went on saying
+       an ID expiring at midnight was still valid. */
+    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
     // provider-verified identity — the only true KYC states
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -20023,7 +20618,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
     if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(TODAY)) / 86400000;
+      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
       if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
     }
     return ['ID on hand', CD.amber, CD.amberSoft];
@@ -20031,14 +20626,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const isVerified = s => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
     const mine = rows.filter(r => r.customer === name && r.status !== 'void');
-    let vol = 0,
-      fees = 0,
+    let fees = 0,
       last = '';
     mine.forEach(r => {
-      vol += cadOf(r.inAmt, r.inCcy);
       fees += +r.fee || 0;
       if (r.date > last) last = r.date;
     });
+    const vol = sumHome(mine.map(r => [r.inAmt, r.inCcy]));
     return {
       n: mine.length,
       vol,
@@ -20632,7 +21226,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontVariantNumeric: 'tabular-nums',
           color: CD.mute
         }
-      }, fmt(x.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, fmtHome(x.fee)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-center",
         style: {
           fontFamily: 'Space Mono, monospace',
@@ -20644,7 +21238,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
 
   /* ---------- printable client report ---------- */
-  function exportClientReport(name, rec, rows, flags) {
+  function exportClientReport(name, rec, rows, flags, settings) {
+    /* The letterhead, the regulator and the reporting line all belong to
+       the desk, not to this file. "York Currency Exchange · MSB" was
+       printed on every client report every customer of this product
+       generated, and the footer asserted FINTRAC record-keeping and a
+       ten-thousand-dollar line under any flag. */
+    const pack = deskPack();
+    const bizName = settings && (settings.operatingName || settings.bizName) || (pack && pack.name ? pack.name + ' desk' : 'This desk');
+    const bizLine = settings && settings.reportFootLine || 'Registered Money Services Business';
+    const authority = pack && pack.regulator || null;
+    const limit = reportingLimit(settings);
     rec = rec || {};
     const mine = rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     const st = clientStats(rows, name);
@@ -20660,7 +21264,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const body = mine.map(r => {
       const f = flags[r.id] || {};
       const v = r.status === 'void';
-      return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} ${esc(r.inCcy)}</td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} ${esc(r.outCcy)}</td><td class="r">${fmt(r.fee, 'CAD')}</td><td class="c mono">${v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || '—'}</td></tr>`;
+      return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} ${esc(r.inCcy)}</td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} ${esc(r.outCcy)}</td><td class="r">${esc(fmtHome(r.fee))}</td><td class="c mono">${v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || '—'}</td></tr>`;
     }).join('');
     const addr = fullAddr(rec);
     const w = window.open('', '_blank', 'width=920,height=1100');
@@ -20685,8 +21289,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">${esc(name)}</div><div class="sub">${corp ? 'Corporate client' : 'Individual client'} · KYC file</div><span class="badge">${esc(stat).toUpperCase()}</span></div>
 <div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(new Date().toLocaleString('en-CA', {
       hour12: false
-    }).replace(',', ''))}</div><div>York Currency Exchange · MSB</div></div></div>
-<div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume</div><div class="v">${fmt(st.vol, 'CAD')}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${fmt(st.fees, 'CAD')}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
+    }).replace(',', ''))}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
+<div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(st.vol))}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${esc(fmtHome(st.fees))}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
@@ -20695,7 +21299,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
 <table class="tx"><thead><tr><th>Ref</th><th>Date</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="7" style="padding:14px;color:#999;">No transactions.</td></tr>'}</tbody></table>
-<div class="ft">RPT = reportable ≥ $10,000 · STR = structuring watch · ID = KYC exception. Prepared for FINTRAC record-keeping. Volumes in CAD-equivalent at live mid.</div>
+<div class="ft">RPT = reportable${limit.amount == null ? ' — no reporting line is set for this desk, so nothing here is flagged' : ` ≥ ${esc(limit.label)}`} · STR = structuring watch · ID = KYC exception.${authority ? ` Prepared for ${esc(authority)} record-keeping.` : ' This desk\'s regulator is not stated on its jurisdiction pack, so none is named here.'} ${homeCcy() ? `Volumes in ${esc(homeCcy())}-equivalent at the desk's live mid; a client whose deals include a currency this branch has never published a rate for shows no total.` : 'This desk has no home currency on file, so no cross-currency total is shown.'}</div>
 </body></html>`);
     w.document.close();
     setTimeout(() => {
@@ -20814,7 +21418,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(st.vol, 'CAD'))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, fmtHome(st.vol))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-wide",
       style: {
         color: CD.faint,
@@ -21283,7 +21887,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       soft: CD.amberSoft,
       icon: "alert",
       title: "Structuring watch",
-      sub: `${win}-day cash-in ${fmt(strAgg, 'CAD')} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`,
+      sub: `${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`,
       actionLabel: "Review in ledger",
       onAction: () => onOpenLedger(name)
     }), kycReason && /*#__PURE__*/React.createElement(CompRow, {
@@ -21623,7 +22227,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       s: 14,
       c: edit ? 'var(--cd-on-ink)' : CD.ink
     }), " ", edit ? 'Done' : 'Edit'), canExport && /*#__PURE__*/React.createElement("button", {
-      onClick: () => exportClientReport(name, rec, rows, flags),
+      onClick: () => exportClientReport(name, rec, rows, flags, settings),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white",
       style: {
         background: CD.ink,
@@ -21751,7 +22355,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderRadius: 10,
         overflow: 'hidden'
       }
-    }, [['Transactions', String(st.n)], ['Lifetime volume', fmt(st.vol, 'CAD')], ['Fees paid', fmt(st.fees, 'CAD')], ['Reportable', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+    }, [['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       className: "px-4 py-3",
       style: {
@@ -22712,7 +23316,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
         }
-      }, [['TXNS', String(c.st.n)], ['VOLUME', fmt(c.st.vol, 'CAD')], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+      }, [['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
         key: l,
         className: "px-3 py-2.5",
         style: {
@@ -23315,8 +23919,42 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     Absent,
     businessDate,
     reportingLimit,
-    useDeskFacts
+    useDeskFacts,
+    deskPack
   } = window.CDOS;
+
+  /* THE DESK'S OWN CURRENCY, ONCE.
+      Sixty-five `'CAD'` literals stood in this file. Some named a Canadian
+     DRAWER, which is a Canadian drawer anywhere in the world and stays. The
+     rest meant "the currency this desk keeps its books in" — the fee on a
+     receipt, the pay-in volume on a stat card, the home valuation used to
+     test a deal against the reporting line — and on a London or Dubai desk
+     they printed a Canadian symbol against a domestic number.
+      Home currency belongs to the jurisdiction pack, the same place the
+     reporting line comes from. And the conversion has a real limit: the
+     browser's rate board is quoted in units per CANADIAN dollar, so it can
+     only produce a home valuation for a Canadian desk. Elsewhere `homeOf`
+     answers null and the figure is shown as absent with the reason, which
+     is the rule in docs/ABSENT_FIGURES.md. */
+  const homeCcy = () => {
+    const pack = deskPack();
+    return pack && pack.homeCurrency || (reportingLimit(null) || {}).currency || null;
+  };
+  const homeOf = (amt, ccy) => {
+    const home = homeCcy();
+    if (!home) return null;
+    if (ccy === home) return +amt || 0;
+    if (home !== 'CAD') return null;
+    const rate = crossRate('CAD', ccy);
+    return rate ? (+amt || 0) / rate : null;
+  };
+  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
+  /* A total across currencies, or nothing. One unpriceable leg makes the
+     whole sum unknown — a total quietly missing a currency looks complete. */
+  const sumHome = parts => {
+    const v = parts.map(([a, c]) => homeOf(a, c));
+    return v.length && v.every(x => x != null) ? v.reduce((s, x) => s + x, 0) : null;
+  };
 
   /* THE REPORTING LINE, ONCE.
       This file used to flag rows, warn tellers, size a stat card and print
@@ -23444,7 +24082,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.mute
       }
-    }, r.type, " \xB7 ", fmt(cadIn(r), 'CAD'), " \xB7 ", r.date, " ", r.time)), /*#__PURE__*/React.createElement("div", {
+    }, r.type, " \xB7 ", fmtHome(cadIn(r)), " \xB7 ", r.date, " ", r.time)), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenDetail(r.id),
@@ -23624,19 +24262,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
-      const cadOf = (amt, ccy) => ccy === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', ccy) || 1);
       const winDays = settings && settings.structuringDays || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
-      let total = 0,
-        windowCad = 0;
       const ccyCount = {};
+      const home = homeCcy();
       h.forEach(r => {
-        const cad = cadOf(r.inAmt, r.inCcy);
-        total += cad;
-        if (r.date >= cutoff) windowCad += cad;
-        const c = r.outCcy && r.outCcy !== 'CAD' ? r.outCcy : r.inCcy !== 'CAD' ? r.inCcy : null;
+        /* "What does this customer usually buy" means the FOREIGN side of
+           the deal, and foreign is relative to the desk — it was relative
+           to Canada, so on a London desk every sterling deal counted as
+           the customer's favourite foreign currency. */
+        const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) ccyCount[c] = (ccyCount[c] || 0) + 1;
       });
+      const total = sumHome(h.map(r => [r.inAmt, r.inCcy]));
+      const windowCad = sumHome(h.filter(r => r.date >= cutoff).map(r => [r.inAmt, r.inCcy]));
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
       const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;
@@ -23659,8 +24298,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
-    const nearThreshold = limit.amount != null && s.windowCad >= limit.amount * 0.7 && s.windowCad < limit.amount;
-    const overThreshold = limit.amount != null && s.windowCad >= limit.amount;
+    /* Null-safe on purpose. A window this desk cannot value in its own
+       money cannot be tested against a line stated in that money, and
+       turning "cannot say" into "under" quietly clears a deal nobody
+       checked — the same reasoning as overReportingLimit() in
+       cdos-base.jsx. */
+    const nearThreshold = limit.amount != null && s.windowCad != null && s.windowCad >= limit.amount * 0.7 && s.windowCad < limit.amount;
+    const overThreshold = limit.amount != null && s.windowCad != null && s.windowCad >= limit.amount;
     const lastLabel = s.daysSince == null ? 'First visit' : s.daysSince === 0 ? 'In today already' : s.daysSince === 1 ? 'Yesterday' : `${s.daysSince} days ago`;
     return /*#__PURE__*/React.createElement("div", {
       className: "mt-2 overflow-hidden",
@@ -23735,14 +24379,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       tone: idMissing ? CD.flag : idExpired ? CD.flag : CD.ink
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
-      value: fmt(s.windowCad, 'CAD'),
-      sub: overThreshold ? 'over reporting line' : nearThreshold ? 'nearing the line' : 'within range',
-      tone: overThreshold ? CD.flag : nearThreshold ? CD.amber : CD.ink,
+      value: fmtHome(s.windowCad),
+      sub: s.windowCad == null ? 'not valued in ' + (homeCcy() || 'the desk’s currency') : overThreshold ? 'over reporting line' : nearThreshold ? 'nearing the line' : 'within range',
+      tone: s.windowCad == null ? CD.mute : overThreshold ? CD.flag : nearThreshold ? CD.amber : CD.ink,
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually buys",
       value: s.topCcy || '—',
-      sub: s.count > 0 ? `lifetime ${fmt(s.total, 'CAD')}` : 'new customer',
+      sub: s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer',
       tone: CD.ink,
       divider: true
     })), (overThreshold || nearThreshold) && /*#__PURE__*/React.createElement("div", {
@@ -23756,7 +24400,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "shield",
       s: 12,
       c: overThreshold ? CD.flag : 'var(--cd-brass-text)'
-    }), overThreshold ? `Already ${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — watch for structuring on this deal.` : `${fmt(s.windowCad, 'CAD')} in ${s.winDays} days — getting close to the ${limit.label} line.`));
+    }), overThreshold ? `Already ${fmtHome(s.windowCad)} in ${s.winDays} days — watch for structuring on this deal.` : `${fmtHome(s.windowCad)} in ${s.winDays} days — getting close to the ${limit.label} line.`));
   }
   function CCstat({
     label,
@@ -23922,7 +24566,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: 'var(--cd-on-ink-soft)',
         fontSize: 14
       }
-    }, q.fee > 0 ? `Includes ${fmt(q.fee, 'CAD')} service fee · ` : '', q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'), /*#__PURE__*/React.createElement("button", {
+    }, q.fee > 0 ? `Includes ${fmtHome(q.fee)} service fee · ` : '', q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "flex items-center gap-2 px-5 py-2.5 font-semibold",
       style: {
@@ -23973,7 +24617,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       idNum: '',
       idExpiry: ''
     });
-    const [inCcy, setInCcy] = useState('CAD');
+
+    /* The ticket opens on the desk's own currency. It opened on CAD on
+       every desk in the world, so a Dubai teller's first keystroke was
+       changing the currency away from one they do not trade against. */
+    const [inCcy, setInCcy] = useState(() => homeCcy() || 'CAD');
     const [outCcy, setOutCcy] = useState('USD');
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false); // teller hand-prices instead of the desk rate
@@ -24051,7 +24699,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const feeCadN = isCheque ? chequeFee : parseFloat(fee) || 0;
     const spreadCadLive = isCheque ? 0 : pricing.marginCad || 0;
     const profitCad = +(spreadCadLive + feeCadN).toFixed(2);
-    const marginBasisCad = isCheque ? inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1) : pricing.midCadIn || 0;
+    const marginBasisCad = isCheque ? homeOf(amtN, inCcy) || 0 : pricing.midCadIn || 0;
     const marginPctLive = marginBasisCad > 0 ? profitCad / marginBasisCad * 100 : 0;
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
@@ -24090,13 +24738,18 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
     // live compliance preview (in CAD-equivalent for the threshold test)
-    const inCadEquiv = inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1);
+    /* The deal's size in the desk's own money — what the reporting line is
+       stated in, and therefore what it must be tested against. Null when
+       this desk's books are kept in a currency the rate board cannot
+       convert into, and the compliance strip below says so rather than
+       clearing the deal. */
+    const inCadEquiv = homeOf(amtN, inCcy);
     const limit = limitOf(settings);
     const single = limit.amount != null && inCadEquiv >= limit.amount;
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
       return live.filter(o => o.customer === customer).reduce((s, o) => {
-        const cad = o.inCcy === 'CAD' ? +o.inAmt || 0 : (+o.inAmt || 0) / (crossRate('CAD', o.inCcy) || 1);
+        const cad = homeOf(o.inAmt, o.inCcy) || 0;
         return s + cad;
       }, 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
@@ -24196,7 +24849,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           customer: customer || 'Walk-in (no client)',
           typeId: chequeType.id,
           typeLabel: chequeType.label,
-          ccy: 'CAD',
+          ccy: homeCcy() || 'CAD',
           amount: amtN,
           feeCad: chequeFee,
           netCad: net,
@@ -24262,7 +24915,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="big"><div class="o">Customer receives</div><div class="v grn">${num(outAmt)} ${esc(outCcy)}</div></div>
 <div class="r"><span class="k">Locked rate</span><span>${num(pricing.rate)} ${esc(outCcy)}/${esc(inCcy)}</span></div>
 <div class="r"><span class="k">Spot reference</span><span class="mut">${num(pricing.midRate)}</span></div>
-${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span><span>${fmt(fee, 'CAD')}</span></div>` : ''}
+${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span><span>${esc(fmtHome(fee))}</span></div>` : ''}
 <div class="r"><span class="k">Quoted</span><span class="mut">${esc(stamp())}</span></div>
 <div class="ft">This quote holds the rate above until the stated time. Final settlement on presentation. Not a receipt of sale.<br/>${esc(settings && settings.receiptDisclaimer || 'Rates as quoted at time of transaction.')}</div>
 <script>setTimeout(function(){window.focus();window.print();},350)<\/script>
@@ -24590,7 +25243,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       className: "mt-2 space-y-2"
     }, /*#__PURE__*/React.createElement(Field, {
       label: "Cheque type",
-      hint: `${chequeType.feePct}% · min ${fmt(chequeType.feeMin, 'CAD')} · ${chequeType.holdDays}d hold`
+      hint: `${chequeType.feePct}% · min ${fmtHome(chequeType.feeMin)} · ${chequeType.holdDays}d hold`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, chequeSched.map(t => {
@@ -24643,7 +25296,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: 'var(--cd-brass-text)'
       }
-    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmt(outAmt, 'CAD')), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmt(chequeFee, 'CAD')), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(businessDate(), chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'), onOpenCheques && /*#__PURE__*/React.createElement("button", {
+    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmtHome(outAmt)), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmtHome(chequeFee)), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(businessDate(), chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'), onOpenCheques && /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         onClose();
         onOpenCheques();
@@ -24818,12 +25471,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: zoneColor,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(profitCad, 'CAD'))), /*#__PURE__*/React.createElement("span", {
+    }, fmtHome(profitCad))), /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, !isCheque ? `spread ${fmt(spreadCadLive, 'CAD')} · ` : '', "fee ", fmt(feeCadN, 'CAD'), " \xB7 floor ", mFloor, "%")), belowFloor && /*#__PURE__*/React.createElement("div", {
+    }, !isCheque ? `spread ${fmtHome(spreadCadLive)} · ` : '', "fee ", fmtHome(feeCadN), " \xB7 floor ", mFloor, "%")), belowFloor && /*#__PURE__*/React.createElement("div", {
       className: "mt-2.5 pt-2.5",
       style: {
         borderTop: `1px solid ${CD.flagSoft}`
@@ -24895,12 +25548,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 pay-in \u2248 ", fmt(inCadEquiv, 'CAD'), " (\u2265 ", limit.label, "). A Large Cash Transaction Report will be required."), structuring && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable \u2014 pay-in \u2248 ", fmtHome(inCadEquiv), " (\u2265 ", limit.label, "). ", deskPack() && deskPack().reportName ? `A ${deskPack().reportName} will be required.` : 'A large-cash report will be required.'), structuring && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.ink
       }
-    }, "Structuring watch \u2014 this client's ", settings.structuringDays, "-day total reaches ", fmt(recentTotal, 'CAD'), " with this deal."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Structuring watch \u2014 this client's ", settings.structuringDays, "-day total reaches ", fmtHome(recentTotal), " with this deal."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -25021,7 +25674,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.green
       }
-    }, num(outAmt), " ", outCcy)), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 fee ", fmt(fee, 'CAD'))) : 'Enter an amount to begin'), /*#__PURE__*/React.createElement("div", {
+    }, num(outAmt), " ", outCcy)), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 fee ", fmtHome(fee))) : 'Enter an amount to begin'), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
@@ -25175,8 +25828,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       fromL = 'Cheque face';
       fromS = row.notes || 'Cheque deposited';
       toL = 'Cash paid out';
-      toS = `less ${fmt(fee, 'CAD')} fee`;
-      center = `−${fmt(fee, 'CAD')}`;
+      toS = `less ${fmtHome(fee)} fee`;
+      center = `−${fmtHome(fee)}`;
     } else if (t === 'Money Order') {
       fromL = 'Customer pays';
       fromV = num((+row.inAmt || 0) + fee);
@@ -25300,7 +25953,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Fee withheld",
-        v: fmt(fee, 'CAD'),
+        v: fmtHome(fee),
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Net paid out",
@@ -25319,11 +25972,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Service fee",
-        v: fmt(fee, 'CAD'),
+        v: fmtHome(fee),
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Total collected",
-        v: fmt((+row.inAmt || 0) + fee, 'CAD'),
+        v: fmtHome((+row.inAmt || 0) + fee),
         mono: true
       }), row.notes && /*#__PURE__*/React.createElement(DRow, {
         k: "Payee / memo",
@@ -25340,11 +25993,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Service fee",
-        v: fmt(fee, 'CAD'),
+        v: fmtHome(fee),
         mono: true
       }), /*#__PURE__*/React.createElement(DRow, {
         k: "Total collected",
-        v: fmt((+row.inAmt || 0) + fee, 'CAD'),
+        v: fmtHome((+row.inAmt || 0) + fee),
         mono: true
       })];
     } else {
@@ -25466,7 +26119,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       if (outCcy !== row.outCcy) changes.push(['Pay-out currency', row.outCcy, outCcy]);
       if (amtN !== (+row.inAmt || 0)) changes.push(['Amount in', `${num(row.inAmt)} ${row.inCcy}`, `${num(amtN)} ${inCcy}`]);
       if (!sameCcy && Math.abs(effRate - (+row.rate || 0)) > 1e-9) changes.push(['Rate', num(row.rate), num(effRate)]);
-      if (feeN !== (+row.fee || 0)) changes.push(['Fee', fmt(row.fee || 0, 'CAD'), fmt(feeN, 'CAD')]);
+      if (feeN !== (+row.fee || 0)) changes.push(['Fee', fmtHome(row.fee || 0), fmtHome(feeN)]);
       if ((customer || '') !== (row.customer || '')) changes.push(['Customer', row.customer || '—', customer || '—']);
     }
     const nothingChanged = !isDuplicate && changes.length === 0;
@@ -25802,7 +26455,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: 'var(--cd-on-ink-soft)',
         fontFamily: 'Space Mono, monospace'
       }
-    }, /*#__PURE__*/React.createElement("div", null, num(amtN), " ", inCcy, " in"), !sameCcy && /*#__PURE__*/React.createElement("div", null, "@ ", num(effRate)), /*#__PURE__*/React.createElement("div", null, feeN > 0 ? `fee ${fmt(feeN, 'CAD')}` : 'no fee'))), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", null, num(amtN), " ", inCcy, " in"), !sameCcy && /*#__PURE__*/React.createElement("div", null, "@ ", num(effRate)), /*#__PURE__*/React.createElement("div", null, feeN > 0 ? `fee ${fmtHome(feeN)}` : 'no fee'))), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         background: 'var(--cd-panel)',
@@ -26079,12 +26732,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           by: me.name,
           at: stamp()
         }
-      }), 'ID note acknowledged', `no ID needed under ${fmt(flag.idFloor, 'CAD')} · ${me.name}`);
+      }), 'ID note acknowledged', `no ID needed under ${fmtHome(flag.idFloor)} · ${me.name}`);
     };
 
     // earnings: posted fee + the spread actually booked at the counter (exact when
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
-    const inCad = row.inCcy === 'CAD' ? +row.inAmt || 0 : (+row.inAmt || 0) / (crossRate('CAD', row.inCcy) || 1);
+    const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
     const feeCad = +row.fee || 0;
     const earned = feeCad + spreadCad;
@@ -26403,7 +27056,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           kind: window.CDOS.getRegime(settings).largeCode,
           subject: row.customer,
           beneficiary: row.beneficiary,
-          amount: row.inCcy === 'CAD' ? +row.inAmt || 0 : (+row.inAmt || 0) / (crossRate('CAD', row.inCcy) || 1),
+          amount: homeOf(row.inAmt, row.inCcy),
           refs: [row.ref],
           basis: null
         });
@@ -26414,7 +27067,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         background: CD.ink,
         color: 'var(--cd-on-ink)'
       }
-    }, "File LCTR \u2192"))), flag.str && /*#__PURE__*/React.createElement("div", {
+    }, "File ", deskPack() && deskPack().reportName || window.CDOS.getRegime(settings).largeCode, " \u2192"))), flag.str && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 mb-2",
       style: {
         background: row.ackStr ? CD.lineSoft : CD.amberSoft,
@@ -26437,7 +27090,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, settings.structuringDays, "-day total ", fmt(flag.agg, 'CAD'), row.ackStrInfo ? ` · ${row.ackStrInfo.by}` : '')), !isVoid && /*#__PURE__*/React.createElement("button", {
+    }, settings.structuringDays, "-day total ", fmtHome(flag.agg), row.ackStrInfo ? ` · ${row.ackStrInfo.by}` : '')), !isVoid && /*#__PURE__*/React.createElement("button", {
       onClick: toggleAck,
       className: "flex-none whitespace-nowrap text-xs px-2.5 py-1.5 font-medium",
       style: {
@@ -26465,7 +27118,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute,
         fontWeight: 400
       }
-    }, "\xB7 required over ", fmt(flag.idFloor, 'CAD'))), /*#__PURE__*/React.createElement("button", {
+    }, "\xB7 required over ", fmtHome(flag.idFloor))), /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenClient(row.customer, row.ref),
       className: "flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium",
       style: {
@@ -26500,7 +27153,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, "Not required under ", fmt(flag.idFloor, 'CAD'), " \xB7 ", fmt(inCad, 'CAD'), " deal", row.idNoteInfo ? ` · ${row.idNoteInfo.by}` : '')), !isVoid && /*#__PURE__*/React.createElement("div", {
+    }, "Not required under ", fmtHome(flag.idFloor), " \xB7 ", fmtHome(inCad), " deal", row.idNoteInfo ? ` · ${row.idNoteInfo.by}` : '')), !isVoid && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, !row.idNoteAcked && /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenClient(row.customer, row.ref),
@@ -26580,7 +27233,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(earned, 'CAD'))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      }, fmtHome(earned))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
         style: {
           color: CD.mute
@@ -26593,11 +27246,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         }
       }, marginPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement(DRow, {
         k: flat ? 'Service fee' : 'Commission / fee',
-        v: `${fmt(feeCad, 'CAD')}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
+        v: `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
         mono: true
       }), !flat && /*#__PURE__*/React.createElement(DRow, {
         k: "FX spread (rate markup)",
-        v: spreadCad > 0 ? `${fmt(spreadCad, 'CAD')}  ·  ${spreadPct.toFixed(2)}%` : '—',
+        v: spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—',
         mono: true
       }), row.marginOverride && /*#__PURE__*/React.createElement("div", {
         className: "mt-2 px-2.5 py-2 text-[11.5px]",
@@ -26769,7 +27422,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     onClose
   }) {
     const [tab, setTab] = useState(focus || 'volume');
-    const cadOf = (amt, ccy) => ccy === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', ccy) || 1);
     const d = useMemo(() => {
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
       let vol = 0,
@@ -26781,7 +27433,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         feeTeller = {},
         perTx = [];
       live.forEach(r => {
-        const v = cadOf(r.inAmt, r.inCcy);
+        const v = homeOf(r.inAmt, r.inCcy) || 0;
         const fee = +r.fee || 0;
         const m = dealMargin(r);
         vol += v;
@@ -26895,13 +27547,13 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       className: "grid grid-cols-3 gap-2 mb-4"
     }, /*#__PURE__*/React.createElement(Kpi, {
       label: "Total pay-in",
-      value: fmt(d.vol, 'CAD')
+      value: fmtHome(d.vol)
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Transactions",
       value: d.n
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Avg. ticket",
-      value: fmt(avgTicket, 'CAD')
+      value: fmtHome(avgTicket)
     })), /*#__PURE__*/React.createElement("div", {
       className: "p-4 mb-3",
       style: {
@@ -26911,7 +27563,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, /*#__PURE__*/React.createElement(SubHead, null, "Pay-in volume by currency"), /*#__PURE__*/React.createElement(MiniBars, {
       data: d.byCcy,
-      fmtV: v => fmt(v, 'CAD')
+      fmtV: v => fmtHome(v)
     })), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
@@ -26921,7 +27573,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, /*#__PURE__*/React.createElement(SubHead, null, "Volume by transaction type"), /*#__PURE__*/React.createElement(MiniBars, {
       data: d.byType,
-      fmtV: v => fmt(v, 'CAD')
+      fmtV: v => fmtHome(v)
     })), /*#__PURE__*/React.createElement("p", {
       className: "mt-3 text-[11px]",
       style: {
@@ -26931,16 +27583,16 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       className: "grid grid-cols-4 gap-2 mb-4"
     }, /*#__PURE__*/React.createElement(Kpi, {
       label: "Fees collected",
-      value: fmt(d.fees, 'CAD'),
+      value: fmtHome(d.fees),
       accent: CD.green
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Est. FX spread",
-      value: fmt(d.margin, 'CAD'),
+      value: fmtHome(d.margin),
       accent: CD.green,
       sub: "rate markup"
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Total revenue",
-      value: fmt(d.rev, 'CAD'),
+      value: fmtHome(d.rev),
       accent: CD.green
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Margin %",
@@ -26958,7 +27610,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, /*#__PURE__*/React.createElement(SubHead, null, "Fees by type"), /*#__PURE__*/React.createElement(MiniBars, {
       data: d.feeType,
-      fmtV: v => fmt(v, 'CAD'),
+      fmtV: v => fmtHome(v),
       accent: CD.green
     })), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
@@ -26969,7 +27621,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, /*#__PURE__*/React.createElement(SubHead, null, "Fees by teller"), /*#__PURE__*/React.createElement(MiniBars, {
       data: d.feeTeller,
-      fmtV: v => fmt(v, 'CAD'),
+      fmtV: v => fmtHome(v),
       accent: CD.green
     }))), /*#__PURE__*/React.createElement("div", {
       className: "overflow-hidden",
@@ -27022,19 +27674,19 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(t.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+    }, fmtHome(t.fee)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, t.margin > 0 ? fmt(t.margin, 'CAD') : '—'), /*#__PURE__*/React.createElement("td", {
+    }, t.margin > 0 ? fmtHome(t.margin) : '—'), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-semibold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.green
       }
-    }, fmt(t.total, 'CAD')), /*#__PURE__*/React.createElement("td", {
+    }, fmtHome(t.total)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right",
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -27076,7 +27728,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     const stamp = () => new Date().toLocaleString('en-CA', {
       hour12: false
     }).replace(',', '');
-    const cadIn = r => r.inCcy === 'CAD' ? +r.inAmt || 0 : (+r.inAmt || 0) / (crossRate('CAD', r.inCcy) || 1);
+    const cadIn = r => homeOf(r.inAmt, r.inCcy);
     const fileLCTR = r => {
       const reg = window.CDOS.getRegime(settings);
       onFileLCTR && onFileLCTR({
@@ -27104,18 +27756,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         return [];
       }
     }, [rows, settings]);
-    const fileRow = r => {
-      setRows(rs => rs.map(x => x.id === r.id ? {
-        ...x,
-        filed: true,
-        filedInfo: {
-          ref: 'LCTR-' + Math.floor(1000 + Math.random() * 9000),
-          by: me.name,
-          at: stamp()
-        }
-      } : x));
-      log && log('LCTR filed', `${r.ref} · ${fmt(cadIn(r), 'CAD')}`);
-    };
+    /* `fileRow` stood here. It marked a transaction FILED and minted the
+       filing's reference with `Math.random()` — "LCTR-4471" — so the book
+       would show a regulator reference for a report nobody had submitted.
+       It was unreachable from the UI, which is the only reason it never
+       cost anything. A filing reference is the desk's proof it filed, and
+       the only place one comes from is the regulator's own portal, typed
+       in by the person who filed it: see cdos-lctr.jsx's acknowledgement
+       field, and `ledger_report_filings.acknowledgement_ref`, which is
+       nullable precisely because it does not exist until then. */
     const ackRow = r => {
       setRows(rs => rs.map(x => x.id === r.id ? {
         ...x,
@@ -27264,7 +27913,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         style: {
           color: CD.mute
         }
-      }, c.txs.length, " cash-ins \xB7 ", fmt(c.total, 'CAD'), " \xB7 ", c.windowLabel)), /*#__PURE__*/React.createElement("div", {
+      }, c.txs.length, " cash-ins \xB7 ", fmtHome(c.total), " \xB7 ", c.windowLabel)), /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-1.5 flex-none"
       }, /*#__PURE__*/React.createElement("button", {
         onClick: () => onOpenRecordsWindow ? onOpenRecordsWindow(c.txs.map(t => t.ref), `${c.subject} · ${c.basis === 'beneficiary' ? 'beneficiary' : 'conductor'} agg`) : onOpenFocus(c.txs.map(t => t.ref), `${c.subject} aggregate`),
@@ -27668,7 +28317,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
 
     // headline stats follow the active range + client (unchanged top cards)
     const stats = useMemo(() => {
-      const cadOf = (a, ccy) => ccy === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', ccy) || 1);
       const src = (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.status !== 'void' && inRange(r.date));
       let rpt = 0,
         openRpt = 0,
@@ -27684,7 +28332,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       // pay-in volume in CAD-equivalent so mixed currencies sum correctly
       return {
         n: src.length,
-        vol: src.reduce((s, x) => s + cadOf(x.inAmt, x.inCcy), 0),
+        vol: sumHome(src.map(x => [x.inAmt, x.inCcy])),
         fees: src.reduce((s, x) => s + (+x.fee || 0), 0),
         rpt,
         openRpt,
@@ -27695,17 +28343,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
 
     // live summary of exactly what's on screen (CAD-equivalent)
     const result = useMemo(() => {
-      const cadOf = (a, ccy) => ccy === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', ccy) || 1);
       let vol = 0,
         fees = 0,
         posted = 0;
-      filtered.forEach(r => {
-        if (r.status !== 'void') {
-          vol += cadOf(r.inAmt, r.inCcy);
-          fees += +r.fee || 0;
-          posted++;
-        }
+      const liveRows = filtered.filter(r => r.status !== 'void');
+      posted = liveRows.length;
+      liveRows.forEach(r => {
+        fees += +r.fee || 0;
       });
+      vol = sumHome(liveRows.map(r => [r.inAmt, r.inCcy]));
       return {
         count: filtered.length,
         posted,
@@ -27745,17 +28391,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     };
     const genReport = () => {
       const recs = filtered;
-      const cadOf = (a, ccy) => ccy === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', ccy) || 1);
       let vol = 0,
         fees = 0,
         n = 0;
-      recs.forEach(r => {
-        if (r.status !== 'void') {
-          vol += cadOf(r.inAmt, r.inCcy);
-          fees += +r.fee || 0;
-          n++;
-        }
+      const liveRecs = recs.filter(r => r.status !== 'void');
+      n = liveRecs.length;
+      liveRecs.forEach(r => {
+        fees += +r.fee || 0;
       });
+      vol = sumHome(liveRecs.map(r => [r.inAmt, r.inCcy]));
       const chips = filterChips();
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
         '&': '&amp;',
@@ -27766,7 +28410,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         const f = flags[r.id] || {};
         const v = r.status === 'void';
         const fl = v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' && f.idNeeded ? 'ID' : ''].filter(Boolean).join(' ') || '—';
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${fmt(r.fee, 'CAD')}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) {
@@ -27806,9 +28450,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         hour12: false
       }).replace(',', ''))}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
-<div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume (CAD)</div><div class="v">${fmt(vol, 'CAD')}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${fmt(fees, 'CAD')}</div></div></div>
+<div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(vol))}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${esc(fmtHome(fees))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date / time</th><th>Customer</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th>Teller</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="9" style="padding:14px;color:#999;">No records match the current filters.</td></tr>'}</tbody></table>
-<div class="ft">RPT = reportable ≥ ${esc(limit.label)} · STR = structuring watch · ID = KYC exception. Volume shown in CAD-equivalent at live spot. ${n} posted of ${recs.length} shown.</div>
+<div class="ft">RPT = reportable ≥ ${esc(limit.label)} · STR = structuring watch · ID = KYC exception. Volume shown in ${esc(homeCcy() || 'the desk’s own currency')}-equivalent at live spot; where a leg cannot be priced against it, no total is shown. ${n} posted of ${recs.length} shown.</div>
 </body></html>`);
       w.document.close();
       setTimeout(() => {
@@ -28020,12 +28664,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }, y);
     })))), /*#__PURE__*/React.createElement(StatCard, {
       label: "Pay-in volume",
-      value: stats.n ? fmt(stats.vol, 'CAD') : '—',
+      value: stats.n ? fmtHome(stats.vol) : '—',
       sub: stats.n ? 'view breakdown ›' : 'nothing posted in this range',
       onClick: () => stats.n && setBreakdown('volume')
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: "Fees collected",
-      value: stats.n ? fmt(stats.fees, 'CAD') : '—',
+      value: stats.n ? fmtHome(stats.fees) : '—',
       sub: stats.n ? 'view earnings ›' : 'nothing posted in this range',
       onClick: () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
@@ -28331,11 +28975,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         height: 11,
         background: CD.line
       }
-    }), /*#__PURE__*/React.createElement("span", null, result.posted ? fmt(result.vol, 'CAD') : '—', " ", /*#__PURE__*/React.createElement("span", {
+    }), /*#__PURE__*/React.createElement("span", null, result.posted ? fmtHome(result.vol) : '—', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
-    }, "vol")), /*#__PURE__*/React.createElement("span", null, result.posted ? fmt(result.fees, 'CAD') : '—', " ", /*#__PURE__*/React.createElement("span", {
+    }, "vol")), /*#__PURE__*/React.createElement("span", null, result.posted ? fmtHome(result.fees) : '—', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -28480,7 +29124,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           fontVariantNumeric: 'tabular-nums',
           color: CD.mute
         }
-      }, fmt(x.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, fmtHome(x.fee)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2.5",
         onClick: e => e.stopPropagation()
       }, /*#__PURE__*/React.createElement("div", {
@@ -28494,7 +29138,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         kind: "STR",
         ack: x.ackStr,
         onClick: () => setDetailId(x.id),
-        title: `Structuring watch — ${fmt(f.agg, 'CAD')}`
+        title: `Structuring watch — ${fmtHome(f.agg)}`
       }), f.kyc && f.kyc !== 'ok' && f.idNeeded && /*#__PURE__*/React.createElement(FlagTag, {
         kind: "ID",
         onClick: () => setDetailId(x.id),
@@ -33526,10 +34170,38 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     Ic,
     fmt,
     num,
-    TODAY,
     crossRate,
-    reportingLimit
+    reportingLimit,
+    deskPack,
+    businessDate
   } = window.CDOS;
+  /* THE DESK'S OWN MONEY, AND ITS OWN REGULATOR.
+      Every figure in this module was labelled CAD. The transfer store keeps
+     the local leg of a send in the desk's own currency — which is what
+     `payAmt` has always been — so labelling it "CAD" was correct on one
+     desk and a foreign symbol against a domestic number on every other.
+     The label now comes from the jurisdiction pack, and where no pack has
+     arrived the amount is shown with no currency word rather than with the
+     wrong one. */
+  const homeCcy = () => {
+    const p = deskPack();
+    return p && p.homeCurrency || (reportingLimit(null) || {}).currency || null;
+  };
+  const fmtHome = v => {
+    const c = homeCcy();
+    return c ? fmt(v, c) : num(v);
+  };
+  const authority = () => {
+    const p = deskPack();
+    return p && p.regulator || null;
+  };
+  /* The cross-border report this desk owes, as the pack names it. Canada's
+     is the EFTR; other jurisdictions call it other things, and a pack that
+     carries no wire report means this desk has none to name. */
+  const wireReport = () => {
+    const p = deskPack();
+    return p && p.reportName || null;
+  };
   const T = window.CDOS._transfers;
   const {
     defaultCorridors,
@@ -33988,7 +34660,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, c.partners.length, " partner", c.partners.length === 1 ? '' : 's', vol[c.id] ? ` · ${fmt(vol[c.id], 'CAD')} sent` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, c.partners.length, " partner", c.partners.length === 1 ? '' : 's', vol[c.id] ? ` · ${fmtHome(vol[c.id])} sent` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => toggle(c.id),
       className: "w-11 h-6 relative flex-none",
       style: {
@@ -34056,7 +34728,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         cad
       }) => {
         const c = corOf(t.corridor);
-        return `<tr><td class="mono">${esc(t.ref)}</td><td>${esc(t.date)}</td><td class="b">${esc(t.senderName)}</td><td>${esc(t.direction === 'send' ? benName(t.beneficiaryId) : 'inbound')}</td><td>${esc(c.flag || '')} ${esc(c.country || '')}</td><td class="mut">${esc(t.partner)}</td><td class="r">${fmt(cad, 'CAD')}</td><td class="r">${num(t.recvAmt)} <span class="mut">${esc(t.ccy)}</span></td><td class="mut">${esc(t.purpose)}</td></tr>`;
+        return `<tr><td class="mono">${esc(t.ref)}</td><td>${esc(t.date)}</td><td class="b">${esc(t.senderName)}</td><td>${esc(t.direction === 'send' ? benName(t.beneficiaryId) : 'inbound')}</td><td>${esc(c.flag || '')} ${esc(c.country || '')}</td><td class="mut">${esc(t.partner)}</td><td class="r">${esc(fmtHome(cad))}</td><td class="r">${num(t.recvAmt)} <span class="mut">${esc(t.ccy)}</span></td><td class="mut">${esc(t.purpose)}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=1000,height=1100');
       if (!w) {
@@ -34073,17 +34745,19 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
 .ft{margin-top:14px;font-size:10px;color:#999}@page{margin:13mm}</style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Cross-Border EFT Report</div></div>
 <div class="meta"><b>${esc(biz)}</b><div>${esc(settings.msbNumber || '')}</div><div>Generated ${esc(stamp())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
-<div class="note"><b>FINTRAC EFTR</b> — every international electronic funds transfer of ${fmt(threshold, 'CAD')} or more must be reported within five working days. This pack lists qualifying transfers for the period.</div>
-<div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${eft.length}</div></div><div class="kpi"><div class="l">Total value (CAD)</div><div class="v">${fmt(total, 'CAD')}</div></div><div class="kpi"><div class="l">Threshold</div><div class="v">${fmt(threshold, 'CAD')}</div></div></div>
-<table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">CAD value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
-<div class="ft">Generated by CurrencyDesk OS. Cross-border EFTs ≥ ${fmt(threshold, 'CAD')} (FINTRAC EFTR). Retain per record-retention policy.</div>
+<div class="note">${authority() ? `<b>${esc(authority())} cross-border reporting</b> — international electronic funds transfers at or above this desk's reporting line must be reported to ${esc(authority())}. Confirm the deadline and the exact form in ${esc(authority())}'s own guidance; this desk does not assert it.` : `<b>Cross-border reporting</b> — this desk's regulator is not stated on its jurisdiction pack, so no reporting obligation is asserted here. Install the pack for the country you operate in.`}
+${threshold == null ? ' No reporting line has been set for this desk, so nothing on this page is flagged as reportable.' : ` The line used below is ${esc(fmtHome(threshold))}.`}</div>
+<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Money transfers do not post to the server ledger yet (see docs/CASH_OWNERSHIP_INVARIANTS.md, "known scope limits"), so every figure on this page comes from this desk's own transfer records. It is not reconciled against the book and must not be treated as if it were.</div>
+<div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${threshold == null ? '—' : eft.length}</div></div><div class="kpi"><div class="l">Total value${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(total))}</div></div><div class="kpi"><div class="l">Reporting line</div><div class="v">${threshold == null ? '— not set' : esc(fmtHome(threshold))}</div></div></div>
+<table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">${esc(homeCcy() || 'Local')} value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
+<div class="ft">Generated by CurrencyDesk OS${threshold == null ? '' : `. Cross-border transfers ≥ ${esc(fmtHome(threshold))}`}${wireReport() ? ` (${esc(wireReport())})` : ''}. Retain per record-retention policy.</div>
 </body></html>`);
       w.document.close();
       setTimeout(() => {
         w.focus();
         w.print();
       }, 400);
-      log && log('EFT report generated', `${eft.length} transfers · ${fmt(total, 'CAD')}`);
+      log && log('Cross-border transfer report generated', `${eft.length} transfers · ${fmtHome(total)}`);
     };
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
@@ -34094,12 +34768,12 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
       style: {
         color: CD.ink
       }
-    }, "Cross-border EFT report"), /*#__PURE__*/React.createElement("div", {
+    }, "Cross-border transfer report"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
       }
-    }, "International transfers \u2265 ", fmt(threshold, 'CAD'), " \u2014 the FINTRAC EFTR filing.")), /*#__PURE__*/React.createElement("button", {
+    }, threshold == null ? 'No reporting line is set for this desk, so nothing is flagged.' : /*#__PURE__*/React.createElement(React.Fragment, null, "International transfers \u2265 ", fmtHome(threshold), authority() ? ` — the ${authority()} filing` : '', "."))), /*#__PURE__*/React.createElement("button", {
       onClick: print,
       disabled: !eft.length,
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
@@ -34151,7 +34825,7 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(total, 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, fmtHome(total))), /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
         background: CD.panel,
@@ -34164,13 +34838,13 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
         color: CD.faint,
         fontFamily: 'Space Mono'
       }
-    }, "Threshold"), /*#__PURE__*/React.createElement("div", {
+    }, "Reporting line"), /*#__PURE__*/React.createElement("div", {
       className: "text-xl font-bold",
       style: {
-        color: CD.ink,
+        color: threshold == null ? CD.faint : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(threshold, 'CAD')))), /*#__PURE__*/React.createElement("div", {
+    }, threshold == null ? '— not set' : fmtHome(threshold)))), /*#__PURE__*/React.createElement("div", {
       className: "overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
@@ -34193,7 +34867,7 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
       className: "px-3 py-2"
     }, "Destination"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "CAD value"), /*#__PURE__*/React.createElement("th", {
+    }, homeCcy() || 'Local', " value"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
     }, "Status"))), /*#__PURE__*/React.createElement("tbody", null, eft.map(({
       t,
@@ -34228,7 +34902,7 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
           fontVariantNumeric: 'tabular-nums',
           color: CD.ink
         }
-      }, fmt(cad, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, fmtHome(cad)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2"
       }, /*#__PURE__*/React.createElement(StatusPill, {
         status: t.status,
@@ -34274,10 +34948,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 <div class="r"><span class="k">Destination</span><span>${esc(cor.flag || '')} ${esc(cor.country || '')}</span></div>
 <div class="r"><span class="k">Payout</span><span>${esc(window.CDOS._transfers.methodLabel(t.method))} · ${esc(t.partner)}</span></div>
 <div class="pin"><div class="l">Tracking PIN</div><div class="v">${esc(t.pin)}</div></div>
-<div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : 'CAD')}</div></div>
-<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? 'CAD' : t.ccy)}</span></div>
+<div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : homeCcy() || '')}</div></div>
+<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? homeCcy() || '' : t.ccy)}</span></div>
 <div class="r"><span class="k">Rate</span><span>${num(t.rate)}</span></div>
-<div class="r"><span class="k">Fee</span><span>${fmt(t.fee, 'CAD')}</span></div>
+<div class="r"><span class="k">Fee</span><span>${esc(fmtHome(t.fee))}</span></div>
 <div class="r"><span class="k">Status</span><span>${esc(statusLabel(t.status, t.direction))}</span></div>
 <div class="ft">${esc(settings.receiptDisclaimer || 'Keep this receipt. Funds payable on presentation of the tracking PIN and valid ID.')}</div>
 <script>setTimeout(function(){window.focus();window.print();},350)<\/script></body></html>`);
@@ -34352,7 +35026,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       const amt = +amount || 0;
       if (!amt) return;
       const cadCost = +(amt * (fxRate || crossRate(p.ccy, 'CAD') || 0)).toFixed(2);
-      const ref = 'STL-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + ((settlements || []).filter(s => s.date === TODAY).length + 1).toString().padStart(2, '0');
+      /* A settlement reference is minted from the TRADING DAY, not the wall
+         clock. `TODAY` is a snapshot taken when the page loaded, so a desk
+         left open overnight minted this morning's references under
+         yesterday's date and put them on the audit trail. */
+      const bookDate = businessDate();
+      const ref = 'STL-' + String(bookDate).slice(2).replace(/-/g, '') + '-' + ((settlements || []).filter(s => s.date === bookDate).length + 1).toString().padStart(2, '0');
       const rec = {
         id: 's' + Date.now(),
         ref,
@@ -34362,12 +35041,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         amount: amt,
         fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6),
         cadCost,
-        date: TODAY,
+        date: businessDate(),
         by: me.name,
         note: note || ''
       };
       setSettlements(list => [rec, ...(list || [])]);
-      log && log('Partner settled', `${p.partner} · ${num(amt)} ${p.ccy} · ${fmt(cadCost, 'CAD')}`);
+      log && log('Partner settled', `${p.partner} · ${num(amt)} ${p.ccy} · ${fmtHome(cadCost)}`);
       setSettling(null);
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -34409,7 +35088,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: totalOwed > 0 ? CD.flag : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(totalOwed, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmtHome(totalOwed)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -34433,7 +35112,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.green,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(totalFloat, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmtHome(totalFloat)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -34490,7 +35169,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
         }
-      }, [['Paid out', `${num(p.payouts)} ${p.ccy}`, CD.ink], ['Settled', `${num(p.settled)} ${p.ccy}`, CD.mute], [owe ? 'We owe' : 'Float left', `${num(Math.abs(p.net))} ${p.ccy}`, owe ? CD.flag : CD.green], ['Corridor margin', fmt(p.margin, 'CAD'), p.margin >= 0 ? CD.green : CD.flag]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
+      }, [['Paid out', `${num(p.payouts)} ${p.ccy}`, CD.ink], ['Settled', `${num(p.settled)} ${p.ccy}`, CD.mute], [owe ? 'We owe' : 'Float left', `${num(Math.abs(p.net))} ${p.ccy}`, owe ? CD.flag : CD.green], ['Corridor margin', fmtHome(p.margin), p.margin >= 0 ? CD.green : CD.flag]].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
         key: l
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[9.5px] uppercase tracking-widest",
@@ -34650,13 +35329,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "CAD cost of this wire"), /*#__PURE__*/React.createElement("span", {
+    }, homeCcy() ? homeCcy() + ' cost' : 'Local cost', " of this wire"), /*#__PURE__*/React.createElement("span", {
       className: "text-[14px] font-bold",
       style: {
         fontFamily: 'Space Mono',
         color: CD.ink
       }
-    }, fmt(cadCost, 'CAD'))), /*#__PURE__*/React.createElement(Field, {
+    }, fmtHome(cadCost))), /*#__PURE__*/React.createElement(Field, {
       label: "Reference / note"
     }, /*#__PURE__*/React.createElement("input", {
       value: note,
@@ -34819,7 +35498,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, inProgress, " in progress", onHold ? ` · ${onHold} on hold` : '', owed > 0.5 ? ` · ${fmt(owed, 'CAD')} owed to partners` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, inProgress, " in progress", onHold ? ` · ${onHold} on hold` : '', owed > 0.5 ? ` · ${fmtHome(owed)} owed to partners` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setModal(true),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
@@ -36607,39 +37286,139 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const cadIn = r => r.inCcy === 'CAD' ? Number(r.inAmt) || 0 : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
   const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
 
-  // A house setting that breaks the active regulator's hard rule (looser than the
-  // mandate). Returns [] when the desk is compliant. Consumed by the top bell + Settings.
-  function jurisdictionViolations(settings) {
-    const REGIMES2 = REGIMES;
-    const REG = REGIMES2[settings && settings.regime || 'FINTRAC'] || REGIMES2.FINTRAC;
-    if (!REG) return [];
-    const out = [];
-    const aggH = +(settings && settings.aggHours) || REG.aggHours;
-    if (aggH !== REG.aggHours) out.push({
-      id: 'jv_agg',
-      field: 'aggHours',
-      label: 'Aggregation window',
-      detail: `Set to ${aggH}h — ${REG.authority} mandates a ${REG.aggHours}h window.`
-    });
-    const cur = settings && settings.baseCurrency || REG.currency;
-    const thr = +(settings && settings.threshold) || 0;
-    if (cur === REG.currency && thr > REG.threshold) out.push({
-      id: 'jv_thr',
+  /* ============================================================
+     WHERE THIS DESK STANDS AGAINST ITS MANDATE
+      A desk may ask more of itself than its regulator does. It may never
+     ask less. Those two facts are not symmetrical and this file used to
+     treat them as though they were:
+        tighter than the mandate   a deliberate decision, usually because a
+                                  bank or an auditor wanted it. Not a
+                                  fault. Stated plainly, no red, no bell.
+       looser than the mandate    the desk failing to report things it is
+                                  legally obliged to report. Unmissable.
+       following the pack         the normal case. Name the number and
+                                  where it came from, and say nothing else.
+      And it judged against REGIMES below — a two-entry table holding
+     FINTRAC and FinCEN — while the ledger ships six packs. A desk in
+     Dubai was measured against Canada's numbers, and the threshold check
+     only ran at all when `settings.baseCurrency` happened to equal the
+     regime's currency, so it fell silent on every desk whose books are
+     not kept in Canadian or American dollars. That is the failure mode
+     that matters: the check whose job is to catch a non-compliant desk
+     quietly not running.
+      So the mandate now comes from the desk's REAL pack — the one the
+     ledger resolved, in the pack's own currency, with the desk's own
+     overrides already applied and each one already labelled. REGIMES
+     stands in only where there is no server to ask: the standalone build,
+     and the moment before the first answer lands.
+     ============================================================ */
+
+  /* One line's standing, in the shape the screens render. `standing` is
+     the server's posture where there is one; `note` is the sentence a
+     human reads, and it is deliberately different in tone for each. */
+  function postureOf(line, opts) {
+    if (!line) return null;
+    const money = !!opts.money;
+    const show = v => v == null ? '—' : money ? fmt(+v, opts.currency) : `${v}${opts.unit || ''}`;
+    const standing = line.posture || 'unknown';
+    const note = standing === 'stricter' ? `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? `Following ${opts.authority} (${show(line.packValue)}).` : `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+    return {
+      field: opts.field,
+      label: opts.label,
+      standing,
+      authority: opts.authority,
+      value: line.effective,
+      mandate: line.packValue,
+      deskChoice: line.deskChoice,
+      currency: money ? opts.currency : null,
+      note,
+      /* what the old violation list said, kept word-for-word in shape so
+         the bell and Settings keep working — see jurisdictionViolations */
+      detail: note
+    };
+  }
+
+  /* Every line, judged. Reads the ledger's answer when there is one and
+     falls back to the browser's regime table when there is not. */
+  function jurisdictionPosture(settings) {
+    const server = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const REG = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
+    /* No server answer yet. Build the same shape out of what the browser
+       holds so the screens have one code path — and mark every line
+       "following", because a desk we have not asked about is not a desk
+       we may accuse of anything. */
+    const local = () => {
+      if (!REG) return null;
+      const line = (effective, mandate) => ({
+        effective,
+        deskChoice: null,
+        packValue: mandate,
+        posture: effective == null || mandate == null ? 'unknown' : 'following'
+      });
+      const cur = settings && settings.baseCurrency || REG.currency;
+      return {
+        currency: cur,
+        authority: REG.authority,
+        lines: {
+          reportThreshold: line(+(settings && settings.threshold) || REG.threshold, REG.threshold),
+          idThreshold: line(+(settings && settings.idRequiredOver) || REG.idAt, REG.idAt),
+          aggregationHours: line(+(settings && settings.aggHours) || REG.aggHours, REG.aggHours),
+          retentionYears: line(+(settings && settings.retentionYears) || REG.retentionYears || 5, REG.retentionYears || 5)
+        }
+      };
+    };
+    const source = server ? {
+      currency: server.currency,
+      authority: server.regulator,
+      lines: server
+    } : local();
+    if (!source || !source.lines) return [];
+    const L = source.lines;
+    const common = {
+      currency: source.currency,
+      authority: source.authority
+    };
+    return [postureOf(L.reportThreshold, {
+      ...common,
       field: 'threshold',
       label: 'Reporting threshold',
-      detail: `Set to ${fmt(thr, REG.currency)} — above the ${REG.authority} ${REG.largeCode} limit of ${fmt(REG.threshold, REG.currency)}.`
-    });
-    const ret = +(settings && settings.retentionYears) || REG.retentionYears || 5;
-    const minRet = REG.retentionYears || 5;
-    if (ret < minRet) out.push({
-      id: 'jv_ret',
+      money: true,
+      direction: 'atMost'
+    }), postureOf(L.idThreshold, {
+      ...common,
+      field: 'idRequiredOver',
+      label: 'Identification threshold',
+      money: true,
+      direction: 'atMost'
+    }), postureOf(L.aggregationHours, {
+      ...common,
+      field: 'aggHours',
+      label: 'Aggregation window',
+      unit: 'h',
+      direction: 'atLeast'
+    }), postureOf(L.retentionYears, {
+      ...common,
       field: 'retentionYears',
       label: 'Record retention',
-      detail: `Set to ${ret} years — ${REG.authority} requires at least ${minRet}.`
-    });
-    return out.map(v => ({
-      ...v,
-      authority: REG.authority
+      unit: ' years',
+      direction: 'atLeast'
+    })].filter(Boolean);
+  }
+
+  /* The desk breaking its regulator's hard rule — looser than the
+     mandate, and nothing else. A tighter line is NOT in here and must
+     never be: it is a decision somebody made on purpose, and putting it
+     in the notification bell would train an owner to ignore the bell.
+      Returns [] when the desk is compliant. The shape is unchanged —
+     { id, field, label, detail, authority } — because the top-bar bell in
+     cdos-os.jsx consumes it and this file does not get to move that. */
+  function jurisdictionViolations(settings) {
+    return jurisdictionPosture(settings).filter(p => p.standing === 'looser').map(p => ({
+      id: 'jv_' + p.field,
+      field: p.field,
+      label: p.label,
+      detail: p.detail,
+      authority: p.authority
     }));
   }
 
@@ -36682,12 +37461,31 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       watchlists: ['OFAC', 'UN']
     }
   };
+  /* The engine's view of the rules in force, which every screen reads.
+      The browser's own pack is the SHAPE — report codes, watchlists,
+     terminology — and the numbers on it are the pilot's two countries.
+     Where the ledger has answered, its figures win: they are the desk's
+     own choices resolved against its real pack, and they are what the
+     posting path will actually enforce. A screen warning a teller at
+     3,000 while the server refuses at 1,000 is worse than either number
+     on its own, because it teaches the teller the warning is wrong.
+      Below that, the owner's saved settings, which is all the standalone
+     build has. */
   function getRegime(settings) {
     const base = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
     const r = Object.assign({}, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold; // owner override
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
     if (settings && +settings.aggHours) r.aggHours = +settings.aggHours; // custom window
+    const desk = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    if (desk) {
+      const at = line => line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+      if (at(desk.reportThreshold) != null) r.threshold = at(desk.reportThreshold);
+      if (at(desk.idThreshold) != null) r.idAt = at(desk.idThreshold);
+      if (at(desk.aggregationHours) != null) r.aggHours = at(desk.aggregationHours);
+      if (at(desk.retentionYears) != null) r.retentionYears = at(desk.retentionYears);
+      if (desk.currency) r.currency = desk.currency;
+    }
     return r;
   }
 
@@ -37025,7 +37823,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       setFingerprint
     },
     getRegime,
-    jurisdictionViolations
+    jurisdictionViolations,
+    jurisdictionPosture
   });
 })();
 
@@ -37033,24 +37832,35 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 /* ============================================================
    CurrencyDesk OS — LCTR / EFTR filing
    Two faces of one immutable record:
-     • FACE 1 — Filing Worksheet: every FWR field in form order,
-       pre-filled from CONFIG (set once) · LEDGER (the transaction)
-       · KYC (the client) · ENGINE (aggregation type, the static
-       24h window, the unique reference numbers). The only blanks
-       are the handful of point-of-sale PROMPTs. Copy-to-clipboard
-       on each field — a teleprompter the owner reads down into
-       their own FWR login.
+     • FACE 1 — Filing Worksheet: every field of the regulator's form
+       in form order, pre-filled from CONFIG (set once) · LEDGER (the
+       transaction) · KYC (the client) · ENGINE (aggregation type, the
+       static aggregation window, the unique reference numbers). The
+       only blanks are the handful of point-of-sale PROMPTs.
+       Copy-to-clipboard on each field — a teleprompter the owner reads
+       down into their own regulator's portal.
      • FACE 2 — Filed Record: the moment it's marked filed and the
-       FWR acknowledgement is pasted back, the worksheet freezes
-       into a sealed PDF — every field as submitted, stamped with
-       the report reference, submission timestamp, who filed it,
-       the FWR receipt, and a link back to the ledger record(s)
-       and client(s) that triggered it. Immutable. The 5-year copy.
+       acknowledgement is pasted back, the worksheet freezes into a
+       sealed PDF — every field as submitted, stamped with the report
+       reference, submission timestamp, who filed it, the receipt, and
+       a link back to the ledger record(s) and client(s) that triggered
+       it. Immutable. The 5-year copy.
 
    Two format traps hard-coded:
      1. time = HH:MM:SS±ZZ:ZZ (UTC offset) everywhere.
      2. foreign cash reported in ORIGINAL currency on the action
-        amounts — CAD conversion is used only to test the $10k line.
+        amounts — the home-currency conversion is used only to test
+        the reporting line.
+
+   WHOSE FORM IS THIS. "FWR" is the name of Canada's filing portal and
+   this worksheet used to print it as a fact everywhere: the field a
+   receipt is pasted into, the sentence explaining what gets rejected,
+   the instruction to read the sheet down into "your FWR login". A Dubai
+   desk files into goAML and a US desk into BSA E-Filing. The portal is
+   a fact about the jurisdiction pack — `jurisdiction_reports.filing_
+   format`, seeded per pack in migration 012 — so it is read from there
+   through GET /api/ledger/jurisdiction, and where the pack does not say,
+   the screen says "the regulator's portal" rather than naming one.
    ============================================================ */
 (function () {
   const {
@@ -37063,8 +37873,41 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     CD,
     Ic,
     fmt,
-    num
+    num,
+    deskPack
   } = window.CDOS;
+
+  /* THE PACK'S OWN CATALOGUE OF FORMS.
+      This file used to fetch them for itself, once per session, because
+     refreshJurisdiction() kept `answer.pack` and dropped `answer.reports`
+     from the same response. They travel together now — one request, one
+     answer, one cache — so this reads what the desk already knows. */
+  const deskReports = () => window.CDOS.deskReports();
+  /* Which form is this, as the pack describes it — or nothing. */
+  const reportInPack = code => (deskReports() || []).find(r => r.code && code && r.code.toUpperCase() === String(code).toUpperCase()) || null;
+  /* Where the completed report is submitted, in the regulator's own words.
+     Null when the pack does not say, and every call site prints a neutral
+     phrase rather than Canada's. */
+  const portalOf = code => {
+    const r = reportInPack(code);
+    return r && r.filingFormat || null;
+  };
+  const portalName = code => portalOf(code) || 'the regulator’s portal';
+  /* Who regulates this desk. The server pack first: getRegime() falls back
+     to FINTRAC when `settings.regime` is unset, which is how a London desk
+     came to print a Canadian regulator on a filed compliance record. */
+  const authorityName = regime => {
+    const p = deskPack();
+    return p && p.regulator || regime && regime.authority || 'the regulator';
+  };
+  /* The country an address or an identity document defaults to. There is
+     no universal default — a blank country is a blank country — but where
+     the pack names the jurisdiction the desk operates in, that is the
+     honest fallback for a record with none. */
+  const homeCountry = () => {
+    const p = deskPack();
+    return p && p.name || '';
+  };
   const C = window.CDOS._compliance;
   const Portal = ({
     children
@@ -37080,8 +37923,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // UTC-offset string for a business timezone, e.g. "-05:00"
   function tzOffset(d, tz) {
     try {
-      const s = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz || 'America/Toronto',
+      /* No timezone set means this machine's, not Toronto's. A filing
+         stamped with an offset the desk does not keep is a wrong
+         timestamp on a regulatory record, and defaulting to one country's
+         zone made it wrong silently everywhere else. */
+      const s = new Intl.DateTimeFormat('en-US', tz ? {
+        timeZone: tz,
+        timeZoneName: 'shortOffset'
+      } : {
         timeZoneName: 'shortOffset'
       }).formatToParts(d).find(p => p.type === 'timeZoneName').value;
       const m = /GMT([+-])(\d{1,2})(?::?(\d{2}))?/.exec(s);
@@ -37094,7 +37943,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       return `${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
     }
   }
-  // FWR datetime: "YYYY-MM-DD HH:MM:SS±ZZ:ZZ"
+  // regulator datetime format: "YYYY-MM-DD HH:MM:SS±ZZ:ZZ"
   function fmtDateTime(date, time, tz) {
     const t = (time || '00:00').length === 5 ? time + ':00' : time || '00:00:00';
     const d = new Date((date || '') + 'T' + ((time || '00:00').length === 5 ? time : time || '00:00') + ':00');
@@ -37125,9 +37974,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       other: parts.slice(1, -1).join(' ')
     };
   }
-  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== 'Canada' ? rec.country : ''].filter(Boolean).join(', ');
+  /* The country is omitted from an address only when it IS the desk's own
+     country — which the pack states. It used to be omitted whenever it was
+     Canada, so a Canadian client's address filed by a London desk lost its
+     country line. */
+  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
 
-  /* ---------- field map (FWR form order) ----------
+  /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
   // human label for a report kind under the active regime
@@ -37144,7 +37997,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       rows,
       regime
     } = ctx;
-    const tz = settings && settings.timezone || 'America/Toronto';
+    const tz = settings && settings.timezone || null;
     const TH = regime.threshold;
     const cur = regime.currency;
     const isWire = report.kind === regime.wireCode;
@@ -37175,11 +38028,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || 'Canada'}` : subj.country || '';
+      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
-        hint: '7-digit FINTRAC ID'
+        hint: `Your reporting entity number with ${authorityName(regime)}`
       }), F('report_ref', 'Report reference number', '‡', 'ENGINE', report.reportRef), F('sector', 'Activity sector', '*', 'CONFIG', settings.activitySector, {
         hint: 'e.g. "Money services business — currency exchange"'
       }), F('contact', 'Compliance contact (name · phone · email)', '*', 'CONFIG', strContact, {
@@ -37260,10 +38113,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const winStart = report.windowStart,
       winEnd = report.windowEnd;
     const general = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
-      hint: '7-digit FINTRAC ID'
+      hint: `Your reporting entity number with ${authorityName(regime)}`
     }), F('report_ref', 'Report reference number', '‡', 'ENGINE', report.reportRef), F('sector', 'Activity sector', '*', 'CONFIG', settings.activitySector, {
       hint: 'e.g. "Money services business — currency exchange"'
-    }), F('contact', 'FINTRAC contact (name · phone · email)', '*', 'CONFIG', contact, {
+    }), F('contact', `${authorityName(regime)} contact (name · phone · email)`, '*', 'CONFIG', contact, {
       hint: 'Compliance contact name · phone · email'
     }), F('agg_type', 'Aggregation type', '‡', 'ENGINE', aggType), F('win_start', '24-hour period — start', '‡', 'ENGINE', winStart ? fmtWindowEdge(winStart, tz) : 'Not applicable'), F('win_end', '24-hour period — end', '‡', 'ENGINE', winEnd ? fmtWindowEdge(winEnd, tz) : 'Not applicable'),
     /* Tagged CONFIG and fed the literal '' — there is no such setting
@@ -37294,13 +38147,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           prompt: true,
           hint: 'e.g. "GBP for vacation"'
         }), F('tx_location', 'Reporting entity location number', '*', 'CONFIG', settings.locationNumber, {
-          hint: 'Your branch / location ID on file with FINTRAC'
+          hint: `Your branch / location ID on file with ${authorityName(regime)}`
         })]
       });
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || 'Canada'}` : cond.country || '';
+      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -37489,7 +38342,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const {
       regime
     } = ctx;
-    // `vals` overrides EVERY field (pre-filled values are editable); `ticks` marks a field keyed into FWR.
+    // `vals` overrides EVERY field (pre-filled values are editable); `ticks` marks a field keyed into the portal.
     const [vals, setVals] = useState(report.prompts || {});
     const [ticks, setTicks] = useState(report.ticks || {});
     const [focused, setFocused] = useState(null);
@@ -37527,7 +38380,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       })));
       return m;
     }, [blocks]);
-    // a field can only be "keyed into FWR" once it actually has a value — you can't tick a blank
+    // a field can only be "keyed in" once it actually has a value — you can't tick a blank
     const valueKeys = allKeys.filter(k => {
       const f = fieldByKey[k];
       return f && String(evOf(f, k)).trim();
@@ -37716,7 +38569,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     };
     const fieldHelp = f => {
       const [src, srcIcon] = SRC_HELP[f.source] || ['', 'info'];
-      const req = f.cat === '‡' ? 'Required — FWR rejects the whole report without it.' : f.cat === '*' ? 'Mandatory field.' : f.cat === '†' ? 'Only needed when it applies to this deal.' : 'Optional — include it if you have it.';
+      const req = f.cat === '‡' ? `Required — ${portalName(report.kind)} rejects the whole report without it.` : f.cat === '*' ? 'Mandatory field.' : f.cat === '†' ? 'Only needed when it applies to this deal.' : 'Optional — include it if you have it.';
       const reqTone = f.cat === '‡' ? '#ff9b8a' : f.cat === '*' ? '#e7d9b0' : '#c2bdb0';
       return {
         what: f.help || '',
@@ -37924,7 +38777,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           toggleTick(fk);
         },
         disabled: !dv.trim(),
-        title: !dv.trim() ? 'Fill this field first' : done ? 'Keyed into FWR — click to undo' : 'Copy value & mark it keyed',
+        title: !dv.trim() ? 'Fill this field first' : done ? 'Keyed in — click to undo' : 'Copy value & mark it keyed',
         className: "flex-none grid place-items-center",
         style: {
           width: 34,
@@ -38045,7 +38898,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: 'var(--cd-brass-text)'
       }
-    }, "Every field is editable \u2014 click any value to correct it. Read down, paste each into your FWR login, and ", /*#__PURE__*/React.createElement("b", null, "tick it off"), " as you go.", missingLeft ? ` ${missingLeft} highlighted field${missingLeft === 1 ? '' : 's'} still need${missingLeft === 1 ? 's' : ''} a value.` : ''), /*#__PURE__*/React.createElement("button", {
+    }, "Every field is editable \u2014 click any value to correct it. Read down, paste each into ", portalName(report.kind), ", and ", /*#__PURE__*/React.createElement("b", null, "tick it off"), " as you go.", missingLeft ? ` ${missingLeft} highlighted field${missingLeft === 1 ? '' : 's'} still need${missingLeft === 1 ? 's' : ''} a value.` : ''), /*#__PURE__*/React.createElement("button", {
       onClick: onProgressAction,
       title: reqLeft > 0 ? 'Jump to the next field that needs a value' : '',
       className: "text-[10.5px] font-semibold flex-none px-2 py-1 flex items-center gap-1",
@@ -38083,7 +38936,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "alert",
       s: 14,
       c: CD.flag
-    }), /*#__PURE__*/React.createElement("span", null, missingLeft, " mandatory ", missingLeft === 1 ? 'field' : 'fields', " normally from CONFIG / KYC came back empty \u2014 type ", missingLeft === 1 ? 'it' : 'them', " into the highlighted ", missingLeft === 1 ? 'box' : 'boxes', " below to complete the report. FWR rejects the filing without ", missingLeft === 1 ? 'it' : 'them', ".")), blocks.map(b => /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, missingLeft, " mandatory ", missingLeft === 1 ? 'field' : 'fields', " normally from CONFIG / KYC came back empty \u2014 type ", missingLeft === 1 ? 'it' : 'them', " into the highlighted ", missingLeft === 1 ? 'box' : 'boxes', " below to complete the report. ", portalName(report.kind), " rejects the filing without ", missingLeft === 1 ? 'it' : 'them', ".")), blocks.map(b => /*#__PURE__*/React.createElement("div", {
       key: b.key,
       className: "mb-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -38194,7 +39047,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: reqLeft ? CD.flag : CD.mute
       }
-    }, reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed into FWR. Seal the filed copy once submitted.`), /*#__PURE__*/React.createElement("button", {
+    }, reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed in. Seal the filed copy once submitted.`), /*#__PURE__*/React.createElement("button", {
       onClick: () => setFiling(true),
       disabled: reqLeft > 0,
       className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none",
@@ -38226,11 +39079,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.ink
       }
-    }, "FWR acknowledgement #"), /*#__PURE__*/React.createElement("input", {
+    }, portalOf(report.kind) ? portalOf(report.kind) + ' acknowledgement #' : 'Acknowledgement #'), /*#__PURE__*/React.createElement("input", {
       value: receipt,
       onChange: e => setReceipt(e.target.value),
       autoFocus: true,
-      placeholder: "Paste the FWR receipt number\u2026",
+      placeholder: portalOf(report.kind) ? `Paste the ${portalOf(report.kind)} receipt number…` : 'Paste the receipt number the regulator gave you…',
       className: "flex-1 text-[13px] px-2.5 py-2 outline-none",
       style: {
         border: `1px solid ${CD.ink}`,
@@ -38302,10 +39155,10 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
 <div class="hd">
   <div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div>
     <div class="h1">${esc(filing.kindLabel || filing.kind)}</div>
-    <div class="sub">${esc(op)} · ${esc(regime.authority)} · filed copy of record</div></div>
+    <div class="sub">${esc(op)} · ${esc(authorityName(regime))} · filed copy of record</div></div>
   <div class="meta"><div class="seal">● Filed &amp; sealed</div>
     <div style="margin-top:8px;">Report ref <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.reportRef)}</b></div>
-    <div>FWR receipt <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.fwrReceipt)}</b></div></div>
+    <div>${esc(portalOf(filing.kind) || 'Regulator')} receipt <b style="color:#0a0a0a;font-family:'Space Mono'">${esc(filing.fwrReceipt)}</b></div></div>
 </div>
 <div class="kpis">
   <div class="kpi"><div class="l">Subject</div><div class="v">${esc(filing.subject)}</div></div>
@@ -38316,7 +39169,7 @@ body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:34px 40px;color
 ${filing.amendsAck ? `<div class="amd"><b>Correction.</b> This report supersedes the copy filed under acknowledgement <b>${esc(filing.amendsAck)}</b> — which remains on the record, unchanged, as it was submitted.</div>` : ''}
 ${(filing.map || []).map(blockHTML).join('')}
 <div class="lnk"><b>Linked records</b> — this filing was triggered by, and is welded to: ${links || '—'}${filing.subject ? ` · client <b>${esc(filing.subject)}</b>` : ''}</div>
-<div class="ft2">Immutable filed copy. A correction is filed as a new linked report — this record is never edited. Retain ≥ ${settings && settings.retentionYears || 5} years per ${esc(regime.authority)} record-keeping. Times in ${esc(settings && settings.timezone || 'America/Toronto')} with UTC offset. Foreign amounts shown in original currency; ${esc(regime.currency)} equivalents are threshold-test references only.</div>
+<div class="ft2">Immutable filed copy. A correction is filed as a new linked report — this record is never edited. Retain ≥ ${settings && settings.retentionYears || 5} years per ${esc(authorityName(regime))} record-keeping. Times in ${esc(settings && settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'this machine’s timezone')} with UTC offset. Foreign amounts shown in original currency; ${esc(regime.currency)} equivalents are threshold-test references only.</div>
 </body></html>`;
   }
   function openSealed(filing, ctx) {
@@ -40721,13 +41574,14 @@ ${(filing.map || []).map(blockHTML).join('')}
   }).replace(',', '');
   const money = n => '$' + (+n || 0).toFixed(2);
   // house default risk for brand-new contacts (Settings → Clients · KYC)
-  const houseRisk = () => {
+  const storedSettings = () => {
     try {
-      return JSON.parse(localStorage.getItem('cdos_settings') || '{}').defaultClientRisk || 'Normal';
+      return JSON.parse(localStorage.getItem('cdos_settings') || '{}') || {};
     } catch (e) {
-      return 'Normal';
+      return {};
     }
   };
+  const houseRisk = () => storedSettings().defaultClientRisk || 'Normal';
   const refHash = id => {
     let h = 0;
     const s = String(id);
@@ -40983,80 +41837,29 @@ ${(filing.map || []).map(blockHTML).join('')}
   reconcile();
   setInterval(reconcile, 1200);
 
-  /* ---- demo seed: give a spread of contacts a KYC history so the prototype
-     shows every state (verified / stale→quick / plus / high-risk) out of the box.
-     Runs once (versioned) and is additive — it never removes a real check. ---- */
-  function seedDemo() {
-    const V = 'cdos_kyc_seed_v3';
-    try {
-      if (localStorage.getItem(V)) return;
-    } catch (e) {}
-    const st = ms => new Date(ms).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '');
-    const mk = (subject, kind, template, d) => {
-      const t = tmpl(template);
-      const ms = Date.now() - d * 86400000;
-      const id = 'seed_' + template + '_' + subject.replace(/[^A-Za-z]/g, '').slice(0, 14);
-      return {
-        id,
-        subject,
-        kind: kind || 'individual',
-        template,
-        templateLabel: t.label,
-        price: t.price,
-        channel: template === 'quick' ? 'instant' : 'link',
-        contact: {
-          via: 'demo'
-        },
-        by: 'System',
-        requestedAt: st(ms),
-        ms,
-        dueMs: ms + 1000,
-        matchedOnFile: false,
-        status: 'completed',
-        result: {
-          decision: 'approved',
-          extracted: null,
-          idCheck: t.idv ? 'pass' : 'n/a',
-          matchedOnFile: false,
-          biometric: t.bio ? 'pass' : 'n/a',
-          database: t.db ? 'clear' : 'n/a',
-          pep: 'None found',
-          watchlist: [],
-          reportRef: 'PSA-' + refHash(id),
-          completedAt: st(ms)
-        }
-      };
-    };
-    const plan = [['Jakob Miller', 'individual', 'verify', 25], ['Kevin Doyle', 'individual', 'verify', 90], ['Nicole Hayes', 'individual', 'verify', 30], ['Rachel Carter', 'individual', 'verify', 210], ['Megan Foster', 'individual', 'verify', 400], ['Brandon Cole', 'individual', 'verify', 200], ['Jordan Blake', 'individual', 'verify', 220], ['Ashley Turner', 'individual', 'plus', 25], ['Lauren Bishop', 'individual', 'plus', 30], ['Maple Leaf Logistics Inc.', 'corporate', 'verify', 250], ['Golden Crescent Travel', 'corporate', 'plus', 40]];
-    const unverified = ['Brooke Lawson', 'Tyler Bennett', 'Emily Park', 'Sarah Whitman', 'Marcus Reed', 'Chris Delaney', 'Northbridge Imports'];
-    Object.keys(STORE).forEach(k => {
-      const s = STORE[k] && STORE[k].subject;
-      if (unverified.indexOf(s) !== -1) delete STORE[k];
-    });
-    plan.forEach(([s, k, t, d]) => {
-      const c = mk(s, k, t, d);
-      STORE[c.id] = c;
-    });
-    try {
-      const raw = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null');
-      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-        if (raw['Marcus Reed']) raw['Marcus Reed'].idExpiry = '2026-05-15';
-        if (raw['Brooke Lawson']) {
-          raw['Brooke Lawson'].idType = '';
-          raw['Brooke Lawson'].idNum = '';
-          raw['Brooke Lawson'].idExpiry = '';
-        }
-        localStorage.setItem('cdos_clients_v1', JSON.stringify(raw));
-      }
-    } catch (e) {}
-    try {
-      localStorage.setItem(V, '1');
-    } catch (e) {}
-    persist();
-  }
-  seedDemo();
+  /* ============================================================
+     THE DEMO KYC HISTORY IS GONE, AND THIS IS ITS HEADSTONE
+      `seedDemo()` stood here and ran on module load. It fabricated eleven
+     COMPLETED identity verifications against named people — Jakob Miller,
+     Ashley Turner, Maple Leaf Logistics Inc. and eight more — each with a
+     provider reference number ("PSA-…"), each recorded as approved with
+     document authenticity, biometric and database screening all passed,
+     and each pushed into the report history as a sealed certificate
+     footed "retained as a KYC record under the PCMLTFA".
+      No provider ever ran those checks. It also reached into the client
+     store and EDITED two real contacts to make the demo look better:
+     blanking Brooke Lawson's ID fields and back-dating Marcus Reed's
+     expiry to 2026-05-15.
+      A verification record is the desk's evidence that it identified a
+     customer before moving their money. Inventing eleven of them, with
+     reference numbers, is not a demo fixture — it is the exact artifact a
+     regulator asks for, manufactured. It is gone, and the panel now shows
+     what this desk has actually run, which for a new desk is nothing.
+      See docs/GENERATED_DOCUMENTS.md: nothing this application presents as
+     a record of something having happened may be manufactured in the
+     browser.
+     ============================================================ */
+
   function setProvider(name) {
     PROVIDER = (name || 'Persona').trim() || 'Persona';
     try {
@@ -41124,7 +41927,17 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
 
   /* ---------------- sealed KYC certificate (opened from History) ---------------- */
-  function certHTML(check) {
+  function certHTML(check, settings) {
+    settings = settings || storedSettings();
+    /* Whose desk, and under whose law. This certificate named "York
+       Currency Exchange (MSB)" and cited the PCMLTFA on every desk in
+       every country that generated one. Both belong to the desk's own
+       settings and its jurisdiction pack; where the pack cannot say, the
+       sentence states the fact it has (a verification was performed) and
+       does not cite a statute it cannot name. */
+    const pack = window.CDOS.deskPack();
+    const bizName = settings && (settings.operatingName || settings.bizName) || (pack && pack.name ? pack.name + ' desk' : 'this desk');
+    const authority = pack && pack.regulator || null;
     const r = check.result || {};
     const t = tmpl(check.template);
     const dm = decisionMeta(r.decision);
@@ -41159,7 +41972,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         </table>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:${P.faint};font-family:'Space Mono',monospace;margin-bottom:2px;">Database matches</div>
         ${wl}
-        <div style="margin-top:22px;font-size:11px;color:${P.faint};line-height:1.6;">Verification performed by ${PROVIDER} on behalf of York Currency Exchange (MSB) and retained as a KYC record under the PCMLTFA. This certificate reflects the provider's automated determination; manual review may be required where matches are returned.</div>
+        <div style="margin-top:22px;font-size:11px;color:${P.faint};line-height:1.6;">Verification performed by ${PROVIDER} on behalf of ${esc(bizName)} and retained as a KYC record${authority ? ` under ${esc(authority)} record-keeping requirements` : ''}. This certificate reflects the provider's automated determination; manual review may be required where matches are returned.</div>
       </body></html>`;
   }
   function openWindow(html) {
@@ -42000,10 +42813,12 @@ ${(filing.map || []).map(blockHTML).join('')}
     if (!name) return null;
     const RECO_DAYS = settings && +settings.recheckDays || 180; // periodic quick-screen cadence
     const REVERIFY_DAYS = settings && +settings.reverifyDays || 365; // full re-verification cadence
-    const TODAY = window.CDOS.TODAY;
+    /* Live, not a snapshot taken at page load — an ID that expires at
+       midnight has expired at 00:01, including on a desk left open. */
+    const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
+    const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /high|enhanced/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
     const highRisk = riskLvl === 'High';
     const done = (demoChecks || checksFor(name)).filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved');
@@ -42013,8 +42828,15 @@ ${(filing.map || []).map(blockHTML).join('')}
     const ageAny = lastAny ? daysAgo(lastAny.ms) : null;
     const ageFull = lastFull ? daysAgo(lastFull.ms) : null;
     // pick the recommended tier from the file's state + house parameters
-    const TH = settings && +settings.threshold || 10000;
-    const bigDeal = amountCad != null && amountCad >= TH;
+    /* THE LINE THIS DESK TRADES UNDER, not ten thousand Canadian dollars.
+       A desk with no reporting line has no "large transaction" to mandate a
+       check on, and the honest answer is to raise no mandate rather than to
+       apply another country's number silently — the same reasoning as
+       reportingLimit() in cdos-base.jsx and docs/ABSENT_FIGURES.md. */
+    const houseLimit = window.CDOS.reportingLimit(settings);
+    const TH = houseLimit.amount;
+    const THLabel = houseLimit.label;
+    const bigDeal = TH != null && amountCad != null && amountCad >= TH;
     const policy = settings && settings.largeTxCheck || 'off'; // off | quick | verify | plus — mandatory check on large deals
     const TIER_NAME = {
       quick: 'Quick',
@@ -42036,12 +42858,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       level = 'force';
       tier = !lastFull && policy === 'quick' ? 'verify' : policy;
       title = 'Check required — large transaction';
-      reason = `House policy: every deal at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + (!lastFull && policy === 'quick' ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : '');
+      reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + (!lastFull && policy === 'quick' ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : '');
     } else if (bigDeal && !lastFull) {
       level = 'reco';
       tier = 'plus';
       title = 'Verified Plus recommended';
-      reason = `First large transaction — this deal is at or above ${fmt ? fmt(TH, 'CAD') : '$' + TH.toLocaleString()} and ${first} has never been verified. Run the full enhanced check.`;
+      reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`;
     } else if (!lastFull) {
       level = 'reco';
       tier = 'verify';
@@ -44021,9 +44843,15 @@ ${snap}`;
    CurrencyDesk OS — Reports
    One-touch report generation off the live ledger. Pick a period,
    tap a report, and a formatted, print-ready document is built
-   instantly: Period Summary, FINTRAC / LCTR compliance pack,
+   instantly: Period Summary, the desk's large-cash compliance pack,
    Revenue & Earnings, Transaction Register, Client & KYC Register.
    Print / Save-PDF and CSV export on every report.
+
+   THESE ARE DOCUMENTS SOMEBODY SIGNS. The rule they follow is written
+   down in docs/GENERATED_DOCUMENTS.md and it is short: every figure on a
+   generated document comes from the ledger, is labelled in the desk's own
+   currency, and is shown as absent when the book has no answer. A printed
+   0.00 becomes evidence.
    ============================================================ */
 (function () {
   const {
@@ -44046,14 +44874,45 @@ ${snap}`;
     dealMargin,
     CCY,
     businessDate,
+    businessDayWindow,
     reportingLimit,
-    useDeskFacts
+    useDeskFacts,
+    deskPack,
+    Absent
   } = window.CDOS;
   /* The desk's own reporting line, in the desk's own currency. This file
      used to print `THRESHOLD` — a hardcoded 10,000 Canadian dollars — in
      four places, including the sentence claiming what the law requires,
      while the rest of the product honoured the owner's setting. */
   const limitOf = settings => reportingLimit(settings);
+
+  /* WHO REGULATES THIS DESK, AND WHAT THE FORM IS CALLED.
+      This file printed "Prepared for FINTRAC record-keeping under the
+     PCMLTFA" on a compliance pack regardless of which country installed
+     the product. The regulator, the report's name and the country are
+     facts about the jurisdiction pack the entity points at, and the pack
+     carries all three (`regulator`, `reportName`, `name`).
+      getRegime() is deliberately NOT the first source here. It is the
+     browser's own two-country table and it falls back to FINTRAC when
+     `settings.regime` is unset — which is exactly how a London desk came
+     to print a Canadian regulator's name. The server's pack is what the
+     entity was actually created with, so it wins; the regime engine is a
+     fallback for a desk that has not reached the server yet, and where
+     neither can answer the document says "the regulator" rather than
+     naming one. */
+  function authorityOf(settings) {
+    const pack = deskPack();
+    const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null) || {};
+    return {
+      /* null, not a guess — a sentence claiming what a named regulator
+         requires is not a sentence to fill in with a default. */
+      authority: pack && pack.regulator || regime.authority || null,
+      country: pack && pack.name || regime.country || null,
+      largeCode: pack && pack.reportName || regime.largeCode || null,
+      largeLabel: regime.largeLabel || (pack && pack.reportName ? pack.reportName + ' report' : null),
+      aggHours: regime.aggHours || null
+    };
+  }
 
   // ---- role-based report access ----
   const ROLES = ['Owner', 'Manager', 'Compliance', 'Senior teller', 'Cashier'];
@@ -44081,12 +44940,52 @@ ${snap}`;
     }
   }
   const allowedFor = (me, access) => access[roleOf(me)] || DEFAULT_ACCESS[roleOf(me)] || [];
-  const cadOf = (amt, ccy) => ccy === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', ccy) || 1);
+
+  /* A foreign amount expressed in the desk's own money, or null.
+      This was `cadOf`, and it divided by `crossRate('CAD', ccy)` on every
+     desk in the world. The browser's rate board is quoted in units per
+     CANADIAN dollar — that is what `PER_CAD` means — so on a London or
+     Dubai entity this produced a Canadian-dollar figure and printed a
+     pound sign in front of it. Same reasoning as the server's own
+     `unitHome` in reporting.ts, which also refuses to value anything when
+     the home currency is not the one the board is quoted against.
+      Returns null rather than a number the reader cannot check. Every call
+     site has to decide what to do with that, which is the point — see
+     docs/ABSENT_FIGURES.md. */
+  const homeEquiv = (amt, ccy, home) => {
+    if (!home) return null;
+    if (ccy === home) return +amt || 0;
+    if (home !== 'CAD') return null;
+    const rate = crossRate('CAD', ccy);
+    return rate ? (+amt || 0) / rate : null;
+  };
   // booked spread per deal — exact when two-side priced, else the live-mid estimate
   const spreadOf = r => dealMargin(r);
   const stampNow = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
+  /* The ledger records WHO posted a deal as a principal id, tenant-scoped
+     ("tnt-yorkfx:a.singh"). Earnings by teller is the book's answer, so the
+     id is the book's; turning it back into a person is presentation, and
+     it is done from whatever staff list the desk actually has. An id with
+     nobody behind it prints as the id rather than as a blank — a row of
+     earnings attributed to nothing is a thing somebody needs to notice. */
+  const principalOf = id => String(id == null ? '' : id).split(':').pop() || '';
+  function tellerName(actorId, settings) {
+    const staffId = principalOf(actorId);
+    if (!staffId) return '—';
+    const roster = settings && Array.isArray(settings.employees) && settings.employees.length ? settings.employees : window.CDOS.STAFF || [];
+    const found = roster.find(s => s && (s.staffId === staffId || s.name === staffId));
+    return found && found.name || staffId;
+  }
+  /* A money field the ledger sent, or a dash and a reason. Inline rather
+     than <Absent>, because these appear inside table cells and KPI tiles
+     that are cloned into a print window — the printed page has no React. */
+  const orDash = (value, currency, why) => value == null ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: CD.faint
+    }
+  }, why ? '— ' + why : '—') : fmt(value, currency);
   const RANGES = [['today', 'Today', 0], ['7d', 'Past 7 days', 7], ['30d', 'Past 30 days', 30], ['90d', 'This quarter', 90], ['365d', 'This year', 365], ['all', 'All time', null]];
   const REPORTS = [{
     id: 'endofday',
@@ -44107,9 +45006,13 @@ ${snap}`;
     icon: 'coins',
     desc: 'Revenue, estimated GST/HST on commission and net profit.',
     tone: CD.green
-  }, {
+  },
+  /* Named by the desk's own pack — see titleOf() below. The launcher card
+     said "FINTRAC / LCTR Pack" on every desk in every country, which is
+     the same defect as the document it opens. */
+  {
     id: 'fintrac',
-    title: 'FINTRAC / LCTR Pack',
+    title: 'Large-Cash Compliance Pack',
     icon: 'shield',
     desc: 'Reportable deals, structuring watches and KYC gaps.',
     tone: CD.flag
@@ -44132,6 +45035,15 @@ ${snap}`;
     desc: 'Every client, ID status and period activity.',
     tone: CD.ink
   }];
+
+  /* What to call a report on this desk. Only the compliance pack changes
+     with the jurisdiction; everything else is the desk's own document and
+     is named the same everywhere. */
+  function titleOf(report) {
+    if (report.id !== 'fintrac') return report.title;
+    const pack = deskPack();
+    return pack && pack.regulator && pack.reportName ? `${pack.regulator} / ${pack.reportName} Pack` : report.title;
+  }
 
   /* ---------- print: clone the report node into a clean window ---------- */
   function printReport(title) {
@@ -44475,11 +45387,7 @@ ${snap}`;
        somebody keeps for five years. */
     const deskFacts = useDeskFacts();
     const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
-    const regime = (window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null) || {
-      authority: 'the regulator',
-      largeLabel: 'Large cash transaction report',
-      aggHours: 24
-    };
+    const regime = useMemo(() => authorityOf(settings), [settings, deskFacts]);
     /* WHAT THE DESK IS HOLDING AT CLOSE — the ledger's figure.
         The End-of-Day Sign-Off used to fill this column by DERIVING each
        currency from a demo opening baseline plus the browser's records,
@@ -44502,6 +45410,24 @@ ${snap}`;
       summary: null,
       error: ''
     });
+    /* THE PHYSICAL COUNT, AS THE LEDGER RECORDED IT.
+        The sign-off sheet used to read its "Counted" column out of
+       localStorage — `cdos_till_history_v2` — which the Cash Drawer seeded
+       with a YEAR of invented daily counts on first open. That is where the
+       sheet's CAD variance of −249,270.79 came from, on a day the reconcile
+       screen it was generated from said "Drawers off 0 · Total variance 0".
+       Two books, disagreeing by a third of a million dollars, on the page
+       with the signature lines.
+        `GET /api/ledger/till-session` carries `latestCounts`: what was
+       counted, what was expected AT COUNT TIME, and the variance the server
+       computed from the two. That is the count that exists; a count taken
+       on a machine and never sent is not one. */
+    const [tillDay, setTillDay] = useState({
+      loading: true,
+      session: null,
+      counts: {},
+      error: ''
+    });
     useEffect(() => {
       const backend = window.CDOS.Backend;
       if (!backend) {
@@ -44513,6 +45439,12 @@ ${snap}`;
         setDayBook({
           loading: false,
           summary: null,
+          error: 'not signed in to the ledger'
+        });
+        setTillDay({
+          loading: false,
+          session: null,
+          counts: {},
           error: 'not signed in to the ledger'
         });
         return;
@@ -44544,11 +45476,43 @@ ${snap}`;
           error: error && error.message || 'the ledger could not be reached'
         });
       });
+      backend.loadTillSession().then(answer => {
+        if (live) setTillDay({
+          loading: false,
+          session: answer && answer.session || null,
+          counts: answer && answer.latestCounts || {},
+          error: ''
+        });
+      }).catch(error => {
+        if (live) setTillDay({
+          loading: false,
+          session: null,
+          counts: {},
+          error: error && error.message || 'the ledger could not be reached'
+        });
+      });
       return () => {
         live = false;
       };
     }, [deskFacts]);
     const [active, setActive] = useState(null);
+    /* THE PERIOD'S OWN BOOK.
+        Volume, fees and earnings on every other report were summed here in
+       the browser, over `rows` — a copy of the last hundred ledger
+       transactions, re-priced against a live market mid. Two things were
+       wrong with that on a printed document. The margin was an ESTIMATE
+       (docs/COST_BASIS.md: the desk earns what the disposal booked, not
+       what a mid says it should have), and the copy is capped at a hundred
+       records, so a busy quarter silently reported a fraction of itself.
+        So the headline figures come from GET /api/ledger/summary over the
+       same window the report is scoped to. The row-by-row tables still
+       render `rows`, because those rows ARE ledger transactions and a
+       register is a list, not a total. */
+    const [periodBook, setPeriodBook] = useState({
+      loading: true,
+      summary: null,
+      error: ''
+    });
     const [menu, setMenu] = useState(false);
     const [access, setAccess] = useState(loadAccess);
     const [manageAccess, setManageAccess] = useState(false);
@@ -44596,6 +45560,57 @@ ${snap}`;
     const allRange = range === 'all';
     const within = d => allRange ? true : inRange(d);
 
+    /* The window to ask the book for, as two instants. A custom date range
+       the user typed is honoured; "All time" is an omitted window, which
+       the server reads as everything this till has ever posted. */
+    const bookWindow = useMemo(() => {
+      if (scope.from || scope.to) {
+        const at = (d, plusDay) => {
+          const t = new Date(d + 'T00:00:00');
+          if (plusDay) t.setDate(t.getDate() + 1);
+          return t.toISOString();
+        };
+        return {
+          from: scope.from ? at(scope.from) : undefined,
+          to: scope.to ? at(scope.to, true) : undefined
+        };
+      }
+      const days = (RANGES.find(r => r[0] === range) || [])[2];
+      return days == null ? {} : businessDayWindow(Math.max(1, days || 1));
+    }, [range, scope.from, scope.to, deskFacts]);
+    useEffect(() => {
+      const backend = window.CDOS.Backend;
+      if (!backend) {
+        setPeriodBook({
+          loading: false,
+          summary: null,
+          error: 'not signed in to the ledger'
+        });
+        return;
+      }
+      let live = true;
+      setPeriodBook(b => ({
+        ...b,
+        loading: true
+      }));
+      backend.loadLedgerSummary(bookWindow).then(summary => {
+        if (live) setPeriodBook({
+          loading: false,
+          summary,
+          error: ''
+        });
+      }).catch(error => {
+        if (live) setPeriodBook({
+          loading: false,
+          summary: null,
+          error: error && error.message || 'the ledger could not be reached'
+        });
+      });
+      return () => {
+        live = false;
+      };
+    }, [bookWindow]);
+
     // ---- report scope (the “select a person / teller / type / custom dates” filters) ----
     const customersList = useMemo(() => Array.from(new Set(rows.map(r => r.customer).filter(Boolean))).sort(), [rows]);
     const tellersList = useMemo(() => Array.from(new Set(rows.map(r => r.teller).filter(Boolean))).sort(), [rows]);
@@ -44631,14 +45646,16 @@ ${snap}`;
         drawerIn = {},
         drawerOut = {};
       live.forEach(r => {
-        const v = cadOf(r.inAmt, r.inCcy),
+        const v = homeEquiv(r.inAmt, r.inCcy, homeCcy),
           fee = +r.fee || 0,
           sp = spreadOf(r);
-        vol += v;
+        vol += v || 0;
         fees += fee;
         spread += sp;
-        byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v;
-        byType[r.type] = (byType[r.type] || 0) + v;
+        if (v != null) {
+          byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v;
+          byType[r.type] = (byType[r.type] || 0) + v;
+        }
         feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee + sp;
         feeType[r.type] = (feeType[r.type] || 0) + fee + sp;
         drawerIn[r.inCcy] = (drawerIn[r.inCcy] || 0) + (+r.inAmt || 0);
@@ -44682,7 +45699,7 @@ ${snap}`;
         r,
         fee: +r.fee || 0,
         sp: spreadOf(r),
-        vol: cadOf(r.inAmt, r.inCcy)
+        vol: homeEquiv(r.inAmt, r.inCcy, homeCcy)
       })).map(o => ({
         ...o,
         earned: o.fee + o.sp
@@ -44705,32 +45722,49 @@ ${snap}`;
         drawer,
         perTx,
         filed: reportable.filter(r => r.filed).length,
-        /* Cash on hand at close — the LEDGER's balance for each box the
-           desk actually has, matched against the till's own physical count
-           snapshot for the trading day. A currency the book has no row for
-           is simply not a line on the sheet; a currency it can hold but
-           cannot value prints its units and a dash for the home value. */
+        /* CASH ON HAND AT CLOSE — the drawer, and the count of the drawer.
+            This table used to put the branch's WHOLE position — drawer plus
+           strong room, which is what position().currencies totals — in a
+           column headed "On the ledger", and subtract from it a count of
+           the DRAWER. Those are two different boxes. The reconcile screen
+           the sheet was generated from compares the drawer against the
+           drawer and said every currency balanced; the sheet compared the
+           drawer against the drawer plus the safe and printed a CAD
+           variance of −249,270.79 above the signature lines. Nobody had
+           lost anything. The sheet was subtracting a safe.
+            So the ledger column is `row.till` — the box that was counted —
+           and the safe is reported separately, as its own line, because an
+           owner signing a close-out is entitled to see it and it must
+           never be netted into a variance. */
         cash: (() => {
-          let counted = {};
-          try {
-            counted = ((JSON.parse(localStorage.getItem('cdos_till_history_v2') || '{}') || {})[businessDate()] || {}).byCcy || {};
-          } catch (e) {}
           const position = held.position;
           if (!position) return [];
+          const counts = tillDay.counts || {};
           return (position.currencies || []).map(row => {
-            const units = Number(row.quantity);
-            const ct = row.currency in counted ? +counted[row.currency] : null;
+            const till = row.till;
+            const record = counts[row.currency];
+            /* The variance the SERVER computed when the count was taken,
+               against the expected balance AT THAT MOMENT. Recomputing it
+               here against the balance now would silently fold in every
+               movement since the count — which is a different number with
+               the same name. */
             return {
               ccy: row.currency,
-              units,
-              home: row.marketValueHome == null ? null : Number(row.marketValueHome),
-              counted: ct,
-              variance: ct == null ? null : +(ct - units).toFixed(2)
+              /* null, not zero: a currency held only in the safe has no
+                 drawer balance, and a drawer line of 0.00 against a
+                 counted figure would read as a variance. */
+              units: till ? Number(till.quantity) : null,
+              home: till && till.marketValueHome != null ? Number(till.marketValueHome) : null,
+              vaultUnits: row.vault ? Number(row.vault.quantity) : null,
+              counted: record && record.counted != null ? Number(record.counted) : null,
+              countedExpected: record && record.expected != null ? Number(record.expected) : null,
+              variance: record && record.variance != null ? Number(record.variance) : null,
+              countedAt: record ? record.countedAt : null
             };
-          });
+          }).filter(x => x.units != null || x.counted != null || x.vaultUnits != null);
         })()
       };
-    }, [rows, clients, settings, range, flags, scope, held.position]);
+    }, [rows, clients, settings, range, flags, scope, held.position, tillDay.counts, homeCcy]);
 
     // Every freshly generated report is snapshotted (rendered HTML frozen) into an
     // immutable history log — surfaced in the Compliance ▸ History tab, never silently changing.
@@ -44751,7 +45785,7 @@ ${snap}`;
           key: 'R' + nowMs.toString(36) + Math.random().toString(36).slice(2, 5),
           ms: nowMs,
           type: active,
-          title: meta.title,
+          title: titleOf(meta),
           icon: meta.icon,
           tone: meta.tone,
           range,
@@ -44766,24 +45800,35 @@ ${snap}`;
       }, 140);
       return () => clearTimeout(t);
     }, [active, range]);
+
+    /* A CSV cell for a figure the ledger has no answer for. Blank, never
+       "0.00" — a spreadsheet is where an absent figure most easily becomes
+       a confident one, because SUM() treats a blank and a zero identically
+       but a reader does not. */
+    const csvMoney = v => v == null ? '' : Number(v).toFixed(2);
     const csvFor = id => {
-      if (id === 'endofday') return [['Currency', 'On the ledger', `${homeCcy} value`], ...data.cash.map(x => [x.ccy, x.units.toFixed(2), x.home == null ? '' : x.home.toFixed(2)]), [], ['Transactions', data.n], ['Pay-in volume CAD', data.vol.toFixed(2)], ['Fees CAD', data.fees.toFixed(2)], ['FX spread CAD', data.spread.toFixed(2)], ['Revenue CAD', data.rev.toFixed(2)], ['Reportable', data.reportable.length], ['Open LCTRs', data.reportable.length - data.filed]];
+      const s = periodBook.summary;
+      if (id === 'endofday') {
+        const d = dayBook.summary;
+        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvMoney(x.units), csvMoney(x.home), csvMoney(x.counted), csvMoney(x.variance), csvMoney(x.vaultUnits)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
+      }
       if (id === 'pnl') {
         const hstRate = settings && settings.hstRate != null ? +settings.hstRate : 13;
-        return [['Line', 'CAD'], ['Commission & fees', data.fees.toFixed(2)], ['FX spread', data.spread.toFixed(2)], ['Gross revenue', data.rev.toFixed(2)], [`GST/HST on commission (${hstRate}%)`, (data.fees * hstRate / 100).toFixed(2)], ['Net revenue to business', data.rev.toFixed(2)]];
+        return [['Line', homeCcy], ['Commission & fees', s ? csvMoney(s.feesHome) : ''], ['Realized FX margin', s ? csvMoney(s.realizedPnlHome) : ''], ['Gross revenue', s ? csvMoney(s.earningsHome) : ''], [`Sales tax on commission (${hstRate}%)`, s && s.feesHome != null ? (Number(s.feesHome) * hstRate / 100).toFixed(2) : ''], ['Net revenue to business', s ? csvMoney(s.earningsHome) : '']];
       }
-      if (id === 'summary') return [['Currency', 'Pay-in volume CAD'], ...data.byCcy.map(([c, v]) => [c, v.toFixed(2)])];
-      if (id === 'fintrac') return [['Ref', 'Date', 'Customer', 'Amount', 'Currency', 'CAD equiv', 'Filed', 'LCTR ref'], ...data.reportable.map(r => [r.ref, r.date, r.customer, r.inAmt, r.inCcy, cadOf(r.inAmt, r.inCcy).toFixed(2), r.filed ? 'yes' : 'NO', r.filedInfo && r.filedInfo.ref || ''])];
-      if (id === 'revenue') return [['Ref', 'Customer', 'Type', 'Teller', 'Fee', 'Spread', 'Earned'], ...data.perTx.map(o => [o.r.ref, o.r.customer, o.r.type, o.r.teller, o.fee.toFixed(2), o.sp.toFixed(2), o.earned.toFixed(2)])];
+      if (id === 'summary') return [['Currency', 'Sold to customers', `Realized margin ${homeCcy}`], ...(s && s.byCurrency || []).map(c => [c.currency, csvMoney(c.sold), csvMoney(c.realizedPnlHome)])];
+      if (id === 'fintrac') return [['Ref', 'Date', 'Customer', 'Amount', 'Currency', `${homeCcy} equiv`, 'Filed', `${regime.largeCode || 'Report'} ref`], ...data.reportable.map(r => [r.ref, r.date, r.customer, r.inAmt, r.inCcy, csvMoney(homeEquiv(r.inAmt, r.inCcy, homeCcy)), r.filed ? 'yes' : 'NO', r.filedInfo && r.filedInfo.ref || ''])];
+      if (id === 'revenue') return [['Teller', 'Deals', `Fees ${homeCcy}`, `Realized margin ${homeCcy}`, `Earned ${homeCcy}`, 'Deals with a cost basis'], ...(s && s.byActor || []).map(a => [tellerName(a.actorId, settings), a.deals, csvMoney(a.feesHome), csvMoney(a.realizedPnlHome), csvMoney(a.earningsHome), a.pricedDeals])];
       if (id === 'register') return [['Ref', 'Date', 'Time', 'Customer', 'Type', 'In', 'InCcy', 'Out', 'OutCcy', 'Fee', 'Teller', 'Status'], ...data.inP.map(r => [r.ref, r.date, r.time, r.customer, r.type, r.inAmt, r.inCcy, r.outAmt, r.outCcy, r.fee, r.teller, r.status])];
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)]));
-        return [['Client', 'ID type', 'ID number', 'Expiry', 'Status', 'Tx in period', 'Volume CAD'], ...names.map(n => {
+        return [['Client', 'ID type', 'ID number', 'Expiry', 'Status', 'Tx in period', `Volume ${homeCcy}`], ...names.map(n => {
           const c = clients[n] || {};
           const tx = data.live.filter(r => r.customer === n);
-          const v = tx.reduce((s, r) => s + cadOf(r.inAmt, r.inCcy), 0);
+          const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
+          const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
           const st = !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
-          return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, v.toFixed(2)];
+          return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
       return [];
@@ -44791,30 +45836,57 @@ ${snap}`;
 
     /* ---------- the five documents ---------- */
     const renderDoc = id => {
-      const sub = `${data.n} posted transaction${data.n === 1 ? '' : 's'} · CAD-equivalent at live spot`;
+      const book = periodBook.summary;
+      /* Why a figure on this document is a dash, in one short line. The
+         order matters: "we could not reach the book" and "the book has
+         nothing for this period" are different answers and a reader acting
+         on them does different things. */
+      const noBook = periodBook.error || (periodBook.loading ? 'reading the ledger…' : 'nothing posted in this period');
+      const sub = book ? `${book.posted} posted transaction${book.posted === 1 ? '' : 's'}${book.reversed ? ` · ${book.reversed} voided` : ''} · valued in ${homeCcy}` : `the ledger has no figures for this period — ${noBook}`;
       const branchName = station && branches && (branches.find(b => b.id === station.branchId) || {}).name || settings && (settings.operatingName || settings.bizName) || 'York Currency Exchange';
       const tillName = station && station.tillId ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
       if (id === 'endofday') {
+        const d = dayBook.summary;
+        /* Why the day's money reads "—", said once and reused. "Nothing was
+           posted" and "we could not reach the book" are different facts and
+           a manager signing the sheet acts differently on each. */
+        const whyNoDay = dayBook.error || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
         /* A total is only a total when every line has a figure. Where one
-           currency could not be valued the sheet prints a dash and names
-           the reason rather than a sum that quietly omits it. */
-        const cashComplete = data.cash.length > 0 && data.cash.every(x => x.home != null);
-        const totalCashHome = cashComplete ? data.cash.reduce((s, x) => s + x.home, 0) : null;
+           currency in the drawer could not be valued the sheet prints a dash
+           and names the reason rather than a sum that quietly omits it. */
+        const drawerRows = data.cash.filter(x => x.units != null);
+        const cashComplete = drawerRows.length > 0 && drawerRows.every(x => x.home != null);
+        const totalCashHome = cashComplete ? drawerRows.reduce((s, x) => s + x.home, 0) : null;
+        const unvalued = drawerRows.filter(x => x.home == null).map(x => x.ccy);
         const openRpt = data.reportable.length - data.filed;
+        /* Earnings by teller, from the book — GET /api/ledger/summary's
+           byActor block. This panel used to be summed in the browser and on
+           the desk that was audited it named three tellers with money beside
+           them, on a day one person had traded once and voided it. */
+        const earners = d && d.byActor || [];
+        /* The day the sheet is FOR. The business date the till session
+           carries, not the wall clock — a session opened before midnight is
+           still on yesterday's trading day at 00:05, and the sheet has to
+           agree with the movements filed under it. The session's own number
+           replaces "Day 1", which was a counter kept in the browser. */
+        const sheetDate = tillDay.session && tillDay.session.businessDate || businessDate();
+        const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
+        const longDate = (() => {
+          try {
+            return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            });
+          } catch (e) {
+            return sheetDate;
+          }
+        })();
+        const closed = tillDay.session && tillDay.session.status === 'closed';
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "End-of-Day Sign-Off",
-          subtitle: `${branchName}${tillName ? ' · ' + tillName : ''} · ${(() => {
-            try {
-              return new Date(businessDate() + 'T00:00:00').toLocaleDateString('en-CA', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric'
-              });
-            } catch (e) {
-              return businessDate();
-            }
-          })()} · Day ${day && day.num || 1}`,
+          subtitle: `${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`,
           rangeLabel: effRangeLabel
         }), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -44823,8 +45895,8 @@ ${snap}`;
             gap: 10,
             marginBottom: 18,
             padding: '10px 14px',
-            background: CD.greenSoft,
-            border: `1px solid ${CD.green}`,
+            background: closed ? CD.greenSoft : 'var(--cd-chip)',
+            border: `1px solid ${closed ? CD.green : CD.line}`,
             borderRadius: 9
           }
         }, /*#__PURE__*/React.createElement("span", {
@@ -44832,7 +45904,7 @@ ${snap}`;
             width: 26,
             height: 26,
             borderRadius: '50%',
-            background: CD.green,
+            background: closed ? CD.green : CD.mute,
             display: 'grid',
             placeItems: 'center',
             flex: 'none'
@@ -44842,29 +45914,29 @@ ${snap}`;
             color: 'var(--cd-on-ink)',
             fontSize: 14
           }
-        }, "\u2713")), /*#__PURE__*/React.createElement("div", {
+        }, closed ? '✓' : '·')), /*#__PURE__*/React.createElement("div", {
           style: {
             fontSize: 12.5,
-            color: '#14543a'
+            color: closed ? '#14543a' : CD.mute
           }
-        }, /*#__PURE__*/React.createElement("b", null, "Close-out summary"), " \u2014 review every drawer against expected, then sign below. Filed to the day's permanent record.")), /*#__PURE__*/React.createElement(KpiRow, {
+        }, closed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "Closed and counted"), " \u2014 every figure below is the ledger's, for the trading day named above. Review, then sign.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "This till is not closed."), " The figures below are the ledger's as of now; the counts are whatever has been recorded so far. A sign-off sheet for a day still trading is a snapshot, not a close-out."))), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Transactions',
-            value: dayBook.summary ? dayBook.summary.posted : '—',
-            sub: dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
+            value: d ? d.posted : '—',
+            sub: d ? d.reversed ? `${d.reversed} voided` : 'none voided' : whyNoDay
           }, {
             label: 'Pay-in volume',
-            value: dayBook.summary && dayBook.summary.volumeHome != null ? fmt(dayBook.summary.volumeHome, homeCcy) : '—',
-            sub: dayBook.summary && dayBook.summary.volumeHome == null ? 'nothing posted today' : null
+            value: d && d.volumeHome != null ? fmt(d.volumeHome, homeCcy) : '—',
+            sub: d && d.volumeHome != null ? `in ${homeCcy}` : whyNoDay
           }, {
             label: 'Earned today',
-            value: dayBook.summary && dayBook.summary.earningsHome != null ? fmt(dayBook.summary.earningsHome, homeCcy) : '—',
+            value: d && d.earningsHome != null ? fmt(d.earningsHome, homeCcy) : '—',
             accent: CD.green,
-            sub: dayBook.summary && dayBook.summary.earningsHome != null ? 'commission + realized margin' : dayBook.error || 'nothing posted today'
+            sub: d && d.earningsHome != null ? 'commission + realized margin' : whyNoDay
           }, {
-            label: 'Cash on hand',
+            label: 'In the drawer',
             value: totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy),
-            sub: totalCashHome == null ? held.error || (held.position ? 'not every currency has a board rate' : 'no ledger balances') : 'the ledger’s balance at close'
+            sub: totalCashHome == null ? held.error || (unvalued.length ? `no board rate for ${unvalued.join(', ')}` : 'no ledger balances for this drawer') : `the ledger’s ${homeCcy} value at close`
           }]
         }), /*#__PURE__*/React.createElement(Card, {
           pad: 0
@@ -44874,20 +45946,20 @@ ${snap}`;
           }
         }, /*#__PURE__*/React.createElement(SecTitle, {
           n: `${data.cash.length} currenc${data.cash.length === 1 ? 'y' : 'ies'}`
-        }, "Cash on hand at close \u2014 the ledger vs. the count")), !data.cash.length ? /*#__PURE__*/React.createElement("div", {
+        }, "This drawer at close \u2014 the ledger vs. the count")), !data.cash.length ? /*#__PURE__*/React.createElement("div", {
           style: {
             padding: '10px 16px 14px',
             fontSize: 11.5,
             color: CD.faint
           }
-        }, held.loading ? 'Reading the ledger…' : `This desk has no cash balances on the ledger${held.error ? ' — ' + held.error : ''}. Nothing is printed here rather than a figure from somewhere else.`) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, held.loading ? 'Reading the ledger…' : `This till has no cash balances on the ledger${held.error ? ' — ' + held.error : ''}. Nothing is printed here rather than a figure from somewhere else.`) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Currency"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "On the ledger"), /*#__PURE__*/React.createElement("th", {
+        }, "In the drawer"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
@@ -44902,7 +45974,12 @@ ${snap}`;
             ...thS,
             textAlign: 'right'
           }
-        }, "Variance"))), /*#__PURE__*/React.createElement("tbody", null, data.cash.map(x => {
+        }, "Variance"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "In the safe"))), /*#__PURE__*/React.createElement("tbody", null, data.cash.map(x => {
           const off = x.variance != null && Math.abs(x.variance) > 0.005;
           return /*#__PURE__*/React.createElement("tr", {
             key: x.ccy
@@ -44912,9 +45989,10 @@ ${snap}`;
             style: {
               ...tdS,
               textAlign: 'right',
-              fontVariantNumeric: 'tabular-nums'
+              fontVariantNumeric: 'tabular-nums',
+              color: x.units == null ? CD.faint : CD.ink
             }
-          }, num(x.units)), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : num(x.units)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -44936,12 +46014,27 @@ ${snap}`;
               fontWeight: x.variance != null ? 600 : 400,
               color: x.variance == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance)));
+          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums',
+              color: CD.mute
+            }
+          }, x.vaultUnits == null ? '—' : num(x.vaultUnits)));
         }), (() => {
-          const ctTot = data.cash.reduce((s, x) => s + (x.counted == null ? 0 : cadOf(x.counted, x.ccy)), 0);
-          const vTot = data.cash.reduce((s, x) => s + (x.variance == null ? 0 : cadOf(x.variance, x.ccy)), 0);
-          const anyCounted = data.cash.some(x => x.counted != null);
-          const off = Math.abs(vTot) > 0.005;
+          /* The counted and variance totals are only offered in the
+             desk's own money when every counted line can BE valued in
+             it. Summing a home value the board cannot produce is how
+             the old sheet reached a total; where it cannot, the column
+             still totals the per-currency variances it does have, and
+             says which currencies it could not price. */
+          const counted = data.cash.filter(x => x.counted != null);
+          const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
+          const vParts = counted.map(x => homeEquiv(x.variance == null ? 0 : x.variance, x.ccy, homeCcy));
+          const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
+          const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
+          const off = vTot != null && Math.abs(vTot) > 0.005;
           return /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
@@ -44962,39 +46055,106 @@ ${snap}`;
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums'
             }
-          }, anyCounted ? fmt(ctTot, 'CAD') : '—'), /*#__PURE__*/React.createElement("td", {
+          }, ctTot == null ? '—' : fmt(ctTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums',
-              color: !anyCounted ? CD.faint : off ? CD.flag : CD.green
+              color: vTot == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, anyCounted ? Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, 'CAD') : '—'));
+          }, vTot == null ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
+            style: tdS
+          }));
         })())), /*#__PURE__*/React.createElement("div", {
           style: {
             fontSize: 10.5,
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "\u201COn the ledger\u201D is the server's balance for this branch's drawer and safe \u2014 not a figure derived here. Counted & variance come from the till's own drawer count; currencies not yet counted show \u201C\u2014 not counted\u201D, and a currency the branch has never published a rate for cannot be valued and says so."))), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Activity by type"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.byType,
-          fmtV: v => fmt(v, 'CAD')
-        })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Earnings by teller"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.feeTeller,
-          fmtV: v => fmt(v, 'CAD'),
-          accent: CD.green
-        }))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance at close"), /*#__PURE__*/React.createElement("div", {
+        }, "Every figure in this table is the server ledger's. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " and ", /*#__PURE__*/React.createElement("b", null, "variance"), " are what the ledger recorded when the count was taken, measured against the expected balance at that moment. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+          pad: 0
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '14px 16px 4px'
+          }
+        }, /*#__PURE__*/React.createElement(SecTitle, {
+          n: earners.length ? `${earners.length} on the book` : null
+        }, "Earnings by teller \u2014 from the ledger")), !earners.length ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, d ? 'Nobody posted a deal at this till on this trading day. No earnings are attributed rather than a table of zeros.' : `The ledger has no answer — ${whyNoDay}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+          style: thS
+        }, "Teller"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Deals"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Commission"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Realized margin"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Earned"))), /*#__PURE__*/React.createElement("tbody", null, earners.map(a => /*#__PURE__*/React.createElement("tr", {
+          key: a.actorId
+        }, /*#__PURE__*/React.createElement("td", {
+          style: tdS
+        }, /*#__PURE__*/React.createElement("b", null, tellerName(a.actorId, settings))), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, a.deals), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.feesHome, homeCcy, 'no fee recorded')), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.realizedPnlHome, homeCcy, a.pricedDeals ? 'not priced' : 'nothing sold')), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 600,
+            color: a.earningsHome == null ? CD.faint : CD.green
+          }
+        }, orDash(a.earningsHome, homeCcy, 'nothing to attribute')))))), earners.some(a => a.pricedDeals < a.deals) && /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 10.5,
+            color: CD.faint,
+            padding: '8px 16px 2px'
+          }
+        }, "Some deals here carry no cost basis, so the margin beside them covers fewer deals than the count. See docs/COST_BASIS.md \u2014 the desk earns what the disposal booked, and a deal the book never priced has no margin to report.")), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance at close"), /*#__PURE__*/React.createElement("div", {
           style: {
             display: 'grid',
             gridTemplateColumns: 'repeat(3,1fr)',
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: "Reportable \u2265 $10k",
-          value: `${data.reportable.length}`,
-          sub: `${data.filed} filed · ${openRpt} open`,
-          tone: openRpt > 0 ? CD.flag : CD.green
+          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          value: limit.amount == null ? '—' : `${data.reportable.length}`,
+          sub: limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`,
+          tone: limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green
         }), /*#__PURE__*/React.createElement(Mini, {
           label: "Structuring watch",
           value: `${data.stru.length}`,
@@ -45025,7 +46185,7 @@ ${snap}`;
             display: 'flex',
             gap: 30
           }
-        }, [['Teller on duty', me ? me.name : ''], ['Manager / owner', '']].map(([r, nm]) => /*#__PURE__*/React.createElement("div", {
+        }, [['Teller on duty', tillDay.session && tillDay.session.closedBy && principalOf(tillDay.session.closedBy) || (me ? me.name : '')], ['Manager / owner', '']].map(([r, nm]) => /*#__PURE__*/React.createElement("div", {
           key: r,
           style: {
             flex: 1
@@ -45054,13 +46214,25 @@ ${snap}`;
             color: CD.faint,
             marginTop: 12
           }
-        }, "Prepared by ", me ? `${me.name} · ${me.role}` : '—', " \xB7 ", stampNow(), ". The cash figures are the book's expected float; enter the physical count and variance, then both parties sign.")));
+        }, "Prepared by ", me ? `${me.name} · ${me.role}` : '—', " \xB7 generated ", stampNow(), " for trading day ", sheetDate, ". Every figure above is read from the server ledger; nothing on this sheet is computed in the browser. A figure the book cannot source is printed as \u201C\u2014\u201D with the reason beside it, and is never a zero.")));
       }
       if (id === 'pnl') {
         const hstRate = settings && settings.hstRate != null ? +settings.hstRate : 13;
-        const hstOnFees = data.fees * (hstRate / 100);
-        const net = data.rev; // revenue is net to the business; HST is collected on top, remitted separately
-        const margin = data.vol ? data.rev / data.vol * 100 : 0;
+        /* THE MONEY ON A P&L IS THE BOOK'S.
+            Commission is the fee column the ledger stored. The other half of
+           revenue is the REALIZED margin the disposal booked — what the
+           stock actually cost against what it sold for — and not a "spread"
+           re-derived here by comparing the rate quoted against a live market
+           mid. Those two numbers disagree by whatever the market did between
+           buying the notes and selling them, which on a currency desk is the
+           whole business. See docs/COST_BASIS.md. */
+        const fees = book && book.feesHome != null ? Number(book.feesHome) : null;
+        const realized = book && book.realizedPnlHome != null ? Number(book.realizedPnlHome) : null;
+        const gross = book && book.earningsHome != null ? Number(book.earningsHome) : null;
+        const volume = book && book.volumeHome != null ? Number(book.volumeHome) : null;
+        const hstOnFees = fees == null ? null : fees * (hstRate / 100);
+        const margin = gross != null && volume != null && volume > 0 ? gross / volume * 100 : null;
+        const taxAuthority = settings && settings.taxAuthority || null;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Profit & Loss",
           subtitle: `${branchName} · ${sub}`,
@@ -45068,19 +46240,19 @@ ${snap}`;
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Gross revenue',
-            value: fmt(data.rev, 'CAD'),
+            value: orDash(gross, homeCcy, noBook),
             accent: CD.green,
-            sub: 'fees + FX spread'
+            sub: 'commission + realized margin'
           }, {
             label: 'Commission (fees)',
-            value: fmt(data.fees, 'CAD')
+            value: orDash(fees, homeCcy, noBook)
           }, {
-            label: 'FX spread',
-            value: fmt(data.spread, 'CAD')
+            label: 'Realized FX margin',
+            value: orDash(realized, homeCcy, book ? 'nothing sold in this period' : noBook)
           }, {
             label: 'Margin %',
-            value: `${margin.toFixed(2)}%`,
-            sub: 'of pay-in volume'
+            value: margin == null ? '—' : `${margin.toFixed(2)}%`,
+            sub: margin == null ? 'no volume to divide by' : 'of pay-in volume'
           }]
         }), /*#__PURE__*/React.createElement(Card, {
           pad: 0
@@ -45088,7 +46260,7 @@ ${snap}`;
           style: {
             padding: '14px 16px 4px'
           }
-        }, /*#__PURE__*/React.createElement(SecTitle, null, "Profit & loss statement")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, /*#__PURE__*/React.createElement(SecTitle, null, "Profit & loss statement \xB7 ", homeCcy)), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             fontWeight: 600
@@ -45099,18 +46271,22 @@ ${snap}`;
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(data.fees, 'CAD'))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, orDash(fees, homeCcy, noBook))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             fontWeight: 600
           }
-        }, "FX spread (rate markup booked)"), /*#__PURE__*/React.createElement("td", {
+        }, "Realized FX margin ", /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: CD.faint
+          }
+        }, "\u2014 what the stock sold for, less what it cost")), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(data.spread, 'CAD'))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, orDash(realized, homeCcy, book ? 'nothing sold' : noBook))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             fontWeight: 700,
@@ -45125,23 +46301,23 @@ ${snap}`;
             color: CD.green,
             borderTop: `2px solid ${CD.line}`
           }
-        }, fmt(data.rev, 'CAD'))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, orDash(gross, homeCcy, noBook))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             color: CD.mute
           }
-        }, "GST/HST collected on commission (", hstRate, "%) ", /*#__PURE__*/React.createElement("span", {
+        }, "Sales tax collected on commission (", hstRate, "%) ", /*#__PURE__*/React.createElement("span", {
           style: {
             color: CD.faint
           }
-        }, "\u2014 remitted to CRA, not income")), /*#__PURE__*/React.createElement("td", {
+        }, "\u2014 remitted", taxAuthority ? ` to ${taxAuthority}` : '', ", not income")), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums',
             color: CD.mute
           }
-        }, fmt(hstOnFees, 'CAD'))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, orDash(hstOnFees, homeCcy, 'no commission to tax'))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             fontWeight: 700
@@ -45154,25 +46330,86 @@ ${snap}`;
             fontVariantNumeric: 'tabular-nums',
             color: CD.green
           }
-        }, fmt(net, 'CAD')))))), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Revenue by type"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.feeType,
-          fmtV: v => fmt(v, 'CAD'),
-          accent: CD.green
-        })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Revenue by teller"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.feeTeller,
-          fmtV: v => fmt(v, 'CAD'),
-          accent: CD.green
-        }))), /*#__PURE__*/React.createElement("div", {
+        }, orDash(gross, homeCcy, noBook)))))), /*#__PURE__*/React.createElement(Card, {
+          pad: 0
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '14px 16px 4px'
+          }
+        }, /*#__PURE__*/React.createElement(SecTitle, {
+          n: (book && book.byActor || []).length || null
+        }, "Revenue by teller \u2014 from the ledger")), !(book && book.byActor || []).length ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, book ? 'Nobody posted a deal at this till in this period.' : `The ledger has no answer — ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+          style: thS
+        }, "Teller"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Deals"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Commission"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Realized margin"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Earned"))), /*#__PURE__*/React.createElement("tbody", null, book.byActor.map(a => /*#__PURE__*/React.createElement("tr", {
+          key: a.actorId
+        }, /*#__PURE__*/React.createElement("td", {
+          style: tdS
+        }, /*#__PURE__*/React.createElement("b", null, tellerName(a.actorId, settings))), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, a.deals), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.feesHome, homeCcy, 'no fee')), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.realizedPnlHome, homeCcy, 'nothing sold')), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 600,
+            color: CD.green
+          }
+        }, orDash(a.earningsHome, homeCcy, 'nothing to attribute'))))))), /*#__PURE__*/React.createElement("div", {
           style: {
             fontSize: 11,
             color: CD.faint,
             lineHeight: 1.6,
             padding: '2px'
           }
-        }, "FX spread is the markup booked into the rate vs. the live spot; it is not separately taxed. GST/HST is estimated on commission income at ", hstRate, "% \u2014 confirm your registration and rate. This is a management P&L, not a filed financial statement."), /*#__PURE__*/React.createElement(Attest, null));
+        }, "Realized margin is the figure the disposal booked against the stock's own cost \u2014 not a markup measured against a market mid, which is a different number and one the desk never earned. Sales tax is estimated on commission income at ", hstRate, "%; confirm your registration and rate. This is a management P&L, not a filed financial statement."), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'summary') {
-        const avg = data.n ? data.vol / data.n : 0;
+        const volume = book && book.volumeHome != null ? Number(book.volumeHome) : null;
+        const posted = book ? book.posted : null;
+        const avg = volume != null && posted ? volume / posted : null;
+        const revenue = book && book.earningsHome != null ? Number(book.earningsHome) : null;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Period Summary",
           subtitle: sub,
@@ -45180,32 +46417,88 @@ ${snap}`;
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Pay-in volume',
-            value: fmt(data.vol, 'CAD')
+            value: orDash(volume, homeCcy, noBook),
+            sub: book && book.unvaluedDeals ? `${book.unvaluedDeals} cross-currency deal(s) this book cannot value in ${homeCcy}` : null
           }, {
             label: 'Transactions',
-            value: data.n
+            value: posted == null ? '—' : posted,
+            sub: posted == null ? noBook : book.reversed ? `${book.reversed} voided` : null
           }, {
             label: 'Avg. ticket',
-            value: fmt(avg, 'CAD')
+            value: orDash(avg, homeCcy, 'no volume to average')
           }, {
             label: 'Total revenue',
-            value: fmt(data.rev, 'CAD'),
+            value: orDash(revenue, homeCcy, noBook),
             accent: CD.green,
-            sub: 'fees + spread'
+            sub: 'commission + realized margin'
           }]
-        }), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Pay-in volume by currency"), /*#__PURE__*/React.createElement(Bars, {
+        }), /*#__PURE__*/React.createElement(Card, {
+          pad: 0
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '14px 16px 4px'
+          }
+        }, /*#__PURE__*/React.createElement(SecTitle, {
+          n: (book && book.byCurrency || []).length || null
+        }, "Where the margin came from \u2014 by currency sold")), !(book && book.byCurrency || []).length ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, book ? 'No foreign currency left this till in the period.' : `The ledger has no answer — ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+          style: thS
+        }, "Currency"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Deals"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Units sold"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Realized margin"))), /*#__PURE__*/React.createElement("tbody", null, book.byCurrency.map(c => /*#__PURE__*/React.createElement("tr", {
+          key: c.currency
+        }, /*#__PURE__*/React.createElement("td", {
+          style: tdS
+        }, /*#__PURE__*/React.createElement("b", null, c.currency)), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, c.deals), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, num(c.sold)), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 600
+          }
+        }, orDash(c.realizedPnlHome, homeCcy, c.pricedDeals ? 'partly priced' : 'no cost basis recorded'))))))), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Pay-in volume by currency"), /*#__PURE__*/React.createElement(Bars, {
           data: data.byCcy,
-          fmtV: v => fmt(v, 'CAD')
+          fmtV: v => fmt(v, homeCcy)
         })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Volume by transaction type"), /*#__PURE__*/React.createElement(Bars, {
           data: data.byType,
-          fmtV: v => fmt(v, 'CAD')
+          fmtV: v => fmt(v, homeCcy)
         }))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             padding: '14px 16px 4px'
           }
-        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement \xB7 in units")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Currency"), /*#__PURE__*/React.createElement("th", {
           style: {
@@ -45256,10 +46549,10 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: "Reportable \u2265 $10k",
-          value: `${data.reportable.length}`,
-          sub: `${data.filed} filed · ${data.reportable.length - data.filed} open`,
-          tone: data.reportable.length - data.filed > 0 ? CD.flag : CD.green
+          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          value: limit.amount == null ? '—' : `${data.reportable.length}`,
+          sub: limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`,
+          tone: limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green
         }), /*#__PURE__*/React.createElement(Mini, {
           label: "Structuring watch",
           value: `${data.stru.length}`,
@@ -45273,17 +46566,22 @@ ${snap}`;
         }))));
       }
       if (id === 'fintrac') {
+        /* The pack names this document, because "FINTRAC / LCTR" is a
+           Canadian answer and this product is sold in six jurisdictions. A
+           desk whose pack has not arrived gets a neutral title rather than
+           somebody else's regulator on the letterhead. */
+        const packTitle = regime.authority && regime.largeCode ? `${regime.authority} / ${regime.largeCode} Compliance Pack` : 'Large-Cash Compliance Pack';
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
-          title: "FINTRAC / LCTR Compliance Pack",
-          subtitle: "Large Cash Transaction Reports, structuring watch and KYC exceptions",
+          title: packTitle,
+          subtitle: `${regime.largeLabel || 'Large-cash reports'}, structuring watch and KYC exceptions`,
           rangeLabel: effRangeLabel
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Reportable deals',
-            value: data.reportable.length,
-            sub: `≥ ${limit.label}`
+            value: limit.amount == null ? '—' : data.reportable.length,
+            sub: limit.amount == null ? 'no reporting line set for this desk' : `≥ ${limit.label}`
           }, {
-            label: 'LCTRs filed',
+            label: `${regime.largeCode || 'Reports'} filed`,
             value: data.filed,
             accent: CD.green
           }, {
@@ -45319,7 +46617,7 @@ ${snap}`;
             ...thS,
             textAlign: 'right'
           }
-        }, "CAD equiv"), /*#__PURE__*/React.createElement("th", {
+        }, homeCcy, " equiv"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'center'
@@ -45349,7 +46647,7 @@ ${snap}`;
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(cadOf(r.inAmt, r.inCcy), 'CAD')), /*#__PURE__*/React.createElement("td", {
+        }, orDash(homeEquiv(r.inAmt, r.inCcy, homeCcy), homeCcy, `no ${homeCcy} rate`)), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'center'
@@ -45404,7 +46702,7 @@ ${snap}`;
             fontSize: 10.5,
             color: CD.mute
           }
-        }, settings.structuringDays, "-day total ", fmt(s.agg, 'CAD'))), /*#__PURE__*/React.createElement("span", {
+        }, settings.structuringDays, "-day total ", orDash(s.agg, homeCcy, 'not valued'))), /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: 10,
             fontWeight: 700,
@@ -45453,105 +46751,117 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, "Prepared for ", regime.authority, " record-keeping. ", regime.largeLabel, "s are required for single cash amounts of ", limit.label, " or more, with ", regime.aggHours, "-hour aggregation \u2014 this desk's own line, from its jurisdiction pack. This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
-        const margin = data.vol ? data.rev / data.vol * 100 : 0;
+        /* This document exists to answer "who earned what", and it used to
+           answer it from the browser's copy of the day's deals, with the
+           margin re-estimated against a live market mid. Both halves are
+           now the book's: GET /api/ledger/summary's byActor block, grouped
+           by the principal the ledger recorded against each posting. */
+        const fees = book && book.feesHome != null ? Number(book.feesHome) : null;
+        const realized = book && book.realizedPnlHome != null ? Number(book.realizedPnlHome) : null;
+        const total = book && book.earningsHome != null ? Number(book.earningsHome) : null;
+        const volume = book && book.volumeHome != null ? Number(book.volumeHome) : null;
+        const margin = total != null && volume != null && volume > 0 ? total / volume * 100 : null;
+        const earners = book && book.byActor || [];
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Revenue & Earnings",
-          subtitle: "Posted fees plus the FX spread booked at the counter",
+          subtitle: `Commission plus the margin each disposal actually booked · ${homeCcy}`,
           rangeLabel: effRangeLabel
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Fees collected',
-            value: fmt(data.fees, 'CAD'),
+            value: orDash(fees, homeCcy, noBook),
             accent: CD.green
           }, {
-            label: 'FX spread',
-            value: fmt(data.spread, 'CAD'),
+            label: 'Realized FX margin',
+            value: orDash(realized, homeCcy, book ? 'nothing sold in this period' : noBook),
             accent: CD.green,
-            sub: 'booked margin'
+            sub: 'against the stock’s own cost'
           }, {
             label: 'Total revenue',
-            value: fmt(data.rev, 'CAD'),
+            value: orDash(total, homeCcy, noBook),
             accent: CD.green
           }, {
             label: 'Margin %',
-            value: `${margin.toFixed(2)}%`,
-            sub: 'of pay-in volume'
+            value: margin == null ? '—' : `${margin.toFixed(2)}%`,
+            sub: margin == null ? 'no volume to divide by' : 'of pay-in volume'
           }]
-        }), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Earnings by teller"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.feeTeller,
-          fmtV: v => fmt(v, 'CAD'),
-          accent: CD.green
-        })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Earnings by type"), /*#__PURE__*/React.createElement(Bars, {
-          data: data.feeType,
-          fmtV: v => fmt(v, 'CAD'),
-          accent: CD.green
-        }))), /*#__PURE__*/React.createElement(Card, {
+        }), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             padding: '14px 16px 4px'
           }
         }, /*#__PURE__*/React.createElement(SecTitle, {
-          n: `top ${Math.min(data.perTx.length, 25)} of ${data.perTx.length}`
-        }, "Earnings per transaction")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+          n: earners.length || null
+        }, "Earnings by teller")), !earners.length ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, book ? 'Nobody posted a deal at this till in this period. No earnings are attributed rather than a table of zeros.' : `The ledger has no answer — ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
-        }, "Ref"), /*#__PURE__*/React.createElement("th", {
-          style: thS
-        }, "Customer"), /*#__PURE__*/React.createElement("th", {
-          style: thS
-        }, "Type"), /*#__PURE__*/React.createElement("th", {
+        }, "Teller"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Fee"), /*#__PURE__*/React.createElement("th", {
+        }, "Deals"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Spread"), /*#__PURE__*/React.createElement("th", {
+        }, "Volume"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Earned"), /*#__PURE__*/React.createElement("th", {
+        }, "Commission"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Margin"))), /*#__PURE__*/React.createElement("tbody", null, data.perTx.slice(0, 25).map(o => /*#__PURE__*/React.createElement("tr", {
-          key: o.r.id
+        }, "Realized margin"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Earned"))), /*#__PURE__*/React.createElement("tbody", null, earners.map(a => /*#__PURE__*/React.createElement("tr", {
+          key: a.actorId
         }, /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
-            fontFamily: 'Space Mono, monospace',
-            fontSize: 11,
-            color: CD.mute
+            fontWeight: 500
           }
-        }, o.r.ref), /*#__PURE__*/React.createElement("td", {
-          style: tdS
-        }, o.r.customer), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            color: CD.mute
-          }
-        }, o.r.type), /*#__PURE__*/React.createElement("td", {
+        }, tellerName(a.actorId, settings)), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(o.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+        }, a.deals), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.volumeHome, homeCcy, `no ${homeCcy} leg`)), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, orDash(a.feesHome, homeCcy, 'no fee')), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums',
             color: CD.mute
           }
-        }, o.sp > 0 ? fmt(o.sp, 'CAD') : '—'), /*#__PURE__*/React.createElement("td", {
+        }, orDash(a.realizedPnlHome, homeCcy, 'nothing sold')), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
@@ -45559,17 +46869,69 @@ ${snap}`;
             fontWeight: 600,
             color: CD.green
           }
-        }, fmt(o.earned, 'CAD')), /*#__PURE__*/React.createElement("td", {
+        }, orDash(a.earningsHome, homeCcy, 'nothing to attribute'))))))), /*#__PURE__*/React.createElement(Card, {
+          pad: 0
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '14px 16px 4px'
+          }
+        }, /*#__PURE__*/React.createElement(SecTitle, {
+          n: (book && book.byCurrency || []).length || null
+        }, "Earnings by currency sold")), !(book && book.byCurrency || []).length ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, book ? 'No foreign currency left this till in the period.' : `The ledger has no answer — ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+          style: thS
+        }, "Currency"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Deals"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Units sold"), /*#__PURE__*/React.createElement("th", {
+          style: {
+            ...thS,
+            textAlign: 'right'
+          }
+        }, "Realized margin"))), /*#__PURE__*/React.createElement("tbody", null, book.byCurrency.map(c => /*#__PURE__*/React.createElement("tr", {
+          key: c.currency
+        }, /*#__PURE__*/React.createElement("td", {
+          style: tdS
+        }, /*#__PURE__*/React.createElement("b", null, c.currency)), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, c.deals), /*#__PURE__*/React.createElement("td", {
+          style: {
+            ...tdS,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums'
+          }
+        }, num(c.sold)), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums',
-            color: CD.mute
+            fontWeight: 600,
+            color: CD.green
           }
-        }, o.vol ? (o.earned / o.vol * 100).toFixed(1) + '%' : '—'))), data.perTx.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-          style: tdS,
-          colSpan: 7
-        }, "No transactions in this period."))))));
+        }, orDash(c.realizedPnlHome, homeCcy, c.pricedDeals ? 'partly priced' : 'no cost basis recorded'))))))), /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 11,
+            color: CD.faint,
+            lineHeight: 1.6,
+            padding: '2px'
+          }
+        }, book && book.pricedDeals < book.posted ? /*#__PURE__*/React.createElement(React.Fragment, null, book.posted - book.pricedDeals, " of ", book.posted, " deal(s) in this period carry no cost basis, so no margin is reported for them \u2014 see docs/COST_BASIS.md. A deal the book never priced has no margin, which is not the same as a margin of nothing.") : /*#__PURE__*/React.createElement(React.Fragment, null, "Realized margin is the figure each disposal booked against the stock's own cost, under the desk's costing method. It is not a markup measured against a market mid.")));
       }
       if (id === 'register') {
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
@@ -45672,12 +47034,12 @@ ${snap}`;
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums'
             }
-          }, fmt(r.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+          }, fmt(r.fee, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: CD.mute
             }
-          }, r.teller), /*#__PURE__*/React.createElement("td", {
+          }, tellerName(r.teller, settings)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'center',
@@ -45698,7 +47060,7 @@ ${snap}`;
             color: CD.faint,
             padding: '2px'
           }
-        }, "RPT = reportable \u2265 ", limit.label, " \xB7 STR = structuring watch \xB7 ID = KYC exception. Voided records are retained, struck through, and never deleted."));
+        }, limit.amount == null ? 'RPT = reportable — no reporting line is set for this desk, so nothing is flagged' : /*#__PURE__*/React.createElement(React.Fragment, null, "RPT = reportable \u2265 ", limit.label), " \xB7 STR = structuring watch \xB7 ID = KYC exception. Fees are shown in ", homeCcy, ". Voided records are retained, struck through, and never deleted."));
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
@@ -45741,7 +47103,12 @@ ${snap}`;
           const c = clients[n] || {};
           const [st, col, bg] = stat(n);
           const tx = data.live.filter(r => r.customer === n);
-          const v = tx.reduce((s, r) => s + cadOf(r.inAmt, r.inCcy), 0);
+          /* A client's volume in the desk's own money, or nothing. One
+             leg this board cannot price makes the whole total unknown
+             — a sum quietly missing a currency is worse than a dash,
+             because it looks complete. */
+          const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
+          const v = !parts.length || parts.some(p => p == null) ? null : parts.reduce((s, p) => s + p, 0);
           return /*#__PURE__*/React.createElement("tr", {
             key: n
           }, /*#__PURE__*/React.createElement("td", {
@@ -45793,8 +47160,14 @@ ${snap}`;
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums'
             }
-          }, v ? fmt(v, 'CAD') : '—'));
-        })))));
+          }, orDash(v, homeCcy, tx.length ? `no ${homeCcy} rate` : 'nothing in this period')));
+        })))), /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 11,
+            color: CD.faint,
+            padding: '2px'
+          }
+        }, "Volumes are shown in ", homeCcy, ", this desk's own currency as its jurisdiction pack states it. A client whose deals include a currency this branch has never published a rate for has no total to show, and says so."));
       }
       return null;
     };
@@ -46340,7 +47713,7 @@ ${snap}`;
         n: rep.icon,
         s: 13,
         c: "var(--cd-on-ink)"
-      })), rep.title)), ROLES.map(role => {
+      })), titleOf(rep))), ROLES.map(role => {
         const on = (access[role] || DEFAULT_ACCESS[role] || []).includes(rep.id);
         const locked = role === 'Owner';
         return /*#__PURE__*/React.createElement("td", {
@@ -46493,7 +47866,7 @@ ${snap}`;
             fontWeight: 700,
             color: CD.ink
           }
-        }, r.title), /*#__PURE__*/React.createElement("div", {
+        }, titleOf(r)), /*#__PURE__*/React.createElement("div", {
           style: {
             fontSize: 12,
             color: CD.mute,
@@ -46546,7 +47919,7 @@ ${snap}`;
       style: {
         color: CD.ink
       }
-    }, meta.title)), /*#__PURE__*/React.createElement("div", {
+    }, titleOf(meta))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, active !== 'endofday' && FilterControl, RangePicker, /*#__PURE__*/React.createElement("button", {
       onClick: () => downloadCsv(`${active}-${range}.csv`, csvFor(active)),
@@ -46561,7 +47934,7 @@ ${snap}`;
       n: "download",
       s: 15
     }), " CSV"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => printReport(meta.title),
+      onClick: () => printReport(titleOf(meta)),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
         background: CD.ink,
@@ -46617,7 +47990,7 @@ ${snap}`;
     const metaFor = type => {
       const r = REPORTS.find(x => x.id === type);
       return r ? {
-        label: r.title,
+        label: titleOf(r),
         icon: r.icon,
         tone: r.tone
       } : {
@@ -46977,210 +48350,33 @@ ${snap}`;
   }
 
   /* ============================================================
-     Demo seed — a realistic spread of history so the tab isn't empty
-     on first look. Runs once; never overwrites real entries, and a
-     "Clear all" sticks (the seed flag is set regardless).
+     THE DEMO HISTORY IS GONE, AND THIS IS ITS HEADSTONE
+      `seedFakeHistory()` stood here and ran on module load. It wrote nine
+     entries into the report history, and four of them were SEALED
+     COMPLIANCE FILINGS: a Large Cash Transaction Report for "Brooke
+     Lawson" with acknowledgement number FIN-4471, an EFTR for "Jakob
+     Miller" with FIN-6093, each rendered as a full print-ready document
+     headed "YORK CURRENCY EXCHANGE · MSB", stamped ● SEALED, and footed
+     "Immutable record retained under the PCMLTFA."
+      No such report was ever filed. No such acknowledgement was ever
+     issued. They were props, and they sat in the same list, with the same
+     print button, as the ones a desk actually files — on the screen an
+     examiner is shown.
+      A fabricated business figure is a bug. A fabricated regulatory filing
+     with an invented receipt number is a different category of thing, and
+     it does not belong in a shipped product at any stage of its life. The
+     tab now opens empty for a desk that has generated nothing, and says
+     so, which is the truth about that desk.
+      If a populated history is ever wanted for a sales demo, it belongs
+     behind an explicit demo-tenant flag on the server, generated from
+     that tenant's own ledger — never compiled into the browser where the
+     only thing separating it from a real record is a key in
+     localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
-  function seedFakeHistory(force) {
-    const SEEDFLAG = 'cdos_report_history_seed_v3';
-    if (!force) {
-      try {
-        if (localStorage.getItem(SEEDFLAG)) return;
-        const existing = JSON.parse(localStorage.getItem(HKEY) || '[]') || [];
-        if (existing.length) {
-          localStorage.setItem(SEEDFLAG, '1');
-          return;
-        }
-      } catch (e) {
-        return;
-      }
-    }
-    const ms = s => Date.parse(s.replace(' ', 'T'));
-    const meta = id => REPORTS.find(r => r.id === id) || {
-      icon: 'filetext',
-      tone: CD.ink
-    };
-    const P = {
-      ink: '#262216',
-      mute: '#6f6857',
-      faint: '#9a927e',
-      line: '#e4e0d5',
-      soft: '#f1efe7',
-      green: '#1f8a5b',
-      flag: '#c0392b',
-      brass: '#9a7b3f'
-    };
 
-    // a believable one-page report document
-    const doc = (title, sub, rangeLabel, kpis, table) => `
-      <div style="font-family:'Archivo',system-ui,sans-serif;color:${P.ink};">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:2px solid ${P.ink};margin-bottom:22px;">
-          <div>
-            <div style="display:flex;align-items:center;gap:9px;"><span style="width:30px;height:30px;background:${P.ink};color:#fff;border-radius:7px;display:grid;place-items:center;font-family:'Space Mono',monospace;font-weight:700;font-size:13px;">CD</span><div style="font-family:'Space Mono',monospace;font-weight:700;font-size:13px;letter-spacing:.04em;">CURRENCYDESK OS</div></div>
-            <div style="font-size:23px;font-weight:800;margin-top:12px;">${title}</div>
-            <div style="font-size:12.5px;color:${P.mute};margin-top:2px;">${sub}</div>
-          </div>
-          <div style="text-align:right;font-size:11px;color:${P.mute};line-height:1.7;"><div style="font-family:'Space Mono',monospace;font-weight:700;color:${P.ink};font-size:12px;">${rangeLabel}</div><div>York Currency Exchange · MSB</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(${kpis.length},1fr);gap:1px;background:${P.line};border:1px solid ${P.line};margin-bottom:22px;">
-          ${kpis.map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${k[0]}</div><div style="font-size:20px;font-weight:700;color:${k[2] || P.ink};margin-top:3px;font-variant-numeric:tabular-nums;">${k[1]}</div></div>`).join('')}
-        </div>
-        <div style="background:#fff;border:1px solid ${P.line};border-radius:10px;overflow:hidden;">
-          <table style="border-collapse:collapse;width:100%;">
-            <thead><tr>${table.head.map((h, i) => `<th style="text-align:${i ? 'right' : 'left'};font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:${P.mute};padding:8px 12px;background:${P.soft};border-bottom:1px solid ${P.line};font-weight:600;">${h}</th>`).join('')}</tr></thead>
-            <tbody>${table.rows.map(r => `<tr>${r.map((c, i) => `<td style="font-size:12px;padding:8px 12px;border-bottom:1px solid ${P.soft};color:${P.ink};text-align:${i ? 'right' : 'left'};font-variant-numeric:tabular-nums;">${c}</td>`).join('')}</tr>`).join('')}</tbody>
-          </table>
-        </div>
-      </div>`;
-
-    // a believable sealed filing document
-    const sealed = (kind, kindLabel, subject, ref, ack, when, amount) => `
-      <!DOCTYPE html><html><head><meta charset="utf-8"><title>${kind} ${ref}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-      <style>*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:40px 46px;color:${P.ink};}</style></head>
-      <body>
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${P.ink};padding-bottom:16px;margin-bottom:22px;">
-          <div><div style="font-family:'Space Mono',monospace;font-weight:700;font-size:13px;letter-spacing:.04em;">YORK CURRENCY EXCHANGE · MSB</div><div style="font-size:24px;font-weight:800;margin-top:10px;">${kindLabel}</div><div style="font-size:12.5px;color:${P.mute};margin-top:2px;">Sealed filed copy · ${kind}</div></div>
-          <div style="text-align:right;font-size:11px;color:${P.mute};line-height:1.8;"><div style="display:inline-flex;align-items:center;gap:6px;background:#e7f3ec;color:${P.green};font-family:'Space Mono',monospace;font-weight:700;padding:4px 10px;border-radius:6px;">● SEALED</div><div style="margin-top:6px;">FWR receipt <b style="color:${P.ink};font-family:'Space Mono',monospace;">${ack}</b></div><div>Filed ${when}</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:${P.line};border:1px solid ${P.line};margin-bottom:20px;">
-          ${[['Report reference', ref], ['Subject', subject], ['Amount (CAD equiv)', amount], ['Filed by', 'A. Singh']].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${k[0]}</div><div style="font-size:15px;font-weight:700;margin-top:3px;font-family:'Space Mono',monospace;">${k[1]}</div></div>`).join('')}
-        </div>
-        <div style="font-size:11.5px;color:${P.faint};line-height:1.6;">Immutable record retained under the PCMLTFA. This sealed copy is welded to the ledger entries that triggered it and cannot be altered. Verify against the official FINTRAC portal acknowledgement.</div>
-      </body></html>`;
-    const entries = [{
-      type: 'register',
-      range: 'today',
-      rangeLabel: 'Today',
-      at: '2026-06-24 21:40:10',
-      n: 12,
-      html: doc('Transaction Register', '12 records including voided — the complete book', 'Today', [['Records', '12'], ['Pay-in volume', '$84,210'], ['Fees', '$612']], {
-        head: ['Ref', 'Customer', 'Pay-in', 'Fee'],
-        rows: [['TX-4471', 'Maple Leaf Logistics Inc.', '8,200 USD', '$58.00'], ['TX-4470', 'Ashley Turner', '3,100 EUR', '$24.50'], ['TX-4469', 'Chris Delaney', '1,900 GBP', '$19.00'], ['TX-4468', 'Lauren Bishop', '12,400 USD', '$84.00']]
-      })
-    }, {
-      type: 'summary',
-      range: '30d',
-      rangeLabel: 'Past 30 days',
-      at: '2026-06-24 09:12:04',
-      n: 142,
-      html: doc('Period Summary', '142 posted transactions · CAD-equivalent at live spot', 'Past 30 days', [['Pay-in volume', '$1.84M'], ['Transactions', '142'], ['Avg. ticket', '$12,950'], ['Total revenue', '$21,470', P.green]], {
-        head: ['Currency', 'Pay-in volume CAD'],
-        rows: [['USD', '$1,102,400'], ['EUR', '$421,900'], ['GBP', '$208,300'], ['JPY', '$74,210'], ['SEK', '$33,100']]
-      })
-    }, {
-      type: 'LCTR',
-      filing: true,
-      title: 'Large Cash Transaction Report · Brooke Lawson',
-      icon: 'lock',
-      tone: CD.flag,
-      at: '2026-06-21 10:15:22',
-      ref: 'LCTR-2026-L7XN0',
-      ack: 'FIN-4471',
-      subject: 'Brooke Lawson',
-      amount: '$14,820',
-      fullHTML: sealed('LCTR', 'Large Cash Transaction Report', 'Brooke Lawson', 'LCTR-2026-L7XN0', 'FIN-4471', '2026-06-21 10:15', '$14,820.00')
-    }, {
-      type: 'revenue',
-      range: '7d',
-      rangeLabel: 'Past 7 days',
-      at: '2026-06-23 17:48:31',
-      n: 38,
-      html: doc('Revenue & Earnings', 'Posted fees plus the FX spread booked at the counter', 'Past 7 days', [['Fees collected', '$2,140', P.green], ['FX spread', '$3,880', P.green], ['Total revenue', '$6,020', P.green], ['Margin %', '1.42%']], {
-        head: ['Teller', 'Earned'],
-        rows: [['A. Singh', '$2,710'], ['M. Cole', '$1,940'], ['R. Diaz', '$1,370']]
-      })
-    }, {
-      type: 'fintrac',
-      range: '90d',
-      rangeLabel: 'This quarter',
-      at: '2026-06-22 11:03:55',
-      n: 211,
-      html: doc('FINTRAC / LCTR Compliance Pack', 'Large Cash Transaction Reports, structuring watch and KYC exceptions', 'This quarter', [['Reportable deals', '14'], ['LCTRs filed', '12', P.green], ['Open / unfiled', '2', P.flag], ['Structuring watch', '3']], {
-        head: ['Ref', 'Customer', 'CAD equiv', 'Status'],
-        rows: [['LCTR-…L7XN0', 'Brooke Lawson', '$14,820', 'FILED'], ['LCTR-…22KP9', 'Northbridge Imports', '$26,400', 'FILED'], ['LCTR-…4HO55', 'Maple Leaf Logistics', '$11,295', 'UNFILED']]
-      })
-    }, {
-      type: 'LCTR',
-      filing: true,
-      title: 'Large Cash Transaction Report · Northbridge Imports',
-      icon: 'lock',
-      tone: CD.flag,
-      at: '2026-06-15 16:02:44',
-      ref: 'LCTR-2026-22KP9',
-      ack: 'FIN-5520',
-      subject: 'Northbridge Imports',
-      amount: '$26,400',
-      fullHTML: sealed('LCTR', 'Large Cash Transaction Report', 'Northbridge Imports', 'LCTR-2026-22KP9', 'FIN-5520', '2026-06-15 16:02', '$26,400.00')
-    }, {
-      type: 'kyc',
-      range: '365d',
-      rangeLabel: 'This year',
-      at: '2026-06-18 14:20:09',
-      n: 96,
-      html: doc('Client & KYC Register', '96 client files · activity within this year', 'This year', [['Client files', '96'], ['Verified', '88', P.green], ['ID gaps', '8', P.flag]], {
-        head: ['Client', 'Status', 'Volume'],
-        rows: [['Maple Leaf Logistics', 'VERIFIED', '$182,400'], ['Brooke Lawson', 'VERIFIED', '$61,200'], ['Marcus Reed', 'MISSING ID', '$9,400']]
-      })
-    }, {
-      type: 'EFTR',
-      filing: true,
-      title: 'Electronic Funds Transfer Report · Jakob Miller',
-      icon: 'lock',
-      tone: '#1d4ed8',
-      at: '2026-06-09 13:31:08',
-      ref: 'EFTR-2026-9XQ12',
-      ack: 'FIN-6093',
-      subject: 'Jakob Miller',
-      amount: '$18,950',
-      fullHTML: sealed('EFTR', 'Electronic Funds Transfer Report', 'Jakob Miller', 'EFTR-2026-9XQ12', 'FIN-6093', '2026-06-09 13:31', '$18,950.00')
-    }];
-    const seed = entries.map((e, i) => {
-      const m = meta(e.type);
-      const base = {
-        key: 'SEED' + i + '_' + (e.ref || e.type),
-        ms: ms(e.at),
-        at: e.at,
-        type: e.type
-      };
-      if (e.filing) return {
-        ...base,
-        title: e.title,
-        icon: e.icon,
-        tone: e.tone,
-        ref: e.ref,
-        ack: e.ack,
-        subject: e.subject,
-        amount: e.amount,
-        filing: true,
-        fullHTML: e.fullHTML
-      };
-      return {
-        ...base,
-        title: m === REPORTS.find(r => r.id === e.type) ? REPORTS.find(r => r.id === e.type).title : e.type,
-        icon: m.icon,
-        tone: m.tone,
-        range: e.range,
-        rangeLabel: e.rangeLabel,
-        n: e.n,
-        html: e.html
-      };
-    }).sort((a, b) => b.ms - a.ms);
-    let cur = [];
-    try {
-      cur = JSON.parse(localStorage.getItem(HKEY) || '[]') || [];
-    } catch (e) {}
-    const merged = [...seed, ...cur.filter(c => !seed.some(s => s.key === c.key))].sort((a, b) => b.ms - a.ms);
-    try {
-      localStorage.setItem(HKEY, JSON.stringify(merged));
-      localStorage.setItem(SEEDFLAG, '1');
-    } catch (e) {}
-  }
-  seedFakeHistory();
   window.CDOS = Object.assign(window.CDOS || {}, {
     Reports,
-    ReportHistory,
-    _seedHistory: seedFakeHistory
+    ReportHistory
   });
 })();
 
@@ -58520,7 +59716,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         localStorage.setItem('cdos_submissions_v1', JSON.stringify(subs));
       } catch (e) {}
     }, [subs]);
-    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
+
+    /* The desk's own reporting and ID lines come from the server, and they
+       arrive a moment after the first render. Both memos below judge against
+       them, so both have to re-run when they land — otherwise the bell and
+       the flags keep answering from the browser's fallback, which marks
+       every line "following" and therefore never raises the one alarm that
+       matters: a desk sitting looser than its regulator requires. */
+    const deskFacts = window.CDOS.useDeskFacts();
+    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     // A sealed cash filing is "welded to the records that triggered it" — mirror that
     // onto the ledger rows so the ledger flags, dashboard and this badge all agree on
     // what's filed. Wire/EFT filings reference transfers, not ledger rows, so are skipped.
@@ -58564,7 +59768,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       rpt: openObligations.length
     }), [rows, flags, openObligations]);
     // house settings that break the active regulator's hard rules — persistent until fixed
-    const jViol = useMemo(() => window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [], [settings]);
+    const jViol = useMemo(() => window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [], [settings, deskFacts]);
     // per-item breakdown for the bell preview dropdown
     const alertList = useMemo(() => {
       const strM = new Map(),
