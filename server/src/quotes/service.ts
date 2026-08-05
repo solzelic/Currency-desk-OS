@@ -6,6 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
+import { withSerializationRetry } from "../ledger/retry.js";
 import {
   LedgerError,
   LedgerService,
@@ -166,7 +167,18 @@ export class QuoteService {
         : null,
     };
   }
-  async create(actor: LedgerActor, request: QuoteRequest) {
+  /* Retried on a serialization failure, like every write on the ledger
+     side. Quoting is not a write in the teller's mind, but it takes the
+     principal row and the quote table at SERIALIZABLE and it is the single
+     most-hit path at a counter — so it aborts against anything else the
+     desk is doing, and an abort here reached the teller as an unexplained
+     failure on the one action they take before every deal. See
+     ../ledger/retry.ts. */
+  create(actor: LedgerActor, request: QuoteRequest) {
+    return withSerializationRetry(() => this.createOnce(actor, request));
+  }
+
+  private async createOnce(actor: LedgerActor, request: QuoteRequest) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
@@ -430,7 +442,17 @@ export class QuoteService {
       client.release();
     }
   }
-  async override(
+  override(
+    actor: LedgerActor,
+    quoteId: string,
+    customerRate: string,
+    reason: string,
+  ) {
+    return withSerializationRetry(() =>
+      this.overrideOnce(actor, quoteId, customerRate, reason));
+  }
+
+  private async overrideOnce(
     actor: LedgerActor,
     quoteId: string,
     customerRate: string,

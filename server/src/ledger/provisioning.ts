@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { authorizeLedgerActor } from "./principal.js";
+import { withSerializationRetry } from "./retry.js";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -43,7 +44,12 @@ export class LedgerProvisioningService {
     }
   }
 
-  async saveCustomer(
+  saveCustomer(actor: LedgerActor, input: CustomerInput, customerId?: string) {
+    return withSerializationRetry(() =>
+      this.saveCustomerOnce(actor, input, customerId));
+  }
+
+  private async saveCustomerOnce(
     actor: LedgerActor,
     input: CustomerInput,
     customerId?: string,
@@ -152,7 +158,14 @@ export class LedgerProvisioningService {
     }
   }
 
-  async initializeBalances(
+  initializeBalances(
+    actor: LedgerActor,
+    balances: Partial<Record<"CAD" | "USD" | "EUR" | "GBP", string>>,
+  ) {
+    return withSerializationRetry(() => this.initializeBalancesOnce(actor, balances));
+  }
+
+  private async initializeBalancesOnce(
     actor: LedgerActor,
     balances: Partial<Record<"CAD" | "USD" | "EUR" | "GBP", string>>,
   ) {
