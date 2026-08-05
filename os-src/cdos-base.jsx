@@ -396,10 +396,52 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
-  const setDeskPack = (pack, reports) => {
+
+  /* ============================================================
+     WHICH CURRENCIES THIS DESK DEALS IN
+
+     The browser used to answer this itself, from a literal:
+
+       const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];   // cdos-os.jsx
+
+     — and it checked that list BEFORE calling the server, so a shop
+     holding pesos was refused by its own screen with the words "PHP is
+     not carried by the server ledger yet". The ledger had no such
+     opinion; a matching four-way enum on the route did, and the two
+     agreed only because somebody kept them in step by hand.
+
+     It arrives with the jurisdiction now, from the one place that can
+     answer it. `stated` is the owner's own set or NULL, and NULL is not
+     an empty set — it means nobody restricted anything. `suggested` is
+     what a dropdown should offer. `minorUnits` carries only the
+     exceptions to two places, so a screen never quotes ¥1,234.56.
+     ============================================================ */
+  let _currencies = null;
+  const deskCurrencies = () => _currencies;
+  /** How many decimal places this currency is actually paid in. */
+  const currencyPlaces = (code) => {
+    const known = _currencies && _currencies.minorUnits;
+    const stated = known && known[String(code || '').toUpperCase()];
+    return typeof stated === 'number' ? stated : 2;
+  };
+  /** Does this desk deal in it? True where nobody has restricted anything. */
+  const deskTrades = (code) => {
+    const want = String(code || '').toUpperCase();
+    if (!_currencies) return true;
+    if (!_currencies.stated) return true;
+    return _currencies.stated.indexOf(want) >= 0;
+  };
+  /** What a currency picker should offer, home first. */
+  const deskCurrencyList = () => {
+    const set = _currencies && (_currencies.stated || _currencies.suggested);
+    return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
+  };
+
+  const setDeskPack = (pack, reports, currencies) => {
     _pack = pack || null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
-    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports } })); } catch (e) {}
+    if (currencies !== undefined) _currencies = currencies || null;
+    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies } })); } catch (e) {}
     return _pack;
   };
   async function refreshJurisdiction() {
@@ -407,7 +449,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
@@ -1136,6 +1178,7 @@
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds, setDeskThresholds, refreshDeskThresholds,
     spreadOf, unitCadMid, buyUnitCad, sellUnitCad, roundPayout, priceDeal, dealMargin

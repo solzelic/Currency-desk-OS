@@ -3,6 +3,7 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
+import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -15,7 +16,13 @@ import {
   type CostBox,
 } from "./vault-control.js";
 
-type Currency = "CAD" | "USD" | "EUR" | "GBP";
+/* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
+   — which is what a `char(3)` column had been narrowed to by hand. It
+   was the type-level half of the ceiling described in migration 020: a
+   desk trading pesos could not be represented, never mind stored. What
+   a given desk may hold is data, and it is resolved per desk in
+   ./currencies.ts. */
+type Currency = string;
 type Counts = Partial<Record<Currency, string>>;
 type MovementInput = {
   idempotencyKey: string;
@@ -577,6 +584,16 @@ export class TillControlService {
          as they stood. Read afterwards it is a different, wrong number, and
          nothing downstream would ever say so. See docs/COST_BASIS.md. */
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+      /* A movement can bring a currency onto the book that was never on
+         it, so this is one of the doors the desk's own set has to be
+         checked at. Refused by name — "this desk does not trade PHP" —
+         rather than by a four-way enum in the route, which is what used
+         to happen and which no shop could act on. See migration 020. */
+      await assertTradeable(
+        client,
+        { legalEntityId: actor.legalEntityId, branchId: actor.branchId, homeCurrency: home },
+        input.currency,
+      );
       const carriesCost =
         input.counterpartyType === "vault" && input.currency !== home;
       const tillBox: CostBox = {

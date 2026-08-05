@@ -210,6 +210,14 @@ export const legalEntities = pgTable(
     idThreshold: text("id_threshold"),
     aggregationHours: integer("aggregation_hours"),
     retentionYears: integer("retention_years"),
+    /* The currencies this desk trades, beside the one its books are kept
+       in. Onboarding asks for these and has always used the answer to
+       publish the opening rate board; until migration 020 it was never
+       written anywhere the LEDGER could read, so the ledger kept its own
+       four-currency opinion and a Philippine-corridor desk could not put
+       a peso in a till. NULL means unstated, not empty — the resolver
+       falls back to the branch's board. */
+    tradedCurrencies: text("traded_currencies").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],

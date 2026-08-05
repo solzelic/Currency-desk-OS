@@ -19,9 +19,16 @@ import {
   type JurisdictionPack,
 } from "./jurisdiction.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
+import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
-type Currency = "CAD" | "USD" | "EUR" | "GBP";
+/* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
+   — which is what a `char(3)` column had been narrowed to by hand. It
+   was the type-level half of the ceiling described in migration 020: a
+   desk trading pesos could not be represented, never mind stored. What
+   a given desk may hold is data, and it is resolved per desk in
+   ./currencies.ts. */
+type Currency = string;
 export type LedgerActor = {
   userId: string;
   tenantId: string;
@@ -747,6 +754,21 @@ export class LedgerService {
       const permitted = pairAllowed(pack, request.from, request.to);
       if (!permitted.ok)
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
+      /* And whether THIS desk trades them, which is a different question
+         from whether the jurisdiction permits the pair. The pack says what
+         is legal here; the desk says what is in its drawers. Both have to
+         agree, and until migration 020 the second was a four-way enum in
+         the route rather than anything the desk had said. */
+      await assertTradeable(
+        client,
+        {
+          legalEntityId: actor.legalEntityId,
+          branchId: actor.branchId,
+          homeCurrency: pack.homeCurrency,
+        },
+        request.from,
+        request.to,
+      );
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), request.idempotencyKey],
@@ -779,25 +801,38 @@ export class LedgerService {
         "SELECT currency,units_per_cad FROM ledger_rates WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4",
         scope(actor).slice(0, 4),
       );
-      const rates = Object.fromEntries(
-        rows.rows.map((row) => [row.currency, new Decimal(row.units_per_cad)]),
-      ) as Record<Currency, Decimal>;
-      if (!rates[request.from] || !rates[request.to])
-        throw new LedgerError("RATE_NOT_AVAILABLE", "Scoped rate missing.");
+      const rates = new Map<string, Decimal>(
+        rows.rows.map((row) => [
+          String(row.currency),
+          new Decimal(row.units_per_cad),
+        ]),
+      );
+      /* Bound to locals rather than indexed four more times below. With
+         `Currency` widened from a four-way union to a code, TypeScript
+         started saying what was always true: a lookup by an arbitrary
+         code can miss. The guard was already here and already correct —
+         it just could not be seen through an index signature, and the
+         arithmetic underneath it was running on values the compiler had
+         been told could not be absent. */
+      const fromRate = rates.get(request.from);
+      const toRate = rates.get(request.to);
+      if (!fromRate || !toRate)
+        throw new LedgerError(
+          "RATE_NOT_AVAILABLE",
+          `This till has no rate for ${!fromRate ? request.from : request.to}.`,
+        );
       const input = decimal(request.inputAmount, "0.01");
       const fee = decimal(request.feeCad, "0");
-      const rate = rates[request.to]
-        .div(rates[request.from])
-        .toDecimalPlaces(12);
+      const rate = toRate.div(fromRate).toDecimalPlaces(12);
       // Legacy direct posting has no commercial adjustment. Quote posting
       // supplies frozen customer rate and spread through postFrozenQuote.
       /* `units_per_cad` is the pilot's name for a rate against the book's
          own currency, kept because renaming a column is not free. The
          figure it produces is home currency, whatever the pack says home
          is — which is why it is no longer called `inputCad`. */
-      const inputHome = input.div(rates[request.from]).toDecimalPlaces(2);
+      const inputHome = input.div(fromRate).toDecimalPlaces(2);
       const output = input.mul(rate).toDecimalPlaces(2);
-      const outputCad = output.div(rates[request.to]).toDecimalPlaces(2);
+      const outputCad = output.div(toRate).toDecimalPlaces(2);
       const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
       await this.requireIdentification(
         client,

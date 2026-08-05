@@ -171,9 +171,18 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   id_threshold numeric(24,2),
   aggregation_hours integer,
   retention_years integer,
+  -- which currencies this desk trades, beside the one its books are kept
+  -- in. NULL means nobody has stated a set and the resolver falls back to
+  -- what the branch's rate board already quotes. Migration 020 adds it to
+  -- existing databases; it is here because the test database is built from
+  -- this constant rather than from the migrations. The CHECK constraint
+  -- lives with the migration — see server/src/ledger/currencies.ts for why
+  -- minor units are deliberately NOT a column.
+  traded_currencies text[],
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS cost_method text;
+ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS traded_currencies text[];
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS report_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS id_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS aggregation_hours integer;

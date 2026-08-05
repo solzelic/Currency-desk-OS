@@ -34,6 +34,11 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
 import { resolvePack } from "./jurisdiction.js";
+import {
+  LEDGER_SCALE,
+  minorUnits,
+  resolveDeskCurrencies,
+} from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { type LedgerActor } from "./service.js";
 
@@ -566,9 +571,38 @@ export class LedgerReportingService {
           ORDER BY code, version DESC`,
         [pack.packId],
       );
+      /* What this desk may hold, and how many decimal places each of
+         those has. The browser had its own copy of this — a literal
+         `LEDGER_CCYS = ['CAD','USD','EUR','GBP']` in os-src/cdos-os.jsx
+         which it checked BEFORE calling the server, so a desk holding
+         pesos was told "PHP is not carried by the server ledger yet" by
+         its own screen. One book, one answer: the ledger says what it
+         carries and the screen renders it. See ./currencies.ts. */
+      const desk = await resolveDeskCurrencies(client, {
+        legalEntityId: actor.legalEntityId,
+        branchId: actor.branchId,
+        homeCurrency: pack.homeCurrency,
+      });
       await client.query("COMMIT");
       return {
         pack,
+        currencies: {
+          home: desk.home,
+          /* null means the owner has stated no set, which is not the
+             same as an empty one: nothing is restricted. A screen shows
+             `suggested` either way and only calls a currency refused
+             when `stated` exists and excludes it. */
+          stated: desk.stated,
+          suggested: desk.suggested,
+          /* Only the exceptions travel. Two is the rule, and sending
+             every code's 2 would invite a client to treat the list as
+             the set of currencies that exist. */
+          minorUnits: Object.fromEntries(
+            desk.suggested
+              .map((code) => [code, minorUnits(code)] as const)
+              .filter(([, places]) => places !== LEDGER_SCALE),
+          ),
+        },
         reports: reports.rows.map((row) => ({
           code: String(row.code),
           name: String(row.name),

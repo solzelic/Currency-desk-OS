@@ -1028,13 +1028,26 @@
        On a server-backed desk the server moves first. If it refuses, the local
        rail is left untouched and the caller is told why — a movement that only
        happened in this browser is worse than one that did not happen at all. */
-    const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];
+    /* `LEDGER_CCYS = ['CAD','USD','EUR','GBP']` stood here, and it was
+       checked BEFORE the server was called — so a shop holding pesos was
+       refused by its own screen, in words that blamed the ledger:
+       "PHP is not carried by the server ledger yet". The ledger held no
+       such opinion. A four-way enum on the route did, and the two stayed
+       in step only because somebody maintained both by hand.
+
+       Whether this desk deals in a currency is the ledger's answer now,
+       and it arrives with the jurisdiction. `deskTrades` is true where
+       nobody has restricted anything, which is the honest default — and
+       where the desk HAS stated a set, the server's refusal names it. */
     const movementKey = (kind, ccy) =>
       `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const postTillMovement = async ({ kind, fromB, toB, tId, ccy, amt, fromLabel, toLabel }) => {
       if (!srvUser || !window.CDOS.Backend) return { ok: true };
-      if (LEDGER_CCYS.indexOf(ccy) < 0) {
-        return { ok: false, message: `${ccy} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.` };
+      /* Asked, not assumed. The screen can say so early where the desk
+         has named its currencies; where it has not, the request goes and
+         the ledger answers. */
+      if (!window.CDOS.deskTrades(ccy)) {
+        return { ok: false, message: `This desk does not trade ${ccy}. Add it in Settings › Compliance & jurisdiction if it should.` };
       }
       try {
         if (kind === 'vault') {
@@ -1109,8 +1122,8 @@
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return { ok: false, message: 'Nothing to receive.' };
       if (srvUser && window.CDOS.Backend && vaultTracked) {
-        if (LEDGER_CCYS.indexOf(ccy2) < 0) {
-          return { ok: false, message: `${ccy2} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.` };
+        if (!window.CDOS.deskTrades(ccy2)) {
+          return { ok: false, message: `This desk does not trade ${ccy2}. Add it in Settings › Compliance & jurisdiction if it should.` };
         }
         try {
           await window.CDOS.Backend.receiveVaultCash({

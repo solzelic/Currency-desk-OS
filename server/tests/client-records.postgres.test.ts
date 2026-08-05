@@ -522,17 +522,29 @@ postgres("the desk's customer file, on the server", () => {
     const cookies = {
       cdos_session: login.cookies.find((c) => c.name === "cdos_session")!.value,
     };
+    /* Which till this request is FOR, stated — exactly as the browser's
+       Backend client states it on every call.
+
+       Without it, `resolveActor` falls back to "the only workspace at
+       this branch", which is not a thing on a desk with two tills. This
+       test passed for as long as it happened to run before the suite
+       that adds till-11 to the demo branch and leaves it there, and
+       returned SCOPE_DENIED the moment file ordering changed. A test
+       that silently depends on a single-till desk is testing an
+       accident. */
+    const headers = { "x-workspace-id": DEMO.workspaceId };
 
     const created = await app.inject({
       method: "POST",
       url: "/api/clients",
       cookies,
+      headers,
       payload: { legalName: "Wei Zhang", kind: "individual", riskRating: "normal" },
     });
     expect(created.statusCode, created.body).toBe(201);
     const clientId = created.json().clientId as string;
 
-    const listed = await app.inject({ method: "GET", url: "/api/clients", cookies });
+    const listed = await app.inject({ method: "GET", url: "/api/clients", cookies, headers });
     expect(listed.statusCode).toBe(200);
     expect(listed.json().clients.map((c: { clientId: string }) => c.clientId)).toContain(clientId);
 
@@ -547,6 +559,7 @@ postgres("the desk's customer file, on the server", () => {
       method: "POST",
       url: "/api/clients",
       cookies,
+      headers,
       payload: { legalName: "", dateOfBirth: "1985-13-45" },
     });
     expect(nonsense.statusCode).toBe(422);
