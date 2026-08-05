@@ -13,7 +13,12 @@ import {
   ensureBasis,
   reverseEvent,
 } from "./cost-basis.js";
-import { pairAllowed, resolvePack } from "./jurisdiction.js";
+import {
+  pairAllowed,
+  resolvePack,
+  type JurisdictionPack,
+} from "./jurisdiction.js";
+import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 type Currency = "CAD" | "USD" | "EUR" | "GBP";
@@ -140,6 +145,60 @@ export class LedgerService {
         "Open the till before posting transactions.",
       );
     }
+  }
+
+  /* ---- the identification gate ----
+
+     The most load-bearing compliance number in the product, and until now
+     it was the literal 3,000 in a comparison against a variable called
+     `inputCad`. Every desk got Canada's figure: a British desk whose pack
+     says 1,000 cleared four deals in five that it should have identified,
+     and a UAE desk on 3,500 dirhams refused deals it was entitled to take.
+
+     Two things this now gets right. The comparison is in the currency the
+     PACK states the book is kept in, which is the currency `amountHome`
+     already arrived in. And the line is the DESK's — its own choice where
+     it has made one, the pack's where it has not. A desk may set this
+     tighter than its regulator requires at any time, and the moment it
+     does, the next deal is judged at the new number.
+
+     ---- and when nothing can answer ----
+
+     `resolveIdThreshold` returns null when neither the desk nor its pack
+     states a line. That is a broken desk rather than a permissive one, and
+     the two available blanket answers are both wrong: a gate that never
+     fires clears deals nobody checked, and a gate that always fires stops
+     a working shop trading.
+
+     So it is not a blanket answer. A customer who is already verified
+     satisfies every possible value of a line nobody can state — there is
+     nothing to be unsure about, and that desk keeps trading. An unverified
+     one is exactly the case the gate exists for, and "we could not work
+     out whether ID was needed, so it wasn't" is not something anybody can
+     say to a regulator. That deal is refused, in words that name the real
+     problem, because the fix is a minute of somebody's time and the
+     alternative is a silent hole in the desk's file. The browser follows
+     the same rule for the reporting line — see `overReportingLimit` in
+     os-src/cdos-base.jsx, which answers null rather than false. */
+  private async requireIdentification(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    pack: JurisdictionPack,
+    amountHome: Decimal,
+    idStatus: unknown,
+  ) {
+    if (idStatus === "verified") return;
+    const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
+    if (line === null)
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
+      );
+    if (amountHome.gte(line))
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
   }
 
   /* Retried on a serialization failure, like every other write here. A
@@ -289,13 +348,15 @@ export class LedgerService {
       const toMid = sideMid(quote.to, quote.toMid);
       /* What the deal is worth to the desk, in the currency its book is
          kept in, taken on each side at that side's own rate. */
-      const inputCad = input.mul(fromMid).toDecimalPlaces(2);
+      const inputHome = input.mul(fromMid).toDecimalPlaces(2);
       const outputCad = output.mul(toMid).toDecimalPlaces(2);
-      if (inputCad.gte(3000) && customer.rows[0].id_status !== "verified")
-        throw new LedgerError(
-          "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
-        );
+      await this.requireIdentification(
+        client,
+        actor,
+        pack,
+        inputHome,
+        customer.rows[0].id_status,
+      );
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
@@ -386,7 +447,7 @@ export class LedgerService {
          valued on the side that ARRIVED: that is the cash the desk is
          actually holding, and pricing off it leaves the margin as the only
          thing moving the customer's number. */
-      const proceedsHome = disposing ? inputCad : null;   // they paid us this
+      const proceedsHome = disposing ? inputHome : null;   // they paid us this
       const paidHome = acquiring ? outputCad : null;      // we paid them this
 
       const now = new Date(),
@@ -427,7 +488,7 @@ export class LedgerService {
                plus whatever the desk made or lost holding that currency —
                is realized. Nothing here touches the home currency except
                the fee, because nothing here IS the home currency. */
-            [`till:${quote.from}`, "debit", inputCad],
+            [`till:${quote.from}`, "debit", inputHome],
             [`till:${home}`, "debit", fee],
             [`till:${quote.to}`, "credit", costOfSale],
             ["revenue:fx_trading", realized.gte(0) ? "credit" : "debit", realized.abs()],
@@ -438,7 +499,7 @@ export class LedgerService {
             // sold foreign: home currency in, stock out AT COST, margin realized.
             // The exchange and the fee stay separate lines — they are separate
             // things, and a journal you cannot read them apart in is worse.
-            [`till:${home}`, "debit", inputCad],
+            [`till:${home}`, "debit", inputHome],
             [`till:${home}`, "debit", fee],
             [`till:${quote.to}`, "credit", costOfSale],
             ["revenue:fx_trading", realized.gte(0) ? "credit" : "debit", realized.abs()],
@@ -447,7 +508,7 @@ export class LedgerService {
         : ([
             // bought foreign: stock in AT WHAT WE PAID, home currency out.
             // Nothing is earned buying — the margin comes when it is sold.
-            [`till:${quote.from}`, "debit", paidHome ?? inputCad],
+            [`till:${quote.from}`, "debit", paidHome ?? inputHome],
             [`till:${home}`, "debit", fee],
             [`till:${home}`, "credit", paidHome ?? outputCad],
             ["revenue:fee", "credit", fee],
@@ -651,11 +712,8 @@ export class LedgerService {
          constant. This used to demand CAD on one side, which is the pilot's
          limitation and not a rule anywhere. It has to be asked inside the
          transaction because the pack is read through the same client. */
-      const permitted = pairAllowed(
-        await resolvePack(client, actor.legalEntityId),
-        request.from,
-        request.to,
-      );
+      const pack = await resolvePack(client, actor.legalEntityId);
+      const permitted = pairAllowed(pack, request.from, request.to);
       if (!permitted.ok)
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
       const existing = await client.query(
@@ -702,19 +760,40 @@ export class LedgerService {
         .toDecimalPlaces(12);
       // Legacy direct posting has no commercial adjustment. Quote posting
       // supplies frozen customer rate and spread through postFrozenQuote.
-      const inputCad = input.div(rates[request.from]).toDecimalPlaces(2);
+      /* `units_per_cad` is the pilot's name for a rate against the book's
+         own currency, kept because renaming a column is not free. The
+         figure it produces is home currency, whatever the pack says home
+         is — which is why it is no longer called `inputCad`. */
+      const inputHome = input.div(rates[request.from]).toDecimalPlaces(2);
       const output = input.mul(rate).toDecimalPlaces(2);
       const outputCad = output.div(rates[request.to]).toDecimalPlaces(2);
-      const spread = inputCad.sub(outputCad).toDecimalPlaces(2);
-      if (
-        (inputCad.gte(3000) && customer.rows[0].id_status !== "verified") ||
-        (inputCad.gte(10000) &&
-          (!request.purpose.trim() || !request.sourceOfFunds.trim()))
-      )
-        throw new LedgerError(
-          "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
+      const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
+      await this.requireIdentification(
+        client,
+        actor,
+        pack,
+        inputHome,
+        customer.rows[0].id_status,
+      );
+      /* Purpose and source of funds, over the desk's REPORTING line — the
+         details the report itself is made of. Same story as the ID gate: a
+         hardcoded 10,000 in a book that might be kept in dirhams, where
+         the figure is 55,000. Resolved from the same place, and a capture
+         that is present clears it whatever the line turns out to be. */
+      if (!request.purpose.trim() || !request.sourceOfFunds.trim()) {
+        const reporting = await resolveReportThreshold(
+          client,
+          actor.legalEntityId,
+          pack,
         );
+        if (reporting === null || inputHome.gte(reporting))
+          throw new LedgerError(
+            "COMPLIANCE_BLOCKED",
+            reporting === null
+              ? "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed."
+              : "Authoritative compliance policy blocked posting.",
+          );
+      }
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), request.to],
@@ -729,7 +808,7 @@ export class LedgerService {
         );
       // Product rule: feeCad is a separate CAD cash payment, never part of inputAmount.
       const journal = [
-        [`till:${request.from}`, "debit", inputCad],
+        [`till:${request.from}`, "debit", inputHome],
         ["till:CAD", "debit", fee],
         [`till:${request.to}`, "credit", outputCad],
         ["revenue:fx_spread", "credit", spread],

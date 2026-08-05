@@ -125,6 +125,227 @@
     </div>);
   }
 
+  /* ---------- the desk's compliance thresholds (server-backed) ----------
+
+     These four rows used to write the browser's saved settings and stop
+     there. Which meant the reporting line an owner set at sign-up lived in
+     one browser profile; the second till at the same desk held its own
+     copy; a cleared browser held none; and the ledger — which REFUSES a
+     deal when the customer has not been identified — could not see any of
+     it and compared against a hardcoded 3,000 instead.
+
+     So they go to the ledger, the same way CostMethodRow does and for the
+     same reason: through window.CDOS.Backend, never a bare fetch, because
+     every ledger route decides which till it is answering for from a
+     header only the Backend client sets.
+
+     The pack proposes and the desk decides. Each row shows what the desk
+     operates at, what its regulator requires, and — the part the owner
+     asked for — where the first stands against the second, live, as the
+     number changes. Tighter than the mandate is a decision, said plainly.
+     Looser is a compliance failure and looks like one.
+
+     They are ALSO mirrored back into the saved settings on success. Not
+     as a second source of truth — reportingLimit() prefers the server's
+     answer — but so the standalone build, which has no ledger to ask,
+     keeps working from the last number this desk actually chose. */
+
+  const THRESHOLD_MIRROR = {
+    reportThreshold: 'threshold',
+    idThreshold: 'idRequiredOver',
+    aggregationHours: 'aggHours',
+    retentionYears: 'retentionYears',
+  };
+
+  /* Where one line stands against the mandate. The whole point of the
+     component: "stricter" is a sentence, not a warning. It gets no colour,
+     no icon and no bell, because a desk that identifies at 1,000 where its
+     regulator asks 3,000 has done something deliberate and usually because
+     its bank asked. "Looser" gets all three, because that desk is failing
+     to report what it is legally obliged to report. */
+  function PostureNote({ p }) {
+    if (!p) return null;
+    if (p.standing === 'looser') return (
+      <div className="text-[11px] mb-2 flex items-start gap-1.5" style={{ color: CD.flag, marginTop: -2 }}>
+        <Ic n="alert" s={11} c={CD.flag} />
+        <span><b>Not compliant.</b> {p.note}</span>
+      </div>);
+    const quiet = p.standing === 'stricter';
+    return (
+      <div className="text-[10.5px] mb-2" style={{ color: quiet ? CD.mute : CD.faint, marginTop: -2 }}>
+        {p.note}
+      </div>);
+  }
+
+  /* A money field that only commits when the owner has finished typing.
+     Committed on blur and on Enter rather than per keystroke, because
+     every commit is a round trip and an audit row — typing "10000" one
+     digit at a time would file five changes to the desk's reporting line,
+     four of them nonsense. */
+  function ThresholdInput({ value, currency, width, disabled, onCommit }) {
+    const [text, setText] = useState(value == null ? '' : String(value));
+    useEffect(() => { setText(value == null ? '' : String(value)); }, [value]);
+    const commit = () => {
+      const clean = String(text).trim().replace(/,/g, '');
+      if (!clean || !/^\d+(\.\d{1,2})?$/.test(clean) || +clean <= 0) {
+        setText(value == null ? '' : String(value));   // put it back; say nothing
+        return;
+      }
+      if (value != null && +clean === +value) return;
+      onCommit(clean);
+    };
+    return (
+      <div className="flex items-center" style={{ ...inSty, opacity: disabled ? 0.55 : 1 }}>
+        <span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{currency || '—'}</span>
+        <input type="text" inputMode="decimal" value={text} disabled={disabled}
+          onChange={e => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+          className="text-sm px-2 py-2 outline-none text-right bg-transparent"
+          style={{ width: width || 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} />
+      </div>);
+  }
+
+  function DeskThresholdRows() {
+    const { settings, setSettings, log } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading');   // loading | ready | offline
+    const [desk, setDesk] = useState(null);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') { setStatus('offline'); return; }
+      let alive = true;
+      api.loadDeskThresholds()
+        .then(j => {
+          if (!alive) return;
+          setDesk(j);
+          /* Everything else on the desk reads reportingLimit(), which reads
+             this cache. Publishing the answer here as well as on first
+             render means the Ledger and the Dashboard pick up a change the
+             moment it is made, rather than on their next mount. */
+          if (window.CDOS.setDeskThresholds) window.CDOS.setDeskThresholds(j);
+          setStatus('ready');
+        })
+        .catch(() => { if (alive) setStatus('offline'); });
+      return () => { alive = false; };
+    }, []);
+
+    const save = async (field, value, note) => {
+      if (busy) return;
+      setBusy(field); setErr('');
+      try {
+        const answer = await api.setDeskThresholds({ [field]: value });
+        setDesk(answer);
+        if (window.CDOS.setDeskThresholds) window.CDOS.setDeskThresholds(answer);
+        const mirror = THRESHOLD_MIRROR[field];
+        const landed = answer[field] && answer[field].effective;
+        if (mirror && landed != null) setSettings(s => ({ ...s, [mirror]: +landed }));
+        log('Compliance threshold changed', note);
+      } catch (e) {
+        setErr(e && e.status === 403
+          ? 'Only an owner, a manager or your compliance officer can move a reporting line.'
+          : e && e.code === 'NETWORK_ERROR'
+            ? 'Could not reach the desk — nothing was changed.'
+            : 'Could not save that — nothing was changed.');
+      } finally { setBusy(''); }
+    };
+
+    const posture = window.CDOS.jurisdictionPosture ? window.CDOS.jurisdictionPosture(settings) : [];
+    const standingOf = (settingsField) => posture.find(p => p.field === settingsField) || null;
+    const line = (field) => (desk && desk[field]) || null;
+    const currency = (desk && desk.currency) || settings.baseCurrency || 'CAD';
+    const authority = (desk && desk.regulator) || 'your regulator';
+    const disabled = status !== 'ready' || !!busy;
+
+    /* Hand a line back to the pack. Offered only where the desk has taken
+       one, because "follow the regulator" is not a change a desk already
+       following the regulator can make. */
+    const Release = ({ field, label }) => (line(field) && line(field).deskChoice != null && status === 'ready')
+      ? <button type="button" disabled={disabled}
+          onClick={() => save(field, 'pack_default', `${label} · back to ${authority}'s figure`)}
+          className="text-[10.5px] mb-2 underline"
+          style={{ color: CD.mute, marginTop: -2, cursor: disabled ? 'default' : 'pointer', background: 'none', border: 'none', padding: 0 }}>
+          Use {authority}'s figure instead
+        </button>
+      : null;
+
+    const unavailable = (
+      <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>
+        {status === 'loading' ? 'reading…' : 'unavailable'}
+      </span>);
+
+    const reportTip = (<window.CDOS.InfoTip
+      w={320}
+      title="Where your reporting line sits"
+      body="Your jurisdiction sets the amount a cash deal has to be reported at, and that figure arrives with your country's pack. You may move the line DOWN — some banks and auditors want to see a desk reporting sooner than the law requires, and a desk is free to do that. You may not move it up: a line above what your regulator requires means deals you are legally obliged to report going unreported, and the desk is told so here and in the notification bell until it is fixed."
+      lines={[
+        { k: 'Following', v: "you have not chosen; the pack's figure is in force and moves if the pack is corrected" },
+        { k: 'Stricter', v: 'your own, lower line. A decision, not a fault — nothing here treats it as one' },
+        { k: 'Looser', v: 'above the mandate. A compliance failure, flagged until it is back inside' },
+      ]}
+      example="A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
+    />);
+
+    return (<div>
+      <Row
+        title={<span className="flex items-center gap-1.5">Large cash / reportable threshold {reportTip}</span>}
+        desc={`Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`}>
+        {status === 'ready'
+          ? <ThresholdInput value={line('reportThreshold') && line('reportThreshold').effective}
+              currency={currency} disabled={disabled}
+              onCommit={v => save('reportThreshold', v, `reporting threshold ${fmt(+v, currency)}`)} />
+          : unavailable}
+      </Row>
+      <PostureNote p={standingOf('threshold')} />
+      <Release field="reportThreshold" label="Reporting threshold" />
+
+      <Row
+        title="Require ID over"
+        desc="The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report.">
+        {status === 'ready'
+          ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}
+              currency={currency} disabled={disabled}
+              onCommit={v => save('idThreshold', v, `identification threshold ${fmt(+v, currency)}`)} />
+          : unavailable}
+      </Row>
+      <PostureNote p={standingOf('idRequiredOver')} />
+      <Release field="idThreshold" label="Identification threshold" />
+
+      <Row
+        title="Aggregation window"
+        desc="Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one.">
+        {status === 'ready'
+          ? <Seg value={String((line('aggregationHours') || {}).effective || 24)}
+              onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
+              opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />
+          : unavailable}
+      </Row>
+      <PostureNote p={standingOf('aggHours')} />
+      <Release field="aggregationHours" label="Aggregation window" />
+
+      <Row
+        title="Record retention"
+        desc="How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call.">
+        {status === 'ready'
+          ? <select value={(line('retentionYears') || {}).effective || 5}
+              disabled={disabled}
+              onChange={e => save('retentionYears', +e.target.value, `record retention ${e.target.value} years`)}
+              className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>
+              {[3, 5, 7, 10].map(y => <option key={y} value={y}>{y} years</option>)}
+            </select>
+          : unavailable}
+      </Row>
+      <PostureNote p={standingOf('retentionYears')} />
+      <Release field="retentionYears" label="Record retention" />
+
+      {status === 'offline' && (
+        <div className="text-[10.5px] -mt-1 mb-2" style={{ color: CD.faint }}>Available on the hosted desk, where the ledger keeps the books and enforces these lines.</div>
+      )}
+      {err && <div className="text-[10.5px] -mt-1 mb-2" style={{ color: CD.flag }}>{err}</div>}
+    </div>);
+  }
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = (settings) => (settings.cards) || [
     { id: 'card_visa', num: '4242 4242 4242 4242', exp: '04/27', name: (settings.billingName || 'Jordan Masri'), postal: 'M5V 2T6', role: 'primary' },
@@ -482,7 +703,10 @@
 
     /* shared controls live at module scope (stable identity → inputs keep
        focus). Value-bearing ones read this via SettingsCtx, provided below. */
-    const ctxVal = { settings, set, base };
+    /* `setSettings` and `log` ride along for DeskThresholdRows, which
+       writes the LEDGER and only mirrors the result here — see its
+       header. Everything else in the context is unchanged. */
+    const ctxVal = { settings, set, base, setSettings, log };
 
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
     const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
@@ -1290,7 +1514,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
           const activeRid = settings.regime || 'FINTRAC';
           const applyRegime = (id) => { const r = REGIMES[id]; if (!r) return; setSettings(s => ({ ...s, regime: id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours })); log('Jurisdiction pack applied', `${r.authority} · ${r.country}`); };
-          const aggH = +settings.aggHours || (REGIMES[activeRid] ? REGIMES[activeRid].aggHours : 24);
           const isOwner = me.role === 'Owner';
           const recheckDays = +settings.recheckDays || 180;
           const reverifyDays = +settings.reverifyDays || 365;
@@ -1301,8 +1524,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
           const shownRegimes = matched.length ? matched : Object.values(REGIMES);
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
-          const jvF = (f) => jv.find(v => v.field === f);
-          const jvNote = (f) => { const v = jvF(f); return v ? <div className="text-[11px] mb-2 flex items-center gap-1.5" style={{ color: CD.flag, marginTop: -2 }}><Ic n="alert" s={11} c={CD.flag} /> {v.detail}</div> : null; };
           return (<div>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
 
@@ -1324,16 +1545,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           {/* ---- reporting & thresholds ---- */}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>
-          <Row title="Large cash / reportable threshold" desc={`Deals at or above this (in ${base}) are reportable.`}><Money k="threshold" /></Row>
-          {jvNote('threshold')}
-          <Row title="Require ID over" desc="Your own ID policy — collect identification at or above this amount, ahead of the mandatory reportable line. Below it, a missing ID is just an amber note the teller acknowledges, not a compliance warning."><Money k="idRequiredOver" /></Row>
-          <Row title="Aggregation window" desc="Same person, cash-in within this window is summed against the threshold — automatically."><Seg value={String(aggH)} onPick={v => set('aggHours', +v, `aggregation ${v}h`)} opts={[['24', '24h'], ['48', '48h'], ['72', '72h']]} /></Row>
-          {jvNote('aggHours')}
+          {/* The four lines the regulator sets and the desk may tighten.
+              They live on the ledger, they are enforced there, and each
+              one says where it stands against the pack — see
+              DeskThresholdRows at the top of this file. */}
+          <DeskThresholdRows />
           <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>
           <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
-          <Row title="Record retention"><select value={settings.retentionYears || 5} onChange={e => set('retentionYears', +e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[5, 7, 10].map(y => <option key={y} value={y}>{y} years</option>)}</select></Row>
-          {jvNote('retentionYears')}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>

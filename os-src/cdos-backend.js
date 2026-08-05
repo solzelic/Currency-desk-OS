@@ -389,6 +389,35 @@
       loadJurisdiction: function () {
         return request("/api/ledger/jurisdiction");
       },
+
+      /* ---- the desk's own thresholds ----
+
+         The pack states what the regulator requires; these are what the
+         desk actually operates at, which it may tighten at any time and
+         not only at sign-up. They live on the ledger because the POSTING
+         path enforces the identification line — a number the server
+         cannot see is a number the server cannot enforce, and it used to
+         be a hardcoded 3,000 for every desk on earth.
+
+         Each line comes back as { effective, deskChoice, packValue,
+         posture }: what the desk operates at, what it chose, what its
+         regulator requires, and where the first stands against the last.
+         `posture` is "following" while the desk has chosen nothing,
+         "stricter" where it asks more of itself than the law does — which
+         is a legitimate decision and not a fault — and "looser" where it
+         is failing to report what it is obliged to report. */
+      loadDeskThresholds: function () {
+        return request("/api/ledger/desk-thresholds");
+      },
+      /* A partial change: name only the lines you are moving. Amounts are
+         decimal strings, windows and years are whole numbers, and the
+         string "pack_default" hands a line back to the jurisdiction. */
+      setDeskThresholds: function (changes) {
+        return request("/api/ledger/desk-thresholds", {
+          method: "PUT",
+          body: JSON.stringify(changes),
+        });
+      },
     },
   });
 })();

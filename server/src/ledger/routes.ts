@@ -16,6 +16,10 @@ import {
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
+import {
+  ThresholdService,
+  type ThresholdChanges,
+} from "./threshold-control.js";
 import { isRetryable } from "./retry.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
@@ -137,6 +141,32 @@ const movementQuery = z.object({
 const costMethodBody = z.object({
   method: z.enum(["weighted_average", "fifo", "pack_default"]),
 }).strict();
+/* The desk's own thresholds. Every field is optional — a client changing
+   the identification line should not have to restate the reporting one,
+   and a PUT that carried all four would let a stale screen quietly undo
+   somebody else's change to a field it was not editing.
+
+   `pack_default` for the same reason it appears above: a client that means
+   "hand this line back to the jurisdiction pack" says so, because a null
+   arriving in a JSON body is just as often a field somebody forgot. */
+const packDefault = z.literal("pack_default");
+const thresholdAmount = z
+  .string()
+  .trim()
+  .regex(/^\d{1,22}(\.\d{1,2})?$/, "A threshold is an amount, to two decimals.")
+  .refine((value) => Number(value) > 0, "A threshold has to be above zero.");
+const wholeNumber = (max: number) => z.coerce.number().int().min(1).max(max);
+const deskThresholdsBody = z.object({
+  reportThreshold: z.union([thresholdAmount, packDefault]).optional(),
+  idThreshold: z.union([thresholdAmount, packDefault]).optional(),
+  /* A month is already an absurd aggregation window and the column agrees;
+     the bound exists so a typo cannot become a rule nobody notices. */
+  aggregationHours: z.union([wholeNumber(24 * 31), packDefault]).optional(),
+  retentionYears: z.union([wholeNumber(100), packDefault]).optional(),
+}).strict().refine(
+  (value) => Object.values(value).some((field) => field !== undefined),
+  { message: "Name at least one threshold to change." },
+);
 /* A sealed regulatory filing arriving from the worksheet.
 
    `payload` is left as an opaque object on purpose: it is the regulator's
@@ -190,6 +220,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
+  const thresholds = new ThresholdService(pool);
   const reportFilings = new ReportFilingService(pool);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
@@ -583,6 +614,48 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
             ),
           )
         : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* What this desk reports and identifies at.
+
+     The pack states what the regulator requires and the desk may tighten
+     it, at any time — not only at sign-up. Like the costing method these
+     live on the legal entity in the book rather than in the browser's
+     saved state, and for a harder reason: the posting path enforces the
+     identification line, and a number the server cannot see is a number
+     the server cannot enforce. It used to be a hardcoded 3,000.
+
+     The read is `ledger:view` because everybody working the counter needs
+     to know where the line is. The write is its own permission. */
+  app.get("/api/ledger/desk-thresholds", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/ledger/desk-thresholds", async (req, reply) => {
+    const parsed = deskThresholdsBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    /* "pack_default" becomes the NULL that means "follow the pack". The
+       wire says it in words and the column says it in SQL; nothing in
+       between gets to confuse the two. */
+    const changes: ThresholdChanges = {};
+    for (const [field, value] of Object.entries(parsed.data)) {
+      if (value === undefined) continue;
+      changes[field as keyof ThresholdChanges] =
+        value === "pack_default" ? null : value;
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.set(actor, changes)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }

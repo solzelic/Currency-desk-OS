@@ -42,5 +42,9 @@ server/.env
 # Committing them would leave the repo littered with half-finished probes
 # that read like tests and are not maintained as any.
 _scratch_*.mjs
+# throwaway configs and build scripts agents write while the real ones are
+# held by somebody else — never part of the product
+.scratch-*
+.pw-scratch.*
 drive-*.mjs
 walk*.mjs

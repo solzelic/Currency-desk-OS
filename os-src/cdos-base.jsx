@@ -267,13 +267,22 @@
 
      reportingLimit() is the one answer. In precedence order:
 
-       1. what the owner has set          settings.threshold
+       1. what the DESK has set           the server's per-entity override
        2. what the jurisdiction pack says the server's pack, per entity
-       3. what the regime engine says     getRegime(), the browser's packs
+       3. what the owner set in Settings  settings.threshold
+       4. what the regime engine says     getRegime(), the browser's packs
 
      and the currency comes from the pack first, because home currency is
      the pack's to state — it is the whole point of shipping a Canada pack
      and a UK pack rather than hardcoding one country.
+
+     Note where the owner's setting now sits. It used to be first, and it
+     was browser state: whatever this browser profile last saved. That is
+     the wrong authority for a compliance line — the second till at the
+     same desk held its own copy, a cleared browser held none, and the
+     server enforcing the ID gate could not see any of it. The desk's
+     number now lives on the ledger and comes back at (1); (3) survives
+     only for the standalone build, which has no server to ask.
 
      `amount` is null when nothing can answer. A screen showing a
      threshold it cannot state must say so; flagging every deal against a
@@ -294,11 +303,43 @@
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
+  /* The desk's own lines, as the ledger resolved them: each of
+     reportThreshold / idThreshold / aggregationHours / retentionYears as
+     { effective, deskChoice, packValue, posture }. Cached in module state
+     beside the pack and refreshed by the same hook, because every screen
+     that shows a threshold wants the same answer and none of them should
+     be asking for itself. */
+  let _thresholds = null;
+  const deskThresholds = () => _thresholds;
+  const setDeskThresholds = (answer) => {
+    _thresholds = answer || null;
+    try { window.dispatchEvent(new CustomEvent('cdos-thresholds', { detail: { thresholds: _thresholds } })); } catch (e) {}
+    return _thresholds;
+  };
+  async function refreshDeskThresholds() {
+    try {
+      const B = window.CDOS && window.CDOS.Backend;
+      if (!B) return _thresholds;
+      const answer = await B.loadDeskThresholds();
+      if (answer && answer.idThreshold) setDeskThresholds(answer);
+    } catch (e) { /* not signed in, or the standalone build with no server */ }
+    return _thresholds;
+  }
   const _positive = (v) => v != null && v !== '' && !isNaN(v) && +v > 0;
+  /* One resolved line off the server's answer, or null. `effective` is
+     already the desk's choice where it made one and the pack's where it
+     did not — the precedence was decided on the server, once, so that the
+     number the screen prints and the number the gate enforces cannot
+     drift apart. */
+  const _serverLine = (key) => {
+    const line = _thresholds && _thresholds[key];
+    return line && _positive(line.effective) ? +line.effective : null;
+  };
   function reportingLimit(settings) {
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
-    const amount = _positive(settings && settings.threshold) ? +settings.threshold
+    const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold')
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
+      : _positive(settings && settings.threshold) ? +settings.threshold
       : (regime && _positive(regime.threshold)) ? +regime.threshold
       : null;
     const currency = (_pack && _pack.homeCurrency)
@@ -322,6 +363,25 @@
     const limit = reportingLimit(settings);
     return limit.amount == null ? null : (+homeAmount || 0) >= limit.amount;
   };
+  /* The line at which this desk asks for identification — the other half
+     of the pair, and the one the LEDGER refuses a deal at. Same
+     precedence, same currency, same null. A screen quoting a different
+     number from the one the server will enforce is how a teller ends up
+     arguing with a refusal they were told would not come. */
+  function identificationLimit(settings) {
+    const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
+    const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold')
+      : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
+      : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver
+      : (regime && _positive(regime.idAt)) ? +regime.idAt
+      : null;
+    const currency = (_thresholds && _thresholds.currency)
+      || (_pack && _pack.homeCurrency)
+      || (settings && settings.baseCurrency)
+      || (regime && regime.currency)
+      || null;
+    return { amount, currency, label: amount == null || !currency ? '—' : fmt(amount, currency) };
+  }
   /* Staff directory seed. Per the Branch & Access Model spec: a role carries
      capabilities (ROLE_CAPS) AND a scope (ROLE_SCOPE); assignments say WHERE
      the role applies — branches: '*' (owner) or an array of branch ids, with
@@ -705,11 +765,22 @@
       let live = true;
       const bump = () => { if (live) setVersion(v => v + 1); };
       window.addEventListener('cdos-jurisdiction', bump);
+      window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
-      Promise.all([refreshJurisdiction(), refreshBusinessDate()]).then(bump, bump);
+      Promise.all([
+        refreshJurisdiction(),
+        /* The desk's own lines, alongside the pack that proposes them. A
+           screen that had the pack but not the override would print the
+           regulator's 10,000 at a desk that had deliberately moved to
+           7,500 — the exact class of disagreement this hook exists to
+           stop, so the two arrive together or the version does not move. */
+        refreshDeskThresholds(),
+        refreshBusinessDate(),
+      ]).then(bump, bump);
       return () => {
         live = false;
         window.removeEventListener('cdos-jurisdiction', bump);
+        window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
       };
     }, []);
@@ -844,7 +915,10 @@
     /* the two "todays", kept apart on purpose — see the note above */
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
-    reportingLimit, overReportingLimit, deskPack, setDeskPack, refreshJurisdiction, useDeskFacts,
+    reportingLimit, overReportingLimit, identificationLimit,
+    deskPack, setDeskPack, refreshJurisdiction, useDeskFacts,
+    /* the desk's own lines, as the ledger resolved them against the pack */
+    deskThresholds, setDeskThresholds, refreshDeskThresholds,
     spreadOf, unitCadMid, buyUnitCad, sellUnitCad, roundPayout, priceDeal, dealMargin
   });
 })();

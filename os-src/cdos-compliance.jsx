@@ -22,22 +22,120 @@
   const cadIn = (r) => r.inCcy === 'CAD' ? (Number(r.inAmt) || 0) : (Number(r.inAmt) || 0) / (crossRate('CAD', r.inCcy) || 1);
   const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
 
-  // A house setting that breaks the active regulator's hard rule (looser than the
-  // mandate). Returns [] when the desk is compliant. Consumed by the top bell + Settings.
+  /* ============================================================
+     WHERE THIS DESK STANDS AGAINST ITS MANDATE
+
+     A desk may ask more of itself than its regulator does. It may never
+     ask less. Those two facts are not symmetrical and this file used to
+     treat them as though they were:
+
+       tighter than the mandate   a deliberate decision, usually because a
+                                  bank or an auditor wanted it. Not a
+                                  fault. Stated plainly, no red, no bell.
+       looser than the mandate    the desk failing to report things it is
+                                  legally obliged to report. Unmissable.
+       following the pack         the normal case. Name the number and
+                                  where it came from, and say nothing else.
+
+     And it judged against REGIMES below — a two-entry table holding
+     FINTRAC and FinCEN — while the ledger ships six packs. A desk in
+     Dubai was measured against Canada's numbers, and the threshold check
+     only ran at all when `settings.baseCurrency` happened to equal the
+     regime's currency, so it fell silent on every desk whose books are
+     not kept in Canadian or American dollars. That is the failure mode
+     that matters: the check whose job is to catch a non-compliant desk
+     quietly not running.
+
+     So the mandate now comes from the desk's REAL pack — the one the
+     ledger resolved, in the pack's own currency, with the desk's own
+     overrides already applied and each one already labelled. REGIMES
+     stands in only where there is no server to ask: the standalone build,
+     and the moment before the first answer lands.
+     ============================================================ */
+
+  /* One line's standing, in the shape the screens render. `standing` is
+     the server's posture where there is one; `note` is the sentence a
+     human reads, and it is deliberately different in tone for each. */
+  function postureOf(line, opts) {
+    if (!line) return null;
+    const money = !!opts.money;
+    const show = (v) => v == null ? '—' : money ? fmt(+v, opts.currency) : `${v}${opts.unit || ''}`;
+    const standing = line.posture || 'unknown';
+    const note =
+      standing === 'stricter'
+        ? `Stricter than ${opts.authority} requires (${show(line.packValue)}).`
+        : standing === 'looser'
+          ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.`
+          : standing === 'matching'
+            ? `The ${opts.authority} figure, set by hand.`
+            : standing === 'following'
+              ? `Following ${opts.authority} (${show(line.packValue)}).`
+              : `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+    return {
+      field: opts.field,
+      label: opts.label,
+      standing,
+      authority: opts.authority,
+      value: line.effective,
+      mandate: line.packValue,
+      deskChoice: line.deskChoice,
+      currency: money ? opts.currency : null,
+      note,
+      /* what the old violation list said, kept word-for-word in shape so
+         the bell and Settings keep working — see jurisdictionViolations */
+      detail: note,
+    };
+  }
+
+  /* Every line, judged. Reads the ledger's answer when there is one and
+     falls back to the browser's regime table when there is not. */
+  function jurisdictionPosture(settings) {
+    const server = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
+    const REG = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
+    /* No server answer yet. Build the same shape out of what the browser
+       holds so the screens have one code path — and mark every line
+       "following", because a desk we have not asked about is not a desk
+       we may accuse of anything. */
+    const local = () => {
+      if (!REG) return null;
+      const line = (effective, mandate) => ({
+        effective, deskChoice: null, packValue: mandate,
+        posture: effective == null || mandate == null ? 'unknown' : 'following',
+      });
+      const cur = (settings && settings.baseCurrency) || REG.currency;
+      return { currency: cur, authority: REG.authority, lines: {
+        reportThreshold: line(+((settings && settings.threshold)) || REG.threshold, REG.threshold),
+        idThreshold: line(+((settings && settings.idRequiredOver)) || REG.idAt, REG.idAt),
+        aggregationHours: line(+((settings && settings.aggHours)) || REG.aggHours, REG.aggHours),
+        retentionYears: line(+((settings && settings.retentionYears)) || REG.retentionYears || 5, REG.retentionYears || 5),
+      } };
+    };
+    const source = server
+      ? { currency: server.currency, authority: server.regulator, lines: server }
+      : local();
+    if (!source || !source.lines) return [];
+    const L = source.lines;
+    const common = { currency: source.currency, authority: source.authority };
+    return [
+      postureOf(L.reportThreshold, { ...common, field: 'threshold', label: 'Reporting threshold', money: true, direction: 'atMost' }),
+      postureOf(L.idThreshold, { ...common, field: 'idRequiredOver', label: 'Identification threshold', money: true, direction: 'atMost' }),
+      postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' }),
+      postureOf(L.retentionYears, { ...common, field: 'retentionYears', label: 'Record retention', unit: ' years', direction: 'atLeast' }),
+    ].filter(Boolean);
+  }
+
+  /* The desk breaking its regulator's hard rule — looser than the
+     mandate, and nothing else. A tighter line is NOT in here and must
+     never be: it is a decision somebody made on purpose, and putting it
+     in the notification bell would train an owner to ignore the bell.
+
+     Returns [] when the desk is compliant. The shape is unchanged —
+     { id, field, label, detail, authority } — because the top-bar bell in
+     cdos-os.jsx consumes it and this file does not get to move that. */
   function jurisdictionViolations(settings) {
-    const REGIMES2 = REGIMES;
-    const REG = REGIMES2[(settings && settings.regime) || 'FINTRAC'] || REGIMES2.FINTRAC;
-    if (!REG) return [];
-    const out = [];
-    const aggH = +(settings && settings.aggHours) || REG.aggHours;
-    if (aggH !== REG.aggHours) out.push({ id: 'jv_agg', field: 'aggHours', label: 'Aggregation window', detail: `Set to ${aggH}h — ${REG.authority} mandates a ${REG.aggHours}h window.` });
-    const cur = (settings && settings.baseCurrency) || REG.currency;
-    const thr = +(settings && settings.threshold) || 0;
-    if (cur === REG.currency && thr > REG.threshold) out.push({ id: 'jv_thr', field: 'threshold', label: 'Reporting threshold', detail: `Set to ${fmt(thr, REG.currency)} — above the ${REG.authority} ${REG.largeCode} limit of ${fmt(REG.threshold, REG.currency)}.` });
-    const ret = +(settings && settings.retentionYears) || REG.retentionYears || 5;
-    const minRet = REG.retentionYears || 5;
-    if (ret < minRet) out.push({ id: 'jv_ret', field: 'retentionYears', label: 'Record retention', detail: `Set to ${ret} years — ${REG.authority} requires at least ${minRet}.` });
-    return out.map(v => ({ ...v, authority: REG.authority }));
+    return jurisdictionPosture(settings)
+      .filter(p => p.standing === 'looser')
+      .map(p => ({ id: 'jv_' + p.field, field: p.field, label: p.label, detail: p.detail, authority: p.authority }));
   }
 
   /* ===================== JURISDICTION PACKS ===================== */
@@ -59,12 +157,33 @@
       fileFormat: 'BSA E-Filing XML', watchlists: ['OFAC', 'UN'],
     },
   };
+  /* The engine's view of the rules in force, which every screen reads.
+
+     The browser's own pack is the SHAPE — report codes, watchlists,
+     terminology — and the numbers on it are the pilot's two countries.
+     Where the ledger has answered, its figures win: they are the desk's
+     own choices resolved against its real pack, and they are what the
+     posting path will actually enforce. A screen warning a teller at
+     3,000 while the server refuses at 1,000 is worse than either number
+     on its own, because it teaches the teller the warning is wrong.
+
+     Below that, the owner's saved settings, which is all the standalone
+     build has. */
   function getRegime(settings) {
     const base = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
     const r = Object.assign({}, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;     // owner override
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
     if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;          // custom window
+    const desk = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
+    if (desk) {
+      const at = (line) => (line && line.effective != null && +line.effective > 0) ? +line.effective : null;
+      if (at(desk.reportThreshold) != null) r.threshold = at(desk.reportThreshold);
+      if (at(desk.idThreshold) != null) r.idAt = at(desk.idThreshold);
+      if (at(desk.aggregationHours) != null) r.aggHours = at(desk.aggregationHours);
+      if (at(desk.retentionYears) != null) r.retentionYears = at(desk.retentionYears);
+      if (desk.currency) r.currency = desk.currency;
+    }
     return r;
   }
 
@@ -212,5 +331,6 @@
     _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, dt, setFingerprint },
     getRegime,
     jurisdictionViolations,
+    jurisdictionPosture,
   });
 })();

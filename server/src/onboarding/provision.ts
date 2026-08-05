@@ -15,7 +15,7 @@
    side, the tenant/entity/branch/workspace hierarchy on the other. It is
    the only place that translation happens.
    ============================================================ */
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
 import { packForCountry } from "../ledger/jurisdiction.js";
@@ -212,6 +212,39 @@ export interface Provisioned {
   staffCreated: number;
 }
 
+/* The identification line an owner picked during onboarding, as a desk
+   override — or null, meaning "follow the pack", which is the truthful
+   state for every answer that is not a real tightening. See the call site
+   for why, and docs/DESK_THRESHOLDS.md for the rule.
+
+   The pack's own figure is read rather than kept in a second table here,
+   because a duplicated threshold is exactly the kind of copy that drifts.
+   Where the packs cannot be read at all — the embedded database used in
+   development and tests carries no `jurisdiction_packs` — no override is
+   recorded, which leaves the desk following its pack. That is the safe
+   direction to be wrong in: a desk that follows its regulator. */
+async function idThresholdFromSetup(
+  setup: unknown,
+  packId: string,
+  db: Db,
+): Promise<string | null> {
+  const chosen = Number((setup as Record<string, unknown> | null)?.idThreshold);
+  if (!Number.isFinite(chosen) || chosen <= 0) return null;
+  let mandate: number | null = null;
+  try {
+    const found = await db.execute(
+      sql`SELECT id_threshold FROM jurisdiction_packs WHERE pack_id = ${packId}`,
+    );
+    const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
+    const value = Number((rows[0] as { id_threshold?: unknown } | undefined)?.id_threshold);
+    mandate = Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+  if (mandate === null || chosen >= mandate) return null;
+  return chosen.toFixed(2);
+}
+
 /* Create the desk. Everything here is onConflictDoNothing, so a retry after
    a dropped connection finishes the job rather than half-failing on the
    first row that already exists. */
@@ -234,11 +267,33 @@ export async function provisionDesk(
      reporting thresholds, and the currency this desk keeps its books in.
      Nothing downstream asks "is this Canada" — it asks the pack. */
   const pack = packForCountry((spec.setup as Record<string, unknown>)?.country as string);
+  /* "When should the desk ask for ID?" — screen four of onboarding, and the
+     answer used to land in `tenants.setup` and stop there. The browser read
+     it once into its own saved state on first run; the ledger, which is
+     what actually REFUSES a deal for an unidentified customer, never saw it
+     at all and compared against a hardcoded 3,000.
+
+     So the answer becomes the desk's real line, on the legal entity, where
+     the posting path resolves it — and where the owner can move it again
+     later, which is the other half of what they asked for. See
+     docs/DESK_THRESHOLDS.md.
+
+     Written ONLY where it is a genuine tightening. The picker's top option
+     is worded "the legal minimum — nothing extra", which is a desk saying
+     "follow my regulator" rather than a desk pinning a figure; recorded as
+     an override it would stop that desk ever being moved by a pack
+     correction. And a number ABOVE the pack's cannot be honoured as an
+     identification line in any case: it would put a desk out of compliance
+     on the day it opened, on the strength of a question it thought it was
+     answering about something else. NULL means "follow the pack", and for
+     every answer except a real tightening that is the truthful state. */
+  const chosenIdLine = await idThresholdFromSetup(spec.setup, pack.packId, db);
   await db.insert(schema.legalEntities).values({
     id: legalEntityId, tenantId, name: spec.legalName, msbNumber: spec.msbNumber, jurisdiction: spec.regulator,
     homeCurrency: pack.homeCurrency,
     jurisdictionPackId: pack.packId,
     jurisdictionPackVersion: pack.version,
+    idThreshold: chosenIdLine,
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();

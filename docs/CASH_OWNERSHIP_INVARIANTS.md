@@ -114,7 +114,13 @@ may compute a cash figure for itself:
 | what does this branch hold, and what did it cost | `GET /api/ledger/position` |
 | what was posted, and what did it earn | `GET /api/ledger/summary` |
 | which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
+| what does this desk report and identify at | `GET /api/ledger/desk-thresholds` |
 
 What a screen does when one of those has no answer is its own rule, and it
 is written down in `ABSENT_FIGURES.md`. The short version: absent, visibly —
 never zero.
+
+How a jurisdiction's number and a desk's own number relate — which one wins,
+which way "stricter" points, and what the posting gate does when neither can
+answer — is written down in `DESK_THRESHOLDS.md`. The short version: the pack
+proposes, the desk decides, and a desk may only ever tighten.

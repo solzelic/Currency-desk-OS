@@ -1497,7 +1497,14 @@
     const [subs, setSubs] = useState(() => { try { return JSON.parse(localStorage.getItem('cdos_submissions_v1') || '{}') || {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_submissions_v1', JSON.stringify(subs)); } catch (e) {} }, [subs]);
 
-    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
+    /* The desk's own reporting and ID lines come from the server, and they
+       arrive a moment after the first render. Both memos below judge against
+       them, so both have to re-run when they land — otherwise the bell and
+       the flags keep answering from the browser's fallback, which marks
+       every line "following" and therefore never raises the one alarm that
+       matters: a desk sitting looser than its regulator requires. */
+    const deskFacts = window.CDOS.useDeskFacts();
+    const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     // A sealed cash filing is "welded to the records that triggered it" — mirror that
     // onto the ledger rows so the ledger flags, dashboard and this badge all agree on
     // what's filed. Wire/EFT filings reference transfers, not ledger rows, so are skipped.
@@ -1525,7 +1532,7 @@
     // reportable count comes from the obligation list above.
     const alerts = useMemo(() => ({ ...computeAlerts(rows, flags), rpt: openObligations.length }), [rows, flags, openObligations]);
     // house settings that break the active regulator's hard rules — persistent until fixed
-    const jViol = useMemo(() => (window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : []), [settings]);
+    const jViol = useMemo(() => (window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : []), [settings, deskFacts]);
     // per-item breakdown for the bell preview dropdown
     const alertList = useMemo(() => {
       const strM = new Map(), kycM = new Map();

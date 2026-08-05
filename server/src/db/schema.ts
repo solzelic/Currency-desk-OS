@@ -199,6 +199,17 @@ export const legalEntities = pgTable(
        whatever the jurisdiction pack suggests", which is where a desk starts
        and stays until an owner decides otherwise. See migration 014. */
     costMethod: text("cost_method"),
+    /* What this desk reports at, identifies at, aggregates over and keeps
+       records for. Nullable for the same reason `costMethod` is: NULL means
+       "follow the jurisdiction pack", which states the regulator's mandate.
+       A desk may tighten any of these and may never loosen one — see
+       migration 016 and server/src/ledger/thresholds.ts. Read as strings
+       because they are numeric columns and node-postgres does not narrow
+       arbitrary-precision numbers into a float. */
+    reportThreshold: text("report_threshold"),
+    idThreshold: text("id_threshold"),
+    aggregationHours: integer("aggregation_hours"),
+    retentionYears: integer("retention_years"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],
