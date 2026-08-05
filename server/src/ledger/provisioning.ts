@@ -3,6 +3,7 @@ import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
+import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -266,11 +267,22 @@ export class LedgerProvisioningService {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
       const result = await client.query(
+        /* Deals only. A cheque clearance and a cheque return each write a
+           journal and therefore each need a transaction row to hang it
+           off, but neither is a deal somebody did at the counter — and
+           this list becomes the browser's `rows`, which the Ledger screen
+           counts, the Dashboard totals and the compliance engine
+           aggregates as cash movement. One cheque appearing there three
+           times would count its face amount three times over, in the
+           aggregate that decides whether a report is owed. The list of
+           settlement kinds lives in cheques.ts; a second copy of it here
+           is where the next disagreement starts. */
         `SELECT t.*,r.reversal_id,r.reason AS reversal_reason,r.posted_at AS reversed_at
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id=t.transaction_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
+            AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
           ORDER BY t.posted_at DESC,t.transaction_id DESC
           LIMIT $6`,
         [...scope(actor), limit],
@@ -308,6 +320,15 @@ export class LedgerProvisioningService {
           marketSnapshotId: row.market_snapshot_id ?? null,
           rateSourceType: row.rate_source_type ?? null,
           quoteOverrideId: row.quote_override_id ?? null,
+          /* What KIND of deal, and what actually crossed the counter.
+             The browser used to label every server row "Currency
+             Exchange" because that was the only thing the book could
+             hold. It now holds cheque cashings too, and a screen that
+             calls one an exchange is a screen lying about a deal type on
+             the same row it prints the amount of. */
+          dealKind: row.deal_kind ?? "exchange",
+          receivedInstrument: row.received_instrument ?? "cash",
+          disbursedInstrument: row.disbursed_instrument ?? "cash",
           postedAt: new Date(row.posted_at).toISOString(),
           reversal: row.reversal_id
             ? {

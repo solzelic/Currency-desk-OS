@@ -100,6 +100,92 @@ const decimal = (value: string, min: Decimal.Value) => {
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
 
+/* ---- the two gates every counter deal passes, wherever it is posted ----
+
+   These were private methods on LedgerService while an exchange was the
+   only thing that could be posted. Cheque cashing is the second, and it
+   has to pass exactly the same two: a drawer that is not open cannot pay
+   anybody, and the desk's identification line does not become optional
+   because the customer handed over paper instead of notes. Copies of them
+   in a second service would be two rules, and the day somebody moved the
+   line one of the copies would not follow. */
+
+export async function requireOpenTill(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+) {
+  const session = await client.query(
+    `SELECT status
+       FROM ledger_till_sessions
+      WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        AND workspace_id=$4 AND till_id=$5
+      ORDER BY session_number DESC
+      LIMIT 1
+      FOR SHARE`,
+    scope(actor),
+  );
+  if (!session.rowCount || session.rows[0].status !== "open") {
+    throw new LedgerError(
+      "TILL_NOT_OPEN",
+      "Open the till before posting transactions.",
+    );
+  }
+}
+
+/* ---- the identification gate ----
+
+   The most load-bearing compliance number in the product, and until now
+   it was the literal 3,000 in a comparison against a variable called
+   `inputCad`. Every desk got Canada's figure: a British desk whose pack
+   says 1,000 cleared four deals in five that it should have identified,
+   and a UAE desk on 3,500 dirhams refused deals it was entitled to take.
+
+   Two things this now gets right. The comparison is in the currency the
+   PACK states the book is kept in, which is the currency `amountHome`
+   already arrived in. And the line is the DESK's — its own choice where
+   it has made one, the pack's where it has not. A desk may set this
+   tighter than its regulator requires at any time, and the moment it
+   does, the next deal is judged at the new number.
+
+   ---- and when nothing can answer ----
+
+   `resolveIdThreshold` returns null when neither the desk nor its pack
+   states a line. That is a broken desk rather than a permissive one, and
+   the two available blanket answers are both wrong: a gate that never
+   fires clears deals nobody checked, and a gate that always fires stops
+   a working shop trading.
+
+   So it is not a blanket answer. A customer who is already verified
+   satisfies every possible value of a line nobody can state — there is
+   nothing to be unsure about, and that desk keeps trading. An unverified
+   one is exactly the case the gate exists for, and "we could not work
+   out whether ID was needed, so it wasn't" is not something anybody can
+   say to a regulator. That deal is refused, in words that name the real
+   problem, because the fix is a minute of somebody's time and the
+   alternative is a silent hole in the desk's file. The browser follows
+   the same rule for the reporting line — see `overReportingLimit` in
+   os-src/cdos-base.jsx, which answers null rather than false. */
+export async function requireIdentification(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  pack: JurisdictionPack,
+  amountHome: Decimal,
+  idStatus: unknown,
+) {
+  if (idStatus === "verified") return;
+  const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
+  if (line === null)
+    throw new LedgerError(
+      "COMPLIANCE_BLOCKED",
+      "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
+    );
+  if (amountHome.gte(line))
+    throw new LedgerError(
+      "COMPLIANCE_BLOCKED",
+      "Authoritative compliance policy blocked posting.",
+    );
+}
+
 export class LedgerService {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -125,80 +211,18 @@ export class LedgerService {
       throw new LedgerError("AUTHORIZATION_DENIED", `Missing ${permission}.`);
   }
 
-  private async requireOpenTill(
-    client: pg.PoolClient,
-    actor: LedgerActor,
-  ) {
-    const session = await client.query(
-      `SELECT status
-         FROM ledger_till_sessions
-        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
-          AND workspace_id=$4 AND till_id=$5
-        ORDER BY session_number DESC
-        LIMIT 1
-        FOR SHARE`,
-      scope(actor),
-    );
-    if (!session.rowCount || session.rows[0].status !== "open") {
-      throw new LedgerError(
-        "TILL_NOT_OPEN",
-        "Open the till before posting transactions.",
-      );
-    }
+  private requireOpenTill(client: pg.PoolClient, actor: LedgerActor) {
+    return requireOpenTill(client, actor);
   }
 
-  /* ---- the identification gate ----
-
-     The most load-bearing compliance number in the product, and until now
-     it was the literal 3,000 in a comparison against a variable called
-     `inputCad`. Every desk got Canada's figure: a British desk whose pack
-     says 1,000 cleared four deals in five that it should have identified,
-     and a UAE desk on 3,500 dirhams refused deals it was entitled to take.
-
-     Two things this now gets right. The comparison is in the currency the
-     PACK states the book is kept in, which is the currency `amountHome`
-     already arrived in. And the line is the DESK's — its own choice where
-     it has made one, the pack's where it has not. A desk may set this
-     tighter than its regulator requires at any time, and the moment it
-     does, the next deal is judged at the new number.
-
-     ---- and when nothing can answer ----
-
-     `resolveIdThreshold` returns null when neither the desk nor its pack
-     states a line. That is a broken desk rather than a permissive one, and
-     the two available blanket answers are both wrong: a gate that never
-     fires clears deals nobody checked, and a gate that always fires stops
-     a working shop trading.
-
-     So it is not a blanket answer. A customer who is already verified
-     satisfies every possible value of a line nobody can state — there is
-     nothing to be unsure about, and that desk keeps trading. An unverified
-     one is exactly the case the gate exists for, and "we could not work
-     out whether ID was needed, so it wasn't" is not something anybody can
-     say to a regulator. That deal is refused, in words that name the real
-     problem, because the fix is a minute of somebody's time and the
-     alternative is a silent hole in the desk's file. The browser follows
-     the same rule for the reporting line — see `overReportingLimit` in
-     os-src/cdos-base.jsx, which answers null rather than false. */
-  private async requireIdentification(
+  private requireIdentification(
     client: pg.PoolClient,
     actor: LedgerActor,
     pack: JurisdictionPack,
     amountHome: Decimal,
     idStatus: unknown,
   ) {
-    if (idStatus === "verified") return;
-    const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
-    if (line === null)
-      throw new LedgerError(
-        "COMPLIANCE_BLOCKED",
-        "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
-      );
-    if (amountHome.gte(line))
-      throw new LedgerError(
-        "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
-      );
+    return requireIdentification(client, actor, pack, amountHome, idStatus);
   }
 
   /* Retried on a serialization failure, like every other write here. A
@@ -556,7 +580,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)",
         [
           transactionId,
           transactionRef,
@@ -587,6 +611,13 @@ export class LedgerService {
           // handed over had cost it. Null on a purchase — buying earns nothing.
           disposing ? fixed(realized) : null,
           disposing ? fixed(costOfSale) : null,
+          /* An exchange over the counter: notes in, notes out. Stated
+             rather than defaulted, because migration 017 dropped the
+             column default precisely so that a deal type which is NOT
+             cash has to say so instead of inheriting a claim. */
+          "exchange",
+          "cash",
+          "cash",
         ],
       );
       for (const [account, side, value] of journal)
@@ -854,7 +885,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)",
         [
           transactionId,
           transactionRef,
@@ -875,6 +906,10 @@ export class LedgerService {
           actor.userId,
           now,
           now,
+          // notes in, notes out — see the same three values in postFrozenQuote
+          "exchange",
+          "cash",
+          "cash",
         ],
       );
       for (const [account, side, value] of journal)
