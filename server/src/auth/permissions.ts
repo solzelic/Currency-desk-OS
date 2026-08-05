@@ -46,18 +46,23 @@ export type BackendPermission =
      all. Tightening past the pack is an ordinary business decision; going
      looser is the desk failing to report things it is legally obliged to
      report. Nothing stops the second — the relationship is a posture, not
-     a constraint, for the reasons in thresholds.ts — which is exactly why
-     the right to move the line stops at the people who answer for it. The
-     compliance officer is here where they are absent from
-     `accounting:cost_method`, because where the reporting line sits is
-     exactly their job, and they are the one who signs what comes of it. */
+     a constraint, for the reasons in thresholds.ts.
+
+     So this is the OWNER's, and nobody else's. Narrower than
+     `compliance:file`, which everybody at the counter has because the
+     person who took the cash is often the person who reports it, and
+     narrower than `accounting:cost_method`, which a branch manager shares.
+     Where the reporting line sits is not a day's work at a branch — it is
+     the standing policy of the registered business, and the registered
+     business is one person. A compliance officer or a manager who wants it
+     moved asks the owner, which is a conversation worth having out loud. */
   | "compliance:thresholds";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
   teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view", "compliance:file"],
   supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "compliance:file"],
-  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "compliance:thresholds"],
-  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file", "compliance:thresholds"],
+  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file"],
+  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file"],
   administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds"],
   auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };

@@ -244,7 +244,7 @@
         log('Compliance threshold changed', note);
       } catch (e) {
         setErr(e && e.status === 403
-          ? 'Only an owner, a manager or your compliance officer can move a reporting line.'
+          ? 'Only the owner can move a reporting line — it is the standing policy of the registered business, not a branch setting.'
           : e && e.code === 'NETWORK_ERROR'
             ? 'Could not reach the desk — nothing was changed.'
             : 'Could not save that — nothing was changed.');

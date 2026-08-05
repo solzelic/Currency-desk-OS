@@ -820,13 +820,13 @@ postgres("moving the line through the desk", () => {
         (user_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,role,authorized_branch_ids)
        VALUES
         ($1||':a.singh',$1,$2,$3,$4,$5,'teller','["br-yorkville"]'),
-        ($1||':r.haddad',$1,$2,$3,$4,$5,'branch_manager','["br-yorkville"]'),
+        ($1||':r.haddad',$1,$2,$3,$4,$5,'administrator','["br-yorkville"]'),
         ($1||':m.costa',$1,$2,$3,$4,$5,'compliance_officer','["br-yorkville"]')`,
       scope,
     );
     for (const [staffId, role] of [
       ["a.singh", "teller"],
-      ["r.haddad", "branch_manager"],
+      ["r.haddad", "administrator"],
       ["m.costa", "compliance_officer"],
     ] as const) {
       await handle.db
@@ -857,12 +857,12 @@ postgres("moving the line through the desk", () => {
     });
   });
 
-  it("lets a compliance officer tighten a line, and writes down who did it", async () => {
+  it("lets the owner tighten a line, and writes down who did it", async () => {
     const changed = await app.inject({
       method: "PUT",
       url: "/api/ledger/desk-thresholds",
       payload: { idThreshold: "1000.00" },
-      cookies: await cookieFor("m.costa"),
+      cookies: await cookieFor("r.haddad"),
     });
     expect(changed.statusCode).toBe(200);
     expect(changed.json().idThreshold).toEqual({
@@ -876,7 +876,7 @@ postgres("moving the line through the desk", () => {
 
     const audit = await auditRows();
     expect(audit.rowCount).toBe(1);
-    expect(audit.rows[0].actor_id).toBe(`${DEMO.tenantId}:m.costa`);
+    expect(audit.rows[0].actor_id).toBe(`${DEMO.tenantId}:r.haddad`);
     expect(audit.rows[0].target_id).toBe(DEMO.legalEntityId);
     expect(audit.rows[0].reason).toBe(
       "identification threshold pack default (3000.00) → 1000.00 (stricter)",
@@ -941,12 +941,20 @@ postgres("moving the line through the desk", () => {
     );
   });
 
-  it("refuses a teller, and changes nothing", async () => {
+  /* Where the reporting line sits is the standing policy of the registered
+     business, not a day's work at a branch — so it is the owner's, and
+     everybody else asks. The compliance officer is the interesting refusal:
+     they may FILE every report the line creates and may not move the line
+     that creates them, which is the separation the permission exists for. */
+  it.each([
+    ["a teller", "a.singh"],
+    ["the compliance officer", "m.costa"],
+  ])("refuses %s, and changes nothing", async (_who, staffId) => {
     const denied = await app.inject({
       method: "PUT",
       url: "/api/ledger/desk-thresholds",
       payload: { idThreshold: "1000.00" },
-      cookies: await cookieFor("a.singh"),
+      cookies: await cookieFor(staffId),
     });
     expect(denied.statusCode).toBe(403);
     expect(denied.json().code).toBe("AUTHORIZATION_DENIED");

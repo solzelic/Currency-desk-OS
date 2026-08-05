@@ -131,13 +131,20 @@ can reconstruct from the lots, a threshold leaves no trace anywhere else in
 the book. The only record that a reporting line ever moved is the one
 written when it moved.
 
-`compliance:thresholds` reaches the administrator, the branch manager and
-the compliance officer — the last of whom is deliberately absent from
-`accounting:cost_method`, because where the reporting line sits is exactly
-their job and they are the one who signs what comes of it. Everybody may
-**read** it, on `ledger:view`: refusing the read would be the wrong lesson
-from refusing the write, since everybody at the counter needs to know when
-to ask for ID.
+`compliance:thresholds` is the **owner's alone** — narrower than
+`compliance:file`, which everybody at the counter holds because the person
+who took the cash is often the person who has to report it, and narrower
+than `accounting:cost_method`, which a branch manager shares. Where the
+reporting line sits is not a day's work at a branch; it is the standing
+policy of the registered business, and the registered business is one
+person. The compliance officer is the instructive refusal: they may file
+every report the line creates and may not move the line that creates them.
+Anybody who wants it moved asks the owner, which is a conversation worth
+having out loud.
+
+Everybody may **read** it, on `ledger:view`. Refusing the read would be the
+wrong lesson from refusing the write, since everybody at the counter needs
+to know when to ask for ID.
 
 Nothing already posted is re-judged. A deal that cleared under the old line
 stays cleared and a report already filed stays filed; what changes is the
