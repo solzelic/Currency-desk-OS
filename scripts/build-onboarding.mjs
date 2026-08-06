@@ -112,6 +112,10 @@ const BRIDGE = `<script>
        actually invited. */
     known: {},
     checking: "",
+    /* Set when the SERVER said "slow down", which is a completely
+       different thing from "we do not know that code" and used to render
+       as the same red chip. See checkRef below. */
+    throttled: false,
 
     refValid: function (v) {
       var code = String(v || "").toUpperCase().trim();
@@ -123,6 +127,7 @@ const BRIDGE = `<script>
       var code = String(v || "").toUpperCase().trim();
       if (!REF.test(code)) return "empty";
       if (CD.known[code] === true) return "ok";
+      if (CD.throttled) return "slow";
       if (CD.known[code] === false) return "no";
       return CD.checking === code ? "checking" : "empty";
     },
@@ -139,8 +144,23 @@ const BRIDGE = `<script>
         done();
         fetch("/api/onboarding/" + encodeURIComponent(code) + "/state")
           .then(function (r) {
-            CD.known[code] = r.ok;
             CD.checking = "";
+            /* A 429 IS NOT A WRONG CODE, and treating it as one is how a
+               working invitation came to read "we don't have that ID".
+
+               This used to be CD.known[code] = r.ok, so every non-2xx
+               marked the code permanently unknown FOR THE LIFE OF THE
+               PAGE — the cache is consulted before the fetch, so retyping
+               it did nothing and even waiting out the limit did not help
+               without a reload. The one answer a person cannot act on is
+               the one that blames them for the server's own throttle. */
+            if (r.status === 429) { CD.throttled = true; done(); return; }
+            CD.throttled = false;
+            /* Only a real 404 is evidence about the CODE. A network blip
+               or a 500 leaves it unknown, so the next keystroke retries
+               instead of inheriting a verdict nobody reached. */
+            if (r.ok) CD.known[code] = true;
+            else if (r.status === 404) CD.known[code] = false;
             /* Their code, typed rather than followed. Send them to the same
                address the email would have, so the rest of this — hydrating
                their answers, saving, launching — is one path, not two. */
@@ -582,7 +602,7 @@ patch(
   "the code badge — it claimed 'Recognised' for anything shaped like a code",
   "cdIdBadge: this.cdIdValid(d.cdId) ? 'Recognised' : 'From your invite email',",
   "cdIdBadge: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
-  "        return s === 'ok' ? 'Recognised' : s === 'checking' ? 'Checking\\u2026' : s === 'no' ? 'Not recognised' : 'From your invite email'; })(),",
+  "        return s === 'ok' ? 'Recognised' : s === 'checking' ? 'Checking\\u2026' : s === 'slow' ? 'Too many tries' : s === 'no' ? 'Not recognised' : 'From your invite email'; })(),",
 );
 patch(
   "the code hint — it told somebody their invented code was theirs to keep",
@@ -590,6 +610,7 @@ patch(
   "cdIdHint: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
   "        if (s === 'ok') return 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
   "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
+  "        if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and try again \\u2014 your ID is probably fine.';\n" +
   "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +
   "        return 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.'; })(),",
 );
