@@ -177,7 +177,16 @@ test("a send takes the cash the screen said it would, and books the payout as ow
     homeCurrency: "CAD",
   });
   expect(Number(payable!.faceAmount)).toBeGreaterThan(0);
-  expect(owed.outstanding.payable).toBe("600.00");
+  /* At LEAST this deal's 600, not exactly it.
+
+     `outstanding.payable` is the desk's whole open book, and asserting an
+     absolute on it only holds while this file is the only one that ever
+     posted a remittance — which stopped being true the moment
+     a-day-at-the-desk.spec.ts started trading a full shift on the same
+     database. The deal this test posted is proven by `carryingAmountHome`
+     on the obligation above; what the total adds is that the deal reached
+     the desk's outstanding book at all. */
+  expect(Number(owed.outstanding.payable)).toBeGreaterThanOrEqual(600);
 
   /* The deal is on the transaction list too, with the ledger's own
      reference — the browser row carries the book's name for it rather

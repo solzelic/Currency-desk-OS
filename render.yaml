@@ -72,6 +72,26 @@ services:
       # first-run operator login "email:password"; remove after signing in
       - key: PLATFORM_ADMIN_BOOTSTRAP
         sync: false
+      # Manual lead research. Until configured, the admin panel says research
+      # is unavailable and the rest of the application starts normally.
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: TAVILY_CREDIT_COST_CENTS
+        sync: false
+      # ElevenLabs outbound calling. All three identifiers are required;
+      # missing configuration disables Call now without affecting boot.
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_AGENT_ID
+        sync: false
+      - key: ELEVENLABS_AGENT_PHONE_NUMBER_ID
+        sync: false
+      - key: ELEVENLABS_CALL_RECORDING
+        value: "1"
+      - key: ELEVENLABS_WEBHOOK_SECRET
+        sync: false
+      - key: ELEVENLABS_AGENT_TOOL_SECRET
+        sync: false
       # Stripe Billing: hosted Checkout, Customer Portal, Tax and invoices.
       # Price IDs are public identifiers; the two secrets above stay in the
       # Render dashboard.  These values match the live CAD catalog.

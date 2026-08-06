@@ -499,6 +499,26 @@
         });
       },
 
+      /* ---- the currencies this desk deals in ----
+
+         `stated` is the owner's own set or null, and null is NOT an empty
+         set: it means nobody has restricted anything and the desk may
+         deal in whatever the ledger carries. `suggested` is what a picker
+         should offer. `minorUnits` names only the currencies that are not
+         paid to two decimal places, so no screen carries its own table of
+         which ones have no cents. */
+      loadDeskCurrencies: function () {
+        return request("/api/ledger/desk-currencies");
+      },
+      /* An array to state the set, or null to hand the question back.
+         The home currency is added by the ledger whatever is sent. */
+      setDeskCurrencies: function (currencies) {
+        return request("/api/ledger/desk-currencies", {
+          method: "PUT",
+          body: JSON.stringify({ currencies: currencies }),
+        });
+      },
+
       /* ---- the four lines that are cash on one side and a promise on
              the other ----
 

@@ -522,17 +522,29 @@ postgres("the desk's customer file, on the server", () => {
     const cookies = {
       cdos_session: login.cookies.find((c) => c.name === "cdos_session")!.value,
     };
+    /* Which till this request is FOR, stated — exactly as the browser's
+       Backend client states it on every call.
+
+       Without it, `resolveActor` falls back to "the only workspace at
+       this branch", which is not a thing on a desk with two tills. This
+       test passed for as long as it happened to run before the suite
+       that adds till-11 to the demo branch and leaves it there, and
+       returned SCOPE_DENIED the moment file ordering changed. A test
+       that silently depends on a single-till desk is testing an
+       accident. */
+    const headers = { "x-workspace-id": DEMO.workspaceId };
 
     const created = await app.inject({
       method: "POST",
       url: "/api/clients",
       cookies,
+      headers,
       payload: { legalName: "Wei Zhang", kind: "individual", riskRating: "normal" },
     });
     expect(created.statusCode, created.body).toBe(201);
     const clientId = created.json().clientId as string;
 
-    const listed = await app.inject({ method: "GET", url: "/api/clients", cookies });
+    const listed = await app.inject({ method: "GET", url: "/api/clients", cookies, headers });
     expect(listed.statusCode).toBe(200);
     expect(listed.json().clients.map((c: { clientId: string }) => c.clientId)).toContain(clientId);
 
@@ -547,6 +559,7 @@ postgres("the desk's customer file, on the server", () => {
       method: "POST",
       url: "/api/clients",
       cookies,
+      headers,
       payload: { legalName: "", dateOfBirth: "1985-13-45" },
     });
     expect(nonsense.statusCode).toBe(422);
@@ -757,9 +770,12 @@ postgres("migration 019, over a desk's existing blob", () => {
       `SELECT i.purpose, i.content_type, i.byte_size, d.doc_type
          FROM desk_client_images i
          LEFT JOIN desk_client_identity_documents d ON d.document_id = i.document_id
-        WHERE i.client_id=$1 ORDER BY i.purpose, d.doc_type`,
+        WHERE i.client_id=$1 ORDER BY i.purpose, d.doc_type COLLATE "C"`,
       [jonh.client_id],
     );
+    /* Explicit C collation: CI and a developer laptop may have different
+       locale collations, and this assertion is about which scans exist, not
+       the host's opinion of whether "PR" sorts before "Pa". */
     /* Both ID scans and the contact photograph came out of the blob —
        which is the four-megabyte ceiling this desk was heading for — and
        the photograph is kept as its own purpose rather than being

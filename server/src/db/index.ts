@@ -110,9 +110,124 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS decided_by text;
 -- what an application is LIKE, as opposed to where it IS. Free-form and
 -- multi-valued; status stays the single ordered thing automation keys off.
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS labels jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact boolean NOT NULL DEFAULT false;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact_at timestamptz;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact_by text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact_reason text;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
+-- Consent evidence is operational metadata, not an answer the applicant
+-- typed. Keeping it beside rather than inside details preserves provenance.
+CREATE TABLE IF NOT EXISTS enquiry_contact_consents (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  form_version text NOT NULL,
+  ip_address text NOT NULL,
+  user_agent text,
+  timezone text,
+  timezone_source text,
+  consented_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_contact_consents_idx ON enquiry_contact_consents(enquiry_id, consented_at);
+CREATE TABLE IF NOT EXISTS enquiry_research_runs (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  run_at timestamptz NOT NULL DEFAULT now(),
+  provider text NOT NULL,
+  model text,
+  status text NOT NULL,
+  summary text,
+  credits_used integer,
+  cost_cents integer,
+  error text,
+  created_by text NOT NULL
+);
+CREATE INDEX IF NOT EXISTS enquiry_research_runs_idx ON enquiry_research_runs(enquiry_id, run_at);
+ALTER TABLE enquiry_research_runs ADD COLUMN IF NOT EXISTS brief jsonb;
+CREATE TABLE IF NOT EXISTS enquiry_research_facts (
+  id text PRIMARY KEY,
+  research_id text NOT NULL REFERENCES enquiry_research_runs(id),
+  key text NOT NULL,
+  value text NOT NULL,
+  source_url text NOT NULL CHECK (btrim(source_url) <> ''),
+  confidence double precision NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  method text NOT NULL CHECK (method IN ('web_search','website_read','registry','model_inference'))
+);
+CREATE INDEX IF NOT EXISTS enquiry_research_facts_idx ON enquiry_research_facts(research_id);
+CREATE TABLE IF NOT EXISTS enquiry_research_reviews (
+  id text PRIMARY KEY,
+  research_id text NOT NULL REFERENCES enquiry_research_runs(id),
+  reviewed_by text NOT NULL,
+  reviewed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_research_reviews_idx ON enquiry_research_reviews(research_id, reviewed_at);
+CREATE TABLE IF NOT EXISTS enquiry_calls (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  research_id text REFERENCES enquiry_research_runs(id),
+  trigger_key text NOT NULL,
+  provider text NOT NULL,
+  agent_id text NOT NULL,
+  provider_call_id text,
+  conversation_id text,
+  phone text NOT NULL,
+  timezone text NOT NULL,
+  status text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  placed_at timestamptz,
+  completed_at timestamptz,
+  duration_seconds integer,
+  outcome text,
+  recording_url text,
+  transcript jsonb,
+  summary text,
+  error text,
+  created_by text NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS enquiry_calls_trigger_idx ON enquiry_calls(trigger_key);
+CREATE INDEX IF NOT EXISTS enquiry_calls_enquiry_idx ON enquiry_calls(enquiry_id, requested_at);
+CREATE UNIQUE INDEX IF NOT EXISTS enquiry_calls_conversation_idx ON enquiry_calls(conversation_id) WHERE conversation_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  updated_by text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS enquiry_growth_jobs (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','completed','failed')),
+  attempts integer NOT NULL DEFAULT 0,
+  max_attempts integer NOT NULL DEFAULT 3,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  completed_at timestamptz,
+  research_id text REFERENCES enquiry_research_runs(id),
+  error text,
+  requested_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_jobs_queue_idx ON enquiry_growth_jobs(status, available_at, created_at);
+CREATE INDEX IF NOT EXISTS enquiry_growth_jobs_enquiry_idx ON enquiry_growth_jobs(enquiry_id, created_at);
+CREATE TABLE IF NOT EXISTS enquiry_growth_events (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  type text NOT NULL,
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+  actor text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_events_idx ON enquiry_growth_events(enquiry_id, created_at);
+CREATE TABLE IF NOT EXISTS enquiry_growth_assignments (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  assigned_to text,
+  assigned_by text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_assignments_idx ON enquiry_growth_assignments(enquiry_id, assigned_at);
 -- our side of a thread with somebody who wrote to us. Outbound only.
 CREATE TABLE IF NOT EXISTS enquiry_replies (
   id text PRIMARY KEY,
@@ -171,9 +286,18 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   id_threshold numeric(24,2),
   aggregation_hours integer,
   retention_years integer,
+  -- which currencies this desk trades, beside the one its books are kept
+  -- in. NULL means nobody has stated a set and the resolver falls back to
+  -- what the branch's rate board already quotes. Migration 020 adds it to
+  -- existing databases; it is here because the test database is built from
+  -- this constant rather than from the migrations. The CHECK constraint
+  -- lives with the migration — see server/src/ledger/currencies.ts for why
+  -- minor units are deliberately NOT a column.
+  traded_currencies text[],
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS cost_method text;
+ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS traded_currencies text[];
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS report_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS id_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS aggregation_hours integer;

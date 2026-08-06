@@ -11,12 +11,13 @@ const MONO = "var(--m)";
 
 // ---- helpers ----
 const api = async (path, opts) => {
-  const r = await fetch(path, Object.assign({
-    credentials: 'same-origin',
-    headers: {
-      'content-type': 'application/json'
-    }
-  }, opts || {}));
+  const init = Object.assign({
+    credentials: 'same-origin'
+  }, opts || {});
+  init.headers = Object.assign({
+    'content-type': 'application/json'
+  }, opts && opts.headers || {});
+  const r = await fetch(path, init);
   const body = await r.json().catch(() => null);
   if (!r.ok) throw {
     status: r.status,
@@ -2129,10 +2130,19 @@ function Pipeline({
     return !!d && d.next.includes(id);
   };
   const load = async () => {
-    const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({
+    const [r, growth] = await Promise.all([api('/api/admin/enquiries?kind=' + kind).catch(() => ({
       enquiries: []
-    }));
-    setRows(r.enquiries);
+    })), kind === 'early_access' ? api('/api/admin/growth/pipeline').catch(() => ({
+      byEnquiry: {},
+      counts: {}
+    })) : Promise.resolve({
+      byEnquiry: {},
+      counts: {}
+    })]);
+    setRows(r.enquiries.map(row => ({
+      ...row,
+      growth: growth.byEnquiry[row.id] || null
+    })));
     if (r.stages) setStages(r.stages);
     if (onCounts) onCounts(r.enquiries);
   };
@@ -2347,7 +2357,22 @@ function Pipeline({
         color: 'var(--mute)',
         marginTop: 3
       }
-    }, "\u260F ", tel(r), det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''), r.isDemo && /*#__PURE__*/React.createElement("div", {
+    }, "\u260F ", tel(r), det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''), r.growth && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        flexWrap: 'wrap',
+        marginTop: 7
+      }
+    }, /*#__PURE__*/React.createElement(Pill, {
+      tone: r.growth.workflow.tone
+    }, r.growth.workflow.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10.5,
+        color: 'var(--faint)'
+      }
+    }, r.growth.assignment && r.growth.assignment.assignedTo ? r.growth.assignment.assignedTo : 'unassigned')), r.isDemo && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 6
       }
@@ -2621,7 +2646,11 @@ function Pipeline({
     }
   }, kind === 'early_access' ? 'Applicant' : 'From'), /*#__PURE__*/React.createElement("th", {
     style: th
-  }, "Stage"), /*#__PURE__*/React.createElement("th", {
+  }, "Decision"), kind === 'early_access' && /*#__PURE__*/React.createElement("th", {
+    style: th
+  }, "Process"), kind === 'early_access' && /*#__PURE__*/React.createElement("th", {
+    style: th
+  }, "Owner"), /*#__PURE__*/React.createElement("th", {
     style: th
   }, kind === 'early_access' ? 'Wants' : 'About'), /*#__PURE__*/React.createElement("th", {
     style: th
@@ -2660,7 +2689,24 @@ function Pipeline({
   }, /*#__PURE__*/React.createElement(Pill, {
     tone: STAGE_TONE[r.status],
     dot: true
-  }, stageTitle(BOARD, r.status))), /*#__PURE__*/React.createElement("td", {
+  }, stageTitle(BOARD, r.status))), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
+    style: td
+  }, r.growth ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement(Pill, {
+    tone: r.growth.workflow.tone
+  }, r.growth.workflow.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      marginTop: 4,
+      fontSize: 10.5,
+      color: 'var(--faint)'
+    }
+  }, r.growth.workflow.nextAction)) : '—'), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...td,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, r.growth && r.growth.assignment && r.growth.assignment.assignedTo || 'Unassigned'), /*#__PURE__*/React.createElement("td", {
     style: {
       ...td,
       color: 'var(--mute)',
@@ -2682,7 +2728,7 @@ function Pipeline({
       color: 'var(--mute)'
     }
   }, fmtDay(r.createdAt)))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 5,
+    colSpan: kind === 'early_access' ? 7 : 5,
     style: {
       ...td,
       textAlign: 'center',
@@ -3492,9 +3538,11 @@ function Card({
   title,
   help,
   children,
-  pad = 16
+  pad = 16,
+  testId
 }) {
   return /*#__PURE__*/React.createElement("div", {
+    "data-testid": testId,
     style: {
       background: 'var(--card)',
       border: '1px solid var(--line)',
@@ -5078,6 +5126,493 @@ function SentSoFar({
     }
   }, r.body))));
 }
+
+/* What the applicant said and what research inferred must remain two visible
+   kinds of fact. This panel owns only the second kind, and every line here
+   has a source link; the server will not store one without it. */
+function GrowthPanel({
+  enquiry
+}) {
+  const [growth, setGrowth] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [flash, setFlash] = useState(null);
+  const load = () => api('/api/admin/enquiries/' + encodeURIComponent(enquiry.id) + '/growth').then(setGrowth).catch(x => setFlash({
+    tone: 'red',
+    text: x.body && x.body.detail || 'Could not load research.'
+  }));
+  useEffect(() => {
+    setGrowth(null);
+    setFlash(null);
+    load();
+  }, [enquiry.id]);
+  const act = async (name, work, success) => {
+    setBusy(name);
+    setFlash(null);
+    try {
+      await work();
+      setFlash({
+        tone: 'green',
+        text: success
+      });
+      await load();
+    } catch (x) {
+      setFlash({
+        tone: 'red',
+        text: x.body && x.body.detail || 'That did not work.'
+      });
+    }
+    setBusy('');
+  };
+  const button = (primary, danger) => ({
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: danger ? '1px solid color-mix(in srgb,var(--red) 45%,transparent)' : primary ? '1px solid transparent' : '1px solid var(--line)',
+    background: danger ? 'color-mix(in srgb,var(--red) 10%,transparent)' : primary ? 'var(--text)' : 'transparent',
+    color: danger ? 'var(--red)' : primary ? '#111' : 'var(--mute)',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: busy ? 'default' : 'pointer',
+    opacity: busy ? 0.65 : 1
+  });
+  if (!growth) return /*#__PURE__*/React.createElement(Card, {
+    title: "What research inferred"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: 'var(--faint)',
+      fontFamily: MONO,
+      fontSize: 12
+    }
+  }, "Loading research\u2026"));
+  const latest = growth.research[0] || null;
+  const latestComplete = growth.research.find(run => run.status === 'complete') || null;
+  const caps = growth.capabilities || {};
+  const reviewed = latestComplete && (latestComplete.reviews || []).length > 0;
+  const callReady = caps.callingConfigured && caps.callingEnabled && growth.consent && latestComplete && reviewed && !growth.doNotContact;
+  const workflow = growth.workflow || {
+    stage: 'applied',
+    label: 'Applied',
+    nextAction: 'Queue lead research',
+    tone: 'blue',
+    step: 1
+  };
+  const flowSteps = ['Applied', 'Research', 'Brief', 'Review', 'Call', 'Decision'];
+  const call = () => act('call', () => api('/api/admin/enquiries/' + enquiry.id + '/call', {
+    method: 'POST',
+    headers: {
+      'idempotency-key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+    },
+    body: '{}'
+  }), 'The provider accepted one call. Its transcript will appear here when it finishes.');
+  const run = () => act('research', () => api('/api/admin/enquiries/' + enquiry.id + '/research', {
+    method: 'POST',
+    body: '{}'
+  }), latest ? 'A new research snapshot was added. The earlier one is unchanged.' : 'Research complete.');
+  const review = () => latest && act('review', () => api('/api/admin/enquiries/' + enquiry.id + '/research/' + latest.id + '/review', {
+    method: 'POST',
+    body: '{}'
+  }), 'Marked reviewed.');
+  const assign = assignedTo => act('assign', () => api('/api/admin/enquiries/' + enquiry.id + '/growth/assignment', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      assignedTo: assignedTo || null
+    })
+  }), assignedTo ? 'Application owner updated.' : 'Application is now unassigned.');
+  const stop = () => {
+    if (!window.confirm('Permanently mark this applicant do not contact? Calling will be refused from now on.')) return;
+    act('dnc', () => api('/api/admin/enquiries/' + enquiry.id + '/contact', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        doNotContact: true,
+        reason: 'operator'
+      })
+    }), 'Do not contact is now permanent for this application.');
+  };
+  const switchCalling = () => act('switch', () => api('/api/admin/growth/calling', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      enabled: !caps.callingEnabled
+    })
+  }), caps.callingEnabled ? 'All AI outbound calling is paused.' : 'AI outbound calling is enabled.');
+  const facts = run => (run.facts || []).map(f => /*#__PURE__*/React.createElement("div", {
+    key: f.id,
+    style: {
+      padding: '10px 0',
+      borderTop: '1px solid var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 5,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 10.5,
+      color: 'var(--purple)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em'
+    }
+  }, String(f.key).replaceAll('_', ' ')), /*#__PURE__*/React.createElement(Pill, {
+    tone: "purple"
+  }, Math.round(Number(f.confidence) * 100), "% source match"), /*#__PURE__*/React.createElement(Pill, {
+    tone: "mute"
+  }, String(f.method).replaceAll('_', ' '))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: 'var(--mute)',
+      lineHeight: 1.55
+    }
+  }, f.value), /*#__PURE__*/React.createElement("a", {
+    href: f.sourceUrl,
+    target: "_blank",
+    rel: "noopener",
+    style: {
+      display: 'inline-block',
+      color: 'var(--blue)',
+      fontSize: 11.5,
+      marginTop: 5,
+      overflowWrap: 'anywhere'
+    }
+  }, f.sourceUrl, " \u2197")));
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "What research inferred",
+    testId: "research-inferred",
+    help: "Separate from their answers. This is sourced background for a caller, never something to quote as if the applicant said it."
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderLeft: '3px solid var(--purple)',
+      padding: '9px 11px',
+      background: 'color-mix(in srgb,var(--purple) 8%,transparent)',
+      borderRadius: '0 9px 9px 0',
+      fontSize: 12,
+      color: 'var(--mute)',
+      lineHeight: 1.55,
+      marginBottom: 13
+    }
+  }, "Inferred by research \xB7 every finding below names its source. An unsourced finding is absent."), /*#__PURE__*/React.createElement("div", {
+    "data-testid": "growth-workflow",
+    style: {
+      padding: 12,
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      marginBottom: 13,
+      background: 'var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 7,
+      flexWrap: 'wrap',
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: workflow.tone
+  }, workflow.label), /*#__PURE__*/React.createElement("b", {
+    style: {
+      fontSize: 12.5
+    }
+  }, workflow.nextAction), /*#__PURE__*/React.createElement("label", {
+    style: {
+      marginLeft: 'auto',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 11.5,
+      color: 'var(--mute)'
+    }
+  }, "Owner", /*#__PURE__*/React.createElement("select", {
+    disabled: !!busy || !caps.canWrite,
+    value: growth.assignment && growth.assignment.assignedTo || '',
+    onChange: e => assign(e.target.value),
+    style: {
+      padding: '6px 8px',
+      borderRadius: 7,
+      border: '1px solid var(--line)',
+      background: 'var(--card)',
+      color: 'var(--text)',
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Unassigned"), (growth.assignableMembers || []).map(person => /*#__PURE__*/React.createElement("option", {
+    key: person.email,
+    value: person.email
+  }, person.name || person.email, " \xB7 ", person.role))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(6,minmax(0,1fr))',
+      gap: 5
+    }
+  }, flowSteps.map((name, i) => /*#__PURE__*/React.createElement("div", {
+    key: name,
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 4,
+      borderRadius: 9,
+      background: i + 1 <= workflow.step ? toneColor(workflow.tone) : 'var(--line)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 5,
+      fontSize: 9.5,
+      color: i + 1 <= workflow.step ? 'var(--text)' : 'var(--faint)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, name))))), flash && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12,
+      padding: '9px 11px',
+      borderRadius: 8,
+      fontSize: 12,
+      color: toneColor(flash.tone),
+      background: 'color-mix(in srgb,' + toneColor(flash.tone) + ' 10%,transparent)',
+      border: '1px solid color-mix(in srgb,' + toneColor(flash.tone) + ' 25%,transparent)'
+    }
+  }, flash.text), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 7,
+      flexWrap: 'wrap',
+      marginBottom: 13
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy || !caps.researchConfigured || !caps.canWrite,
+    onClick: run,
+    style: button(!latest, false)
+  }, busy === 'research' ? 'Researching…' : latest ? 'Run research again' : caps.researchConfigured ? 'Research this lead' : 'Research not configured'), latest && latest.status === 'complete' && !(latest.reviews || []).length && /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy || !caps.canWrite,
+    onClick: review,
+    style: button(false, false)
+  }, "Approve brief for calling"), /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy || !callReady || !caps.canWrite,
+    onClick: call,
+    title: !growth.consent ? 'No consent record' : !caps.callingEnabled ? 'Outbound calling is paused' : !latest ? 'Research first' : !reviewed ? 'A staff member must approve the brief first' : growth.doNotContact ? 'Do not contact' : '',
+    style: button(callReady, false)
+  }, busy === 'call' ? 'Placing once…' : caps.callingConfigured ? 'Call now with AI' : 'ElevenLabs not configured'), !growth.doNotContact && /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy || !caps.canWrite,
+    onClick: stop,
+    style: button(false, true)
+  }, "Do not contact")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      marginBottom: 12,
+      fontSize: 11.5,
+      color: 'var(--faint)'
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: growth.doNotContact ? 'red' : growth.consent ? 'green' : 'amber'
+  }, growth.doNotContact ? 'do not contact' : growth.consent ? 'consent recorded' : 'consent absent'), /*#__PURE__*/React.createElement(Pill, {
+    tone: caps.callingEnabled ? 'green' : 'red'
+  }, caps.callingEnabled ? 'AI calling on' : 'AI calling paused'), growth.consent && /*#__PURE__*/React.createElement("span", null, growth.consent.formVersion, " \xB7 ", growth.consent.timezone || 'timezone absent'), caps.canManageCalling && /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy,
+    onClick: switchCalling,
+    style: {
+      ...button(false, caps.callingEnabled),
+      marginLeft: 'auto'
+    }
+  }, caps.callingEnabled ? 'Emergency stop all calls' : 'Enable all calls')), !latest && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: 'var(--faint)',
+      padding: '8px 0'
+    }
+  }, "No research has been run. Their stated answers remain in the card above."), growth.research.map((run, index) => /*#__PURE__*/React.createElement("details", {
+    key: run.id,
+    open: index === 0,
+    style: {
+      borderTop: '1px solid var(--line)',
+      padding: '11px 0'
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontSize: 12.5,
+      fontWeight: 700
+    }
+  }, run.status === 'complete' ? 'Research' : 'Failed attempt', " \xB7 ", fmtWhen(run.runAt), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--faint)',
+      fontWeight: 400
+    }
+  }, " \xB7 ", run.provider, run.costCents == null ? ' · cost not priced' : ' · $' + (run.costCents / 100).toFixed(2)), (run.reviews || []).length > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 7
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: "green"
+  }, "reviewed"))), run.brief && /*#__PURE__*/React.createElement("div", {
+    "data-testid": "research-brief",
+    style: {
+      margin: '11px 0',
+      padding: 12,
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      background: 'var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      color: 'var(--purple)',
+      marginBottom: 7
+    }
+  }, "Caller brief \xB7 ", run.brief.sourceCount, " cited source", run.brief.sourceCount === 1 ? '' : 's'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      lineHeight: 1.6
+    }
+  }, run.brief.executiveSummary), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: run.brief.registryStatus === 'possible_match' ? 'amber' : 'mute'
+  }, run.brief.registryStatus === 'possible_match' ? 'possible FINTRAC name match · verify' : 'FINTRAC not confirmed')), (run.brief.talkingPoints || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Talking points"), run.brief.talkingPoints.map((point, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "\xB7 ", point))), (run.brief.openQuestions || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Open questions"), run.brief.openQuestions.map((point, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "\xB7 ", point)))), run.summary && /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontSize: 11.5,
+      color: 'var(--mute)'
+    }
+  }, "Research run notes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      whiteSpace: 'pre-wrap',
+      fontSize: 12.5,
+      color: 'var(--text)',
+      lineHeight: 1.6,
+      padding: '11px 0'
+    }
+  }, run.summary)), run.error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: 'var(--red)',
+      fontSize: 12,
+      padding: '9px 0'
+    }
+  }, run.error), facts(run))), growth.calls.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 13,
+      borderTop: '1px solid var(--line)',
+      paddingTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 10.5,
+      color: 'var(--faint)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      marginBottom: 7
+    }
+  }, "Call history"), growth.calls.map(c => /*#__PURE__*/React.createElement("details", {
+    key: c.id,
+    style: {
+      padding: '8px 0',
+      borderTop: '1px solid var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: c.status === 'completed' ? 'green' : c.status === 'failed' ? 'red' : 'amber'
+  }, c.status), " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 7
+    }
+  }, fmtWhen(c.requestedAt), " \xB7 ", c.phone)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '8px 0 0 4px',
+      fontSize: 12,
+      color: 'var(--mute)',
+      lineHeight: 1.55
+    }
+  }, c.summary && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 7
+    }
+  }, c.summary), c.outcome && /*#__PURE__*/React.createElement("div", null, "Outcome: ", c.outcome), c.durationSeconds != null && /*#__PURE__*/React.createElement("div", null, "Duration: ", c.durationSeconds, "s"), Array.isArray(c.transcript) && c.transcript.map((turn, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("b", null, turn.role || 'turn', ":"), " ", turn.message || turn.text || JSON.stringify(turn))), c.recordingUrl && /*#__PURE__*/React.createElement("a", {
+    href: c.recordingUrl,
+    target: "_blank",
+    rel: "noopener",
+    style: {
+      color: 'var(--blue)'
+    }
+  }, "Recording \u2197"))))), (growth.timeline || []).length > 0 && /*#__PURE__*/React.createElement("details", {
+    style: {
+      marginTop: 13,
+      borderTop: '1px solid var(--line)',
+      paddingTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontFamily: MONO,
+      fontSize: 10.5,
+      color: 'var(--faint)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em'
+    }
+  }, "Process history \xB7 ", growth.timeline.length, " events"), growth.timeline.map(event => /*#__PURE__*/React.createElement("div", {
+    key: event.id,
+    style: {
+      display: 'flex',
+      gap: 9,
+      padding: '8px 0',
+      borderTop: '1px solid var(--line2)',
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 125,
+      color: 'var(--mute)'
+    }
+  }, String(event.type).replaceAll('_', ' ')), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--faint)'
+    }
+  }, fmtWhen(event.createdAt), " \xB7 ", event.actor)))));
+}
 function ApplicationPage({
   id,
   onChanged
@@ -5251,6 +5786,7 @@ function ApplicationPage({
     }
   }, e.email)), /*#__PURE__*/React.createElement(Card, {
     title: isApp ? 'What they told us' : 'Their message',
+    testId: isApp ? 'applicant-stated' : undefined,
     help: isApp ? 'Their own answers from the early-access form, exactly as given. Nothing here is verified — it is what they said about themselves.' : 'Sent from the contact page. They were promised a reply within a business day.'
   }, kv('Email', /*#__PURE__*/React.createElement("a", {
     href: 'mailto:' + e.email,
@@ -5258,7 +5794,9 @@ function ApplicationPage({
       color: 'var(--blue)'
     }
   }, e.email), 'The address they applied with. Everything we send goes here, and it is the address their desk is opened against.'), Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '')
-  /* the number has its own card above; repeating it here is noise */.filter(([k]) => !(isApp && (k === 'phone' || k === 'bestTime' || k === 'phoneUnparsed'))).map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v), DETAIL_HELP[k]))), isApp && /*#__PURE__*/React.createElement(LabelBox, {
+  /* the number has its own card above; repeating it here is noise */.filter(([k]) => !(isApp && (k === 'phone' || k === 'bestTime' || k === 'phoneUnparsed'))).map(([k, v]) => kv(DETAIL_LABELS[k] || k, String(v), DETAIL_HELP[k]))), isApp && /*#__PURE__*/React.createElement(GrowthPanel, {
+    enquiry: e
+  }), isApp && /*#__PURE__*/React.createElement(LabelBox, {
     enquiry: e,
     onSaved: load
   }), /*#__PURE__*/React.createElement(SendEmail, {

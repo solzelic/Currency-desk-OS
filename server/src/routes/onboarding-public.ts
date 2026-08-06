@@ -123,10 +123,38 @@ function allow(key: string, max: number, windowMs = 60 * 60 * 1000): boolean {
 
 /* Guessing a code has to be pointless. Failures are what we count — somebody
    working through their own onboarding saves constantly and must never be
-   throttled for it. */
+   throttled for it.
+
+   ---- AND A HIT HAS TO FORGIVE THE MISSES ----
+
+   It did not, and that is a lockout with no way out that a real applicant
+   walks into on their first morning.
+
+   The screen looks a code up AS YOU TYPE. Every stale code, every typo,
+   every half-remembered reference from an older email is a miss, and
+   twelve of them in an hour close the door on an IP for the rest of that
+   hour — including for a brand-new, perfectly valid code, because the
+   ceiling is checked BEFORE the lookup. The owner then does the only
+   thing anybody would do: asks for another code. That one fails too,
+   with a message about not recognising it, and now the product looks
+   broken rather than cautious. That is exactly how this was found.
+
+   A request that SUCCEEDS proves the caller is holding a real code. At
+   that moment the limiter's job is finished: whoever they are, they are
+   through, and continuing to hold nine failed guesses against them
+   protects nothing. So a hit clears the IP's record.
+
+   This does not weaken the guard. A reference is six characters from a
+   32-letter alphabet — a billion possibilities — and an attacker who has
+   actually found a live one has already won; declining to reset their
+   counter afterwards costs them nothing. What it fixes is the honest
+   case: type it wrong a few times, get it right, carry on. */
 const misses = new Map<string, number[]>();
 const MISS_WINDOW_MS = 60 * 60 * 1000;
-const MISS_MAX = 12;
+/* Per IP, and a whole shop shares one. Generous enough that a counter
+   full of staff on one connection cannot lock each other out by trying
+   their own codes. */
+const MISS_MAX = 30;
 function tooManyMisses(ip: string): boolean {
   const now = Date.now();
   const hits = (misses.get(ip) ?? []).filter((t) => now - t < MISS_WINDOW_MS);
@@ -140,16 +168,59 @@ function recordMiss(ip: string): void {
   misses.set(ip, hits);
   for (const [k, v] of misses) if (!v.some((t) => now - t < MISS_WINDOW_MS)) misses.delete(k);
 }
+/** They found a real code. Whatever they got wrong before does not matter. */
+function forgiveMisses(ip: string): void {
+  misses.delete(ip);
+}
 
 export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): void {
   /* Only an invited application opens. An application still being read, or
      one we turned down, is not a door — and the answer is the same either
      way so the code cannot be used to find out which. */
-  async function find(ref: string) {
+  /* THE ORDER HERE IS THE WHOLE FIX.
+     
+     The code is looked up BEFORE the ceiling is consulted, so a caller
+     holding a real reference is served no matter how many wrong guesses
+     preceded it — and the guesses are forgiven on the way through. The
+     throttle then applies only to callers who did NOT have a valid code,
+     which is exactly the population it was written for.
+     
+     Checking the ceiling first, as this used to, meant a locked-out IP
+     could not get back in by proving it held a live invitation. There was
+     no way out but waiting an hour, and the screen said "we don't have
+     that ID" the whole time. The cost of this ordering is one indexed
+     lookup for a request that will be refused anyway; the cost of the
+     other ordering was a founder unable to open their own desk. */
+  async function gateFor(
+    ref: string,
+    ip: string,
+    reply: { code(n: number): { send(v: unknown): unknown } },
+  ) {
+    const found = await find(ref, ip);
+    if (found) return found;
+    if (tooManyMisses(ip)) {
+      reply.code(429).send({
+        error: "slow_down",
+        detail: "Too many tries from this connection. Wait a few minutes — if your code is right, it will work.",
+      });
+      return undefined;
+    }
+    recordMiss(ip);
+    reply.code(404).send({
+      error: "no_such_code",
+      detail: "We don't recognise that code. Check the email we sent you.",
+    });
+    return undefined;
+  }
+
+  async function find(ref: string, ip?: string) {
     const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
     const row = rows[0];
     if (!row || row.kind !== "early_access") return undefined;
     if (row.status !== "invited" && row.status !== "accepted") return undefined;
+    /* Forgiven HERE rather than at eleven call sites, so a route added
+       later cannot forget it and reintroduce the lockout. */
+    if (ip) forgiveMisses(ip);
     return row;
   }
 
@@ -214,19 +285,14 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   }
 
   app.get<{ Params: { ref: string } }>("/api/onboarding/:ref", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down", detail: "Too many tries. Wait a while, then check the code in your email." });
-    const a = await find(req.params.ref);
-    if (!a) {
-      recordMiss(req.ip);
-      return reply.code(404).send({ error: "no_such_code", detail: "We don't recognise that code. Check the email we sent you." });
-    }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     return present(a, await loadOrCreate(a.id));
   });
 
   app.patch<{ Params: { ref: string } }>("/api/onboarding/:ref", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const parsed = patchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const step = stepById(parsed.data.stepId);
@@ -250,9 +316,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   /* Everything is answered — hand it to the signup path, which owns creating
      a desk and emailing the code that confirms the address. */
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/submit", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const row = await loadOrCreate(a.id);
     if (row.tenantId) return reply.code(409).send({ error: "already_created", tenantId: row.tenantId });
 
@@ -292,9 +357,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
      surfaces slowly stopped agreeing about what a desk had. Rows written
      before that are still read below, once, and then written back flat. */
   app.get<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const row = await loadOrCreate(a.id);
     const saved = flowAnswers(row);
     const details = (a.details ?? {}) as Record<string, unknown>;
@@ -323,9 +387,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   });
 
   app.put<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const parsed = stateBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const row = await loadOrCreate(a.id);
@@ -374,9 +437,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   app.get<{ Params: { ref: string }; Querystring: { q?: string; country?: string; s?: string } }>(
     "/api/onboarding/:ref/places/suggest",
     async (req, reply) => {
-      if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-      const a = await find(req.params.ref);
-      if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+      const a = await gateFor(req.params.ref, req.ip, reply);
+      if (!a) return;
       if (!placesEnabled()) return { enabled: false, suggestions: [] };
       /* A busy typist is one person; a script is not. Generous enough that
          nobody filling in their own address ever notices. */
@@ -390,9 +452,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   app.get<{ Params: { ref: string }; Querystring: { id?: string; s?: string } }>(
     "/api/onboarding/:ref/places/details",
     async (req, reply) => {
-      if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-      const a = await find(req.params.ref);
-      if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+      const a = await gateFor(req.params.ref, req.ip, reply);
+      if (!a) return;
       const id = String(req.query.id ?? "");
       if (!id) return reply.code(400).send({ error: "invalid_request" });
       const address = await details(id, String(req.query.s ?? "").slice(0, 64));
@@ -422,14 +483,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
        useful sentence in the product: it is shown for a rate limit, for a
        missing address and for a provider outage alike, and none of them
        have the same answer. */
-    if (tooManyMisses(req.ip)) {
-      return reply.code(429).send({
-        error: "slow_down",
-        detail: "Too many tries from here in the last hour. Wait a few minutes and ask again.",
-      });
-    }
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const parsed = launchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
 
@@ -485,14 +540,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/verify/check", async (req, reply) => {
-    if (tooManyMisses(req.ip)) {
-      return reply.code(429).send({
-        error: "slow_down",
-        detail: "Too many tries from here in the last hour. Wait a few minutes and try again.",
-      });
-    }
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const parsed = codeBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const check = await checkCode(a, parsed.data.code);
@@ -509,9 +558,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
      application.
      ---------------------------------------------------------------- */
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/launch", async (req, reply) => {
-    if (tooManyMisses(req.ip)) return reply.code(429).send({ error: "slow_down" });
-    const a = await find(req.params.ref);
-    if (!a) { recordMiss(req.ip); return reply.code(404).send({ error: "no_such_code" }); }
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
     const parsed = launchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
 

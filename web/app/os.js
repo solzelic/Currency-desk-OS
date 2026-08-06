@@ -504,14 +504,52 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
-  const setDeskPack = (pack, reports) => {
+
+  /* ============================================================
+     WHICH CURRENCIES THIS DESK DEALS IN
+      The browser used to answer this itself, from a literal:
+        const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];   // cdos-os.jsx
+      — and it checked that list BEFORE calling the server, so a shop
+     holding pesos was refused by its own screen with the words "PHP is
+     not carried by the server ledger yet". The ledger had no such
+     opinion; a matching four-way enum on the route did, and the two
+     agreed only because somebody kept them in step by hand.
+      It arrives with the jurisdiction now, from the one place that can
+     answer it. `stated` is the owner's own set or NULL, and NULL is not
+     an empty set — it means nobody restricted anything. `suggested` is
+     what a dropdown should offer. `minorUnits` carries only the
+     exceptions to two places, so a screen never quotes ¥1,234.56.
+     ============================================================ */
+  let _currencies = null;
+  const deskCurrencies = () => _currencies;
+  /** How many decimal places this currency is actually paid in. */
+  const currencyPlaces = code => {
+    const known = _currencies && _currencies.minorUnits;
+    const stated = known && known[String(code || '').toUpperCase()];
+    return typeof stated === 'number' ? stated : 2;
+  };
+  /** Does this desk deal in it? True where nobody has restricted anything. */
+  const deskTrades = code => {
+    const want = String(code || '').toUpperCase();
+    if (!_currencies) return true;
+    if (!_currencies.stated) return true;
+    return _currencies.stated.indexOf(want) >= 0;
+  };
+  /** What a currency picker should offer, home first. */
+  const deskCurrencyList = () => {
+    const set = _currencies && (_currencies.stated || _currencies.suggested);
+    return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
+  };
+  const setDeskPack = (pack, reports, currencies) => {
     _pack = pack || null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
+    if (currencies !== undefined) _currencies = currencies || null;
     try {
       window.dispatchEvent(new CustomEvent('cdos-jurisdiction', {
         detail: {
           pack: _pack,
-          reports: _reports
+          reports: _reports,
+          currencies: _currencies
         }
       }));
     } catch (e) {}
@@ -522,7 +560,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
@@ -1754,6 +1792,10 @@
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
+    deskCurrencies,
+    deskCurrencyList,
+    deskTrades,
+    currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds,
     setDeskThresholds,
@@ -2267,6 +2309,26 @@
         return request("/api/ledger/desk-thresholds", {
           method: "PUT",
           body: JSON.stringify(changes),
+        });
+      },
+
+      /* ---- the currencies this desk deals in ----
+
+         `stated` is the owner's own set or null, and null is NOT an empty
+         set: it means nobody has restricted anything and the desk may
+         deal in whatever the ledger carries. `suggested` is what a picker
+         should offer. `minorUnits` names only the currencies that are not
+         paid to two decimal places, so no screen carries its own table of
+         which ones have no cents. */
+      loadDeskCurrencies: function () {
+        return request("/api/ledger/desk-currencies");
+      },
+      /* An array to state the set, or null to hand the question back.
+         The home currency is added by the ledger whatever is sent. */
+      setDeskCurrencies: function (currencies) {
+        return request("/api/ledger/desk-currencies", {
+          method: "PUT",
+          body: JSON.stringify({ currencies: currencies }),
         });
       },
 
@@ -5020,6 +5082,135 @@
         color: CD.faint
       }
     }, "Available on the hosted desk, where the ledger keeps the books and enforces these lines."), err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] -mt-1 mb-2",
+      style: {
+        color: CD.flag
+      }
+    }, err));
+  }
+
+  /* ---------- the currencies this desk deals in (server-backed) ----------
+      There was no such setting, and there did not need to be, because the
+     answer was a literal in five places: `z.enum(["CAD","USD","EUR","GBP"])`
+     on every money route, with a matching list in the browser that was
+     checked BEFORE the server was even called. A shop whose whole trade
+     is the Philippine corridor was told by its own screen that "PHP is
+     not carried by the server ledger yet".
+      The ledger carries it. What it needed was for somebody to be able to
+     say so — see migration 020 and server/src/ledger/currency-control.ts.
+      Two states, and the difference matters. NO SET STATED is the normal
+     one and it is not a gap to be filled: the desk may deal in anything
+     the ledger carries. A STATED SET is a deliberate narrowing, and the
+     refusal a teller then meets at the counter names it. Clearing the
+     field returns to the first, which is why "Any currency" is a real
+     choice on this panel and not an empty text box.
+      Owner-only, on the same permission as the reporting line, and every
+     change is an audit row — including which currencies are still SITTING
+     IN THE DRAWERS after being dropped from the set. */
+  function DeskCurrencyRows() {
+    const {
+      log
+    } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading'); // loading | ready | offline
+    const [desk, setDesk] = useState(null);
+    const [draft, setDraft] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    /* No local role check. The ledger holds the permission and returns
+       403, and the error lands in `err` where the person who tried can
+       read it. A second copy of the rule here would be a second thing to
+       get out of step with the server's answer. */
+
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      let alive = true;
+      api.loadDeskCurrencies().then(answer => {
+        if (!alive) return;
+        setDesk(answer);
+        setDraft((answer.stated || []).filter(c => c !== answer.home).join(', '));
+        setStatus('ready');
+      }).catch(() => {
+        if (alive) setStatus('offline');
+      });
+      return () => {
+        alive = false;
+      };
+    }, []);
+    const commit = async codes => {
+      if (busy) return;
+      setBusy(true);
+      setErr('');
+      try {
+        const answer = await api.setDeskCurrencies(codes);
+        setDesk(answer);
+        setDraft((answer.stated || []).filter(c => c !== answer.home).join(', '));
+        /* Published so the rest of the desk stops offering — and stops
+           refusing — the moment this changes, rather than on next mount. */
+        if (window.CDOS.refreshJurisdiction) window.CDOS.refreshJurisdiction();
+        log && log('Currencies changed', answer.stated ? answer.stated.join(', ') : 'any the ledger carries');
+      } catch (error) {
+        setErr(error.message || 'The ledger did not accept that.');
+      }
+      setBusy(false);
+    };
+    const save = () => {
+      const codes = String(draft).split(/[\s,]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+      commit(codes.length ? codes : null);
+    };
+    const unavailable = /*#__PURE__*/React.createElement("span", {
+      className: "text-[11px]",
+      style: {
+        color: CD.faint
+      }
+    }, "\u2014");
+    const restricted = !!(desk && desk.stated);
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
+      title: "Currencies this desk deals in",
+      desc: "Leave empty to deal in any currency the ledger carries. Naming a set is a deliberate narrowing \u2014 a teller is refused anything outside it, by name, at the counter."
+    }, status === 'ready' ? /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("input", {
+      value: draft,
+      disabled: busy,
+      placeholder: "Any currency",
+      onChange: e => setDraft(e.target.value),
+      onKeyDown: e => {
+        if (e.key === 'Enter') save();
+      },
+      onBlur: save,
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width: 230,
+        fontFamily: 'Space Mono, monospace'
+      }
+    })) : unavailable), status === 'ready' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mb-2",
+      style: {
+        color: CD.mute,
+        marginTop: -2
+      }
+    }, restricted ? /*#__PURE__*/React.createElement(React.Fragment, null, "Trading ", /*#__PURE__*/React.createElement("b", null, desk.stated.join(', ')), ". Anything else is refused at the counter. Clear the field to deal in any currency the ledger carries.") : /*#__PURE__*/React.createElement(React.Fragment, null, "No set stated \u2014 this desk may deal in any currency the ledger carries. Its board quotes ", (desk.suggested || []).join(', '), ".")), status === 'ready' && desk && Object.keys(desk.minorUnits || {}).length > 0 &&
+    /*#__PURE__*/
+    /* The currencies that are NOT paid to two decimal places. Said out
+       loud because a teller quoting ¥1,234.56 is quoting money that
+       does not exist, and nobody would think to ask. */
+    React.createElement("div", {
+      className: "text-[10.5px] mb-2",
+      style: {
+        color: CD.faint,
+        marginTop: -2
+      }
+    }, Object.entries(desk.minorUnits).map(([code, places]) => `${code} is counted in whole units`).join(' · '), "."), status === 'offline' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] -mt-1 mb-2",
+      style: {
+        color: CD.faint
+      }
+    }, "Available on the hosted desk, where the ledger keeps the books and enforces this."), err && /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] -mt-1 mb-2",
       style: {
         color: CD.flag
@@ -9474,7 +9665,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -60859,7 +61050,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         On a server-backed desk the server moves first. If it refuses, the local
        rail is left untouched and the caller is told why — a movement that only
        happened in this browser is worse than one that did not happen at all. */
-    const LEDGER_CCYS = ['CAD', 'USD', 'EUR', 'GBP'];
+    /* `LEDGER_CCYS = ['CAD','USD','EUR','GBP']` stood here, and it was
+       checked BEFORE the server was called — so a shop holding pesos was
+       refused by its own screen, in words that blamed the ledger:
+       "PHP is not carried by the server ledger yet". The ledger held no
+       such opinion. A four-way enum on the route did, and the two stayed
+       in step only because somebody maintained both by hand.
+        Whether this desk deals in a currency is the ledger's answer now,
+       and it arrives with the jurisdiction. `deskTrades` is true where
+       nobody has restricted anything, which is the honest default — and
+       where the desk HAS stated a set, the server's refusal names it. */
     const movementKey = (kind, ccy) => `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const postTillMovement = async ({
       kind,
@@ -60874,10 +61074,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (!srvUser || !window.CDOS.Backend) return {
         ok: true
       };
-      if (LEDGER_CCYS.indexOf(ccy) < 0) {
+      /* Asked, not assumed. The screen can say so early where the desk
+         has named its currencies; where it has not, the request goes and
+         the ledger answers. */
+      if (!window.CDOS.deskTrades(ccy)) {
         return {
           ok: false,
-          message: `${ccy} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.`
+          message: `This desk does not trade ${ccy}. Add it in Settings › Compliance & jurisdiction if it should.`
         };
       }
       try {
@@ -61007,10 +61210,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         message: 'Nothing to receive.'
       };
       if (srvUser && window.CDOS.Backend && vaultTracked) {
-        if (LEDGER_CCYS.indexOf(ccy2) < 0) {
+        if (!window.CDOS.deskTrades(ccy2)) {
           return {
             ok: false,
-            message: `${ccy2} is not carried by the server ledger yet — it holds ${LEDGER_CCYS.join(', ')}.`
+            message: `This desk does not trade ${ccy2}. Add it in Settings › Compliance & jurisdiction if it should.`
           };
         }
         try {

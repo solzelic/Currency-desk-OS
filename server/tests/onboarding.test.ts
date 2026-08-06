@@ -549,3 +549,68 @@ describe("the walkthrough", () => {
     expect((await app.inject({ method: "POST", url: "/api/admin/walkthrough/reset", payload: {} })).statusCode).toBe(401);
   });
 });
+
+/* ============================================================
+   A wrong guess must not lock out a right one.
+
+   Found in production, and it is worth stating exactly how, because the
+   shape recurs: the setup screen looks a code up AS YOU TYPE, every miss
+   counts against a per-IP ceiling, and the ceiling is checked BEFORE the
+   lookup. A founder testing their own flow burned the allowance on stale
+   references, then issued themselves a brand-new code — and that failed
+   too, with a message saying the ID was not recognised.
+
+   Two separate defects made it unreadable. The server never forgave the
+   misses once somebody proved they held a real code, and the screen
+   rendered 429 with the same red chip as 404 — so the product blamed the
+   applicant for the server's own throttle, and cached that verdict for
+   the life of the page.
+   ============================================================ */
+describe("the code lookup's miss limit", () => {
+  const miss = (code: string) =>
+    app.inject({ method: "GET", url: `/api/onboarding/${code}/state` });
+
+  it("still refuses a code that was never issued", async () => {
+    const answer = await miss("CD-ZZZZZZ");
+    expect(answer.statusCode).toBe(404);
+    expect(answer.json().error).toBe("no_such_code");
+  });
+
+  it("forgives the misses as soon as a real code is presented", async () => {
+    /* Well under the ceiling on its own, and enough that an un-forgiven
+       run of them would show up in the next assertion. */
+    for (let i = 0; i < 11; i += 1) await miss(`CD-ZZZZ${i}Z`);
+
+    /* THE FIX. A request that succeeds proves the caller is holding a
+       real code; at that moment the limiter's job is done. */
+    const real = await miss(ref);
+    expect(real.statusCode).toBe(200);
+
+    /* And the slate is clean — eleven more wrong guesses do not tip a
+       genuine applicant over, because the eleven before them were
+       forgiven when they got it right. */
+    for (let i = 0; i < 11; i += 1) await miss(`CD-YYYY${i}Y`);
+    expect((await miss(ref)).statusCode).toBe(200);
+  });
+
+  it("says slow down to a guesser, and still lets a real code through", async () => {
+    /* Past the ceiling in one go, without ever presenting a good code. */
+    for (let i = 0; i < 40; i += 1) await miss(`CD-QQQ${String(i).padStart(3, "Q")}`);
+
+    /* A guess from this connection is now refused — and refused as a
+       THROTTLE, not as a wrong code, because those are different facts
+       and the screen renders them differently. */
+    const guess = await miss("CD-QQQZZZ");
+    expect(guess.statusCode).toBe(429);
+    expect(guess.json().error).toBe("slow_down");
+
+    /* THE POINT. The real code still opens the door, because the lookup
+       runs BEFORE the ceiling is consulted. Checking the ceiling first —
+       which is what shipped — meant a locked-out connection had no way
+       back in but waiting an hour, while being told its ID was wrong. */
+    expect((await miss(ref)).statusCode).toBe(200);
+
+    /* And having proved it, the connection is clean again. */
+    expect((await miss("CD-QQQZZZ")).statusCode).toBe(404);
+  });
+});

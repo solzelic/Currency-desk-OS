@@ -346,6 +346,121 @@
     </div>);
   }
 
+  /* ---------- the currencies this desk deals in (server-backed) ----------
+
+     There was no such setting, and there did not need to be, because the
+     answer was a literal in five places: `z.enum(["CAD","USD","EUR","GBP"])`
+     on every money route, with a matching list in the browser that was
+     checked BEFORE the server was even called. A shop whose whole trade
+     is the Philippine corridor was told by its own screen that "PHP is
+     not carried by the server ledger yet".
+
+     The ledger carries it. What it needed was for somebody to be able to
+     say so — see migration 020 and server/src/ledger/currency-control.ts.
+
+     Two states, and the difference matters. NO SET STATED is the normal
+     one and it is not a gap to be filled: the desk may deal in anything
+     the ledger carries. A STATED SET is a deliberate narrowing, and the
+     refusal a teller then meets at the counter names it. Clearing the
+     field returns to the first, which is why "Any currency" is a real
+     choice on this panel and not an empty text box.
+
+     Owner-only, on the same permission as the reporting line, and every
+     change is an audit row — including which currencies are still SITTING
+     IN THE DRAWERS after being dropped from the set. */
+  function DeskCurrencyRows() {
+    const { log } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading');   // loading | ready | offline
+    const [desk, setDesk] = useState(null);
+    const [draft, setDraft] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    /* No local role check. The ledger holds the permission and returns
+       403, and the error lands in `err` where the person who tried can
+       read it. A second copy of the rule here would be a second thing to
+       get out of step with the server's answer. */
+
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') { setStatus('offline'); return; }
+      let alive = true;
+      api.loadDeskCurrencies()
+        .then(answer => {
+          if (!alive) return;
+          setDesk(answer);
+          setDraft((answer.stated || []).filter(c => c !== answer.home).join(', '));
+          setStatus('ready');
+        })
+        .catch(() => { if (alive) setStatus('offline'); });
+      return () => { alive = false; };
+    }, []);
+
+    const commit = async (codes) => {
+      if (busy) return;
+      setBusy(true); setErr('');
+      try {
+        const answer = await api.setDeskCurrencies(codes);
+        setDesk(answer);
+        setDraft((answer.stated || []).filter(c => c !== answer.home).join(', '));
+        /* Published so the rest of the desk stops offering — and stops
+           refusing — the moment this changes, rather than on next mount. */
+        if (window.CDOS.refreshJurisdiction) window.CDOS.refreshJurisdiction();
+        log && log('Currencies changed', answer.stated ? answer.stated.join(', ') : 'any the ledger carries');
+      } catch (error) {
+        setErr(error.message || 'The ledger did not accept that.');
+      }
+      setBusy(false);
+    };
+
+    const save = () => {
+      const codes = String(draft).split(/[\s,]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+      commit(codes.length ? codes : null);
+    };
+
+    const unavailable = <span className="text-[11px]" style={{ color: CD.faint }}>—</span>;
+    const restricted = !!(desk && desk.stated);
+
+    return (<div>
+      <Row
+        title="Currencies this desk deals in"
+        desc="Leave empty to deal in any currency the ledger carries. Naming a set is a deliberate narrowing — a teller is refused anything outside it, by name, at the counter.">
+        {status === 'ready'
+          ? <div className="flex items-center gap-2">
+              <input
+                value={draft}
+                disabled={busy}
+                placeholder="Any currency"
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') save(); }}
+                onBlur={save}
+                className="text-sm px-2.5 py-2 outline-none"
+                style={{ ...inSty, width: 230, fontFamily: 'Space Mono, monospace' }} />
+            </div>
+          : unavailable}
+      </Row>
+      {status === 'ready' && (
+        <div className="text-[10.5px] mb-2" style={{ color: CD.mute, marginTop: -2 }}>
+          {restricted
+            ? <>Trading <b>{desk.stated.join(', ')}</b>. Anything else is refused at the counter. Clear the field to deal in any currency the ledger carries.</>
+            : <>No set stated — this desk may deal in any currency the ledger carries. Its board quotes {(desk.suggested || []).join(', ')}.</>}
+        </div>
+      )}
+      {status === 'ready' && desk && Object.keys(desk.minorUnits || {}).length > 0 && (
+        /* The currencies that are NOT paid to two decimal places. Said out
+           loud because a teller quoting ¥1,234.56 is quoting money that
+           does not exist, and nobody would think to ask. */
+        <div className="text-[10.5px] mb-2" style={{ color: CD.faint, marginTop: -2 }}>
+          {Object.entries(desk.minorUnits).map(([code, places]) =>
+            `${code} is counted in whole units`).join(' · ')}.
+        </div>
+      )}
+      {status === 'offline' && (
+        <div className="text-[10.5px] -mt-1 mb-2" style={{ color: CD.faint }}>Available on the hosted desk, where the ledger keeps the books and enforces this.</div>
+      )}
+      {err && <div className="text-[10.5px] -mt-1 mb-2" style={{ color: CD.flag }}>{err}</div>}
+    </div>);
+  }
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = (settings) => (settings.cards) || [
     { id: 'card_visa', num: '4242 4242 4242 4242', exp: '04/27', name: (settings.billingName || 'Jordan Masri'), postal: 'M5V 2T6', role: 'primary' },
@@ -1557,6 +1672,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               one says where it stands against the pack — see
               DeskThresholdRows at the top of this file. */}
           <DeskThresholdRows />
+          {/* Which currencies this desk may hold at all — the setting the
+              refusal messages point at. See DeskCurrencyRows above. */}
+          <DeskCurrencyRows />
           <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>
           <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>

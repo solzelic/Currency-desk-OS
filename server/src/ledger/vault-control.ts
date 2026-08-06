@@ -31,11 +31,18 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { acquire, currentBasis, dispose, ensureBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
+import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 
-export type VaultCurrency = "CAD" | "USD" | "EUR" | "GBP";
+/* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
+   — which is what a `char(3)` column had been narrowed to by hand. It
+   was the type-level half of the ceiling described in migration 020: a
+   desk trading pesos could not be represented, never mind stored. What
+   a given desk may hold is data, and it is resolved per desk in
+   ./currencies.ts. */
+export type VaultCurrency = string;
 export type VaultBalances = Partial<Record<VaultCurrency, string>>;
 /* What a unit of the opening position cost, where the desk knows. Separate
    from `balances` rather than folded into it because the existing request
@@ -449,6 +456,15 @@ export class VaultControlService {
       }
       const now = new Date();
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+      /* An opening position states what is in the safe, so every currency
+         in it is a currency this desk holds. Checked here rather than
+         trusted: an opening figure is the one number nothing downstream
+         ever corrects. */
+      await assertTradeable(
+        client,
+        { legalEntityId: actor.legalEntityId, branchId: actor.branchId, homeCurrency: home },
+        ...Object.keys(balances),
+      );
       const box = vaultBox(actor.tenantId, actor.legalEntityId, actor.branchId);
       for (const [currency, amount] of Object.entries(balances)) {
         await client.query(
@@ -513,6 +529,11 @@ export class VaultControlService {
       await this.requireTracked(client, actor, actor.branchId);
       const now = new Date();
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+      await assertTradeable(
+        client,
+        { legalEntityId: actor.legalEntityId, branchId: actor.branchId, homeCurrency: home },
+        input.currency,
+      );
       const box = vaultBox(actor.tenantId, actor.legalEntityId, actor.branchId);
       const amount = new Decimal(fixed(input.amount));
       /* Lock and read before anything moves. The average this movement is
@@ -718,6 +739,11 @@ export class VaultControlService {
          a weighted average taken against a quantity that has already changed
          is wrong without ever looking wrong. */
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+      await assertTradeable(
+        client,
+        { legalEntityId: actor.legalEntityId, branchId: actor.branchId, homeCurrency: home },
+        input.currency,
+      );
       const sending = vaultBox(actor.tenantId, actor.legalEntityId, actor.branchId);
       const receiving = vaultBox(
         actor.tenantId,

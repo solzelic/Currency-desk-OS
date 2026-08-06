@@ -38,7 +38,22 @@ const enquiryBody = z.object({
   email: z.string().trim().toLowerCase().email().max(160),
   name: z.string().trim().max(120).optional(),
   details: detailShape.optional(),
+  /* Browser-observed submission context is evidence about consent, not an
+     answer the applicant typed, so it never enters `details`. */
+  contactContext: z.object({ timezone: z.string().trim().max(100).optional() }).optional(),
 });
+
+export const EARLY_ACCESS_FORM_VERSION = "early-access-2026-08-06";
+
+const validTimezone = (value: string | undefined): string | null => {
+  if (!value) return null;
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: value }).format();
+    return value;
+  } catch {
+    return null;
+  }
+};
 
 const THROTTLE_MS = 60 * 1000;
 const THROTTLE_MAX = 3;
@@ -92,7 +107,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     }
-    const { kind, email, name, details } = parsed.data;
+    const { kind, email, name, details, contactContext } = parsed.data;
 
     const now = Date.now();
     const hits = (recent.get(email) ?? []).filter((t) => now - t < THROTTLE_MS);
@@ -143,15 +158,39 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
 
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
-    const [row] = await db.insert(schema.enquiries).values({
-      id: randomUUID(),
-      reference,
-      kind,
-      email,
-      name: name ?? null,
-      details: kept,
-      charterNo,
-    }).returning();
+    const enquiryId = randomUUID();
+    const [row] = await db.transaction(async (tx) => {
+      const inserted = await tx.insert(schema.enquiries).values({
+        id: enquiryId,
+        reference,
+        kind,
+        email,
+        name: name ?? null,
+        details: kept,
+        charterNo,
+      }).returning();
+      if (kind === "early_access") {
+        await tx.insert(schema.enquiryContactConsents).values({
+          id: randomUUID(),
+          enquiryId,
+          formVersion: EARLY_ACCESS_FORM_VERSION,
+          ipAddress: req.ip,
+          userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 500) : null,
+          timezone: validTimezone(contactContext?.timezone),
+          timezoneSource: validTimezone(contactContext?.timezone) ? "browser" : null,
+        });
+        /* Provider calls do not belong in a public form request. The lead,
+           consent evidence and durable job commit together; a worker can
+           retry later without making the applicant wait or submit twice. */
+        const jobId = randomUUID();
+        await tx.insert(schema.enquiryGrowthJobs).values({ id: jobId, enquiryId, requestedBy: "system" });
+        await tx.insert(schema.enquiryGrowthEvents).values([
+          { id: randomUUID(), enquiryId, type: "application_received", detail: { reference }, actor: "system" },
+          { id: randomUUID(), enquiryId, type: "research_queued", detail: { jobId }, actor: "system" },
+        ]);
+      }
+      return inserted;
+    });
 
     /* An application goes straight into review, and the applicant is told so
        in the same breath.

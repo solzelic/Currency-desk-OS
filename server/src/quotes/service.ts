@@ -6,6 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
+import { assertTradeable } from "../ledger/currencies.js";
 import { withSerializationRetry } from "../ledger/retry.js";
 import {
   LedgerError,
@@ -16,7 +17,13 @@ import {
 import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
-type Currency = "CAD" | "USD" | "EUR" | "GBP";
+/* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
+   — which is what a `char(3)` column had been narrowed to by hand. It
+   was the type-level half of the ceiling described in migration 020: a
+   desk trading pesos could not be represented, never mind stored. What
+   a given desk may hold is data, and it is resolved per desk in
+   ../ledger/currencies.ts. */
+type Currency = string;
 export type QuoteRequest = {
   customerId: string;
   from: Currency;
@@ -192,6 +199,21 @@ export class QuoteService {
       const permitted = pairAllowed(pack, request.from, request.to);
       if (!permitted.ok)
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
+      /* And whether THIS desk trades them, which is a different question
+         from whether the jurisdiction permits the pair. The pack says what
+         is legal here; the desk says what is in its drawers. Both have to
+         agree, and until migration 020 the second was a four-way enum in
+         the route rather than anything the desk had said. */
+      await assertTradeable(
+        client,
+        {
+          legalEntityId: actor.legalEntityId,
+          branchId: actor.branchId,
+          homeCurrency: pack.homeCurrency,
+        },
+        request.from,
+        request.to,
+      );
       /* The currencies and the home currency between them already say what
          shape this deal is. A caller who states a different one has built
          the wrong request, and there is no safe way to pick which half of

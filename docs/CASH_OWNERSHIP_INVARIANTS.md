@@ -108,8 +108,15 @@ These are current boundaries of the single book, not exceptions to it. Each is
 tracked work, and each is stated on screen where a user could otherwise assume
 coverage:
 
-- The ledger carries a subset of the currencies the desk trades. Amounts in
-  the others are shown as untracked, never silently merged with ledger figures.
+- The ledger carries whatever the desk trades. It used to carry four
+  currencies — a `z.enum(["CAD","USD","EUR","GBP"])` repeated across the
+  money routes, with a matching list in the browser — so a desk running
+  this product's own Philippine corridor could not put a peso in a till.
+  The set is data now, on `legal_entities.traded_currencies`, and where an
+  owner has stated none the ledger restricts nothing. Three-decimal
+  currencies are the one genuine remaining limit and are refused with the
+  reason, because the amount columns hold two places. See
+  DESK_CURRENCIES.md.
 - Every deal line the desk trades now posts: currency exchange, cheque
   cashing, remittance send, remittance receive, bill payment and money
   order. Cheque cashing was the first of the five to come across and the
@@ -160,6 +167,7 @@ may compute a cash figure for itself:
 | what cash is out on cheques that have not cleared | `GET /api/ledger/cheques` |
 | what this desk owes, and what it is owed | `GET /api/ledger/obligations` |
 | which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
+| which currencies may this desk hold | `GET /api/ledger/desk-currencies` |
 | what does this desk report and identify at | `GET /api/ledger/desk-thresholds` |
 
 What a screen does when one of those has no answer is its own rule, and it

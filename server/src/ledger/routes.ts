@@ -20,6 +20,7 @@ import {
   ThresholdService,
   type ThresholdChanges,
 } from "./threshold-control.js";
+import { CurrencyService } from "./currency-control.js";
 import { isRetryable } from "./retry.js";
 import {
   ChequeService,
@@ -30,13 +31,40 @@ import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
 
+/* ============================================================
+   A CURRENCY ON A MONEY ROUTE
+
+   Each of the five below was a four-way enum over CAD, USD, EUR and GBP,
+   and between them they were the product's real currency ceiling.
+   Nothing in the schema needed it — `ledger_till_balances.currency` is a
+   `char(3)` — but a Toronto desk running the Philippine corridor was
+   refused at the route when it tried to put a peso in a till.
+
+   The route now checks the SHAPE of a currency code and nothing else.
+   Whether this particular desk trades it is a question about the desk,
+   not about the request, and it is answered where the desk is known —
+   `resolveDeskCurrencies` in ./currencies.ts — so the refusal can name
+   the set the desk actually holds instead of a list compiled into the
+   binary. See migration 020. */
+/* The desk's own currency set. `null` hands the question back — see
+   CurrencyService.set on why that is not the same as an empty list. */
+const deskCurrenciesBody = z.object({
+  currencies: z.union([z.array(z.string().trim().min(1).max(8)).max(60), z.null()]),
+}).strict();
+
+const currencyCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .pipe(z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."));
+
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
 const postBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   customerId: z.string().min(1).max(120),
-  from: z.enum(["CAD", "USD", "EUR", "GBP"]),
-  to: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  from: currencyCode,
+  to: currencyCode,
   inputAmount: monetary("0.01"),
   feeCad: monetary("0"),
   purpose: z.string().trim().max(500),
@@ -54,23 +82,33 @@ const customerBody = z.object({
   risk: z.enum(["normal", "enhanced", "high"]),
   idStatus: z.enum(["verified", "pending", "missing", "expired"]),
 }).strict();
+/* A map keyed by currency — a drawer count, an opening position, the unit
+   costs beside one.
+
+   Each of these was a `.strict()` object with exactly four keys: CAD,
+   USD, EUR and GBP. The count one was the dangerous member of the set.
+   Once a desk could HOLD a peso (migration 020) but still could not
+   COUNT one, its day could never be closed — a close refuses to run
+   unless every ledger currency has a real count, so the drawer with
+   pesos in it would have locked the till open. Removing a ceiling in one
+   place and leaving it in another is worse than leaving it everywhere.
+
+   Keyed on the code's shape; whether this desk trades it is answered
+   where the desk is known. Uppercase is required rather than coerced,
+   because these keys are compared against balances the ledger returns
+   uppercase and a silently-normalised key is a second spelling. */
+const byCurrency = <T extends z.ZodTypeAny>(value: T, what: string) =>
+  z
+    .record(z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."), value)
+    .refine((map) => Object.keys(map).length > 0, `At least one ${what} is required.`);
+
 const balancesBody = z.object({
-  balances: z.object({
-    CAD: monetary("0").optional(),
-    USD: monetary("0").optional(),
-    EUR: monetary("0").optional(),
-    GBP: monetary("0").optional(),
-  }).strict().refine((value) => Object.keys(value).length > 0, "At least one balance is required."),
+  balances: byCurrency(monetary("0"), "balance"),
 }).strict();
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-const tillCounts = z.object({
-  CAD: monetary("0").optional(),
-  USD: monetary("0").optional(),
-  EUR: monetary("0").optional(),
-  GBP: monetary("0").optional(),
-}).strict().refine((value) => Object.keys(value).length > 0, "At least one count is required.");
+const tillCounts = byCurrency(monetary("0"), "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
@@ -83,7 +121,7 @@ const closeTillBody = z.object({
 const cashMovementBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   direction: z.enum(["in", "out"]),
-  currency: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  currency: currencyCode,
   amount: monetary("0.01"),
   counterpartyType: z.enum(["vault", "bank", "other"]),
   counterpartyRef: z.string().trim().min(1).max(200),
@@ -96,23 +134,13 @@ const unitCost = z.string()
   .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,12})?$/, "Expected a unit cost with at most twelve places.")
   .refine((value) => new Decimal(value).gt(0) && new Decimal(value).lte("1000000"), "Unit cost is outside the permitted range.");
 const vaultBalancesBody = z.object({
-  balances: z.object({
-    CAD: monetary("0").optional(),
-    USD: monetary("0").optional(),
-    EUR: monetary("0").optional(),
-    GBP: monetary("0").optional(),
-  }).strict().refine((value) => Object.keys(value).length > 0, "At least one balance is required."),
+  balances: byCurrency(monetary("0"), "balance"),
   /* What a unit of the opening position cost, where the desk can say. Its
      own field rather than a change to `balances` so that every caller
      sending the original shape keeps working — a desk that cannot
      reconstruct what its safe cost must still be able to state what is in
      it, and gets an unset basis rather than an invented one. */
-  unitCosts: z.object({
-    CAD: unitCost.optional(),
-    USD: unitCost.optional(),
-    EUR: unitCost.optional(),
-    GBP: unitCost.optional(),
-  }).strict().optional(),
+  unitCosts: byCurrency(unitCost, "unit cost").optional(),
 }).strict().refine(
   (value) =>
     Object.keys(value.unitCosts ?? {}).every((currency) => currency in value.balances),
@@ -121,7 +149,7 @@ const vaultBalancesBody = z.object({
 const vaultReceiptBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   direction: z.enum(["in", "out"]),
-  currency: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  currency: currencyCode,
   amount: monetary("0.01"),
   counterpartyType: z.enum(["supplier", "bank", "other"]),
   counterpartyRef: z.string().trim().min(1).max(200),
@@ -134,7 +162,7 @@ const vaultReceiptBody = z.object({
 const vaultRunBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   toBranchId: z.string().trim().min(1).max(120),
-  currency: z.enum(["CAD", "USD", "EUR", "GBP"]),
+  currency: currencyCode,
   amount: monetary("0.01"),
   reason: z.string().trim().min(1).max(1000),
 }).strict();
@@ -286,6 +314,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
+  const currencies = new CurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
@@ -733,6 +762,36 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor ? reply.send(await thresholds.set(actor, changes)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* WHICH CURRENCIES THIS DESK DEALS IN.
+
+     Read by anyone who can see the ledger; changed by whoever may move a
+     reporting line, which is the administrator. Both answers include the
+     minor units of anything that is not the ordinary two, so no screen
+     has to carry its own table of which currencies have no cents. */
+  app.get("/api/ledger/desk-currencies", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await currencies.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/ledger/desk-currencies", async (req, reply) => {
+    const parsed = deskCurrenciesBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST" });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await currencies.set(actor, parsed.data.currencies))
+        : undefined;
     } catch (error) {
       return failure(reply, error);
     }
