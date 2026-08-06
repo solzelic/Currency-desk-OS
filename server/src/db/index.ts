@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   created_by text NOT NULL
 );
 CREATE INDEX IF NOT EXISTS enquiry_research_runs_idx ON enquiry_research_runs(enquiry_id, run_at);
+ALTER TABLE enquiry_research_runs ADD COLUMN IF NOT EXISTS brief jsonb;
 CREATE TABLE IF NOT EXISTS enquiry_research_facts (
   id text PRIMARY KEY,
   research_id text NOT NULL REFERENCES enquiry_research_runs(id),
@@ -193,6 +194,40 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_by text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS enquiry_growth_jobs (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','completed','failed')),
+  attempts integer NOT NULL DEFAULT 0,
+  max_attempts integer NOT NULL DEFAULT 3,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  completed_at timestamptz,
+  research_id text REFERENCES enquiry_research_runs(id),
+  error text,
+  requested_by text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_jobs_queue_idx ON enquiry_growth_jobs(status, available_at, created_at);
+CREATE INDEX IF NOT EXISTS enquiry_growth_jobs_enquiry_idx ON enquiry_growth_jobs(enquiry_id, created_at);
+CREATE TABLE IF NOT EXISTS enquiry_growth_events (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  type text NOT NULL,
+  detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+  actor text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_events_idx ON enquiry_growth_events(enquiry_id, created_at);
+CREATE TABLE IF NOT EXISTS enquiry_growth_assignments (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  assigned_to text,
+  assigned_by text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_growth_assignments_idx ON enquiry_growth_assignments(enquiry_id, assigned_at);
 -- our side of a thread with somebody who wrote to us. Outbound only.
 CREATE TABLE IF NOT EXISTS enquiry_replies (
   id text PRIMARY KEY,

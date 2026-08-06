@@ -34,6 +34,13 @@ test("the application page separates stated answers from sourced research", asyn
         provider: "fixture",
         status: "complete",
         summary: "Public registry evidence is available below.",
+        brief: {
+          executiveSummary: "Test FX has one possible FINTRAC name match. Staff must verify it before calling.",
+          sourceCount: 1,
+          registryStatus: "possible_match",
+          talkingPoints: ["Confirm the business model and locations."],
+          openQuestions: ["Confirm the registry record belongs to this applicant."],
+        },
         costCents: 3,
         reviews: [],
         facts: [{
@@ -48,7 +55,10 @@ test("the application page separates stated answers from sourced research", asyn
       calls: [],
       consent: { consentedAt: "2026-08-06T14:00:00.000Z", formVersion: "early-access-2026-08-06", timezone: "America/Toronto", timezoneSource: "browser" },
       doNotContact: false,
-      capabilities: { researchConfigured: true, callingConfigured: true, callingEnabled: false, canManageCalling: true },
+      jobs: [], timeline: [], assignment: null,
+      assignableMembers: [{ email: "j.masri", name: "J. Masri", role: "owner" }],
+      workflow: { stage: "brief_ready", label: "Brief ready", nextAction: "Review the sourced brief", tone: "purple", step: 3 },
+      capabilities: { researchConfigured: true, callingConfigured: true, callingEnabled: false, canManageCalling: true, canWrite: true },
     }),
   }));
 
@@ -62,5 +72,8 @@ test("the application page separates stated answers from sourced research", asyn
   await expect(inferred).toContainText("The public registry lists registration M123456.");
   await expect(inferred).not.toContainText("$10M+");
   await expect(inferred.getByRole("link", { name: /registry\.example/ })).toHaveAttribute("href", "https://registry.example/msb/M123456");
-  await expect(inferred).toContainText("98% confidence");
+  await expect(inferred).toContainText("98% source match");
+  await expect(inferred.getByTestId("growth-workflow")).toContainText("Brief ready");
+  await expect(inferred.getByTestId("research-brief")).toContainText("possible FINTRAC name match");
+  await expect(inferred.getByRole("button", { name: "Call now with AI" })).toBeDisabled();
 });

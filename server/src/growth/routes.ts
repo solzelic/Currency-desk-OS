@@ -9,6 +9,8 @@ import { can, member, type Permission, type PlatformRole } from "../platform/tea
 import { CallRefused, placeOutboundCall, type OutboundCallConfig, type OutboundCallProvider } from "./calls.js";
 import { elevenLabsRuntime, verifyElevenLabsWebhook, type ElevenLabsRuntime } from "./elevenlabs.js";
 import { researchEnquiry, ResearchUnavailable, tavilyResearchProvider, type LeadResearchProvider } from "./research.js";
+import { growthWorkflow } from "./workflow.js";
+import { startResearchWorker } from "./worker.js";
 
 export type GrowthDependencies = {
   researchProvider?: LeadResearchProvider | null;
@@ -17,6 +19,7 @@ export type GrowthDependencies = {
   webhookSecret?: string | null;
   toolSecret?: string | null;
   now?: () => Date;
+  autoResearch?: boolean;
 };
 
 type PlatformActor = {
@@ -30,6 +33,7 @@ type PlatformActor = {
 
 const doNotContactBody = z.object({ doNotContact: z.literal(true), reason: z.string().trim().max(500).optional() });
 const callingBody = z.object({ enabled: z.boolean() });
+const assignmentBody = z.object({ assignedTo: z.string().trim().toLowerCase().max(200).nullable() });
 const toolBody = z.object({
   enquiryId: z.string().min(1).max(200),
   conversationId: z.string().min(1).max(200),
@@ -56,6 +60,18 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
   const researchProvider = dependencies.researchProvider === undefined
     ? tavilyResearchProvider()
     : dependencies.researchProvider;
+  let stopWorker: (() => void) | null = null;
+  const autoResearch = dependencies.autoResearch ?? process.env.NODE_ENV !== "test";
+  if (researchProvider && autoResearch) {
+    app.addHook("onReady", async () => { stopWorker = startResearchWorker({ db, provider: researchProvider, now: dependencies.now }); });
+    app.addHook("onClose", async () => { stopWorker?.(); stopWorker = null; });
+  }
+  const visibleWorkflow = (input: Parameters<typeof growthWorkflow>[0]) => {
+    const workflow = growthWorkflow(input);
+    return !researchProvider && workflow.stage === "research_queued"
+      ? { ...workflow, stage: "research_waiting_config", label: "Research waiting", nextAction: "Configure Tavily to start automatic research", tone: "amber" as const }
+      : workflow;
+  };
 
   async function gate(req: FastifyRequest, reply: FastifyReply, need: Permission): Promise<PlatformActor | null> {
     const state = await resolveSessionState(db, req.cookies[SESSION_COOKIE]);
@@ -95,6 +111,18 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
     const calls = await db.select().from(schema.enquiryCalls)
       .where(eq(schema.enquiryCalls.enquiryId, enquiry.id))
       .orderBy(desc(schema.enquiryCalls.requestedAt));
+    const jobs = await db.select().from(schema.enquiryGrowthJobs)
+      .where(eq(schema.enquiryGrowthJobs.enquiryId, enquiry.id))
+      .orderBy(desc(schema.enquiryGrowthJobs.createdAt));
+    const timeline = await db.select().from(schema.enquiryGrowthEvents)
+      .where(eq(schema.enquiryGrowthEvents.enquiryId, enquiry.id))
+      .orderBy(desc(schema.enquiryGrowthEvents.createdAt));
+    const assignment = (await db.select().from(schema.enquiryGrowthAssignments)
+      .where(eq(schema.enquiryGrowthAssignments.enquiryId, enquiry.id))
+      .orderBy(desc(schema.enquiryGrowthAssignments.assignedAt)).limit(1))[0] ?? null;
+    const assignableMembers = (await db.select().from(schema.platformUsers))
+      .filter((person) => person.status === "active" && can(person.role as PlatformRole, "applications:write"))
+      .map((person) => ({ email: person.email, name: person.name, role: person.role }));
     const consent = (await db.select().from(schema.enquiryContactConsents)
       .where(eq(schema.enquiryContactConsents.enquiryId, enquiry.id))
       .orderBy(desc(schema.enquiryContactConsents.consentedAt)).limit(1))[0];
@@ -110,11 +138,17 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       doNotContact: enquiry.doNotContact,
       doNotContactAt: enquiry.doNotContactAt,
       doNotContactReason: enquiry.doNotContactReason,
+      jobs,
+      timeline,
+      assignment,
+      assignableMembers,
+      workflow: visibleWorkflow({ enquiry, jobs, research, calls }),
       capabilities: {
         researchConfigured: !!researchProvider,
         callingConfigured: !!runtime,
         callingEnabled: await settingEnabled(db),
         canManageCalling: can(who.platformRole, "security:manage"),
+        canWrite: can(who.platformRole, "applications:write"),
       },
     };
   });
@@ -126,14 +160,22 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
     const enquiry = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
     if (!enquiry || enquiry.kind !== "early_access") return reply.code(404).send({ error: "not_found" });
     try {
+      await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: enquiry.id, type: "research_started", detail: { manual: true }, actor: who.staffId });
       const runId = await researchEnquiry({ db, enquiry, createdBy: who.staffId, provider: researchProvider, now: dependencies.now });
+      const completedAt = dependencies.now?.() ?? new Date();
+      await db.update(schema.enquiryGrowthJobs).set({ status: "completed", researchId: runId, completedAt, updatedAt: completedAt })
+        .where(and(eq(schema.enquiryGrowthJobs.enquiryId, enquiry.id), eq(schema.enquiryGrowthJobs.status, "queued")));
+      await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: enquiry.id, type: "research_completed", detail: { runId, manual: true }, actor: who.staffId });
       await audit(db, {
         tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id,
         action: "admin.enquiry_researched", detail: { enquiryId: enquiry.id, reference: enquiry.reference, runId },
       });
       return reply.code(201).send({ ok: true, runId });
     } catch (error) {
-      if (error instanceof ResearchUnavailable) return reply.code(error.statusCode).send({ error: error.code, detail: error.message });
+      if (error instanceof ResearchUnavailable) {
+        await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: enquiry.id, type: "research_failed", detail: { manual: true, error: error.message }, actor: who.staffId });
+        return reply.code(error.statusCode).send({ error: error.code, detail: error.message });
+      }
       throw error;
     }
   });
@@ -149,7 +191,52 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
     const [review] = await db.insert(schema.enquiryResearchReviews).values({
       id: randomUUID(), researchId: run.id, reviewedBy: who.staffId,
     }).returning();
+    await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: req.params.id, type: "research_reviewed", detail: { runId: run.id }, actor: who.staffId });
     return reply.code(201).send({ ok: true, review });
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/admin/enquiries/:id/growth/assignment", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    const parsed = assignmentBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "Choose a current application team member or leave it unassigned." });
+    const enquiry = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!enquiry || enquiry.kind !== "early_access") return reply.code(404).send({ error: "not_found" });
+    if (parsed.data.assignedTo) {
+      const person = (await db.select().from(schema.platformUsers).where(eq(schema.platformUsers.email, parsed.data.assignedTo)).limit(1))[0];
+      if (!person || person.status !== "active" || !can(person.role as PlatformRole, "applications:write")) {
+        return reply.code(400).send({ error: "invalid_assignee", detail: "That person is not an active application team member." });
+      }
+    }
+    const [assignment] = await db.insert(schema.enquiryGrowthAssignments).values({
+      id: randomUUID(), enquiryId: enquiry.id, assignedTo: parsed.data.assignedTo, assignedBy: who.staffId,
+    }).returning();
+    await db.insert(schema.enquiryGrowthEvents).values({
+      id: randomUUID(), enquiryId: enquiry.id, type: parsed.data.assignedTo ? "owner_assigned" : "owner_cleared",
+      detail: { assignedTo: parsed.data.assignedTo }, actor: who.staffId,
+    });
+    return { ok: true, assignment };
+  });
+
+  app.get("/api/admin/growth/pipeline", async (req, reply) => {
+    const who = await gate(req, reply, "applications:read");
+    if (!who) return;
+    const enquiries = (await db.select().from(schema.enquiries)).filter((row) => row.kind === "early_access" && !row.isDemo);
+    const byEnquiry: Record<string, unknown> = {};
+    const counts: Record<string, number> = {};
+    await Promise.all(enquiries.map(async (enquiry) => {
+      const [jobs, runs, calls, assignmentRows] = await Promise.all([
+        db.select().from(schema.enquiryGrowthJobs).where(eq(schema.enquiryGrowthJobs.enquiryId, enquiry.id)).orderBy(desc(schema.enquiryGrowthJobs.createdAt)),
+        db.select().from(schema.enquiryResearchRuns).where(eq(schema.enquiryResearchRuns.enquiryId, enquiry.id)).orderBy(desc(schema.enquiryResearchRuns.runAt)),
+        db.select().from(schema.enquiryCalls).where(eq(schema.enquiryCalls.enquiryId, enquiry.id)).orderBy(desc(schema.enquiryCalls.requestedAt)),
+        db.select().from(schema.enquiryGrowthAssignments).where(eq(schema.enquiryGrowthAssignments.enquiryId, enquiry.id)).orderBy(desc(schema.enquiryGrowthAssignments.assignedAt)),
+      ]);
+      const research = await Promise.all(runs.map(async (run) => ({ ...run, reviews: await db.select().from(schema.enquiryResearchReviews).where(eq(schema.enquiryResearchReviews.researchId, run.id)) })));
+      const workflow = visibleWorkflow({ enquiry, jobs, research, calls });
+      byEnquiry[enquiry.id] = { workflow, assignment: assignmentRows[0] ?? null, latestResearchAt: runs[0]?.runAt ?? null };
+      counts[workflow.stage] = (counts[workflow.stage] ?? 0) + 1;
+    }));
+    return { byEnquiry, counts, total: enquiries.length };
   });
 
   app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/call", async (req, reply) => {
@@ -166,6 +253,7 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
         db, enquiryId: req.params.id, triggerKey: key, createdBy: who.staffId,
         provider: runtime.provider, config: runtime.config, now: dependencies.now,
       });
+      if (!result.replayed) await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: req.params.id, type: "call_placed", detail: { callId: result.call.id }, actor: who.staffId });
       await audit(db, {
         tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id,
         action: result.replayed ? "admin.enquiry_call_replayed" : "admin.enquiry_call_placed",
@@ -190,6 +278,7 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       doNotContactReason: parsed.data.reason ?? "operator",
     }).where(eq(schema.enquiries.id, req.params.id)).returning();
     if (!changed[0]) return reply.code(404).send({ error: "not_found" });
+    await db.insert(schema.enquiryGrowthEvents).values({ id: randomUUID(), enquiryId: req.params.id, type: "do_not_contact_set", detail: { reason: parsed.data.reason ?? "operator" }, actor: who.staffId });
     return { ok: true, doNotContact: true };
   });
 
@@ -243,6 +332,10 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       summary: typeof analysis.transcript_summary === "string" ? analysis.transcript_summary.slice(0, 20_000) : null,
       error: type === "call_initiation_failure" ? outcome : null,
     }).where(eq(schema.enquiryCalls.id, call.id));
+    await db.insert(schema.enquiryGrowthEvents).values({
+      id: randomUUID(), enquiryId: call.enquiryId, type: type === "call_initiation_failure" ? "call_failed" : "call_completed",
+      detail: { callId: call.id, conversationId, outcome }, actor: "elevenlabs-webhook",
+    });
     return { ok: true };
   });
 
@@ -265,6 +358,10 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       doNotContactBy: `elevenlabs:${parsed.data.conversationId}`,
       doNotContactReason: parsed.data.reason ?? "requested during call",
     }).where(eq(schema.enquiries.id, parsed.data.enquiryId));
+    await db.insert(schema.enquiryGrowthEvents).values({
+      id: randomUUID(), enquiryId: parsed.data.enquiryId, type: "do_not_contact_set",
+      detail: { reason: parsed.data.reason ?? "requested during call", conversationId: parsed.data.conversationId }, actor: "elevenlabs-agent",
+    });
     return { ok: true, doNotContact: true };
   });
 }

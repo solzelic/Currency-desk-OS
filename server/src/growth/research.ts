@@ -6,6 +6,7 @@
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import { schema, type Db } from "../db/index.js";
+import type { ResearchBrief } from "../db/schema.js";
 
 export type ResearchFactInput = {
   key: string;
@@ -25,6 +26,7 @@ export type ResearchLead = {
 
 export type ResearchOutput = {
   summary: string;
+  brief?: ResearchBrief;
   facts: ResearchFactInput[];
   creditsUsed: number | null;
   costCents: number | null;
@@ -48,6 +50,10 @@ type TavilyResponse = {
   results?: unknown;
   usage?: { credits?: unknown };
 };
+type TavilyExtractResponse = {
+  results?: { url?: unknown; raw_content?: unknown }[];
+  usage?: { credits?: unknown };
+};
 
 const kept = (value: unknown, max = 4000): string | null => {
   const s = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -66,6 +72,7 @@ const websiteHost = (value: unknown): string | null => {
 };
 
 const factKey = (prefix: string, index: number): string => `${prefix}_${index + 1}`;
+const sourceKey = (value: string): string => value.replace(/\/$/, "");
 
 export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): LeadResearchProvider | null {
   const apiKey = env.TAVILY_API_KEY?.trim();
@@ -84,7 +91,7 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
         query,
         search_depth: "basic",
         max_results: 4,
-        include_answer: "basic",
+        include_answer: false,
         include_usage: true,
         safe_search: true,
         include_domains: includeDomains,
@@ -93,6 +100,17 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
     });
     if (!response.ok) throw new Error(`Tavily search failed (${response.status}).`);
     return await response.json() as TavilyResponse;
+  };
+
+  const extract = async (urls: string[], query: string): Promise<TavilyExtractResponse> => {
+    const response = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ urls, query, chunks_per_source: 3, extract_depth: "basic", include_usage: true }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`Tavily extract failed (${response.status}).`);
+    return await response.json() as TavilyExtractResponse;
   };
 
   return {
@@ -125,16 +143,30 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
       const facts: ResearchFactInput[] = [];
       const sections: string[] = [];
       let credits = 0;
-      responses.forEach((response, taskIndex) => {
+      for (let taskIndex = 0; taskIndex < responses.length; taskIndex += 1) {
+        const response = responses[taskIndex]!;
         const task = tasks[taskIndex]!;
         const results = Array.isArray(response.results) ? response.results as TavilyResult[] : [];
+        const candidates = results.flatMap((result) => {
+          const url = kept(result.url, 1000);
+          return url ? [url] : [];
+        }).slice(0, 4);
+        if (!candidates.length) continue;
+        const extracted = await extract(candidates, `${business} business identity services ownership locations and regulatory registration evidence`);
+        const extractedByUrl = new Map((extracted.results ?? []).flatMap((result) => {
+          const url = kept(result.url, 1000);
+          const content = kept(result.raw_content, 10_000);
+          return url && content ? [[sourceKey(url), content] as const] : [];
+        }));
         const sourced = results.flatMap((result, index) => {
           const sourceUrl = kept(result.url, 1000);
-          const value = kept(result.content);
+          const value = sourceUrl ? extractedByUrl.get(sourceKey(sourceUrl)) ?? null : null;
           if (!sourceUrl || !value) return [];
-          const score = typeof result.score === "number" && Number.isFinite(result.score)
-            ? Math.min(1, Math.max(0, result.score))
-            : 0.5;
+          const normalizedBusiness = business.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+          const matchesBusiness = normalizedBusiness.length > 3 && value.toLowerCase().replace(/[^a-z0-9]+/g, " ").includes(normalizedBusiness);
+          // This is source-match strength, not a claim that the content is
+          // true. The UI names it that way; an operator still opens sources.
+          const score = task.method === "website_read" ? 0.85 : task.method === "registry" ? (matchesBusiness ? 0.8 : 0.45) : (matchesBusiness ? 0.72 : 0.55);
           return [{
             key: factKey(task.label, index),
             value,
@@ -144,19 +176,27 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
           } satisfies ResearchFactInput];
         });
         facts.push(...sourced);
-        const answer = kept(response.answer);
-        if (answer && sourced.length) {
-          sections.push(`${task.label.replaceAll("_", " ")}: ${answer} Sources: ${sourced.map((fact) => fact.sourceUrl).join(", ")}`);
-        }
+        if (sourced.length) sections.push(`${task.label.replaceAll("_", " ")}: ${sourced.length} extracted source${sourced.length === 1 ? "" : "s"}. ${sourced.map((fact) => fact.sourceUrl).join(", ")}`);
         const used = Number(response.usage?.credits);
         if (Number.isFinite(used) && used > 0) credits += used;
-      });
+        const extractUsed = Number(extracted.usage?.credits);
+        if (Number.isFinite(extractUsed) && extractUsed > 0) credits += extractUsed;
+      }
 
       if (!facts.length) {
         throw new Error("Research returned no sourced findings.");
       }
+      const registryMatch = facts.some((fact) => fact.method === "registry" && fact.confidence >= 0.8);
+      const summary = `${business}: ${facts.length} sourced finding${facts.length === 1 ? "" : "s"} extracted for staff review. FINTRAC registration ${registryMatch ? "has a possible name match that requires human confirmation" : "was not confirmed by this run"}.`;
       return {
-        summary: sections.join("\n\n") || "Sourced results are available below; the provider returned no narrative summary.",
+        summary: `${summary}\n\n${sections.join("\n\n")}`,
+        brief: {
+          executiveSummary: summary,
+          sourceCount: new Set(facts.map((fact) => fact.sourceUrl)).size,
+          registryStatus: registryMatch ? "possible_match" : "not_confirmed",
+          talkingPoints: ["Confirm the business model and locations.", "Ask how the team currently handles rates, cash ownership and compliance work."],
+          openQuestions: registryMatch ? ["Confirm the FINTRAC record belongs to this applicant."] : ["Ask for the legal business name and MSB registration number.", "Confirm whether registration is pending or held under another legal name."],
+        },
         facts,
         creditsUsed: credits || null,
         costCents: centsPerCredit == null || !credits ? null : Math.round(credits * centsPerCredit),
@@ -190,6 +230,13 @@ export async function researchEnquiry(input: {
       Number.isFinite(fact.confidence) && fact.confidence >= 0 && fact.confidence <= 1,
     );
     if (!facts.length) throw new Error("Research returned no sourced findings.");
+    const brief: ResearchBrief = output.brief ?? {
+      executiveSummary: output.summary.slice(0, 3000),
+      sourceCount: new Set(facts.map((fact) => fact.sourceUrl)).size,
+      registryStatus: facts.some((fact) => fact.method === "registry" && fact.confidence >= 0.8) ? "possible_match" : "not_confirmed",
+      talkingPoints: ["Confirm the applicant's current workflow and goals."],
+      openQuestions: ["Verify any material finding before relying on it in the call."],
+    };
 
     await input.db.transaction(async (tx) => {
       await tx.insert(schema.enquiryResearchRuns).values({
@@ -200,6 +247,7 @@ export async function researchEnquiry(input: {
         model: input.provider.model,
         status: "complete",
         summary: output.summary.slice(0, 20_000),
+        brief,
         creditsUsed: output.creditsUsed,
         costCents: output.costCents,
         createdBy: input.createdBy,

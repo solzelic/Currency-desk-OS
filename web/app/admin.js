@@ -2130,10 +2130,19 @@ function Pipeline({
     return !!d && d.next.includes(id);
   };
   const load = async () => {
-    const r = await api('/api/admin/enquiries?kind=' + kind).catch(() => ({
+    const [r, growth] = await Promise.all([api('/api/admin/enquiries?kind=' + kind).catch(() => ({
       enquiries: []
-    }));
-    setRows(r.enquiries);
+    })), kind === 'early_access' ? api('/api/admin/growth/pipeline').catch(() => ({
+      byEnquiry: {},
+      counts: {}
+    })) : Promise.resolve({
+      byEnquiry: {},
+      counts: {}
+    })]);
+    setRows(r.enquiries.map(row => ({
+      ...row,
+      growth: growth.byEnquiry[row.id] || null
+    })));
     if (r.stages) setStages(r.stages);
     if (onCounts) onCounts(r.enquiries);
   };
@@ -2348,7 +2357,22 @@ function Pipeline({
         color: 'var(--mute)',
         marginTop: 3
       }
-    }, "\u260F ", tel(r), det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''), r.isDemo && /*#__PURE__*/React.createElement("div", {
+    }, "\u260F ", tel(r), det(r, 'bestTime') && det(r, 'bestTime') !== 'Any time' ? ' · ' + det(r, 'bestTime').toLowerCase() : ''), r.growth && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        flexWrap: 'wrap',
+        marginTop: 7
+      }
+    }, /*#__PURE__*/React.createElement(Pill, {
+      tone: r.growth.workflow.tone
+    }, r.growth.workflow.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10.5,
+        color: 'var(--faint)'
+      }
+    }, r.growth.assignment && r.growth.assignment.assignedTo ? r.growth.assignment.assignedTo : 'unassigned')), r.isDemo && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 6
       }
@@ -2622,7 +2646,11 @@ function Pipeline({
     }
   }, kind === 'early_access' ? 'Applicant' : 'From'), /*#__PURE__*/React.createElement("th", {
     style: th
-  }, "Stage"), /*#__PURE__*/React.createElement("th", {
+  }, "Decision"), kind === 'early_access' && /*#__PURE__*/React.createElement("th", {
+    style: th
+  }, "Process"), kind === 'early_access' && /*#__PURE__*/React.createElement("th", {
+    style: th
+  }, "Owner"), /*#__PURE__*/React.createElement("th", {
     style: th
   }, kind === 'early_access' ? 'Wants' : 'About'), /*#__PURE__*/React.createElement("th", {
     style: th
@@ -2661,7 +2689,24 @@ function Pipeline({
   }, /*#__PURE__*/React.createElement(Pill, {
     tone: STAGE_TONE[r.status],
     dot: true
-  }, stageTitle(BOARD, r.status))), /*#__PURE__*/React.createElement("td", {
+  }, stageTitle(BOARD, r.status))), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
+    style: td
+  }, r.growth ? /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement(Pill, {
+    tone: r.growth.workflow.tone
+  }, r.growth.workflow.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      marginTop: 4,
+      fontSize: 10.5,
+      color: 'var(--faint)'
+    }
+  }, r.growth.workflow.nextAction)) : '—'), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...td,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, r.growth && r.growth.assignment && r.growth.assignment.assignedTo || 'Unassigned'), /*#__PURE__*/React.createElement("td", {
     style: {
       ...td,
       color: 'var(--mute)',
@@ -2683,7 +2728,7 @@ function Pipeline({
       color: 'var(--mute)'
     }
   }, fmtDay(r.createdAt)))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 5,
+    colSpan: kind === 'early_access' ? 7 : 5,
     style: {
       ...td,
       textAlign: 'center',
@@ -5141,7 +5186,16 @@ function GrowthPanel({
   const latest = growth.research[0] || null;
   const latestComplete = growth.research.find(run => run.status === 'complete') || null;
   const caps = growth.capabilities || {};
-  const callReady = caps.callingConfigured && caps.callingEnabled && growth.consent && latestComplete && !growth.doNotContact;
+  const reviewed = latestComplete && (latestComplete.reviews || []).length > 0;
+  const callReady = caps.callingConfigured && caps.callingEnabled && growth.consent && latestComplete && reviewed && !growth.doNotContact;
+  const workflow = growth.workflow || {
+    stage: 'applied',
+    label: 'Applied',
+    nextAction: 'Queue lead research',
+    tone: 'blue',
+    step: 1
+  };
+  const flowSteps = ['Applied', 'Research', 'Brief', 'Review', 'Call', 'Decision'];
   const call = () => act('call', () => api('/api/admin/enquiries/' + enquiry.id + '/call', {
     method: 'POST',
     headers: {
@@ -5157,6 +5211,12 @@ function GrowthPanel({
     method: 'POST',
     body: '{}'
   }), 'Marked reviewed.');
+  const assign = assignedTo => act('assign', () => api('/api/admin/enquiries/' + enquiry.id + '/growth/assignment', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      assignedTo: assignedTo || null
+    })
+  }), assignedTo ? 'Application owner updated.' : 'Application is now unassigned.');
   const stop = () => {
     if (!window.confirm('Permanently mark this applicant do not contact? Calling will be refused from now on.')) return;
     act('dnc', () => api('/api/admin/enquiries/' + enquiry.id + '/contact', {
@@ -5197,7 +5257,7 @@ function GrowthPanel({
     }
   }, String(f.key).replaceAll('_', ' ')), /*#__PURE__*/React.createElement(Pill, {
     tone: "purple"
-  }, Math.round(Number(f.confidence) * 100), "% confidence"), /*#__PURE__*/React.createElement(Pill, {
+  }, Math.round(Number(f.confidence) * 100), "% source match"), /*#__PURE__*/React.createElement(Pill, {
     tone: "mute"
   }, String(f.method).replaceAll('_', ' '))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5232,7 +5292,81 @@ function GrowthPanel({
       lineHeight: 1.55,
       marginBottom: 13
     }
-  }, "Inferred by research \xB7 every finding below names its source. An unsourced finding is absent."), flash && /*#__PURE__*/React.createElement("div", {
+  }, "Inferred by research \xB7 every finding below names its source. An unsourced finding is absent."), /*#__PURE__*/React.createElement("div", {
+    "data-testid": "growth-workflow",
+    style: {
+      padding: 12,
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      marginBottom: 13,
+      background: 'var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 7,
+      flexWrap: 'wrap',
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: workflow.tone
+  }, workflow.label), /*#__PURE__*/React.createElement("b", {
+    style: {
+      fontSize: 12.5
+    }
+  }, workflow.nextAction), /*#__PURE__*/React.createElement("label", {
+    style: {
+      marginLeft: 'auto',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 11.5,
+      color: 'var(--mute)'
+    }
+  }, "Owner", /*#__PURE__*/React.createElement("select", {
+    disabled: !!busy || !caps.canWrite,
+    value: growth.assignment && growth.assignment.assignedTo || '',
+    onChange: e => assign(e.target.value),
+    style: {
+      padding: '6px 8px',
+      borderRadius: 7,
+      border: '1px solid var(--line)',
+      background: 'var(--card)',
+      color: 'var(--text)',
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Unassigned"), (growth.assignableMembers || []).map(person => /*#__PURE__*/React.createElement("option", {
+    key: person.email,
+    value: person.email
+  }, person.name || person.email, " \xB7 ", person.role))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(6,minmax(0,1fr))',
+      gap: 5
+    }
+  }, flowSteps.map((name, i) => /*#__PURE__*/React.createElement("div", {
+    key: name,
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 4,
+      borderRadius: 9,
+      background: i + 1 <= workflow.step ? toneColor(workflow.tone) : 'var(--line)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 5,
+      fontSize: 9.5,
+      color: i + 1 <= workflow.step ? 'var(--text)' : 'var(--faint)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, name))))), flash && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 12,
       padding: '9px 11px',
@@ -5250,20 +5384,20 @@ function GrowthPanel({
       marginBottom: 13
     }
   }, /*#__PURE__*/React.createElement("button", {
-    disabled: !!busy || !caps.researchConfigured,
+    disabled: !!busy || !caps.researchConfigured || !caps.canWrite,
     onClick: run,
     style: button(!latest, false)
   }, busy === 'research' ? 'Researching…' : latest ? 'Run research again' : caps.researchConfigured ? 'Research this lead' : 'Research not configured'), latest && latest.status === 'complete' && !(latest.reviews || []).length && /*#__PURE__*/React.createElement("button", {
-    disabled: !!busy,
+    disabled: !!busy || !caps.canWrite,
     onClick: review,
     style: button(false, false)
-  }, "Mark reviewed"), /*#__PURE__*/React.createElement("button", {
-    disabled: !!busy || !callReady,
+  }, "Approve brief for calling"), /*#__PURE__*/React.createElement("button", {
+    disabled: !!busy || !callReady || !caps.canWrite,
     onClick: call,
-    title: !growth.consent ? 'No consent record' : !caps.callingEnabled ? 'Outbound calling is paused' : !latest ? 'Research first' : growth.doNotContact ? 'Do not contact' : '',
+    title: !growth.consent ? 'No consent record' : !caps.callingEnabled ? 'Outbound calling is paused' : !latest ? 'Research first' : !reviewed ? 'A staff member must approve the brief first' : growth.doNotContact ? 'Do not contact' : '',
     style: button(callReady, false)
   }, busy === 'call' ? 'Placing once…' : caps.callingConfigured ? 'Call now with AI' : 'ElevenLabs not configured'), !growth.doNotContact && /*#__PURE__*/React.createElement("button", {
-    disabled: !!busy,
+    disabled: !!busy || !caps.canWrite,
     onClick: stop,
     style: button(false, true)
   }, "Do not contact")), /*#__PURE__*/React.createElement("div", {
@@ -5317,7 +5451,65 @@ function GrowthPanel({
     }
   }, /*#__PURE__*/React.createElement(Pill, {
     tone: "green"
-  }, "reviewed"))), run.summary && /*#__PURE__*/React.createElement("div", {
+  }, "reviewed"))), run.brief && /*#__PURE__*/React.createElement("div", {
+    "data-testid": "research-brief",
+    style: {
+      margin: '11px 0',
+      padding: 12,
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      background: 'var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      color: 'var(--purple)',
+      marginBottom: 7
+    }
+  }, "Caller brief \xB7 ", run.brief.sourceCount, " cited source", run.brief.sourceCount === 1 ? '' : 's'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      lineHeight: 1.6
+    }
+  }, run.brief.executiveSummary), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement(Pill, {
+    tone: run.brief.registryStatus === 'possible_match' ? 'amber' : 'mute'
+  }, run.brief.registryStatus === 'possible_match' ? 'possible FINTRAC name match · verify' : 'FINTRAC not confirmed')), (run.brief.talkingPoints || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Talking points"), run.brief.talkingPoints.map((point, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "\xB7 ", point))), (run.brief.openQuestions || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Open questions"), run.brief.openQuestions.map((point, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "\xB7 ", point)))), run.summary && /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontSize: 11.5,
+      color: 'var(--mute)'
+    }
+  }, "Research run notes"), /*#__PURE__*/React.createElement("div", {
     style: {
       whiteSpace: 'pre-wrap',
       fontSize: 12.5,
@@ -5325,7 +5517,7 @@ function GrowthPanel({
       lineHeight: 1.6,
       padding: '11px 0'
     }
-  }, run.summary), run.error && /*#__PURE__*/React.createElement("div", {
+  }, run.summary)), run.error && /*#__PURE__*/React.createElement("div", {
     style: {
       color: 'var(--red)',
       fontSize: 12,
@@ -5386,7 +5578,40 @@ function GrowthPanel({
     style: {
       color: 'var(--blue)'
     }
-  }, "Recording \u2197"))))));
+  }, "Recording \u2197"))))), (growth.timeline || []).length > 0 && /*#__PURE__*/React.createElement("details", {
+    style: {
+      marginTop: 13,
+      borderTop: '1px solid var(--line)',
+      paddingTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      fontFamily: MONO,
+      fontSize: 10.5,
+      color: 'var(--faint)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em'
+    }
+  }, "Process history \xB7 ", growth.timeline.length, " events"), growth.timeline.map(event => /*#__PURE__*/React.createElement("div", {
+    key: event.id,
+    style: {
+      display: 'flex',
+      gap: 9,
+      padding: '8px 0',
+      borderTop: '1px solid var(--line2)',
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 125,
+      color: 'var(--mute)'
+    }
+  }, String(event.type).replaceAll('_', ' ')), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--faint)'
+    }
+  }, fmtWhen(event.createdAt), " \xB7 ", event.actor)))));
 }
 function ApplicationPage({
   id,

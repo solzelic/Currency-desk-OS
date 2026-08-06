@@ -179,6 +179,15 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
           timezone: validTimezone(contactContext?.timezone),
           timezoneSource: validTimezone(contactContext?.timezone) ? "browser" : null,
         });
+        /* Provider calls do not belong in a public form request. The lead,
+           consent evidence and durable job commit together; a worker can
+           retry later without making the applicant wait or submit twice. */
+        const jobId = randomUUID();
+        await tx.insert(schema.enquiryGrowthJobs).values({ id: jobId, enquiryId, requestedBy: "system" });
+        await tx.insert(schema.enquiryGrowthEvents).values([
+          { id: randomUUID(), enquiryId, type: "application_received", detail: { reference }, actor: "system" },
+          { id: randomUUID(), enquiryId, type: "research_queued", detail: { jobId }, actor: "system" },
+        ]);
       }
       return inserted;
     });

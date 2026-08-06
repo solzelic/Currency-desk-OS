@@ -490,12 +490,66 @@ export const enquiryResearchRuns = pgTable(
     model: text("model"),
     status: text("status").notNull(),
     summary: text("summary"),
+    brief: jsonb("brief").$type<ResearchBrief>(),
     creditsUsed: integer("credits_used"),
     costCents: integer("cost_cents"),
     error: text("error"),
     createdBy: text("created_by").notNull(),
   },
   (t) => [index("enquiry_research_runs_idx").on(t.enquiryId, t.runAt)],
+);
+
+export type ResearchBrief = {
+  executiveSummary: string;
+  sourceCount: number;
+  registryStatus: "possible_match" | "not_confirmed";
+  talkingPoints: string[];
+  openQuestions: string[];
+};
+
+export const enquiryGrowthJobs = pgTable(
+  "enquiry_growth_jobs",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    status: text("status").$type<"queued" | "running" | "completed" | "failed">().notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    researchId: text("research_id").references(() => enquiryResearchRuns.id),
+    error: text("error"),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_growth_jobs_queue_idx").on(t.status, t.availableAt, t.createdAt), index("enquiry_growth_jobs_enquiry_idx").on(t.enquiryId, t.createdAt)],
+);
+
+export const enquiryGrowthEvents = pgTable(
+  "enquiry_growth_events",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    type: text("type").notNull(),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    actor: text("actor").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_growth_events_idx").on(t.enquiryId, t.createdAt)],
+);
+
+export const enquiryGrowthAssignments = pgTable(
+  "enquiry_growth_assignments",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    assignedTo: text("assigned_to"),
+    assignedBy: text("assigned_by").notNull(),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_growth_assignments_idx").on(t.enquiryId, t.assignedAt)],
 );
 
 export type ResearchMethod = "web_search" | "website_read" | "registry" | "model_inference";

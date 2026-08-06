@@ -152,6 +152,12 @@ export async function placeOutboundCall(input: {
   if (!research?.summary) {
     throw new CallRefused("research_absent", "Research this application before calling.");
   }
+  const review = (await input.db.select().from(schema.enquiryResearchReviews)
+    .where(eq(schema.enquiryResearchReviews.researchId, research.id))
+    .orderBy(desc(schema.enquiryResearchReviews.reviewedAt)).limit(1))[0];
+  if (!review) {
+    throw new CallRefused("research_unreviewed", "A staff member must approve the sourced brief before an AI call can be placed.");
+  }
 
   const triggerKey = `${enquiry.id}:${input.triggerKey.trim()}`;
   if (!input.triggerKey.trim() || triggerKey.length > 220) {
@@ -182,14 +188,18 @@ export async function placeOutboundCall(input: {
   const applicantName = text(enquiry.name) ?? "there";
   const recorded = input.config.recordingEnabled ? " This call is being recorded." : "";
   const firstMessage = `Hello ${applicantName}. I'm SAM, an AI assistant calling from CurrencyDesk about the application you submitted.${recorded} Is now still a good time?`;
+  const statedAnswers = JSON.stringify(enquiry.details ?? {}).slice(0, 8_000);
+  const citedBrief = (research.brief ? JSON.stringify(research.brief) : research.summary).slice(0, 8_000);
   const prompt = [
     "You are SAM, CurrencyDesk's AI sales assistant.",
     "You must identify yourself as an AI and announce recording in the opening line when recording is enabled.",
     "The person asked to be contacted through CurrencyDesk's early-access form.",
     "If they ask not to be contacted, confirm immediately, end politely, and invoke the configured do-not-contact tool.",
     "Never claim an inferred fact came from the applicant. Treat the research below as sourced background, not as their own words.",
-    "Research context:",
-    research.summary,
+    "Applicant-stated form answers (these are what the person told us):",
+    statedAnswers,
+    "Sourced research brief (inferred context; verify and never attribute it to the applicant):",
+    citedBrief,
   ].join("\n");
 
   try {
@@ -204,6 +214,8 @@ export async function placeOutboundCall(input: {
         enquiry_reference: enquiry.reference,
         applicant_name: applicantName,
         research_summary: research.summary,
+        applicant_answers: statedAnswers,
+        research_brief: citedBrief,
       },
       recordingEnabled: input.config.recordingEnabled,
     });

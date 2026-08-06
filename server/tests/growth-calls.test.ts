@@ -69,6 +69,11 @@ describe("growth outbound calls", () => {
       confidence: 0.98,
       method: "website_read",
     });
+    await handle.db.insert(schema.enquiryResearchReviews).values({
+      id: "review-call-idempotency",
+      researchId: "research-call-idempotency",
+      reviewedBy: "platform-owner",
+    });
     await handle.db.insert(schema.platformSettings).values({
       key: "outbound_calling_enabled",
       value: { enabled: true },

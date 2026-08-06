@@ -100,8 +100,13 @@ describe("lead research and outbound calling", () => {
 
   it("places once over HTTP and writes an authenticated transcript back", async () => {
     const { row } = await apply("call@northstar.example");
-    await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/research`, cookies: admin, payload: {} });
+    const researched = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/research`, cookies: admin, payload: {} });
     await app.inject({ method: "PATCH", url: "/api/admin/growth/calling", cookies: admin, payload: { enabled: true } });
+    const unreviewed = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/call`, cookies: admin, headers: { "idempotency-key": "before-review" }, payload: {} });
+    expect(unreviewed.statusCode).toBe(409);
+    expect(unreviewed.json().error).toBe("research_unreviewed");
+    expect(dial).not.toHaveBeenCalled();
+    await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/research/${researched.json().runId}/review`, cookies: admin, payload: {} });
     const first = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/call`, cookies: admin, headers: { "idempotency-key": "same-click" }, payload: {} });
     const retry = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/call`, cookies: admin, headers: { "idempotency-key": "same-click" }, payload: {} });
     expect(first.statusCode).toBe(201);

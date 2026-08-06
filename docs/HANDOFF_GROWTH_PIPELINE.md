@@ -5,7 +5,7 @@ A second workstream, independent of the ledger work in
 cash-ownership invariants do not apply — but one of their lessons does,
 and it is the most important design decision in this document. See §2.
 
-## 1. What exists already
+## 1. What exists now
 
 A prospect fills in the early-access form on the public site. That is the
 **initial capture**, before onboarding, and it is the trigger for
@@ -33,6 +33,24 @@ highest-signal field available about this particular kind of business.
 why it is a blob; the two forms ask different questions and both keep
 changing.
 
+The growth workflow is implemented alongside that row:
+
+```
+server/src/growth/research.ts  Tavily search → targeted extract → cited brief
+server/src/growth/worker.ts    durable queue claiming, retries and stale-lock recovery
+server/src/growth/workflow.ts  one derived team-facing stage and next action
+server/src/growth/calls.ts     reviewed-brief gate and idempotent ElevenLabs placement
+server/src/growth/routes.ts    detail, pipeline, assignment, review, call and webhook APIs
+server/src/db/migrations/022_growth_operations.sql
+                              jobs, timeline events, assignment history and briefs
+admin.html                    process rail, owner, brief, sources and call history
+```
+
+An early-access submission commits its consent evidence, an
+`application_received` event and a queued research job in the same
+transaction. The public request never waits for Tavily. If Tavily is not
+configured, the job remains safe and visible as **Research waiting**.
+
 ## 2. The one design decision that matters
 
 **What the applicant TOLD us and what we INFERRED about them are
@@ -55,47 +73,58 @@ So:
   Re-running research on a lead you already called must not silently
   rewrite what the caller saw.
 - Every research finding carries **where it came from** (source URL or
-  tool) and **how confident** it is. A finding with no source is not a
-  finding; render it as absent rather than as fact
+  tool) and its **source-match strength**. That number is retrieval
+  relevance, not a probability that the statement is true. A finding
+  with no source is not a finding; render it as absent rather than as fact
   (`docs/ABSENT_FIGURES.md`).
 - The admin panel shows stated and inferred data **visually distinct**.
 
-Suggested shape, adjust as you build:
+Current shape:
 
 ```
-enquiry_research      id, enquiry_id, run_at, model, status, summary,
-                      cost_cents, created_by
+enquiry_research_runs id, enquiry_id, run_at, provider, model, status,
+                      summary, brief, credits_used, cost_cents, created_by
 enquiry_research_facts research_id, key, value, source_url, confidence,
                       method ('web_search' | 'website_read' | 'registry' | 'model_inference')
+enquiry_growth_jobs   enquiry_id, status, attempts, available_at, lock,
+                      research_id, error, requested_by
+enquiry_growth_events enquiry_id, type, detail, actor, created_at
+enquiry_growth_assignments enquiry_id, assigned_to, assigned_by, assigned_at
 ```
 
 ## 3. The work, in three stages
 
 Each stage ships on its own and is useful without the next.
 
-### Stage 1 — research a lead
+### Stage 1 — research a lead — implemented
 
-- A job that takes an `enquiries` row and produces one `enquiry_research`
-  run: read their website, search for the business, look up the FINTRAC
+- A durable job takes an `enquiries` row and produces one append-only
+  research run: discover and extract their website, search for the
+  business, look for evidence in the FINTRAC
   MSB registry, summarise what a salesperson would want to know before
   dialling.
-- Triggered **manually from the admin panel first** (a "Research" button
-  on the application), automatic later. Manual first means you see a
-  dozen real outputs before anything runs unattended.
+- Triggered automatically after signup. The operator can also re-run it
+  manually. Automatic jobs retry with a bounded backoff and stale worker
+  locks are recovered after a restart.
 - Store the cost per run. This is the kind of thing that is fine at 10
   leads and surprising at 500.
 
-### Stage 2 — show it, and let an operator act
+### Stage 2 — show it, and let an operator act — implemented
 
 - The application detail view in `admin.html` grows a research panel:
   the summary, the facts with their sources, and when it was run.
 - Actions: re-run research, mark reviewed, and **call now**.
+- The board and list show the operational stage, current owner and next
+  action. The detail view adds a six-step process rail, structured caller
+  brief and append-only event history. Owner and Support can work it;
+  Auditor remains read-only through the existing platform permissions.
 - Nothing calls automatically at this stage.
 
-### Stage 3 — the ElevenLabs call
+### Stage 3 — the ElevenLabs call — implemented, disabled until configured
 
-- An ElevenLabs Conversational AI agent, given the research summary as
-  context, placed as an outbound call to the phone on the application.
+- An ElevenLabs Conversational AI agent receives two separately labelled
+  context blocks: what the applicant submitted and the sourced research
+  brief. A staff member must approve the latest brief before calling.
 - Persist to an append-only `enquiry_calls` table: placed_at, agent id,
   call id, duration, outcome, recording URL, transcript.
 - The transcript comes back into the admin panel against the application,
@@ -132,7 +161,7 @@ retrofit.
 
 ## 5. Secrets and configuration
 
-`ELEVENLABS_API_KEY`, the agent id, and whatever the research tool needs
+`ELEVENLABS_API_KEY`, the agent id, and `TAVILY_API_KEY`
 go in environment variables, never in the repo. There is an existing
 pattern for optional integrations — look at how `RATES_SYNC` and the
 Stripe keys are handled: absent config disables the feature cleanly
@@ -150,6 +179,9 @@ regresses.**
 - A lead marked `do_not_contact` is never dialled. Assert the refusal.
 - A call outside the permitted window is refused, with the reason.
 - The same trigger fired twice places one call.
+- Two workers racing for one queued job produce one research run.
+- The team pipeline derives **Brief ready** from the stored run and shows
+  the current append-only assignment.
 
 That last one is the one to write first. It is the failure that reaches a
 real person.
