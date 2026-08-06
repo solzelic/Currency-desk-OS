@@ -13,6 +13,12 @@ let admin: Record<string, string> = {};
 
 const research = vi.fn(async () => ({
   summary: "North Star FX presents itself as a Toronto currency exchange. FINTRAC registration was not confirmed.",
+  brief: {
+    executiveSummary: "North Star FX presents itself as a Toronto currency exchange. FINTRAC registration was not confirmed.",
+    sourceCount: 1, registryStatus: "not_confirmed" as const,
+    talkingPoints: [], openQuestions: [],
+    identity: { businessName: "North Star FX", websiteHost: "northstar.example", verification: "exact_business_name" as const },
+  },
   facts: [{
     key: "website_profile_1",
     value: "Currency exchange services in Toronto.",

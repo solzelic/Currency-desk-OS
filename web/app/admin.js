@@ -5184,7 +5184,11 @@ function GrowthPanel({
     }
   }, "Loading research\u2026"));
   const latest = growth.research[0] || null;
-  const latestComplete = growth.research.find(run => run.status === 'complete') || null;
+  const identityChecked = run => !!(run && run.brief && run.brief.identity && run.brief.identity.verification === 'exact_business_name');
+  const latestComplete = growth.research.find(run => run.status === 'complete' && identityChecked(run)) || null;
+  const stated = enquiry.details || {};
+  const statedBusiness = stated.shopName || stated.businessName || stated.legalName || stated.companyName || null;
+  const statedWebsite = stated.website || null;
   const caps = growth.capabilities || {};
   const reviewed = latestComplete && (latestComplete.reviews || []).length > 0;
   const callReady = caps.callingConfigured && caps.callingEnabled && growth.consent && latestComplete && reviewed && !growth.doNotContact;
@@ -5207,7 +5211,7 @@ function GrowthPanel({
     method: 'POST',
     body: '{}'
   }), latest ? 'A new research snapshot was added. The earlier one is unchanged.' : 'Research complete.');
-  const review = () => latest && act('review', () => api('/api/admin/enquiries/' + enquiry.id + '/research/' + latest.id + '/review', {
+  const review = () => latest && identityChecked(latest) && act('review', () => api('/api/admin/enquiries/' + enquiry.id + '/research/' + latest.id + '/review', {
     method: 'POST',
     body: '{}'
   }), 'Marked reviewed.');
@@ -5233,6 +5237,7 @@ function GrowthPanel({
       enabled: !caps.callingEnabled
     })
   }), caps.callingEnabled ? 'All AI outbound calling is paused.' : 'AI outbound calling is enabled.');
+  const sourceName = method => method === 'website_read' ? 'Applicant website' : method === 'registry' ? 'FINTRAC registry' : 'Public business source';
   const facts = run => (run.facts || []).map(f => /*#__PURE__*/React.createElement("div", {
     key: f.id,
     style: {
@@ -5255,11 +5260,9 @@ function GrowthPanel({
       textTransform: 'uppercase',
       letterSpacing: '0.05em'
     }
-  }, String(f.key).replaceAll('_', ' ')), /*#__PURE__*/React.createElement(Pill, {
-    tone: "purple"
-  }, Math.round(Number(f.confidence) * 100), "% source match"), /*#__PURE__*/React.createElement(Pill, {
-    tone: "mute"
-  }, String(f.method).replaceAll('_', ' '))), /*#__PURE__*/React.createElement("div", {
+  }, sourceName(f.method)), /*#__PURE__*/React.createElement(Pill, {
+    tone: "green"
+  }, "names stated business")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: 'var(--mute)',
@@ -5292,7 +5295,30 @@ function GrowthPanel({
       lineHeight: 1.55,
       marginBottom: 13
     }
-  }, "Inferred by research \xB7 every finding below names its source. An unsourced finding is absent."), /*#__PURE__*/React.createElement("div", {
+  }, "Research is limited to the business identity they gave us. A result that does not name that business is discarded, not saved."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '9px 11px',
+      border: '1px solid var(--line)',
+      borderRadius: 9,
+      background: 'var(--line2)',
+      fontSize: 12,
+      lineHeight: 1.55,
+      color: 'var(--mute)',
+      marginBottom: 13
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Research identity"), /*#__PURE__*/React.createElement("br", null), statedBusiness ? /*#__PURE__*/React.createElement(React.Fragment, null, "Business: ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, statedBusiness), statedWebsite ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 website supplied: ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, statedWebsite)) : null) : /*#__PURE__*/React.createElement(React.Fragment, null, "A business or legal name is needed before we research. We never substitute the applicant's personal name or email.")), /*#__PURE__*/React.createElement("div", {
     "data-testid": "growth-workflow",
     style: {
       padding: 12,
@@ -5387,7 +5413,7 @@ function GrowthPanel({
     disabled: !!busy || !caps.researchConfigured || !caps.canWrite,
     onClick: run,
     style: button(!latest, false)
-  }, busy === 'research' ? 'Researching…' : latest ? 'Run research again' : caps.researchConfigured ? 'Research this lead' : 'Research not configured'), latest && latest.status === 'complete' && !(latest.reviews || []).length && /*#__PURE__*/React.createElement("button", {
+  }, busy === 'research' ? 'Researching…' : latest ? 'Run research again' : caps.researchConfigured ? 'Research this lead' : 'Research not configured'), latest && latest.status === 'complete' && identityChecked(latest) && !(latest.reviews || []).length && /*#__PURE__*/React.createElement("button", {
     disabled: !!busy || !caps.canWrite,
     onClick: review,
     style: button(false, false)
@@ -5503,13 +5529,24 @@ function GrowthPanel({
     }
   }, "Open questions"), run.brief.openQuestions.map((point, i) => /*#__PURE__*/React.createElement("div", {
     key: i
-  }, "\xB7 ", point)))), run.summary && /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
+  }, "\xB7 ", point)))), run.status === 'complete' && !identityChecked(run) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: '11px 0',
+      padding: '9px 11px',
+      color: 'var(--amber)',
+      background: 'color-mix(in srgb,var(--amber) 10%,transparent)',
+      border: '1px solid color-mix(in srgb,var(--amber) 28%,transparent)',
+      borderRadius: 8,
+      fontSize: 12,
+      lineHeight: 1.5
+    }
+  }, "This older snapshot did not prove the business identity. It is kept as history, but cannot be reviewed or used to place a call. Re-run research."), run.summary && /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
     style: {
       cursor: 'pointer',
       fontSize: 11.5,
       color: 'var(--mute)'
     }
-  }, "Research run notes"), /*#__PURE__*/React.createElement("div", {
+  }, "Research method"), /*#__PURE__*/React.createElement("div", {
     style: {
       whiteSpace: 'pre-wrap',
       fontSize: 12.5,
@@ -5523,7 +5560,21 @@ function GrowthPanel({
       fontSize: 12,
       padding: '9px 0'
     }
-  }, run.error), facts(run))), growth.calls.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, run.error), identityChecked(run) && (run.facts || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 9,
+      borderTop: '1px solid var(--line2)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontFamily: MONO,
+      fontSize: 10,
+      color: 'var(--faint)',
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase'
+    }
+  }, "Sources that passed the identity check"), facts(run)))), growth.calls.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 13,
       borderTop: '1px solid var(--line)',

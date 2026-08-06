@@ -73,10 +73,16 @@ So:
   Re-running research on a lead you already called must not silently
   rewrite what the caller saw.
 - Every research finding carries **where it came from** (source URL or
-  tool) and its **source-match strength**. That number is retrieval
-  relevance, not a probability that the statement is true. A finding
-  with no source is not a finding; render it as absent rather than as fact
-  (`docs/ABSENT_FIGURES.md`).
+  tool). A finding with no source is not a finding; render it as absent
+  rather than as fact (`docs/ABSENT_FIGURES.md`).
+- A source is saved only when its extracted text names the applicant's
+  stated business exactly. The supplied website is read directly, public
+  search snippets are candidates only, and a generic currency-exchange
+  result is discarded before extraction. Never substitute a contact's
+  personal name or email for a business identity.
+- The compact caller brief records that identity check. A historical run
+  from before this rule remains append-only for audit, but cannot be
+  reviewed or used to place an AI call; the operator must re-run it.
 - The admin panel shows stated and inferred data **visually distinct**.
 
 Current shape:
@@ -103,6 +109,9 @@ Each stage ships on its own and is useful without the next.
   business, look for evidence in the FINTRAC
   MSB registry, summarise what a salesperson would want to know before
   dialling.
+- It is identity-gated: without a stated business/legal name it fails
+  visibly without making a public people-search. It only searches FINTRAC
+  when the applicant states a Canadian jurisdiction.
 - Triggered automatically after signup. The operator can also re-run it
   manually. Automatic jobs retry with a bounded backoff and stale worker
   locks are recovered after a restart.

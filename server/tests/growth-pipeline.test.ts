@@ -23,6 +23,11 @@ const research: LeadResearchProvider = {
   async research() {
     return {
       summary: "The public FINTRAC registry lists the business as registered. Source: https://registry.example/msb/42",
+      brief: {
+        executiveSummary: "The public FINTRAC registry lists the business as registered.",
+        sourceCount: 1, registryStatus: "possible_match", talkingPoints: [], openQuestions: [],
+        identity: { businessName: "North Star FX", websiteHost: "northstar.example", verification: "exact_business_name" },
+      },
       facts: [{
         key: "fintrac_registration",
         value: "Registration M123456 is listed as active.",

@@ -40,6 +40,7 @@ test("the application page separates stated answers from sourced research", asyn
           registryStatus: "possible_match",
           talkingPoints: ["Confirm the business model and locations."],
           openQuestions: ["Confirm the registry record belongs to this applicant."],
+          identity: { businessName: "Test FX", websiteHost: null, verification: "exact_business_name" },
         },
         costCents: 3,
         reviews: [],
@@ -72,7 +73,7 @@ test("the application page separates stated answers from sourced research", asyn
   await expect(inferred).toContainText("The public registry lists registration M123456.");
   await expect(inferred).not.toContainText("$10M+");
   await expect(inferred.getByRole("link", { name: /registry\.example/ })).toHaveAttribute("href", "https://registry.example/msb/M123456");
-  await expect(inferred).toContainText("98% source match");
+  await expect(inferred).toContainText("names stated business");
   await expect(inferred.getByTestId("growth-workflow")).toContainText("Brief ready");
   await expect(inferred.getByTestId("research-brief")).toContainText("possible FINTRAC name match");
   await expect(inferred.getByRole("button", { name: "Call now with AI" })).toBeDisabled();
