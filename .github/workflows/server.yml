@@ -18,4 +18,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_test npm test
-      - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_test npm run test:ledger:postgres
+      # The full suite above already exercises these files and leaves real
+      # ledger history behind. Re-running the focused gate against that same
+      # book tests fixed fixture IDs, not a fresh deployment. Keep the extra
+      # release gate, but give it the independent database its invariants
+      # require.
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_ledger_test'
+      - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_ledger_test npm run test:ledger:postgres
