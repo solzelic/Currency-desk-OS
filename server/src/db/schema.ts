@@ -513,6 +513,21 @@ export type ResearchBrief = {
     websiteHost: string | null;
     verification: "exact_business_name";
   };
+  /* This is the compact, caller-safe handoff. It deliberately contains only
+     public, sourced business context; staff-only matching signals below never
+     cross the boundary into an outbound agent prompt. */
+  callerContext?: {
+    goal: string;
+    publicBusinessContext: string[];
+    suggestedQuestions: string[];
+  };
+  /* Exact-match counts are a staff workflow aid, not research about a person.
+     The counts reveal neither another applicant nor their contact details. */
+  operatorOnly?: {
+    matchingEmailApplications: number;
+    matchingPhoneApplications: number;
+    matchingBusinessApplications: number;
+  };
 };
 
 export const enquiryGrowthJobs = pgTable(

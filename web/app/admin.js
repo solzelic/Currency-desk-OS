@@ -5238,6 +5238,7 @@ function GrowthPanel({
     })
   }), caps.callingEnabled ? 'All AI outbound calling is paused.' : 'AI outbound calling is enabled.');
   const sourceName = method => method === 'website_read' ? 'Applicant website' : method === 'registry' ? 'FINTRAC registry' : 'Public business source';
+  const sourceSummary = fact => fact.key && fact.key.startsWith('website_submitted_') ? fact.value : fact.method === 'registry' ? 'This registry source names the stated business. Review the cited record before treating it as a confirmed registration.' : 'This public source names the stated business. Open the cited page to review the supporting excerpt.';
   const facts = run => (run.facts || []).map(f => /*#__PURE__*/React.createElement("div", {
     key: f.id,
     style: {
@@ -5268,7 +5269,7 @@ function GrowthPanel({
       color: 'var(--mute)',
       lineHeight: 1.55
     }
-  }, f.value), /*#__PURE__*/React.createElement("a", {
+  }, sourceSummary(f)), /*#__PURE__*/React.createElement("a", {
     href: f.sourceUrl,
     target: "_blank",
     rel: "noopener",
@@ -5279,7 +5280,24 @@ function GrowthPanel({
       marginTop: 5,
       overflowWrap: 'anywhere'
     }
-  }, f.sourceUrl, " \u2197")));
+  }, f.sourceUrl, " \u2197"), !f.key.startsWith('website_submitted_') && /*#__PURE__*/React.createElement("details", {
+    style: {
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("summary", {
+    style: {
+      cursor: 'pointer',
+      color: 'var(--faint)',
+      fontSize: 11.5
+    }
+  }, "View source excerpt"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: 'var(--mute)',
+      fontSize: 11.5,
+      lineHeight: 1.55
+    }
+  }, f.value))));
   return /*#__PURE__*/React.createElement(Card, {
     title: "What research inferred",
     testId: "research-inferred",
@@ -5494,7 +5512,7 @@ function GrowthPanel({
       color: 'var(--purple)',
       marginBottom: 7
     }
-  }, "Caller brief \xB7 ", run.brief.sourceCount, " cited source", run.brief.sourceCount === 1 ? '' : 's'), /*#__PURE__*/React.createElement("div", {
+  }, "Call context \xB7 ", run.brief.sourceCount, " cited source", run.brief.sourceCount === 1 ? '' : 's'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       lineHeight: 1.6
@@ -5505,7 +5523,7 @@ function GrowthPanel({
     }
   }, /*#__PURE__*/React.createElement(Pill, {
     tone: run.brief.registryStatus === 'possible_match' ? 'amber' : 'mute'
-  }, run.brief.registryStatus === 'possible_match' ? 'possible FINTRAC name match · verify' : 'FINTRAC not confirmed')), (run.brief.talkingPoints || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, run.brief.registryStatus === 'possible_match' ? 'possible FINTRAC name match · verify' : 'FINTRAC not confirmed')), run.brief.callerContext && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10,
       fontSize: 12,
@@ -5515,7 +5533,19 @@ function GrowthPanel({
     style: {
       color: 'var(--text)'
     }
-  }, "Talking points"), run.brief.talkingPoints.map((point, i) => /*#__PURE__*/React.createElement("div", {
+  }, "Verified business context"), (run.brief.callerContext.publicBusinessContext || []).map((point, i) => /*#__PURE__*/React.createElement("div", {
+    key: i
+  }, "\xB7 ", point))), (run.brief.callerContext ? run.brief.callerContext.suggestedQuestions : run.brief.talkingPoints || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Suggested questions"), (run.brief.callerContext ? run.brief.callerContext.suggestedQuestions : run.brief.talkingPoints || []).map((point, i) => /*#__PURE__*/React.createElement("div", {
     key: i
   }, "\xB7 ", point))), (run.brief.openQuestions || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5529,7 +5559,27 @@ function GrowthPanel({
     }
   }, "Open questions"), run.brief.openQuestions.map((point, i) => /*#__PURE__*/React.createElement("div", {
     key: i
-  }, "\xB7 ", point)))), run.status === 'complete' && !identityChecked(run) && /*#__PURE__*/React.createElement("div", {
+  }, "\xB7 ", point))), run.brief.operatorOnly && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      paddingTop: 10,
+      borderTop: '1px solid var(--line)',
+      fontSize: 12,
+      color: 'var(--mute)'
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: 'var(--text)'
+    }
+  }, "Internal record check"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--faint)'
+    }
+  }, " \xB7 staff only, never sent to the calling agent"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 5
+    }
+  }, "Matching prior applications: email ", run.brief.operatorOnly.matchingEmailApplications, " \xB7 phone ", run.brief.operatorOnly.matchingPhoneApplications, " \xB7 business ", run.brief.operatorOnly.matchingBusinessApplications))), run.status === 'complete' && !identityChecked(run) && /*#__PURE__*/React.createElement("div", {
     style: {
       margin: '11px 0',
       padding: '9px 11px',

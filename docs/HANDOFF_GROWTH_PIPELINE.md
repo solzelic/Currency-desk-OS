@@ -80,6 +80,15 @@ So:
   search snippets are candidates only, and a generic currency-exchange
   result is discarded before extraction. Never substitute a contact's
   personal name or email for a business identity.
+- The submitted email and phone are **corroboration signals**, not public
+  search terms. The research job may check whether either is published on
+  the applicant's stated corporate website, and it records that positive
+  result with the page URL. It never sends personal contact details to a web
+  search provider for a reverse people-search.
+- A completed run also records exact-match counts for other early-access
+  applications (same email, phone, or stated business). Those are a
+  staff-only duplicate-resolution aid: they reveal no other applicant's
+  details and are never sent to ElevenLabs or rendered as public research.
 - The compact caller brief records that identity check. A historical run
   from before this rule remains append-only for audit, but cannot be
   reviewed or used to place an AI call; the operator must re-run it.
@@ -117,6 +126,9 @@ Each stage ships on its own and is useful without the next.
   locks are recovered after a restart.
 - Store the cost per run. This is the kind of thing that is fine at 10
   leads and surprising at 500.
+- Its result includes a caller-safe handoff: call goal, sourced public
+  business context, and suggested questions. It is distinct from both the
+  applicant's form answers and the operator-only duplicate check.
 
 ### Stage 2 — show it, and let an operator act — implemented
 
@@ -132,8 +144,9 @@ Each stage ships on its own and is useful without the next.
 ### Stage 3 — the ElevenLabs call — implemented, disabled until configured
 
 - An ElevenLabs Conversational AI agent receives two separately labelled
-  context blocks: what the applicant submitted and the sourced research
-  brief. A staff member must approve the latest brief before calling.
+  context blocks: what the applicant submitted and a caller-safe, sourced
+  business context. Staff-only duplicate counts do not cross that boundary.
+  A staff member must approve the latest brief before calling.
 - Persist to an append-only `enquiry_calls` table: placed_at, agent id,
   call id, duration, outcome, recording URL, transcript.
 - The transcript comes back into the admin panel against the application,

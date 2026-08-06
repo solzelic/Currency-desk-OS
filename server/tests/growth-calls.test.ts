@@ -60,6 +60,12 @@ describe("growth outbound calls", () => {
         executiveSummary: "Registered Canadian MSB with a staffed Toronto storefront.",
         sourceCount: 1, registryStatus: "possible_match", talkingPoints: [], openQuestions: [],
         identity: { businessName: "Amina FX", websiteHost: null, verification: "exact_business_name" },
+        callerContext: {
+          goal: "Qualify the business for CurrencyDesk early access.",
+          publicBusinessContext: ["A public source independently names Amina FX as the stated business."],
+          suggestedQuestions: ["Confirm the operating locations and next step."],
+        },
+        operatorOnly: { matchingEmailApplications: 4, matchingPhoneApplications: 2, matchingBusinessApplications: 1 },
       },
       creditsUsed: 3,
       costCents: 3,
@@ -119,6 +125,10 @@ describe("growth outbound calls", () => {
     });
     expect(dial.mock.calls[0]?.[0].firstMessage).toMatch(/AI/i);
     expect(dial.mock.calls[0]?.[0].firstMessage).toMatch(/record/i);
+    expect(dial.mock.calls[0]?.[0].prompt).toContain("Qualify the business for CurrencyDesk early access.");
+    expect(dial.mock.calls[0]?.[0].prompt).toContain("A public source independently names Amina FX");
+    expect(dial.mock.calls[0]?.[0].prompt).not.toContain("operatorOnly");
+    expect(dial.mock.calls[0]?.[0].prompt).not.toContain("matchingEmailApplications");
 
     const calls = await handle.db.select().from(schema.enquiryCalls)
       .where(eq(schema.enquiryCalls.enquiryId, enquiryId));

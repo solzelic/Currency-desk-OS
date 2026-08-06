@@ -84,4 +84,42 @@ describe("Tavily lead research", () => {
       enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example", details: {},
     })).rejects.toMatchObject({ code: "business_identity_required", statusCode: 422 });
   });
+
+  it("uses submitted contact details only to corroborate the stated website, never as a Tavily query", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body ?? "{}")) as { urls?: string[] };
+      if (url.endsWith("/search")) {
+        return new Response(JSON.stringify({ results: [{
+          title: "North Star FX", url: "https://directory.example/north-star", content: "North Star FX in Toronto",
+        }], usage: { credits: 1 } }), { status: 200 });
+      }
+      const source = body.urls?.[0] ?? "";
+      const content = source.includes("northstar.example")
+        ? "North Star FX contact Mira at mira@northstar.example or +1 (416) 555-0191."
+        : "North Star FX is listed in Toronto.";
+      return new Response(JSON.stringify({ results: [{ url: source, raw_content: content }], usage: { credits: 1 } }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = tavilyResearchProvider({ TAVILY_API_KEY: "test-key" });
+
+    const output = await provider!.research({
+      enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example",
+      details: { shopName: "North Star FX", website: "northstar.example", phone: "+14165550191", city: "Toronto" },
+    });
+
+    expect(output.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "website_submitted_email_1", value: "The submitted application email is published on this stated business website." }),
+      expect.objectContaining({ key: "website_submitted_phone_1", value: "The submitted application phone number is published on this stated business website." }),
+    ]));
+    expect(output.brief?.callerContext?.publicBusinessContext).toEqual(expect.arrayContaining([
+      "The submitted application email is published on this stated business website.",
+      "The submitted application phone number is published on this stated business website.",
+    ]));
+    for (const [, init] of fetchMock.mock.calls) {
+      const sent = String(init?.body ?? "");
+      expect(sent).not.toContain("mira@northstar.example");
+      expect(sent).not.toContain("14165550191");
+    }
+  });
 });

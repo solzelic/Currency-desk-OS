@@ -51,6 +51,19 @@ const text = (value: unknown): string | null => {
   return kept || null;
 };
 
+function callerSafeContext(brief: typeof schema.enquiryResearchRuns.$inferSelect["brief"], summary: string): string {
+  /* Never stringify the saved brief wholesale here. `operatorOnly` is useful
+     to staff resolving duplicate applications, but sending it to an AI caller
+     would both violate that boundary and make an awkward customer experience. */
+  return JSON.stringify({
+    callGoal: brief?.callerContext?.goal ?? "Qualify this business for CurrencyDesk early access and agree an appropriate next step.",
+    businessIdentity: brief?.identity?.businessName ?? null,
+    publicBusinessContext: brief?.callerContext?.publicBusinessContext ?? [summary],
+    suggestedQuestions: brief?.callerContext?.suggestedQuestions ?? brief?.openQuestions ?? [],
+    registryStatus: brief?.registryStatus ?? "not_confirmed",
+  }).slice(0, 8_000);
+}
+
 export function localHour(at: Date, timezone: string): number | null {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -195,7 +208,7 @@ export async function placeOutboundCall(input: {
   const recorded = input.config.recordingEnabled ? " This call is being recorded." : "";
   const firstMessage = `Hello ${applicantName}. I'm SAM, an AI assistant calling from CurrencyDesk about the application you submitted.${recorded} Is now still a good time?`;
   const statedAnswers = JSON.stringify(enquiry.details ?? {}).slice(0, 8_000);
-  const citedBrief = (research.brief ? JSON.stringify(research.brief) : research.summary).slice(0, 8_000);
+  const citedBrief = callerSafeContext(research.brief, research.summary);
   const prompt = [
     "You are SAM, CurrencyDesk's AI sales assistant.",
     "You must identify yourself as an AI and announce recording in the opening line when recording is enabled.",
@@ -204,7 +217,7 @@ export async function placeOutboundCall(input: {
     "Never claim an inferred fact came from the applicant. Treat the research below as sourced background, not as their own words.",
     "Applicant-stated form answers (these are what the person told us):",
     statedAnswers,
-    "Sourced research brief (inferred context; verify and never attribute it to the applicant):",
+    "Caller context (public, sourced business context; verify and never attribute it to the applicant):",
     citedBrief,
   ].join("\n");
 
