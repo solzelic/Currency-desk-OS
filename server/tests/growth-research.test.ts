@@ -32,6 +32,12 @@ describe("Tavily lead research", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(6);
+    const searchCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/search"));
+    expect(searchCalls).toHaveLength(3);
+    expect(JSON.parse(String(searchCalls[0]?.[1]?.body))).toMatchObject({
+      search_depth: "basic", max_results: 4, include_usage: true,
+    });
+    expect(JSON.parse(String(searchCalls[0]?.[1]?.body))).not.toHaveProperty("safe_search");
     const extractCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/extract"));
     expect(extractCalls).toHaveLength(3);
     expect(JSON.parse(String(extractCalls[0]?.[1]?.body))).toMatchObject({ chunks_per_source: 3, extract_depth: "basic" });
@@ -40,5 +46,15 @@ describe("Tavily lead research", () => {
     expect(output.brief).toMatchObject({ sourceCount: 3, registryStatus: "possible_match" });
     expect(output.creditsUsed).toBe(6);
     expect(output.costCents).toBe(12);
+  });
+
+  it("keeps a provider rejection useful without exposing a Tavily key", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "Project is not allowed for this request: tvly-secret-key" }), { status: 403 })));
+    const provider = tavilyResearchProvider({ TAVILY_API_KEY: "test-key" });
+
+    await expect(provider!.research({
+      enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example",
+      details: { shopName: "North Star FX", jurisdiction: "Canada" },
+    })).rejects.toThrow("Tavily search failed (403): Project is not allowed for this request: [redacted].");
   });
 });
