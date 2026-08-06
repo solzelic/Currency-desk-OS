@@ -56,6 +56,11 @@ describe("growth outbound calls", () => {
       model: "fixture-v1",
       status: "complete",
       summary: "Registered Canadian MSB with a staffed Toronto storefront.",
+      brief: {
+        executiveSummary: "Registered Canadian MSB with a staffed Toronto storefront.",
+        sourceCount: 1, registryStatus: "possible_match", talkingPoints: [], openQuestions: [],
+        identity: { businessName: "Amina FX", websiteHost: null, verification: "exact_business_name" },
+      },
       creditsUsed: 3,
       costCents: 3,
       createdBy: "platform-owner",

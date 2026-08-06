@@ -505,6 +505,14 @@ export type ResearchBrief = {
   registryStatus: "possible_match" | "not_confirmed";
   talkingPoints: string[];
   openQuestions: string[];
+  /* A call may only rely on research that independently named the business
+     the applicant supplied. Older snapshots remain visible, but are not
+     callable context merely because they happen to contain web text. */
+  identity?: {
+    businessName: string;
+    websiteHost: string | null;
+    verification: "exact_business_name";
+  };
 };
 
 export const enquiryGrowthJobs = pgTable(

@@ -152,6 +152,12 @@ export async function placeOutboundCall(input: {
   if (!research?.summary) {
     throw new CallRefused("research_absent", "Research this application before calling.");
   }
+  if (research.brief?.identity?.verification !== "exact_business_name") {
+    /* A previous version could retain a broad search page as a completed
+       snapshot. It stays in history, but it must never become context for a
+       real person call; a fresh identity-checked run is required instead. */
+    throw new CallRefused("research_identity_unverified", "Re-run research before calling: this saved snapshot did not verify the applicant's stated business identity.");
+  }
   const review = (await input.db.select().from(schema.enquiryResearchReviews)
     .where(eq(schema.enquiryResearchReviews.researchId, research.id))
     .orderBy(desc(schema.enquiryResearchReviews.reviewedAt)).limit(1))[0];

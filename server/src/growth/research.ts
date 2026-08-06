@@ -82,15 +82,40 @@ const kept = (value: unknown, max = 4000): string | null => {
   return s ? s.slice(0, max) : null;
 };
 
-const websiteHost = (value: unknown): string | null => {
+const websiteUrl = (value: unknown): string | null => {
   const raw = kept(value, 300);
   if (!raw || raw === "none yet") return null;
   try {
     const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
-    return url.hostname || null;
+    return ["http:", "https:"].includes(url.protocol) && url.hostname ? url.toString() : null;
   } catch {
     return null;
   }
+};
+
+const websiteHost = (value: string | null): string | null => {
+  if (!value) return null;
+  try { return new URL(value).hostname.toLowerCase(); } catch { return null; }
+};
+
+const normal = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+const businessName = (details: Record<string, unknown>): string | null =>
+  kept(details.shopName, 180) ?? kept(details.businessName, 180) ?? kept(details.legalName, 180) ?? kept(details.companyName, 180);
+const namesBusiness = (value: string, business: string): boolean => normal(business).length >= 3 && normal(value).includes(normal(business));
+const sameDomain = (url: string, host: string): boolean => {
+  try {
+    const actual = new URL(url).hostname.toLowerCase();
+    return actual === host || actual.endsWith(`.${host}`);
+  } catch { return false; }
+};
+const canada = (value: string | null): boolean => /(^|\b)(ca|canada|canadian)(\b|$)/i.test(value ?? "");
+const cleanEvidence = (value: string, business: string): string | null => {
+  const compact = value.replace(/\s+/g, " ").replace(/\[(?:\.{3}|…)?\]/g, " ").trim();
+  const index = compact.toLowerCase().indexOf(business.toLowerCase());
+  if (index < 0) return namesBusiness(compact, business) ? compact.slice(0, 720) : null;
+  const start = Math.max(0, index - 180);
+  const end = Math.min(compact.length, index + business.length + 540);
+  return `${start ? "…" : ""}${compact.slice(start, end)}${end < compact.length ? "…" : ""}`;
 };
 
 const factKey = (prefix: string, index: number): string => `${prefix}_${index + 1}`;
@@ -138,85 +163,99 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
     name: "tavily",
     model: "tavily-search-basic",
     async research(lead) {
-      const business = kept(lead.details.shopName, 180) ?? kept(lead.name, 180) ?? lead.email;
-      const jurisdiction = kept(lead.details.jurisdiction, 80) ?? "Canada";
-      const host = websiteHost(lead.details.website);
-      const tasks: { label: string; method: ResearchFactInput["method"]; promise: Promise<TavilyResponse> }[] = [];
-      if (host) {
-        tasks.push({
-          label: "website_profile",
-          method: "website_read",
-          promise: search(`site:${host} ${business} currency exchange services locations compliance`),
-        });
+      /* A person’s name or email is not a business identity. Falling back to
+         either caused generic “currency exchange” pages to be filed against
+         an applicant. We now do no public lookup until the applicant has
+         named the business we are trying to verify. */
+      const business = businessName(lead.details);
+      if (!business) {
+        throw new ResearchUnavailable(
+          "business_identity_required",
+          "Research needs the applicant's business or legal name. We will not search a person's name or email as a substitute.",
+          422,
+        );
       }
-      tasks.push({
-        label: "business_search",
-        method: "web_search",
-        promise: search(`\"${business}\" currency exchange ${jurisdiction} locations owners services`),
+      const jurisdiction = kept(lead.details.jurisdiction, 80);
+      const city = kept(lead.details.city, 100);
+      const site = websiteUrl(lead.details.website);
+      const host = websiteHost(site);
+      const tasks: { label: string; method: ResearchFactInput["method"]; direct?: boolean; promise: Promise<TavilyResponse> | Promise<TavilyExtractResponse> }[] = [];
+      if (site) tasks.push({ label: "applicant_website", method: "website_read", direct: true,
+        // Read the address the applicant gave us directly. A search engine is
+        // useful for discovery, but it is not proof that a result is theirs.
+        promise: extract([site], `${business} business identity services locations`),
       });
-      tasks.push({
-        label: "fintrac_registry",
-        method: "registry",
+      tasks.push({ label: "public_business_source", method: "web_search",
+        promise: search(`\"${business}\"${city ? ` ${city}` : ""}${jurisdiction ? ` ${jurisdiction}` : ""}`),
+      });
+      if (canada(jurisdiction)) tasks.push({ label: "fintrac_registry", method: "registry",
         promise: search(`\"${business}\" FINTRAC MSB registration`, ["fintrac-canafe.canada.ca"]),
       });
 
       const responses = await Promise.all(tasks.map((task) => task.promise));
       const facts: ResearchFactInput[] = [];
-      const sections: string[] = [];
       let credits = 0;
       for (let taskIndex = 0; taskIndex < responses.length; taskIndex += 1) {
         const response = responses[taskIndex]!;
         const task = tasks[taskIndex]!;
-        const results = Array.isArray(response.results) ? response.results as TavilyResult[] : [];
+        const discovery = task.direct ? null : response as TavilyResponse;
+        const directExtract = task.direct ? response as TavilyExtractResponse : null;
+        const results = Array.isArray(discovery?.results) ? discovery.results as TavilyResult[] : [];
+        /* Search snippets are only candidates. We extract no result unless
+           its own title or snippet names the stated business exactly. */
         const candidates = results.flatMap((result) => {
           const url = kept(result.url, 1000);
-          return url ? [url] : [];
-        }).slice(0, 4);
-        if (!candidates.length) continue;
-        const extracted = await extract(candidates, `${business} business identity services ownership locations and regulatory registration evidence`);
+          const identityText = [kept(result.title, 500), kept(result.content, 2_000)].filter(Boolean).join(" ");
+          return url && namesBusiness(identityText, business) ? [url] : [];
+        }).slice(0, 2);
+        const extracted = directExtract ?? (candidates.length
+          ? await extract(candidates, `${business} business identity services locations regulatory registration`)
+          : null);
+        if (!extracted) continue;
         const extractedByUrl = new Map((extracted.results ?? []).flatMap((result) => {
           const url = kept(result.url, 1000);
-          const content = kept(result.raw_content, 10_000);
+          const content = kept(result.raw_content, 8_000);
           return url && content ? [[sourceKey(url), content] as const] : [];
         }));
-        const sourced = results.flatMap((result, index) => {
-          const sourceUrl = kept(result.url, 1000);
-          const value = sourceUrl ? extractedByUrl.get(sourceKey(sourceUrl)) ?? null : null;
-          if (!sourceUrl || !value) return [];
-          const normalizedBusiness = business.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-          const matchesBusiness = normalizedBusiness.length > 3 && value.toLowerCase().replace(/[^a-z0-9]+/g, " ").includes(normalizedBusiness);
-          // This is source-match strength, not a claim that the content is
-          // true. The UI names it that way; an operator still opens sources.
-          const score = task.method === "website_read" ? 0.85 : task.method === "registry" ? (matchesBusiness ? 0.8 : 0.45) : (matchesBusiness ? 0.72 : 0.55);
+        const sourced = [...extractedByUrl.entries()].flatMap(([url, raw], index) => {
+          if (task.direct && (!host || !sameDomain(url, host))) return [];
+          const value = cleanEvidence(raw, business);
+          // Even the supplied website must name the business in the extracted
+          // page. A domain alone is not evidence of the applicant’s company.
+          if (!value) return [];
           return [{
-            key: factKey(task.label, index),
-            value,
-            sourceUrl,
-            confidence: score,
+            key: factKey(task.label, index), value, sourceUrl: url,
+            confidence: task.method === "website_read" ? 0.95 : task.method === "registry" ? 0.9 : 0.85,
             method: task.method,
           } satisfies ResearchFactInput];
         });
         facts.push(...sourced);
-        if (sourced.length) sections.push(`${task.label.replaceAll("_", " ")}: ${sourced.length} extracted source${sourced.length === 1 ? "" : "s"}. ${sourced.map((fact) => fact.sourceUrl).join(", ")}`);
-        const used = Number(response.usage?.credits);
+        const used = Number((response as TavilyResponse | TavilyExtractResponse).usage?.credits);
         if (Number.isFinite(used) && used > 0) credits += used;
-        const extractUsed = Number(extracted.usage?.credits);
-        if (Number.isFinite(extractUsed) && extractUsed > 0) credits += extractUsed;
+        if (!directExtract) {
+          const extractUsed = Number(extracted.usage?.credits);
+          if (Number.isFinite(extractUsed) && extractUsed > 0) credits += extractUsed;
+        }
       }
 
       if (!facts.length) {
-        throw new Error("Research returned no sourced findings.");
+        throw new ResearchUnavailable(
+          "business_identity_not_confirmed",
+          `No public source named \"${business}\" exactly. Nothing was saved as a finding; check the business name and website before re-running research.`,
+          422,
+        );
       }
       const registryMatch = facts.some((fact) => fact.method === "registry" && fact.confidence >= 0.8);
-      const summary = `${business}: ${facts.length} sourced finding${facts.length === 1 ? "" : "s"} extracted for staff review. FINTRAC registration ${registryMatch ? "has a possible name match that requires human confirmation" : "was not confirmed by this run"}.`;
+      const summary = `${business}: ${facts.length} public source${facts.length === 1 ? "" : "s"} named the stated business exactly and passed the identity check. FINTRAC registration ${registryMatch ? "has a possible name match that requires human confirmation" : "was not confirmed by this run"}.`;
       return {
-        summary: `${summary}\n\n${sections.join("\n\n")}`,
+        summary,
         brief: {
           executiveSummary: summary,
           sourceCount: new Set(facts.map((fact) => fact.sourceUrl)).size,
           registryStatus: registryMatch ? "possible_match" : "not_confirmed",
-          talkingPoints: ["Confirm the business model and locations.", "Ask how the team currently handles rates, cash ownership and compliance work."],
+          talkingPoints: [`Confirm that ${business} is the legal or trading name.`, "Ask how the team currently handles rates, cash ownership and compliance work."],
           openQuestions: registryMatch ? ["Confirm the FINTRAC record belongs to this applicant."] : ["Ask for the legal business name and MSB registration number.", "Confirm whether registration is pending or held under another legal name."],
+          identity: { businessName: business, websiteHost: host, verification: "exact_business_name" },
         },
         facts,
         creditsUsed: credits || null,
@@ -284,6 +323,7 @@ export async function researchEnquiry(input: {
       })));
     });
   } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 2000) : "Research failed.";
     await input.db.insert(schema.enquiryResearchRuns).values({
       id: runId,
       enquiryId: input.enquiry.id,
@@ -291,9 +331,10 @@ export async function researchEnquiry(input: {
       provider: input.provider.name,
       model: input.provider.model,
       status: "failed",
-      error: error instanceof Error ? error.message.slice(0, 2000) : "Research failed.",
+      error: detail,
       createdBy: input.createdBy,
     });
+    if (error instanceof ResearchUnavailable) throw error;
     throw new ResearchUnavailable("research_failed", "Lead research failed. The attempt is recorded; no applicant data was changed.", 502);
   }
   return runId;

@@ -10,10 +10,9 @@ describe("Tavily lead research", () => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string; urls?: string[] };
       if (url.endsWith("/search")) {
         const fintrac = body.query?.includes("FINTRAC");
-        const website = body.query?.startsWith("site:");
         const source = fintrac
           ? "https://fintrac-canafe.canada.ca/msb-esm/registry-registre/42"
-          : website ? "https://northstar.example/about" : "https://directory.example/north-star";
+          : "https://directory.example/north-star";
         return new Response(JSON.stringify({ results: [{ url: source, title: "North Star FX", content: "search snippet", score: 0.91 }], usage: { credits: 1 } }), { status: 200 });
       }
       const source = body.urls?.[0] ?? "";
@@ -31,9 +30,9 @@ describe("Tavily lead research", () => {
       details: { shopName: "North Star FX", website: "northstar.example", jurisdiction: "Canada" },
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     const searchCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/search"));
-    expect(searchCalls).toHaveLength(3);
+    expect(searchCalls).toHaveLength(2);
     expect(JSON.parse(String(searchCalls[0]?.[1]?.body))).toMatchObject({
       search_depth: "basic", max_results: 4, include_usage: true,
     });
@@ -43,9 +42,11 @@ describe("Tavily lead research", () => {
     expect(JSON.parse(String(extractCalls[0]?.[1]?.body))).toMatchObject({ chunks_per_source: 3, extract_depth: "basic" });
     expect(output.facts).toHaveLength(3);
     expect(output.facts.every((fact) => fact.sourceUrl && !fact.value.includes("search snippet"))).toBe(true);
+    expect(output.facts.every((fact) => fact.value.length <= 722)).toBe(true);
     expect(output.brief).toMatchObject({ sourceCount: 3, registryStatus: "possible_match" });
-    expect(output.creditsUsed).toBe(6);
-    expect(output.costCents).toBe(12);
+    expect(output.brief?.identity).toEqual({ businessName: "North Star FX", websiteHost: "northstar.example", verification: "exact_business_name" });
+    expect(output.creditsUsed).toBe(5);
+    expect(output.costCents).toBe(10);
   });
 
   it("keeps a provider rejection useful without exposing a Tavily key", async () => {
@@ -56,5 +57,31 @@ describe("Tavily lead research", () => {
       enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example",
       details: { shopName: "North Star FX", jurisdiction: "Canada" },
     })).rejects.toThrow("Tavily search failed (403): Project is not allowed for this request: [redacted].");
+  });
+
+  it("does not save generic currency-exchange search pages against a business", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/search")) {
+        return new Response(JSON.stringify({ results: [{
+          title: "Currency exchange near you", url: "https://example.test/currency-exchange", content: "Find a currency exchange in any city.",
+        }], usage: { credits: 1 } }), { status: 200 });
+      }
+      throw new Error("A non-matching search result must not be extracted.");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = tavilyResearchProvider({ TAVILY_API_KEY: "test-key" });
+
+    await expect(provider!.research({
+      enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example",
+      details: { shopName: "North Star FX", jurisdiction: "Canada" },
+    })).rejects.toMatchObject({ code: "business_identity_not_confirmed", statusCode: 422 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses to research a personal name or email when business identity is absent", async () => {
+    const provider = tavilyResearchProvider({ TAVILY_API_KEY: "test-key" });
+    await expect(provider!.research({
+      enquiryId: "lead-1", reference: "CD-LEAD01", name: "Mira Chen", email: "mira@northstar.example", details: {},
+    })).rejects.toMatchObject({ code: "business_identity_required", statusCode: 422 });
   });
 });
