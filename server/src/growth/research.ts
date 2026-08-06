@@ -55,6 +55,28 @@ type TavilyExtractResponse = {
   usage?: { credits?: unknown };
 };
 
+const safeTavilyError = async (response: Response, operation: "search" | "extract"): Promise<Error> => {
+  // Provider error bodies often explain a rejected request, but they must never
+  // become a route for reflecting credentials into the applicant timeline.
+  // Keep only a short, printable message and redact key-shaped strings.
+  const raw = await response.text().catch(() => "");
+  let message = "";
+  try {
+    const body = JSON.parse(raw) as { detail?: unknown; error?: unknown; message?: unknown };
+    const candidate = body.detail ?? body.error ?? body.message;
+    if (typeof candidate === "string") message = candidate;
+  } catch {
+    // Non-JSON failures (for example a proxy page) are deliberately not shown
+    // to staff. The status still gives support a useful, safe diagnostic.
+  }
+  message = message
+    .replace(/tvly-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/[\x00-\x1F\x7F]/g, " ")
+    .trim()
+    .slice(0, 240);
+  return new Error(`Tavily ${operation} failed (${response.status})${message ? `: ${message}` : ""}.`);
+};
+
 const kept = (value: unknown, max = 4000): string | null => {
   const s = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   return s ? s.slice(0, max) : null;
@@ -93,12 +115,11 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
         max_results: 4,
         include_answer: false,
         include_usage: true,
-        safe_search: true,
         include_domains: includeDomains,
       }),
       signal: AbortSignal.timeout(25_000),
     });
-    if (!response.ok) throw new Error(`Tavily search failed (${response.status}).`);
+    if (!response.ok) throw await safeTavilyError(response, "search");
     return await response.json() as TavilyResponse;
   };
 
@@ -109,7 +130,7 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
       body: JSON.stringify({ urls, query, chunks_per_source: 3, extract_depth: "basic", include_usage: true }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error(`Tavily extract failed (${response.status}).`);
+    if (!response.ok) throw await safeTavilyError(response, "extract");
     return await response.json() as TavilyExtractResponse;
   };
 
