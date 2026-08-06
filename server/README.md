@@ -53,6 +53,16 @@ npm run typecheck && npm test
 
 Integration tests run the full HTTP app against an in-memory PGlite instance.
 
+## Lead research and outbound calls
+
+The admin application page can run sourced Tavily research and place a
+guarded ElevenLabs call. Both integrations are optional and remain disabled
+when their environment variables are absent. Consent evidence, research
+snapshots, sourced facts and call history are stored separately from the
+applicant's own `enquiries.details` answers. See
+[`docs/GROWTH_PIPELINE.md`](../docs/GROWTH_PIPELINE.md) for configuration,
+safety gates and webhook setup.
+
 ## Ledger posting (isolated local PostgreSQL)
 
 ```sh

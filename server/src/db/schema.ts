@@ -436,6 +436,12 @@ export const enquiries = pgTable(
        up with a stage called "high-volume-reviewing". */
     labels: jsonb("labels").$type<string[]>().notNull().default([]),
     handledAt: timestamp("handled_at", { withTimezone: true }),
+    /* A safety state, not an inferred fact. Once set, no automation may dial
+       this lead; only a deliberate operator action may clear it. */
+    doNotContact: boolean("do_not_contact").notNull().default(false),
+    doNotContactAt: timestamp("do_not_contact_at", { withTimezone: true }),
+    doNotContactBy: text("do_not_contact_by"),
+    doNotContactReason: text("do_not_contact_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -453,6 +459,115 @@ export type EnquiryKind = "early_access" | "contact";
    ordering here is what the board's columns are drawn from. */
 export type EnquiryStatus = "new" | "reviewing" | "hold" | "invited" | "accepted" | "declined";
 export const ENQUIRY_STATUSES: EnquiryStatus[] = ["new", "reviewing", "hold", "invited", "accepted", "declined"];
+
+/* Evidence for the permission to contact this applicant. Kept outside
+   `details`: that blob is exactly what the applicant typed, while this row is
+   server/browser evidence about how and when the form was submitted. */
+export const enquiryContactConsents = pgTable(
+  "enquiry_contact_consents",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    formVersion: text("form_version").notNull(),
+    ipAddress: text("ip_address").notNull(),
+    userAgent: text("user_agent"),
+    timezone: text("timezone"),
+    timezoneSource: text("timezone_source"),
+    consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_contact_consents_idx").on(t.enquiryId, t.consentedAt)],
+);
+
+/* One immutable snapshot per research attempt. A re-run adds a row; it never
+   rewrites what the caller saw before an earlier conversation. */
+export const enquiryResearchRuns = pgTable(
+  "enquiry_research_runs",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    provider: text("provider").notNull(),
+    model: text("model"),
+    status: text("status").notNull(),
+    summary: text("summary"),
+    creditsUsed: integer("credits_used"),
+    costCents: integer("cost_cents"),
+    error: text("error"),
+    createdBy: text("created_by").notNull(),
+  },
+  (t) => [index("enquiry_research_runs_idx").on(t.enquiryId, t.runAt)],
+);
+
+export type ResearchMethod = "web_search" | "website_read" | "registry" | "model_inference";
+export const enquiryResearchFacts = pgTable(
+  "enquiry_research_facts",
+  {
+    id: text("id").primaryKey(),
+    researchId: text("research_id").notNull().references(() => enquiryResearchRuns.id),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    method: text("method").$type<ResearchMethod>().notNull(),
+  },
+  (t) => [index("enquiry_research_facts_idx").on(t.researchId)],
+);
+
+/* Reviewing is an event of its own. It does not mutate the run, which keeps
+   the research history append-only. */
+export const enquiryResearchReviews = pgTable(
+  "enquiry_research_reviews",
+  {
+    id: text("id").primaryKey(),
+    researchId: text("research_id").notNull().references(() => enquiryResearchRuns.id),
+    reviewedBy: text("reviewed_by").notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_research_reviews_idx").on(t.researchId, t.reviewedAt)],
+);
+
+/* One row per attempted real-world call. `trigger_key` is the reservation:
+   the provider is never contacted unless this insert wins. */
+export const enquiryCalls = pgTable(
+  "enquiry_calls",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    researchId: text("research_id").references(() => enquiryResearchRuns.id),
+    triggerKey: text("trigger_key").notNull(),
+    provider: text("provider").notNull(),
+    agentId: text("agent_id").notNull(),
+    providerCallId: text("provider_call_id"),
+    conversationId: text("conversation_id"),
+    phone: text("phone").notNull(),
+    timezone: text("timezone").notNull(),
+    status: text("status").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    placedAt: timestamp("placed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    durationSeconds: integer("duration_seconds"),
+    outcome: text("outcome"),
+    recordingUrl: text("recording_url"),
+    transcript: jsonb("transcript").$type<unknown[]>(),
+    summary: text("summary"),
+    error: text("error"),
+    createdBy: text("created_by").notNull(),
+  },
+  (t) => [
+    uniqueIndex("enquiry_calls_trigger_idx").on(t.triggerKey),
+    index("enquiry_calls_enquiry_idx").on(t.enquiryId, t.requestedAt),
+    uniqueIndex("enquiry_calls_conversation_idx").on(t.conversationId),
+  ],
+);
+
+/* Operational switches must be reachable without a deploy. Values stay JSON
+   so future settings do not require a new table shape. */
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<Record<string, unknown>>().notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /* SMS rate-hold quotes — a site visitor asks for a rate by text; the
    server prices it off the newest published board and HOLDS it for 30

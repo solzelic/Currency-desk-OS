@@ -271,10 +271,18 @@ const PAGES = {
    failure surfaces as a missing reference rather than a false success. */
 const ENQUIRY_HELPER = `<script>
 window.sendEnquiry = function (kind, email, name, details) {
+  var timezone = null;
+  try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) {}
   return fetch('/api/enquiries', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind: kind, email: email, name: name || undefined, details: details }),
+    body: JSON.stringify({
+      kind: kind,
+      email: email,
+      name: name || undefined,
+      details: details,
+      contactContext: kind === 'early_access' ? { timezone: timezone } : undefined,
+    }),
   })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
     // the whole reply: the reference to quote back, and — for an application —

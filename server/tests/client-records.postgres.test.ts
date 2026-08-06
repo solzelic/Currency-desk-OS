@@ -770,9 +770,12 @@ postgres("migration 019, over a desk's existing blob", () => {
       `SELECT i.purpose, i.content_type, i.byte_size, d.doc_type
          FROM desk_client_images i
          LEFT JOIN desk_client_identity_documents d ON d.document_id = i.document_id
-        WHERE i.client_id=$1 ORDER BY i.purpose, d.doc_type`,
+        WHERE i.client_id=$1 ORDER BY i.purpose, d.doc_type COLLATE "C"`,
       [jonh.client_id],
     );
+    /* Explicit C collation: CI and a developer laptop may have different
+       locale collations, and this assertion is about which scans exist, not
+       the host's opinion of whether "PR" sorts before "Pa". */
     /* Both ID scans and the contact photograph came out of the blob —
        which is the four-megabyte ceiling this desk was heading for — and
        the photograph is kept as its own purpose rather than being
