@@ -9,11 +9,26 @@ this (`scripts/check-repository-governance.mjs`).
 
 A multi-tenant SaaS operating system for currency-exchange houses. One
 sign-in gives a desk its rate board, ledger, quotes, transfers, cheque
-cashing, clients/KYC, compliance thresholds and filings, till/vault cash,
-and reports. CurrencyDesk also hosts each customer's public storefront
-(live rates, converter, SMS quotes) on their own domain, and runs a growth
-pipeline (lead research + outbound calling) for its own sales funnel.
+cashing, clients/KYC, compliance thresholds, alerts and filing records
+(a filing is sealed and recorded in the ledger; submission to the regulator
+is not automated), till/vault cash, and reports. CurrencyDesk also hosts
+each customer's public storefront (live rates, converter, SMS rate quotes)
+on their own domain, and runs a growth pipeline (lead research + outbound
+calling) for its own sales funnel.
 Deployed as **one Render web service** (`render.yaml`), auto-deploying `main`.
+
+## Current product milestone — Shop-Ready Core v1
+
+One shop, one full operating loop, provable end to end: an approved operator
+can go from Early Access → approval → onboarding → configured desk and rates
+→ open till → quote and post FX transactions → acknowledge manual KYC
+verification when the system flags it → receive internal compliance
+alerts/work items → have the authoritative ledger, till and audit trail
+update correctly → reconcile and close the day.
+
+Automated KYC-provider integration, SMS delivery, calling-agent automation,
+external rate publishing and other external integrations are useful next
+layers — they are not blockers for proving this core loop.
 
 ## Current architecture (major components only)
 
@@ -51,9 +66,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Open, under normal review.
-- **Repository governance** — this branch (`chore/repository-governance`): AI
-  instruction system, living docs, PR governance CI, full seam suite in CI.
-- **Queued next**: cherry-pick of the two unmerged security fixes from
+- **Queued**: cherry-pick of the two unmerged security fixes from
   `claude/currencydesk-onboarding-completion-ls2i74` @ `cee9c74` (fake
   `000000` two-step screen removal; designed sign-in email), then the staged
   cleanup PRs from the Phase 1 audit (`docs/REPO_CONSOLIDATION_PHASE1.md` on
@@ -79,17 +92,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
    all five customer-facing pages pull React dev builds + Babel from unpkg
    for the tweaks panel, and `YorkFX/image-slot.js` 404s on a state file
    every load.
-7. **Seam suite in CI** — being fixed by the governance branch; until it
-   merges, the browser/financial gate in CI runs only 3 of 17 specs.
 
 ## Next engineering priorities (ordered)
 
-1. Merge repository governance (this branch) — CI then runs the full seam suite.
-2. Cherry-pick the `cee9c74` security fixes as `security/remove-fake-otp-screen`.
-3. Cleanup PR 1 — deterministic low-risk deletions from the Phase 1 audit.
-4. Documentation consolidation (Phase 1 audit §H).
-5. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
-6. Platform MFA (issue #33).
+1. Cherry-pick the `cee9c74` security fixes as `security/remove-fake-otp-screen`.
+2. Cleanup PR 1 — deterministic low-risk deletions from the Phase 1 audit.
+3. Documentation consolidation (Phase 1 audit §H).
+4. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
+5. Platform MFA (issue #33).
 
 ## Last reviewed
 
