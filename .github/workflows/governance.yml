@@ -1,0 +1,29 @@
+# Documentation freshness, enforced at the change-set level.
+#
+# A PR that changes application code must either update
+# docs/PROJECT_STATE.md or carry the checked "PROJECT_STATE reviewed —
+# no change required" box from the PR template; a PR that changes
+# architecture-sensitive surfaces must do the same for the
+# architecture/repository docs. The check itself lives in
+# scripts/check-repository-governance.mjs so it can also run locally.
+name: Governance
+
+on: [pull_request]
+
+jobs:
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # PR body and base ref go through env, never string interpolation into
+      # the shell — the body is author-controlled text.
+      - name: Living documentation was reviewed or updated
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/check-repository-governance.mjs --base "origin/$BASE_REF"
