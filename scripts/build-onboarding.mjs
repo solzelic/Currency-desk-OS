@@ -1,7 +1,7 @@
 /* ============================================================
    Compile the designed onboarding into the served page.
 
-     CurrencyDesk Onboarding.html  →  web/onboarding.html
+     design/onboarding/currencydesk-onboarding.html  →  web/onboarding.html
 
    The design is a dc-runtime standalone bundle: 17 screens that keep
    their answers in localStorage. That is right for a prototype and
@@ -49,7 +49,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SRC = path.join(ROOT, "CurrencyDesk Onboarding.html");
+const SRC = path.join(ROOT, "design/onboarding/currencydesk-onboarding.html");
 const OUT = path.join(ROOT, "web", "onboarding.html");
 
 /* The design's own storage key. Kept in one place here so that if a re-export
@@ -503,7 +503,7 @@ function patcher(source) {
 }
 
 if (!existsSync(SRC)) {
-  console.log("no CurrencyDesk Onboarding.html in the repo root — nothing to build.");
+  console.log("no design/onboarding/currencydesk-onboarding.html — nothing to build.");
   console.log("drop the design there and run this again.");
   process.exit(0);
 }
