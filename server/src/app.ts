@@ -197,10 +197,16 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
        compiles them ahead of time into web/app; when that output is present
        it is what gets served, and the hand-written originals stay as the
        thing you edit. A deploy that has not run the build still works — it
-       just serves the slow ones. */
+       just serves the slow ones.
+
+       STATIC_INDEX is the fallback name, not an override. Render still
+       sets it to the uncompiled shell (`CurrencyDesk OS.html`). Letting
+       that win put Babel and react.development back on /login and /app
+       in production while every test that deleted the variable stayed
+       green. Compiled output, when present, is what a customer loads. */
     const compiled = (built: string, source: string): string =>
       existsSync(path.join(staticDir, built)) ? built : source;
-    const indexFile = process.env.STATIC_INDEX ?? compiled("web/app/index.html", "CurrencyDesk OS.html");
+    const indexFile = compiled("web/app/index.html", process.env.STATIC_INDEX ?? "CurrencyDesk OS.html");
     // the public front door. When SITE_INDEX is present in the static dir the
     // marketing site serves at "/" and the OS moves to "/app"; without it the
     // OS keeps the root, so a deploy that ships only the app still works.

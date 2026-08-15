@@ -8,7 +8,7 @@ import { defineConfig, devices } from "@playwright/test";
    green and none of it touched the code a customer loads.
 
    So it boots the real server, configured the way Render configures it:
-   the buildless OS at /app, the built marketing pages at /, the panel at
+   the compiled OS at /app, the built marketing pages at /, the panel at
    /admin. In-memory Postgres so a run leaves nothing behind, and rate
    syncing off so no test depends on a rate provider being up.
    ============================================================ */
@@ -41,13 +41,11 @@ export default defineConfig({
     env: {
       PORT: String(PORT),
       /* The same shape Render runs: repo root as the static dir, the
-         buildless OS as the app shell, the built site at the front. */
+         uncompiled shell named in STATIC_INDEX, the built site at the
+         front. The server still prefers web/app when that output is
+         present — that is what a customer loads. */
       STATIC_DIR: "..",
-      /* No STATIC_INDEX on purpose. The server prefers web/app when the
-         compiled apps are there, which is what Render serves — naming the
-         uncompiled original here would walk a customer journey through code
-         no customer runs, which is the whole mistake this suite exists to
-         stop repeating. */
+      STATIC_INDEX: "CurrencyDesk OS.html",
       SITE_INDEX: "web/index.html",
       /* A database that exists only for this run — unless a real PostgreSQL
          is offered for the seam suite.

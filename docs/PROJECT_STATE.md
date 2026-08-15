@@ -39,12 +39,17 @@ layers — they are not blockers for proving this core loop.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
   compiled ahead of time to `web/app/` by `scripts/build-os.mjs`.
+  Production `/login` and `/app` serve that compiled shell
+  (`/web/app/os.js`). `STATIC_INDEX` names the uncompiled shell as a
+  fallback only; it does not override compiled output.
 - **Admin panel** — `admin.html`, compiled to `web/app/admin.*`.
 - **Marketing site** — generated into `web/` from `design/site/*.dc.html`.
 - **Onboarding** — `web/onboarding.html`, generated from
   `design/onboarding/currencydesk-onboarding.html`.
 - **Customer storefront** — `YorkFX/`, served at `/sites/yorkfx` and via
-  customer domains.
+  customer domains. Customer pages are plain HTML and their own scripts;
+  they do not load unpkg, Babel, or `react.development`. The design-time
+  tweaks panel stays in the repo and is not referenced from those pages.
 
 Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
@@ -86,10 +91,6 @@ deliberately retained until external hot-linking can be ruled out.
    resolve a request's till as "the only workspace at this branch" and deny
    callers without `x-workspace-id` once a second workspace exists. Makes
    seam-test order load-bearing (`zz-` prefix workaround).
-5. **YorkFX storefront loads design tooling in production** (issue #35) —
-   all five customer-facing pages pull React dev builds + Babel from unpkg
-   for the tweaks panel, and `YorkFX/image-slot.js` 404s on a state file
-   every load.
 
 ## Next engineering priorities (ordered)
 
@@ -99,6 +100,7 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Last reviewed
 
-**2026-08-15**, against `main` = `7ab3f85e` ("Organize the repository root
-(#41)"). Review this stamp — and every section above — whenever a PR
-changes what is true.
+**2026-08-15**, against this change (compiled OS in production; YorkFX
+pages no longer load unpkg/Babel/dev-react). Base `main` was `75dd6b8`
+("Correct the two remaining documentation inaccuracies (#42)"). Review
+this stamp — and every section above — whenever a PR changes what is true.

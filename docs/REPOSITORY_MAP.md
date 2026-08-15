@@ -29,7 +29,7 @@ say.
 | `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
 | `design/onboarding/` | onboarding design bundle (build input, `currencydesk-onboarding.html`) | replaced by design exports |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
-| `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
+| `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. Customer HTML does not load unpkg, Babel, or React dev builds. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
 | `scripts/` | build + design-import tools + governance checks | ✅ |
 | `tests/e2e/` | Playwright seam suite (drives the browser, then asks the ledger) | ✅ |
@@ -55,7 +55,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | --- | --- |
 | `/` (`/d`, `/m`) | marketing site — desktop / phone design by user agent |
 | `/signup` | Early Access application (`web/early-access.html`) |
-| `/login`, `/app` | the OS — compiled `web/app/index.html` (fallback: the root shell) |
+| `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
 | `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path) |
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
@@ -114,11 +114,12 @@ until that defect is fixed.
 Everything else at the root is a standard project/config/governance file.
 These four look out of place and are deliberately still there:
 
-- `CurrencyDesk OS.html` — the OS shell. `render.yaml` names it in the
-  `STATIC_INDEX` deploy contract; moving it requires updating the Render
-  environment in the same motion and verifying the dashboard holds no stale
-  copy of that variable — a coordinated job with production access, not a
-  `git mv`.
+- `CurrencyDesk OS.html` — the OS shell you edit, and the fallback when
+  `web/app/index.html` is absent. `render.yaml` still names it in
+  `STATIC_INDEX`, but that variable is a fallback only: the server serves
+  the compiled app whenever it is present, so a stale dashboard copy of
+  the variable cannot put Babel back on `/login` or `/app`. Moving the
+  file still needs the Render environment updated in the same motion.
 - `admin.html` — the OS shell's twin (same build input, same fallback, same
   allow-list block). It could move alone, but splitting the pair helps
   nobody; it moves in the same job as the OS shell.

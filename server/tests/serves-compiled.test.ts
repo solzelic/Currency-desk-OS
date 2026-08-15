@@ -6,6 +6,10 @@
    is exactly the kind of thing that quietly regresses: somebody adds a
    STATIC_INDEX to a deploy, or the build stops running, and everyone is
    back to waiting on Babel with no error anywhere to say so.
+
+   These tests use the Render shape: STATIC_INDEX names the uncompiled
+   shell. Compiled output must still win. Deleting the variable to make
+   the assertion pass is how production kept serving Babel.
 */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -21,19 +25,35 @@ let handle: DbHandle; let app: FastifyInstance;
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1"; process.env.SEED_PASSWORD = "yorkville";
   process.env.STATIC_DIR = ROOT;
-  delete process.env.STATIC_INDEX;
+  process.env.STATIC_INDEX = "CurrencyDesk OS.html";
+  process.env.SITE_INDEX = "web/index.html";
   handle = await createDb(); await seed(handle.db); app = await buildApp(handle.db);
 });
-afterAll(async () => { await app.close(); await handle.close(); delete process.env.STATIC_DIR; });
+afterAll(async () => {
+  await app.close(); await handle.close();
+  delete process.env.STATIC_DIR; delete process.env.STATIC_INDEX; delete process.env.SITE_INDEX;
+});
 
 const get = (url: string) => app.inject({ method: "GET", url });
 
+function assertNoCdnCompiler(html: string) {
+  expect(html).not.toMatch(/unpkg\.com/);
+  expect(html).not.toMatch(/react\.development/);
+  /* Matched on the tag rather than the word: a comment saying where Babel
+     went is not the regression worth catching. */
+  expect(html).not.toMatch(/<script[^>]*babel/i);
+  expect(html).not.toMatch(/type="text\/babel"/);
+}
+
 describe("the compiled apps are the ones that ship", () => {
-  it("serves the compiled OS at /app", async () => {
-    const res = await get("/app");
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("/web/app/os.js");
-  });
+  for (const url of ["/app", "/login"] as const) {
+    it(`serves the compiled OS at ${url} even when STATIC_INDEX names the shell`, async () => {
+      const res = await get(url);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("/web/app/os.js");
+      expect(res.body).not.toContain("CurrencyDesk OS.html");
+    });
+  }
 
   it("serves the compiled panel at /admin", async () => {
     const res = await get("/admin");
@@ -43,15 +63,9 @@ describe("the compiled apps are the ones that ship", () => {
 
   /* The three reasons this was worth doing. Each of them is a request a
      customer's browser used to make before the desk would open. */
-  for (const [what, url] of [["OS", "/app"], ["panel", "/admin"]] as const) {
+  for (const [what, url] of [["OS", "/app"], ["sign-in", "/login"], ["panel", "/admin"]] as const) {
     it(`does not send the ${what} to a CDN to boot`, async () => {
-      const html = (await get(url)).body;
-      expect(html).not.toMatch(/unpkg\.com/);
-      /* And no browser-side compiler at all. Matched on the tag rather than
-         the word: the page carries a comment saying where Babel went, and
-         losing that comment is not the regression worth catching. */
-      expect(html).not.toMatch(/<script[^>]*babel/i);
-      expect(html).not.toMatch(/type="text\/babel"/);
+      assertNoCdnCompiler((await get(url)).body);
     });
   }
 
@@ -66,6 +80,36 @@ describe("the compiled apps are the ones that ship", () => {
   it("serves React from our own domain rather than somebody else's", async () => {
     expect((await get("/web/vendor/react.production.min.js")).statusCode).toBe(200);
     expect((await get("/web/vendor/react-dom.production.min.js")).statusCode).toBe(200);
+  });
+});
+
+/* The storefront is a live customer's site. Design-time tweaks used to
+   pull React development builds and Babel from unpkg on every visit. */
+describe("the YorkFX storefront does not load a CDN compiler", () => {
+  const pages = [
+    "/sites/yorkfx/",
+    "/sites/yorkfx/YorkFX%20Homepage.html",
+    "/sites/yorkfx/YorkFX%20Rates.html",
+    "/sites/yorkfx/YorkFX%20Regulations.html",
+    "/sites/yorkfx/YorkFX%20Services.html",
+    "/sites/yorkfx/YorkFX%20Visit.html",
+    "/YorkFX/YorkFX%20Homepage.html",
+    "/YorkFX/YorkFX%20Rate%20Board.html",
+  ];
+
+  for (const url of pages) {
+    it(`${url} has no unpkg, Babel, or react.development`, async () => {
+      const res = await get(url);
+      expect(res.statusCode, url).toBe(200);
+      assertNoCdnCompiler(res.body);
+    });
+  }
+
+  it("does not ask for the design-tool image-slot sidecar", async () => {
+    const res = await get("/sites/yorkfx/image-slot.js");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toMatch(/loadP = fetch\(STATE_FILE\)/);
+    expect(res.body).toContain("no sidecar in production");
   });
 });
 

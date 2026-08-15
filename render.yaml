@@ -41,7 +41,9 @@ services:
         value: production
       - key: STATIC_DIR
         value: ..
-      # the OS itself — served at /app
+      # Fallback OS shell when web/app/index.html is absent. The server
+      # prefers the compiled app (web/app/index.html + os.js) whenever
+      # that output is present — this variable must not override it.
       - key: STATIC_INDEX
         value: CurrencyDesk OS.html
       # the public marketing site — the front door at /. Remove this (or the
