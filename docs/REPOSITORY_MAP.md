@@ -27,7 +27,7 @@ say.
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
 | `design/emails/` | email design reference | ✅ |
 | `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
-| `CurrencyDesk Onboarding.html` | onboarding design bundle (build input) | replaced by design exports |
+| `design/onboarding/` | onboarding design bundle (build input, `currencydesk-onboarding.html`) | replaced by design exports |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
 | `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
@@ -41,7 +41,7 @@ say.
 | Source | Command | Output |
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
-| `CurrencyDesk Onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
+| `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
 | `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
@@ -108,6 +108,27 @@ until that defect is fixed.
 - **`desk_clients`** = the KYC client file; **`ledger_customers`** = the ledger counterparty. Deliberately distinct tables.
 - **enquiry** → **application** → **lead**: stages of one funnel, not synonyms.
 - **transaction** is the canonical stored noun; the UI says **deal** (`deal_kind` is a real column).
+
+## The four product files still at the repository root, and why
+
+Everything else at the root is a standard project/config/governance file.
+These four look out of place and are deliberately still there:
+
+- `CurrencyDesk OS.html` — the OS shell. `render.yaml` names it in the
+  `STATIC_INDEX` deploy contract; moving it requires updating the Render
+  environment in the same motion and verifying the dashboard holds no stale
+  copy of that variable — a coordinated job with production access, not a
+  `git mv`.
+- `admin.html` — the OS shell's twin (same build input, same fallback, same
+  allow-list block). It could move alone, but splitting the pair helps
+  nobody; it moves in the same job as the OS shell.
+- `yorkfx.css`, `yorkfx-converter.js` — served at **two public URLs each**
+  (`/yorkfx*` for the app door, `/sites/yorkfx*` for the storefront door via
+  the `../` references in every YorkFX page) on a live customer's site.
+  The correct future home is inside `YorkFX/` (same-directory references fix
+  both doors and delete the `sites.ts` special-case), but that changes
+  customer-facing URLs — done deliberately, with cache/hot-link fallout
+  considered, not overnight.
 
 ## Files that must never be edited directly
 

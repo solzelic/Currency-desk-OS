@@ -66,7 +66,6 @@ const isAppCode = (f) =>
     f.startsWith("scripts/") ||
     f === "admin.html" ||
     f === "CurrencyDesk OS.html" ||
-    f === "CurrencyDesk Onboarding.html" ||
     f === "yorkfx.css" ||
     f === "yorkfx-converter.js" ||
     f === "render.yaml" ||
