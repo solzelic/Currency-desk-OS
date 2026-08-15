@@ -255,7 +255,7 @@ export class ClientRecordService {
          other. */
       const byName = new Map<string, string[]>();
       for (const row of clients.rows) {
-        const key = `${row.legal_entity_id} ${row.name_key}`;
+        const key = `${row.legal_entity_id}\u0000${row.name_key}`;
         byName.set(key, (byName.get(key) ?? []).concat(row.client_id));
       }
       return {
@@ -266,7 +266,7 @@ export class ClientRecordService {
             aliases.rows.filter((a) => a.client_id === row.client_id),
             scanCount,
             photo.get(row.client_id) ?? null,
-            (byName.get(`${row.legal_entity_id} ${row.name_key}`) ?? []).filter(
+            (byName.get(`${row.legal_entity_id}\u0000${row.name_key}`) ?? []).filter(
               (id) => id !== row.client_id,
             ),
           ),

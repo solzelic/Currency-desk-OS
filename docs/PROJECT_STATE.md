@@ -66,9 +66,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Open, under normal review.
-- **Queued**: the staged cleanup PRs from the Phase 1 audit
-  (`docs/REPO_CONSOLIDATION_PHASE1.md` on the audit branch), starting with
-  the deterministic low-risk deletions.
+- **Queued**: documentation consolidation (the last staged cleanup PR from
+  the Phase 1 audit). The deterministic low-risk deletions have landed;
+  the nine unreferenced YorkFX media files rated LOW-MED were deliberately
+  retained until external hot-linking can be ruled out.
 
 ## Known high-priority engineering risks (unresolved)
 
@@ -90,10 +91,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Next engineering priorities (ordered)
 
-1. Cleanup PR 1 — deterministic low-risk deletions from the Phase 1 audit.
-2. Documentation consolidation (Phase 1 audit §H).
-3. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
-4. Platform MFA (issue #33).
+1. Documentation consolidation (Phase 1 audit §H).
+2. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
+3. Platform MFA (issue #33).
 
 ## Last reviewed
 
