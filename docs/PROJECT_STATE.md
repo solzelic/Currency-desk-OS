@@ -41,7 +41,8 @@ layers — they are not blockers for proving this core loop.
   compiled ahead of time to `web/app/` by `scripts/build-os.mjs`.
 - **Admin panel** — `admin.html`, compiled to `web/app/admin.*`.
 - **Marketing site** — generated into `web/` from `design/site/*.dc.html`.
-- **Onboarding** — generated `web/onboarding.html` from the root design bundle.
+- **Onboarding** — `web/onboarding.html`, generated from
+  `design/onboarding/currencydesk-onboarding.html`.
 - **Customer storefront** — `YorkFX/`, served at `/sites/yorkfx` and via
   customer domains.
 
@@ -55,7 +56,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Customers / KYC files | Server: `desk_clients` (+ documents/images tables). `ledger_customers` is the ledger-side counterparty record — deliberately distinct |
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
-| Frontend truth | Sources: `os-src/`, `design/site/`, root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
+| Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 
 ## Production/build surfaces
 
@@ -98,6 +99,6 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Last reviewed
 
-**2026-08-15**, against `main` = `1bb29da9` ("Deterministic repository
-cleanup (#39)"). Review this stamp — and every section above — whenever a
-PR changes what is true.
+**2026-08-15**, against `main` = `7ab3f85e` ("Organize the repository root
+(#41)"). Review this stamp — and every section above — whenever a PR
+changes what is true.

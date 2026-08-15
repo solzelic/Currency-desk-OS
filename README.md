@@ -14,7 +14,7 @@ public storefront (live rates, converter, SMS rate quotes) on their own domain.
 | --- | --- |
 | `design/site/` | The design sources, as exported from Claude Design: one `.dc.html` per page plus the runtime they need (`support.js`, `image-slot.js`). Edit these, never `web/` |
 | `web/` | The generated public site — the front door at `/`. Built by `scripts/build-site.mjs`; fully self-contained (React vendored, fonts self-hosted, no CDN). "Sign in" → `/login`, "Get early access" → `/signup` |
-| `CurrencyDesk OS.html` + `os-src/` | The OS app, served at `/app` — and at `/login` and `/signup`, the two doors the site sends people through (buildless React, one `window.CDOS` global, files split by domain: `cdos-ledger.jsx`, `cdos-kyc.jsx`, …) |
+| `CurrencyDesk OS.html` + `os-src/` | The OS app, served at `/app` and `/login` (buildless React, one `window.CDOS` global, files split by domain: `cdos-ledger.jsx`, `cdos-kyc.jsx`, …). `/signup` is the Early Access application (`web/early-access.html`), not the OS |
 | `server/` | Fastify + Drizzle backend: auth & sessions, staff administration, tenants & plans, rate boards, hosted sites, SMS rate quotes, Postgres ledger |
 | `YorkFX/` | The hosted customer storefront (homepage, rates + converter, services, regulations, visit/quote) and the staff rate-board editor the OS embeds |
 | `docs/` | The durable set: `PROJECT_STATE.md` (what is true now), `REPOSITORY_MAP.md` (what runs, where, how it builds), architecture, security, and the financial-invariant docs |
