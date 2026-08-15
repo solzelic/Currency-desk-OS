@@ -78,5 +78,6 @@ See [server/README.md](../server/README.md) for isolated PostgreSQL startup, mig
 No live KYC provider is connected, so `idStatus` is still a staff-attested
 record. Opening balances are initialization, not an adjustment mechanism;
 after activity begins, differences must use a future counted-reconciliation
-workflow. The browser transaction modal has not yet been cut over to these
-server APIs.
+workflow. (This table documents the core posting surface; the full ledger
+API has grown well beyond it — routes register in
+`server/src/ledger/routes.ts`, and the browser posts through them.)

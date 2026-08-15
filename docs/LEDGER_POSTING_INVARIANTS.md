@@ -3,10 +3,12 @@
 - PostgreSQL is authoritative. API money values are decimal strings; JavaScript floating-point values are never stored.
 - Posting locks and validates principal, customer, rates, and destination till under tenant/legal-entity/branch/workspace/till scope.
 - `transaction:post` and `transaction:reverse` are enforced at the server boundary.
-- The journal balances in CAD functional currency before any entry is inserted:
-  CAD value of source cash plus separately tendered CAD fee debit; destination
-  cash, FX spread revenue, and fee revenue credits. Both fee and no-fee
-  journals are tested.
+- The journal balances in the entity's functional currency before any entry
+  is inserted ("CAD" throughout this document means the legal entity's home
+  currency — jurisdiction packs generalised it, see
+  `docs/JURISDICTION_PACK_ARCHITECTURE.md`): home value of source cash plus
+  separately tendered home-currency fee debit; destination cash, FX spread
+  revenue, and fee revenue credits. Both fee and no-fee journals are tested.
 - A successful post appends a transaction, balanced journal, till movements, audit event, and idempotency response atomically.
 - Posted transactions, journals, movements, and audit rows are append-only.
   Reversals append compensating journal and till movements and preserve the

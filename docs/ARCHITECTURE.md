@@ -13,9 +13,8 @@ having forgotten why any of it is like this.
 > deleted (its CI was green while the shipped code went unwatched, which is
 > how a dead Settings screen survived for days). The inversion is total: the
 > buildless OS *is* the product. `docs/THREAT_MODEL.md` and
-> `docs/SECURITY_COMPLIANCE_FOUNDATION.md` still open by scoping themselves
-> to that removed app — their substance mostly stands, their scope lines do
-> not. Read them with that correction in mind until they are rewritten.
+> `docs/SECURITY_COMPLIANCE_FOUNDATION.md` have since been re-scoped to the
+> shipped system.
 
 ---
 
@@ -327,36 +326,35 @@ this; it is written down so it does not slip.
 ## 8. What we know is wrong, in the order we are fixing it
 
 An honest list. Writing it down is what stops these from becoming
-architecture by default.
+architecture by default. (Re-verified 2026-08-15; the first five items the
+original list carried are fixed and live only in git history now: the state
+body-limit and 4 MB guard are real — `server/src/state/contract.ts`; saves
+carry a version and conflicts 409 — `state-conflict.test.ts`; the document's
+shape is catalogued per-key — `server/src/state/shape.ts`, which describes
+rather than refuses, deliberately; identity is server-minted —
+`desk_clients.client_id`, ledger references; clients, transactions and till
+counts are tables. The Tailwind CDN compiler is also gone from what ships —
+`web/app/tw.css` is compiled ahead of time; only the buildless dev shell
+still pulls the CDN.)
 
 **Now**
 
-1. **Silent save failure.** The state size guard says 4 MB and can never fire
-   — no body limit is configured, so Fastify's 1 MiB default rejects first,
-   and the client retries the same doomed payload every four seconds forever
-   without telling anyone. Confirmed by probe, not by reading.
-2. **Last-write-wins on the whole desk.** No version, no precondition. Two
-   tellers, and one loses work with no error anywhere.
-3. **The document has no shape.** `z.record(z.unknown())` — anything is
-   accepted.
-4. **No stable identity.** Clients keyed by human name; transaction ids
-   assigned client-side as sequential integers, so two tellers collide.
-
-**Next**
-
-5. Promote clients, then transactions, then till counts, into tables.
-6. **Platform MFA.** One password between a phished account and every desk.
-7. Four in-memory maps assume exactly one process — no horizontal scale, and
-   every deploy drops in-flight sign-ins.
-8. Authorization moves from a remembered line to a hook.
+1. **Platform MFA** (issue #33). One password between a phished operator
+   account and every desk.
+2. **In-process state assumes exactly one server.** Cooldown and sign-in
+   maps (e.g. `server/src/cooldown.ts`) live in process memory — no
+   horizontal scale, and every deploy drops in-flight sign-ins.
+3. **Multi-till resolution** (issue #34): several routes resolve a caller's
+   till as "the only workspace at this branch" and deny once a second
+   workspace exists. The `zz-` seam-test workaround exists because of this.
 
 **After**
 
-9. One schema mechanism. The boot-time DDL string and the checksummed
-   migrations describe the same tables two ways, and the migrations do not run
-   on the embedded database at all — so dev and production run different
-   schemas.
-10. The Tailwind CDN compiler still runs in the customer's browser.
-11. A state layer in the OS. Thirty localStorage keys read directly from
-    fifteen files, modules wired through a global, thirty-prop components. A
-    velocity tax rather than a correctness risk, which is why it is last.
+4. One schema mechanism. The boot-time DDL string and the checksummed
+   migrations describe the same tables two ways, and the migrations do not
+   run on the embedded database at all — so dev and production run different
+   schemas. `docs/MIGRATION.md` documents the contract as it stands.
+5. Authorization as a hook rather than a remembered line in each route.
+6. A state layer in the OS. Thirty localStorage keys read directly from
+   fifteen files, modules wired through a global, thirty-prop components. A
+   velocity tax rather than a correctness risk, which is why it is last.

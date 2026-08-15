@@ -1,7 +1,9 @@
-# Onboarding — where it stands, and what's next
+# Onboarding — how a desk comes to exist
 
-Everything below is verified against a running server, driven in Chromium,
-unless it says otherwise.
+The reference for the onboarding subsystem: the record model, the build
+pipeline, the public API, verification, and provisioning. Everything below
+is verified against a running server, driven in Chromium, unless it says
+otherwise.
 
 ## The shape of it
 
@@ -153,32 +155,6 @@ the *whole* flow including the ending: a real code is issued and must be
 typed (it goes to the log instead of an inbox), `/launch` runs, and the one
 thing it does not do is create a desk. Verified: after a full browser run
 its `tenantId` is still null and its status still `invited`.
-
-## Next
-
-1. **Stripe.** The design collects card fields; nothing charges. Two
-   decisions are the user's and change the schema: subscription-per-plan vs
-   setup fee, and where documents live (Postgres / S3-R2 / record-that-you-
-   sighted-it) since this container is ephemeral.
-2. **Make the panel look like the design.** The field list is now shared;
-   the panel still renders it as a dark form.
-3. **Automations** — events → rules → actions, stored, not hard-coded:
-   invite email on `invited`, a nudge when somebody stalls, receipt and
-   welcome on payment, a warning when a desk hasn't traded in N days. Every
-   automated action visible in the panel with what fired it, and individually
-   disableable. Plus a manual twin for each.
-
-## Still outstanding from earlier
-
-- Admin password `12345`, reset every deploy by `PLATFORM_ADMIN_BOOTSTRAP`.
-- Rotate the Resend API key.
-- The panel's sign-in field is `type=email`, so a non-email admin id cannot
-  be typed into it.
-- Add-ons design is truncated and needs a re-export.
-- The Rate Board still lives in `YorkFX/` and should move into the product;
-  the landmine is the `yorkfx_*` localStorage keys, which need a migration
-  or every published board is orphaned.
-- `onb-desktop.png` in the repo root is a render of the *old* design.
 
 ## Known and deliberate
 

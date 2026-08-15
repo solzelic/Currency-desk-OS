@@ -17,9 +17,8 @@ public storefront (live rates, converter, SMS rate quotes) on their own domain.
 | `CurrencyDesk OS.html` + `os-src/` | The OS app, served at `/app` — and at `/login` and `/signup`, the two doors the site sends people through (buildless React, one `window.CDOS` global, files split by domain: `cdos-ledger.jsx`, `cdos-kyc.jsx`, …) |
 | `server/` | Fastify + Drizzle backend: auth & sessions, staff administration, tenants & plans, rate boards, hosted sites, SMS rate quotes, Postgres ledger |
 | `YorkFX/` | The hosted customer storefront (homepage, rates + converter, services, regulations, visit/quote) and the staff rate-board editor the OS embeds |
-| `src/`, `index.html`, `vite.config.ts` | The TypeScript/Vite production rebuild track (coexists with the prototype; CI runs its typecheck, tests, and build) |
-| `docs/` | Architecture, security/compliance foundation, threat model, ledger API, migration plan, product roadmap |
-| `design_handoff_kyc/` | KYC design handoff: architecture, brand tokens, motion spec |
+| `docs/` | The durable set: `PROJECT_STATE.md` (what is true now), `REPOSITORY_MAP.md` (what runs, where, how it builds), architecture, security, and the financial-invariant docs |
+| `design/kyc-handoff/` | KYC design handoff: architecture, brand tokens, motion spec, verification-states reference |
 | `render.yaml` | Render Blueprint — auto-deploys `main` |
 
 ## Running locally
@@ -82,13 +81,13 @@ npm test
 npm run typecheck
 ```
 
-Vite app (production rebuild track):
-
-```sh
-npm ci
-npm run dev
-npm run check
-```
+One console note is deliberate: the front page's preload scanner fetches
+`{{ p.src }}` literally before the design's runtime substitutes the real
+image path a tick later. Silencing it means renaming attributes in the
+design's markup and copying them back after resolution — a real risk to the
+front page's imagery in exchange for one console line. Left on purpose.
+(The `401` from `/api/auth/me` on `/app` and `/login` is a signed-out
+visitor asking whether they are signed in, and being told no.)
 
 ## Architecture in one paragraph
 
@@ -120,18 +119,26 @@ Custom domains: record the customer's domain in the OS (Settings → Business
 profile → Your public site), have them point DNS (CNAME/ALIAS) at this service,
 and add the domain under Render → Custom Domains so TLS is issued.
 
-> **Security status:** the OS front end still persists demo desk data in
-> browser storage; do not store real KYC documents or production financial data
-> in it. Credentials, sessions, tenancy, rates, quotes, and the ledger are
-> server-side. See [docs/SECURITY_COMPLIANCE_FOUNDATION.md](docs/SECURITY_COMPLIANCE_FOUNDATION.md).
+> **Security status:** the financial ledger, credentials, sessions, tenancy,
+> rates, quotes, client records and ID documents are server-side — one book,
+> and it is the server's (see
+> [docs/CASH_OWNERSHIP_INVARIANTS.md](docs/CASH_OWNERSHIP_INVARIANTS.md) and
+> [docs/CLIENT_RECORDS.md](docs/CLIENT_RECORDS.md)). Desk preferences and
+> screen state still sync as a versioned JSON document. Known open risks are
+> tracked as issues and listed in
+> [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security and compliance foundation](docs/SECURITY_COMPLIANCE_FOUNDATION.md)
-- [Threat model](docs/THREAT_MODEL.md)
-- [Development](docs/DEVELOPMENT.md)
-- [Ledger posting API](docs/LEDGER_POSTING_API.md) · [invariants](docs/LEDGER_POSTING_INVARIANTS.md)
-- [Migration plan](docs/MIGRATION.md)
-- [Product roadmap](<docs/CurrencyDesk OS - Roadmap v2.html>)
-- [KYC developer handoff](design_handoff_kyc/README.md)
+Start here: [PROJECT_STATE](docs/PROJECT_STATE.md) — what is true now ·
+[REPOSITORY_MAP](docs/REPOSITORY_MAP.md) — what runs, where it lives, how it
+builds · [AGENTS.md](AGENTS.md) — the working rules.
+
+- [Architecture](docs/ARCHITECTURE.md) — the governing document
+- [Development](docs/DEVELOPMENT.md) · [Migrations](docs/MIGRATION.md) · [Email](docs/EMAIL.md)
+- [Road to deployment](docs/ROAD_TO_DEPLOYMENT.md) — readiness scoring
+- Financial invariants: [cash ownership](docs/CASH_OWNERSHIP_INVARIANTS.md) · [absent figures](docs/ABSENT_FIGURES.md) · [cost basis](docs/COST_BASIS.md) · [cheques](docs/CHEQUE_CASHING.md) · [obligations](docs/OBLIGATION_LINES.md) · [thresholds](docs/DESK_THRESHOLDS.md) · [currencies](docs/DESK_CURRENCIES.md) · [documents](docs/GENERATED_DOCUMENTS.md) · [client records](docs/CLIENT_RECORDS.md) · [jurisdiction packs](docs/JURISDICTION_PACK_ARCHITECTURE.md)
+- Ledger & quotes API: [posting](docs/LEDGER_POSTING_API.md) · [posting invariants](docs/LEDGER_POSTING_INVARIANTS.md) · [quotes](docs/QUOTE_SERVICE.md) · [quote invariants](docs/QUOTE_INVARIANTS.md)
+- [Security & compliance](docs/SECURITY_COMPLIANCE_FOUNDATION.md) · [Threat model](docs/THREAT_MODEL.md)
+- [Growth pipeline](docs/GROWTH_PIPELINE.md) · [Onboarding](docs/ONBOARDING.md) · [Stripe billing](docs/STRIPE_BILLING.md)
+- [KYC design handoff](design/kyc-handoff/README.md)

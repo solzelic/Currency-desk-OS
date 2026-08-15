@@ -85,6 +85,20 @@ The first message identifies SAM as an AI and announces recording whenever
 recording is enabled. Do-not-contact can be set by an operator or by the agent
 tool and is never cleared automatically.
 
+## Why stated and inferred never share a column
+
+The design principle behind the whole subsystem, preserved from the
+original workstream: **what the applicant TOLD us and what we INFERRED
+about them are different facts and must never share a column.** An operator
+reading a screen must be able to tell, at a glance, whether "handles about
+$2M a month" is something the owner said or something an AI guessed from a
+web page — one of those you can quote back to them on a call; the other
+will embarrass you. Hence: `enquiries.details` stays exactly what the
+applicant typed and research never writes to it; research runs are
+append-only rows beside it; a finding with no source is rendered as absent,
+not as fact (`docs/ABSENT_FIGURES.md`); and a source is saved only when its
+extracted text names the applicant's stated business exactly.
+
 Official provider references:
 
 - [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)

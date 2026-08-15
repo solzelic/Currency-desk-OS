@@ -28,7 +28,7 @@
    is no URL to point at. The card itself is here — it is the middle of
    the email — just not a download of it.
 
-   Both are noted in docs/EMAIL-BUILD.md. Everything else is the design.
+   Both are noted in docs/EMAIL.md. Everything else is the design.
 
    ONE HONEST RELABELLING
 

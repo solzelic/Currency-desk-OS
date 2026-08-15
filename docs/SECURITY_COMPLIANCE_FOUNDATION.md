@@ -2,23 +2,33 @@
 
 ## Status and Non-Compliance Notice
 
-This repository is an engineering prototype. It is **not production compliant** and does not claim SOC 2, GDPR, AML, FINTRAC, or any other regulatory certification or compliance status.
+This repository does **not** claim SOC 2, GDPR, AML, FINTRAC, or any other
+regulatory certification or compliance status. This document maps what the
+engineering provides against what those frameworks require; legal counsel,
+compliance owners, security owners, auditors, and accountable management
+must confirm policy, regulatory applicability, evidence, and operating
+effectiveness.
 
-The `DemoLocalStoragePersistenceAdapter` exists only to support local demonstrations. Browser `localStorage` is not an approved store for production financial records, personal data, authentication material, screening evidence, or audit records. **Never place real KYC documents or production financial data in this application or its localStorage adapter.**
+(An earlier version of this document scoped itself to a since-deleted
+frontend foundation and its localStorage persistence adapters. That
+architecture is gone; the sections below that name it are corrected here.)
 
-The code establishes vocabulary and boundaries that can support later controls. Legal counsel, compliance owners, security owners, auditors, and accountable management must confirm policy, regulatory applicability, evidence, and operating effectiveness.
+## Architecture Boundary — as shipped
 
-## Architecture Boundary
+Authority is server-side: authentication is per-employee scrypt credentials
+with opaque revocable sessions; authorization is checked on the server;
+every query is tenant-scoped; the financial ledger is append-only Postgres
+with idempotency keys and a server-minted identity for every record
+(`docs/CASH_OWNERSHIP_INVARIANTS.md`); client/KYC records and ID documents
+are server tables with audited reveals (`docs/CLIENT_RECORDS.md`);
+`ledger_audit_events` is the append-only audit trail. The browser holds a
+versioned JSON document of desk preferences and screen state
+(`server/src/state/shape.ts` catalogues every key and marks which are
+records vs preferences) — not the book, not credentials, not KYC documents.
 
-The frontend depends on the typed `PersistenceAdapter` port:
-
-- `InMemoryPersistenceAdapter` provides isolated deterministic test storage.
-- `DemoLocalStoragePersistenceAdapter` provides untrusted, demo-only browser persistence.
-- `BackendPersistenceAdapter` marks the future production boundary.
-
-A production adapter must use authenticated server APIs and an asynchronous application-service layer. It must not expose database credentials to the browser. State changes and audit appends need transactional guarantees or a durable outbox; the demo adapter cannot provide these guarantees.
-
-Audit events contain state references, not full before/after payloads. This limits unnecessary sensitive-data duplication while retaining correlation to versioned records in a future system of record.
+Audit events contain state references, not full before/after payloads. This
+limits unnecessary sensitive-data duplication while retaining correlation
+to versioned records in the system of record.
 
 ## SOC 2 Readiness Mapping
 
@@ -90,11 +100,20 @@ Logs must avoid credentials, full identity documents, payment data, or unnecessa
 
 ## Current Gaps
 
-- Authentication is a demo account selector, not identity verification.
-- Authorization is client-side and therefore bypassable.
-- localStorage state and audit events can be read, edited, or removed by the browser user.
-- Persistence and audit writes are not crash-atomic.
-- There is no production encryption, key management, secrets integration, alerting, backup, or disaster recovery.
-- Compliance thresholds and workflow behavior remain prototype assumptions.
-- Retention schedules and legal holds are types only; no disposition engine exists.
-- No KYC-document storage is implemented, by design.
+(Re-verified 2026-08-15. The gaps the earlier version listed —
+demo-selector authentication, client-side authorization, browser-editable
+audit events — closed when authority moved server-side; see the
+Architecture Boundary above.)
+
+- No second factor on the platform operator console (issue #33).
+- `PLATFORM_ADMIN_BOOTSTRAP` re-asserts the configured operator password on
+  every boot while set (issue #31).
+- Compliance thresholds resolve through jurisdiction packs with desk
+  overrides (`docs/DESK_THRESHOLDS.md`), but workflow behavior beyond
+  thresholds remains a product assumption, not a certified process.
+- Retention rules are written down (`docs/CLIENT_RECORDS.md`), but no
+  disposition engine enforces them yet.
+- Monitoring, alerting, backup and disaster-recovery are the hosting
+  platform's defaults, not designed controls.
+- ID scans and cheque images live in Postgres rows rather than object
+  storage (`docs/ROAD_TO_DEPLOYMENT.md`).

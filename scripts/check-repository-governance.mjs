@@ -44,7 +44,7 @@ if (changed.length === 0) {
 const isDoc = (f) =>
   f.startsWith("docs/") ||
   f.endsWith(".md") ||
-  f.startsWith("design_handoff_kyc/") ||
+  f.startsWith("design/kyc-handoff/") ||
   f === ".gitignore" ||
   f === ".nvmrc" ||
   f === "LICENSE";

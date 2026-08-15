@@ -57,10 +57,8 @@ touches money:
 - **Never weaken a financial test to make a PR green.** If a seam or ledger
   test fails, the finding is the deliverable; report it.
 - Database migrations are **immutable once merged/applied** — never edit or
-  rename one; add the next one. Adding a migration means three places
-  (`docs/MIGRATION.md` will hold the rule; until then: the SQL file, the list
-  in `server/src/db/migrations.ts`, and the `DDL` + `schema.ts` pair for
-  Drizzle-managed tables).
+  rename one; add the next one. Adding a migration means three places —
+  the full contract is `docs/MIGRATION.md`.
 - **Never test against a production database.** Tests use embedded PGlite or a
   disposable local/CI Postgres.
 

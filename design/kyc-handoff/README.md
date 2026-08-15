@@ -12,13 +12,13 @@ prototype**, not production code — see *Rebuild notes* below for what to keep 
 ## 1. What's here
 
 ```
-CurrencyDesk OS.html          ← entry point (dev; loads .jsx via Babel from CDN)
-cdos-*.jsx                    ← the app, one file per domain (see §3)
-yorkfx-converter.js           ← live rate engine (reads the published/locked rate board)
-york-os.css, yorkfx.css       ← desk styling + design tokens
-BRAND.md                      ← colour, type, spacing tokens
-MOTION.md                     ← every animation with exact code
-KYC Nudge States.html         ← standalone reference: every verification state + the pricing tiers
+(repo root) CurrencyDesk OS.html      ← entry point (dev; loads .jsx via Babel from CDN)
+(repo root) os-src/cdos-*.jsx         ← the app, one file per domain (see §3)
+(repo root) yorkfx-converter.js       ← live rate engine (reads the published/locked rate board)
+(repo root) os-src/york-os.css, yorkfx.css ← desk styling + design tokens
+BRAND.md                              ← colour, type, spacing tokens
+MOTION.md                             ← every animation with exact code
+kyc-verification-states.html          ← standalone reference: every verification state + the pricing tiers
 ```
 \* the standalone still pulls Tailwind + fonts from CDN at runtime; those can't be inlined.
 
@@ -65,7 +65,7 @@ first, then extended by each module. There is no module system — load order (d
 
 ## 4. The KYC verification system (the core IP)
 
-Three tiers, priced to convert (full rationale on the `KYC Nudge States.html` page):
+Three tiers, priced to convert (full rationale on the `kyc-verification-states.html` page):
 
 | Tier | Price | What it runs |
 |---|---|---|
@@ -106,9 +106,10 @@ visual/motion language (see BRAND.md + MOTION.md), the screen layouts.
 - **KYC provider:** the check flow is simulated (`reconcile()` fakes async completion).
   Wire to the real provider API (configured in Settings). Keep `net()` for pricing.
 - **Auth:** the sign-in / 2FA is a mock. Real IdP + session management.
-- **Buildless React:** fine for a prototype; for production move to a real build
-  (Vite/Next), a module system, and TypeScript. The `window.CDOS` global pattern should
-  become proper imports; component boundaries already map cleanly to the file list in §3.
+- **Buildless React:** ~~for production move to a real build (Vite/Next)~~ —
+  **superseded**: that path was tried and deliberately deleted
+  (`docs/ARCHITECTURE.md`, header note). The buildless sources are the
+  product; `scripts/build-os.mjs` compiles them ahead of time for customers.
 - **Compliance filings (LCTR etc.):** logic is modeled but must be validated against
   current FINTRAC (and per-jurisdiction) requirements before going live.
 
