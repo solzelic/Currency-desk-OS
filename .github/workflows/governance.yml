@@ -11,7 +11,7 @@ name: Governance
 on: [pull_request]
 
 jobs:
-  docs-freshness:
+  governance-docs-freshness:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

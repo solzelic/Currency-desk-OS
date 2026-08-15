@@ -85,7 +85,7 @@ SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔led
 Use a **fresh disposable database per full run** — suites intentionally leave
 ledger state behind. Without `SEAM_DATABASE_URL` the e2e server has no ledger
 and 13 of 17 specs skip; CI runs the full suite with an ephemeral Postgres
-(`.github/workflows/browser.yml`, seam job) and fails if a seam spec skips.
+(`.github/workflows/browser.yml`, `browser-seam` job) and fails if a seam spec skips.
 `tests/e2e/zz-a-day-at-the-desk.spec.ts` is the deployment gate; its `zz-`
 prefix is a documented ordering workaround for the multi-till defect — keep it
 until that defect is fixed.

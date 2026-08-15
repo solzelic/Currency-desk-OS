@@ -8,10 +8,10 @@
 # This guards the real thing: the buildless OS, the platform panel, and the
 # pages compiled from the designs. Two jobs:
 #
-#   validate — the cheap static gates: every script parses, and the committed
-#              generated output matches a fresh build of the sources.
-#   seam     — the full Playwright suite against the real server AND a real
-#              PostgreSQL. Without a database the ledger routes never
+#   browser-validate — the cheap static gates: every script parses, and the
+#              committed generated output matches a fresh build of the sources.
+#   browser-seam — the full Playwright suite against the real server AND a
+#              real PostgreSQL. Without a database the ledger routes never
 #              register, 13 of 17 specs skip themselves, and the deployment
 #              gate goes green having proved nothing — that is how every
 #              serious cash defect here survived CI. The ephemeral service
@@ -22,7 +22,7 @@ name: Browser
 on: [pull_request]
 
 jobs:
-  validate:
+  browser-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
             exit 1
           }
 
-  seam:
+  browser-seam:
     runs-on: ubuntu-latest
     services:
       postgres:
