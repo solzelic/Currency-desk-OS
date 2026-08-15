@@ -2045,13 +2045,15 @@ function GrowthPanel({ enquiry }) {
     caps.callingEnabled ? 'All AI outbound calling is paused.' : 'AI outbound calling is enabled.');
 
   const sourceName = method => method === 'website_read' ? 'Applicant website' : method === 'registry' ? 'FINTRAC registry' : 'Public business source';
+  const sourceSummary = fact => fact.key && fact.key.startsWith('website_submitted_') ? fact.value : fact.method === 'registry' ? 'This registry source names the stated business. Review the cited record before treating it as a confirmed registration.' : 'This public source names the stated business. Open the cited page to review the supporting excerpt.';
   const facts = (run) => (run.facts || []).map(f => (<div key={f.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line2)' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{sourceName(f.method)}</span>
       <Pill tone="green">names stated business</Pill>
     </div>
-    <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>{f.value}</div>
+    <div style={{ fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.55 }}>{sourceSummary(f)}</div>
     <a href={f.sourceUrl} target="_blank" rel="noopener" style={{ display: 'inline-block', color: 'var(--blue)', fontSize: 11.5, marginTop: 5, overflowWrap: 'anywhere' }}>{f.sourceUrl} ↗</a>
+    {!f.key.startsWith('website_submitted_') && <details style={{ marginTop: 6 }}><summary style={{ cursor: 'pointer', color: 'var(--faint)', fontSize: 11.5 }}>View source excerpt</summary><div style={{ marginTop: 6, color: 'var(--mute)', fontSize: 11.5, lineHeight: 1.55 }}>{f.value}</div></details>}
   </div>));
 
   return (<Card title="What research inferred" testId="research-inferred"
@@ -2109,11 +2111,13 @@ function GrowthPanel({ enquiry }) {
         {(run.reviews || []).length > 0 && <span style={{ marginLeft: 7 }}><Pill tone="green">reviewed</Pill></span>}
       </summary>
       {run.brief && <div data-testid="research-brief" style={{ margin: '11px 0', padding: 12, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--line2)' }}>
-        <div style={{ fontFamily: MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--purple)', marginBottom: 7 }}>Caller brief · {run.brief.sourceCount} cited source{run.brief.sourceCount === 1 ? '' : 's'}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--purple)', marginBottom: 7 }}>Call context · {run.brief.sourceCount} cited source{run.brief.sourceCount === 1 ? '' : 's'}</div>
         <div style={{ fontSize: 13, lineHeight: 1.6 }}>{run.brief.executiveSummary}</div>
         <div style={{ marginTop: 9 }}><Pill tone={run.brief.registryStatus === 'possible_match' ? 'amber' : 'mute'}>{run.brief.registryStatus === 'possible_match' ? 'possible FINTRAC name match · verify' : 'FINTRAC not confirmed'}</Pill></div>
-        {(run.brief.talkingPoints || []).length > 0 && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--mute)' }}><b style={{ color: 'var(--text)' }}>Talking points</b>{run.brief.talkingPoints.map((point, i) => <div key={i}>· {point}</div>)}</div>}
+        {run.brief.callerContext && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--mute)' }}><b style={{ color: 'var(--text)' }}>Verified business context</b>{(run.brief.callerContext.publicBusinessContext || []).map((point, i) => <div key={i}>· {point}</div>)}</div>}
+        {(run.brief.callerContext ? run.brief.callerContext.suggestedQuestions : run.brief.talkingPoints || []).length > 0 && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--mute)' }}><b style={{ color: 'var(--text)' }}>Suggested questions</b>{(run.brief.callerContext ? run.brief.callerContext.suggestedQuestions : run.brief.talkingPoints || []).map((point, i) => <div key={i}>· {point}</div>)}</div>}
         {(run.brief.openQuestions || []).length > 0 && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--mute)' }}><b style={{ color: 'var(--text)' }}>Open questions</b>{run.brief.openQuestions.map((point, i) => <div key={i}>· {point}</div>)}</div>}
+        {run.brief.operatorOnly && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line)', fontSize: 12, color: 'var(--mute)' }}><b style={{ color: 'var(--text)' }}>Internal record check</b><span style={{ color: 'var(--faint)' }}> · staff only, never sent to the calling agent</span><div style={{ marginTop: 5 }}>Matching prior applications: email {run.brief.operatorOnly.matchingEmailApplications} · phone {run.brief.operatorOnly.matchingPhoneApplications} · business {run.brief.operatorOnly.matchingBusinessApplications}</div></div>}
       </div>}
       {run.status === 'complete' && !identityChecked(run) && <div style={{ margin: '11px 0', padding: '9px 11px', color: 'var(--amber)', background: 'color-mix(in srgb,var(--amber) 10%,transparent)', border: '1px solid color-mix(in srgb,var(--amber) 28%,transparent)', borderRadius: 8, fontSize: 12, lineHeight: 1.5 }}>This older snapshot did not prove the business identity. It is kept as history, but cannot be reviewed or used to place a call. Re-run research.</div>}
       {run.summary && <details><summary style={{ cursor: 'pointer', fontSize: 11.5, color: 'var(--mute)' }}>Research method</summary><div style={{ whiteSpace: 'pre-wrap', fontSize: 12.5, color: 'var(--text)', lineHeight: 1.6, padding: '11px 0' }}>{run.summary}</div></details>}

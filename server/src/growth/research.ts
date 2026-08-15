@@ -101,6 +101,20 @@ const websiteHost = (value: string | null): string | null => {
 const normal = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 const businessName = (details: Record<string, unknown>): string | null =>
   kept(details.shopName, 180) ?? kept(details.businessName, 180) ?? kept(details.legalName, 180) ?? kept(details.companyName, 180);
+const emailAddress = (value: unknown): string | null => {
+  const email = kept(value, 320)?.toLowerCase() ?? null;
+  return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+};
+const phoneDigits = (value: unknown): string | null => {
+  const digits = kept(value, 80)?.replace(/\D/g, "") ?? "";
+  return digits.length >= 8 && digits.length <= 15 ? digits : null;
+};
+const containsPhone = (text: string, digits: string): boolean => {
+  // Match the submitted number with normal human formatting, without
+  // concatenating all digits from a page (which could join unrelated numbers).
+  const pattern = digits.split("").join("[^0-9]{0,3}");
+  return new RegExp(pattern).test(text);
+};
 const namesBusiness = (value: string, business: string): boolean => normal(business).length >= 3 && normal(value).includes(normal(business));
 const sameDomain = (url: string, host: string): boolean => {
   try {
@@ -179,6 +193,8 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
       const city = kept(lead.details.city, 100);
       const site = websiteUrl(lead.details.website);
       const host = websiteHost(site);
+      const submittedEmail = emailAddress(lead.email);
+      const submittedPhone = phoneDigits(lead.details.phone);
       const tasks: { label: string; method: ResearchFactInput["method"]; direct?: boolean; promise: Promise<TavilyResponse> | Promise<TavilyExtractResponse> }[] = [];
       if (site) tasks.push({ label: "applicant_website", method: "website_read", direct: true,
         // Read the address the applicant gave us directly. A search engine is
@@ -223,11 +239,30 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
           // Even the supplied website must name the business in the extracted
           // page. A domain alone is not evidence of the applicant’s company.
           if (!value) return [];
-          return [{
+          const businessFact = {
             key: factKey(task.label, index), value, sourceUrl: url,
             confidence: task.method === "website_read" ? 0.95 : task.method === "registry" ? 0.9 : 0.85,
             method: task.method,
-          } satisfies ResearchFactInput];
+          } satisfies ResearchFactInput;
+          /* Contact details stay local to this check. We only record a
+             positive result when the applicant's stated corporate site itself
+             publishes the exact submitted address or number. */
+          const contactFacts: ResearchFactInput[] = [];
+          if (task.direct && submittedEmail && raw.toLowerCase().includes(submittedEmail)) {
+            contactFacts.push({
+              key: factKey("website_submitted_email", index),
+              value: "The submitted application email is published on this stated business website.",
+              sourceUrl: url, confidence: 0.95, method: "website_read",
+            });
+          }
+          if (task.direct && submittedPhone && containsPhone(raw, submittedPhone)) {
+            contactFacts.push({
+              key: factKey("website_submitted_phone", index),
+              value: "The submitted application phone number is published on this stated business website.",
+              sourceUrl: url, confidence: 0.95, method: "website_read",
+            });
+          }
+          return [businessFact, ...contactFacts];
         });
         facts.push(...sourced);
         const used = Number((response as TavilyResponse | TavilyExtractResponse).usage?.credits);
@@ -246,6 +281,11 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
         );
       }
       const registryMatch = facts.some((fact) => fact.method === "registry" && fact.confidence >= 0.8);
+      const publicBusinessContext = [
+        `A public source independently names ${business} as the stated business.`,
+        ...facts.filter((fact) => fact.key.startsWith("website_submitted_")).map((fact) => fact.value),
+        ...(registryMatch ? ["A possible FINTRAC MSB name match was found; confirm the legal entity and registration before relying on it."] : []),
+      ];
       const summary = `${business}: ${facts.length} public source${facts.length === 1 ? "" : "s"} named the stated business exactly and passed the identity check. FINTRAC registration ${registryMatch ? "has a possible name match that requires human confirmation" : "was not confirmed by this run"}.`;
       return {
         summary,
@@ -256,6 +296,15 @@ export function tavilyResearchProvider(env: NodeJS.ProcessEnv = process.env): Le
           talkingPoints: [`Confirm that ${business} is the legal or trading name.`, "Ask how the team currently handles rates, cash ownership and compliance work."],
           openQuestions: registryMatch ? ["Confirm the FINTRAC record belongs to this applicant."] : ["Ask for the legal business name and MSB registration number.", "Confirm whether registration is pending or held under another legal name."],
           identity: { businessName: business, websiteHost: host, verification: "exact_business_name" },
+          callerContext: {
+            goal: "Qualify the business for CurrencyDesk early access and learn whether a follow-up with the team is worthwhile.",
+            publicBusinessContext,
+            suggestedQuestions: [
+              `Confirm ${business}'s legal or trading name and operating locations.`,
+              "Understand the current workflow for rates, cash and compliance, and where it is difficult today.",
+              "Confirm the right next step, decision-maker and timing for a CurrencyDesk walkthrough.",
+            ],
+          },
         },
         facts,
         creditsUsed: credits || null,
@@ -290,13 +339,30 @@ export async function researchEnquiry(input: {
       Number.isFinite(fact.confidence) && fact.confidence >= 0 && fact.confidence <= 1,
     );
     if (!facts.length) throw new Error("Research returned no sourced findings.");
-    const brief: ResearchBrief = output.brief ?? {
+    const baseBrief: ResearchBrief = output.brief ?? {
       executiveSummary: output.summary.slice(0, 3000),
       sourceCount: new Set(facts.map((fact) => fact.sourceUrl)).size,
       registryStatus: facts.some((fact) => fact.method === "registry" && fact.confidence >= 0.8) ? "possible_match" : "not_confirmed",
       talkingPoints: ["Confirm the applicant's current workflow and goals."],
       openQuestions: ["Verify any material finding before relying on it in the call."],
     };
+    /* An existing application can corroborate that a lead is already in the
+       funnel, but it is not a public fact and must not be handed to the AI
+       caller. Store only counts so a staff member can resolve duplicates
+       without exposing one applicant's information to another. */
+    const targetEmail = emailAddress(input.enquiry.email);
+    const targetPhone = phoneDigits(details.phone);
+    const targetBusiness = businessName(details);
+    const otherApplications = (await input.db.select().from(schema.enquiries))
+      .filter((row) => row.id !== input.enquiry.id && row.kind === "early_access");
+    const operatorOnly = {
+      matchingEmailApplications: targetEmail ? otherApplications.filter((row) => emailAddress(row.email) === targetEmail).length : 0,
+      matchingPhoneApplications: targetPhone ? otherApplications.filter((row) => phoneDigits((row.details as Record<string, unknown> | null)?.phone) === targetPhone).length : 0,
+      matchingBusinessApplications: targetBusiness ? otherApplications.filter((row) => businessName((row.details ?? {}) as Record<string, unknown>) && normal(businessName((row.details ?? {}) as Record<string, unknown>)!) === normal(targetBusiness)).length : 0,
+    };
+    const brief: ResearchBrief = baseBrief.identity?.verification === "exact_business_name"
+      ? { ...baseBrief, operatorOnly }
+      : baseBrief;
 
     await input.db.transaction(async (tx) => {
       await tx.insert(schema.enquiryResearchRuns).values({

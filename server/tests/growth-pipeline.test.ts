@@ -83,6 +83,15 @@ const apply = async (email: string) => {
 describe("lead research and outbound calling", () => {
   it("stores consent evidence and sourced research without touching applicant details", async () => {
     const { row, details } = await apply("research@northstar.example");
+    await handle.db.insert(schema.enquiries).values({
+      id: "enq-prior-matching-lead",
+      reference: "CD-PRIOR01",
+      kind: "early_access",
+      email: "research@northstar.example",
+      name: "Earlier application",
+      details,
+      status: "reviewing",
+    });
     const before = row.details;
     const first = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/research`, cookies: admin, payload: {} });
     const second = await app.inject({ method: "POST", url: `/api/admin/enquiries/${row.id}/research`, cookies: admin, payload: {} });
@@ -95,6 +104,11 @@ describe("lead research and outbound calling", () => {
     expect(view.json().research[0].facts).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceUrl: "https://registry.example/msb/42", confidence: 0.99, method: "registry" }),
     ]));
+    expect(view.json().research[0].brief.operatorOnly).toEqual({
+      matchingEmailApplications: 1,
+      matchingPhoneApplications: 1,
+      matchingBusinessApplications: 1,
+    });
     expect(view.json().consent).toMatchObject({ formVersion: "early-access-2026-08-06", timezone: "America/Toronto", timezoneSource: "browser" });
 
     const after = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, row.id)).limit(1))[0]!;
