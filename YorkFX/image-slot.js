@@ -75,7 +75,12 @@
 
   function load() {
     if (loadP) return loadP;
-    loadP = fetch(STATE_FILE)
+    /* Production never ships the design-tool sidecar. Asking for it 404s
+       on every storefront load for a feature that only exists in the
+       editor — same patch scripts/build-site.mjs applies to web/. */
+    loadP = Promise.reject(new Error('no sidecar in production'))
+      .catch(() => ({ ok: false, json: () => null }))
+      .then((r) => r)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         // Merge: sidecar loses to any in-memory change that raced ahead of
@@ -603,7 +608,8 @@
       // (Claude wrote it into the HTML) so it passes through unchanged.
       let stored = this.id ? getSlot(this.id) : this._local;
       if (stored && stored.u && !/^data:image\//i.test(stored.u)) stored = null;
-      const srcAttr = this.getAttribute('src') || '';
+      const raw = this.getAttribute('src') || '';
+      const srcAttr = raw.indexOf('{{') >= 0 ? '' : raw;
       this._userUrl = (stored && stored.u) || null;
       const url = this._userUrl || srcAttr;
       // Don't clobber an in-flight reframe with a store-triggered re-render.

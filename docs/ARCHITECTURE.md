@@ -76,9 +76,13 @@ broken one. Where that ordering matters it is commented at the call site.
 
 **The frontend ships without a build step for its logic** — JSX compiled
 ahead of time into `web/app/`, React served from our own origin, no CDN in
-the request path for anything the product needs to open. (One exception
-remains: the Tailwind Play CDN, a compiler running in the customer's browser.
-It is on the list in §8.)
+the request path for anything the product needs to open. `/login` and
+`/app` load `/web/app/os.js` even when `STATIC_INDEX` still names the
+uncompiled shell. The YorkFX storefront is the same rule: customer pages
+are plain HTML and their own scripts; they do not pull React, Babel, or
+unpkg. (The buildless `CurrencyDesk OS.html` shell still uses the Tailwind
+Play CDN and in-browser Babel — that file is the editor fallback, not
+what production serves when `web/app` is present.)
 
 ---
 

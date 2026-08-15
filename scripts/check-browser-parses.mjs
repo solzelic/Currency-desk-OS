@@ -26,6 +26,7 @@
      web/*.html           the built public pages, including the two
                           compiled from designs
      yorkfx-converter.js  the storefront's rate script
+     YorkFX/*.html        the customer storefront pages
 
    A file that does not parse fails the build. There is no severity dial:
    a page that cannot be read is not a degraded page, it is a missing one.
@@ -101,11 +102,15 @@ if (existsSync(appDir)) {
 }
 
 // ---- pages, and the scripts inside them --------------------------------
+const yorkfxDir = path.join(ROOT, "YorkFX");
 const pages = [
   path.join(ROOT, "admin.html"),
   path.join(ROOT, "CurrencyDesk OS.html"),
   ...(existsSync(path.join(ROOT, "web"))
     ? readdirSync(path.join(ROOT, "web")).filter((f) => f.endsWith(".html")).sort().map((f) => path.join(ROOT, "web", f))
+    : []),
+  ...(existsSync(yorkfxDir)
+    ? readdirSync(yorkfxDir).filter((f) => f.endsWith(".html")).sort().map((f) => path.join(yorkfxDir, f))
     : []),
 ];
 for (const p of pages) {
