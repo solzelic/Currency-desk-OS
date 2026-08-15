@@ -26,9 +26,10 @@ say.
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
 | `design/emails/` | email design reference | ✅ |
+| `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
 | `CurrencyDesk Onboarding.html` | onboarding design bundle (build input) | replaced by design exports |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
-| `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx` | ✅ (it is production) |
+| `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
 | `scripts/` | build + design-import tools + governance checks | ✅ |
 | `tests/e2e/` | Playwright seam suite (drives the browser, then asks the ledger) | ✅ |

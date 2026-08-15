@@ -17,8 +17,11 @@
   publication and market-snapshot IDs, rate source type, and any override ID.
   The posted transaction is append-only, so later board or quote changes cannot
   change historical lineage.
-- The Canadian pilot requires exactly one CAD currency leg. This is documented
-  pilot behavior only; it is not a universal architecture rule.
+- The Canadian pilot originally required exactly one CAD currency leg.
+  **Amended**: desks whose jurisdiction pack sets `allow_cross_currency`
+  post foreign-to-foreign deals — two frozen board rows, margin on both
+  legs (`docs/JURISDICTION_PACK_ARCHITECTURE.md`,
+  `server/tests/cross-currency.postgres.test.ts`).
 
 Current limitations: no live KYC provider or production market-data assurance;
 the newest market snapshot is associated when available but publication-to-

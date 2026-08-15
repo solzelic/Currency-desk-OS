@@ -1,6 +1,10 @@
 # CurrencyDesk Server
 
-The backend for the TypeScript frontend (`src/`). First slice: **auth + tenancy**.
+The Fastify backend for the whole product: auth and tenancy, the Postgres
+ledger, quotes, client records, rates, hosted storefronts, billing, the
+growth pipeline — and all static serving in production (one origin, no
+CORS). The frontends it serves are the buildless OS (`os-src/`), the admin
+panel, and the generated site under `web/` — see `docs/REPOSITORY_MAP.md`.
 
 ## Stack
 
@@ -20,28 +24,27 @@ tenant (exchange group)
       └─ workspace (till/station)
 ```
 
-Staff belong to a tenant + legal entity + home branch, with `authorizedBranchIds` for cross-branch access. Roles are the same union as `src/domain/types.ts` (`teller` … `auditor`), so the frontend's `authorize()` logic and the server can never drift.
+Staff belong to a tenant + legal entity + home branch, with `authorizedBranchIds` for cross-branch access. Roles are the enum in `server/src/db/index.ts` (`teller` … `auditor`); the server is the single authority on authorization.
 
 ## Run
 
 ```sh
 cd server
-npm install
-npm run dev          # http://127.0.0.1:8787, embedded DB, auto-seeded
+npm ci
+npm run dev:prototype   # http://127.0.0.1:8787 — site at /, OS at /app, embedded DB, auto-seeded
 ```
-
-Frontend dev (`npm run dev` at the repo root) proxies `/api` → `:8787`.
 
 Demo accounts (any of `j.masri`, `r.haddad`, `a.singh`), password `yorkville`. **Demo only.**
 
 ## API
 
-| Method | Path             | Description                              |
-| ------ | ---------------- | ---------------------------------------- |
-| POST   | /api/auth/login  | `{ staffId, password }` → session cookie |
-| POST   | /api/auth/logout | revoke session                           |
-| GET    | /api/auth/me     | current user + scope, 401 if none        |
-| GET    | /api/health      | liveness                                 |
+Routes are registered per domain in `server/src/app.ts`: auth, signup,
+enquiries, early access, PINs, staff, desk, tenant, tenant-state, admin,
+growth, public onboarding, public site, rates, billing — plus the ledger,
+quote and client-records routes (44+ under `/api/ledger` and `/api/quotes`),
+which register only when a database URL is configured. The route map lives
+in `docs/REPOSITORY_MAP.md`; the ledger surface in
+`docs/LEDGER_POSTING_API.md` and `docs/QUOTE_SERVICE.md`.
 
 Login failures are uniform (`invalid_credentials`) to prevent staff-ID enumeration, and every attempt lands in `audit_events`.
 
@@ -114,14 +117,11 @@ tender and the quote-post endpoint requires `purpose` and `sourceOfFunds`.
 Historical quote transactions retain their frozen rate-board, market-snapshot,
 market-mid, source-type, and override lineage.
 
-## Next slices
-
-1. Provision authenticated staff, customers / KYC, and opening till balances
-   into the relational ledger for each workspace.
-2. Cut the browser transaction flow over to create and post frozen quotes, then
-   hydrate its ledger from server reads instead of writing local rows.
-3. Add production market-data assurance, monitoring, backups, and an approved
-   override/compliance policy.
+(The "next slices" that used to be listed here all shipped: workspace
+provisioning is `server/src/ledger/provisioning.ts` + migration 004, and the
+browser flow posts frozen quotes through `/api/quotes`. Production
+market-data assurance and an approved override policy remain open — see
+`docs/ROAD_TO_DEPLOYMENT.md`.)
 
 ## Stripe billing
 

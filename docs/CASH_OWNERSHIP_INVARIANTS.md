@@ -178,3 +178,25 @@ How a jurisdiction's number and a desk's own number relate — which one wins,
 which way "stricter" points, and what the posting gate does when neither can
 answer — is written down in `DESK_THRESHOLDS.md`. The short version: the pack
 proposes, the desk decides, and a desk may only ever tighten.
+
+## Where the seams are tested
+
+Each of these drives a real screen against a real ledger
+(`SEAM_DATABASE_URL`). They are the standard for anything touching money —
+a server test and a browser test both passing while the join is broken is
+exactly how past defects survived green runs. CI runs all of them
+(`browser-seam`).
+
+```
+zz-a-day-at-the-desk    a full shift; the deployment gate
+cash-seam               till sessions, floats, counts, close
+obligation-seam         remittance send and receive
+cheque-seam             cashing, clearing, the register
+client-records-seam     customers, aliases, ID reveal audit
+currency-set-seam       the desk's traded currencies
+rate-board-seam         the board, the provider, publish
+desk-thresholds-seam    reporting and identification lines
+document-seam           generated paperwork from the ledger
+reporting-seam          the Dashboard and Ledger headlines
+till-switch-seam        which drawer a session writes to
+```

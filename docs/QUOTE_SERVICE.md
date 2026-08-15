@@ -49,6 +49,9 @@ Stable failures include `AUTHENTICATION_REQUIRED`, `SCOPE_DENIED`,
 posting failures documented in `LEDGER_POSTING_API.md`.
 
 The API is intentionally fail-closed until a workspace has relational ledger
-principals, customers, and till balances. The current browser OS has not yet
-been switched from its local transaction writer to these endpoints; that
-provisioning and UI cutover are the next production milestone.
+principals, customers, and till balances. The browser OS posts through these
+endpoints (`os-src/cdos-backend.js` → `POST /api/quotes`, `/override`,
+`/post`); provisioning creates the workspace rows at onboarding. The
+original single-CAD-leg pilot constraint has been generalised — desks with
+`allow_cross_currency` post foreign-to-foreign deals
+(`docs/JURISDICTION_PACK_ARCHITECTURE.md`).

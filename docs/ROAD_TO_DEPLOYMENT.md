@@ -1,4 +1,8 @@
-# The Road to Deployment
+# The Road to Deployment — assessed 2026-08-05
+
+(A dated status assessment: the scores below were taken against the
+pre-governance `main` and age as work lands. Reverify a row before relying
+on it; `docs/PROJECT_STATE.md` carries the current risk list.)
 
 Two bars, scored separately, because they are different questions and a
 single percentage hides which one you are looking at.

@@ -1,47 +1,42 @@
-# Frontend Migration Plan
+# Database migrations — the contract
 
-## Phase 0: Repository Foundation
+(This filename used to hold the abandoned 2026-07 frontend migration plan;
+git history has it. This is the real, load-bearing migration contract,
+consolidated from the ledger workstream's hard-won rules.)
 
-- Document the preserved prototype and repository structure.
-- Add `.gitignore` rules for Node, build output, local environment files, and editor state.
-- Add a Vite React TypeScript app that runs beside the prototype.
+## Adding a migration means THREE places
 
-## Phase 1: Core Desk Slice
+Missing any one of them fails silently:
 
-Build the first vertical slice in TypeScript:
+1. The SQL file: `server/src/db/migrations/NNN_name.sql` — the name
+   describes the schema change.
+2. Register it in the ordered list in `server/src/db/migrations.ts`.
+3. If it touches a Drizzle-managed table: add the column to the `DDL`
+   constant in `server/src/db/index.ts` **and** to
+   `server/src/db/schema.ts`.
 
-1. Staff sign-in with seeded users.
-2. Workspace state for branch, till, ledger, customers, receipts, and cash position.
-3. Customer search and customer creation.
-4. Currency exchange transaction drafting.
-5. Compliance checks for ID policy, reportable threshold, and basic risk notes.
-6. Transaction posting into ledger.
-7. Receipt generation from posted transaction.
-8. Till position update from posted transaction.
+Ledger tables are the exception — they are created by
+`server/src/ledger/migration.sql` (registered as migration `001_ledger`)
+and are deliberately absent from `DDL`.
 
-## Phase 2: Prototype Parity Modules
+## Immutability and checksums
 
-Migrate one module at a time:
+Migrations are **immutable once merged/applied**. Every applied migration's
+checksum is recorded in `schema_migrations`; editing an applied file raises
+`Migration checksum drift` at boot rather than silently diverging
+(`server/tests/migrations.postgres.test.ts` pins this, along with
+partial-failure rollback). Need a change? Write the next migration.
+Never rename a migration file after merge.
 
-- Ledger detail and corrections.
-- KYC verification workflow.
-- Compliance filing worksheets.
-- Till reconciliation and shift handoff.
-- Vault and branch movement.
-- Pricing and rate-board administration.
-- Reports and audit history.
+## How they run
 
-## Phase 3: Production Readiness
+Boot applies everything: `createDb()` runs `DDL` (idempotent
+`IF NOT EXISTS`) and then `runMigrations` against a Postgres
+`DATABASE_URL` — a fresh database self-provisions exactly the way a fresh
+deployment does. The embedded PGlite database applies `DDL` but **not**
+the SQL migrations, which is why the ledger only exists when a real
+database URL is configured, and why the known "two schema mechanisms"
+debt exists (`docs/ARCHITECTURE.md` §8).
 
-Replace demo infrastructure:
-
-- localStorage persistence -> backend API and database.
-- Mock sign-in -> identity provider and sessions.
-- Simulated KYC -> provider integration.
-- Static rates -> provider-backed rate feed with lock/audit history.
-- Browser-only receipts -> durable receipt and document storage.
-- Prototype compliance rules -> jurisdiction-validated rules engine.
-
-## Compatibility Policy
-
-The root prototype files remain runnable throughout migration. The Vite app is additive and should not require changes to `CurrencyDesk OS.html` or `os-src/`.
+Operational commands: `cd server && npm run ledger:migrate` applies
+migrations by hand; `npm run ledger:seed` seeds ledger fixtures.

@@ -66,10 +66,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Open, under normal review.
-- **Queued**: documentation consolidation (the last staged cleanup PR from
-  the Phase 1 audit). The deterministic low-risk deletions have landed;
-  the nine unreferenced YorkFX media files rated LOW-MED were deliberately
-  retained until external hot-linking can be ruled out.
+
+The Phase 1 repository cleanup is complete: governance, the security
+cherry-pick, deterministic deletions, and documentation consolidation have
+all landed. The nine unreferenced YorkFX media files rated LOW-MED were
+deliberately retained until external hot-linking can be ruled out.
 
 ## Known high-priority engineering risks (unresolved)
 
@@ -91,12 +92,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Next engineering priorities (ordered)
 
-1. Documentation consolidation (Phase 1 audit §H).
-2. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
-3. Platform MFA (issue #33).
+1. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
+2. Platform MFA (issue #33).
+3. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
 
 ## Last reviewed
 
-**2026-08-15**, against `main` = `0fb4739f` ("Establish repository governance
-and full CI safety gates (#37)"). Review this stamp — and every section above
-— whenever a PR changes what is true.
+**2026-08-15**, against `main` = `1bb29da9` ("Deterministic repository
+cleanup (#39)"). Review this stamp — and every section above — whenever a
+PR changes what is true.

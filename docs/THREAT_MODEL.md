@@ -1,8 +1,20 @@
-# Frontend Foundation Threat Model
+# CurrencyDesk Threat Model
 
 ## Scope
 
-This threat model covers the React frontend foundation, its demo persistence adapters, domain authorization helpers, and audit-event creation. It does not cover the preserved legacy prototype as a production system. Review this model whenever authentication, backend APIs, document handling, third-party screening, exports, or deployment architecture change.
+This threat model covers the shipped system: the Fastify server (auth,
+sessions, tenancy, the Postgres ledger, quotes, client records, hosted
+storefronts, billing, growth pipeline), the buildless OS and admin panel it
+serves, and the generated public site. It was originally written against a
+since-deleted frontend foundation; the asset list, actors, abuse cases and
+security invariants below carried over intact because they describe the
+product, not that implementation. Where a mitigation column still names the
+old persistence adapters, read it as historical — the live mitigations are
+server-side (scrypt credentials, opaque revocable sessions, tenant scoping
+on every query, idempotency keys, append-only `ledger_audit_events`), and
+the "production requirements" column remains the live checklist. Review
+this model whenever authentication, backend APIs, document handling,
+third-party screening, exports, or deployment architecture change.
 
 ## Assets
 
