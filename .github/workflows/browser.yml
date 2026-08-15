@@ -6,13 +6,23 @@
 # screen managed to be dead for days without anyone noticing.
 #
 # This guards the real thing: the buildless OS, the platform panel, and the
-# pages compiled from the designs.
+# pages compiled from the designs. Two jobs:
+#
+#   browser-validate — the cheap static gates: every script parses, and the
+#              committed generated output matches a fresh build of the sources.
+#   browser-seam — the full Playwright suite against the real server AND a
+#              real PostgreSQL. Without a database the ledger routes never
+#              register, 13 of 17 specs skip themselves, and the deployment
+#              gate goes green having proved nothing — that is how every
+#              serious cash defect here survived CI. The ephemeral service
+#              below is the fix, and scripts/check-seam-ran.mjs fails the job
+#              if a spec file silently skips anyway.
 name: Browser
 
 on: [pull_request]
 
 jobs:
-  validate:
+  browser-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,10 +42,8 @@ jobs:
       # The served pages are generated from the designs and committed. If a
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a
-      # customer.
-      # web/app is the OS and the panel, compiled ahead of time so a
-      # customer's browser does not have to. If it is stale, what ships is
-      # not what the sources say.
+      # customer. web/app is the OS and the panel, compiled ahead of time so
+      # a customer's browser does not have to.
       - name: Built pages are current with the designs and the sources
         run: |
           npm run build:onboarding
@@ -46,6 +54,23 @@ jobs:
             exit 1
           }
 
+  browser-seam:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: currencydesk_seam }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
       - name: Install the server
         run: npm ci
         working-directory: server
@@ -53,15 +78,29 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      # One customer, from the public site to a working desk. Every bug this
-      # exists for lived at a handover between two pieces that each had
-      # tests of their own.
-      - name: Walk the customer journey
-        run: npm run test:e2e
+      # One customer from the public site to a working desk, then every
+      # browser↔ledger seam, then the day-long shift that is the deployment
+      # gate. The database exists only for this run; the server provisions
+      # it at boot (DDL + checksummed migrations), exactly as a fresh
+      # deployment would. The suite deliberately leaves ledger state behind
+      # — that is why the database is disposable.
+      - name: Walk the seams against a real book
+        env:
+          SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/seam-report.json
+        run: npx playwright test --reporter=list,html,json
+
+      # Green must mean "ran", not "skipped". A spec file that executed zero
+      # tests is the missing-database signature this job exists to prevent.
+      - name: No seam spec silently skipped
+        if: always()
+        run: node scripts/check-seam-ran.mjs test-results/seam-report.json
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
