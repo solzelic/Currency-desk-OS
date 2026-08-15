@@ -21,7 +21,8 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { applicationReceived, youreIn } from "../src/emails/design.js";
+import { applicationReceived, contactReceivedEmail, youreIn } from "../src/emails/design.js";
+import { loginCodeEmail } from "../src/email.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const ADMIN = "j.masri";
@@ -32,6 +33,16 @@ const A2 = () => youreIn({
   name: "Amir Rostami", shopName: "Yorkville Currency", reference: "CD-KLCU73",
   setupUrl: "https://www.currencydeskos.com/onboarding/CD-KLCU73", cohortNo: 42, place: "Toronto",
   issuedOn: new Date(Date.UTC(2026, 6, 30)),
+});
+/* A3 fires on every sign-in, forever — the email a customer sees more than
+   any other, and the last one still rendering the plain fallback weeks after
+   the rest had been redrawn. It is in this loop so it cannot quietly go back:
+   the fallback passed no table test, and now the same checks that hold A1 and
+   A2 to the design hold A3 too. */
+const A3 = () => loginCodeEmail("482190", "Amir Rostami");
+const A4 = () => contactReceivedEmail({
+  name: "Quinn Alvarez", reference: "CD-YMWW5X", topic: "Currencies",
+  message: "Do you support EUR at the counter?",
 });
 
 beforeAll(async () => {
@@ -47,7 +58,7 @@ afterAll(async () => { await app.close(); await handle.close(); vi.restoreAllMoc
 /* Everything a mail client will actually throw away. Each of these is in
    the design, and each of them had to be rebuilt rather than copied. */
 describe("what survives the trip", () => {
-  for (const [name, mail] of [["A1", A1], ["A2", A2]] as const) {
+  for (const [name, mail] of [["A1", A1], ["A2", A2], ["A3", A3], ["A4", A4]] as const) {
     describe(name, () => {
       it("lays out in tables, never in flex or grid", () => {
         const html = mail().html;

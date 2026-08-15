@@ -66,43 +66,37 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Open, under normal review.
-- **Queued**: cherry-pick of the two unmerged security fixes from
-  `claude/currencydesk-onboarding-completion-ls2i74` @ `cee9c74` (fake
-  `000000` two-step screen removal; designed sign-in email), then the staged
-  cleanup PRs from the Phase 1 audit (`docs/REPO_CONSOLIDATION_PHASE1.md` on
-  the audit branch).
+- **Queued**: the staged cleanup PRs from the Phase 1 audit
+  (`docs/REPO_CONSOLIDATION_PHASE1.md` on the audit branch), starting with
+  the deterministic low-risk deletions.
 
 ## Known high-priority engineering risks (unresolved)
 
-1. **Fake two-step screen ships in the OS bundle** — `os-src/cdos-os.jsx`
-   still compiles a simulated 2FA screen with hardcoded `000000`. Fix exists
-   unmerged on `cee9c74`; cherry-pick is queued (see Active work).
-2. **Platform MFA absent** (issue #33) — no TOTP/MFA on the cross-tenant
+1. **Platform MFA absent** (issue #33) — no TOTP/MFA on the cross-tenant
    admin console.
-3. **`PLATFORM_ADMIN_BOOTSTRAP` re-sets the operator password on every boot**
+2. **`PLATFORM_ADMIN_BOOTSTRAP` re-sets the operator password on every boot**
    (issue #31) while the env var is set (`server/src/admin-bootstrap.ts`) —
    safe only if the var is removed after first sign-in; nothing enforces that.
-4. **Resend API key rotation** (issue #32) — the key passed through chat;
+3. **Resend API key rotation** (issue #32) — the key passed through chat;
    rotation cannot be verified from the repo. Open until confirmed rotated.
-5. **Multi-till/workspace resolution defect** (issue #34) — several routes
+4. **Multi-till/workspace resolution defect** (issue #34) — several routes
    resolve a request's till as "the only workspace at this branch" and deny
    callers without `x-workspace-id` once a second workspace exists. Makes
    seam-test order load-bearing (`zz-` prefix workaround).
-6. **YorkFX storefront loads design tooling in production** (issue #35) —
+5. **YorkFX storefront loads design tooling in production** (issue #35) —
    all five customer-facing pages pull React dev builds + Babel from unpkg
    for the tweaks panel, and `YorkFX/image-slot.js` 404s on a state file
    every load.
 
 ## Next engineering priorities (ordered)
 
-1. Cherry-pick the `cee9c74` security fixes as `security/remove-fake-otp-screen`.
-2. Cleanup PR 1 — deterministic low-risk deletions from the Phase 1 audit.
-3. Documentation consolidation (Phase 1 audit §H).
-4. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
-5. Platform MFA (issue #33).
+1. Cleanup PR 1 — deterministic low-risk deletions from the Phase 1 audit.
+2. Documentation consolidation (Phase 1 audit §H).
+3. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
+4. Platform MFA (issue #33).
 
 ## Last reviewed
 
-**2026-08-14**, against `main` = `6704e856` ("Gate lead research on business
-identity (#29)"). Review this stamp — and every section above — whenever a PR
-changes what is true.
+**2026-08-15**, against `main` = `0fb4739f` ("Establish repository governance
+and full CI safety gates (#37)"). Review this stamp — and every section above
+— whenever a PR changes what is true.
