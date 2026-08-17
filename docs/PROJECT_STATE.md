@@ -71,7 +71,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **PR #30** — caller-safe lead dossier (growth pipeline). Open, under normal review.
+- The compiled-OS production slice is closed on `main` (`90a3890`, #43).
+  Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17.
+- **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
+  Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
+  was deleted in #40), and its CI is from 2026-08-06 (pre-governance).
+  Outside the locked compiled-OS slice.
 
 The Phase 1 repository cleanup is complete: governance, the security
 cherry-pick, deterministic deletions, and documentation consolidation have
@@ -100,7 +105,11 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Last reviewed
 
-**2026-08-15**, against this change (compiled OS in production; YorkFX
-pages no longer load unpkg/Babel/dev-react). Base `main` was `75dd6b8`
-("Correct the two remaining documentation inaccuracies (#42)"). Review
-this stamp — and every section above — whenever a PR changes what is true.
+**2026-08-17**, code review of `main` at `90a3890` (#43) and open PR #30.
+Live `/login` and `/app` serve `/web/app/os.js` with no unpkg, Babel, or
+`react.development`. No must-fix inside the locked compiled-OS slice.
+Residual, not blocking: the uncompiled editor shells remain fetchable at
+`/CurrencyDesk OS.html` and `/admin.html`; `/onboarding` still lists unpkg
+React production URLs in its bundler template. Neither is a product-route
+regression. Review this stamp — and every section above — whenever a PR
+changes what is true.
