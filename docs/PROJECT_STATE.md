@@ -72,11 +72,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
-  Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17.
+  Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
+  at `f31cf21` (#44).
+- **Engineering standards audit** of `main` at `f31cf21` is recorded in
+  `docs/STANDARDS_AUDIT.md` (2026-09-04). Docs only — no product slice
+  opened, no #31–#36 fix shipped.
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
   was deleted in #40), and its CI is from 2026-08-06 (pre-governance).
-  Outside the locked compiled-OS slice.
+  Outside the locked compiled-OS slice. The audit recommends park/close.
 
 The Phase 1 repository cleanup is complete: governance, the security
 cherry-pick, deterministic deletions, and documentation consolidation have
@@ -105,8 +109,12 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Last reviewed
 
-**2026-08-17**, code review of `main` at `90a3890` (#43) and open PR #30.
-Live `/login` and `/app` serve `/web/app/os.js` with no unpkg, Babel, or
+**2026-09-04**, Engineering standards audit of `main` at `f31cf21` (#44).
+Scorecard, residual-issue verification, and proposed two-line slice end
+states: `docs/STANDARDS_AUDIT.md`. No product behaviour changed.
+
+Prior stamp **2026-08-17** (`90a3890`, #43; recorded on `main` by #44):
+live `/login` and `/app` serve `/web/app/os.js` with no unpkg, Babel, or
 `react.development`. No must-fix inside the locked compiled-OS slice.
 Residual, not blocking: the uncompiled editor shells remain fetchable at
 `/CurrencyDesk OS.html` and `/admin.html`; `/onboarding` still lists unpkg
