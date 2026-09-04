@@ -229,7 +229,7 @@ does.
 | #32 Resend key | **Ops only.** | Not in the repo. Rotation cannot be proved from git. Leave open until an operator confirms. |
 | #33 Platform MFA | **Confirmed.** | No TOTP/WebAuthn in `server/src/`. `/admin` is email + password (+ emailed code only if the staff id *is* an email). Cross-tenant blast radius. |
 | #34 Multi-till `SCOPE_DENIED` | **Confirmed.** | Same fallback in `server/src/quotes/routes.ts:20`, `ledger/routes.ts:336`, `clients/routes.ts:134`: no `x-workspace-id` → “the only workspace at this branch” → `undefined` → `SCOPE_DENIED` once a second till exists. `zz-` seam prefix is the workaround. The OS *does* send the header (`os-src/cdos-backend.js`); a shop with two counters and any caller that does not is denied. |
-| #36 cash-seam flake | **Confirmed as documented.** | `tests/e2e/cash-seam.spec.ts:85` — click on Reconcile & close races the till header. Passes alone; flakes in the full suite. Playwright `retries: 1` absorbs most occurrences. Not a financial assertion failure. |
+| #36 cash-seam flake | **Confirmed as documented — reproduced on this audit’s own CI.** | `tests/e2e/cash-seam.spec.ts:85` / line 104: click on Reconcile & close timed out (90s). Locator resolved; element “not stable”; then `<div class="px-4 pt-3 flex-none">` intercepted pointer events. GitHub Actions run `33886373267` on `d72cbe1` (docs-only): 67 passed, 1 failed (this test), 1 flaky (cash-seam open-till, recovered on retry), 1 skipped. Financial assertion never ran. Playwright `retries: 1` did not absorb it. Not caused by this PR. |
 | #35 YorkFX CDN tooling | **Closed, verified gone.** | No `unpkg` / Babel / `react.development` under `YorkFX/`. |
 | Public `/CurrencyDesk OS.html`, `/admin.html` | **Confirmed still public.** | Allow-list in `app.ts:71–72`. Both load unpkg `react.development` + Babel standalone. Product routes do not. |
 | `/onboarding` unpkg | **Confirmed residual.** | `design/onboarding/currencydesk-onboarding.html` and generated `web/onboarding.html` still list unpkg React production URLs in the bundler template. Marketing pages rewrite those to `/web/vendor/`. |
@@ -249,7 +249,7 @@ does.
 6. **Hard-delete of a suspended desk destroys the audit trail.** `admin.ts:1415–1439` deletes `audit_events` and the 6-year record. Standard forbids this.
 7. **Uncompiled Babel shells and `os-src/` are still on the public allow-list.** Residual XSS/supply-chain surface (`react.development`, in-browser Babel, Tailwind Play CDN on the editor shell). Not the product route; still fetchable.
 8. **In-process auth challenges and cooldowns.** Sign-in codes die on every Render sleep. `auth.ts:74–76`, `cooldown.ts`.
-9. **cash-seam flake tolerated by CI retry.** (#36). Standard says fix or delete the day it is noticed. Do not weaken the assertion.
+9. **cash-seam flake tolerated by CI retry, and the retry is not enough.** (#36). This audit’s Browser job went red on the documented click-stability race (`cash-seam.spec.ts:104`). Standard says fix or delete the day it is noticed. Do not weaken the assertion. This PR does not fix it.
 10. **Two schema mechanisms + caret-ranged server deps + no secret-scan / `npm audit` job.** Drift between PGlite and Postgres; unpinned server libraries; #32 rotation still unconfirmed.
 
 ---
