@@ -102,15 +102,15 @@ The book itself meets the standard. Two adjacent money paths do not.
 | Currency in the type | Ledger amounts travel with a `char(3)` currency. Three-decimal currencies are refused out loud (`server/src/ledger/currencies.ts`) rather than truncated. |
 | One book | `docs/CASH_OWNERSHIP_INVARIANTS.md`. Browser `position()` is a headstone (`os-src/cdos-base.jsx` ~628). |
 
-**Fail on two non-ledger money paths.**
+**Fail on two non-ledger money paths — storefront holds and board
+margins landed in Slice F.** Remaining: jsonb mids.
 
 | Evidence | Why |
 | --- | --- |
-| `server/src/db/index.ts:50–52`, `server/src/db/schema.ts:647–649` | Storefront SMS holds (`rate_quotes`) store `have_amount`, `quoted_rate`, `receive_amount` as `double precision`. |
-| `server/src/routes/public-site.ts:210–215` | Those holds are computed with JS `*` `/` on IEEE floats: `mid * (1 - margin)`, `receive / amount`. A customer-facing rate, persisted. |
-| `server/src/db/index.ts:386–387`, `schema.ts:347–348` | Rate-board `buy_margin` / `sell_margin` are `double precision`. |
-| `server/src/db/schema.ts:366` | `market_rates.mids` is `jsonb` typed `Record<string, number>` — JS numbers. |
-| `server/src/seed.ts:62–73` | Seed board mids are `Number((1 / units).toPrecision(6))`. |
+| `server/src/db/index.ts`, `schema.ts`, migration `024_storefront_holds_decimal` | **Landed (Slice F).** `rate_quotes.have_amount` / `receive_amount` are `numeric(24,2)`; `quoted_rate` and board `buy_margin` / `sell_margin` are `numeric(24,12)`. |
+| `server/src/sites/storefront-hold.ts`, `routes/public-site.ts` | **Landed (Slice F).** SMS holds and the public board display price with `decimal.js` (`ROUND_HALF_UP`), once. IEEE `*` `/` is gone from that path. |
+| `server/src/db/schema.ts` `market_rates.mids` | Still `jsonb` typed `Record<string, number>` — JS numbers. Parked; not Slice F. |
+| `server/src/seed.ts` | Seed board mids are still `Number((1 / units).toPrecision(6))`. Parked with the jsonb finding. |
 
 `confidence double precision` on research facts and `attempts double
 precision` on pending signups are not money; they are listed only so a
@@ -244,7 +244,7 @@ does.
 
 1. **Platform admin is one password deep, and boot can reset that password.** (#33 + #31). One phished or still-bootstrapped credential reaches every desk. `admin-bootstrap.ts` + no TOTP.
 2. **Render health lies about Neon.** `GET /api/health` is `{ ok: true }`. A DB outage looks like a live shop until a person opens `/admin`. `app.ts:151`, `render.yaml:39`.
-3. **Storefront SMS quotes and rate-board margins are floats.** Customer-visible amounts stored as `double precision` and computed with `*`. `public-site.ts:210–215`, `schema.ts:347–348, 647–649`.
+3. **Storefront SMS quotes and rate-board margins are floats.** **Closed (Slice F).** Columns are `numeric`; the SMS path uses Decimal. jsonb board mids remain JS numbers.
 4. **Quote-create still hard-codes CAD/USD/EUR/GBP** after the ledger learned every ISO 4217 code. A corridor the book will hold, the quote door will refuse. `quotes/routes.ts:15` vs migration 020.
 5. **Multi-till resolution denies the second workspace.** (#34). Adding a till through the product’s own route breaks callers that omit `x-workspace-id`. Seam-test order is load-bearing.
 6. **Hard-delete of a suspended desk destroys the audit trail.** `admin.ts:1415–1439` deletes `audit_events` and the 6-year record. Standard forbids this.
@@ -285,10 +285,10 @@ A boot with the var still set logs loudly and leaves the hash alone.
 `POST /api/quotes` accepts any ISO-style currency code the desk may hold; the four-way enum is gone.
 A peso (or any stated) pair that the ledger will post, the quote service will quote. Pair and `permittedCurrencies` rules are unchanged and still applied in the service.
 
-### Slice F — Storefront holds are decimal
+### Slice F — Storefront holds are decimal — landed
 
 `rate_quotes` amounts/rates and board margins are `numeric`; the SMS quote path uses Decimal, once.
-A hold a customer shows at the counter is a number the ledger can reproduce.
+A hold a customer shows at the counter is a number the ledger can reproduce. jsonb board mids were out of bounds and stay parked.
 
 ### Slice G — cash-seam is deterministic (#36)
 
@@ -339,7 +339,7 @@ durable doc, not inferred taste.
 | Dev database | Embedded PGlite | Zero install (`server/README.md`). Does **not** run SQL migrations — known debt. |
 | Prod database | Neon Postgres via `DATABASE_URL` | `render.yaml`. Free-tier CU-hours are an ops limit, not a code choice. |
 | Migrations | Checksummed SQL in `server/src/db/migrations/`, registered in `migrations.ts`, mirrored in `DDL` for Drizzle tables | `docs/MIGRATION.md`. Immutable once applied. |
-| Money | `decimal.js` + `numeric(24,2\|12)` on the ledger | `CASH_OWNERSHIP_INVARIANTS.md`. Float is forbidden on the book; still present on SMS quotes and board margins (gap). |
+| Money | `decimal.js` + `numeric(24,2\|12)` on the ledger, storefront holds, and board margins | `CASH_OWNERSHIP_INVARIANTS.md`. Float is forbidden on the book and on SMS holds (Slice F). jsonb board mids are still JS numbers. |
 | Frontend | Buildless React 18.3.1, compiled AOT to `web/app/` | Deleted Vite app was green while production went unwatched (`.github/workflows/browser.yml` header). |
 | CSS | Tailwind 3.4.17, compiled to `web/app/tw.css` | CDN compiler is gone from what ships; only the editor shell still pulls it. |
 | Browser deps | React, ReactDOM, Babel standalone, Tailwind **pinned exactly** | Root `package.json` comment: a caret would serve a version the committed `web/` was never built with. |

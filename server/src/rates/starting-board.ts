@@ -14,6 +14,7 @@
    margin, and the market sync refreshes what is already on it.
    ============================================================ */
 import { desc, eq, sql } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -108,8 +109,8 @@ export async function publishStartingBoard(
     tenantId: args.tenantId,
     legalEntityId: args.legalEntityId,
     branchId: args.branchId,
-    buyMargin: marginFrom(args.spreadAll),
-    sellMargin: marginFrom(args.spreadAll),
+    buyMargin: new Decimal(marginFrom(args.spreadAll)).toFixed(12),
+    sellMargin: new Decimal(marginFrom(args.spreadAll)).toFixed(12),
     boardRows: rows,
     boardOrder: Object.keys(rows),
     publishedBy: args.publishedBy ?? "system:provisioning",
