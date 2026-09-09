@@ -76,10 +76,22 @@ jobs:
         working-directory: server
 
       - name: Install Chromium
-        # Playwright's supported path (`install --with-deps`) runs apt. Google
-        # Chrome's apt index sometimes Hash-Sum-mismatches mid-sync and the
-        # step dies before any seam test runs. Retry with a clean list.
+        # `install --with-deps` still installs Playwright Chromium plus Ubuntu
+        # system libs. It also runs `apt-get update` against every source on
+        # the runner. ubuntu-latest ships Google's Chrome repo; that CDN has
+        # been serving Packages.gz that disagrees with InRelease (same hash
+        # mismatch across retries). Playwright does not use that repo — the
+        # browser comes from cdn.playwright.dev and the libs from Ubuntu —
+        # so drop the unused source, then keep the supported install path.
         run: |
+          for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -e "$f" ] || continue
+            if grep -qiE 'dl\.google\.com' "$f"; then
+              echo "Removing unused apt source $f"
+              sudo rm -f "$f"
+            fi
+          done
+          sudo rm -f /var/lib/apt/lists/*google* /var/lib/apt/lists/*chrome* || true
           for attempt in 1 2 3; do
             if npx playwright install --with-deps chromium; then
               exit 0
@@ -87,7 +99,6 @@ jobs:
             echo "::warning::Chromium install attempt ${attempt}/3 failed"
             if [ "$attempt" -lt 3 ]; then
               sudo apt-get clean
-              sudo rm -f /var/lib/apt/lists/*google* /var/lib/apt/lists/*chrome* || true
               sleep 15
             fi
           done
