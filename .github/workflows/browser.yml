@@ -76,7 +76,23 @@ jobs:
         working-directory: server
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        # Playwright's supported path (`install --with-deps`) runs apt. Google
+        # Chrome's apt index sometimes Hash-Sum-mismatches mid-sync and the
+        # step dies before any seam test runs. Retry with a clean list.
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Chromium install attempt ${attempt}/3 failed"
+            if [ "$attempt" -lt 3 ]; then
+              sudo apt-get clean
+              sudo rm -f /var/lib/apt/lists/*google* /var/lib/apt/lists/*chrome* || true
+              sleep 15
+            fi
+          done
+          echo "::error::Chromium install failed after 3 attempts"
+          exit 1
 
       # One customer from the public site to a working desk, then every
       # browser↔ledger seam, then the day-long shift that is the deployment
