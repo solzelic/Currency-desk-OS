@@ -18,8 +18,46 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export async function createSession(db: Db, userId: string): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await db.insert(schema.sessions).values({ tokenHash: sha256(token), userId, expiresAt });
+  const workspaceId = await homeWorkspaceId(db, userId);
+  await db.insert(schema.sessions).values({
+    tokenHash: sha256(token),
+    userId,
+    expiresAt,
+    ...(workspaceId ? { workspaceId } : {}),
+  });
   return { token, expiresAt };
+}
+
+export async function setSessionWorkspace(db: Db, token: string, workspaceId: string): Promise<void> {
+  await db
+    .update(schema.sessions)
+    .set({ workspaceId })
+    .where(eq(schema.sessions.tokenHash, sha256(token)));
+}
+
+async function homeWorkspaceId(db: Db, userId: string): Promise<string | undefined> {
+  const rows = await db
+    .select({
+      tenantId: schema.staffUsers.tenantId,
+      legalEntityId: schema.staffUsers.legalEntityId,
+      branchId: schema.staffUsers.branchId,
+    })
+    .from(schema.staffUsers)
+    .where(eq(schema.staffUsers.id, userId))
+    .limit(1);
+  const user = rows[0];
+  if (!user) return undefined;
+  const tills = await db
+    .select({ id: schema.workspaces.id, tillId: schema.workspaces.tillId })
+    .from(schema.workspaces)
+    .where(
+      and(
+        eq(schema.workspaces.tenantId, user.tenantId),
+        eq(schema.workspaces.legalEntityId, user.legalEntityId),
+        eq(schema.workspaces.branchId, user.branchId),
+      ),
+    );
+  return [...tills].sort((left, right) => left.tillId.localeCompare(right.tillId))[0]?.id;
 }
 
 export interface SessionUser {
@@ -32,6 +70,7 @@ export interface SessionUser {
   branchId: string;
   authorizedBranchIds: string[];
   mustChangePassword: boolean;
+  workspaceId: string | null;
 }
 
 /* Why a session did not resolve, for the one caller that has something
@@ -65,7 +104,11 @@ export type SessionState =
 export async function resolveSessionState(db: Db, token: string | undefined): Promise<SessionState> {
   if (!token) return { state: "none" };
   const rows = await db
-    .select({ user: schema.staffUsers, suspended: schema.tenants.suspended })
+    .select({
+      user: schema.staffUsers,
+      suspended: schema.tenants.suspended,
+      workspaceId: schema.sessions.workspaceId,
+    })
     .from(schema.sessions)
     .innerJoin(schema.staffUsers, eq(schema.sessions.userId, schema.staffUsers.id))
     .innerJoin(schema.tenants, eq(schema.staffUsers.tenantId, schema.tenants.id))
@@ -91,6 +134,7 @@ export async function resolveSessionState(db: Db, token: string | undefined): Pr
     branchId: u.branchId,
     authorizedBranchIds: u.authorizedBranchIds,
     mustChangePassword: u.mustChangePassword,
+    workspaceId: row.workspaceId ?? null,
   };
   return row.suspended ? { state: "suspended", user } : { state: "active", user };
 }

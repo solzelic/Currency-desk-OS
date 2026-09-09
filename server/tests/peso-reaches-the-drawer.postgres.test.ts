@@ -57,12 +57,11 @@ const scope = [
 /* WHICH TILL EVERY REQUEST HERE IS FOR, stated — exactly as the browser's
    Backend client states it on every call it makes.
 
-   Without the header the ledger routes fall back to "the only workspace
-   at this branch", which is not a thing on a desk with two tills. Another
-   suite adds till-11 to the demo branch and leaves it there, so a test
-   that omits this passes or returns SCOPE_DENIED depending on which file
-   ran first — which is exactly the accident this file caught in
-   client-records.postgres.test.ts and then repeated. */
+   The header names the till this request is for, the same way the
+   browser's Backend client does. Without it the server uses the
+   session workspace (the home till at sign-in). Stating it here keeps
+   this corridor on till-01 even if an earlier file selected another
+   drawer on a shared login. */
 const headers = { "x-workspace-id": DEMO.workspaceId };
 
 /** A float in, through the desk's own cash rail. */

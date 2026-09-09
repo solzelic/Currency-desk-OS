@@ -88,9 +88,9 @@ Use a **fresh disposable database per full run** — suites intentionally leave
 ledger state behind. Without `SEAM_DATABASE_URL` the e2e server has no ledger
 and 13 of 17 specs skip; CI runs the full suite with an ephemeral Postgres
 (`.github/workflows/browser.yml`, `browser-seam` job) and fails if a seam spec skips.
-`tests/e2e/zz-a-day-at-the-desk.spec.ts` is the deployment gate; its `zz-`
-prefix is a documented ordering workaround for the multi-till defect — keep it
-until that defect is fixed.
+`tests/e2e/a-day-at-the-desk.spec.ts` is the deployment gate. It trades on
+its own till (opened through the product's add-till route) so file order
+is not load-bearing.
 
 ## Where new work normally lives
 

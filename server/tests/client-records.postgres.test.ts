@@ -523,15 +523,9 @@ postgres("the desk's customer file, on the server", () => {
       cdos_session: login.cookies.find((c) => c.name === "cdos_session")!.value,
     };
     /* Which till this request is FOR, stated — exactly as the browser's
-       Backend client states it on every call.
-
-       Without it, `resolveActor` falls back to "the only workspace at
-       this branch", which is not a thing on a desk with two tills. This
-       test passed for as long as it happened to run before the suite
-       that adds till-11 to the demo branch and leaves it there, and
-       returned SCOPE_DENIED the moment file ordering changed. A test
-       that silently depends on a single-till desk is testing an
-       accident. */
+       Backend client states it on every call. Without it the server uses
+       the session workspace; naming till-01 keeps this file on the
+       seeded drawer if an earlier suite selected another one. */
     const headers = { "x-workspace-id": DEMO.workspaceId };
 
     const created = await app.inject({

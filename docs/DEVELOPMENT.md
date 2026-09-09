@@ -31,13 +31,12 @@ deliberately leave ledger state behind (an append-only book is the point).
 - **Assert deltas, not absolutes.** A test that asserts a global total
   (`outstanding.payable === "600.00"`) passes only while it is the only
   file that ever posted. Assert what your test changed.
-- **File order is currently load-bearing** in the seam suite, because
-  suites leave shared fixtures behind (one adds a till to the demo branch;
-  another repoints the demo entity to a GBP pack — symptoms are
-  `SCOPE_DENIED` or CAD assertions receiving GBP). If a test passes alone
-  and fails in the suite, this is why — do not chase it as a race. The
-  `zz-` prefix on the deployment gate is the documented workaround until
-  the multi-till defect (issue #34) is fixed.
+- **Shared fixtures still outlive a file.** Suites can leave a till or a
+  jurisdiction pack behind (a GBP pack on the demo entity makes CAD
+  assertions fail). If a test passes alone and fails in the suite, look
+  there before chasing a race. Adding a till no longer denies unscoped
+  callers — that was issue #34, and the session workspace is the rule
+  now. The day-at-the-desk gate trades on its own till.
 - **Drive the seam to verify wiring.** A server test and a browser test
   both green while the join is broken is how every serious cash defect
   here survived CI.

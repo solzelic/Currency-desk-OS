@@ -35,46 +35,64 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
    beyond reading it from the ledger. */
 const OPENING_FLOAT = "25000.00";
 
-/* ---- WHY THIS FILE IS NAMED TO RUN LAST ----
+/* This shift has its own till, opened through the product's "add a
+   till" route, so it does not disturb cash-seam (which needs a drawer
+   that has never been opened) or obligation-seam (which needs one it
+   can post to). The workspace header is sent on every call — the same
+   contract the OS client uses — and the server would also resolve the
+   session workspace if the header were omitted. */
+const SHIFT_TILL = "till-day";
+let shiftWorkspaceId = "";
 
-   It trades a whole shift on the demo desk's till, which conflicts with
-   two suites in opposite directions: cash-seam tests a brand-new desk's
-   FIRST EVER morning and needs a till with no session on it, while
-   obligation-seam needs one it can post to. A day that ends closed
-   breaks the second; a day that ends open breaks the first. There is no
-   state to leave behind that satisfies both.
+async function ensureShiftWorkspace(page: Page): Promise<string> {
+  if (shiftWorkspaceId) return shiftWorkspaceId;
+  const created = await page.evaluate(async (tillId) => {
+    const response = await fetch("/api/desk/branches/br-yorkville/tills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ tillId }),
+    });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  }, SHIFT_TILL);
+  const id = created.body.workspaceId ?? created.body.till?.workspaceId;
+  if (!id) {
+    throw new Error(`the shift till could not be added: ${JSON.stringify(created)}`);
+  }
+  shiftWorkspaceId = id as string;
+  return shiftWorkspaceId;
+}
 
-   Two fixes were tried before this one, and it is worth knowing why they
-   were abandoned. Restoring the session to however it was found does not
-   help, because cash-seam needs a till that was never opened AT ALL and
-   opening one is the whole point of this file. Giving the shift its own
-   till through the product's own "add a till" route made things
-   dramatically worse — ten failures — because several routes resolve a
-   request's till as "the only workspace at this branch", so a third
-   workspace denies every caller that does not send a header.
-
-   That fallback is the real defect and it is tracked (#33 in
-   docs/ROAD_TO_DEPLOYMENT.md). Until it is fixed, this file runs after
-   the suites it would otherwise disturb, which the runner orders by
-   path. That is a WORKAROUND and is named as one — the moment a session
-   resolves to a teller's own till rather than to whichever one is
-   unique, this comment and this filename should both go. */
+async function openShift(page: Page) {
+  await signInAtDesk(page, "r.haddad");
+  await ensureShiftWorkspace(page);
+}
 
 /** Post to the desk's own routes, from inside the signed-in page. */
 function desk(page: Page) {
   const post = (url: string, body: unknown) =>
     page.evaluate(
-      ([u, b]) =>
+      ([u, b, ws]) =>
         fetch(u as string, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...((ws as string) ? { "x-workspace-id": ws as string } : {}),
+          },
           credentials: "same-origin",
           body: JSON.stringify(b),
         }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) })),
-      [url, body] as const,
+      [url, body, shiftWorkspaceId] as const,
     );
   const get = (url: string) =>
-    page.evaluate((u) => fetch(u).then((r) => r.json()), url);
+    page.evaluate(
+      ([u, ws]) =>
+        fetch(u as string, {
+          headers: (ws as string) ? { "x-workspace-id": ws as string } : {},
+          credentials: "same-origin",
+        }).then((r) => r.json()),
+      [url, shiftWorkspaceId] as const,
+    );
   return { post, get };
 }
 
@@ -95,17 +113,9 @@ const drawer = (page: Page) => ({
    the entire point of comparing them at the end. */
 let expectedCad = 0;
 let customerId = "";
-/* Whether the desk was trading when this file arrived. Restored at the
-   end, because the suites either side of this one want OPPOSITE states —
-   cash-seam needs a till it can open, obligation-seam needs one it can
-   post to — and a day that ends by imposing either of them breaks the
-   other. Leaving things as found is the only answer that works for both.
-   See docs/ROAD_TO_DEPLOYMENT.md on why order-dependence is tracked
-   work rather than a quirk. */
-let wasOpenOnArrival = false;
 
 test("morning — the desk opens on a counted drawer", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
 
   const api = desk(page);
   const till = drawer(page);
@@ -116,7 +126,6 @@ test("morning — the desk opens on a counted drawer", async ({ page }) => {
   expect([201, 409], `opening balances refused: ${JSON.stringify(opened.body)}`)
     .toContain(opened.status);
 
-  wasOpenOnArrival = (await till.session())?.status === "open";
   const session = await api.post("/api/ledger/till-sessions/open", {});
   expect([201, 409], `the till would not open: ${JSON.stringify(session.body)}`)
     .toContain(session.status);
@@ -130,7 +139,7 @@ test("morning — the desk opens on a counted drawer", async ({ page }) => {
 });
 
 test("a customer the desk has never seen is put on file", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
 
   /* Identification first, because the deals below cross the desk's lines
@@ -151,7 +160,7 @@ test("a customer the desk has never seen is put on file", async ({ page }) => {
 test("the counter trades — an exchange, over the counter, both ways", async ({
   page,
 }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
   const book = drawer(page);
 
@@ -198,7 +207,7 @@ test("the counter trades — an exchange, over the counter, both ways", async ({
 test("the counter trades — a remittance, and the desk owes a payout", async ({
   page,
 }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
   const book = drawer(page);
 
@@ -233,7 +242,7 @@ test("the counter trades — a remittance, and the desk owes a payout", async ({
 });
 
 test("the counter trades — a cheque is cashed out of the drawer", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
   const book = drawer(page);
 
@@ -263,7 +272,7 @@ test("the counter trades — a cheque is cashed out of the drawer", async ({ pag
 });
 
 test("the desk refuses what it should, and says why", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
 
   /* A customer with no identification, at an amount over the desk's line.
@@ -300,7 +309,7 @@ test("the desk refuses what it should, and says why", async ({ page }) => {
 });
 
 test("night — the drawer is counted and the books balance", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
   const book = drawer(page);
 
@@ -349,7 +358,7 @@ test("night — the drawer is counted and the books balance", async ({ page }) =
 });
 
 test("night — the day's sign-off is the ledger's own figures", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
+  await openShift(page);
   const api = desk(page);
 
   /* The paperwork a shop keeps. Read from the book rather than from the
@@ -360,27 +369,12 @@ test("night — the day's sign-off is the ledger's own figures", async ({ page }
   expect(Number(summary.volumeHome)).toBeGreaterThan(0);
 });
 
-test("tomorrow — the desk is left ready to open again", async ({ page }) => {
-  await signInAtDesk(page, "r.haddad");
-  const api = desk(page);
+test("tomorrow — the shift till is closed and the shared drawer is untouched", async ({ page }) => {
+  await openShift(page);
   const book = drawer(page);
 
-  /* A closed till is the correct end of a day and the wrong thing to
-     leave behind: the seam tests that follow this one need a desk that
-     can trade, and a suite whose result depends on which file ran first
-     is a suite that cannot be trusted. Opening tomorrow's session is
-     both the cleanup and the honest next step of the story.
-
-     Stated as its own step rather than hidden in a hook, because leaving
-     shared state behind is the single most common way tests in this
-     repository have lied — see docs/ROAD_TO_DEPLOYMENT.md. */
-  if (!wasOpenOnArrival) {
-    /* Found closed, left closed. */
-    expect((await book.session())?.status).toBe("closed");
-    return;
-  }
-  const tomorrow = await api.post("/api/ledger/till-sessions/open", {});
-  expect([201, 409], `tomorrow would not open: ${JSON.stringify(tomorrow.body)}`)
-    .toContain(tomorrow.status);
-  expect((await book.session())?.status).toBe("open");
+  /* This shift traded on till-day, not the seeded till-01. Closing it
+     is the honest end of the day and leaves cash-seam and
+     obligation-seam on the drawer they arrived with. */
+  expect((await book.session())?.status).toBe("closed");
 });

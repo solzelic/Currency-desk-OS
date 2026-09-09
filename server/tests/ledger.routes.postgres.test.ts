@@ -573,13 +573,11 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     ).toBe(401);
   });
 
-  /* The header is what makes a second till possible at all. Before the browser
-     sent x-workspace-id the server fell back to "the branch's only workspace",
-     so the moment a branch had two, every ledger call failed with SCOPE_DENIED
-     and the Cash Drawer's till switcher was renaming a label over one drawer's
-     money. This walks that exact state: two workspaces, no header (still a
-     refusal, deliberately), then each workspace named in turn. */
-  it("answers for the named workspace once a branch has a second till", async () => {
+  /* A second till used to deny every caller that omitted x-workspace-id.
+     The session now carries the drawer this login is sitting at, so an
+     unscoped call keeps answering for that till; a named header still
+     selects the other one. Both can post. */
+  it("answers for the session workspace once a branch has a second till, and for each named till", async () => {
     const secondWorkspaceId = "ws-yorkville-till-02";
     await handle.db.insert(schema.workspaces).values({
       id: secondWorkspaceId,
@@ -606,8 +604,11 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         url: "/api/ledger/till-balances",
         cookies,
       });
-      expect(unscoped.statusCode).toBe(403);
-      expect(unscoped.json()).toMatchObject({ code: "SCOPE_DENIED" });
+      expect(unscoped.statusCode).toBe(200);
+      expect(unscoped.json()).toMatchObject({
+        tillId: "till-01",
+        balances: { CAD: "25000.00" },
+      });
 
       const first = await app.inject({
         method: "GET",
@@ -631,20 +632,31 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       // a drawer of its own: same branch, its own till, none of till-01's money
       expect(second.json()).toEqual({ tillId: "till-02", balances: {} });
 
+      const quoteBody = {
+        customerId: "customer-demo",
+        from: "CAD",
+        to: "USD",
+        inputAmount: "100.00",
+        feeCad: "0.00",
+        direction: "customer_buy_foreign",
+      };
+      const quotedHome = await app.inject({
+        method: "POST",
+        url: "/api/quotes",
+        cookies,
+        payload: quoteBody,
+      });
+      expect(quotedHome.statusCode).not.toBe(403);
+
       const quoted = await app.inject({
         method: "POST",
         url: "/api/quotes",
         cookies,
         headers: { "x-workspace-id": secondWorkspaceId },
-        payload: {
-          customerId: "customer-demo",
-          from: "CAD",
-          to: "USD",
-          inputAmount: "100.00",
-          feeCad: "0.00",
-          direction: "customer_buy_foreign",
-        },
+        payload: quoteBody,
       });
+      // the second drawer is empty of rates/customers; the assertion is that
+      // naming it is not SCOPE_DENIED now that the branch has two tills
       expect(quoted.statusCode).not.toBe(403);
     } finally {
       await pool.query("DELETE FROM ledger_principals WHERE workspace_id=$1", [
