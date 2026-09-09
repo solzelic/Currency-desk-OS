@@ -68,15 +68,23 @@ if (process.env.RESET_STAFF_PASSWORD) {
   }
 }
 
-// platform-admin bootstrap: PLATFORM_ADMIN_BOOTSTRAP="email:password" ensures
-// an operator account exists so you can reach /admin on a fresh deploy.
+// platform-admin bootstrap: PLATFORM_ADMIN_BOOTSTRAP="email:password" creates
+// the operator account on a fresh deploy if it is missing. One-shot: an
+// existing account's password is never overwritten. Remove the env var from
+// Render after first sign-in (defense in depth — the plaintext otherwise
+// stays in the host environment).
 if (process.env.PLATFORM_ADMIN_BOOTSTRAP) {
   const [email, ...rest] = process.env.PLATFORM_ADMIN_BOOTSTRAP.split(":");
   const password = rest.join(":");
   if (email && password) {
     const { ensurePlatformAdmin } = await import("./admin-bootstrap.js");
-    await ensurePlatformAdmin(handle.db, email.trim().toLowerCase(), password);
-    console.warn(`[platform-admin] bootstrapped ${email.trim().toLowerCase()} — sign in at /admin, then REMOVE PLATFORM_ADMIN_BOOTSTRAP`);
+    const normalized = email.trim().toLowerCase();
+    const result = await ensurePlatformAdmin(handle.db, normalized, password);
+    if (result === "created") {
+      console.warn(`[platform-admin] created ${normalized} — sign in at /admin, then REMOVE PLATFORM_ADMIN_BOOTSTRAP from Render`);
+    } else {
+      console.warn(`[platform-admin] ${normalized} already exists — password was NOT reset. REMOVE PLATFORM_ADMIN_BOOTSTRAP from Render`);
+    }
   } else {
     console.warn("[platform-admin] PLATFORM_ADMIN_BOOTSTRAP malformed — expected email:password");
   }
