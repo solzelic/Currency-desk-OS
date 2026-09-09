@@ -77,7 +77,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 - **Engineering standards audit** of `main` at `f31cf21` is recorded in
   `docs/STANDARDS_AUDIT.md` (2026-09-04). Docs only — no product slice
   opened at that stamp. Issue **#31** (one-shot platform-admin bootstrap)
-  has since landed in code.
+  has since landed in code. Audit Slice D (honest public health) has
+  also landed: `GET /api/health` now performs a trivial database read.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -106,6 +107,14 @@ account and never overwrites `passwordHash` / `mustChangePassword` /
 `passwordUpdatedAt`. The env var should still be removed from Render after
 first sign-in so the plaintext is not left in the host environment.
 
+Public `GET /api/health` is no longer process-alive only. It runs the same
+kind of trivial tenant read as the admin dashboard's database check
+(`server/src/platform/health.ts`) and answers **503** `{ ok: false,
+error: "database" }` when that read fails. Render `healthCheckPath` still
+points at `/api/health`. Free-tier sleep after idle is unchanged — that
+is a hosting step, not this probe. `/api/admin/health` remains the
+authenticated narrative dashboard.
+
 ## Next engineering priorities (ordered)
 
 1. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
@@ -114,7 +123,11 @@ first sign-in so the plaintext is not left in the host environment.
 
 ## Last reviewed
 
-**2026-09-09**, `PLATFORM_ADMIN_BOOTSTRAP` is one-shot (`ensurePlatformAdmin`
+**2026-09-09**, public `GET /api/health` pings the database (trivial tenant
+read) and returns 503 when that read fails. Render continues to probe
+`/api/health`. Free-tier sleep is unchanged.
+
+Prior stamp **2026-09-09**, `PLATFORM_ADMIN_BOOTSTRAP` is one-shot (`ensurePlatformAdmin`
 creates if missing; never overwrites an existing operator password). Issue
 #31. Render should still drop the env var after first sign-in.
 

@@ -12,7 +12,7 @@ import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import type { Db } from "./db/index.js";
+import { schema, type Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
@@ -148,7 +148,20 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
   });
   await refreshSiteDomains(db);
 
-  app.get("/api/health", async () => ({ ok: true, service: "currencydesk-server" }));
+  /* Public probe. Render healthCheckPath hits this. A process that cannot
+     read the database is not a live shop — Neon down used to stay green
+     because this answered `{ ok: true }` with no query. The admin
+     narrative (`/api/admin/health`) stays the sentence-per-check dashboard;
+     this is the dependency check load balancers see. Failure body is
+     unauthenticated-safe: no exception text, no connection details. */
+  app.get("/api/health", async (_req, reply) => {
+    try {
+      await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+    } catch {
+      return reply.code(503).send({ ok: false, service: "currencydesk-server", error: "database" });
+    }
+    return { ok: true, service: "currencydesk-server" };
+  });
   registerAuthRoutes(app, db);
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);

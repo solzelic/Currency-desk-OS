@@ -61,6 +61,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
+| `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
 ## Databases
