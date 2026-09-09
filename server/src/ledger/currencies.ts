@@ -49,6 +49,7 @@
    silent-wrongness docs/ABSENT_FIGURES.md exists to forbid.
    ============================================================ */
 import Decimal from "decimal.js";
+import { z } from "zod";
 import { LedgerError } from "./service.js";
 
 /** The scale the ledger's money columns actually hold. */
@@ -78,6 +79,15 @@ export function minorUnits(code: string): number {
 export function isCurrencyCode(code: unknown): code is string {
   return typeof code === "string" && /^[A-Z]{3}$/.test(code.trim().toUpperCase());
 }
+
+/** HTTP-edge form of the same check: trim, uppercase, then three A–Z letters.
+ *  Whether this desk trades the code is answered later, where the desk is
+ *  known — `assertTradeable` — so a refusal can name the desk's set. */
+export const currencyCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .pipe(z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."));
 
 /** Normalized, or null if it is not a currency code at all. */
 export function asCurrencyCode(code: unknown): string | null {

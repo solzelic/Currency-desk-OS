@@ -22,6 +22,7 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
+import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
   ChequeService,
@@ -52,12 +53,6 @@ import { ObligationService } from "./obligations.js";
 const deskCurrenciesBody = z.object({
   currencies: z.union([z.array(z.string().trim().min(1).max(8)).max(60), z.null()]),
 }).strict();
-
-const currencyCode = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .pipe(z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."));
 
 const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
