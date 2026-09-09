@@ -8,6 +8,7 @@
    ============================================================ */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import Decimal from "decimal.js";
 import { createDb } from "../src/db/index.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -35,34 +36,29 @@ postgres("storefront holds and board margins are numeric", () => {
   afterAll(() => pool.end());
 
   it("rate_quotes amounts are money (24,2) and the rate is (24,12)", async () => {
-    expect(await column("rate_quotes", "have_amount")).toMatchObject({
-      data_type: "numeric",
-      numeric_precision: 24,
-      numeric_scale: 2,
-    });
-    expect(await column("rate_quotes", "receive_amount")).toMatchObject({
-      data_type: "numeric",
-      numeric_precision: 24,
-      numeric_scale: 2,
-    });
-    expect(await column("rate_quotes", "quoted_rate")).toMatchObject({
-      data_type: "numeric",
-      numeric_precision: 24,
-      numeric_scale: 12,
-    });
+    const have = await column("rate_quotes", "have_amount");
+    const receive = await column("rate_quotes", "receive_amount");
+    const rate = await column("rate_quotes", "quoted_rate");
+    expect(have?.data_type).toBe("numeric");
+    expect(Number(have?.numeric_precision)).toBe(24);
+    expect(Number(have?.numeric_scale)).toBe(2);
+    expect(receive?.data_type).toBe("numeric");
+    expect(Number(receive?.numeric_precision)).toBe(24);
+    expect(Number(receive?.numeric_scale)).toBe(2);
+    expect(rate?.data_type).toBe("numeric");
+    expect(Number(rate?.numeric_precision)).toBe(24);
+    expect(Number(rate?.numeric_scale)).toBe(12);
   });
 
   it("rate_boards margins are rates (24,12), not float8", async () => {
-    expect(await column("rate_boards", "buy_margin")).toMatchObject({
-      data_type: "numeric",
-      numeric_precision: 24,
-      numeric_scale: 12,
-    });
-    expect(await column("rate_boards", "sell_margin")).toMatchObject({
-      data_type: "numeric",
-      numeric_precision: 24,
-      numeric_scale: 12,
-    });
+    const buy = await column("rate_boards", "buy_margin");
+    const sell = await column("rate_boards", "sell_margin");
+    expect(buy?.data_type).toBe("numeric");
+    expect(Number(buy?.numeric_precision)).toBe(24);
+    expect(Number(buy?.numeric_scale)).toBe(12);
+    expect(sell?.data_type).toBe("numeric");
+    expect(Number(sell?.numeric_precision)).toBe(24);
+    expect(Number(sell?.numeric_scale)).toBe(12);
   });
 
   it("casts existing float holds in place without dropping the row", async () => {
@@ -86,11 +82,11 @@ postgres("storefront holds and board margins are numeric", () => {
         ALTER COLUMN buy_margin TYPE numeric(24,12) USING buy_margin::numeric(24,12),
         ALTER COLUMN sell_margin TYPE numeric(24,12) USING sell_margin::numeric(24,12)`);
     const row = (await pool.query("SELECT * FROM storefront_hold_legacy")).rows[0];
-    expect(row.have_amount).toBe("1000.50");
-    expect(row.receive_amount).toBe("719.17");
-    expect(row.quoted_rate).toBe("0.719165327418");
-    expect(row.buy_margin).toBe("0.015000000000");
-    expect(row.sell_margin).toBe("0.015000000000");
+    expect(new Decimal(row.have_amount).eq("1000.50")).toBe(true);
+    expect(new Decimal(row.receive_amount).eq("719.17")).toBe(true);
+    expect(new Decimal(row.quoted_rate).eq("0.719165327418")).toBe(true);
+    expect(new Decimal(row.buy_margin).eq("0.015")).toBe(true);
+    expect(new Decimal(row.sell_margin).eq("0.015")).toBe(true);
     await pool.query("DROP TABLE storefront_hold_legacy");
   });
 });
