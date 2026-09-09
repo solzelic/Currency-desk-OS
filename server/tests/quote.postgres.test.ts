@@ -116,6 +116,59 @@ postgres("quote service against real PostgreSQL", () => {
     delete process.env.LEDGER_DATABASE_URL;
   });
   beforeEach(reset);
+  /* The quote door used to be a four-way enum after the ledger dropped
+     that ceiling. Every assertion here fails against
+     `z.enum(["CAD","USD","EUR","GBP"])` — that is the point. Pair and
+     desk-set rules still live in the service; this is only the shape. */
+  it("quotes a peso the four-currency enum refused at the door", async () => {
+    await pool.query(
+      `UPDATE rate_boards
+          SET board_rows = board_rows || '{"PHP":{"mid":0.024,"show":true},"MXN":{"mid":0.075,"show":true}}'::jsonb
+        WHERE id='board-1'`,
+    );
+    const php = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, to: "PHP" },
+    });
+    expect(php.statusCode).toBe(201);
+    expect(php.json().from).toBe("CAD");
+    expect(php.json().to).toBe("PHP");
+    expect(php.json().buyOrSellSide).toBe("we_sell");
+
+    const mxn = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, to: "mxn" },
+    });
+    expect(mxn.statusCode).toBe(201);
+    expect(mxn.json().to).toBe("MXN");
+  });
+  it("rejects something that is not a currency code, at the route", async () => {
+    for (const to of ["PESOS", "US", "123", "php1", ""]) {
+      const refused = await app.inject({
+        method: "POST",
+        url: "/api/quotes",
+        cookies: await cookie(),
+        payload: { ...body, to },
+      });
+      expect(refused.statusCode, `${JSON.stringify(to)} should be 400`).toBe(400);
+      expect(refused.json().code).toBe("INVALID_REQUEST");
+    }
+  });
+  it("still refuses a currency the ledger's columns cannot hold", async () => {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, to: "KWD" },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
+    expect(refused.json().message).toMatch(/three decimal places/i);
+  });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({
       method: "POST",

@@ -79,6 +79,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   opened at that stamp. Issue **#31** (one-shot platform-admin bootstrap)
   has since landed in code. Audit Slice D (honest public health) has
   also landed: `GET /api/health` now performs a trivial database read.
+  Audit Slice E (quote door matches the book) has landed:
+  `POST /api/quotes` validates currency as an uppercase ISO-style
+  3-letter code, not a four-way CAD/USD/EUR/GBP enum. A desk that can
+  float PHP can quote it. Pack pair rules and `assertTradeable` are
+  unchanged.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -126,7 +131,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-09**, multi-till/workspace resolution (#34): unscoped money
+**2026-09-09**, `POST /api/quotes` accepts any valid ISO-style currency
+code (uppercase 3 letters). The four-way CAD/USD/EUR/GBP enum on
+`createBody` is gone; pair and desk-set policy stay in the quote
+service. Audit Slice E.
+
+Prior stamp **2026-09-09**, multi-till/workspace resolution (#34): unscoped money
 routes use the session workspace rather than "the only workspace at this
 branch". The day-at-the-desk seam spec runs in normal order on its own
 till. Public `GET /api/health` still pings the database (trivial tenant

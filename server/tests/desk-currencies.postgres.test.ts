@@ -36,6 +36,7 @@ import { runMigrations } from "../src/db/migrations.js";
 import {
   asCurrencyCode,
   carriable,
+  currencyCode,
   fixedIn,
   minorUnits,
   parseMoney,
@@ -133,6 +134,11 @@ describe("minor units are the currency's, not two for everything", () => {
     expect(asCurrencyCode("PESOS")).toBeNull();
     expect(asCurrencyCode("")).toBeNull();
     expect(asCurrencyCode(42)).toBeNull();
+    expect(currencyCode.parse(" php ")).toBe("PHP");
+    expect(currencyCode.parse("mxn")).toBe("MXN");
+    expect(currencyCode.safeParse("PESOS").success).toBe(false);
+    expect(currencyCode.safeParse("US").success).toBe(false);
+    expect(currencyCode.safeParse("123").success).toBe(false);
   });
 });
 

@@ -77,14 +77,15 @@ typed escape hatches exist without a why.
 | --- | --- |
 | `server/src/routes/auth.ts`, `server/src/quotes/service.ts`, ledger `parseMoney` / `decimal()` helpers | HTTP bodies for login, quotes and ledger amounts are Zod- or Decimal-parsed at the edge. |
 | `server/src/state/shape.ts` | The tenant state blob is catalogued per-key. The schema *describes* rather than refuses — deliberate, and said so. |
-| `server/src/quotes/routes.ts:15` | `createBody` still `z.enum(["CAD","USD","EUR","GBP"])` after the ledger dropped that ceiling (migration 020, `server/src/quotes/service.ts` `type Currency = string`). A peso desk can float PHP and then fail to quote it. The OS stopped pre-checking the four-way list (`os-src/cdos-os.jsx` ~1028); the quote route did not. |
+| `server/src/quotes/routes.ts` `createBody` | **Closed.** Was a four-way `z.enum(["CAD","USD","EUR","GBP"])` after the ledger dropped that ceiling (migration 020). Now uses the shared `currencyCode` shape (`server/src/ledger/currencies.ts`): uppercase ISO-style 3-letter codes. Pair / desk-set policy stays in `QuoteService.create` (`pairAllowed`, `assertTradeable`). |
 | `server/src/quotes/routes.ts:20–30` | `req: any`, `reply: any`, `(req.params as any).quoteId` — no comment saying why. |
 | `server/src/routes/admin.ts:240, 270` | `gate(req: any, reply: any)` and `(who as any).platform`. Authorization is a remembered function at the top of each handler, not a hook (`docs/ARCHITECTURE.md` §8 item 5). |
 | `server/src/state/shape.ts` | `z.record` / unknown-shaped document keys remain; ARCHITECTURE §3 still names this as the table-vs-document debt. |
 
 Illegal states are unrepresentable in the ledger (append-only rows,
-status CHECKs, `numeric` CHECKs). They are still representable in the
-quote-create enum, the state blob, and several `any` admin paths.
+status CHECKs, `numeric` CHECKs). The quote-create four-way enum is
+gone. They are still representable in the state blob and several `any`
+admin paths.
 
 ### §3 Money — Partial
 
@@ -279,10 +280,10 @@ A boot with the var still set logs loudly and leaves the hash alone.
 `GET /api/health` fails (non-200) when a trivial Neon read fails, and Render’s probe uses that behaviour.
 `/api/admin/health` stays the narrative dashboard; the probe is the dependency check.
 
-### Slice E — Quote door matches the book
+### Slice E — Quote door matches the book — landed
 
-`POST /api/quotes` accepts any currency the desk may hold; the four-way enum is gone.
-A peso (or any stated) pair that the ledger will post, the quote service will quote.
+`POST /api/quotes` accepts any ISO-style currency code the desk may hold; the four-way enum is gone.
+A peso (or any stated) pair that the ledger will post, the quote service will quote. Pair and `permittedCurrencies` rules are unchanged and still applied in the service.
 
 ### Slice F — Storefront holds are decimal
 

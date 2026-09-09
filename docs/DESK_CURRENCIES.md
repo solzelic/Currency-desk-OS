@@ -10,11 +10,12 @@ wrong way.
 The ledger capped every desk in the product at four currencies. Not by
 schema — `ledger_till_balances.currency` has always been a `char(3)`, the
 journal is currency-agnostic, and the jurisdiction packs ship six home
-currencies — but by six copies of the same literal:
+currencies — but by copies of the same literal:
 
 | where | what |
 |---|---|
 | `ledger/routes.ts` × 5 | `z.enum(["CAD", "USD", "EUR", "GBP"])` on `from`, `to` and three `currency` fields |
+| `quotes/routes.ts` `createBody` | the same four-way enum, left behind after the ledger door dropped it |
 | `ledger/routes.ts` × 4 | four-key `.strict()` records for till counts, opening balances, vault balances, unit costs |
 | `ledger/service.ts`, `quotes/service.ts`, `till-control.ts`, `vault-control.ts` | `type Currency = "CAD" \| "USD" \| "EUR" \| "GBP"` |
 | `os-src/cdos-os.jsx` | `const LEDGER_CCYS = ['CAD','USD','EUR','GBP']` |
@@ -62,6 +63,12 @@ product does not invent an answer and act on it. See `DESK_THRESHOLDS.md`
 and `ABSENT_FIGURES.md`.
 
 ## Where it is enforced, and where it deliberately is not
+
+The HTTP doors check **shape only** (`currencyCode` in
+`server/src/ledger/currencies.ts`: trim, uppercase, `^[A-Z]{3}$`). The
+quote route uses that same schema; it does not re-impose a four-currency
+list. Whether the pair is legal here, and whether this desk trades the
+codes, is answered in the service (`pairAllowed`, `assertTradeable`).
 
 `assertTradeable` is called on the paths that can bring a **new** currency
 onto the book:
@@ -127,5 +134,7 @@ refuses them anyway; a hidden control is a courtesy, not a permission.
 - `server/tests/peso-reaches-the-drawer.postgres.test.ts` — the claim, at
   the HTTP surface, because the HTTP surface is what used to refuse it.
   Every assertion in it fails against the old enum.
+- `server/tests/quote.postgres.test.ts` — the quote door: a peso (or MXN)
+  pair that the board publishes is quoted; garbage codes are still 400.
 - `tests/e2e/currency-set-seam.spec.ts` — the owner's screen against the
   real ledger, per the standard in `CASH_OWNERSHIP_INVARIANTS.md`.
