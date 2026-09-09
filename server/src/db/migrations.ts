@@ -29,6 +29,7 @@ const migrations: readonly Migration[] = [
   ["021_growth_pipeline", "src/db/migrations/021_growth_pipeline.sql"],
   ["022_growth_operations", "src/db/migrations/022_growth_operations.sql"],
   ["023_session_workspace", "src/db/migrations/023_session_workspace.sql"],
+  ["024_storefront_holds_decimal", "src/db/migrations/024_storefront_holds_decimal.sql"],
 ] as const;
 
 export async function runMigrations(

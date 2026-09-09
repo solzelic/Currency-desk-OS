@@ -15,12 +15,22 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { normalizePhone, sendSms } from "../sms.js";
 import { SITES, siteSlugForHost } from "../sites.js";
+import {
+  jsonMargin,
+  jsonMoney,
+  jsonRate,
+  moneyFixed,
+  priceStorefrontHold,
+  rateFixed,
+  storefrontDisplayPair,
+} from "../sites/storefront-hold.js";
 
 const HOLD_MINUTES = 30;
 
@@ -65,8 +75,8 @@ async function latestBoard(db: Db, tenantId: string) {
   return rows[0] ?? null;
 }
 
-const fmtAmount = (n: number, ccy: string) =>
-  `${n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`;
+const fmtAmount = (n: Decimal.Value, ccy: string) =>
+  `${jsonMoney(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`;
 const fmtTime = (d: Date) =>
   d.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit", timeZone: "America/Toronto" });
 
@@ -78,9 +88,9 @@ const quoteJson = (q: typeof schema.rateQuotes.$inferSelect) => {
     name: q.name,
     from: q.haveCcy,
     to: q.wantCcy,
-    amount: q.haveAmount,
-    rate: q.quotedRate,
-    receive: q.receiveAmount,
+    amount: jsonMoney(q.haveAmount),
+    rate: jsonRate(q.quotedRate),
+    receive: jsonMoney(q.receiveAmount),
     status,
     smsStatus: q.smsStatus,
     expiresAt: q.expiresAt.getTime(),
@@ -131,8 +141,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
         return {
           code: ccy,
           // we buy foreign under mid and sell over it — the desk's side
-          buy: +(r.mid * (1 - (r.spread ?? board.buyMargin))).toFixed(6),
-          sell: +(r.mid * (1 + (r.spread ?? board.sellMargin))).toFixed(6),
+          ...storefrontDisplayPair(r, board.buyMargin, board.sellMargin),
         };
       });
     return {
@@ -151,8 +160,8 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
          for anyone who wants it. Withholding it protected nothing and cost
          the page its ordering and its hidden rows. */
       board: {
-        buyMargin: board.buyMargin,
-        sellMargin: board.sellMargin,
+        buyMargin: jsonMargin(board.buyMargin),
+        sellMargin: jsonMargin(board.sellMargin),
         rows,
         order: board.boardOrder ?? undefined,
         publishedAt: board.publishedAt.getTime(),
@@ -207,12 +216,23 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     if (b.from !== "CAD" && !rowOf(b.from)) return reply.code(400).send({ error: "unknown_currency", detail: b.from });
     if (b.to !== "CAD" && !rowOf(b.to)) return reply.code(400).send({ error: "unknown_currency", detail: b.to });
 
-    // desk math: we buy foreign under mid, sell over mid; crosses go via CAD
-    const buyRate = (ccy: string) => rowOf(ccy)!.mid * (1 - (rowOf(ccy)!.spread ?? board.buyMargin));
-    const sellRate = (ccy: string) => rowOf(ccy)!.mid * (1 + (rowOf(ccy)!.spread ?? board.sellMargin));
-    const cad = b.from === "CAD" ? b.amount : b.amount * buyRate(b.from);
-    const receive = b.to === "CAD" ? cad : cad / sellRate(b.to);
-    const rate = receive / b.amount;
+    // desk math: we buy foreign under mid, sell over mid; crosses go via CAD.
+    // Decimal, once — same function the public board display uses.
+    let priced;
+    try {
+      priced = priceStorefrontHold({
+        from: b.from,
+        to: b.to,
+        amount: String(b.amount),
+        board: {
+          buyMargin: board.buyMargin,
+          sellMargin: board.sellMargin,
+          rows: board.boardRows,
+        },
+      });
+    } catch {
+      return reply.code(400).send({ error: "invalid_board_terms" });
+    }
 
     // customer-facing ref, retried on the rare collision
     let ref = "";
@@ -228,7 +248,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     // opt-out line on the initiating text keeps A2P 10DLC compliant; Twilio
     // auto-handles the STOP keyword, so no unsubscribe list to maintain here
     const smsText =
-      `${t.name}: ${fmtAmount(b.amount, b.from)} → ${fmtAmount(receive, b.to)}. ` +
+      `${t.name}: ${fmtAmount(priced.haveAmount, b.from)} → ${fmtAmount(priced.receiveAmount, b.to)}. ` +
       `Rate held for ${HOLD_MINUTES} min (until ${fmtTime(expiresAt)}). Ref ${ref} — show this text at the desk. Reply STOP to opt out.`;
     const smsStatus = await sendSms(phone, smsText);
 
@@ -239,9 +259,9 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
       name: b.name ?? null,
       haveCcy: b.from,
       wantCcy: b.to,
-      haveAmount: b.amount,
-      quotedRate: rate,
-      receiveAmount: receive,
+      haveAmount: moneyFixed(priced.haveAmount),
+      quotedRate: rateFixed(priced.quotedRate),
+      receiveAmount: moneyFixed(priced.receiveAmount),
       smsStatus,
       smsText,
       expiresAt,

@@ -12,12 +12,14 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hasBackendPermission } from "../auth/permissions.js";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { jsonMargin } from "../sites/storefront-hold.js";
 
 const DEMO_BRANCH = "br-yorkville";
 
@@ -39,8 +41,8 @@ const publishBody = z.object({
 
 function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
   return {
-    buyMargin: row.buyMargin,
-    sellMargin: row.sellMargin,
+    buyMargin: jsonMargin(row.buyMargin),
+    sellMargin: jsonMargin(row.sellMargin),
     rows: row.boardRows,
     order: row.boardOrder ?? undefined,
     publishedAt: row.publishedAt.getTime(),
@@ -139,8 +141,8 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
         tenantId: who.tenantId,
         legalEntityId: who.legalEntityId,
         branchId,
-        buyMargin: body.buyMargin,
-        sellMargin: body.sellMargin,
+        buyMargin: new Decimal(body.buyMargin).toFixed(12),
+        sellMargin: new Decimal(body.sellMargin).toFixed(12),
         boardRows: body.rows,
         boardOrder: body.order ?? null,
         publishedBy: who.staffId,

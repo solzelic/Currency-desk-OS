@@ -84,6 +84,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   3-letter code, not a four-way CAD/USD/EUR/GBP enum. A desk that can
   float PHP can quote it. Pack pair rules and `assertTradeable` are
   unchanged.
+  Audit Slice F (storefront holds are decimal) has landed:
+  `rate_quotes` amounts/rates and `rate_boards` margins are
+  `numeric` (money 2dp, rates/margins 12dp). The SMS quote path and
+  the public board display price with `decimal.js`, once. jsonb board
+  mids remain JS numbers — parked with the rest of that audit finding.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -131,7 +136,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-09**, `POST /api/quotes` accepts any valid ISO-style currency
+**2026-09-09**, storefront SMS holds and rate-board margins are
+`numeric`; the public quote path uses Decimal (audit Slice F). JSON
+still returns numbers so the storefront `typeof === 'number'` contract
+is unchanged. Twilio delivery is unchanged.
+
+Prior stamp **2026-09-09**, `POST /api/quotes` accepts any valid ISO-style currency
 code (uppercase 3 letters). The four-way CAD/USD/EUR/GBP enum on
 `createBody` is gone; pair and desk-set policy stay in the quote
 service. Audit Slice E.

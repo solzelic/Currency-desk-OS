@@ -5,7 +5,7 @@
    Staff roles are the same union as src/domain/types.ts StaffRole,
    so the two sides can never drift apart on authorization.
    ============================================================ */
-import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
   "teller",
@@ -344,8 +344,8 @@ export const rateBoards = pgTable(
     tenantId: text("tenant_id").notNull().references(() => tenants.id),
     legalEntityId: text("legal_entity_id").notNull().references(() => legalEntities.id),
     branchId: text("branch_id").notNull().references(() => branches.id),
-    buyMargin: doublePrecision("buy_margin").notNull(),
-    sellMargin: doublePrecision("sell_margin").notNull(),
+    buyMargin: numeric("buy_margin", { precision: 24, scale: 12 }).notNull(),
+    sellMargin: numeric("sell_margin", { precision: 24, scale: 12 }).notNull(),
     boardRows: jsonb("board_rows").$type<Record<string, RateBoardRow>>().notNull(),
     boardOrder: jsonb("board_order").$type<string[]>(),
     publishedBy: text("published_by"),
@@ -644,9 +644,9 @@ export const rateQuotes = pgTable(
     name: text("name"),
     haveCcy: text("have_ccy").notNull(),
     wantCcy: text("want_ccy").notNull(),
-    haveAmount: doublePrecision("have_amount").notNull(),
-    quotedRate: doublePrecision("quoted_rate").notNull(),   // want per 1 have
-    receiveAmount: doublePrecision("receive_amount").notNull(),
+    haveAmount: numeric("have_amount", { precision: 24, scale: 2 }).notNull(),
+    quotedRate: numeric("quoted_rate", { precision: 24, scale: 12 }).notNull(),   // want per 1 have
+    receiveAmount: numeric("receive_amount", { precision: 24, scale: 2 }).notNull(),
     status: text("status").notNull().default("held"),
     smsStatus: text("sms_status").notNull().default("simulated"),
     smsText: text("sms_text").notNull(),

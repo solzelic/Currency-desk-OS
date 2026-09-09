@@ -47,9 +47,9 @@ CREATE TABLE IF NOT EXISTS rate_quotes (
   name text,
   have_ccy text NOT NULL,
   want_ccy text NOT NULL,
-  have_amount double precision NOT NULL,
-  quoted_rate double precision NOT NULL,
-  receive_amount double precision NOT NULL,
+  have_amount numeric(24,2) NOT NULL,
+  quoted_rate numeric(24,12) NOT NULL,
+  receive_amount numeric(24,2) NOT NULL,
   status text NOT NULL DEFAULT 'held',
   sms_status text NOT NULL DEFAULT 'simulated',
   sms_text text NOT NULL,
@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS rate_quotes (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_quotes_tenant_idx ON rate_quotes(tenant_id, created_at);
+-- existing databases created these as double precision; CREATE TABLE IF NOT
+-- EXISTS will not change them. Cast in place so PGlite (DDL only) and a
+-- lived-in Postgres stay on the same numeric scales as the ledger.
+ALTER TABLE rate_quotes
+  ALTER COLUMN have_amount TYPE numeric(24,2) USING have_amount::numeric(24,2),
+  ALTER COLUMN quoted_rate TYPE numeric(24,12) USING quoted_rate::numeric(24,12),
+  ALTER COLUMN receive_amount TYPE numeric(24,2) USING receive_amount::numeric(24,2);
 CREATE TABLE IF NOT EXISTS pending_signups (
   id text PRIMARY KEY,
   email text NOT NULL,
@@ -383,8 +390,8 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   tenant_id text NOT NULL REFERENCES tenants(id),
   legal_entity_id text NOT NULL REFERENCES legal_entities(id),
   branch_id text NOT NULL REFERENCES branches(id),
-  buy_margin double precision NOT NULL,
-  sell_margin double precision NOT NULL,
+  buy_margin numeric(24,12) NOT NULL,
+  sell_margin numeric(24,12) NOT NULL,
   board_rows jsonb NOT NULL,
   board_order jsonb,
   published_by text,
@@ -392,6 +399,9 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);
+ALTER TABLE rate_boards
+  ALTER COLUMN buy_margin TYPE numeric(24,12) USING buy_margin::numeric(24,12),
+  ALTER COLUMN sell_margin TYPE numeric(24,12) USING sell_margin::numeric(24,12);
 CREATE TABLE IF NOT EXISTS stripe_customers (
   tenant_id text PRIMARY KEY REFERENCES tenants(id),
   stripe_customer_id text NOT NULL UNIQUE,

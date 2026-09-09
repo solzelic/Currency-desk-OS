@@ -4,9 +4,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { moneyFixed, priceStorefrontHold } from "../src/sites/storefront-hold.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -77,13 +79,39 @@ describe("SMS rate holds", () => {
 
     // desk math: selling USD at mid*(1+sellMargin) — seed board USD mid & 1.5%
     const board = (await handle.db.select().from(schema.rateBoards))[0]!;
-    const expected = 1000 / (board.boardRows.USD!.mid * (1 + board.sellMargin));
-    expect(q.receive).toBeCloseTo(expected, 6);
+    const expected = priceStorefrontHold({
+      from: "CAD",
+      to: "USD",
+      amount: "1000",
+      board: {
+        buyMargin: board.buyMargin,
+        sellMargin: board.sellMargin,
+        rows: board.boardRows,
+      },
+    });
+    expect(q.receive).toBe(Number(expected.receiveAmount.toFixed(2)));
+    expect(q.amount).toBe(1000);
+    expect(q.rate).toBe(Number(expected.quotedRate.toDecimalPlaces(12).toFixed(12)));
 
     const row = (await handle.db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, q.ref)))[0]!;
     expect(row.smsText).toContain(q.ref);
     expect(row.smsText).toContain("held for 30 min");
     expect(row.smsText).toContain("Reply STOP to opt out");
+    /* Persisted as numeric strings, not IEEE floats — the 2dp the SMS showed. */
+    expect(row.haveAmount).toBe("1000.00");
+    expect(row.receiveAmount).toBe(moneyFixed(expected.receiveAmount));
+    expect(row.quotedRate).toBe(expected.quotedRate.toDecimalPlaces(12).toFixed(12));
+  });
+
+  it("persists a hold the ledger can reproduce from stored amounts", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes",
+      payload: { phone: "647 555 0144", from: "CAD", to: "USD", amount: 10 },
+    });
+    expect(res.statusCode).toBe(201);
+    const row = (await handle.db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, res.json().quote.ref)))[0]!;
+    expect(new Decimal(row.quotedRate).mul(row.haveAmount).toDecimalPlaces(2).toFixed(2)).toBe(row.receiveAmount);
   });
 
   it("confirming a held quote flips it and refuses after expiry", async () => {
