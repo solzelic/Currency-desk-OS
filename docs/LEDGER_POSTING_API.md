@@ -10,7 +10,7 @@ created by the Quote Service and posted through frozen quote terms.
 
 | Method | Path | Auth | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | Liveness response. |
+| `GET` | `/api/health` | none | Readiness: 200 if a trivial database read succeeds, 503 `{ ok: false, error: "database" }` if it does not. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
 | `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |
