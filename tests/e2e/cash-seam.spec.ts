@@ -14,6 +14,7 @@
    in the repository.
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
+import type { Locator, Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -21,15 +22,61 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 const OPENING = { CAD: "25000.00", USD: "12000.00" };
 
 /** Read what the Cash Drawer is telling the teller it holds, in CAD. */
-async function drawerChip(page: import("@playwright/test").Page) {
+async function drawerChip(page: Page) {
   const body = await page.locator("body").innerText();
   const match = body.match(/In drawer · ledger\s*\$([\d,]+(?:\.\d+)?)/);
   return match ? Number(match[1]!.replace(/,/g, "")) : null;
 }
 
-async function openCashDrawer(page: import("@playwright/test").Page) {
+/* The Cash Drawer header reflows as the session, live balances and the
+   ledger till name arrive, and the OS shell hides `.fld-bar` on downward
+   scroll (0.3s max-height / transform). Playwright then reports a tab
+   click as "not stable" or intercepted by the header that names till-01
+   (`div.px-4.pt-3.flex-none`). That is issue #36: the close assertion
+   never ran. Wait for the chrome to finish moving; do not force:true. */
+async function settleCashDrawerChrome(page: Page) {
+  await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/server balances live/i)).toBeVisible();
+  const scroller = page.locator(".win-body .overflow-auto").first();
+  if (await scroller.count()) {
+    await scroller.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+  }
+  const tabBar = page.locator(".win-body .fld-bar").first();
+  await expect(tabBar).toBeVisible();
+  await expect(tabBar).not.toHaveClass(/fld-hidden/);
+}
+
+async function clickWhenStable(locator: Locator) {
+  await locator.scrollIntoViewIfNeeded();
+  await expect(locator).toBeVisible();
+  await expect(async () => {
+    await locator.click({ trial: true });
+  }).toPass({ timeout: 15_000 });
+  await locator.click();
+}
+
+async function clickDrawerTab(page: Page, name: RegExp) {
+  await settleCashDrawerChrome(page);
+  await clickWhenStable(page.getByRole("button", { name }).first());
+}
+
+async function saveDrawerCount(page: Page) {
+  await page.getByRole("button", { name: /Save count/i }).first().click();
+  /* Save is a server round-trip. The button goes Saving… → Saved and the
+     header tally updates; clicking Reconcile during that reflow is the
+     flake. */
+  await expect(page.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await settleCashDrawerChrome(page);
+}
+
+async function openCashDrawer(page: Page) {
   await page.getByText(/Cash Drawer/i).first().click();
   await expect(page.getByText(/Cash drawer/i).first()).toBeVisible();
+  await settleCashDrawerChrome(page);
 }
 
 test("the desk opens a till session, and the ledger is the one that says so", async ({ page }) => {
@@ -47,7 +94,7 @@ test("the desk opens a till session, and the ledger is the one that says so", as
   await expect(openButton).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/hasn.t been opened/i)).toBeVisible();
   expect(await book.session()).toBeNull();
-  await openButton.click();
+  await clickWhenStable(openButton);
 
   await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 15_000 });
   const session = await book.session();
@@ -69,7 +116,7 @@ test("a float moves the vault and the till together, or not at all", async ({ pa
   test.skip(!vaultBefore.tracked, "vault opening position is covered by the vault suite");
   const tillBefore = await book.till();
 
-  await page.getByRole("button", { name: /^Move cash$/i }).first().click();
+  await clickWhenStable(page.getByRole("button", { name: /^Move cash$/i }).first());
   await page.locator('input[placeholder="0"]').last().fill("2000");
   await page.getByRole("button", { name: /Issue float/i }).last().click();
 
@@ -99,22 +146,22 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   await page.getByRole("button", { name: /Enter total/i }).first().click();
   const short = Number(before[firstCcy!]) - 5;
   await page.locator('input[placeholder="0.00"]').first().fill(String(short));
-  await page.getByRole("button", { name: /Save count/i }).first().click();
+  await saveDrawerCount(page);
 
-  await page.getByRole("button", { name: /Reconcile & close/i }).first().click();
+  await clickDrawerTab(page, /Reconcile & close/i);
   const closeButton = page.getByRole("button", { name: /Close day & lock book/i }).first();
   await expect(closeButton).toBeDisabled();
   await expect(page.getByText(/Count all \d+ drawers? before closing/)).toBeVisible();
 
   // now count the rest honestly, and close
-  await page.getByRole("button", { name: /Cash drawer/i }).first().click();
+  await clickDrawerTab(page, /Cash drawer/i);
   for (const ccy of rest) {
     await page.locator(`button:has-text("${ccy}")`).first().click();
     await page.getByRole("button", { name: /Enter total/i }).first().click();
     await page.locator('input[placeholder="0.00"]').first().fill(String(Number(before[ccy]!)));
   }
-  await page.getByRole("button", { name: /Save count/i }).first().click();
-  await page.getByRole("button", { name: /Reconcile & close/i }).first().click();
+  await saveDrawerCount(page);
+  await clickDrawerTab(page, /Reconcile & close/i);
   await page.getByRole("button", { name: /Close day & lock book/i }).first().click();
   await page.getByRole("button", { name: /Close day & lock book/i }).last().click();
 
