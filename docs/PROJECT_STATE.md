@@ -96,10 +96,14 @@ deliberately retained until external hot-linking can be ruled out.
    admin console.
 2. **Resend API key rotation** (issue #32) — the key passed through chat;
    rotation cannot be verified from the repo. Open until confirmed rotated.
-3. **Multi-till/workspace resolution defect** (issue #34) — several routes
-   resolve a request's till as "the only workspace at this branch" and deny
-   callers without `x-workspace-id` once a second workspace exists. Makes
-   seam-test order load-bearing (`zz-` prefix workaround).
+
+Issue **#34** (multi-till/workspace resolution) is closed in code: an
+unscoped ledger, quote or client-records call uses the workspace stamped
+on the session (first till at the user's home branch at sign-in; updated
+by `POST /api/ledger/till-selection`). `x-workspace-id` still names a
+till for that request and is SCOPE_DENIED when out of scope. Adding a
+till no longer denies existing callers. The day-at-the-desk seam spec
+trades on its own till and no longer needs a `zz-` filename prefix.
 
 Issue **#31** (`PLATFORM_ADMIN_BOOTSTRAP` re-set the operator password on
 every boot) is closed in code: `ensurePlatformAdmin` creates a missing
@@ -117,15 +121,16 @@ authenticated narrative dashboard.
 
 ## Next engineering priorities (ordered)
 
-1. Fix the multi-till resolution defect (issue #34), then remove the `zz-` workaround.
-2. Platform MFA (issue #33).
-3. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
+1. Platform MFA (issue #33).
+2. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
 
 ## Last reviewed
 
-**2026-09-09**, public `GET /api/health` pings the database (trivial tenant
-read) and returns 503 when that read fails. Render continues to probe
-`/api/health`. Free-tier sleep is unchanged.
+**2026-09-09**, multi-till/workspace resolution (#34): unscoped money
+routes use the session workspace rather than "the only workspace at this
+branch". The day-at-the-desk seam spec runs in normal order on its own
+till. Public `GET /api/health` still pings the database (trivial tenant
+read) and returns 503 when that read fails.
 
 Prior stamp **2026-09-09**, `PLATFORM_ADMIN_BOOTSTRAP` is one-shot (`ensurePlatformAdmin`
 creates if missing; never overwrites an existing operator password). Issue

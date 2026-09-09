@@ -71,10 +71,8 @@ touches money:
   - browser↔server seams: `SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e`
 - **Use a fresh database per full run** — several suites deliberately leave
   ledger state behind.
-- Test file order is currently load-bearing in the seam suite: the `zz-`
-  prefix on `zz-a-day-at-the-desk.spec.ts` is a documented workaround for the
-  multi-till resolution defect. Do not rename or reorder seam tests until that
-  defect is fixed.
+- The day-at-the-desk seam spec (`tests/e2e/a-day-at-the-desk.spec.ts`)
+  trades on its own till. Do not put shared-drawer state back into it.
 
 ## Generated output
 

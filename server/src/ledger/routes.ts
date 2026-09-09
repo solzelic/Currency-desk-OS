@@ -5,7 +5,8 @@ import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
+import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
 import { ensureLedgerPrincipal } from "./principal.js";
@@ -326,15 +327,13 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     // tier gate: the ledger is a Pro/Premium app — a basic tenant only has
     // the rate board, so its sessions can't post to the book
     if ((await tenantPlan(db, user.tenantId)) === "basic") return { kind: "plan_denied" };
-    const header = req.headers["x-workspace-id"];
-    if (Array.isArray(header)) return { kind: "scope_denied" };
-    const candidates = await db.select().from(schema.workspaces).where(and(
-      eq(schema.workspaces.tenantId, user.tenantId),
-      eq(schema.workspaces.legalEntityId, user.legalEntityId),
-      eq(schema.workspaces.branchId, user.branchId),
-    ));
-    const workspace = header ? candidates.find((item) => item.id === header) : candidates.length === 1 ? candidates[0] : undefined;
-    if (!workspace || !user.authorizedBranchIds.includes(workspace.branchId)) return { kind: "scope_denied" };
+    const workspace = await resolveWorkspaceForUser(
+      db,
+      user,
+      req.headers["x-workspace-id"],
+      req.cookies[SESSION_COOKIE],
+    );
+    if (!workspace) return { kind: "scope_denied" };
     const actor = { userId: user.id, tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: workspace.branchId, workspaceId: workspace.id, tillId: workspace.tillId, role: user.role, authorizedBranchIds: user.authorizedBranchIds };
     await ensureLedgerPrincipal(pool, actor);
     return { kind: "authenticated", actor };
@@ -414,13 +413,11 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
 
   /* The desk's own topology: which tills this session's branch actually has on
      the ledger. Deliberately NOT resolved through resolveActor — that picks one
-     workspace and refuses (SCOPE_DENIED) when a branch has more than one and the
-     caller named none, which is exactly the state every client is in before it
-     has seen this list. The browser never sent x-workspace-id at all, so the
-     single-workspace fallback was carrying the whole desk; the day a branch got
-     a second till every ledger and quote call would have started failing with
-     nothing to tell the client which id to send. Scope still comes only from the
-     session record — the request cannot name a tenant, entity or branch.
+     workspace. Listing tills must not go through that: a client that has
+     not yet seen this list has no header to send, and a second till at
+     the branch must not turn the roster itself into SCOPE_DENIED. Scope
+     still comes only from the session record — the request cannot name a
+     tenant, entity or branch.
 
      Which also means a till this session is not posted at is never in the
      answer, so a till switcher built on this list cannot offer somebody a
@@ -534,7 +531,11 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.post("/api/ledger/till-selection", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
-      return actor ? reply.send(await tillControl.selectTill(actor)) : undefined;
+      if (!actor) return undefined;
+      const selected = await tillControl.selectTill(actor);
+      const token = req.cookies[SESSION_COOKIE];
+      if (token) await setSessionWorkspace(db, token, actor.workspaceId);
+      return reply.send(selected);
     } catch (error) {
       return failure(reply, error);
     }

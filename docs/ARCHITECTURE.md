@@ -348,17 +348,19 @@ still pulls the CDN.)
 2. **In-process state assumes exactly one server.** Cooldown and sign-in
    maps (e.g. `server/src/cooldown.ts`) live in process memory — no
    horizontal scale, and every deploy drops in-flight sign-ins.
-3. **Multi-till resolution** (issue #34): several routes resolve a caller's
-   till as "the only workspace at this branch" and deny once a second
-   workspace exists. The `zz-` seam-test workaround exists because of this.
+
+Issue **#34** (multi-till resolution) is closed: unscoped ledger, quote
+and client-records calls use the session workspace, not "the only
+workspace at this branch". `tests/e2e/a-day-at-the-desk.spec.ts` no
+longer needs a `zz-` prefix.
 
 **After**
 
-4. One schema mechanism. The boot-time DDL string and the checksummed
+3. One schema mechanism. The boot-time DDL string and the checksummed
    migrations describe the same tables two ways, and the migrations do not
    run on the embedded database at all — so dev and production run different
    schemas. `docs/MIGRATION.md` documents the contract as it stands.
-5. Authorization as a hook rather than a remembered line in each route.
-6. A state layer in the OS. Thirty localStorage keys read directly from
+4. Authorization as a hook rather than a remembered line in each route.
+5. A state layer in the OS. Thirty localStorage keys read directly from
    fifteen files, modules wired through a global, thirty-prop components. A
    velocity tax rather than a correctness risk, which is why it is last.

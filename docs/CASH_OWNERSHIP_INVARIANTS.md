@@ -188,7 +188,7 @@ exactly how past defects survived green runs. CI runs all of them
 (`browser-seam`).
 
 ```
-zz-a-day-at-the-desk    a full shift; the deployment gate
+a-day-at-the-desk       a full shift; the deployment gate
 cash-seam               till sessions, floats, counts, close
 obligation-seam         remittance send and receive
 cheque-seam             cashing, clearing, the register

@@ -30,10 +30,13 @@ after a role or branch assignment changes. Principals use a composite workspace
 key so one staff member can be authorized at more than one till without
 overwriting another active scope.
 
-`x-workspace-id` is optional only when the authenticated session has exactly one
-workspace in its tenant, legal-entity, and branch scope. A supplied workspace
-that is missing or out of scope returns `403 SCOPE_DENIED`; it never falls back
-to a different workspace.
+`x-workspace-id` names the till for this request. When it is omitted, the
+server uses the workspace recorded on the session — stamped at sign-in to
+the first till at the user's home branch, and updated by
+`POST /api/ledger/till-selection`. A supplied workspace that is missing or
+out of scope returns `403 SCOPE_DENIED`; it never falls back to a different
+workspace. Adding a second till at the branch does not deny callers that
+omit the header.
 
 ## Money and Fees
 

@@ -16,7 +16,7 @@ Bar 1 is the deployment decision. Bar 2 is the business.
 
 ## The gate
 
-`tests/e2e/zz-a-day-at-the-desk.spec.ts` is the one test that answers Bar 1.
+`tests/e2e/a-day-at-the-desk.spec.ts` is the one test that answers Bar 1.
 It runs a shift — open the drawer, put a customer on file, exchange,
 remit, cash a cheque, get refused at the identification line, count the
 drawer, close, sign off — and its last assertion is the only one that
@@ -108,19 +108,10 @@ for many. That gap *is* the roadmap.
 7. **ID scans and cheque images to object storage** (#29).
 8. **A demo tenant provisioned server-side** (#28) — you cannot sell what
    you cannot demonstrate.
-9. **Test isolation** (#33), and the product defect underneath it.
-   Several routes resolve which till a request is for as *"the only
-   workspace at this branch"* — true of a one-till desk and of nothing
-   else. Adding a single extra till to the demo branch during a test run
-   produced ten failures, because every caller that does not send an
-   `x-workspace-id` header is denied the moment a second workspace
-   exists. The browser always sends the header, so a shop does not see
-   this today; a shop with two counters and any integration that does not
-   set it would. The fix is for a session to resolve to the teller's own
-   till rather than to whichever one happens to be unique — and until it
-   lands, the day-at-the-desk gate is named `zz-` so it runs after the
-   suites it would otherwise disturb. That prefix is a workaround with a
-   shelf life, not a convention.
+9. **Test isolation** (historical #33 in this dated note; tracked as
+   GitHub #34). Closed: unscoped money routes resolve the session
+   workspace rather than "the only workspace at this branch", and the
+   day-at-the-desk gate trades on its own till without a `zz-` prefix.
 
 ## The rule that keeps this honest
 

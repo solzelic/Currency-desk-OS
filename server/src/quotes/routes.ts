@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, eq } from "drizzle-orm";
 import pg from "pg";
 import { z } from "zod";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
-import { schema, type Db } from "../db/index.js";
+import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
+import { type Db } from "../db/index.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import { isRetryable } from "../ledger/retry.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
@@ -17,7 +17,7 @@ const overrideBody=z.object({customerRate:rate,reason:z.string().trim().min(1).m
 const postBody=z.object({idempotencyKey:z.string().min(1).max(200),purpose:z.string().trim().min(1).max(500),sourceOfFunds:z.string().trim().min(1).max(500),thirdParty:z.boolean().default(false),thirdPartyName:z.string().trim().max(200).optional()}).refine(v=>!v.thirdParty||!!v.thirdPartyName,{message:"Third-party name is required.",path:["thirdPartyName"]}).refine(v=>v.thirdParty||!v.thirdPartyName,{message:"Third-party name requires third-party status.",path:["thirdPartyName"]});
 type Resolution={kind:"authenticated";actor:LedgerActor}|{kind:"unauthenticated"}|{kind:"scope_denied"}|{kind:"plan_denied"};
 export function registerQuoteRoutes(app:FastifyInstance,db:Db,databaseUrl:string){const pool=new pg.Pool({connectionString:databaseUrl}),service=new QuoteService(pool);app.addHook("onClose",async()=>pool.end());
-async function actor(req:FastifyRequest):Promise<Resolution>{const user=await resolveSession(db,req.cookies[SESSION_COOKIE]);if(!user)return {kind:"unauthenticated"};if((await tenantPlan(db,user.tenantId))==="basic")return {kind:"plan_denied"};const header=req.headers["x-workspace-id"];if(Array.isArray(header))return {kind:"scope_denied"};const candidates=await db.select().from(schema.workspaces).where(and(eq(schema.workspaces.tenantId,user.tenantId),eq(schema.workspaces.legalEntityId,user.legalEntityId),eq(schema.workspaces.branchId,user.branchId)));const workspace=header?candidates.find(w=>w.id===header):candidates.length===1?candidates[0]:undefined;if(!workspace||!user.authorizedBranchIds.includes(workspace.branchId))return {kind:"scope_denied"};const current={userId:user.id,tenantId:user.tenantId,legalEntityId:user.legalEntityId,branchId:workspace.branchId,workspaceId:workspace.id,tillId:workspace.tillId,role:user.role,authorizedBranchIds:user.authorizedBranchIds};await ensureLedgerPrincipal(pool,current);return {kind:"authenticated",actor:current};}
+async function actor(req:FastifyRequest):Promise<Resolution>{const user=await resolveSession(db,req.cookies[SESSION_COOKIE]);if(!user)return {kind:"unauthenticated"};if((await tenantPlan(db,user.tenantId))==="basic")return {kind:"plan_denied"};const workspace=await resolveWorkspaceForUser(db,user,req.headers["x-workspace-id"],req.cookies[SESSION_COOKIE]);if(!workspace)return {kind:"scope_denied"};const current={userId:user.id,tenantId:user.tenantId,legalEntityId:user.legalEntityId,branchId:workspace.branchId,workspaceId:workspace.id,tillId:workspace.tillId,role:user.role,authorizedBranchIds:user.authorizedBranchIds};await ensureLedgerPrincipal(pool,current);return {kind:"authenticated",actor:current};}
 /* Contention that survived its retries is not a fault: the transaction
      rolled back whole and nothing was written. Answering 500 INTERNAL_ERROR
      is wrong in both halves and sends a teller hunting for a problem with a

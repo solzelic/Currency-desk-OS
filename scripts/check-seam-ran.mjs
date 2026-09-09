@@ -11,7 +11,7 @@
    Reads a Playwright JSON report and fails when:
      1. any spec FILE executed zero tests (the whole file skipped —
         exactly the missing-database failure mode), or
-     2. the deployment gate (zz-a-day-at-the-desk.spec.ts) did not
+     2. the deployment gate (a-day-at-the-desk.spec.ts) did not
         execute at least one test.
 
    Individual in-file conditional skips (e.g. cash-seam's "vault
@@ -57,7 +57,7 @@ if (files.size === 0) {
 }
 
 let failed = false;
-const GATE = "zz-a-day-at-the-desk.spec.ts";
+const GATE = "a-day-at-the-desk.spec.ts";
 let gateSeen = false;
 
 for (const [file, { executed, skipped, skippedTitles }] of [...files.entries()].sort()) {

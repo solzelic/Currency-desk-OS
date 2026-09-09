@@ -95,6 +95,15 @@ postgres("a new till can take a customer", () => {
     const rates = await pool.query("SELECT currency FROM ledger_rates WHERE workspace_id=$1 ORDER BY currency", [workspaceId]);
     expect(rates.rows.map((r) => r.currency)).toEqual(["CAD", "EUR", "GBP", "USD"]);
 
+    /* Adding this till must not deny the session's existing drawer. */
+    const stillHome = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-balances",
+      cookies: owner,
+    });
+    expect(stillHome.statusCode, stillHome.body).toBe(200);
+    expect(stillHome.json()).toMatchObject({ tillId: "till-01" });
+
     const scoped = { "x-workspace-id": workspaceId };
     const opening = await app.inject({
       method: "POST", url: "/api/ledger/opening-balances", cookies: owner, headers: scoped,

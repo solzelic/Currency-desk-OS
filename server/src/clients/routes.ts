@@ -1,14 +1,13 @@
 /* ============================================================
    The customer file, over HTTP.
 
-   Scope resolution is deliberately a copy of the ledger's rather than a
-   shared helper: `registerLedgerRoutes` owns its own pool and its own
-   resolution, and reaching into it from here would couple two route
-   files that have no other reason to know about each other. What must
-   NOT differ is the rule, and the rule is the same one in both places —
-   tenant, entity and branch come from the SESSION and can never be named
-   by the request; the workspace may be named, and only from the ones
-   this session's branch actually has.
+   Scope resolution uses the same helper as the ledger and quote routes
+   (`auth/workspace-scope.ts`). The rule must not differ: tenant, entity
+   and branch come from the SESSION and can never be named by the
+   request; the workspace may be named, and only from the ones this
+   session's branch actually has. When the header is omitted the
+   session's own workspace is used — never "the only workspace at this
+   branch".
 
    The permission is `customer:view` / `customer:write`, the same pair
    the ledger's own customer routes use. Viewing an identity document is
@@ -18,12 +17,11 @@
    is a record that it happened. See the header of records.ts.
    ============================================================ */
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, eq } from "drizzle-orm";
 import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
-import { schema } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
@@ -122,18 +120,13 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!user) return { kind: "unauthenticated" };
     if ((await tenantPlan(db, user.tenantId)) === "basic") return { kind: "plan_denied" };
-    const header = req.headers["x-workspace-id"];
-    if (Array.isArray(header)) return { kind: "scope_denied" };
-    const candidates = await db.select().from(schema.workspaces).where(and(
-      eq(schema.workspaces.tenantId, user.tenantId),
-      eq(schema.workspaces.legalEntityId, user.legalEntityId),
-      eq(schema.workspaces.branchId, user.branchId),
-    ));
-    const workspace = header
-      ? candidates.find((item) => item.id === header)
-      : candidates.length === 1 ? candidates[0] : undefined;
-    if (!workspace || !user.authorizedBranchIds.includes(workspace.branchId))
-      return { kind: "scope_denied" };
+    const workspace = await resolveWorkspaceForUser(
+      db,
+      user,
+      req.headers["x-workspace-id"],
+      req.cookies[SESSION_COOKIE],
+    );
+    if (!workspace) return { kind: "scope_denied" };
     const actor: LedgerActor = {
       userId: user.id,
       tenantId: user.tenantId,

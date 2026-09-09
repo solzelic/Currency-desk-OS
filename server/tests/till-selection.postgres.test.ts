@@ -174,6 +174,19 @@ postgres("naming a till, against real PostgreSQL", () => {
     expect(audit.rowCount).toBe(1);
     expect(audit.rows[0].actor_id).toBe(`${DEMO.tenantId}:a.singh`);
     expect(audit.rows[0].workspace_id).toBe(SECOND_WORKSPACE);
+
+    /* After the switch, an unscoped call follows the session — not "the
+       only workspace at this branch", which this desk no longer has. */
+    const unscoped = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-balances",
+      cookies,
+    });
+    expect(unscoped.statusCode).toBe(200);
+    expect(unscoped.json()).toMatchObject({
+      tillId: SECOND_TILL,
+      balances: { CAD: "9000.00" },
+    });
   });
 
   it("refuses to move a session to a drawer outside its branch", async () => {
