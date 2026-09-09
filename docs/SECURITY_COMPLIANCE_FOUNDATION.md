@@ -106,8 +106,10 @@ audit events — closed when authority moved server-side; see the
 Architecture Boundary above.)
 
 - No second factor on the platform operator console (issue #33).
-- `PLATFORM_ADMIN_BOOTSTRAP` re-asserts the configured operator password on
-  every boot while set (issue #31).
+- `PLATFORM_ADMIN_BOOTSTRAP` is one-shot in code (creates if missing; never
+  overwrites an existing password). The env var should still be removed
+  from Render after first sign-in so the plaintext is not left in the host
+  environment.
 - Compliance thresholds resolve through jurisdiction packs with desk
   overrides (`docs/DESK_THRESHOLDS.md`), but workflow behavior beyond
   thresholds remains a product assumption, not a certified process.

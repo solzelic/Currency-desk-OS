@@ -76,7 +76,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   at `f31cf21` (#44).
 - **Engineering standards audit** of `main` at `f31cf21` is recorded in
   `docs/STANDARDS_AUDIT.md` (2026-09-04). Docs only — no product slice
-  opened, no #31–#36 fix shipped.
+  opened at that stamp. Issue **#31** (one-shot platform-admin bootstrap)
+  has since landed in code.
+
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
   was deleted in #40), and its CI is from 2026-08-06 (pre-governance).
@@ -91,15 +93,18 @@ deliberately retained until external hot-linking can be ruled out.
 
 1. **Platform MFA absent** (issue #33) — no TOTP/MFA on the cross-tenant
    admin console.
-2. **`PLATFORM_ADMIN_BOOTSTRAP` re-sets the operator password on every boot**
-   (issue #31) while the env var is set (`server/src/admin-bootstrap.ts`) —
-   safe only if the var is removed after first sign-in; nothing enforces that.
-3. **Resend API key rotation** (issue #32) — the key passed through chat;
+2. **Resend API key rotation** (issue #32) — the key passed through chat;
    rotation cannot be verified from the repo. Open until confirmed rotated.
-4. **Multi-till/workspace resolution defect** (issue #34) — several routes
+3. **Multi-till/workspace resolution defect** (issue #34) — several routes
    resolve a request's till as "the only workspace at this branch" and deny
    callers without `x-workspace-id` once a second workspace exists. Makes
    seam-test order load-bearing (`zz-` prefix workaround).
+
+Issue **#31** (`PLATFORM_ADMIN_BOOTSTRAP` re-set the operator password on
+every boot) is closed in code: `ensurePlatformAdmin` creates a missing
+account and never overwrites `passwordHash` / `mustChangePassword` /
+`passwordUpdatedAt`. The env var should still be removed from Render after
+first sign-in so the plaintext is not left in the host environment.
 
 ## Next engineering priorities (ordered)
 
@@ -109,9 +114,14 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Last reviewed
 
-**2026-09-04**, Engineering standards audit of `main` at `f31cf21` (#44).
-Scorecard, residual-issue verification, and proposed two-line slice end
-states: `docs/STANDARDS_AUDIT.md`. No product behaviour changed.
+**2026-09-09**, `PLATFORM_ADMIN_BOOTSTRAP` is one-shot (`ensurePlatformAdmin`
+creates if missing; never overwrites an existing operator password). Issue
+#31. Render should still drop the env var after first sign-in.
+
+Prior stamp **2026-09-04**, Engineering standards audit of `main` at
+`f31cf21` (#44). Scorecard, residual-issue verification, and proposed
+two-line slice end states: `docs/STANDARDS_AUDIT.md`. No product behaviour
+changed in that audit.
 
 Prior stamp **2026-08-17** (`90a3890`, #43; recorded on `main` by #44):
 live `/login` and `/app` serve `/web/app/os.js` with no unpkg, Babel, or
