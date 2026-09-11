@@ -90,6 +90,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the public board display price with `decimal.js`, once. jsonb board
   mids remain JS numbers — parked with the rest of that audit finding.
 
+- **Product-demo desk** — York FX can be opened as a lived-in shop for a
+  meeting. Staff id `demo` is created on that tenant if missing; the
+  password is stamped only from `DEMO_STAFF_BOOTSTRAP` and is never
+  overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
+  saved history through the real quote / ledger / client-record
+  services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
+  `siteSlug=yorkfx`. Login is `/login` → `/app`, not `/admin`. How to
+  run it: `docs/DEMO_DESK.md`.
+
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
   was deleted in #40), and its CI is from 2026-08-06 (pre-governance).
@@ -136,7 +145,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-09**, storefront SMS holds and rate-board margins are
+**2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
+`DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
+Posted through the existing ledger/quote/client services; other tenants
+are out of scope. `docs/DEMO_DESK.md`.
+
+Prior stamp **2026-09-09**, storefront SMS holds and rate-board margins are
 `numeric`; the public quote path uses Decimal (audit Slice F). JSON
 still returns numbers so the storefront `typeof === 'number'` contract
 is unchanged. Twilio delivery is unchanged.
