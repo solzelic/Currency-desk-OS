@@ -33,7 +33,7 @@ say.
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
 | `scripts/` | build + design-import tools + governance checks | ✅ |
 | `tests/e2e/` | Playwright seam suite (drives the browser, then asks the ledger) | ✅ |
-| `docs/` | durable engineering docs; `PROJECT_STATE.md` is the living one | ✅ |
+| `docs/` | durable engineering docs; `PROJECT_STATE.md` is the living one. Product-demo sit-down: `docs/DEMO_DESK.md` | ✅ |
 | `render.yaml` | the deployment: build command, env contract, routes | ✅ carefully |
 
 ## Source → generated output
@@ -101,6 +101,7 @@ is not load-bearing.
 - Storefront → `YorkFX/`
 - Tests beside their layer: `server/tests/` or `tests/e2e/<behaviour>.spec.ts`
 - Durable knowledge → the matching `docs/` file; current truth → `docs/PROJECT_STATE.md`
+- Product-demo desk (York FX `/login`, staff `demo`) → `server/src/demo-desk.ts`, opted in at boot from `server/src/index.ts` via `DEMO_STAFF_BOOTSTRAP` / `DEMO_POPULATE`. How to run it: `docs/DEMO_DESK.md`
 
 ## Glossary (server-canonical vocabulary)
 

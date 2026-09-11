@@ -11,6 +11,13 @@
 #   RESET_STAFF_PASSWORD — break-glass, normally UNSET. "staffId:newpassword"
 #                   resets that one account at boot (audited, temporary
 #                   password). Remove it right after signing back in.
+#   DEMO_STAFF_BOOTSTRAP — product-demo till at /login. "demo:password".
+#                   One-shot: creates staff id demo on York FX if missing;
+#                   never overwrites an existing demo password. Remove after
+#                   first sign-in. See docs/DEMO_DESK.md.
+#   DEMO_POPULATE — "1" to post the York FX demo book (customers, open till,
+#                   a few already-saved FX deals) through the real ledger
+#                   services. Idempotent; York FX / siteSlug yorkfx only.
 #   STRIPE_SECRET_KEY — a newly rotated, restricted live Stripe secret key.
 #                   Never put it in this file, Git, or browser code.
 #   STRIPE_WEBHOOK_SECRET — signing secret for this service's Stripe webhook.
@@ -73,6 +80,17 @@ services:
         sync: false
       # first-run operator login "email:password"; remove after signing in
       - key: PLATFORM_ADMIN_BOOTSTRAP
+        sync: false
+      # product-demo till login at /login (not /admin). "demo:password";
+      # one-shot — creates staff id demo on York FX if missing, never
+      # overwrites an existing demo password. Remove after first sign-in.
+      # Password lives in Render / Keeper, not in git. See docs/DEMO_DESK.md.
+      - key: DEMO_STAFF_BOOTSTRAP
+        sync: false
+      # opt-in: post the York FX demo book (customers + open till + a
+      # small already-saved history) through the real ledger services.
+      # Idempotent. Only touches tnt-yorkfx / siteSlug yorkfx.
+      - key: DEMO_POPULATE
         sync: false
       # Manual lead research. Until configured, the admin panel says research
       # is unavailable and the rest of the application starts normally.

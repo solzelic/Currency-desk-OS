@@ -9,6 +9,12 @@ try {
 import { and, eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
+import {
+  ensureDemoStaff,
+  parseDemoStaffBootstrap,
+  populateDemoDesk,
+  shouldPopulateDemoDesk,
+} from "./demo-desk.js";
 import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { syncMarketRatesIfStale } from "./rates/market.js";
@@ -87,6 +93,58 @@ if (process.env.PLATFORM_ADMIN_BOOTSTRAP) {
     }
   } else {
     console.warn("[platform-admin] PLATFORM_ADMIN_BOOTSTRAP malformed — expected email:password");
+  }
+}
+
+// product-demo staff on York FX only. DEMO_STAFF_BOOTSTRAP="demo:password"
+// creates the account (or stamps a password that has never been set). An
+// existing demo password is never overwritten. Remove the env var from
+// Render after first sign-in — while it is set the plaintext lives in the
+// host environment.
+{
+  const parsed = parseDemoStaffBootstrap(process.env.DEMO_STAFF_BOOTSTRAP);
+  if (process.env.DEMO_STAFF_BOOTSTRAP && !parsed) {
+    console.warn("[demo-desk] DEMO_STAFF_BOOTSTRAP malformed — expected demo:password (password ≥ 8 chars). Other staff ids are refused.");
+  }
+  const result = await ensureDemoStaff(handle.db, parsed?.password ?? null);
+  if (parsed) {
+    if (result === "created" || result === "password_set") {
+      console.warn("[demo-desk] staff id demo is ready — sign in at /login, then REMOVE DEMO_STAFF_BOOTSTRAP from Render");
+    } else if (result === "exists") {
+      console.warn("[demo-desk] staff id demo already exists — password was NOT reset. REMOVE DEMO_STAFF_BOOTSTRAP from Render");
+    } else {
+      console.warn("[demo-desk] DEMO_STAFF_BOOTSTRAP set but the York FX tenant is missing");
+    }
+  } else if (result === "created") {
+    console.warn("[demo-desk] staff id demo created without a sign-in password — set DEMO_STAFF_BOOTSTRAP=demo:password once to stamp it");
+  }
+}
+
+// York FX book activity. Opt-in: DEMO_POPULATE=1. Posts through the real
+// quote / ledger / client-record services and is a no-op on a second boot.
+// Never touches a tenant that is not York FX (siteSlug yorkfx).
+if (shouldPopulateDemoDesk()) {
+  const ledgerUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!ledgerUrl) {
+    console.warn("[demo-desk] DEMO_POPULATE set but no DATABASE_URL — ledger activity was not seeded");
+  } else {
+    const { default: pg } = await import("pg");
+    const pool = new pg.Pool({ connectionString: ledgerUrl });
+    try {
+      const result = await populateDemoDesk(pool, handle.db);
+      if (result.status === "skipped") {
+        console.warn(`[demo-desk] populate skipped (${result.reason ?? "unknown"})`);
+      } else {
+        console.warn(
+          `[demo-desk] ${result.status} — ${result.customers} customers, ${result.transactions} deals on the book, till ${result.tillOpen ? "open" : "not open"}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.warn(`[demo-desk] populate failed — ${message}`);
+    } finally {
+      await pool.end();
+    }
   }
 }
 
