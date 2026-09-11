@@ -35,6 +35,7 @@ import { ensureLedgerPrincipal } from "./ledger/principal.js";
 import { LedgerError, type LedgerActor } from "./ledger/service.js";
 import { TillControlService } from "./ledger/till-control.js";
 import { QuoteService, boardMaxAgeSeconds } from "./quotes/service.js";
+import type { QuoteDirection } from "./quotes/terms.js";
 import { DEMO } from "./seed.js";
 
 export const DEMO_STAFF_ID = "demo";
@@ -457,16 +458,37 @@ async function ensureDemoCustomers(pool: pg.Pool, actor: LedgerActor) {
   return bySlug;
 }
 
-function dealDirection(from: string, to: string): "customer_buy_foreign" | "customer_sell_foreign" {
-  if (from === "CAD") return "customer_buy_foreign";
-  if (to === "CAD") return "customer_sell_foreign";
-  throw new LedgerError("INVALID_REQUEST", "Demo deals are CAD↔foreign only.");
+function dealDirection(from: string, to: string, home: string): QuoteDirection {
+  if (from === home) return "customer_buy_foreign";
+  if (to === home) return "customer_sell_foreign";
+  return "customer_cross";
+}
+
+/** York FX is a CAD / FINTRAC shop. Earlier suites sometimes leave this
+    entity on another pack or home currency; quoting then refuses our
+    CAD↔foreign directions. Restore the seed contract, demo tenant only. */
+async function ensureDemoJurisdiction(pool: pg.Pool): Promise<string> {
+  const updated = await pool.query(
+    `UPDATE legal_entities
+        SET home_currency = 'CAD',
+            jurisdiction = 'FINTRAC',
+            jurisdiction_pack_id = 'pack-ca-v1',
+            jurisdiction_pack_version = 1
+      WHERE id = $1 AND tenant_id = $2
+      RETURNING home_currency`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
+  if (!updated.rowCount) {
+    throw new LedgerError("SCOPE_DENIED", "York FX legal entity is missing.");
+  }
+  return String(updated.rows[0].home_currency);
 }
 
 async function postDemoDeals(
   pool: pg.Pool,
   actor: LedgerActor,
   customerIds: Map<string, string>,
+  home: string,
 ) {
   const quotes = new QuoteService(pool);
   let posted = 0;
@@ -486,7 +508,7 @@ async function postDemoDeals(
       to: deal.to,
       inputAmount: deal.inputAmount,
       feeCad: deal.feeCad,
-      direction: dealDirection(deal.from, deal.to),
+      direction: dealDirection(deal.from, deal.to, home),
     });
     await quotes.post(actor, quote.quoteId, deal.key, deal.purpose, deal.sourceOfFunds);
     posted += 1;
@@ -528,6 +550,7 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const teller = demoActor("teller");
   const admin = demoActor("administrator");
   await ensureLedgerPrincipal(pool, admin);
+  const home = await ensureDemoJurisdiction(pool);
   await ensureOpeningBalances(pool, admin);
   await ensureLedgerPrincipal(pool, teller);
 
@@ -538,7 +561,7 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const tillOpen = session.session?.status === "open";
 
   const customerIds = await ensureDemoCustomers(pool, teller);
-  const { posted, reused } = await postDemoDeals(pool, teller, customerIds);
+  const { posted, reused } = await postDemoDeals(pool, teller, customerIds, home);
 
   const listed = await new LedgerProvisioningService(pool).listTransactions(teller, 50);
   return {

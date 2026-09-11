@@ -62,8 +62,7 @@ async function resetDemoBook() {
        ledger_till_balances,
        ledger_rates,
        ledger_customers,
-       ledger_principals,
-       rate_boards
+       ledger_principals
      CASCADE`,
   );
   await seed(handle.db);
@@ -247,6 +246,23 @@ postgres("York FX demo desk seeder", () => {
       [OTHER.tenantId],
     );
     expect(foreignTx.rows).toEqual([{ transaction_id: foreign.transactionId, input_amount: "80.00" }]);
+  });
+
+  it("still posts when a prior suite left the demo entity on another home currency", async () => {
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='GBP', jurisdiction_pack_id='pack-gb-v1'
+        WHERE id=$1 AND tenant_id=$2`,
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.status).toBe("populated");
+    expect(first.posted).toBe(6);
+    const home = await pool.query(
+      "SELECT home_currency, jurisdiction_pack_id FROM legal_entities WHERE id=$1 AND tenant_id=$2",
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
+    expect(home.rows[0]).toEqual({ home_currency: "CAD", jurisdiction_pack_id: "pack-ca-v1" });
   });
 
   it("skips when York FX is no longer the demo site", async () => {
