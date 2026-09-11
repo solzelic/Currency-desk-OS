@@ -7,10 +7,12 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import {
   DEMO_STAFF_ID,
+  demoDealsForHome,
   demoStaffRowId,
   ensureDemoStaff,
   isDemoDeskTenant,
   parseDemoStaffBootstrap,
+  quoteDirectionForPair,
   shouldPopulateDemoDesk,
 } from "../src/demo-desk.js";
 import { DEMO, seed } from "../src/seed.js";
@@ -58,6 +60,36 @@ describe("isDemoDeskTenant / shouldPopulateDemoDesk", () => {
     expect(isDemoDeskTenant({ id: DEMO.tenantId, siteSlug: null })).toBe(false);
     expect(isDemoDeskTenant({ id: DEMO.tenantId, siteSlug: "other" })).toBe(false);
     expect(isDemoDeskTenant({ id: "tnt-customer", siteSlug: "yorkfx" })).toBe(false);
+  });
+
+  it("derives quote direction from home the same way QuoteService does", () => {
+    const home = "CAD";
+    expect(quoteDirectionForPair("CAD", "USD", home)).toBe("customer_buy_foreign");
+    expect(quoteDirectionForPair("USD", "CAD", home)).toBe("customer_sell_foreign");
+    expect(quoteDirectionForPair("CAD", "EUR", home)).toBe("customer_buy_foreign");
+    expect(quoteDirectionForPair("EUR", "CAD", home)).toBe("customer_sell_foreign");
+    expect(quoteDirectionForPair("USD", "EUR", home)).toBe("customer_cross");
+    expect(quoteDirectionForPair("GBP", "USD", home)).toBe("customer_cross");
+    expect(quoteDirectionForPair("USD", "CAD", "USD")).toBe("customer_buy_foreign");
+    expect(demoDealsForHome("CAD").map((d) => `${d.from}→${d.to}`)).toEqual([
+      "USD→CAD",
+      "CAD→USD",
+      "CAD→EUR",
+      "CAD→USD",
+      "EUR→CAD",
+      "CAD→EUR",
+    ]);
+    expect(demoDealsForHome("GBP").map((d) => `${d.from}→${d.to}`)).toEqual([
+      "USD→GBP",
+      "GBP→USD",
+      "GBP→EUR",
+      "GBP→USD",
+      "EUR→GBP",
+      "GBP→EUR",
+    ]);
+    for (const deal of demoDealsForHome("GBP")) {
+      expect(quoteDirectionForPair(deal.from, deal.to, "GBP")).not.toBe("customer_cross");
+    }
   });
 
   it("treats DEMO_POPULATE=1 or true as opt-in", () => {

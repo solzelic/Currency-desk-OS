@@ -32,6 +32,7 @@ import type { Db } from "./db/index.js";
 import { schema } from "./db/index.js";
 import { LedgerProvisioningService } from "./ledger/provisioning.js";
 import { ensureLedgerPrincipal } from "./ledger/principal.js";
+import { resolvePack, type JurisdictionPack } from "./ledger/jurisdiction.js";
 import { LedgerError, type LedgerActor } from "./ledger/service.js";
 import { TillControlService } from "./ledger/till-control.js";
 import { QuoteService, boardMaxAgeSeconds } from "./quotes/service.js";
@@ -71,8 +72,8 @@ type DemoCustomerSpec = {
 type DemoDealSpec = {
   key: string;
   customerSlug: string;
-  from: "CAD" | "USD" | "EUR";
-  to: "CAD" | "USD" | "EUR";
+  from: string;
+  to: string;
   inputAmount: string;
   feeCad: string;
   purpose: string;
@@ -126,68 +127,93 @@ const DEMO_CUSTOMERS: readonly DemoCustomerSpec[] = [
   },
 ];
 
-const DEMO_DEALS: readonly DemoDealSpec[] = [
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:1`,
-    customerSlug: "lina-farah",
-    from: "USD",
-    to: "CAD",
-    inputAmount: "350.00",
-    feeCad: "3.00",
-    purpose: "Travel",
-    sourceOfFunds: "Savings",
-  },
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:2`,
-    customerSlug: "omar-haddad",
-    from: "CAD",
-    to: "USD",
-    inputAmount: "400.00",
-    feeCad: "4.00",
-    purpose: "Family support",
-    sourceOfFunds: "Employment income",
-  },
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:3`,
-    customerSlug: "priya-nair",
-    from: "CAD",
-    to: "EUR",
-    inputAmount: "275.00",
-    feeCad: "3.50",
-    purpose: "Holiday",
-    sourceOfFunds: "Employment income",
-  },
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:4`,
-    customerSlug: "lina-farah",
-    from: "CAD",
-    to: "USD",
-    inputAmount: "150.00",
-    feeCad: "2.00",
-    purpose: "Personal travel",
-    sourceOfFunds: "Savings",
-  },
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:5`,
-    customerSlug: "james-okonkwo",
-    from: "EUR",
-    to: "CAD",
-    inputAmount: "200.00",
-    feeCad: "3.00",
-    purpose: "Living expenses",
-    sourceOfFunds: "Employment income",
-  },
-  {
-    key: `${DEMO_IDEMPOTENCY_PREFIX}tx:6`,
-    customerSlug: "omar-haddad",
-    from: "CAD",
-    to: "EUR",
-    inputAmount: "180.00",
-    feeCad: "2.50",
-    purpose: "Travel",
-    sourceOfFunds: "Employment income",
-  },
-];
+/** Same shape rule QuoteService.createOnce enforces. Do not special-case CAD. */
+export function quoteDirectionForPair(from: string, to: string, home: string): QuoteDirection {
+  if (from === home) return "customer_buy_foreign";
+  if (to === home) return "customer_sell_foreign";
+  return "customer_cross";
+}
+
+/** The six already-saved deals: home↔two foreign currencies. Foreign
+    legs are USD/EUR when those are not home, otherwise the next of
+    USD/EUR/GBP, so a leftover US or UK pack still has a pair. */
+export function demoDealsForHome(home: string): DemoDealSpec[] {
+  const foreign = ["USD", "EUR", "GBP"].filter((code) => code !== home);
+  const a = foreign[0] ?? "USD";
+  const b = foreign[1] ?? "EUR";
+  return [
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:1`,
+      customerSlug: "lina-farah",
+      from: a,
+      to: home,
+      inputAmount: "350.00",
+      feeCad: "3.00",
+      purpose: "Travel",
+      sourceOfFunds: "Savings",
+    },
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:2`,
+      customerSlug: "omar-haddad",
+      from: home,
+      to: a,
+      inputAmount: "400.00",
+      feeCad: "4.00",
+      purpose: "Family support",
+      sourceOfFunds: "Employment income",
+    },
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:3`,
+      customerSlug: "priya-nair",
+      from: home,
+      to: b,
+      inputAmount: "275.00",
+      feeCad: "3.50",
+      purpose: "Holiday",
+      sourceOfFunds: "Employment income",
+    },
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:4`,
+      customerSlug: "lina-farah",
+      from: home,
+      to: a,
+      inputAmount: "150.00",
+      feeCad: "2.00",
+      purpose: "Personal travel",
+      sourceOfFunds: "Savings",
+    },
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:5`,
+      customerSlug: "james-okonkwo",
+      from: b,
+      to: home,
+      inputAmount: "200.00",
+      feeCad: "3.00",
+      purpose: "Living expenses",
+      sourceOfFunds: "Employment income",
+    },
+    {
+      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:6`,
+      customerSlug: "omar-haddad",
+      from: home,
+      to: b,
+      inputAmount: "180.00",
+      feeCad: "2.50",
+      purpose: "Travel",
+      sourceOfFunds: "Employment income",
+    },
+  ];
+}
+
+/** What QuoteService will treat as home for this entity. Pack row wins. */
+export async function resolveDemoPack(pool: pg.Pool, legalEntityId = DEMO.legalEntityId): Promise<JurisdictionPack> {
+  const client = await pool.connect();
+  try {
+    return await resolvePack(client, legalEntityId);
+  } finally {
+    client.release();
+  }
+}
 
 const OPENING_BALANCES = {
   CAD: "25000.00",
@@ -357,13 +383,16 @@ async function ensureDemoRateBoard(db: Db, pool: pg.Pool) {
     };
     const rows = { ...row.board_rows };
     let changed = false;
-    if (!rows.USD?.show) {
-      rows.USD = { mid: 1.36407, show: true };
-      changed = true;
-    }
-    if (!rows.EUR?.show) {
-      rows.EUR = { mid: 1.47102, show: true };
-      changed = true;
+    const published: Record<string, { mid: number; show: boolean }> = {
+      USD: { mid: 1.36407, show: true },
+      EUR: { mid: 1.47102, show: true },
+      GBP: { mid: 1.7304, show: true },
+    };
+    for (const [code, row] of Object.entries(published)) {
+      if (!rows[code]?.show) {
+        rows[code] = row;
+        changed = true;
+      }
     }
     const publishedAt = new Date(row.published_at).getTime();
     const stale = !Number.isFinite(publishedAt) || Date.now() - publishedAt > maxAgeMs;
@@ -458,42 +487,17 @@ async function ensureDemoCustomers(pool: pg.Pool, actor: LedgerActor) {
   return bySlug;
 }
 
-function dealDirection(from: string, to: string, home: string): QuoteDirection {
-  if (from === home) return "customer_buy_foreign";
-  if (to === home) return "customer_sell_foreign";
-  return "customer_cross";
-}
-
-/** York FX is a CAD / FINTRAC shop. Earlier suites sometimes leave this
-    entity on another pack or home currency; quoting then refuses our
-    CAD↔foreign directions. Restore the seed contract, demo tenant only. */
-async function ensureDemoJurisdiction(pool: pg.Pool): Promise<string> {
-  const updated = await pool.query(
-    `UPDATE legal_entities
-        SET home_currency = 'CAD',
-            jurisdiction = 'FINTRAC',
-            jurisdiction_pack_id = 'pack-ca-v1',
-            jurisdiction_pack_version = 1
-      WHERE id = $1 AND tenant_id = $2
-      RETURNING home_currency`,
-    [DEMO.legalEntityId, DEMO.tenantId],
-  );
-  if (!updated.rowCount) {
-    throw new LedgerError("SCOPE_DENIED", "York FX legal entity is missing.");
-  }
-  return String(updated.rows[0].home_currency);
-}
-
 async function postDemoDeals(
   pool: pg.Pool,
   actor: LedgerActor,
   customerIds: Map<string, string>,
-  home: string,
 ) {
+  const pack = await resolveDemoPack(pool, actor.legalEntityId);
+  const home = pack.homeCurrency;
   const quotes = new QuoteService(pool);
   let posted = 0;
   let reused = 0;
-  for (const deal of DEMO_DEALS) {
+  for (const deal of demoDealsForHome(home)) {
     if (await alreadyPosted(pool, actor, deal.key)) {
       reused += 1;
       continue;
@@ -508,7 +512,7 @@ async function postDemoDeals(
       to: deal.to,
       inputAmount: deal.inputAmount,
       feeCad: deal.feeCad,
-      direction: dealDirection(deal.from, deal.to, home),
+      direction: quoteDirectionForPair(deal.from, deal.to, home),
     });
     await quotes.post(actor, quote.quoteId, deal.key, deal.purpose, deal.sourceOfFunds);
     posted += 1;
@@ -550,7 +554,6 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const teller = demoActor("teller");
   const admin = demoActor("administrator");
   await ensureLedgerPrincipal(pool, admin);
-  const home = await ensureDemoJurisdiction(pool);
   await ensureOpeningBalances(pool, admin);
   await ensureLedgerPrincipal(pool, teller);
 
@@ -561,7 +564,7 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const tillOpen = session.session?.status === "open";
 
   const customerIds = await ensureDemoCustomers(pool, teller);
-  const { posted, reused } = await postDemoDeals(pool, teller, customerIds, home);
+  const { posted, reused } = await postDemoDeals(pool, teller, customerIds);
 
   const listed = await new LedgerProvisioningService(pool).listTransactions(teller, 50);
   return {

@@ -4,7 +4,12 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
-import { populateDemoDesk } from "../src/demo-desk.js";
+import {
+  demoDealsForHome,
+  populateDemoDesk,
+  quoteDirectionForPair,
+  resolveDemoPack,
+} from "../src/demo-desk.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { eq } from "drizzle-orm";
 
@@ -66,6 +71,18 @@ async function resetDemoBook() {
      CASCADE`,
   );
   await seed(handle.db);
+  /* seed() is onConflictDoNothing — a prior suite can leave this entity
+     on another pack. QuoteService reads home from resolvePack (the pack
+     row), not from the seed insert. Restore the York FX seed contract
+     here the same way cheque-cashing / cross-currency do. */
+  await pool.query(
+    `UPDATE legal_entities
+        SET home_currency='CAD',
+            jurisdiction_pack_id='pack-ca-v1',
+            jurisdiction_pack_version=1
+      WHERE id=$1 AND tenant_id=$2`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
 }
 
 async function countFor(tenantId: string, table: string) {
@@ -149,6 +166,36 @@ postgres("York FX demo desk seeder", () => {
   });
   beforeEach(resetDemoBook);
 
+  it("resolvePack home after resetDemoBook matches the quote-door matrix", async () => {
+    const pack = await resolveDemoPack(pool);
+    expect(pack.homeCurrency).toBe("CAD");
+    /* Known-good pairs from quote.postgres.test.ts — direction is a
+       function of the currencies and the pack home, never a CAD literal
+       in the seeder. */
+    for (const valid of [
+      { from: "CAD", to: "USD", direction: "customer_buy_foreign" },
+      { from: "USD", to: "CAD", direction: "customer_sell_foreign" },
+      { from: "CAD", to: "EUR", direction: "customer_buy_foreign" },
+      { from: "EUR", to: "CAD", direction: "customer_sell_foreign" },
+      { from: "USD", to: "EUR", direction: "customer_cross" },
+      { from: "GBP", to: "USD", direction: "customer_cross" },
+    ] as const) {
+      expect(quoteDirectionForPair(valid.from, valid.to, pack.homeCurrency)).toBe(valid.direction);
+    }
+    const deals = demoDealsForHome(pack.homeCurrency);
+    expect(deals.map((d) => `${d.from}→${d.to}`)).toEqual([
+      "USD→CAD",
+      "CAD→USD",
+      "CAD→EUR",
+      "CAD→USD",
+      "EUR→CAD",
+      "CAD→EUR",
+    ]);
+    for (const deal of deals) {
+      expect(quoteDirectionForPair(deal.from, deal.to, pack.homeCurrency)).not.toBe("customer_cross");
+    }
+  });
+
   it("posts a lived-in book through the quote path and is a no-op the second time", async () => {
     const first = await populateDemoDesk(pool, handle.db);
     expect(first.status).toBe("populated");
@@ -165,15 +212,11 @@ postgres("York FX demo desk seeder", () => {
         ORDER BY posted_at, transaction_id`,
       [DEMO.tenantId, DEMO.legalEntityId, DEMO.workspaceId],
     );
+    const pack = await resolveDemoPack(pool);
     expect(deals.rowCount).toBe(6);
-    expect(deals.rows.map((row) => `${row.from_currency.trim()}→${row.to_currency.trim()}`)).toEqual([
-      "USD→CAD",
-      "CAD→USD",
-      "CAD→EUR",
-      "CAD→USD",
-      "EUR→CAD",
-      "CAD→EUR",
-    ]);
+    expect(deals.rows.map((row) => `${row.from_currency.trim()}→${row.to_currency.trim()}`)).toEqual(
+      demoDealsForHome(pack.homeCurrency).map((deal) => `${deal.from}→${deal.to}`),
+    );
 
     const journal = await pool.query(
       `SELECT t.transaction_id, sum(CASE WHEN e.side='debit' THEN e.amount_cad ELSE 0 END) AS debit,
@@ -248,21 +291,34 @@ postgres("York FX demo desk seeder", () => {
     expect(foreignTx.rows).toEqual([{ transaction_id: foreign.transactionId, input_amount: "80.00" }]);
   });
 
-  it("still posts when a prior suite left the demo entity on another home currency", async () => {
+  it("still posts when a prior suite left the demo entity on another pack", async () => {
     await pool.query(
       `UPDATE legal_entities
           SET home_currency='GBP', jurisdiction_pack_id='pack-gb-v1'
         WHERE id=$1 AND tenant_id=$2`,
       [DEMO.legalEntityId, DEMO.tenantId],
     );
+    const pack = await resolveDemoPack(pool);
+    expect(pack.homeCurrency).toBe("GBP");
+    expect(quoteDirectionForPair("USD", "GBP", pack.homeCurrency)).toBe("customer_sell_foreign");
+    expect(quoteDirectionForPair("GBP", "USD", pack.homeCurrency)).toBe("customer_buy_foreign");
+
     const first = await populateDemoDesk(pool, handle.db);
     expect(first.status).toBe("populated");
     expect(first.posted).toBe(6);
-    const home = await pool.query(
-      "SELECT home_currency, jurisdiction_pack_id FROM legal_entities WHERE id=$1 AND tenant_id=$2",
-      [DEMO.legalEntityId, DEMO.tenantId],
+
+    const deals = await pool.query(
+      `SELECT from_currency, to_currency
+         FROM ledger_transactions
+        WHERE tenant_id=$1
+        ORDER BY posted_at, transaction_id`,
+      [DEMO.tenantId],
     );
-    expect(home.rows[0]).toEqual({ home_currency: "CAD", jurisdiction_pack_id: "pack-ca-v1" });
+    expect(deals.rows.map((row) => `${row.from_currency.trim()}→${row.to_currency.trim()}`)).toEqual(
+      demoDealsForHome("GBP").map((deal) => `${deal.from}→${deal.to}`),
+    );
+    const after = await resolveDemoPack(pool);
+    expect(after.homeCurrency).toBe("GBP");
   });
 
   it("skips when York FX is no longer the demo site", async () => {
