@@ -37,8 +37,15 @@ export const tenants = pgTable("tenants", {
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
   suspended: boolean("suspended").notNull().default(false),
+  /* The account's public identifier: CD- and six characters. Issued when
+     the account is created on the public setup page. Null on desks that
+     were opened before that door existed. Not an input the browser may
+     choose. See migration 027. */
+  reference: text("reference"),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsVersion: text("terms_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [uniqueIndex("tenants_reference_idx").on(t.reference)]);
 
 /* Per-tenant OS working state — one JSON snapshot per desk. The buildless
    OS keeps its live state (rate board, ledger rows, clients, till counts,

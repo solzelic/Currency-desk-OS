@@ -27,7 +27,7 @@ say.
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
 | `design/emails/` | email design reference | ✅ |
 | `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
-| `design/onboarding/` | onboarding design bundle (build input, `currencydesk-onboarding.html`) | replaced by design exports |
+| `design/onboarding/` | onboarding sources: the public account page (`account-start.html`) and the design bundle (`currencydesk-onboarding.html`) | the account page is edited here; the bundle is replaced by design exports |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
 | `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. Customer HTML does not load unpkg, Babel, or React dev builds. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
@@ -41,6 +41,7 @@ say.
 | Source | Command | Output |
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
+| `design/onboarding/account-start.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding-start.html` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
 | `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
@@ -57,7 +58,8 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/signup` | Early Access application (`web/early-access.html`) |
 | `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
-| `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path) |
+| `/onboarding` | open an account: accept the terms, create the account, then the page shows the CurrencyDesk ID the desk issued (`web/onboarding-start.html`) |
+| `/onboarding/:code` | continuation for an application that already has a reference (`web/onboarding.html`; code read from the path) |
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |

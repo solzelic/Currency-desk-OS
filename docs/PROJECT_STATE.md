@@ -66,10 +66,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Production/build surfaces
 
 `marketing site` (`/`) · `OS` (`/app`, `/login`) · `admin` (`/admin`) ·
-`onboarding` (`/onboarding/:code`) · `customer storefront` (`/sites/yorkfx`)
+`onboarding` (`/onboarding` to open an account; `/onboarding/:code` to continue one that already has a reference) · `customer storefront` (`/sites/yorkfx`)
 · `server/API` (`/api/*`).
 
 ## Current active work
+
+- **Public account opening** — a new shop at `/onboarding` accepts the
+  Terms of Service (the legal page dated 26 July 2026), then creates
+  the account. The server issues the CurrencyDesk ID (`CD-` and six
+  characters) in that request and stores it on `tenants.reference`.
+  The page shows it. The ID is not an input, and a request that sends
+  one is refused. Shop-record upload is not on this path: no drop
+  zone, nothing is treated as read, nothing is marked verified.
+  `/onboarding/CD-XXXXXX` is still the wizard for an application that
+  already has a reference. Desk `/login` and platform MFA are unchanged.
 
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
@@ -165,7 +175,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-30**, operator file folder. Supporting papers (proof of address,
+**2026-09-30**, public account opening. `/onboarding` is terms, then
+the account, then the issued CurrencyDesk ID. The invite-ID gate is
+no longer the start. Shop-record upload is unfinished on purpose.
+Migration 027 stores the reference and the terms acceptance.
+
+Prior stamp **2026-09-30**, operator file folder. Supporting papers (proof of address,
 source of funds, corporate filings) are `supporting_file` rows on
 `desk_client_images`. The client record lists them without the bytes;
 opening one writes an audit row. A file does not change identification.

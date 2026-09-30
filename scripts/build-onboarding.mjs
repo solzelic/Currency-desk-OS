@@ -44,13 +44,24 @@
    loudly rather than shipping a page that has quietly stopped saving,
    stopped verifying, or stopped creating desks.
    ============================================================ */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "design/onboarding/currencydesk-onboarding.html");
 const OUT = path.join(ROOT, "web", "onboarding.html");
+/* The public start. Not a patch of the 17-screen wizard: a new shop
+   accepts the terms and creates an account here, and the wizard stays
+   the continuation for a reference that already exists. */
+const START_SRC = path.join(ROOT, "design/onboarding/account-start.html");
+const START_OUT = path.join(ROOT, "web", "onboarding-start.html");
+
+if (!existsSync(START_SRC)) {
+  throw new Error("onboarding: design/onboarding/account-start.html is missing — that is the page /onboarding serves");
+}
+copyFileSync(START_SRC, START_OUT);
+console.log("built web/onboarding-start.html from design/onboarding/account-start.html");
 
 /* The design's own storage key. Kept in one place here so that if a re-export
    renames it, the assert below is what tells us — not a customer whose

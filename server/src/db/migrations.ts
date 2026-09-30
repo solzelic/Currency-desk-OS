@@ -32,6 +32,7 @@ const migrations: readonly Migration[] = [
   ["024_storefront_holds_decimal", "src/db/migrations/024_storefront_holds_decimal.sql"],
   ["025_platform_mfa", "src/db/migrations/025_platform_mfa.sql"],
   ["026_client_supporting_files", "src/db/migrations/026_client_supporting_files.sql"],
+  ["027_account_reference_terms", "src/db/migrations/027_account_reference_terms.sql"],
 ] as const;
 
 export async function runMigrations(
