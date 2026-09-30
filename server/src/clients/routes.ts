@@ -98,6 +98,18 @@ const documentChanges = documentBody.partial().strict().refine(
 );
 
 const photographBody = z.object({ dataUrl: scanDataUrl }).strict();
+/* A paper filed for the customer — proof of address, source of funds,
+   a corporate filing. Not an identity document. The bytes are the same
+   data-URL shape the intake already produces; the label is what the
+   operator searches by. */
+const fileBody = z.object({
+  label: z.string().trim().min(1).max(200),
+  fileName: text(300),
+  dataUrl: scanDataUrl,
+}).strict();
+const fileLabelBody = z.object({
+  label: z.string().trim().min(1).max(200),
+}).strict();
 const aliasBody = z.object({ alias: z.string().trim().min(1).max(300) }).strict();
 const revealBody = z.object({ purpose: z.string().trim().max(200).optional() }).strict();
 const lookupQuery = z.object({ name: z.string().trim().min(1).max(300) });
@@ -180,6 +192,7 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CLIENT_NOT_FOUND" ||
               error.code === "CLIENT_DOCUMENT_NOT_FOUND" ||
+              error.code === "FILE_NOT_ON_FILE" ||
               error.code === "SCAN_NOT_ON_FILE" ||
               error.code === "PHOTOGRAPH_NOT_ON_FILE" ? 404
             : error.code === "SCAN_TOO_LARGE" ? 413
@@ -374,6 +387,56 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const { clientId } = req.params as { clientId: string };
       reply.header("cache-control", "no-store");
       return reply.send(await records.photograph(actor, clientId));
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The file folder. Listed on the customer record as labels only;
+     opening one is the call below, and it is the only way to the bytes. */
+  app.post("/api/clients/:clientId/files", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const body = fileBody.safeParse(req.body);
+      if (!body.success) return invalid(reply, body.error);
+      const { clientId } = req.params as { clientId: string };
+      return reply.code(201).send(await records.addSupportingFile(actor, clientId, body.data));
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.patch("/api/clients/:clientId/files/:fileId", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const body = fileLabelBody.safeParse(req.body);
+      if (!body.success) return invalid(reply, body.error);
+      const { clientId, fileId } = req.params as { clientId: string; fileId: string };
+      return reply.send(await records.updateSupportingFileLabel(actor, clientId, fileId, body.data.label));
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.delete("/api/clients/:clientId/files/:fileId", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const { clientId, fileId } = req.params as { clientId: string; fileId: string };
+      return reply.send(await records.removeSupportingFile(actor, clientId, fileId));
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/clients/:clientId/files/:fileId/reveal", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const { clientId, fileId } = req.params as { clientId: string; fileId: string };
+      return reply.send(await records.revealSupportingFile(actor, clientId, fileId));
     } catch (error) {
       return failure(reply, error);
     }

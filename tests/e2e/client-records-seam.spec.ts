@@ -21,6 +21,9 @@
    exactly how every defect in this project so far survived a fully green
    run. See docs/CASH_OWNERSHIP_INVARIANTS.md, "testing standard".
    ============================================================ */
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, ledger, rendered } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -510,4 +513,47 @@ test("the same document opens from a second till, and stays inside the business"
     return response.status;
   }, `/api/clients/${record.clientId}`);
   expect([401, 403]).toContain(anonymous);
+});
+
+test("the operator files a paper on the customer and can search the folder", async ({ page }) => {
+  await openDesk(page);
+  await openClients(page);
+  const name = `File Holder ${RUN}`;
+  await addContact(page, name);
+
+  const png = join(tmpdir(), `cdos-file-${RUN}.png`);
+  writeFileSync(
+    png,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  );
+  await page.getByLabel("Add a file to this customer").setInputFiles(png);
+  const label = `cdos-file-${RUN}`;
+  await expect(page.getByLabel("File label")).toHaveValue(label, { timeout: 20_000 });
+
+  const server = desk(page);
+  const found = named(await server.clients(), name);
+  expect(found, "the file did not reach the customer record").toHaveLength(1);
+  expect(found[0].verificationStatus).toBe("unverified");
+  expect(found[0].files).toHaveLength(1);
+  expect(found[0].files[0].label).toBe(label);
+  expect(JSON.stringify(found[0].files)).not.toMatch(/base64|iVBORw0KGgo/);
+
+  await page.getByLabel("Search files").fill("no-such-paper");
+  await expect(page.getByText("No files match that search.")).toBeVisible();
+  await page.getByLabel("Search files").fill(label);
+  await expect(page.getByRole("button", { name: `Open ${label}` })).toBeVisible();
+  await page.getByRole("button", { name: `Open ${label}` }).click();
+
+  await expect.poll(async () => {
+    const views = (await server.disclosures(found[0].clientId)).filter(
+      (e) => e.action === "client.file.view",
+    );
+    return views.length;
+  }).toBeGreaterThanOrEqual(1);
+
+  await expect(page.getByText("Where they are")).toBeVisible();
+  await expect(page.getByText("Not identified")).toBeVisible();
 });

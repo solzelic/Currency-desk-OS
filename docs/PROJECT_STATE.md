@@ -156,10 +156,23 @@ authenticated narrative dashboard.
 ## Next engineering priorities (ordered)
 
 1. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
+   The operator file folder is no longer the gap in that loop: opening a
+   client shows the papers filed for them, searchable, from the database,
+   and where they stand (`unverified` / `identified` / `expired` /
+   `verified`). The identification and large-cash lines stay the pack's.
+   The platform desk tile counts those customers and that standing from
+   `desk_clients`, not from the browser blob.
 
 ## Last reviewed
 
-**2026-09-30**, platform-operator MFA (issue #33): `/admin` sign-in requires
+**2026-09-30**, operator file folder. Supporting papers (proof of address,
+source of funds, corporate filings) are `supporting_file` rows on
+`desk_client_images`. The client record lists them without the bytes;
+opening one writes an audit row. A file does not change identification.
+The admin desk tile's client count and process standing come from
+`desk_clients`. Gallery photos are still browser-only.
+
+Prior stamp **2026-09-30**, platform-operator MFA (issue #33): `/admin` sign-in requires
 TOTP once the operator has enrolled. First sign-in enrolls (otpauth URI
 shown once; backup codes are scrypt hashes and single-use). The secret is
 AES-256-GCM, keyed only from `PLATFORM_MFA_KEY` (required in production;

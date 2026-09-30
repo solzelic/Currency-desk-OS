@@ -698,10 +698,37 @@
         };
       }),
       documents: documents,
-      /* Supporting documents, extra photographs and the beneficiary list
-         have NOT moved and are still the browser's. Carried through
-         untouched so this projection never deletes them. */
-      docs: local.docs || [],
+      /* Supporting files now live on the server, as labels only. The
+         bytes are fetched when somebody opens one. A local copy is kept
+         only when the server does not already hold that label and file
+         name — a desk mid-upgrade, or a data URL the migration could
+         not read. Where the server holds it, the browser copy is dropped,
+         because that copy is what was filling the saving ceiling.
+
+         The extra photo gallery has not moved. It is not a filed paper. */
+      docs: (function () {
+        var serverFiles = record.files || [];
+        var held = {};
+        var out = serverFiles.map(function (f) {
+          var key = String(f.label || "") + "\n" + String(f.fileName || "");
+          held[key] = true;
+          return {
+            fileId: f.fileId,
+            label: f.label || "",
+            fileName: f.fileName || "",
+            mime: f.contentType || "",
+            addedAt: (f.addedAt || "").slice(0, 10),
+            onServer: true,
+          };
+        });
+        (local.docs || []).forEach(function (d) {
+          if (!d || d.onServer) return;
+          var key = String(d.label || "") + "\n" + String(d.fileName || "");
+          if (held[key]) return;
+          out.push(d);
+        });
+        return out;
+      })(),
       gallery: local.gallery || [],
       ledgerCustomerId: local.ledgerCustomerId || null,
       ledgerExternalRef: local.ledgerExternalRef || null,
@@ -818,6 +845,28 @@
     },
     photograph: function (clientId) {
       return request("/api/clients/" + encodeURIComponent(clientId) + "/photograph");
+    },
+    /* The file folder. add/rename/remove return the customer record.
+       reveal is the only way to the bytes, and it writes who opened it. */
+    addFile: function (clientId, input) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files", {
+        method: "POST", body: JSON.stringify(input),
+      });
+    },
+    renameFile: function (clientId, fileId, label) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId), {
+        method: "PATCH", body: JSON.stringify({ label: label }),
+      });
+    },
+    removeFile: function (clientId, fileId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId), {
+        method: "DELETE",
+      });
+    },
+    revealFile: function (clientId, fileId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId) + "/reveal", {
+        method: "POST", body: "{}",
+      });
     },
     /* This person, as the till's own counter record — the `customerId`
        the posting path wants. The join between the desk's file and the

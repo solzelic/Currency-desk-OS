@@ -354,18 +354,20 @@ dashboard. That projection obeys two rules:
 - it drops a **scan** only where the server holds that scan. That is the
   byte weight that was breaking saving, and it is the one thing the
   projection is allowed to take away.
+- it drops a **supporting file** the same way, once the server holds that
+  label and file name. A copy the migration could not read stays in the
+  browser and the folder says so.
 
 ## What is still in the browser
 
 Named plainly, because "the customer record is on the server" should not
 be read as more than it is:
 
-- **Supporting documents** (`docs[]` — proof of address, source of funds,
-  corporate filings) and the **extra photo gallery** (`gallery[]`). They
-  are still in `cdos_clients_v1`, still counting against the saving
-  ceiling. They are the obvious next thing to move and they need nothing
-  new to do it — `desk_client_images` already has room for a third
-  `purpose`.
+- **The extra photo gallery** (`gallery[]`). Still in `cdos_clients_v1`.
+  A gallery picture is not a paper filed for the customer. Supporting
+  files — proof of address, source of funds, corporate filings — moved
+  to `desk_client_images` with purpose `supporting_file`. They are not
+  identity documents: saving one does not change `verification_status`.
 - **Beneficiaries** (`cdos_beneficiaries_v1`) — who a client sends money
   to. The other half of a remittance record, and browser-only.
 - **KYC provider checks** (`cdos_kyc_v1`) — the evidence behind
@@ -388,6 +390,8 @@ be read as more than it is:
 | show me the passport (audited) | `POST /api/clients/:clientId/documents/:documentId/reveal` |
 | who has looked at this customer's documents | `GET /api/clients/:clientId/disclosures` |
 | the photograph | `PUT|GET /api/clients/:clientId/photograph` |
+| papers filed for them (label only) | `POST|PATCH|DELETE /api/clients/:clientId/files[/:fileId]` |
+| open one of those papers (audited) | `POST /api/clients/:clientId/files/:fileId/reveal` |
 | this person, as the till's counter record | `POST /api/clients/:clientId/counter-record` |
 
 ## Testing
