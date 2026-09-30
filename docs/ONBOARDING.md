@@ -5,10 +5,35 @@ pipeline, the public API, verification, and provisioning. Everything below
 is verified against a running server, driven in Chromium, unless it says
 otherwise.
 
+## How a new shop starts
+
+The public page at `/onboarding` is the start. The order is fixed:
+
+1. The person accepts the terms of service (the legal page, version
+   dated 26 July 2026), then continues. The server refuses the account
+   if that acceptance is missing or for any other version.
+2. They sign up. Name, business, email, password. No invite code.
+3. The account is created in that request, and the page shows the
+   CurrencyDesk ID the desk just issued: `CD-` and six characters,
+   stored on `tenants.reference`. It is not a field on the form. A
+   request that tries to send one is rejected and creates nothing.
+
+Shop-record upload is not on this page. There is no drop zone. Nothing
+is marked read, and nothing is marked verified. That step stays closed
+until a file can be encrypted, written onto the real application, and
+confirmed by the owner before it is saved.
+
+`/onboarding/CD-XXXXXX` is a different door: the designed wizard, for an
+application that **already has** a reference. It is how an invited
+application is finished. It is not how a new shop starts, and the bare
+page no longer asks anyone to type an ID before they can continue.
+
 ## The shape of it
 
-One record per **application**, not per desk — because all of this happens
-before a desk exists. Table `onboarding`, keyed on `enquiry_id`.
+One record per **application**, not per desk — the wizard below still
+happens against an application that already exists. Table `onboarding`,
+keyed on `enquiry_id`. The account opened at `/onboarding` is a desk
+first; it does not wait on that record.
 
 Two surfaces work the same record:
 
@@ -30,6 +55,10 @@ a translation layer goes stale every time a screen changes.
 
 ## The chain
 
+This is the continuation for an application that already has a reference.
+A new shop does not walk it. They start at `/onboarding`, described above,
+and the desk exists before this wizard does.
+
 ```
 apply on the site  →  operator presses "invited" in the panel
                    →  email carries the code AND a link containing it
@@ -45,8 +74,11 @@ administrator, and the application closed itself to `accepted`.
 
 ## The build
 
-`CurrencyDesk Onboarding.html` (repo root, the design's standalone dc
-bundle) → `scripts/build-onboarding.mjs` → `web/onboarding.html`.
+`design/onboarding/account-start.html` → `web/onboarding-start.html`
+(the public start, copied as-is).
+
+`design/onboarding/currencydesk-onboarding.html` → `scripts/build-onboarding.mjs`
+→ `web/onboarding.html` (the wizard).
 
 Wired into `npm run build`, into the Render `buildCommand`, and CI fails if
 the committed page is stale (`git diff --exit-code web/onboarding.html`).
@@ -162,8 +194,9 @@ its `tenantId` is still null and its status still `invited`.
 
 ## Known and deliberate
 
-- A bare `/onboarding` with no code works on `localStorage` alone and never
-  syncs. Without a code the server cannot know whose setup it is.
+- A bare `/onboarding` is the account-opening page (terms, then the
+  account, then the issued ID). It does not use the wizard's
+  `localStorage`. The wizard runs only at `/onboarding/:code`.
 - Synchronous XHR blocks first paint by roughly the round-trip.
 - Once the desk exists, `PUT /state` answers 409. The page keeps autosaving
   for a moment afterwards; the server refusing to overwrite a finished

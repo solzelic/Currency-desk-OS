@@ -21,6 +21,7 @@ import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
 import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
+import { registerOnboardingAccountRoutes } from "./routes/onboarding-account.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
@@ -48,8 +49,10 @@ const SITE_PAGES = {
   // leads to. Applying is not the same as opening a desk: an accepted
   // operator creates theirs from the OS's own wizard, at /app?signup=1.
   "/signup": "web/early-access.html",
-  // where the invite email lands: type your code, walk the setup
-  "/onboarding": "web/onboarding.html",
+  // A new shop starts here. Terms, then the account, then the ID the
+  // desk issued. The invite-code wizard is a different file, served
+  // only at /onboarding/:code for an application that already has one.
+  "/onboarding": "web/onboarding-start.html",
 } as const satisfies Record<string, string>;
 
 /* Phones and small tablets get the phone design. Deliberately coarse: the
@@ -180,6 +183,7 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
      gone. Setting a desk up is the customer's job on the link we email
      them, and a parallel implementation of the same flow was two things
      to keep in step for the sake of a screen nobody wanted to work. */
+  registerOnboardingAccountRoutes(app, db);
   registerPublicOnboardingRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
@@ -271,11 +275,13 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
           app.get(route, (_req, reply) => reply.sendFile(file));
         }
       }
-      /* The invite link reads like an address rather than a query string:
-         currencydeskos.com/onboarding/CD-A3V5ZE. The page pulls the code off
-         the path itself, so every one of these serves the same file. */
-      if (existsSync(path.join(staticDir, SITE_PAGES["/onboarding"]))) {
-        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
+      /* An application that already has a reference still opens the
+         designed wizard at /onboarding/CD-A3V5ZE. That address is a
+         continuation. A new shop does not start there, and the page at
+         /onboarding does not ask them for an ID. */
+      const onboardingWizard = "web/onboarding.html";
+      if (existsSync(path.join(staticDir, onboardingWizard))) {
+        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(onboardingWizard));
       }
     }
     // the platform control panel — served whether prod ships the vite build or

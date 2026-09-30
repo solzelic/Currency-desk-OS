@@ -40,6 +40,13 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+-- The public setup page issues these when the account is created.
+-- PGlite applies DDL and not the SQL migrations, so the columns have to
+-- exist here as well as in migration 027. Null on every older desk.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reference text;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_version text;
+CREATE UNIQUE INDEX IF NOT EXISTS tenants_reference_idx ON tenants (reference);
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
