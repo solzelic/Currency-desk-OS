@@ -1,6 +1,7 @@
 /* Platform Admin Console — cross-tenant back office, gated to
    PLATFORM_ADMIN_EMAILS. A normal owner/teller can't reach it. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
@@ -82,5 +83,37 @@ describe("platform admin console", () => {
 
     const audit = await app.inject({ method: "GET", url: "/api/admin/audit?limit=50", headers: { cookie: admin } });
     expect(audit.json().events.some((e: any) => e.action === "tenant.created" && e.tenantName)).toBe(true);
+  });
+
+  it("counts customers and where they are from the customer file", async () => {
+    const admin = await login("j.masri");
+    const before = await app.inject({ method: "GET", url: "/api/admin/tenants/tnt-aspenadmin", headers: { cookie: admin } });
+    const entityId = before.json().legalEntities[0].id as string;
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients
+        (client_id, tenant_id, legal_entity_id, display_name, verification_status, created_by, updated_by)
+      VALUES
+        ('cli_admin_identified', 'tnt-aspenadmin', ${entityId}, 'Identified Customer', 'identified', 'test', 'test'),
+        ('cli_admin_open', 'tnt-aspenadmin', ${entityId}, 'Unidentified Customer', 'unverified', 'test', 'test')`);
+    await handle.db.execute(sql`
+      INSERT INTO desk_client_images
+        (image_id, client_id, tenant_id, legal_entity_id, purpose, content_type, byte_size, sha256, bytes, label, file_name, captured_by)
+      VALUES
+        ('img_admin_file', 'cli_admin_identified', 'tnt-aspenadmin', ${entityId}, 'supporting_file',
+         'image/png', 3, 'abc', decode('AAAA', 'base64'), 'Proof of address', 'hydro.png', 'test')`);
+    const detail = await app.inject({ method: "GET", url: "/api/admin/tenants/tnt-aspenadmin", headers: { cookie: admin } });
+    expect(detail.statusCode).toBe(200);
+    const book = detail.json().book;
+    expect(book.clients).toBe(2);
+    expect(book.clientProcess).toMatchObject({
+      total: 2,
+      identified: 1,
+      unverified: 1,
+      files: 1,
+    });
+    /* Names stay on the desk. The support tile is a count and a standing,
+       not a second copy of the customer file. */
+    expect(JSON.stringify(book)).not.toContain("Identified Customer");
+    expect(JSON.stringify(book)).not.toContain("hydro.png");
   });
 });

@@ -1476,6 +1476,10 @@ function DeskPage({ id, onChanged }) {
   const btn = (bg, col, extra) => Object.assign({ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--line)', background: bg, color: col, fontSize: 13, fontWeight: 600, cursor: 'pointer' }, extra || {});
   const td = { padding: '11px 14px', borderTop: '1px solid var(--line2)', fontSize: 13, verticalAlign: 'middle' };
   const th = { textAlign: 'left', fontSize: 10, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 14px 9px', fontWeight: 600, fontFamily: MONO };
+  const standing = book.clientProcess;
+  const processLine = standing && standing.total
+    ? [standing.identified && (standing.identified + ' identified'), standing.unverified && (standing.unverified + ' not identified'), standing.expired && (standing.expired + ' ID expired'), standing.verified && (standing.verified + ' verified'), standing.files && (standing.files + (standing.files === 1 ? ' file' : ' files'))].filter(Boolean).join(' · ')
+    : (book.clients ? 'from the desk\u2019s saved copy' : null);
 
   return (<div>
     <PageHead back="All desks" backTo="#/desks" title={t.name}
@@ -1492,7 +1496,7 @@ function DeskPage({ id, onChanged }) {
       { k: 'Transactions', v: book.transactions || 0 },
       { k: 'Volume in', v: '$' + K(book.volumeCad), sub: 'CAD, all time' },
       { k: 'Fees earned', v: '$' + K(book.feesCad), c: 'var(--green)' },
-      { k: 'Clients', v: book.clients || 0 },
+      { k: 'Clients', v: book.clients || 0, sub: processLine },
       { k: 'People', v: d.staff.length },
       { k: 'Last trade', v: book.lastTradeAt ? String(book.lastTradeAt).slice(0, 10) : '—', c: book.lastTradeAt ? 'var(--text)' : 'var(--faint)' },
     ]} />

@@ -38,6 +38,18 @@
    — and treating a face the desk took itself as equivalent to a
    government document would make the ID trail noise. See
    docs/CLIENT_RECORDS.md.
+
+   ---- SUPPORTING FILES ----
+
+   Proof of address, source of funds and corporate filings are a third
+   purpose on `desk_client_images` (`supporting_file`). They are not
+   identity documents: adding one does not call `refreshVerification`,
+   because a utility bill must not change whether this customer is
+   identified. The list and the record carry the label and the file
+   name, never the bytes. Opening one is `revealSupportingFile`, and
+   that writes the audit row in the same transaction that returns the
+   bytes — the same rule as a passport, because these files are how an
+   examiner reconstructs a customer and they used to live in one browser.
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -249,6 +261,7 @@ export class ClientRecordService {
       );
       const scanCount = new Map(scans.rows.map((row) => [row.document_id, row.n as number]));
       const photo = new Map(photographs.rows.map((row) => [row.client_id, row]));
+      const files = await this.supportingFiles(client, ids);
       /* Same-name records, surfaced rather than merged. This is the
          entire defect being fixed, said out loud on every read: two
          David Chens come back as two clients, each told about the
@@ -269,6 +282,7 @@ export class ClientRecordService {
             (byName.get(`${row.legal_entity_id}\u0000${row.name_key}`) ?? []).filter(
               (id) => id !== row.client_id,
             ),
+            files.get(row.client_id as string) ?? [],
           ),
         ),
       };
@@ -314,6 +328,7 @@ export class ClientRecordService {
         WHERE tenant_id=$1 AND legal_entity_id=$2 AND name_key=$3 AND client_id<>$4`,
       [...entityScope(actor), row.name_key, clientId],
     );
+    const files = await this.supportingFiles(client, [clientId]);
     return clientJson(
       row,
       documents.rows,
@@ -321,7 +336,26 @@ export class ClientRecordService {
       new Map(scans.rows.map((s) => [s.document_id, s.n as number])),
       photograph.rows[0] ?? null,
       sameName.rows.map((s) => s.client_id as string),
+      files.get(clientId) ?? [],
     );
+  }
+
+  /* Labels and names only. The bytes stay in the table until somebody
+     opens the file, which is what makes the audit row mean something. */
+  private async supportingFiles(client: pg.PoolClient, clientIds: string[]) {
+    const found = await client.query(
+      `SELECT image_id, client_id, label, file_name, content_type, byte_size, captured_at
+         FROM desk_client_images
+        WHERE client_id = ANY($1::text[]) AND purpose='supporting_file'
+        ORDER BY captured_at, image_id`,
+      [clientIds],
+    );
+    const byClient = new Map<string, Record<string, unknown>[]>();
+    for (const row of found.rows) {
+      const id = row.client_id as string;
+      byClient.set(id, (byClient.get(id) ?? []).concat(row));
+    }
+    return byClient;
   }
 
   /**
@@ -796,6 +830,150 @@ export class ClientRecordService {
     });
   }
 
+  /* ---- the file folder ------------------------------------------------
+
+     Proof of address, source of funds, a corporate filing. The operator
+     opens the customer and these are the papers filed for them.
+
+     Deliberately not an identity document. `refreshVerification` is not
+     called from any of these: a hydro bill does not identify somebody
+     under the pack, and it must not be recorded as if it did. The
+     identification line (and the large-cash report) stay on the
+     jurisdiction pack and on the identity documents already on the file.
+     ------------------------------------------------------------ */
+
+  async addSupportingFile(
+    actor: LedgerActor,
+    clientId: string,
+    input: { label: string; fileName?: string | null; dataUrl: string },
+  ) {
+    return this.inTransaction(actor, "customer:write", async (client) => {
+      const owned = await client.query(
+        "SELECT verification_status FROM desk_clients WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3",
+        [clientId, ...entityScope(actor)],
+      );
+      if (!owned.rowCount) throw notFound();
+      const before = owned.rows[0]!.verification_status as string;
+      const label = input.label.trim();
+      const fileName = blank(input.fileName);
+      await this.storeImage(
+        client,
+        actor,
+        clientId,
+        "supporting_file",
+        input.dataUrl,
+        null,
+        label,
+        fileName,
+      );
+      await this.audit(
+        client,
+        actor,
+        "client.file.add",
+        clientId,
+        `${label}${fileName ? ` · ${fileName}` : ""}`,
+      );
+      const after = await client.query(
+        "SELECT verification_status FROM desk_clients WHERE client_id=$1",
+        [clientId],
+      );
+      /* A file on the folder is not an identity document. If this ever
+         moves, the till will start treating a utility bill as ID. */
+      if (after.rows[0]!.verification_status !== before) {
+        throw new LedgerError(
+          "FILE_CHANGED_IDENTIFICATION",
+          "Saving a supporting file changed whether this customer is identified. Nothing was saved.",
+        );
+      }
+      return this.readOne(client, actor, clientId);
+    });
+  }
+
+  async updateSupportingFileLabel(
+    actor: LedgerActor,
+    clientId: string,
+    fileId: string,
+    label: string,
+  ) {
+    return this.inTransaction(actor, "customer:write", async (client) => {
+      const next = label.trim();
+      const updated = await client.query(
+        `UPDATE desk_client_images i
+            SET label=$5
+           FROM desk_clients c
+          WHERE i.image_id=$1 AND i.client_id=$2 AND i.purpose='supporting_file'
+            AND c.client_id=i.client_id
+            AND c.tenant_id=$3 AND c.legal_entity_id=$4
+        RETURNING i.label`,
+        [fileId, clientId, ...entityScope(actor), next],
+      );
+      if (!updated.rowCount) throw fileNotFound();
+      await this.audit(client, actor, "client.file.rename", clientId, next, fileId);
+      return this.readOne(client, actor, clientId);
+    });
+  }
+
+  async removeSupportingFile(actor: LedgerActor, clientId: string, fileId: string) {
+    return this.inTransaction(actor, "customer:write", async (client) => {
+      const removed = await client.query(
+        `DELETE FROM desk_client_images i
+          USING desk_clients c
+          WHERE i.image_id=$1 AND i.client_id=$2 AND i.purpose='supporting_file'
+            AND c.client_id=i.client_id
+            AND c.tenant_id=$3 AND c.legal_entity_id=$4
+        RETURNING i.label`,
+        [fileId, clientId, ...entityScope(actor)],
+      );
+      if (!removed.rowCount) throw fileNotFound();
+      await this.audit(
+        client,
+        actor,
+        "client.file.remove",
+        clientId,
+        `${removed.rows[0]!.label ?? "file"} · removed`,
+        fileId,
+      );
+      return this.readOne(client, actor, clientId);
+    });
+  }
+
+  /**
+   * The file itself, and the record that somebody asked for it.
+   *
+   * Same transaction as a passport reveal. The list response does not
+   * carry the bytes, so this is the only path to them.
+   */
+  async revealSupportingFile(actor: LedgerActor, clientId: string, fileId: string) {
+    return this.inTransaction(actor, "customer:view", async (client) => {
+      const found = await client.query(
+        `SELECT i.label, i.file_name, i.content_type, i.bytes, c.display_name
+           FROM desk_client_images i
+           JOIN desk_clients c ON c.client_id = i.client_id
+          WHERE i.image_id=$1 AND i.client_id=$2 AND i.purpose='supporting_file'
+            AND c.tenant_id=$3 AND c.legal_entity_id=$4`,
+        [fileId, clientId, ...entityScope(actor)],
+      );
+      if (!found.rowCount) throw fileNotFound();
+      const row = found.rows[0]!;
+      const label = (row.label as string | null) ?? "file";
+      await this.audit(
+        client,
+        actor,
+        "client.file.view",
+        clientId,
+        `${row.display_name} · ${label}`,
+        fileId,
+      );
+      return {
+        fileId,
+        label: row.label ?? null,
+        fileName: row.file_name ?? null,
+        contentType: row.content_type as string,
+        dataUrl: asDataUrl(row.content_type as string, row.bytes as Buffer),
+      };
+    });
+  }
+
   /* ---- the photograph ------------------------------------------------
      Its own thing, not another entry in the ID list. Different purpose
      (recognising a regular at the counter), different sensitivity, and a
@@ -1009,18 +1187,19 @@ export class ClientRecordService {
     client: pg.PoolClient,
     actor: LedgerActor,
     clientId: string,
-    purpose: "identity_document" | "client_photograph",
+    purpose: "identity_document" | "client_photograph" | "supporting_file",
     dataUrl: string,
     documentId: string | null,
     label: string | null,
+    fileName: string | null = null,
   ) {
     const { contentType, bytes } = decodeDataUrl(dataUrl);
     const imageId = `img_${randomUUID()}`;
     await client.query(
       `INSERT INTO desk_client_images
         (image_id,client_id,tenant_id,legal_entity_id,purpose,document_id,
-         content_type,byte_size,sha256,bytes,label,captured_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+         content_type,byte_size,sha256,bytes,label,file_name,captured_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         imageId,
         clientId,
@@ -1032,6 +1211,7 @@ export class ClientRecordService {
         createHash("sha256").update(bytes).digest("hex"),
         bytes,
         label,
+        fileName,
         actor.userId,
       ],
     );
@@ -1079,6 +1259,12 @@ const documentNotFound = () =>
     "That identity document is not on this customer's file.",
   );
 
+const fileNotFound = () =>
+  new LedgerError(
+    "FILE_NOT_ON_FILE",
+    "That file is not in this customer's folder.",
+  );
+
 /* An empty string is a field somebody cleared, and a cleared field is
    NULL. Storing "" would make "no date of birth recorded" and "date of
    birth recorded as nothing" two different states nobody can tell
@@ -1099,6 +1285,7 @@ function clientJson(
   scanCount: Map<unknown, number>,
   photograph: Record<string, unknown> | null,
   sameNameClientIds: string[],
+  files: Record<string, unknown>[] = [],
 ) {
   return {
     clientId: row.client_id,
@@ -1156,6 +1343,16 @@ function clientJson(
           capturedAt: new Date(photograph.captured_at as string | Date).toISOString(),
         }
       : null,
+    /* Metadata only. Opening a file is a separate request, and that
+       request is what writes who looked. */
+    files: files.map((file) => ({
+      fileId: file.image_id,
+      label: file.label ?? null,
+      fileName: file.file_name ?? null,
+      contentType: file.content_type,
+      byteSize: file.byte_size,
+      addedAt: new Date(file.captured_at as string | Date).toISOString(),
+    })),
     createdBy: row.created_by ?? null,
     updatedBy: row.updated_by ?? null,
     createdAt: new Date(row.created_at as string | Date).toISOString(),

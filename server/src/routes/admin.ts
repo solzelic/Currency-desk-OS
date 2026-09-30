@@ -10,7 +10,7 @@
      GET /api/admin/me               → am I a platform admin? (drives the UI)
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
@@ -134,15 +134,76 @@ function tempPassword(): string {
    actually doing", and never let a malformed blob take the page down — a
    support screen that 500s when a customer rings is worse than one with a
    gap in it. */
+type ClientProcess = {
+  total: number;
+  unverified: number;
+  identified: number;
+  verified: number;
+  expired: number;
+  files: number;
+};
 type DeskSnapshot = {
   recentTransactions: Record<string, unknown>[];
-  book: { transactions: number; volumeCad: number; feesCad: number; clients: number; lastTradeAt: string | null };
+  book: {
+    transactions: number;
+    volumeCad: number;
+    feesCad: number;
+    clients: number;
+    lastTradeAt: string | null;
+    /* How those customers stand, from desk_clients. Null when that
+       table could not be read — the tile then falls back to the blob
+       count rather than taking the support page down. */
+    clientProcess: ClientProcess | null;
+  };
   deskSettings: { name: string | null; branches: number; currencies: number } | null;
 };
+
+/* `cdos_clients_v1` is an object keyed by name, not a list. Reading
+   `.length` off it is always undefined, so the Clients tile sat at 0
+   for every real desk. Count the keys when that is all we have. The
+   record itself is `desk_clients`, and that count wins when it has
+   rows — the blob is a cache and goes stale the moment another till
+   files a customer. */
+function savedClientCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value).length;
+  return 0;
+}
+
+async function clientProcessOf(db: Db, tenantId: string): Promise<ClientProcess | null> {
+  try {
+    const counted = await db.execute(sql`
+      SELECT verification_status AS status, count(*)::int AS n
+        FROM desk_clients
+       WHERE tenant_id = ${tenantId}
+       GROUP BY verification_status`);
+    const files = await db.execute(sql`
+      SELECT count(*)::int AS n
+        FROM desk_client_images i
+        JOIN desk_clients c ON c.client_id = i.client_id
+       WHERE c.tenant_id = ${tenantId}
+         AND i.purpose = 'supporting_file'`);
+    const rows = (counted.rows ?? []) as { status: string; n: number | string }[];
+    const tally = { unverified: 0, identified: 0, verified: 0, expired: 0 };
+    let total = 0;
+    for (const row of rows) {
+      const n = Number(row.n) || 0;
+      total += n;
+      if (row.status === "unverified" || row.status === "identified" || row.status === "verified" || row.status === "expired") {
+        tally[row.status] = n;
+      }
+    }
+    const fileRows = (files.rows ?? []) as { n: number | string }[];
+    return { total, ...tally, files: Number(fileRows[0]?.n) || 0 };
+  } catch (error) {
+    console.warn("desk client process unread:", (error as Error)?.message);
+    return null;
+  }
+}
 async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
   const empty: DeskSnapshot = {
     recentTransactions: [],
-    book: { transactions: 0, volumeCad: 0, feesCad: 0, clients: 0, lastTradeAt: null },
+    book: { transactions: 0, volumeCad: 0, feesCad: 0, clients: 0, lastTradeAt: null, clientProcess: null },
     deskSettings: null,
   };
   const row = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, tenantId)).limit(1))[0];
@@ -174,6 +235,8 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
   const settings = read<Record<string, unknown>>("cdos_settings", {});
   const branches = read<unknown[]>("cdos_branches_v1", []);
   const board = read<Record<string, unknown>>("yorkfx_rates_v1", {});
+  const process = await clientProcessOf(db, tenantId);
+  const fromBlob = savedClientCount(read<unknown>("cdos_clients_v1", null));
 
   return {
     recentTransactions,
@@ -181,8 +244,9 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
       transactions: rows.length,
       volumeCad: Math.round(rows.reduce((s, r) => s + num(r.inAmt), 0)),
       feesCad: Math.round(rows.reduce((s, r) => s + num(r.fee), 0)),
-      clients: read<unknown[]>("cdos_clients_v1", []).length,
+      clients: process && process.total > 0 ? process.total : fromBlob,
       lastTradeAt: byNewest[0] ? when(byNewest[0]) || null : null,
+      clientProcess: process,
     },
     deskSettings: {
       name: typeof settings.deskName === "string" ? settings.deskName : null,

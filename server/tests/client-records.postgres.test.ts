@@ -231,6 +231,66 @@ postgres("the desk's customer file, on the server", () => {
     expect(renames[0].reason).toContain("Jonh Smith → John Smith");
   });
 
+  it("files a supporting paper on the customer without treating it as identification", async () => {
+    const made = await records.create(TILL_1, { legalName: "Priya Raman" });
+    expect(made.verificationStatus).toBe("unverified");
+    expect(made.files).toEqual([]);
+
+    const saved = await records.addSupportingFile(TILL_1, made.clientId as string, {
+      label: "Proof of address",
+      fileName: "hydro.png",
+      dataUrl: SCAN,
+    });
+    /* A utility bill is not an identity document. The pack's
+       identification line is what the till enforces, and this folder
+       must not move the customer along it. */
+    expect(saved.verificationStatus).toBe("unverified");
+    expect(saved.files).toHaveLength(1);
+    expect(saved.files[0]).toMatchObject({
+      label: "Proof of address",
+      fileName: "hydro.png",
+      contentType: "image/png",
+    });
+    expect(JSON.stringify(saved)).not.toContain("iVBORw0KGgo");
+
+    /* The other till sees the folder. It does not see the bytes. */
+    const listed = (await records.list(TILL_2)).clients.find((c) => c.clientId === made.clientId);
+    expect(listed?.files).toHaveLength(1);
+    expect(JSON.stringify(listed?.files)).not.toContain("base64");
+
+    const opened = await records.revealSupportingFile(
+      TILL_2,
+      made.clientId as string,
+      saved.files[0]!.fileId as string,
+    );
+    expect(opened.dataUrl).toBe(SCAN);
+    const views = await auditRows("client.file.view");
+    expect(views).toHaveLength(1);
+    expect(views[0]!.reason).toContain("Proof of address");
+    expect(views[0]!.reason).not.toContain("iVBORw0KGgo");
+
+    const renamed = await records.updateSupportingFileLabel(
+      TILL_1,
+      made.clientId as string,
+      saved.files[0]!.fileId as string,
+      "Hydro bill",
+    );
+    expect(renamed.files[0]!.label).toBe("Hydro bill");
+    expect(renamed.verificationStatus).toBe("unverified");
+
+    await expect(
+      records.revealSupportingFile(STRANGER, made.clientId as string, saved.files[0]!.fileId as string),
+    ).rejects.toMatchObject({ code: "FILE_NOT_ON_FILE" });
+
+    const gone = await records.removeSupportingFile(
+      TILL_1,
+      made.clientId as string,
+      saved.files[0]!.fileId as string,
+    );
+    expect(gone.files).toEqual([]);
+    expect((await auditRows("client.file.remove"))).toHaveLength(1);
+  });
+
   it("two customers with the same name are two records, and each is told about the other", async () => {
     const first = await records.create(TILL_1, {
       legalName: "David Chen",
@@ -619,6 +679,12 @@ postgres("migration 019, over a desk's existing blob", () => {
       contactName: "Rita Alvarez",
       contactTitle: "Director",
       risk: "high",
+      /* A paper filed for them, plus one the migration must refuse.
+         Neither is an identity document. */
+      docs: [
+        { label: "Proof of address", fileName: "hydro.png", mime: "image/png", file: SCAN, addedAt: "2026-06-01" },
+        { label: "Broken", fileName: "nope.txt", file: "not-a-data-url" },
+      ],
     },
     /* An expired ID. It arrives as 'expired', not as 'verified' — the
        migration may not upgrade somebody's KYC standing on the way
@@ -660,6 +726,14 @@ postgres("migration 019, over a desk's existing blob", () => {
     await pool.query("DELETE FROM schema_migrations WHERE migration_id='019_client_records'");
     await runMigrations(pool, [
       ["019_client_records", "src/db/migrations/019_client_records.sql"],
+    ]);
+    /* 026 already ran once, at boot, before this blob existed. Run it
+       again over the planted folder, the way a desk that already had
+       papers in the browser meets this migration. 025 is platform MFA
+       and stays applied. */
+    await pool.query("DELETE FROM schema_migrations WHERE migration_id='026_client_supporting_files'");
+    await runMigrations(pool, [
+      ["026_client_supporting_files", "src/db/migrations/026_client_supporting_files.sql"],
     ]);
   });
 
@@ -788,6 +862,32 @@ postgres("migration 019, over a desk's existing blob", () => {
       marta.client_id,
     ]);
     expect(none.rows[0]!.n).toBe(0);
+  });
+
+  it("lifts a supporting file out of the browser without calling it identification", async () => {
+    const acme = await clientNamed("Acme Imports Ltd.");
+    expect(acme.verification_status).toBe("unverified");
+    const files = await pool.query(
+      `SELECT label, file_name, purpose, document_id IS NULL AS no_document, content_type
+         FROM desk_client_images
+        WHERE client_id=$1 AND purpose='supporting_file'
+        ORDER BY label`,
+      [acme.client_id],
+    );
+    expect(files.rows).toEqual([
+      {
+        label: "Proof of address",
+        file_name: "hydro.png",
+        purpose: "supporting_file",
+        no_document: true,
+        content_type: "image/png",
+      },
+    ]);
+    const ids = await pool.query(
+      "SELECT count(*)::int AS n FROM desk_client_identity_documents WHERE client_id=$1",
+      [acme.client_id],
+    );
+    expect(ids.rows[0]!.n).toBe(0);
   });
 
   it("joins the ledger's own rows to the person rather than making a third concept", async () => {

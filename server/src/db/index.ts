@@ -584,18 +584,20 @@ CREATE TABLE IF NOT EXISTS desk_client_images (
   client_id text NOT NULL REFERENCES desk_clients(client_id) ON DELETE CASCADE,
   tenant_id text NOT NULL,
   legal_entity_id text NOT NULL,
-  purpose text NOT NULL CHECK (purpose IN ('identity_document','client_photograph')),
+  purpose text NOT NULL CHECK (purpose IN ('identity_document','client_photograph','supporting_file')),
   document_id text REFERENCES desk_client_identity_documents(document_id) ON DELETE CASCADE,
   content_type text NOT NULL,
   byte_size integer NOT NULL CHECK (byte_size > 0),
   sha256 text NOT NULL,
   bytes bytea NOT NULL,
   label text,
+  file_name text,
   captured_by text,
   captured_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT desk_client_images_purpose_shape CHECK (
     (purpose = 'identity_document' AND document_id IS NOT NULL) OR
-    (purpose = 'client_photograph' AND document_id IS NULL)
+    (purpose = 'client_photograph' AND document_id IS NULL) OR
+    (purpose = 'supporting_file' AND document_id IS NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS desk_client_images_client_idx ON desk_client_images (client_id, purpose, captured_at DESC);

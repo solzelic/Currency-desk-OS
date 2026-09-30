@@ -233,11 +233,11 @@
      retention answers, and `field()` below is where a screen that has
      not caught up gets sent to the right one.
 
-     What is deliberately NOT sent to the server: supporting documents,
-     the extra photo gallery and the ledger ids the till caches. Those
-     have not moved in this change and are still the browser's, so they
-     fall through to the local setter untouched rather than being
-     silently dropped. */
+     What is deliberately still local: the extra photo gallery and the
+     ledger ids the till caches. Supporting files (proof of address,
+     source of funds, corporate filings) go to the server. A gallery
+     picture is not a paper filed for the customer, and it is not this
+     change. */
   const stampToday = () => new Date().toISOString().slice(0, 10);
   function clientWriter({ name, rec, setClients, reload, onError }) {
     const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
@@ -280,10 +280,72 @@
         return v ? send(() => api.setPhotograph(clientId, v)) : localSet(k, null);
       }
       const changes = api.fromDeskFields({ [k]: v });
-      /* Nothing this record has a column for — supporting documents, the
-         gallery, cached ledger ids. Still the browser's. */
+      /* Nothing this record has a column for — the gallery, cached
+         ledger ids. Still the browser's. A supporting file is not a
+         field of the person; it has its own calls below. */
       if (!Object.keys(changes).length) return localSet(k, v);
       return send(() => api.update(clientId, changes));
+    }
+
+    function addFile(file) {
+      const stamp = stampToday();
+      return Promise.resolve(window.CDOS.intakeAttachment(file)).then(taken => {
+        if (!taken.ok) { onError(taken.why); return; }
+        const label = (file.name || 'Document').replace(/\.[^.]+$/, '') || 'Document';
+        if (!onServer) {
+          setClients(c => {
+            const cur = c[name] || {};
+            const docs = (cur.docs || []).concat({
+              label, fileName: file.name || '', mime: file.type || '', file: taken.dataUrl, addedAt: stamp,
+            });
+            return { ...c, [name]: { ...cur, docs, updatedAt: stamp } };
+          });
+          return;
+        }
+        return send(() => api.addFile(clientId, { label, fileName: file.name || '', dataUrl: taken.dataUrl }));
+      });
+    }
+
+    /* A paper that is still only in this browser — the migration could
+       not read it, or it was added before this screen talked to the
+       server. Posting it is what puts it on the customer's file. */
+    function keepFile(doc) {
+      if (!onServer || !doc || !doc.file) return;
+      return send(() => api.addFile(clientId, {
+        label: doc.label || 'Document',
+        fileName: doc.fileName || '',
+        dataUrl: doc.file,
+      }));
+    }
+
+    function renameFile(doc, label) {
+      const next = String(label || '').trim();
+      if (!next || next === (doc.label || '')) return;
+      if (!onServer || !doc.fileId) {
+        const i = (rec.docs || []).indexOf(doc);
+        if (i < 0) return;
+        return setClients(c => {
+          const cur = c[name] || {};
+          const docs = (cur.docs || []).slice();
+          docs[i] = { ...(docs[i] || {}), label: next };
+          return { ...c, [name]: { ...cur, docs, updatedAt: stampToday() } };
+        });
+      }
+      return send(() => api.renameFile(clientId, doc.fileId, next));
+    }
+
+    function removeFile(doc) {
+      if (!onServer || !doc.fileId) {
+        const i = (rec.docs || []).indexOf(doc);
+        if (i < 0) return;
+        return setClients(c => {
+          const cur = c[name] || {};
+          const docs = (cur.docs || []).slice();
+          docs.splice(i, 1);
+          return { ...c, [name]: { ...cur, docs, updatedAt: stampToday() } };
+        });
+      }
+      return send(() => api.removeFile(clientId, doc.fileId));
     }
 
     function scan(dataUrl) {
@@ -325,7 +387,7 @@
       return send(() => api.removeDocument(clientId, document.documentId));
     }
 
-    return { onServer, clientId, field, scan, addId, setId, rmId, localSet };
+    return { onServer, clientId, field, scan, addId, setId, rmId, addFile, keepFile, renameFile, removeFile, localSet };
   }
 
   /* Photo affordance — a badge that opens a small menu: take a photo (live
@@ -967,6 +1029,98 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     </div>);
   }
 
+  /* Where this customer is, in the words the till already uses.
+     The number is the desk's own line — the pack, then what the desk
+     set — never a figure typed into this screen. A utility bill in the
+     folder below does not move this. */
+  function ProcessStanding({ rec, settings }) {
+    const status = rec && rec.verificationStatus;
+    if (!status) return null;
+    const idLine = window.CDOS.identificationLimit(settings);
+    const reportLine = window.CDOS.reportingLimit(settings);
+    const standing = {
+      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
+      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
+      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
+      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.'],
+    }[status];
+    if (!standing) return null;
+    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const rule = stated
+      ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+      : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
+    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
+    return (<div className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Pill text={standing[0]} c={tone} bg={soft} />
+        <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+      </div>
+      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+    </div>);
+  }
+
+  /* The papers filed for this customer. Search is over the label and
+     the file name the desk gave them — not the bytes. A file the server
+     holds is opened by asking for it, which is recorded. A file that is
+     still only in this browser says so. */
+  function FileFolder({ rec, canEdit, writer, log, name }) {
+    const [q, setQ] = useState('');
+    const [err, setErr] = useState('');
+    const docs = rec.docs || [];
+    const needle = q.trim().toLowerCase();
+    const shown = needle
+      ? docs.filter(d => `${d.label || ''} ${d.fileName || ''}`.toLowerCase().includes(needle))
+      : docs;
+    const open = async (doc) => {
+      setErr('');
+      if (doc.file && !doc.onServer) {
+        window.open(doc.file, '_blank', 'noopener');
+        log && log('File opened', `${name} · ${doc.label || 'file'} · this browser`);
+        return;
+      }
+      const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
+      if (!api || !doc.fileId) { setErr('That file is not on the customer record.'); return; }
+      try {
+        const body = await api.revealFile(rec.clientId, doc.fileId);
+        const opened = window.open(body.dataUrl, '_blank', 'noopener');
+        if (!opened) setErr('The browser blocked the new tab. Allow pop-ups for this desk to open the file.');
+        log && log('File opened', `${name} · ${doc.label || 'file'}`);
+      } catch (e) {
+        setErr((e && e.message) || 'CurrencyDesk could not open that file.');
+      }
+    };
+    return (<div className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div>
+          <div className="text-sm font-semibold" style={{ color: CD.ink }}>Files{docs.length ? <span style={{ color: CD.mute, fontWeight: 500 }}> · {docs.length}</span> : null}</div>
+          <div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 420 }}>Proof of address, source of funds, corporate filings — kept with this customer, not in this browser.</div>
+        </div>
+        {canEdit && <label className="flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none" style={{ color: CD.ink }}><Ic n="upload" s={13} c={CD.ink} /> Add file<input type="file" aria-label="Add a file to this customer" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) writer.addFile(f); }} /></label>}
+      </div>
+      {docs.length > 0 && <div className="flex items-center gap-2 px-2.5 py-1.5 mb-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
+        <Ic n="search" s={13} c={CD.mute} />
+        <input value={q} onChange={e => setQ(e.target.value)} aria-label="Search files" placeholder="Search files" className="w-full outline-none text-[12.5px] bg-transparent" style={{ color: CD.ink }} />
+      </div>}
+      {err && <div className="text-[12px] mb-2" style={{ color: CD.flag }}>{err}</div>}
+      {shown.length ? <div className="space-y-2">{shown.map((d, i) => (
+        <div key={d.fileId || i} className="flex items-center gap-3 p-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+          <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 7, background: CD.lineSoft }}><Ic n="filetext" s={15} c={CD.mute} /></span>
+          <div className="flex-1 min-w-0">
+            {canEdit
+              ? <input defaultValue={d.label || ''} key={(d.fileId || i) + ':' + (d.label || '')} aria-label="File label" onBlur={e => writer.renameFile(d, e.target.value)} className="w-full text-[13px] font-medium px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)', color: CD.ink }} placeholder="What this file is" />
+              : <div className="text-[13px] font-medium truncate" style={{ color: CD.ink }}>{d.label || d.fileName || 'File'}</div>}
+            <div className="text-[10.5px] mt-1 truncate" style={{ color: CD.faint }}>{d.fileName || 'file'}{d.addedAt ? ` · added ${d.addedAt}` : ''}{!d.onServer && d.file ? ' · only on this browser' : ''}</div>
+          </div>
+          <button type="button" onClick={() => open(d)} className="text-[12px] font-medium flex-none" style={{ color: CD.ink }} aria-label={`Open ${d.label || d.fileName || 'file'}`}>Open</button>
+          {!d.onServer && d.file && canEdit && <button type="button" onClick={() => writer.keepFile(d)} className="text-[12px] font-medium flex-none" style={{ color: CD.ink }}>Keep with customer</button>}
+          {canEdit && <button type="button" onClick={() => writer.removeFile(d)} className="grid place-items-center flex-none" aria-label={`Remove ${d.label || 'file'}`} style={{ width: 26, height: 26, borderRadius: 7, color: CD.flag }}><Ic n="x" s={14} c={CD.flag} /></button>}
+        </div>
+      ))}</div> : <div className="text-[12px] py-3 text-center" style={{ color: CD.faint }}>{docs.length ? 'No files match that search.' : 'No files on this customer yet.'}</div>}
+    </div>);
+  }
+
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
@@ -990,7 +1144,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       log && log('Photo added', name);
     };
     const rmGallery = (i) => setClients(c => { const cur = c[name] || {}; const g = (cur.gallery || []).slice(); g.splice(i, 1); return { ...c, [name]: { ...cur, gallery: g } }; });
-    const stamp = () => new Date().toISOString().slice(0, 10);
     /* Additional identity documents. Each is a ROW of its own now — the
        old shape had a "primary" ID as loose fields and the rest in an
        array, so the first one was structurally different from every
@@ -1004,16 +1157,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       setIntakeErr(''); setId(i, 'photo', taken.dataUrl);
       log && log('ID document added', name);
     };
-    // supporting documents (proof of address, source of funds, corporate filings, …)
-    const addDoc = async (file) => {
-      const taken = await window.CDOS.intakeAttachment(file);
-      if (!taken.ok) { setIntakeErr(taken.why); return; }
-      setIntakeErr('');
-      setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).concat({ label: (file.name || 'Document').replace(/\.[^.]+$/, ''), fileName: file.name || '', mime: file.type || '', file: taken.dataUrl, addedAt: stamp() }); return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
-      log && log('Document added', name);
-    };
-    const setDoc = (i, k, v) => setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).slice(); docs[i] = { ...(docs[i] || {}), [k]: v }; return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
-    const rmDoc = (i) => setClients(c => { const cur = c[name] || {}; const docs = (cur.docs || []).slice(); docs.splice(i, 1); return { ...c, [name]: { ...cur, docs, updatedAt: stamp() } }; });
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
@@ -1076,6 +1219,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
           <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} />
+          {/* Then the two things an operator came in for: where this
+              customer is in identification, and the papers filed for them. */}
+          <ProcessStanding rec={rec} settings={settings} />
+          <FileFolder rec={rec} canEdit={canEdit} writer={writer} log={log} name={name} />
           {/* risk rating — always visible on the profile, set inline without entering edit mode */}
           <div className="flex items-center justify-between gap-3 flex-wrap mb-5 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
             <div className="flex items-center gap-2.5"><span className="grid place-items-center flex-none" style={{ width: 32, height: 32, borderRadius: 9, background: CD.lineSoft }}><Ic n="shield" s={16} c={CD.mute} /></span><div><div className="flex items-center gap-1.5"><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Risk rating</div><window.CDOS.InfoTip title="Risk rating" body="Your own read on how much scrutiny a client needs. Setting it puts your judgment on the file — proof to examiners you run an active, risk-based program. It sharpens what the desk recommends, but never replaces the checks themselves: you still verify ID and file the reports required by law. You do your part — CurrencyDesk does the rest." lines={[{k:'Low · Normal',v:'standard handling'},{k:'Medium',v:'a closer watch'},{k:'High',v:'auto-deepens the ID check'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Your own compliance rating for this profile.</div></div></div>
@@ -1117,17 +1264,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="flex items-center justify-between mb-3 gap-3"><div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Documents</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 340 }}>Proof of address, source of funds, corporate filings — anything supporting the file.</div></div>{canEdit && <label className="flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none" style={{ color: CD.ink }}><Ic n="upload" s={13} c={CD.ink} /> Add<input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { if (e.target.files[0]) { addDoc(e.target.files[0]); e.target.value = ''; } }} /></label>}</div>
-                {(rec.docs || []).length ? <div className="space-y-2">{(rec.docs || []).map((d, i) => { const img = /^image\//.test(d.mime || '') || /^data:image\//.test(d.file || ''); return (
-                  <div key={i} className="flex items-center gap-3 p-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-                    <a href={d.file} target="_blank" rel="noreferrer" className="grid place-items-center flex-none" style={{ width: 40, height: 40, borderRadius: 8, background: CD.lineSoft, overflow: 'hidden' }}>{img ? <img src={d.file} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Ic n="filetext" s={16} c={CD.mute} />}</a>
-                    <div className="flex-1 min-w-0"><input value={d.label || ''} onChange={e => setDoc(i, 'label', e.target.value)} disabled={!canEdit} className="w-full text-[13px] font-medium px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)', color: CD.ink }} placeholder="Document label" /><div className="text-[10.5px] mt-1 truncate" style={{ color: CD.faint }}>{d.fileName || 'file'} · added {d.addedAt}</div></div>
-                    <a href={d.file} target="_blank" rel="noreferrer" className="text-[12px] font-medium flex-none" style={{ color: CD.ink }}>View</a>
-                    {canEdit && <button type="button" onClick={() => rmDoc(i)} className="grid place-items-center flex-none" style={{ width: 26, height: 26, borderRadius: 7, color: CD.flag }}><Ic n="x" s={14} c={CD.flag} /></button>}
-                  </div>); })}</div>
-                  : <div className="text-[12px] py-3 text-center" style={{ color: CD.faint }}>No documents attached yet.</div>}
-              </div>
-              <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="text-sm font-semibold mb-2" style={{ color: CD.ink }}>Notes</div>
                 <textarea value={rec.notes || ''} onChange={e => set('notes', e.target.value)} rows={3} className="w-full text-sm px-3 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, resize: 'vertical' }} placeholder="Source of funds, relationship, anything the next teller should know…" />
               </div>
@@ -1166,16 +1302,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
-              </div>
-              <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Documents{(rec.docs || []).length > 0 && <span style={{ color: CD.mute }}> · {(rec.docs || []).length}</span>}</div>
-                {(rec.docs || []).length ? <div className="space-y-2">{(rec.docs || []).map((d, i) => { const img = /^image\//.test(d.mime || '') || /^data:image\//.test(d.file || ''); return (
-                  <a key={i} href={d.file} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 9 }}>
-                    <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 7, background: CD.lineSoft, overflow: 'hidden' }}>{img ? <img src={d.file} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Ic n="filetext" s={15} c={CD.mute} />}</span>
-                    <div className="flex-1 min-w-0"><div className="text-[12.5px] font-medium truncate" style={{ color: CD.ink }}>{d.label || d.fileName || 'Document'}</div><div className="text-[10.5px]" style={{ color: CD.faint }}>added {d.addedAt}</div></div>
-                    <Ic n="chev" s={14} c={CD.faint} />
-                  </a>); })}</div>
-                  : <div className="text-[12px] py-3 text-center" style={{ color: CD.faint }}>No documents attached.</div>}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Photos</div>
@@ -1285,7 +1411,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'verified' && !isVerified(s)) return false;
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''}`.toLowerCase();
+      const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
 
@@ -1334,7 +1461,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return (<div className="flex flex-col" style={{ height: '100%' }}>
       {/* toolbar */}
       <div className="flex items-center gap-2 px-4 py-3 flex-none" style={{ borderBottom: `1px solid ${CD.line}`, background: CD.panel }}>
-        <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, email, phone, ID number…" className="w-full outline-none text-sm bg-transparent" />{q && <button onClick={() => setQ('')} style={{ color: CD.mute }}><Ic n="x" s={13} /></button>}</div>
+        <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, phone, or a file on their record…" className="w-full outline-none text-sm bg-transparent" />{q && <button onClick={() => setQ('')} style={{ color: CD.mute }}><Ic n="x" s={13} /></button>}</div>
         {canEdit && <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="userplus" s={15} c="var(--cd-on-ink)" /> New contact</button>}
       </div>
       {/* A save that failed, or a shared record that quietly is not one.
@@ -1383,6 +1510,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                       <span className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 5, fontFamily: 'Space Mono, monospace', letterSpacing: '.03em' }}><Ic n={corp ? 'building' : 'users'} s={10} c={CD.mute} />{corp ? 'BUSINESS' : 'INDIVIDUAL'}</span>
                       <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: rt.bg, color: rt.c, borderRadius: 5 }}>{risk}</span>
                     </div>
+                    {(c.rec.docs || []).length > 0 && <div className="text-[11px] mt-1" style={{ color: CD.mute }}>{(c.rec.docs || []).length} {(c.rec.docs || []).length === 1 ? 'file' : 'files'} on file</div>}
                   </div>
                   <Pill text={st} c={col} bg={bg} />
                 </div>
