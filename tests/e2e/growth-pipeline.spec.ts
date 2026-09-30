@@ -78,3 +78,115 @@ test("the application page separates stated answers from sourced research", asyn
   await expect(inferred.getByTestId("research-brief")).toContainText("possible FINTRAC name match");
   await expect(inferred.getByRole("button", { name: "Call now with AI" })).toBeDisabled();
 });
+
+test("the shop record shows the call confirmation and the transcript", async ({ page }) => {
+  await signInAsOperator(page);
+  const stamp = Date.now();
+  const email = `call-view-${stamp}@example.test`;
+  const id = await page.evaluate(async ({ email }) => {
+    const applied = await fetch("/api/enquiries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "early_access",
+        email,
+        name: "Call View Lead",
+        details: { shopName: "Call View FX", phone: "+14165550177", jurisdiction: "CA" },
+        contactContext: { timezone: "America/Toronto" },
+      }),
+    });
+    if (!applied.ok) throw new Error(`application failed: ${applied.status}`);
+    const listed = await fetch("/api/admin/enquiries?kind=early_access").then((response) => response.json());
+    return listed.enquiries.find((row: { email: string }) => row.email === email).id as string;
+  }, { email });
+
+  await page.route(`**/api/admin/enquiries/${id}/growth`, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      research: [],
+      calls: [{
+        id: "call-empty-transcript",
+        status: "placed",
+        requestedAt: "2026-08-06T15:00:00.000Z",
+        placedAt: "2026-08-06T15:00:01.000Z",
+        phone: "+14165550177",
+        transcript: null,
+        summary: null,
+        outcome: null,
+        durationSeconds: null,
+        recordingUrl: "https://example.test/should-not-render",
+      }],
+      consent: { consentedAt: "2026-08-06T14:00:00.000Z", formVersion: "early-access-2026-08-06", timezone: "America/Toronto", timezoneSource: "browser" },
+      doNotContact: false,
+      jobs: [], timeline: [], assignment: null,
+      assignableMembers: [],
+      workflow: { stage: "call_in_progress", label: "Call in progress", nextAction: "Wait for the transcript and outcome", tone: "amber", step: 5 },
+      capabilities: { researchConfigured: false, callingConfigured: true, callingEnabled: true, canManageCalling: false, canWrite: true },
+    }),
+  }));
+
+  await page.goto(`/admin#/applications/${id}`);
+  await page.reload();
+  await rendered(page, "Shop call");
+  const shopCall = page.getByTestId("shop-call");
+  await expect(shopCall).toContainText("Call confirmed");
+  await expect(shopCall.getByTestId("call-transcript-empty")).toHaveText("No transcript yet.");
+  await expect(shopCall.getByRole("link", { name: /Recording/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Call now with AI" })).toBeVisible();
+});
+
+test("a finished shop call shows its transcript on the same record", async ({ page }) => {
+  await signInAsOperator(page);
+  const stamp = Date.now();
+  const email = `call-transcript-${stamp}@example.test`;
+  const id = await page.evaluate(async ({ email }) => {
+    const applied = await fetch("/api/enquiries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "early_access",
+        email,
+        name: "Transcript Lead",
+        details: { shopName: "Transcript FX", phone: "+14165550188", jurisdiction: "CA" },
+        contactContext: { timezone: "America/Toronto" },
+      }),
+    });
+    if (!applied.ok) throw new Error(`application failed: ${applied.status}`);
+    const listed = await fetch("/api/admin/enquiries?kind=early_access").then((response) => response.json());
+    return listed.enquiries.find((row: { email: string }) => row.email === email).id as string;
+  }, { email });
+
+  await page.route(`**/api/admin/enquiries/${id}/growth`, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      research: [],
+      calls: [{
+        id: "call-with-transcript",
+        status: "completed",
+        requestedAt: "2026-08-06T15:00:00.000Z",
+        placedAt: "2026-08-06T15:00:01.000Z",
+        phone: "+14165550188",
+        transcript: [{ role: "agent", message: "I'm SAM, an AI assistant." }, { role: "user", message: "Yes, now is fine." }],
+        summary: "They want a walkthrough.",
+        outcome: "true",
+        durationSeconds: 42,
+      }],
+      consent: null,
+      doNotContact: false,
+      jobs: [], timeline: [], assignment: null,
+      assignableMembers: [],
+      workflow: { stage: "call_completed", label: "Call complete", nextAction: "Record a decision or follow-up", tone: "green", step: 5 },
+      capabilities: { researchConfigured: false, callingConfigured: true, callingEnabled: true, canManageCalling: false, canWrite: true },
+    }),
+  }));
+
+  await page.goto(`/admin#/applications/${id}`);
+  await page.reload();
+  await rendered(page, "Shop call");
+  const shopCall = page.getByTestId("shop-call");
+  await expect(shopCall).toContainText("Call confirmed");
+  await expect(shopCall.getByTestId("call-transcript")).toContainText("Yes, now is fine.");
+  await expect(shopCall.getByRole("link", { name: /Recording/ })).toHaveCount(0);
+});

@@ -141,7 +141,11 @@ build different things.
   works.
 - Everything the design collected lands on `tenants.setup` in the design's
   own words — compliance officer, spreads, opening float, publish mode,
-  addons, term, billing address, ID threshold.
+  addons, term, billing address, ID threshold. The mobile is on that blob.
+  The number an admin call dials is `enquiries.details.phone`. When a
+  Canada desk opens and that field is empty, the setup mobile is copied
+  across in the same shape the early-access form already stores. It does
+  not dial.
 - Plans: the design sells `rates`/`full`/`ai`; the server gates on
   `basic`/`pro`/`premium`. `rates`→`basic`, and both `full` and `ai`→
   `premium` with `setup.aiBundle` recording the difference. **Assumption:**

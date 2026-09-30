@@ -2,7 +2,12 @@
 
 The growth pipeline begins with an early-access application and adds two
 separate, append-only histories beside it: sourced research and outbound call
-attempts. It never rewrites what the applicant submitted.
+attempts. Research never rewrites what the applicant submitted. The one
+exception is an empty phone: when a Canada desk signs up or launches, the
+mobile they typed on the desk setup is copied onto `enquiries.details.phone`
+if that field is blank, so the existing admin call can dial it. A number
+already on the enquiry is left as they submitted it. Signup and launch do
+not place the call.
 
 ## Provenance boundary
 
@@ -13,7 +18,11 @@ attempts. It never rewrites what the applicant submitted.
   snapshots. Every stored fact has a non-empty source URL, method and
   confidence. A re-run adds a new snapshot.
 - `enquiry_calls` holds one row per attempted call. The unique trigger key is
-  reserved before the provider request so a retry cannot dial twice.
+  reserved before the provider request so a retry cannot dial twice. The
+  transcript is stored and shown on that shop in the applications panel.
+  A recording URL from the provider is not stored and is not shown. Until
+  a transcript arrives, the panel shows the call confirmation and an empty
+  transcript.
 
 ## Research setup
 
@@ -72,8 +81,10 @@ Every call is refused unless all of these are true:
 1. The database kill switch is enabled from the admin panel.
 2. ElevenLabs is fully configured.
 3. A consent-evidence row exists.
-4. The applicant supplied a valid E.164 number. Research-discovered numbers
-   are never dialled.
+4. `enquiries.details.phone` is a dialable E.164 number the applicant
+   supplied — on the early-access form, or from the Canada desk-setup
+   mobile when that field was empty. Research-discovered numbers are
+   never dialled.
 5. The application is not marked do-not-contact.
 6. A completed research run exists.
 7. The current time is between 09:00 and 21:00 in the lead's sourced or

@@ -615,7 +615,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       .update(schema.onboarding)
       .set({ tenantId: made.tenantId, updatedAt: new Date() })
       .where(eq(schema.onboarding.enquiryId, a.id));
-    await closeApplication(db, { enquiryId: a.id, email: spec.email }, made.tenantId, "onboarding");
+    await closeApplication(db, { enquiryId: a.id, email: spec.email }, made.tenantId, "onboarding", spec.setup);
 
     /* Signed in on the spot. Making somebody who has just finished fifteen
        screens go and find a login page is a strange last impression. */

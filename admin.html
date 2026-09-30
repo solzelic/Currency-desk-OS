@@ -528,6 +528,15 @@ const tel = (e) => {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(raw);
   return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : raw;
 };
+/* The applications list is where each shop's process is read. The
+   transcript itself is on the open record; this line exists so a call
+   that has already gone out is visible without opening every card. */
+const callLine = (growth) => {
+  const call = growth && growth.call;
+  if (!call) return null;
+  const confirmed = call.status === 'requested' || call.status === 'placing' || call.status === 'placed' || call.status === 'completed';
+  return (confirmed ? 'Call confirmed' : ('Call ' + call.status)) + ' · ' + (call.hasTranscript ? 'transcript in' : 'no transcript yet');
+};
 /* Settings is not in the list on purpose — it is the cogwheel at the
    bottom. You visit it when something needs configuring, not while you
    are working, and putting it in the run of daily pages made it look
@@ -570,7 +579,7 @@ const DETAIL_HELP = {
   runningOn: 'What they use today. “Spreadsheets & manual logs” usually means a quick, happy switch; “Legacy MSB software” usually means a data migration conversation.',
   timeline: 'How soon they want to be trading on it. Worth weighing against the queue — somebody who says “as soon as possible” and waits three weeks tends not to answer the phone.',
   branches: 'One shop or several. Multi-branch desks need a legal entity and branch set up per location, so they take longer to open.',
-  phone: 'The number we ring after approving them. Collected on the application so nobody has to chase it — it is also the number they can sign in with later.',
+  phone: 'The number the outbound call dials. What they typed on the application, or — only when that was blank — the mobile they typed while opening a Canada desk. Not a number research found.',
   bestTime: 'When they said to call. Their local time, not yours.',
   phoneUnparsed: 'They typed something we could not read as a phone number, so it is kept exactly as written. Check it before dialling.',
 };
@@ -935,6 +944,7 @@ function Pipeline({ kind, onCounts }) {
           <Pill tone={r.growth.workflow.tone}>{r.growth.workflow.label}</Pill>
           <span style={{ fontSize: 10.5, color: 'var(--faint)' }}>{r.growth.assignment && r.growth.assignment.assignedTo ? r.growth.assignment.assignedTo : 'unassigned'}</span>
         </div>}
+        {callLine(r.growth) && <div style={{ fontSize: 10.5, color: 'var(--mute)', marginTop: 4 }}>{callLine(r.growth)}</div>}
         {/* The rehearsal sits in the same board as everyone else so it can be
             found, and has to be unmistakable so nobody works it as a lead. */}
         {r.isDemo && <div style={{ marginTop: 6 }}><Pill tone="purple">walkthrough</Pill></div>}
@@ -1053,7 +1063,7 @@ function Pipeline({ kind, onCounts }) {
                   <span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--faint)' }}>{r.email}</span></span></span>
               </td>
               <td style={td}><Pill tone={STAGE_TONE[r.status]} dot>{stageTitle(BOARD, r.status)}</Pill></td>
-              {kind === 'early_access' && <td style={td}>{r.growth ? <span><Pill tone={r.growth.workflow.tone}>{r.growth.workflow.label}</Pill><span style={{ display: 'block', marginTop: 4, fontSize: 10.5, color: 'var(--faint)' }}>{r.growth.workflow.nextAction}</span></span> : '—'}</td>}
+              {kind === 'early_access' && <td style={td}>{r.growth ? <span><Pill tone={r.growth.workflow.tone}>{r.growth.workflow.label}</Pill><span style={{ display: 'block', marginTop: 4, fontSize: 10.5, color: 'var(--faint)' }}>{r.growth.workflow.nextAction}</span>{tel(r) && <span style={{ display: 'block', marginTop: 4, fontFamily: MONO, fontSize: 10.5, color: 'var(--mute)' }}>☏ {tel(r)}</span>}{callLine(r.growth) && <span style={{ display: 'block', marginTop: 4, fontSize: 10.5, color: 'var(--mute)' }}>{callLine(r.growth)}</span>}</span> : '—'}</td>}
               {kind === 'early_access' && <td style={{ ...td, fontSize: 12, color: 'var(--mute)' }}>{r.growth && r.growth.assignment && r.growth.assignment.assignedTo || 'Unassigned'}</td>}
               <td style={{ ...td, color: 'var(--mute)', fontSize: 13 }}>{(r.details && (r.details.workspace || r.details.topic)) || '—'}</td>
               <td style={td}>{r.tenantName ? <Pill tone="green">{r.tenantName}</Pill> : <span style={{ color: 'var(--faint)' }}>—</span>}</td>
@@ -2121,18 +2131,31 @@ function GrowthPanel({ enquiry }) {
       {identityChecked(run) && (run.facts || []).length > 0 && <div style={{ marginTop: 9, borderTop: '1px solid var(--line2)' }}><div style={{ marginTop: 10, fontFamily: MONO, fontSize: 10, color: 'var(--faint)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Sources that passed the identity check</div>{facts(run)}</div>}
     </details>))}
 
-    {growth.calls.length > 0 && <div style={{ marginTop: 13, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-      <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Call history</div>
-      {growth.calls.map(c => (<details key={c.id} style={{ padding: '8px 0', borderTop: '1px solid var(--line2)' }}>
-        <summary style={{ cursor: 'pointer', fontSize: 12.5 }}><Pill tone={c.status === 'completed' ? 'green' : c.status === 'failed' ? 'red' : 'amber'}>{c.status}</Pill> <span style={{ marginLeft: 7 }}>{fmtWhen(c.requestedAt)} · {c.phone}</span></summary>
-        <div style={{ padding: '8px 0 0 4px', fontSize: 12, color: 'var(--mute)', lineHeight: 1.55 }}>
-          {c.summary && <div style={{ marginBottom: 7 }}>{c.summary}</div>}
-          {c.outcome && <div>Outcome: {c.outcome}</div>}
-          {c.durationSeconds != null && <div>Duration: {c.durationSeconds}s</div>}
-          {Array.isArray(c.transcript) && c.transcript.map((turn, i) => <div key={i} style={{ marginTop: 6 }}><b>{turn.role || 'turn'}:</b> {turn.message || turn.text || JSON.stringify(turn)}</div>)}
-          {c.recordingUrl && <a href={c.recordingUrl} target="_blank" rel="noopener" style={{ color: 'var(--blue)' }}>Recording ↗</a>}
-        </div>
-      </details>))}
+    {/* The latest call stays open. A collapsed row under research is how a
+        placed call was easy to miss, and the transcript is the thing the
+        operator came to read. There is no recording: the provider URL is
+        not kept, and this panel does not render one. */}
+    {growth.calls.length > 0 && <div data-testid="shop-call" style={{ marginTop: 13, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+      <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7 }}>Shop call</div>
+      {growth.calls.map((c, index) => {
+        const turns = Array.isArray(c.transcript) ? c.transcript : [];
+        const confirmed = c.status === 'requested' || c.status === 'placing' || c.status === 'placed' || c.status === 'completed';
+        return (<details key={c.id} open={index === 0} style={{ padding: '8px 0', borderTop: '1px solid var(--line2)' }}>
+          <summary style={{ cursor: 'pointer', fontSize: 12.5 }}>
+            <Pill tone={c.status === 'completed' ? 'green' : c.status === 'failed' ? 'red' : 'amber'}>{confirmed ? 'Call confirmed' : c.status}</Pill>
+            <span style={{ marginLeft: 7 }}>{fmtWhen(c.placedAt || c.requestedAt)} · {c.phone}</span>
+          </summary>
+          <div style={{ padding: '8px 0 0 4px', fontSize: 12, color: 'var(--mute)', lineHeight: 1.55 }}>
+            {c.summary && <div style={{ marginBottom: 7 }}>{c.summary}</div>}
+            {c.outcome && <div>Outcome: {c.outcome}</div>}
+            {c.durationSeconds != null && <div>Duration: {c.durationSeconds}s</div>}
+            <div style={{ marginTop: 8, fontFamily: MONO, fontSize: 10, color: 'var(--faint)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Transcript</div>
+            {turns.length === 0
+              ? <div data-testid={index === 0 ? 'call-transcript-empty' : undefined} style={{ marginTop: 6, color: 'var(--faint)' }}>No transcript yet.</div>
+              : <div data-testid={index === 0 ? 'call-transcript' : undefined}>{turns.map((turn, i) => <div key={i} style={{ marginTop: 6 }}><b>{turn.role || 'turn'}:</b> {turn.message || turn.text || JSON.stringify(turn)}</div>)}</div>}
+          </div>
+        </details>);
+      })}
     </div>}
     {(growth.timeline || []).length > 0 && <details style={{ marginTop: 13, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
       <summary style={{ cursor: 'pointer', fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Process history · {growth.timeline.length} events</summary>
@@ -2190,7 +2213,7 @@ function ApplicationPage({ id, onChanged }) {
             button that dials it should not be four rows down a list of
             answers about monthly volume. */}
         {isApp && (<Card title="How to reach them"
-          help="Collected on the application so nobody has to chase it. The call is the promise the form makes — within a few minutes of approving, at the time they picked.">
+          help="The number the outbound call dials. Typed on the application, or their mobile while opening a Canada desk when the application left it blank. Research never fills this in.">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontFamily: MONO, fontSize: 19, fontWeight: 700, letterSpacing: '0.03em' }}>
