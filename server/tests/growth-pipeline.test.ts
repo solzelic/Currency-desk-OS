@@ -126,6 +126,7 @@ describe("lead research and outbound calling", () => {
         conversation_id: "conv-growth-1",
         status: "done",
         transcript: [{ role: "agent", message: "I'm SAM, an AI assistant. This call is being recorded." }, { role: "user", message: "Yes." }],
+        recording_url: "https://example.test/recordings/conv-growth-1",
         metadata: { call_duration_secs: 42 },
         analysis: { call_successful: true, transcript_summary: "Applicant wants a walkthrough next week." },
       },
@@ -139,8 +140,11 @@ describe("lead research and outbound calling", () => {
     });
     expect(webhook.statusCode).toBe(200);
     const calls = await handle.db.select().from(schema.enquiryCalls).where(eq(schema.enquiryCalls.enquiryId, row.id));
-    expect(calls[0]).toMatchObject({ status: "completed", durationSeconds: 42, outcome: "true", summary: "Applicant wants a walkthrough next week." });
+    expect(calls[0]).toMatchObject({ status: "completed", durationSeconds: 42, outcome: "true", summary: "Applicant wants a walkthrough next week.", recordingUrl: null });
     expect(calls[0]?.transcript).toHaveLength(2);
+    const shown = await app.inject({ method: "GET", url: `/api/admin/enquiries/${row.id}/growth`, cookies: admin });
+    expect(shown.json().calls[0].transcript).toHaveLength(2);
+    expect(shown.json().calls[0].recordingUrl).toBeUndefined();
   });
 
   it("honours do-not-contact from the panel and from the agent tool", async () => {

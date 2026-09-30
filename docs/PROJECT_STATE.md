@@ -90,6 +90,19 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the public board display price with `decimal.js`, once. jsonb board
   mids remain JS numbers — parked with the rest of that audit finding.
 
+- **Signup mobile on the admin call** — the number `placeOutboundCall`
+  dials is `enquiries.details.phone`. The mobile typed while opening a
+  desk lives on `tenants.setup`. When a Canada desk signs up or launches
+  and that enquiry phone is empty, the setup mobile is copied onto it
+  (local +1, ten digits — the shape the early-access form already
+  stores). A number already there is left alone. Signup and launch do
+  not dial. The applications list in admin shows that the mobile is on
+  the call path; the same shop record is where the call is placed, and
+  where the confirmation and transcript appear. A recording URL is not
+  stored or shown. Empty transcript until the provider sends one.
+  Existing gates are unchanged: admin trigger, kill switch, consent,
+  research review, hours.
+
 - **Product-demo desk** — York FX can be opened as a lived-in shop for a
   meeting. Staff id `demo` is created on that tenant if missing; the
   password is stamped only from `DEMO_STAFF_BOOTSTRAP` and is never
@@ -145,7 +158,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
+**2026-09-30**, signup mobile reaches the admin call. A Canada desk's
+setup mobile fills an empty `enquiries.details.phone` at signup or
+launch. The applications record shows the call confirmation and
+transcript; recordings are not kept. No automatic dial.
+
+Prior stamp **2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
 `DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
 Posted through the existing ledger/quote/client services; other tenants
 are out of scope. `docs/DEMO_DESK.md`.

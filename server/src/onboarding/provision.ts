@@ -21,6 +21,7 @@ import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.
 import { packForCountry } from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
+import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
 
 /* The design sells three plans; the server gates on three tiers. They are
@@ -394,21 +395,28 @@ export async function closeApplication(
   match: { enquiryId?: string | null; email: string },
   tenantId: string,
   by: string,
+  setup?: unknown,
 ): Promise<void> {
   try {
     const target = match.enquiryId
       ? eq(schema.enquiries.id, match.enquiryId)
       : eq(schema.enquiries.email, match.email);
+    const open = and(
+      target,
+      eq(schema.enquiries.kind, "early_access"),
+      notInArray(schema.enquiries.status, ["accepted", "declined"]),
+    );
+    /* Selected before the status write. Afterwards these rows are
+       accepted, and this same filter would miss them — so the mobile
+       on the setup blob would never reach the number the call dials.
+       Both signup and launch close the application here; doing the
+       copy in only one of them would leave the other door uncallable. */
+    const rows = await db.select().from(schema.enquiries).where(open);
     await db
       .update(schema.enquiries)
       .set({ status: "accepted", tenantId, decidedAt: new Date(), decidedBy: by })
-      .where(
-        and(
-          target,
-          eq(schema.enquiries.kind, "early_access"),
-          notInArray(schema.enquiries.status, ["accepted", "declined"]),
-        ),
-      );
+      .where(open);
+    if (rows.length) await landApplicantStatedPhone(db, rows, setup, by);
   } catch {
     /* the application record is bookkeeping; never let it fail a signup */
   }

@@ -12,6 +12,12 @@ export type GrowthWorkflow = {
   step: number;
 };
 
+/* Same shape placeOutboundCall will dial. Anything else is not on the call path. */
+const onCallPath = (enquiry: typeof schema.enquiries.$inferSelect): boolean => {
+  const phone = (enquiry.details as Record<string, unknown> | null)?.phone;
+  return typeof phone === "string" && /^\+\d{8,15}$/.test(phone.trim());
+};
+
 export function growthWorkflow(input: {
   enquiry: typeof schema.enquiries.$inferSelect;
   jobs: Job[];
@@ -19,12 +25,28 @@ export function growthWorkflow(input: {
   calls: Call[];
 }): GrowthWorkflow {
   if (input.enquiry.doNotContact) return { stage: "do_not_contact", label: "Do not contact", nextAction: "Respect the contact stop", tone: "red", step: 4 };
-  if (input.enquiry.status === "accepted") return { stage: "onboarded", label: "Onboarded", nextAction: "Support the new desk", tone: "green", step: 6 };
-  if (input.enquiry.status === "declined") return { stage: "closed", label: "Closed", nextAction: "No further action", tone: "mute", step: 6 };
 
+  /* Accepted used to return first, so once the desk existed the process
+     column said Onboarded and a call placed afterwards disappeared.
+     Calls are passed newest first — the admin routes order them that
+     way — so an older completed call cannot hide one in progress. */
   const latestCall = input.calls[0];
   if (latestCall?.status === "completed") return { stage: "call_completed", label: "Call complete", nextAction: "Record a decision or follow-up", tone: "green", step: 5 };
   if (latestCall && ["requested", "placing", "placed"].includes(latestCall.status)) return { stage: "call_in_progress", label: "Call in progress", nextAction: "Wait for the transcript and outcome", tone: "amber", step: 5 };
+
+  if (input.enquiry.status === "accepted") {
+    /* "Support the new desk" hid the fact that signup had just made a
+       number dialable. The column has to say so, or the call looks
+       unavailable on a shop that can be called. */
+    return {
+      stage: "onboarded",
+      label: "Onboarded",
+      nextAction: onCallPath(input.enquiry) ? "Applicant mobile is on the call path" : "Support the new desk",
+      tone: "green",
+      step: 6,
+    };
+  }
+  if (input.enquiry.status === "declined") return { stage: "closed", label: "Closed", nextAction: "No further action", tone: "mute", step: 6 };
 
   const complete = input.research.find((run) => run.status === "complete" && run.brief?.identity?.verification === "exact_business_name");
   const legacyComplete = input.research.find((run) => run.status === "complete");

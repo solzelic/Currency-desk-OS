@@ -40,6 +40,13 @@ const toolBody = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+/* The panel shows the transcript. A recording URL is a different
+   artifact, and handing it out here is how it ends up on the shop. */
+function withoutRecording<T extends { recordingUrl?: string | null }>(call: T): Omit<T, "recordingUrl"> {
+  const { recordingUrl: _url, ...shown } = call;
+  return shown;
+}
+
 const settingEnabled = async (db: Db): Promise<boolean> => {
   const setting = (await db.select().from(schema.platformSettings)
     .where(eq(schema.platformSettings.key, "outbound_calling_enabled")).limit(1))[0];
@@ -108,9 +115,14 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
         .where(eq(schema.enquiryResearchReviews.researchId, run.id))
         .orderBy(schema.enquiryResearchReviews.reviewedAt),
     })));
-    const calls = await db.select().from(schema.enquiryCalls)
+    /* The stage reads status off the stored call. Those rows still have
+       the recording column, because that migration is not being undone.
+       The panel gets a separate copy with the URL removed, so a recording
+       link cannot be rendered from this response. */
+    const storedCalls = await db.select().from(schema.enquiryCalls)
       .where(eq(schema.enquiryCalls.enquiryId, enquiry.id))
       .orderBy(desc(schema.enquiryCalls.requestedAt));
+    const calls = storedCalls.map(withoutRecording);
     const jobs = await db.select().from(schema.enquiryGrowthJobs)
       .where(eq(schema.enquiryGrowthJobs.enquiryId, enquiry.id))
       .orderBy(desc(schema.enquiryGrowthJobs.createdAt));
@@ -142,7 +154,7 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       timeline,
       assignment,
       assignableMembers,
-      workflow: visibleWorkflow({ enquiry, jobs, research, calls }),
+      workflow: visibleWorkflow({ enquiry, jobs, research, calls: storedCalls }),
       capabilities: {
         researchConfigured: !!researchProvider,
         callingConfigured: !!runtime,
@@ -233,7 +245,21 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       ]);
       const research = await Promise.all(runs.map(async (run) => ({ ...run, reviews: await db.select().from(schema.enquiryResearchReviews).where(eq(schema.enquiryResearchReviews.researchId, run.id)) })));
       const workflow = visibleWorkflow({ enquiry, jobs, research, calls });
-      byEnquiry[enquiry.id] = { workflow, assignment: assignmentRows[0] ?? null, latestResearchAt: runs[0]?.runAt ?? null };
+      const latestCall = calls[0];
+      byEnquiry[enquiry.id] = {
+        workflow,
+        assignment: assignmentRows[0] ?? null,
+        latestResearchAt: runs[0]?.runAt ?? null,
+        /* The list is the process column. It needs the confirmation, not
+           the transcript text — that stays on the shop record. */
+        call: latestCall ? {
+          status: latestCall.status,
+          requestedAt: latestCall.requestedAt,
+          placedAt: latestCall.placedAt,
+          phone: latestCall.phone,
+          hasTranscript: Array.isArray(latestCall.transcript) && latestCall.transcript.length > 0,
+        } : null,
+      };
       counts[workflow.stage] = (counts[workflow.stage] ?? 0) + 1;
     }));
     return { byEnquiry, counts, total: enquiries.length };
@@ -259,7 +285,7 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
         action: result.replayed ? "admin.enquiry_call_replayed" : "admin.enquiry_call_placed",
         detail: { enquiryId: req.params.id, callId: result.call.id, conversationId: result.call.conversationId },
       });
-      return reply.code(result.replayed ? 200 : 201).send(result);
+      return reply.code(result.replayed ? 200 : 201).send({ ...result, call: withoutRecording(result.call) });
     } catch (error) {
       if (error instanceof CallRefused) return reply.code(error.statusCode).send({ error: error.code, detail: error.message });
       throw error;
@@ -327,7 +353,10 @@ export function registerGrowthRoutes(app: FastifyInstance, db: Db, dependencies:
       completedAt: new Date(),
       durationSeconds: Number.isFinite(durationValue) && durationValue >= 0 ? Math.round(durationValue) : null,
       outcome,
-      recordingUrl: typeof data.recording_url === "string" ? data.recording_url : null,
+      /* The provider may attach a recording URL. We do not keep it:
+         the shop record is the transcript, and a stored URL is what
+         the panel used to render as a recording. */
+      recordingUrl: null,
       transcript,
       summary: typeof analysis.transcript_summary === "string" ? analysis.transcript_summary.slice(0, 20_000) : null,
       error: type === "call_initiation_failure" ? outcome : null,

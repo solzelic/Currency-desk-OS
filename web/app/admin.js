@@ -1534,6 +1534,15 @@ const tel = e => {
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(raw);
   return m ? `+1 ${m[1]} ${m[2]} ${m[3]}` : raw;
 };
+/* The applications list is where each shop's process is read. The
+   transcript itself is on the open record; this line exists so a call
+   that has already gone out is visible without opening every card. */
+const callLine = growth => {
+  const call = growth && growth.call;
+  if (!call) return null;
+  const confirmed = call.status === 'requested' || call.status === 'placing' || call.status === 'placed' || call.status === 'completed';
+  return (confirmed ? 'Call confirmed' : 'Call ' + call.status) + ' · ' + (call.hasTranscript ? 'transcript in' : 'no transcript yet');
+};
 /* Settings is not in the list on purpose — it is the cogwheel at the
    bottom. You visit it when something needs configuring, not while you
    are working, and putting it in the run of daily pages made it look
@@ -1600,7 +1609,7 @@ const DETAIL_HELP = {
   runningOn: 'What they use today. “Spreadsheets & manual logs” usually means a quick, happy switch; “Legacy MSB software” usually means a data migration conversation.',
   timeline: 'How soon they want to be trading on it. Worth weighing against the queue — somebody who says “as soon as possible” and waits three weeks tends not to answer the phone.',
   branches: 'One shop or several. Multi-branch desks need a legal entity and branch set up per location, so they take longer to open.',
-  phone: 'The number we ring after approving them. Collected on the application so nobody has to chase it — it is also the number they can sign in with later.',
+  phone: 'The number the outbound call dials. What they typed on the application, or — only when that was blank — the mobile they typed while opening a Canada desk. Not a number research found.',
   bestTime: 'When they said to call. Their local time, not yours.',
   phoneUnparsed: 'They typed something we could not read as a phone number, so it is kept exactly as written. Check it before dialling.'
 };
@@ -2372,7 +2381,13 @@ function Pipeline({
         fontSize: 10.5,
         color: 'var(--faint)'
       }
-    }, r.growth.assignment && r.growth.assignment.assignedTo ? r.growth.assignment.assignedTo : 'unassigned')), r.isDemo && /*#__PURE__*/React.createElement("div", {
+    }, r.growth.assignment && r.growth.assignment.assignedTo ? r.growth.assignment.assignedTo : 'unassigned')), callLine(r.growth) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: 'var(--mute)',
+        marginTop: 4
+      }
+    }, callLine(r.growth)), r.isDemo && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 6
       }
@@ -2700,7 +2715,22 @@ function Pipeline({
       fontSize: 10.5,
       color: 'var(--faint)'
     }
-  }, r.growth.workflow.nextAction)) : '—'), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
+  }, r.growth.workflow.nextAction), tel(r) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      marginTop: 4,
+      fontFamily: MONO,
+      fontSize: 10.5,
+      color: 'var(--mute)'
+    }
+  }, "\u260F ", tel(r)), callLine(r.growth) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      marginTop: 4,
+      fontSize: 10.5,
+      color: 'var(--mute)'
+    }
+  }, callLine(r.growth))) : '—'), kind === 'early_access' && /*#__PURE__*/React.createElement("td", {
     style: {
       ...td,
       fontSize: 12,
@@ -5575,6 +5605,7 @@ function GrowthPanel({
       textTransform: 'uppercase'
     }
   }, "Sources that passed the identity check"), facts(run)))), growth.calls.length > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-testid": "shop-call",
     style: {
       marginTop: 13,
       borderTop: '1px solid var(--line)',
@@ -5589,47 +5620,62 @@ function GrowthPanel({
       letterSpacing: '0.08em',
       marginBottom: 7
     }
-  }, "Call history"), growth.calls.map(c => /*#__PURE__*/React.createElement("details", {
-    key: c.id,
-    style: {
-      padding: '8px 0',
-      borderTop: '1px solid var(--line2)'
-    }
-  }, /*#__PURE__*/React.createElement("summary", {
-    style: {
-      cursor: 'pointer',
-      fontSize: 12.5
-    }
-  }, /*#__PURE__*/React.createElement(Pill, {
-    tone: c.status === 'completed' ? 'green' : c.status === 'failed' ? 'red' : 'amber'
-  }, c.status), " ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      marginLeft: 7
-    }
-  }, fmtWhen(c.requestedAt), " \xB7 ", c.phone)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '8px 0 0 4px',
-      fontSize: 12,
-      color: 'var(--mute)',
-      lineHeight: 1.55
-    }
-  }, c.summary && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 7
-    }
-  }, c.summary), c.outcome && /*#__PURE__*/React.createElement("div", null, "Outcome: ", c.outcome), c.durationSeconds != null && /*#__PURE__*/React.createElement("div", null, "Duration: ", c.durationSeconds, "s"), Array.isArray(c.transcript) && c.transcript.map((turn, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      marginTop: 6
-    }
-  }, /*#__PURE__*/React.createElement("b", null, turn.role || 'turn', ":"), " ", turn.message || turn.text || JSON.stringify(turn))), c.recordingUrl && /*#__PURE__*/React.createElement("a", {
-    href: c.recordingUrl,
-    target: "_blank",
-    rel: "noopener",
-    style: {
-      color: 'var(--blue)'
-    }
-  }, "Recording \u2197"))))), (growth.timeline || []).length > 0 && /*#__PURE__*/React.createElement("details", {
+  }, "Shop call"), growth.calls.map((c, index) => {
+    const turns = Array.isArray(c.transcript) ? c.transcript : [];
+    const confirmed = c.status === 'requested' || c.status === 'placing' || c.status === 'placed' || c.status === 'completed';
+    return /*#__PURE__*/React.createElement("details", {
+      key: c.id,
+      open: index === 0,
+      style: {
+        padding: '8px 0',
+        borderTop: '1px solid var(--line2)'
+      }
+    }, /*#__PURE__*/React.createElement("summary", {
+      style: {
+        cursor: 'pointer',
+        fontSize: 12.5
+      }
+    }, /*#__PURE__*/React.createElement(Pill, {
+      tone: c.status === 'completed' ? 'green' : c.status === 'failed' ? 'red' : 'amber'
+    }, confirmed ? 'Call confirmed' : c.status), /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: 7
+      }
+    }, fmtWhen(c.placedAt || c.requestedAt), " \xB7 ", c.phone)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '8px 0 0 4px',
+        fontSize: 12,
+        color: 'var(--mute)',
+        lineHeight: 1.55
+      }
+    }, c.summary && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 7
+      }
+    }, c.summary), c.outcome && /*#__PURE__*/React.createElement("div", null, "Outcome: ", c.outcome), c.durationSeconds != null && /*#__PURE__*/React.createElement("div", null, "Duration: ", c.durationSeconds, "s"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        fontFamily: MONO,
+        fontSize: 10,
+        color: 'var(--faint)',
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase'
+      }
+    }, "Transcript"), turns.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": index === 0 ? 'call-transcript-empty' : undefined,
+      style: {
+        marginTop: 6,
+        color: 'var(--faint)'
+      }
+    }, "No transcript yet.") : /*#__PURE__*/React.createElement("div", {
+      "data-testid": index === 0 ? 'call-transcript' : undefined
+    }, turns.map((turn, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        marginTop: 6
+      }
+    }, /*#__PURE__*/React.createElement("b", null, turn.role || 'turn', ":"), " ", turn.message || turn.text || JSON.stringify(turn))))));
+  })), (growth.timeline || []).length > 0 && /*#__PURE__*/React.createElement("details", {
     style: {
       marginTop: 13,
       borderTop: '1px solid var(--line)',
@@ -5763,7 +5809,7 @@ function ApplicationPage({
     }
   }, isApp && /*#__PURE__*/React.createElement(Card, {
     title: "How to reach them",
-    help: "Collected on the application so nobody has to chase it. The call is the promise the form makes \u2014 within a few minutes of approving, at the time they picked."
+    help: "The number the outbound call dials. Typed on the application, or their mobile while opening a Canada desk when the application left it blank. Research never fills this in."
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
