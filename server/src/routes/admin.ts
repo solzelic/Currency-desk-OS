@@ -201,9 +201,22 @@ async function clientProcessOf(db: Db, tenantId: string): Promise<ClientProcess 
   }
 }
 async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
+  /* Customers are rows, not a key in the saved blob. A desk that has
+     never saved browser state still has a customer file, and the tile
+     has to say so. Trading figures still come from the blob, because
+     that is where the book lives until it moves. */
+  const process = await clientProcessOf(db, tenantId);
+  const clientsFromTable = process && process.total > 0 ? process.total : 0;
   const empty: DeskSnapshot = {
     recentTransactions: [],
-    book: { transactions: 0, volumeCad: 0, feesCad: 0, clients: 0, lastTradeAt: null, clientProcess: null },
+    book: {
+      transactions: 0,
+      volumeCad: 0,
+      feesCad: 0,
+      clients: clientsFromTable,
+      lastTradeAt: null,
+      clientProcess: process,
+    },
     deskSettings: null,
   };
   const row = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, tenantId)).limit(1))[0];
@@ -235,7 +248,6 @@ async function deskSnapshot(db: Db, tenantId: string): Promise<DeskSnapshot> {
   const settings = read<Record<string, unknown>>("cdos_settings", {});
   const branches = read<unknown[]>("cdos_branches_v1", []);
   const board = read<Record<string, unknown>>("yorkfx_rates_v1", {});
-  const process = await clientProcessOf(db, tenantId);
   const fromBlob = savedClientCount(read<unknown>("cdos_clients_v1", null));
 
   return {

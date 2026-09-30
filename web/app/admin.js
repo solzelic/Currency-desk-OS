@@ -3846,6 +3846,8 @@ function DeskPage({
     fontWeight: 600,
     fontFamily: MONO
   };
+  const standing = book.clientProcess;
+  const processLine = standing && standing.total ? [standing.identified && standing.identified + ' identified', standing.unverified && standing.unverified + ' not identified', standing.expired && standing.expired + ' ID expired', standing.verified && standing.verified + ' verified', standing.files && standing.files + (standing.files === 1 ? ' file' : ' files')].filter(Boolean).join(' · ') : book.clients ? 'from the desk\u2019s saved copy' : null;
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(PageHead, {
     back: "All desks",
     backTo: "#/desks",
@@ -3884,7 +3886,8 @@ function DeskPage({
       c: 'var(--green)'
     }, {
       k: 'Clients',
-      v: book.clients || 0
+      v: book.clients || 0,
+      sub: processLine
     }, {
       k: 'People',
       v: d.staff.length

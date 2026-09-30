@@ -2511,10 +2511,37 @@
         };
       }),
       documents: documents,
-      /* Supporting documents, extra photographs and the beneficiary list
-         have NOT moved and are still the browser's. Carried through
-         untouched so this projection never deletes them. */
-      docs: local.docs || [],
+      /* Supporting files now live on the server, as labels only. The
+         bytes are fetched when somebody opens one. A local copy is kept
+         only when the server does not already hold that label and file
+         name — a desk mid-upgrade, or a data URL the migration could
+         not read. Where the server holds it, the browser copy is dropped,
+         because that copy is what was filling the saving ceiling.
+
+         The extra photo gallery has not moved. It is not a filed paper. */
+      docs: (function () {
+        var serverFiles = record.files || [];
+        var held = {};
+        var out = serverFiles.map(function (f) {
+          var key = String(f.label || "") + "\n" + String(f.fileName || "");
+          held[key] = true;
+          return {
+            fileId: f.fileId,
+            label: f.label || "",
+            fileName: f.fileName || "",
+            mime: f.contentType || "",
+            addedAt: (f.addedAt || "").slice(0, 10),
+            onServer: true,
+          };
+        });
+        (local.docs || []).forEach(function (d) {
+          if (!d || d.onServer) return;
+          var key = String(d.label || "") + "\n" + String(d.fileName || "");
+          if (held[key]) return;
+          out.push(d);
+        });
+        return out;
+      })(),
       gallery: local.gallery || [],
       ledgerCustomerId: local.ledgerCustomerId || null,
       ledgerExternalRef: local.ledgerExternalRef || null,
@@ -2631,6 +2658,28 @@
     },
     photograph: function (clientId) {
       return request("/api/clients/" + encodeURIComponent(clientId) + "/photograph");
+    },
+    /* The file folder. add/rename/remove return the customer record.
+       reveal is the only way to the bytes, and it writes who opened it. */
+    addFile: function (clientId, input) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files", {
+        method: "POST", body: JSON.stringify(input),
+      });
+    },
+    renameFile: function (clientId, fileId, label) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId), {
+        method: "PATCH", body: JSON.stringify({ label: label }),
+      });
+    },
+    removeFile: function (clientId, fileId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId), {
+        method: "DELETE",
+      });
+    },
+    revealFile: function (clientId, fileId) {
+      return request("/api/clients/" + encodeURIComponent(clientId) + "/files/" + encodeURIComponent(fileId) + "/reveal", {
+        method: "POST", body: "{}",
+      });
     },
     /* This person, as the till's own counter record — the `customerId`
        the posting path wants. The join between the desk's file and the
@@ -21313,11 +21362,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      PICTURES of those documents are three tables with three different
      retention answers, and `field()` below is where a screen that has
      not caught up gets sent to the right one.
-      What is deliberately NOT sent to the server: supporting documents,
-     the extra photo gallery and the ledger ids the till caches. Those
-     have not moved in this change and are still the browser's, so they
-     fall through to the local setter untouched rather than being
-     silently dropped. */
+      What is deliberately still local: the extra photo gallery and the
+     ledger ids the till caches. Supporting files (proof of address,
+     source of funds, corporate filings) go to the server. A gallery
+     picture is not a paper filed for the customer, and it is not this
+     change. */
   const stampToday = () => new Date().toISOString().slice(0, 10);
   function clientWriter({
     name,
@@ -21370,10 +21419,104 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const changes = api.fromDeskFields({
         [k]: v
       });
-      /* Nothing this record has a column for — supporting documents, the
-         gallery, cached ledger ids. Still the browser's. */
+      /* Nothing this record has a column for — the gallery, cached
+         ledger ids. Still the browser's. A supporting file is not a
+         field of the person; it has its own calls below. */
       if (!Object.keys(changes).length) return localSet(k, v);
       return send(() => api.update(clientId, changes));
+    }
+    function addFile(file) {
+      const stamp = stampToday();
+      return Promise.resolve(window.CDOS.intakeAttachment(file)).then(taken => {
+        if (!taken.ok) {
+          onError(taken.why);
+          return;
+        }
+        const label = (file.name || 'Document').replace(/\.[^.]+$/, '') || 'Document';
+        if (!onServer) {
+          setClients(c => {
+            const cur = c[name] || {};
+            const docs = (cur.docs || []).concat({
+              label,
+              fileName: file.name || '',
+              mime: file.type || '',
+              file: taken.dataUrl,
+              addedAt: stamp
+            });
+            return {
+              ...c,
+              [name]: {
+                ...cur,
+                docs,
+                updatedAt: stamp
+              }
+            };
+          });
+          return;
+        }
+        return send(() => api.addFile(clientId, {
+          label,
+          fileName: file.name || '',
+          dataUrl: taken.dataUrl
+        }));
+      });
+    }
+
+    /* A paper that is still only in this browser — the migration could
+       not read it, or it was added before this screen talked to the
+       server. Posting it is what puts it on the customer's file. */
+    function keepFile(doc) {
+      if (!onServer || !doc || !doc.file) return;
+      return send(() => api.addFile(clientId, {
+        label: doc.label || 'Document',
+        fileName: doc.fileName || '',
+        dataUrl: doc.file
+      }));
+    }
+    function renameFile(doc, label) {
+      const next = String(label || '').trim();
+      if (!next || next === (doc.label || '')) return;
+      if (!onServer || !doc.fileId) {
+        const i = (rec.docs || []).indexOf(doc);
+        if (i < 0) return;
+        return setClients(c => {
+          const cur = c[name] || {};
+          const docs = (cur.docs || []).slice();
+          docs[i] = {
+            ...(docs[i] || {}),
+            label: next
+          };
+          return {
+            ...c,
+            [name]: {
+              ...cur,
+              docs,
+              updatedAt: stampToday()
+            }
+          };
+        });
+      }
+      return send(() => api.renameFile(clientId, doc.fileId, next));
+    }
+    function removeFile(doc) {
+      if (!onServer || !doc.fileId) {
+        const i = (rec.docs || []).indexOf(doc);
+        if (i < 0) return;
+        return setClients(c => {
+          const cur = c[name] || {};
+          const docs = (cur.docs || []).slice();
+          docs.splice(i, 1);
+          return {
+            ...c,
+            [name]: {
+              ...cur,
+              docs,
+              updatedAt: stampToday()
+            }
+          };
+        });
+      }
+      return send(() => api.removeFile(clientId, doc.fileId));
     }
     function scan(dataUrl) {
       if (!onServer) return localSet('photo', dataUrl);
@@ -21473,6 +21616,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       addId,
       setId,
       rmId,
+      addFile,
+      keepFile,
+      renameFile,
+      removeFile,
       localSet
     };
   }
@@ -23399,6 +23546,251 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, document.docType, document.expiresOn ? ` · exp ${document.expiresOn}` : ''))))));
   }
 
+  /* Where this customer is, in the words the till already uses.
+     The number is the desk's own line — the pack, then what the desk
+     set — never a figure typed into this screen. A utility bill in the
+     folder below does not move this. */
+  function ProcessStanding({
+    rec,
+    settings
+  }) {
+    const status = rec && rec.verificationStatus;
+    if (!status) return null;
+    const idLine = window.CDOS.identificationLimit(settings);
+    const reportLine = window.CDOS.reportingLimit(settings);
+    const standing = {
+      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
+      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
+      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
+      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.']
+    }[status];
+    if (!standing) return null;
+    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
+    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mb-3 p-3.5",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1.5",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 flex-wrap"
+    }, /*#__PURE__*/React.createElement(Pill, {
+      text: standing[0],
+      c: tone,
+      bg: soft
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, standing[1])), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, rule));
+  }
+
+  /* The papers filed for this customer. Search is over the label and
+     the file name the desk gave them — not the bytes. A file the server
+     holds is opened by asking for it, which is recorded. A file that is
+     still only in this browser says so. */
+  function FileFolder({
+    rec,
+    canEdit,
+    writer,
+    log,
+    name
+  }) {
+    const [q, setQ] = useState('');
+    const [err, setErr] = useState('');
+    const docs = rec.docs || [];
+    const needle = q.trim().toLowerCase();
+    const shown = needle ? docs.filter(d => `${d.label || ''} ${d.fileName || ''}`.toLowerCase().includes(needle)) : docs;
+    const open = async doc => {
+      setErr('');
+      if (doc.file && !doc.onServer) {
+        window.open(doc.file, '_blank', 'noopener');
+        log && log('File opened', `${name} · ${doc.label || 'file'} · this browser`);
+        return;
+      }
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients || null;
+      if (!api || !doc.fileId) {
+        setErr('That file is not on the customer record.');
+        return;
+      }
+      try {
+        const body = await api.revealFile(rec.clientId, doc.fileId);
+        const opened = window.open(body.dataUrl, '_blank', 'noopener');
+        if (!opened) setErr('The browser blocked the new tab. Allow pop-ups for this desk to open the file.');
+        log && log('File opened', `${name} · ${doc.label || 'file'}`);
+      } catch (e) {
+        setErr(e && e.message || 'CurrencyDesk could not open that file.');
+      }
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mb-5 p-4",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-3 mb-2"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Files", docs.length ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: CD.mute,
+        fontWeight: 500
+      }
+    }, " \xB7 ", docs.length) : null), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5",
+      style: {
+        color: CD.mute,
+        maxWidth: 420
+      }
+    }, "Proof of address, source of funds, corporate filings \u2014 kept with this customer, not in this browser.")), canEdit && /*#__PURE__*/React.createElement("label", {
+      className: "flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "upload",
+      s: 13,
+      c: CD.ink
+    }), " Add file", /*#__PURE__*/React.createElement("input", {
+      type: "file",
+      "aria-label": "Add a file to this customer",
+      accept: "image/*,application/pdf",
+      className: "hidden",
+      onChange: e => {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (f) writer.addFile(f);
+      }
+    }))), docs.length > 0 && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 px-2.5 py-1.5 mb-2",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        background: 'var(--cd-panel)'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "search",
+      s: 13,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("input", {
+      value: q,
+      onChange: e => setQ(e.target.value),
+      "aria-label": "Search files",
+      placeholder: "Search files",
+      className: "w-full outline-none text-[12.5px] bg-transparent",
+      style: {
+        color: CD.ink
+      }
+    })), err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.flag
+      }
+    }, err), shown.length ? /*#__PURE__*/React.createElement("div", {
+      className: "space-y-2"
+    }, shown.map((d, i) => /*#__PURE__*/React.createElement("div", {
+      key: d.fileId || i,
+      className: "flex items-center gap-3 p-2.5",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 34,
+        height: 34,
+        borderRadius: 7,
+        background: CD.lineSoft
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "filetext",
+      s: 15,
+      c: CD.mute
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 min-w-0"
+    }, canEdit ? /*#__PURE__*/React.createElement("input", {
+      defaultValue: d.label || '',
+      key: (d.fileId || i) + ':' + (d.label || ''),
+      "aria-label": "File label",
+      onBlur: e => writer.renameFile(d, e.target.value),
+      className: "w-full text-[13px] font-medium px-2 py-1 outline-none",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 7,
+        background: 'var(--cd-panel)',
+        color: CD.ink
+      },
+      placeholder: "What this file is"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-medium truncate",
+      style: {
+        color: CD.ink
+      }
+    }, d.label || d.fileName || 'File'), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mt-1 truncate",
+      style: {
+        color: CD.faint
+      }
+    }, d.fileName || 'file', d.addedAt ? ` · added ${d.addedAt}` : '', !d.onServer && d.file ? ' · only on this browser' : '')), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => open(d),
+      className: "text-[12px] font-medium flex-none",
+      style: {
+        color: CD.ink
+      },
+      "aria-label": `Open ${d.label || d.fileName || 'file'}`
+    }, "Open"), !d.onServer && d.file && canEdit && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => writer.keepFile(d),
+      className: "text-[12px] font-medium flex-none",
+      style: {
+        color: CD.ink
+      }
+    }, "Keep with customer"), canEdit && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => writer.removeFile(d),
+      className: "grid place-items-center flex-none",
+      "aria-label": `Remove ${d.label || 'file'}`,
+      style: {
+        width: 26,
+        height: 26,
+        borderRadius: 7,
+        color: CD.flag
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 14,
+      c: CD.flag
+    }))))) : /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] py-3 text-center",
+      style: {
+        color: CD.faint
+      }
+    }, docs.length ? 'No files match that search.' : 'No files on this customer yet.'));
+  }
+
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({
     name,
@@ -23474,7 +23866,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         }
       };
     });
-    const stamp = () => new Date().toISOString().slice(0, 10);
     /* Additional identity documents. Each is a ROW of its own now — the
        old shape had a "primary" ID as loose fields and the rest in an
        array, so the first one was structurally different from every
@@ -23492,63 +23883,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       setId(i, 'photo', taken.dataUrl);
       log && log('ID document added', name);
     };
-    // supporting documents (proof of address, source of funds, corporate filings, …)
-    const addDoc = async file => {
-      const taken = await window.CDOS.intakeAttachment(file);
-      if (!taken.ok) {
-        setIntakeErr(taken.why);
-        return;
-      }
-      setIntakeErr('');
-      setClients(c => {
-        const cur = c[name] || {};
-        const docs = (cur.docs || []).concat({
-          label: (file.name || 'Document').replace(/\.[^.]+$/, ''),
-          fileName: file.name || '',
-          mime: file.type || '',
-          file: taken.dataUrl,
-          addedAt: stamp()
-        });
-        return {
-          ...c,
-          [name]: {
-            ...cur,
-            docs,
-            updatedAt: stamp()
-          }
-        };
-      });
-      log && log('Document added', name);
-    };
-    const setDoc = (i, k, v) => setClients(c => {
-      const cur = c[name] || {};
-      const docs = (cur.docs || []).slice();
-      docs[i] = {
-        ...(docs[i] || {}),
-        [k]: v
-      };
-      return {
-        ...c,
-        [name]: {
-          ...cur,
-          docs,
-          updatedAt: stamp()
-        }
-      };
-    });
-    const rmDoc = i => setClients(c => {
-      const cur = c[name] || {};
-      const docs = (cur.docs || []).slice();
-      docs.splice(i, 1);
-      return {
-        ...c,
-        [name]: {
-          ...cur,
-          docs,
-          updatedAt: stamp()
-        }
-      };
-    });
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
@@ -23753,6 +24087,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       canEdit: canEdit,
       onOpenLedger: onOpenLedger,
       onFixId: () => setEdit(true)
+    }), /*#__PURE__*/React.createElement(ProcessStanding, {
+      rec: rec,
+      settings: settings
+    }), /*#__PURE__*/React.createElement(FileFolder, {
+      rec: rec,
+      canEdit: canEdit,
+      writer: writer,
+      log: log,
+      name: name
     }), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between gap-3 flex-wrap mb-5 p-3.5",
       style: {
@@ -23983,127 +24326,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between mb-3 gap-3"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, "Documents"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5",
-      style: {
-        color: CD.mute,
-        maxWidth: 340
-      }
-    }, "Proof of address, source of funds, corporate filings \u2014 anything supporting the file.")), canEdit && /*#__PURE__*/React.createElement("label", {
-      className: "flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none",
-      style: {
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "upload",
-      s: 13,
-      c: CD.ink
-    }), " Add", /*#__PURE__*/React.createElement("input", {
-      type: "file",
-      accept: "image/*,application/pdf",
-      className: "hidden",
-      onChange: e => {
-        if (e.target.files[0]) {
-          addDoc(e.target.files[0]);
-          e.target.value = '';
-        }
-      }
-    }))), (rec.docs || []).length ? /*#__PURE__*/React.createElement("div", {
-      className: "space-y-2"
-    }, (rec.docs || []).map((d, i) => {
-      const img = /^image\//.test(d.mime || '') || /^data:image\//.test(d.file || '');
-      return /*#__PURE__*/React.createElement("div", {
-        key: i,
-        className: "flex items-center gap-3 p-2.5",
-        style: {
-          border: `1px solid ${CD.line}`,
-          borderRadius: 10
-        }
-      }, /*#__PURE__*/React.createElement("a", {
-        href: d.file,
-        target: "_blank",
-        rel: "noreferrer",
-        className: "grid place-items-center flex-none",
-        style: {
-          width: 40,
-          height: 40,
-          borderRadius: 8,
-          background: CD.lineSoft,
-          overflow: 'hidden'
-        }
-      }, img ? /*#__PURE__*/React.createElement("img", {
-        src: d.file,
-        alt: "",
-        style: {
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover'
-        }
-      }) : /*#__PURE__*/React.createElement(Ic, {
-        n: "filetext",
-        s: 16,
-        c: CD.mute
-      })), /*#__PURE__*/React.createElement("div", {
-        className: "flex-1 min-w-0"
-      }, /*#__PURE__*/React.createElement("input", {
-        value: d.label || '',
-        onChange: e => setDoc(i, 'label', e.target.value),
-        disabled: !canEdit,
-        className: "w-full text-[13px] font-medium px-2 py-1 outline-none",
-        style: {
-          border: `1px solid ${CD.line}`,
-          borderRadius: 7,
-          background: 'var(--cd-panel)',
-          color: CD.ink
-        },
-        placeholder: "Document label"
-      }), /*#__PURE__*/React.createElement("div", {
-        className: "text-[10.5px] mt-1 truncate",
-        style: {
-          color: CD.faint
-        }
-      }, d.fileName || 'file', " \xB7 added ", d.addedAt)), /*#__PURE__*/React.createElement("a", {
-        href: d.file,
-        target: "_blank",
-        rel: "noreferrer",
-        className: "text-[12px] font-medium flex-none",
-        style: {
-          color: CD.ink
-        }
-      }, "View"), canEdit && /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        onClick: () => rmDoc(i),
-        className: "grid place-items-center flex-none",
-        style: {
-          width: 26,
-          height: 26,
-          borderRadius: 7,
-          color: CD.flag
-        }
-      }, /*#__PURE__*/React.createElement(Ic, {
-        n: "x",
-        s: 14,
-        c: CD.flag
-      })));
-    })) : /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] py-3 text-center",
-      style: {
-        color: CD.faint
-      }
-    }, "No documents attached yet.")), /*#__PURE__*/React.createElement("div", {
-      className: "p-4",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold mb-2",
       style: {
         color: CD.ink
@@ -24265,80 +24487,6 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       what: d.type || "additional ID",
       log: log
     }))))), /*#__PURE__*/React.createElement("div", {
-      className: "p-4",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-2",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Documents", (rec.docs || []).length > 0 && /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.mute
-      }
-    }, " \xB7 ", (rec.docs || []).length)), (rec.docs || []).length ? /*#__PURE__*/React.createElement("div", {
-      className: "space-y-2"
-    }, (rec.docs || []).map((d, i) => {
-      const img = /^image\//.test(d.mime || '') || /^data:image\//.test(d.file || '');
-      return /*#__PURE__*/React.createElement("a", {
-        key: i,
-        href: d.file,
-        target: "_blank",
-        rel: "noreferrer",
-        className: "flex items-center gap-3 p-2",
-        style: {
-          border: `1px solid ${CD.line}`,
-          borderRadius: 9
-        }
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "grid place-items-center flex-none",
-        style: {
-          width: 34,
-          height: 34,
-          borderRadius: 7,
-          background: CD.lineSoft,
-          overflow: 'hidden'
-        }
-      }, img ? /*#__PURE__*/React.createElement("img", {
-        src: d.file,
-        alt: "",
-        style: {
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover'
-        }
-      }) : /*#__PURE__*/React.createElement(Ic, {
-        n: "filetext",
-        s: 15,
-        c: CD.mute
-      })), /*#__PURE__*/React.createElement("div", {
-        className: "flex-1 min-w-0"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "text-[12.5px] font-medium truncate",
-        style: {
-          color: CD.ink
-        }
-      }, d.label || d.fileName || 'Document'), /*#__PURE__*/React.createElement("div", {
-        className: "text-[10.5px]",
-        style: {
-          color: CD.faint
-        }
-      }, "added ", d.addedAt)), /*#__PURE__*/React.createElement(Ic, {
-        n: "chev",
-        s: 14,
-        c: CD.faint
-      }));
-    })) : /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] py-3 text-center",
-      style: {
-        color: CD.faint
-      }
-    }, "No documents attached.")), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
         background: CD.panel,
@@ -24635,7 +24783,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'verified' && !isVerified(s)) return false;
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''}`.toLowerCase();
+      const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
     const onClick = name => {
@@ -24727,7 +24876,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }), /*#__PURE__*/React.createElement("input", {
       value: q,
       onChange: e => setQ(e.target.value),
-      placeholder: "Search name, email, phone, ID number\u2026",
+      placeholder: "Search name, phone, or a file on their record\u2026",
       className: "w-full outline-none text-sm bg-transparent"
     }), q && /*#__PURE__*/React.createElement("button", {
       onClick: () => setQ(''),
@@ -24896,7 +25045,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           color: rt.c,
           borderRadius: 5
         }
-      }, risk))), /*#__PURE__*/React.createElement(Pill, {
+      }, risk)), (c.rec.docs || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1",
+        style: {
+          color: CD.mute
+        }
+      }, (c.rec.docs || []).length, " ", (c.rec.docs || []).length === 1 ? 'file' : 'files', " on file")), /*#__PURE__*/React.createElement(Pill, {
         text: st,
         c: col,
         bg: bg
