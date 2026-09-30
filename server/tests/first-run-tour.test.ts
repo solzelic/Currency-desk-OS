@@ -83,8 +83,13 @@ describe("who is shown which path", () => {
     expect(tour.kindForRole("Cashier")).toBe("employee");
     expect(tour.kindForRole("Manager")).toBe("employee");
     expect(tour.kindForRole("Senior teller")).toBe("employee");
-    expect(ids(employee)).toEqual(["till", "count", "close"]);
-    expect(anchors(employee)).toEqual(["till", "till-count", "till-reconcile"]);
+    expect(ids(employee)).toEqual(["till", "count"]);
+    expect(anchors(employee)).toEqual(["till", "till-count"]);
+    /* Reconcile and close is the close itself. Opening it on a drawer
+       with no saved count puts an error on screen, and the tour is not
+       allowed to count or close cash to avoid that. The step is absent. */
+    expect(ids(employee)).not.toContain("close");
+    expect(anchors(employee)).not.toContain("till-reconcile");
     expect(employee.every((s) => s.app === "till")).toBe(true);
   });
 

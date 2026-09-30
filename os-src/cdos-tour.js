@@ -15,8 +15,11 @@
      Owner     the shop, then the client book, then the file folder
                on a customer record: identification standing, the
                papers filed there, and search inside that folder.
-     Everyone  the cash drawer: the till, the count, and reconcile
-     else      & close. That is the path a person works at the till.
+     Everyone  the cash drawer they actually work: the till, then
+     else      the count. Reconcile and close is not a step. That
+               panel is the close itself, and with no count saved it
+               shows an error. The tour does not count, post, or
+               close cash to clear that error, so the step is left out.
 
    A step whose app is not on this person's dock is dropped. The
    cash drawer is gated on the same permissions as the dock
@@ -64,9 +67,9 @@
 
   /* Anchors are `data-tour` attributes on the real screens. `app`
      is the dock id; if it is not in the list the shell passes, the
-     step is not offered. `reveal`, when set, is a control the shell
-     clicks so the anchor (a panel that mounts with that tab) exists.
-     `needsClient` steps open a real customer record first. */
+     step is not offered. `needsClient` steps open a real customer
+     record first. The shell does not draw the card until that
+     anchor is on a window that has actually opened. */
   var OWNER_STEPS = [
     {
       id: 'shop',
@@ -129,15 +132,6 @@
       anchor: 'till-count',
       title: 'The count',
       body: 'Count the drawer here, bill and coin. A count is not on the book until you save it.',
-    },
-    {
-      id: 'close',
-      tour: 'employee',
-      app: 'till',
-      anchor: 'till-reconcile',
-      reveal: 'till-reconcile-tab',
-      title: 'Reconcile and close',
-      body: 'At the end of the day, match the count to the book and close from this tab.',
     },
   ];
 

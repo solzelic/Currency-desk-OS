@@ -915,7 +915,7 @@
       <div className="flex-1 overflow-auto">
 
         {/* ===== COUNT ===== */}
-        {tab === 'count' && (<div data-tour="till-count" className="p-4 pb-0">
+        {tab === 'count' && (<div className="p-4 pb-0">
           {/* currency chips */}
           <div className="flex flex-wrap gap-1.5 mb-3">
             {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
@@ -924,8 +924,10 @@
               </button>); })}
           </div>
           {/* denomination columns */}
-          {/* count mode: by denomination, or a quick total */}
-          <div className="flex items-center justify-between mb-3">
+          {/* count mode: by denomination, or a quick total.
+              The tour points at this switch, not at the whole panel,
+              so the card sits beside the count rather than on top of it. */}
+          <div data-tour="till-count" className="flex items-center justify-between mb-3">
             <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
               {[['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => <button key={m} onClick={() => setMode(o => ({ ...o, [ccy]: m }))} className="text-[11.5px] px-3 py-1.5" style={{ background: ccyMode(ccy) === m ? CD.ink : 'transparent', color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>{l}</button>)}
             </div>

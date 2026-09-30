@@ -14253,7 +14253,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
-      "data-tour": "till-count",
       className: "p-4 pb-0"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5 mb-3"
@@ -14284,6 +14283,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }));
     })), /*#__PURE__*/React.createElement("div", {
+      "data-tour": "till-count",
       className: "flex items-center justify-between mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "inline-flex",
@@ -58555,8 +58555,11 @@ window.CDOS_PERSIST = (function () {
      Owner     the shop, then the client book, then the file folder
                on a customer record: identification standing, the
                papers filed there, and search inside that folder.
-     Everyone  the cash drawer: the till, the count, and reconcile
-     else      & close. That is the path a person works at the till.
+     Everyone  the cash drawer they actually work: the till, then
+     else      the count. Reconcile and close is not a step. That
+               panel is the close itself, and with no count saved it
+               shows an error. The tour does not count, post, or
+               close cash to clear that error, so the step is left out.
 
    A step whose app is not on this person's dock is dropped. The
    cash drawer is gated on the same permissions as the dock
@@ -58604,9 +58607,9 @@ window.CDOS_PERSIST = (function () {
 
   /* Anchors are `data-tour` attributes on the real screens. `app`
      is the dock id; if it is not in the list the shell passes, the
-     step is not offered. `reveal`, when set, is a control the shell
-     clicks so the anchor (a panel that mounts with that tab) exists.
-     `needsClient` steps open a real customer record first. */
+     step is not offered. `needsClient` steps open a real customer
+     record first. The shell does not draw the card until that
+     anchor is on a window that has actually opened. */
   var OWNER_STEPS = [
     {
       id: 'shop',
@@ -58669,15 +58672,6 @@ window.CDOS_PERSIST = (function () {
       anchor: 'till-count',
       title: 'The count',
       body: 'Count the drawer here, bill and coin. A count is not on the book until you save it.',
-    },
-    {
-      id: 'close',
-      tour: 'employee',
-      app: 'till',
-      anchor: 'till-reconcile',
-      reveal: 'till-reconcile-tab',
-      title: 'Reconcile and close',
-      body: 'At the end of the day, match the count to the book and close from this tab.',
     },
   ];
 
@@ -58839,20 +58833,76 @@ window.CDOS_PERSIST = (function () {
   const api = function () {
     return window.CDOS_TOUR;
   };
-  function placeBeside(rect) {
+
+  /* The card sits beside the window, not on the thing it is
+     describing. A wide anchor (the shop masthead, the till header)
+     has no room to its right inside the window, so the first choice
+     is outside the window itself. */
+  function placeBeside(anchor, host) {
     var cardW = Math.min(340, window.innerWidth - 24);
     var cardH = 210;
-    var gap = 14;
-    var left = rect.left;
-    if (left + cardW > window.innerWidth - 12) left = window.innerWidth - cardW - 12;
-    if (left < 12) left = 12;
-    var top = rect.bottom + gap;
-    if (top + cardH > window.innerHeight - 12) top = rect.top - cardH - gap;
-    if (top < 12) top = 12;
+    var gap = 16;
+    var bounds = host || anchor;
+    var spots = [{
+      left: bounds.right + gap,
+      top: bounds.top
+    }, {
+      left: bounds.left - cardW - gap,
+      top: bounds.top
+    }, {
+      left: bounds.left,
+      top: bounds.bottom + gap
+    }, {
+      left: anchor.left,
+      top: anchor.bottom + gap
+    }, {
+      left: anchor.left,
+      top: anchor.top - cardH - gap
+    }];
+    for (var i = 0; i < spots.length; i++) {
+      var spot = spots[i];
+      if (spot.left >= 12 && spot.top >= 12 && spot.left + cardW <= window.innerWidth - 12 && spot.top + cardH <= window.innerHeight - 12) {
+        return {
+          left: spot.left,
+          top: spot.top,
+          width: cardW
+        };
+      }
+    }
+    var left = Math.max(12, Math.min(anchor.left, window.innerWidth - cardW - 12));
+    var top = Math.max(12, Math.min(anchor.bottom + gap, window.innerHeight - cardH - 12));
     return {
       left: left,
       top: top,
       width: cardW
+    };
+  }
+
+  /* A window starts at opacity 0 and only then gains `.show`. An
+     anchor inside a window that has not appeared yet is not a screen
+     a person can see, so the card waits. */
+  function visibleBox(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    var win = el.closest ? el.closest('.win') : null;
+    if (win && (!win.classList.contains('show') || win.classList.contains('min'))) return null;
+    var rect = el.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return null;
+    var host = win ? win.getBoundingClientRect() : null;
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      bottom: rect.bottom,
+      right: rect.right,
+      host: host ? {
+        top: host.top,
+        left: host.left,
+        width: host.width,
+        height: host.height,
+        bottom: host.bottom,
+        right: host.right
+      } : null
     };
   }
   function FirstRun({
@@ -58937,51 +58987,39 @@ window.CDOS_PERSIST = (function () {
       var tries = 0;
       var timer = 0;
       var placed = false;
+      function openSurface() {
+        try {
+          if (step.needsClient) {
+            var name = tour.clientForTour(clientsRef.current);
+            if (name && openClientRef.current) openClientRef.current(name);else if (step.app && openAppRef.current) openAppRef.current(step.app);
+          } else if (step.app && openAppRef.current) {
+            openAppRef.current(step.app);
+          }
+        } catch (e) {}
+      }
       function look() {
         if (cancelled || !tour) return;
         tries += 1;
-        if (tries === 1) {
-          try {
-            if (step.needsClient) {
-              var name = tour.clientForTour(clientsRef.current);
-              if (name && openClientRef.current) openClientRef.current(name);else if (openAppRef.current) openAppRef.current(step.app);
-            } else if (step.app && openAppRef.current) {
-              openAppRef.current(step.app);
-            }
-          } catch (e) {}
-        }
-        if (step.reveal) {
-          var rev = document.querySelector('[data-tour="' + step.reveal + '"]');
-          /* `.on` is the tab's own selected class. Clicking it again
-             is harmless, but it is also how a person changes tabs, so
-             do it once — the first time the control is on the page. */
-          if (rev && !rev.classList.contains('on') && !rev.dataset.tourRevealed) {
-            rev.dataset.tourRevealed = '1';
-            rev.click();
-          }
-        }
+        /* Keep asking until the window is actually up. The desk opens
+           the ledger on its own a moment after sign-in; one call, made
+           too early, loses that race and the card is left on an empty
+           desktop. There is no tab to click here — the close panel is
+           not a step, and clicking it is how a close error gets on screen. */
+        if (!placed) openSurface();
         var el = document.querySelector('[data-tour="' + step.anchor + '"]');
-        if (el) {
-          var rect = el.getBoundingClientRect();
-          if (rect.width > 1 && rect.height > 1) {
-            try {
-              el.scrollIntoView({
-                block: 'nearest',
-                inline: 'nearest'
-              });
-            } catch (e) {}
-            rect = el.getBoundingClientRect();
-            placed = true;
-            sawRef.current = true;
-            setBox({
-              top: rect.top,
-              left: rect.left,
-              width: rect.width,
-              height: rect.height,
-              bottom: rect.bottom
+        var boxNow = visibleBox(el);
+        if (boxNow) {
+          try {
+            el.scrollIntoView({
+              block: 'nearest',
+              inline: 'nearest'
             });
-            return;
-          }
+          } catch (e) {}
+          boxNow = visibleBox(el) || boxNow;
+          placed = true;
+          sawRef.current = true;
+          setBox(boxNow);
+          return;
         }
         /* Twelve looks is about a second and a half. Past that the
            screen is not going to draw this anchor — drop the step. */
@@ -59018,15 +59056,9 @@ window.CDOS_PERSIST = (function () {
       function follow() {
         if (!placed) return;
         var el = document.querySelector('[data-tour="' + step.anchor + '"]');
-        if (!el) return;
-        var rect = el.getBoundingClientRect();
-        setBox({
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-          bottom: rect.bottom
-        });
+        var boxNow = visibleBox(el);
+        if (!boxNow) return;
+        setBox(boxNow);
       }
       window.addEventListener('resize', follow);
       window.addEventListener('scroll', follow, true);
@@ -59090,17 +59122,16 @@ window.CDOS_PERSIST = (function () {
         window.removeEventListener('keydown', onKey);
       };
     }, [run, paused, staffId, role]);
-    if (!run || !step || paused) return null;
-    var spot = box ? placeBeside(box) : null;
+
+    /* No card until the screen it describes is open. A card in the
+       corner of an empty desktop is the bug this guard exists for. */
+    if (!run || !step || paused || !box) return null;
+    var spot = placeBeside(box, box.host);
     var last = run.index >= run.steps.length - 1;
-    var cardStyle = spot ? {
+    var cardStyle = {
       left: spot.left,
       top: spot.top,
       width: spot.width
-    } : {
-      right: 16,
-      bottom: 16,
-      width: Math.min(340, window.innerWidth - 24)
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "cdos-tour",
