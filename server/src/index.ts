@@ -87,7 +87,7 @@ if (process.env.PLATFORM_ADMIN_BOOTSTRAP) {
     const normalized = email.trim().toLowerCase();
     const result = await ensurePlatformAdmin(handle.db, normalized, password);
     if (result === "created") {
-      console.warn(`[platform-admin] created ${normalized} — sign in at /admin, then REMOVE PLATFORM_ADMIN_BOOTSTRAP from Render`);
+      console.warn(`[platform-admin] created ${normalized} — sign in at /admin and enroll an authenticator, then REMOVE PLATFORM_ADMIN_BOOTSTRAP from Render`);
     } else {
       console.warn(`[platform-admin] ${normalized} already exists — password was NOT reset. REMOVE PLATFORM_ADMIN_BOOTSTRAP from Render`);
     }

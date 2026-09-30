@@ -200,21 +200,27 @@ code from the panel is deliberately not a quiet thing.
 Our customers' security is a compliance obligation. Ours is an existential
 one.
 
-**The panel is the crown jewels, and it is one password deep.** Platform
+**The panel is the crown jewels, and a password is not enough.** Platform
 membership is a table with roles and per-route permissions, every action
-audited — that part is right. What is missing is a second factor. One phished
-password reaches every desk we run. This is the highest unpriced risk in the
-system, and the fact that a desk owner has two factors while we do not is
-backwards.
+audited. Sign-in at `/admin` also requires TOTP (`server/src/auth/platform-mfa.ts`).
+An operator who has never enrolled sets the authenticator up on the first
+sign-in — the secret is shown once, as an otpauth URI — and receives
+one-time backup codes stored only as scrypt hashes. After that, a session
+from the desk door does not open the panel. The TOTP secret is AES-256-GCM
+ciphertext; the key is scrypt-derived from `PLATFORM_MFA_KEY` when that is
+set, otherwise from `DATABASE_URL`, and it is not stored in the database.
+Desk tills stay password-only.
 
 **Least privilege on our own side.** Support does not need the permission
 that suspends a desk. The default for a new platform capability is "the role
 that obviously needs it", not "admin".
 
-**Secrets live in the host environment. Never the repo, never the browser,
-never the panel.** Stripe keys, the Resend key, the database URL. No screen
-displays a secret, including to us. Rotation happens in the host; nothing in
-Git ever needs to change.
+**Host secrets live in the host environment. Never the repo, never the
+browser, never the panel.** Stripe keys, the Resend key, the database URL.
+No screen displays one of those, including to us. Rotation happens in the
+host; nothing in Git ever needs to change. The operator's own authenticator
+secret is the exception that has to be shown once, at enrollment, so they
+can put it in an app. It is not shown again.
 
 **The deploy is an attack surface.** CI rebuilds `web/` and fails if the
 committed output differs, so what a customer runs is what the sources say.
@@ -343,11 +349,14 @@ still pulls the CDN.)
 
 **Now**
 
-1. **Platform MFA** (issue #33). One password between a phished operator
-   account and every desk.
-2. **In-process state assumes exactly one server.** Cooldown and sign-in
+1. **In-process state assumes exactly one server.** Cooldown and sign-in
    maps (e.g. `server/src/cooldown.ts`) live in process memory — no
-   horizontal scale, and every deploy drops in-flight sign-ins.
+   horizontal scale, and every deploy drops in-flight sign-ins. Platform
+   MFA challenges are the exception: they are rows, so a sleep during
+   enrollment does not eat the setup.
+
+Issue **#33** (platform MFA) is closed: `/admin` requires TOTP after
+enrollment, with one-time backup codes. Desk `/login` is unchanged.
 
 Issue **#34** (multi-till resolution) is closed: unscoped ledger, quote
 and client-records calls use the session workspace, not "the only
@@ -356,11 +365,11 @@ longer needs a `zz-` prefix.
 
 **After**
 
-3. One schema mechanism. The boot-time DDL string and the checksummed
+2. One schema mechanism. The boot-time DDL string and the checksummed
    migrations describe the same tables two ways, and the migrations do not
    run on the embedded database at all — so dev and production run different
    schemas. `docs/MIGRATION.md` documents the contract as it stands.
-4. Authorization as a hook rather than a remembered line in each route.
-5. A state layer in the OS. Thirty localStorage keys read directly from
+3. Authorization as a hook rather than a remembered line in each route.
+4. A state layer in the OS. Thirty localStorage keys read directly from
    fifteen files, modules wired through a global, thirty-prop components. A
    velocity tax rather than a correctness risk, which is why it is last.

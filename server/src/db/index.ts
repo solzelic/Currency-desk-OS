@@ -91,6 +91,28 @@ CREATE TABLE IF NOT EXISTS platform_users (
   last_seen_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS totp_secret_enc text;
+ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS totp_enrolled_at timestamptz;
+ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS totp_last_step integer;
+CREATE TABLE IF NOT EXISTS platform_mfa_backup_codes (
+  id text PRIMARY KEY,
+  email text NOT NULL REFERENCES platform_users(email) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS platform_mfa_backup_codes_email_idx ON platform_mfa_backup_codes(email);
+CREATE TABLE IF NOT EXISTS platform_mfa_challenges (
+  id text PRIMARY KEY,
+  email text NOT NULL REFERENCES platform_users(email) ON DELETE CASCADE,
+  purpose text NOT NULL CHECK (purpose IN ('enroll', 'login')),
+  secret_enc text,
+  backup_hashes jsonb,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS platform_mfa_challenges_email_idx ON platform_mfa_challenges(email);
 CREATE TABLE IF NOT EXISTS enquiries (
   id text PRIMARY KEY,
   reference text NOT NULL,
@@ -373,6 +395,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at timestamptz NOT NULL,
   revoked_at timestamptz
 );
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS platform_mfa_at timestamptz;
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS audit_events (
   id text PRIMARY KEY,

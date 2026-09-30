@@ -90,7 +90,47 @@ export const platformUsers = pgTable("platform_users", {
   addedBy: text("added_by"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /* Authenticator secret, AES-256-GCM ciphertext. Null until enrollment
+     is confirmed. Never the raw secret. */
+  totpSecretEnc: text("totp_secret_enc"),
+  totpEnrolledAt: timestamp("totp_enrolled_at", { withTimezone: true }),
+  /* Last TOTP time-step accepted. A code inside the window is refused
+     again so it cannot be replayed. */
+  totpLastStep: integer("totp_last_step"),
 });
+
+/* One-time recovery codes for a platform operator. Only the scrypt hash
+   is stored. used_at is set on the sign-in that consumes the code. */
+export const platformMfaBackupCodes = pgTable(
+  "platform_mfa_backup_codes",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull().references(() => platformUsers.email),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("platform_mfa_backup_codes_email_idx").on(t.email)],
+);
+
+/* Password proved, second factor not yet. The ticket the browser holds is
+   not stored — this row is its SHA-256, same as a session. Enrollment
+   keeps the encrypted secret here until a code confirms it, so a restart
+   does not eat the setup the operator is in the middle of. */
+export const platformMfaChallenges = pgTable(
+  "platform_mfa_challenges",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull().references(() => platformUsers.email),
+    purpose: text("purpose").notNull(),
+    secretEnc: text("secret_enc"),
+    backupHashes: jsonb("backup_hashes").$type<string[]>(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("platform_mfa_challenges_email_idx").on(t.email)],
+);
 
 export const stripeCustomers = pgTable(
   "stripe_customers",
@@ -322,6 +362,10 @@ export const sessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /* Set when this session completed platform-operator TOTP (or a backup
+       code). Desk sessions leave it null. The panel requires it once the
+       operator has enrolled. */
+    platformMfaAt: timestamp("platform_mfa_at", { withTimezone: true }),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );

@@ -175,62 +175,102 @@ const dot = c => /*#__PURE__*/React.createElement("span", {
 });
 
 // ===================== LOGIN =====================
+/* Password, then an authenticator. The first time there is nothing to
+   type yet, so this screen shows the setup secret once — the otpauth
+   link, the manual key, and the backup codes — and the next sign-in
+   asks for a code. Desk tills do not use this screen. */
 function Login({
   onIn
 }) {
-  const [step, setStep] = useState('pw'); // pw | code
+  const [step, setStep] = useState('pw'); // pw | enroll | totp
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [code, setCode] = useState('');
+  const [ticket, setTicket] = useState('');
+  const [uri, setUri] = useState('');
+  const [manual, setManual] = useState('');
+  const [backups, setBackups] = useState([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [masked, setMasked] = useState('');
+  const resetToPassword = () => {
+    setStep('pw');
+    setCode('');
+    setTicket('');
+    setUri('');
+    setManual('');
+    setBackups([]);
+    setErr('');
+  };
+  const explain = x => {
+    if (x.status === 401 && step === 'pw') return 'Wrong email or password.';
+    if (x.status === 401) return 'That code isn’t right.';
+    if (x.status === 429) return 'Too many tries. Start sign-in again.';
+    if (x.status === 410) return 'That sign-in expired. Start again.';
+    if (x.status === 409) return 'An authenticator is already set up. Sign in with a code.';
+    return 'Sign-in error — try again.';
+  };
   const submitPw = async e => {
     e.preventDefault();
     setErr('');
     setBusy(true);
     try {
-      const d = await api('/api/auth/login/start', {
+      const d = await api('/api/admin/login', {
         method: 'POST',
         body: JSON.stringify({
           staffId: email.trim().toLowerCase(),
           password: pw
         })
       });
-      if (d.needsCode) {
-        setMasked(d.maskedEmail || '');
-        setStep('code');
+      setPw('');
+      setTicket(d.ticket || '');
+      setCode('');
+      if (d.step === 'enroll') {
+        setUri(d.otpauthUri || '');
+        setManual(d.manualSecret || '');
+        setBackups(Array.isArray(d.backupCodes) ? d.backupCodes : []);
+        setStep('enroll');
         setBusy(false);
-      } else {
-        await afterAuth();
+        return;
       }
+      if (d.step === 'totp') {
+        setUri('');
+        setManual('');
+        setBackups([]);
+        setStep('totp');
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+      setErr('Sign-in error — try again.');
     } catch (x) {
       setBusy(false);
-      setErr(x.status === 401 ? 'Wrong email or password.' : x.status === 403 ? 'That desk is suspended.' : 'Sign-in error — try again.');
+      setErr(explain(x));
     }
   };
   const submitCode = async e => {
     e.preventDefault();
     setErr('');
     setBusy(true);
+    const path = step === 'enroll' ? '/api/admin/login/enroll' : '/api/admin/login/totp';
     try {
-      await api('/api/auth/login/verify', {
+      await api(path, {
         method: 'POST',
         body: JSON.stringify({
-          staffId: email.trim().toLowerCase(),
+          ticket,
           code: code.trim()
         })
       });
       await afterAuth();
     } catch (x) {
       setBusy(false);
-      setErr(x.status === 401 ? 'That code isn’t right.' : 'Verification error — try again.');
+      setErr(explain(x));
+      if (x.status === 410 || x.status === 429 || x.status === 409) resetToPassword();
     }
   };
   const afterAuth = async () => {
     try {
       const me = await api('/api/admin/me');
-      if (me.isAdmin) {
+      if (me.isAdmin && me.mfaEnrolled) {
         onIn();
         return;
       }
@@ -263,6 +303,9 @@ function Login({
     cursor: 'pointer',
     marginTop: 4
   };
+  const title = step === 'enroll' ? 'Set up your authenticator' : step === 'totp' ? 'Authenticator code' : 'Sign in';
+  const blurb = step === 'enroll' ? 'Add CurrencyDesk to your authenticator, then enter the 6-digit code. Save the backup codes now — they are shown once, and each one works a single time. Starting over replaces them.' : step === 'totp' ? 'Enter the 6-digit code from your authenticator, or one backup code.' : 'Platform admin access only. An authenticator code is required.';
+  const manualGroups = (manual || '').replace(/\s/g, '').match(/.{1,4}/g);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
@@ -272,7 +315,7 @@ function Login({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 380,
+      width: step === 'enroll' ? 480 : 380,
       maxWidth: '100%'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -313,13 +356,14 @@ function Login({
       fontWeight: 800,
       margin: '0 0 4px'
     }
-  }, step === 'pw' ? 'Sign in' : 'Check your email'), /*#__PURE__*/React.createElement("p", {
+  }, title), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 13,
       color: 'var(--mute)',
-      margin: '0 0 18px'
+      margin: '0 0 18px',
+      lineHeight: 1.5
     }
-  }, step === 'pw' ? 'Platform admin access only.' : 'We sent a 6-digit code to ' + masked + '.'), step === 'pw' ? /*#__PURE__*/React.createElement("form", {
+  }, blurb), step === 'pw' ? /*#__PURE__*/React.createElement("form", {
     onSubmit: submitPw,
     style: {
       display: 'grid',
@@ -357,18 +401,81 @@ function Login({
       display: 'grid',
       gap: 11
     }
-  }, /*#__PURE__*/React.createElement("input", {
+  }, step === 'enroll' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'grid',
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--faint)',
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase'
+    }
+  }, "Setup link"), /*#__PURE__*/React.createElement("textarea", {
+    readOnly: true,
+    value: uri,
+    rows: 3,
+    style: {
+      ...inSty,
+      fontFamily: MONO,
+      fontSize: 11,
+      lineHeight: 1.45,
+      resize: 'none',
+      wordBreak: 'break-all'
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--faint)',
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      marginBottom: 4
+    }
+  }, "Manual key"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: MONO,
+      fontSize: 13,
+      letterSpacing: '0.08em',
+      wordBreak: 'break-all'
+    }
+  }, manualGroups ? manualGroups.join(' ') : manual)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--faint)',
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      marginBottom: 4
+    }
+  }, "Backup codes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 4,
+      fontFamily: MONO,
+      fontSize: 12.5
+    }
+  }, backups.map(c => /*#__PURE__*/React.createElement("span", {
+    key: c
+  }, c))))), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inSty,
       textAlign: 'center',
       fontFamily: MONO,
-      fontSize: 20,
-      letterSpacing: '0.3em'
+      fontSize: 18,
+      letterSpacing: '0.18em'
     },
     value: code,
-    onChange: e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)),
-    placeholder: "000000",
-    inputMode: "numeric",
+    onChange: e => setCode(step === 'enroll' ? e.target.value.replace(/\D/g, '').slice(0, 6) : e.target.value),
+    placeholder: step === 'enroll' ? '000000' : 'Code',
+    inputMode: step === 'enroll' ? 'numeric' : 'text',
+    autoComplete: "one-time-code",
     autoFocus: true
   }), err && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -381,13 +488,9 @@ function Login({
       opacity: busy ? 0.6 : 1
     },
     disabled: busy
-  }, busy ? 'Verifying…' : 'Verify & enter'), /*#__PURE__*/React.createElement("button", {
+  }, busy ? 'Verifying…' : step === 'enroll' ? 'Confirm & enter' : 'Verify & enter'), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: () => {
-      setStep('pw');
-      setCode('');
-      setErr('');
-    },
+    onClick: resetToPassword,
     style: {
       background: 'none',
       border: 'none',
@@ -3073,7 +3176,7 @@ function SettingsPage() {
     style: {
       color: 'var(--text)'
     }
-  }, "Security"), " \u2014 mandatory MFA on this account, device and session visibility, login history, and hardware keys. Not built yet.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+  }, "Security"), " \u2014 an authenticator code is required to sign in here. Each operator enrolls on their next sign-in; the backup codes are shown then, once. Device lists, login history, and hardware keys are not built yet.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
     style: {
       color: 'var(--text)'
     }
@@ -6156,7 +6259,7 @@ function App() {
   const boot = async () => {
     try {
       const me = await api('/api/admin/me');
-      if (!me.isAdmin) {
+      if (!me.isAdmin || !me.mfaEnrolled) {
         setPhase('login');
         return;
       }
