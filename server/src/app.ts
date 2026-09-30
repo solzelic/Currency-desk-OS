@@ -19,6 +19,7 @@ import { registerDeskRoutes } from "./routes/desk.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
+import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
@@ -172,6 +173,7 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
   registerTenantRoutes(app, db);
   registerTenantStateRoutes(app, db);
   registerAdminRoutes(app, db);
+  registerAdminMfaRoutes(app, db);
   registerGrowthRoutes(app, db, growth);
   /* There used to be a second, staff-side copy of the whole setup flow —
      sixteen steps an operator could fill in on somebody's behalf. It is

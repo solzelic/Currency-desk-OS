@@ -8,6 +8,8 @@
          must-change flag, and revokes every OTHER session.
    Login answers are deliberately uniform ("invalid credentials")
    so staff IDs can't be enumerated; every attempt is audited.
+   Platform-operator TOTP is a different door (/api/admin/login). This
+   file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
@@ -17,7 +19,7 @@ import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { createSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
-import { looksLikeCdId, normalizeCdId } from "../auth/cdid.js";
+import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import { randomUUID } from "node:crypto";
@@ -51,8 +53,6 @@ const resetBody = z.object({
   newPassword: z.string().min(8, "password: at least 8 characters").max(512),
   tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
 });
-
-const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 
 /* Asking for a reset has to be cheap for the person who forgot and
    expensive for anybody working through a list. Counted per address AND
@@ -165,23 +165,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     mustChangePassword: user.mustChangePassword,
     plan: await tenantPlan(db, user.tenantId),
   });
-  // resolve a staff user by staff id — an email identity is globally unique so
-  // it resolves the tenant on its own; a plain staff id is scoped by tenant.
+  // resolve a staff user by staff id — shared with the platform-admin door
+  // so the two cannot drift into two different people.
   async function findLoginUser(staffId: string, tenantId: string) {
-    /* A CurrencyDesk ID identifies a person on its own — that is the point of
-       it — so it resolves without being told which desk. */
-    if (looksLikeCdId(staffId)) {
-      const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.cdId, normalizeCdId(staffId))).limit(1);
-      return rows[0];
-    }
-    if (isEmail(staffId)) {
-      const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId)).limit(2);
-      if (rows.length === 1) return rows[0];
-      if (rows.length > 1) return rows.find((r) => r.tenantId === tenantId) ?? rows[0];
-      return undefined;
-    }
-    const rows = await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.staffId, staffId))).limit(1);
-    return rows[0];
+    return findStaffForLogin(db, staffId, tenantId);
   }
 
   // Step 1 of an email-verified sign-in: prove the password, then email a code.

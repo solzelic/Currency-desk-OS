@@ -17,7 +17,8 @@ import { schema } from "../db/index.js";
 import { packForCountry } from "../ledger/jurisdiction.js";
 import { publishStartingBoard } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
-import { resolveSessionState, revokeAllSessions, SESSION_COOKIE, type SessionState } from "../auth/sessions.js";
+import { resolveSessionState, revokeAllSessions, sessionHasPlatformMfa, SESSION_COOKIE, type SessionState } from "../auth/sessions.js";
+import { platformMfaEnrolled } from "../auth/platform-mfa.js";
 import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
 import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
@@ -263,6 +264,15 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       reply.code(403).send({ error: "forbidden", detail: "Platform team only." });
       return null;
     }
+    /* Until the operator enrolls, a password session still opens the API.
+       That is the window in which an existing account can set an
+       authenticator up instead of being locked out. Once totp_enrolled_at
+       is set, a desk session — password, or the emailed code — is not
+       enough. The panel's own sign-in is what stamps platform_mfa_at. */
+    if ((await platformMfaEnrolled(db, me.email)) && !(await sessionHasPlatformMfa(db, req.cookies[SESSION_COOKIE]))) {
+      reply.code(401).send({ error: "mfa_required", detail: "Enter the code from your authenticator." });
+      return null;
+    }
     if (need && !can(me.role as PlatformRole, need)) {
       reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${need.replace(":", " ")}.` });
       return null;
@@ -282,11 +292,19 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
        Reading it here answered "no" to the owner on every fresh page load. */
     const me = who ? await member(db, who.staffId) : null;
     if (me) memberCache.set(me.email, me.role as PlatformRole);
+    const enrolled = me ? await platformMfaEnrolled(db, me.email) : false;
+    const steppedUp = enrolled && who ? await sessionHasPlatformMfa(db, req.cookies[SESSION_COOKIE]) : false;
+    /* isAdmin stays true before enrollment so an operator who has not yet
+       set up an authenticator is not reported as a stranger. After
+       enrollment, a session that skipped the code is not an admin session. */
+    const open = !!me && (!enrolled || steppedUp);
     return {
-      isAdmin: !!me,
-      role: me?.role ?? null,
-      email: me?.email ?? null,
-      can: me ? Object.fromEntries((ROLES.find((r) => r.id === me.role)?.permissions ?? []).map((p) => [p, true])) : {},
+      isAdmin: open,
+      mfaEnrolled: enrolled,
+      mfaRequired: !!me && enrolled && !steppedUp,
+      role: open ? me!.role : null,
+      email: open ? me!.email : null,
+      can: open ? Object.fromEntries((ROLES.find((r) => r.id === me!.role)?.permissions ?? []).map((p) => [p, true])) : {},
     };
   });
 

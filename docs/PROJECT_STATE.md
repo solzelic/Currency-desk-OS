@@ -89,6 +89,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `numeric` (money 2dp, rates/margins 12dp). The SMS quote path and
   the public board display price with `decimal.js`, once. jsonb board
   mids remain JS numbers — parked with the rest of that audit finding.
+  Audit Slice B (platform MFA) has landed: a platform-operator sign-in
+  at `/admin` requires TOTP after enrollment. The first sign-in enrolls
+  (otpauth URI shown once, backup codes stored only as scrypt hashes).
+  Desk `/login` is still password-only.
 
 - **Signup mobile on the admin call** — the number `placeOutboundCall`
   dials is `enquiries.details.phone`. The mobile typed while opening a
@@ -124,9 +128,7 @@ deliberately retained until external hot-linking can be ruled out.
 
 ## Known high-priority engineering risks (unresolved)
 
-1. **Platform MFA absent** (issue #33) — no TOTP/MFA on the cross-tenant
-   admin console.
-2. **Resend API key rotation** (issue #32) — the key passed through chat;
+1. **Resend API key rotation** (issue #32) — the key passed through chat;
    rotation cannot be verified from the repo. Open until confirmed rotated.
 
 Issue **#34** (multi-till/workspace resolution) is closed in code: an
@@ -153,12 +155,24 @@ authenticated narrative dashboard.
 
 ## Next engineering priorities (ordered)
 
-1. Platform MFA (issue #33).
-2. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
+1. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
 
 ## Last reviewed
 
-**2026-09-30**, signup mobile reaches the admin call. A Canada desk's
+**2026-09-30**, platform-operator MFA (issue #33): `/admin` sign-in requires
+TOTP once the operator has enrolled. First sign-in enrolls (otpauth URI
+shown once; backup codes are scrypt hashes and single-use). The secret is
+AES-256-GCM, keyed only from `PLATFORM_MFA_KEY` (required in production;
+development and tests use a fixed pepper and never `DATABASE_URL`), not
+stored beside the ciphertext. Desk `/login` is unchanged. Until that first
+enrollment, an existing password session can still call the admin API —
+that is the window in which the current operator sets the authenticator
+up, and the panel itself will not open until they do. The session is
+the staff user who proved the password, including a desk staff id that
+is the platform owner. The browser seam signs that operator in through
+the same door, so the panel renders.
+
+Prior stamp **2026-09-30**, signup mobile reaches the admin call. A Canada desk's
 setup mobile fills an empty `enquiries.details.phone` at signup or
 launch. The applications record shows the call confirmation and
 transcript; recordings are not kept. No automatic dial.

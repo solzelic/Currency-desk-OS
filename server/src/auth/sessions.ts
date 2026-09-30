@@ -15,7 +15,11 @@ export const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // one desk shift
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
-export async function createSession(db: Db, userId: string): Promise<{ token: string; expiresAt: Date }> {
+export async function createSession(
+  db: Db,
+  userId: string,
+  opts?: { platformMfa?: boolean },
+): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   const workspaceId = await homeWorkspaceId(db, userId);
@@ -24,8 +28,27 @@ export async function createSession(db: Db, userId: string): Promise<{ token: st
     userId,
     expiresAt,
     ...(workspaceId ? { workspaceId } : {}),
+    /* Only the platform-admin door sets this, and only after a TOTP or
+       backup code. A desk sign-in must not be able to pass it by accident. */
+    ...(opts?.platformMfa ? { platformMfaAt: new Date() } : {}),
   });
   return { token, expiresAt };
+}
+
+export async function sessionHasPlatformMfa(db: Db, token: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  const rows = await db
+    .select({ at: schema.sessions.platformMfaAt })
+    .from(schema.sessions)
+    .where(
+      and(
+        eq(schema.sessions.tokenHash, sha256(token)),
+        isNull(schema.sessions.revokedAt),
+        gt(schema.sessions.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.at != null;
 }
 
 export async function setSessionWorkspace(db: Db, token: string, workspaceId: string): Promise<void> {

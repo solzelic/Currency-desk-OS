@@ -1,5 +1,7 @@
 import { test as base, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 /* ============================================================
@@ -174,21 +176,143 @@ export function ledger(page: Page) {
   };
 }
 
-/* Sign in as the platform operator. The panel's own form takes an email
-   address and the seeded owner is a staff id, so this goes through the
-   API the form posts to — the session cookie is what the panel reads. */
+/* Sign in as the platform operator through the panel's own door.
+
+   A desk password session is not enough: once the operator has an
+   authenticator, /admin stays on the sign-in screen until a code is
+   accepted, and before that the shell still will not open. The first
+   call enrolls (the secret is shown once, on that response). Later
+   calls reuse it. A failed test restarts the Playwright worker, so the
+   secret is also kept in the machine temp directory for the rest of
+   this run. It is not logged and it is not written under test-results,
+   which CI uploads on failure. A server whose database already enrolled
+   j.masri before this run has nothing left to read; this throws instead
+   of opening a back door. Desk sign-in (signInAtDesk) stays
+   password-only. */
+type OperatorTotp = { period: number; generate(opts?: { timestamp?: number }): string };
+const requireFromServer = createRequire(path.join(ROOT, "server/package.json"));
+const OTPAuth = requireFromServer("otpauth") as {
+  TOTP: new (opts: {
+    issuer: string;
+    label: string;
+    algorithm: string;
+    digits: number;
+    period: number;
+    secret: unknown;
+  }) => OperatorTotp;
+  Secret: { fromBase32(secret: string): unknown };
+};
+/* The suite is one worker and one database, but a failed test restarts
+   the worker and a retry is a new process. The secret is shown once, so
+   it is kept here for the rest of the run. Not the server log, and not
+   a product back door. */
+const OPERATOR_TOTP_FILE = path.join(tmpdir(), "currencydesk-seam-operator-totp.json");
+let operatorTotp: OperatorTotp | null = null;
+let operatorTotpSecret: string | null = null;
+let operatorTotpLastStep = -1;
+
+function totpFromBase32(secret: string): OperatorTotp {
+  return new OTPAuth.TOTP({
+    issuer: "CurrencyDesk",
+    label: "j.masri",
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    secret: OTPAuth.Secret.fromBase32(secret),
+  });
+}
+
+function rememberOperator(secret: string, lastStep: number): void {
+  operatorTotpSecret = secret;
+  operatorTotp = totpFromBase32(secret);
+  operatorTotpLastStep = lastStep;
+  writeFileSync(OPERATOR_TOTP_FILE, JSON.stringify({ secret, lastStep }), { mode: 0o600 });
+}
+
+function loadOperator(): void {
+  if (operatorTotp) return;
+  try {
+    const saved = JSON.parse(readFileSync(OPERATOR_TOTP_FILE, "utf8")) as { secret?: string; lastStep?: number };
+    if (!saved.secret) return;
+    operatorTotpSecret = saved.secret;
+    operatorTotp = totpFromBase32(saved.secret);
+    operatorTotpLastStep = saved.lastStep ?? -1;
+  } catch {
+    /* First sign-in of this run. */
+  }
+}
+
+async function operatorCode(totp: OperatorTotp): Promise<string> {
+  const period = (totp.period || 30) * 1000;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const now = Date.now();
+    const current = Math.floor(now / period);
+    /* The server accepts the current step and one either side, and it
+       refuses a step it has already accepted. Stay on the current step
+       or the next one so a boundary does not hand it a code that has
+       just fallen out of the window. */
+    const open = [current, current + 1].filter((step) => step > operatorTotpLastStep);
+    if (open.length) {
+      const step = Math.min(...open);
+      if (operatorTotpSecret) rememberOperator(operatorTotpSecret, step);
+      else operatorTotpLastStep = step;
+      return totp.generate({ timestamp: step * period + Math.floor(period / 2) });
+    }
+    const resumeAt = operatorTotpLastStep * period;
+    const wait = Math.min(Math.max(resumeAt - now + 250, 250), period);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  throw new Error("operator authenticator window did not advance");
+}
+
 export async function signInAsOperator(page: Page): Promise<void> {
+  loadOperator();
   await page.goto("/admin");
-  await page.waitForTimeout(500);
-  const status = await page.evaluate(async () => {
-    const r = await fetch("/api/auth/login", {
+  const started = await page.evaluate(async () => {
+    const r = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" }),
     });
-    return r.status;
+    const body = await r.json().catch(() => ({}));
+    return { status: r.status, body: body as { step?: string; ticket?: string; manualSecret?: string } };
   });
-  if (status !== 200) throw new Error(`operator sign-in failed: ${status}`);
+  if (started.status !== 200) throw new Error(`operator sign-in failed: ${started.status}`);
+  const step = started.body.step;
+  const ticket = started.body.ticket;
+  if (!ticket) throw new Error("operator sign-in did not return a ticket");
+
+  let totp = operatorTotp;
+  if (step === "enroll") {
+    const secret = started.body.manualSecret;
+    if (!secret) throw new Error("operator enrollment did not return a setup key");
+    rememberOperator(secret, -1);
+    totp = operatorTotp;
+  } else if (step === "totp") {
+    if (!totp) {
+      throw new Error(
+        "j.masri is already enrolled and this process never saw the authenticator secret. The panel shows it once. Restart the seam server against a fresh database.",
+      );
+    }
+  } else {
+    throw new Error(`operator sign-in returned an unexpected step`);
+  }
+  if (!totp) throw new Error("operator authenticator is missing");
+
+  const code = await operatorCode(totp);
+  const confirmPath = step === "enroll" ? "/api/admin/login/enroll" : "/api/admin/login/totp";
+  const confirmed = await page.evaluate(
+    async ({ confirmPath, ticket, code }) => {
+      const r = await fetch(confirmPath, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticket, code }),
+      });
+      return r.status;
+    },
+    { confirmPath, ticket, code },
+  );
+  if (confirmed !== 200) throw new Error(`operator ${step} failed: ${confirmed}`);
 }
 
 /* Wait for a Babel-compiled page to have actually rendered. These pages

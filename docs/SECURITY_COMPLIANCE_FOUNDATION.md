@@ -105,7 +105,6 @@ demo-selector authentication, client-side authorization, browser-editable
 audit events — closed when authority moved server-side; see the
 Architecture Boundary above.)
 
-- No second factor on the platform operator console (issue #33).
 - `PLATFORM_ADMIN_BOOTSTRAP` is one-shot in code (creates if missing; never
   overwrites an existing password). The env var should still be removed
   from Render after first sign-in so the plaintext is not left in the host
