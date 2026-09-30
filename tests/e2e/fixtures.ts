@@ -1,6 +1,7 @@
 import { test as base, type Page } from "@playwright/test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 /* ============================================================
@@ -182,11 +183,12 @@ export function ledger(page: Page) {
    accepted, and before that the shell still will not open. The first
    call enrolls (the secret is shown once, on that response). Later
    calls reuse it. A failed test restarts the Playwright worker, so the
-   secret is also kept under test-results/ for the rest of this run.
-   That file is gitignored. It is not logged. A server whose database
-   already enrolled j.masri before this run has nothing left to read;
-   this throws instead of opening a back door. Desk sign-in
-   (signInAtDesk) stays password-only. */
+   secret is also kept in the machine temp directory for the rest of
+   this run. It is not logged and it is not written under test-results,
+   which CI uploads on failure. A server whose database already enrolled
+   j.masri before this run has nothing left to read; this throws instead
+   of opening a back door. Desk sign-in (signInAtDesk) stays
+   password-only. */
 type OperatorTotp = { period: number; generate(opts?: { timestamp?: number }): string };
 const requireFromServer = createRequire(path.join(ROOT, "server/package.json"));
 const OTPAuth = requireFromServer("otpauth") as {
@@ -202,9 +204,9 @@ const OTPAuth = requireFromServer("otpauth") as {
 };
 /* The suite is one worker and one database, but a failed test restarts
    the worker and a retry is a new process. The secret is shown once, so
-   it is kept in this file for the rest of the run. test-results/ is
-   gitignored. It is not the server log and it is not a product back door. */
-const OPERATOR_TOTP_FILE = path.join(ROOT, "test-results", "operator-totp.json");
+   it is kept here for the rest of the run. Not the server log, and not
+   a product back door. */
+const OPERATOR_TOTP_FILE = path.join(tmpdir(), "currencydesk-seam-operator-totp.json");
 let operatorTotp: OperatorTotp | null = null;
 let operatorTotpSecret: string | null = null;
 let operatorTotpLastStep = -1;
@@ -224,7 +226,6 @@ function rememberOperator(secret: string, lastStep: number): void {
   operatorTotpSecret = secret;
   operatorTotp = totpFromBase32(secret);
   operatorTotpLastStep = lastStep;
-  mkdirSync(path.dirname(OPERATOR_TOTP_FILE), { recursive: true });
   writeFileSync(OPERATOR_TOTP_FILE, JSON.stringify({ secret, lastStep }), { mode: 0o600 });
 }
 
