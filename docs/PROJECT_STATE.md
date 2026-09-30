@@ -107,6 +107,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
 
+- **First-run tour** — the first time someone reaches the desk, a
+  skippable walk-through opens the real screens. An owner is shown the
+  shop, then clients, then the file folder on a customer record
+  (identification standing, the papers filed there, and search). Anyone
+  else is shown the cash drawer: the till, the count, and reconcile and
+  close — and only if that app is on their dock. A step whose screen is
+  not there is left out; the tour does not add a screen, a dock icon, or
+  a second dashboard. Skip or finish is stored per person in the desk
+  preference document (`cdos_tour_v1`), the same save that keeps the rest
+  of the desk across a refresh. It does not file a paper and does not
+  change identification standing.
+
 - **Product-demo desk** — York FX can be opened as a lived-in shop for a
   meeting. Staff id `demo` is created on that tenant if missing; the
   password is stamped only from `DEMO_STAFF_BOOTSTRAP` and is never
@@ -165,7 +177,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-30**, operator file folder. Supporting papers (proof of address,
+**2026-09-30**, first-run tour. The first time an owner or an employee
+reaches the desk, a skippable walk-through opens the screens that role
+actually has: the shop, clients, and the file folder for an owner; the
+cash drawer for everyone else, when it is on their dock. The choice to
+skip or finish is a per-person preference in the desk document, so a
+refresh does not bring the tour back. Papers and identification standing
+are unchanged.
+
+Prior stamp **2026-09-30**, operator file folder. Supporting papers (proof of address,
 source of funds, corporate filings) are `supporting_file` rows on
 `desk_client_images`. The client record lists them without the bytes;
 opening one writes an audit row. A file does not change identification.

@@ -317,7 +317,7 @@
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
 
         {/* ===== BANKNOTE MASTHEAD ===== */}
-        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 14, border: `1px solid ${CD.ink}`, background: `linear-gradient(180deg, ${T.panel}, ${T.cream})` }}>
+        <div data-tour="shop" style={{ position: 'relative', overflow: 'hidden', borderRadius: 14, border: `1px solid ${CD.ink}`, background: `linear-gradient(180deg, ${T.panel}, ${T.cream})` }}>
           <div style={{ position: 'absolute', inset: 5, border: `1px solid ${T.line}`, borderRadius: 9, pointerEvents: 'none' }}></div>
           <div style={{ position: 'absolute', inset: 8, border: `1px solid ${T.hair}`, borderRadius: 7, pointerEvents: 'none' }}></div>
           <Rosette size={300} stroke={T.slate} opacity={0.06} style={{ position: 'absolute', right: -40, top: -70, pointerEvents: 'none' }} />
