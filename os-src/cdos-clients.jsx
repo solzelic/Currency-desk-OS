@@ -1051,7 +1051,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       : 'This desk has no identification or reporting line stated, so neither number is shown here.';
     const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
     const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
-    return (<div className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+    return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
       <div className="flex items-center gap-2 flex-wrap">
         <Pill text={standing[0]} c={tone} bg={soft} />
@@ -1091,7 +1091,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setErr((e && e.message) || 'CurrencyDesk could not open that file.');
       }
     };
-    return (<div className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+    return (<div data-tour="file-folder" className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="flex items-center justify-between gap-3 mb-2">
         <div>
           <div className="text-sm font-semibold" style={{ color: CD.ink }}>Files{docs.length ? <span style={{ color: CD.mute, fontWeight: 500 }}> · {docs.length}</span> : null}</div>
@@ -1099,7 +1099,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         </div>
         {canEdit && <label className="flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none" style={{ color: CD.ink }}><Ic n="upload" s={13} c={CD.ink} /> Add file<input type="file" aria-label="Add a file to this customer" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) writer.addFile(f); }} /></label>}
       </div>
-      {docs.length > 0 && <div className="flex items-center gap-2 px-2.5 py-1.5 mb-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
+      {docs.length > 0 && <div data-tour="file-search" className="flex items-center gap-2 px-2.5 py-1.5 mb-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
         <Ic n="search" s={13} c={CD.mute} />
         <input value={q} onChange={e => setQ(e.target.value)} aria-label="Search files" placeholder="Search files" className="w-full outline-none text-[12.5px] bg-transparent" style={{ color: CD.ink }} />
       </div>}
@@ -1460,7 +1460,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     return (<div className="flex flex-col" style={{ height: '100%' }}>
       {/* toolbar */}
-      <div className="flex items-center gap-2 px-4 py-3 flex-none" style={{ borderBottom: `1px solid ${CD.line}`, background: CD.panel }}>
+      <div data-tour="clients" className="flex items-center gap-2 px-4 py-3 flex-none" style={{ borderBottom: `1px solid ${CD.line}`, background: CD.panel }}>
         <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, phone, or a file on their record…" className="w-full outline-none text-sm bg-transparent" />{q && <button onClick={() => setQ('')} style={{ color: CD.mute }}><Ic n="x" s={13} /></button>}</div>
         {canEdit && <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="userplus" s={15} c="var(--cd-on-ink)" /> New contact</button>}
       </div>

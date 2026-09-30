@@ -11366,6 +11366,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         gap: 13
       }
     }, /*#__PURE__*/React.createElement("div", {
+      "data-tour": "shop",
       style: {
         position: 'relative',
         overflow: 'hidden',
@@ -13745,6 +13746,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         position: 'relative'
       }
     }, /*#__PURE__*/React.createElement("div", {
+      "data-tour": "till",
       className: "px-4 pt-3 flex-none",
       style: {
         background: CD.panel
@@ -13973,6 +13975,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, TABS.map(([id, label, ic]) => /*#__PURE__*/React.createElement("button", {
       key: id,
+      "data-tour": id === 'reconcile' ? 'till-reconcile-tab' : undefined,
       onClick: () => setTab(id),
       className: 'fld-tab' + (tab === id ? ' on' : '')
     }, /*#__PURE__*/React.createElement(Ic, {
@@ -14280,6 +14283,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }));
     })), /*#__PURE__*/React.createElement("div", {
+      "data-tour": "till-count",
       className: "flex items-center justify-between mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "inline-flex",
@@ -14539,6 +14543,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint
       }
     }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float."))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
+      "data-tour": "till-reconcile",
       className: "p-5 flex flex-col",
       style: {
         minHeight: '100%'
@@ -14724,6 +14729,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: CD.faint
     }), " Owner / permitted staff only"))) : /*#__PURE__*/React.createElement("div", {
+      "data-tour": "till-reconcile",
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between mb-3"
@@ -23570,6 +23576,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
     const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
+      "data-tour": "identification",
       className: "mb-3 p-3.5",
       style: {
         background: CD.panel,
@@ -23639,6 +23646,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     };
     return /*#__PURE__*/React.createElement("div", {
+      "data-tour": "file-folder",
       className: "mb-5 p-4",
       style: {
         background: CD.panel,
@@ -23683,6 +23691,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         if (f) writer.addFile(f);
       }
     }))), docs.length > 0 && /*#__PURE__*/React.createElement("div", {
+      "data-tour": "file-search",
       className: "flex items-center gap-2 px-2.5 py-1.5 mb-2",
       style: {
         border: `1px solid ${CD.line}`,
@@ -24857,6 +24866,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
+      "data-tour": "clients",
       className: "flex items-center gap-2 px-4 py-3 flex-none",
       style: {
         borderBottom: `1px solid ${CD.line}`,
@@ -58527,6 +58537,758 @@ window.CDOS_PERSIST = (function () {
 })();
 
 
+/* ---- os-src/cdos-tour.js ---- */
+/* ============================================================
+   CurrencyDesk OS — first-run tour
+
+   The first time a person reaches the desk, a short walk-through
+   opens the screens they will actually use and says what each one
+   is for. It is not a second dashboard and it does not invent a
+   screen to have something to point at.
+
+   TWO TOURS, CHOSEN BY ROLE
+
+   The OS role is the one the shell already uses (`Owner`, `Manager`,
+   `Senior teller`, `Cashier`, `Trainee`). The server's `administrator`
+   has already been mapped to `Owner` by the time this runs.
+
+     Owner     the shop, then the client book, then the file folder
+               on a customer record: identification standing, the
+               papers filed there, and search inside that folder.
+     Everyone  the cash drawer they actually work: the till, then
+     else      the count. Reconcile and close is not a step. That
+               panel is the close itself, and with no count saved it
+               shows an error. The tour does not count, post, or
+               close cash to clear that error, so the step is left out.
+
+   A step whose app is not on this person's dock is dropped. The
+   cash drawer is gated on the same permissions as the dock
+   (`canViewReports` or `canCloseDay`), so a cashier or a trainee
+   is not walked into a window the desk has not given them. There
+   is no substitute tour for that case — a made-up path would be
+   the thing this file exists to avoid.
+
+   The folder steps need a real customer to open. With none on the
+   book, those steps are dropped and the tour stops at the client
+   list. Search inside the folder only exists once a customer has
+   a paper; the screen drops that control, and the shell drops the
+   step when the anchor is not in the document (`dropUnplaced`).
+
+   WHAT "DONE" IS STORED AS
+
+   Operator preferences already live in the desk document: every
+   `cdos_*` key in localStorage is loaded on sign-in and written
+   back by `cdos-persist.js` (`GET`/`PUT /api/tenant/state`). A
+   flag that lived only in `sessionStorage`, or in a `cdos_*` key
+   the catalogue did not know, would vanish on the refresh that
+   puts the rest of the desk back.
+
+   So the choice is one preference key, `cdos_tour_v1`, a map from
+   staff id to `{ status, tour }`. Staff id, not the person's name:
+   names collide and get edited. The document is per desk, so the
+   map is what keeps one person's skip from dismissing a colleague.
+
+   The known limit of that document applies here too. A save is
+   merged per key, and this is one key. Two people finishing in the
+   same moment, on two browsers, can lose one of the two entries.
+   The next sign-in shows the tour once more to whoever lost. That
+   is the same limit as app order, and it is not a reason to put a
+   screen preference in its own table.
+
+   This file does not file a paper and does not write a client.
+   Identification standing is read by the screen the tour points
+   at; nothing here changes it.
+   ============================================================ */
+(function () {
+  /* The localStorage key. Also the key inside the tenant document.
+     The catalogue in server/src/state/shape.ts has to name it — a
+     test reads the sources and fails when a new key is not listed. */
+  var KEY = 'cdos_tour_v1';
+
+  /* Anchors are `data-tour` attributes on the real screens. `app`
+     is the dock id; if it is not in the list the shell passes, the
+     step is not offered. `needsClient` steps open a real customer
+     record first. The shell does not draw the card until that
+     anchor is on a window that has actually opened. */
+  var OWNER_STEPS = [
+    {
+      id: 'shop',
+      tour: 'owner',
+      app: 'dashboard',
+      anchor: 'shop',
+      title: 'The shop',
+      body: 'This is the shop. Earnings, cash, and what the book holds, for the period you choose. The figures are the ledger’s.',
+    },
+    {
+      id: 'clients',
+      tour: 'owner',
+      app: 'clients',
+      anchor: 'clients',
+      title: 'Clients',
+      body: 'Customers live here. Search by name, by phone, or by a paper filed on their record.',
+    },
+    {
+      id: 'standing',
+      tour: 'owner',
+      app: 'clients',
+      anchor: 'identification',
+      needsClient: true,
+      title: 'Identification',
+      body: 'Where this customer stands. Identified, expired, or not yet. A paper in the folder does not move it.',
+    },
+    {
+      id: 'folder',
+      tour: 'owner',
+      app: 'clients',
+      anchor: 'file-folder',
+      needsClient: true,
+      title: 'The file folder',
+      body: 'Papers filed on this customer — proof of address, source of funds, corporate filings. They stay with the record.',
+    },
+    {
+      id: 'search',
+      tour: 'owner',
+      app: 'clients',
+      anchor: 'file-search',
+      needsClient: true,
+      title: 'Search the folder',
+      body: 'Find a paper by the label or the file name the desk gave it.',
+    },
+  ];
+
+  var EMPLOYEE_STEPS = [
+    {
+      id: 'till',
+      tour: 'employee',
+      app: 'till',
+      anchor: 'till',
+      title: 'The till',
+      body: 'This is the till. The drawer, the session, and the cash the ledger says is in it.',
+    },
+    {
+      id: 'count',
+      tour: 'employee',
+      app: 'till',
+      anchor: 'till-count',
+      title: 'The count',
+      body: 'Count the drawer here, bill and coin. A count is not on the book until you save it.',
+    },
+  ];
+
+  function kindForRole(role) {
+    return role === 'Owner' ? 'owner' : 'employee';
+  }
+
+  function hasApp(apps, id) {
+    if (!apps) return true; // caller did not restrict the dock
+    return apps.indexOf(id) !== -1;
+  }
+
+  /* The steps this person can be shown. `apps` is the dock they
+     actually have. `hasClient` is whether the book has someone to
+     open — the folder is a panel on a customer, not its own app. */
+  function stepsFor(opts) {
+    opts = opts || {};
+    var kind = kindForRole(opts.role);
+    var source = kind === 'owner' ? OWNER_STEPS : EMPLOYEE_STEPS;
+    var out = [];
+    for (var i = 0; i < source.length; i++) {
+      var step = source[i];
+      if (!hasApp(opts.apps, step.app)) continue;
+      if (step.needsClient && !opts.hasClient) continue;
+      out.push(step);
+    }
+    return out;
+  }
+
+  /* A customer to open the folder on. Prefer one who already has
+     a paper, so the search field — which the screen only draws
+     when there is something to search — is on the page. */
+  function clientForTour(clients) {
+    if (!clients || typeof clients !== 'object') return null;
+    var names = Object.keys(clients).filter(function (n) {
+      return clients[n] && typeof clients[n] === 'object';
+    });
+    if (!names.length) return null;
+    for (var i = 0; i < names.length; i++) {
+      var docs = clients[names[i]].docs;
+      if (Array.isArray(docs) && docs.length) return names[i];
+    }
+    return names[0];
+  }
+
+  function hasClient(clients) {
+    return clientForTour(clients) != null;
+  }
+
+  /* The shell calls this when it has looked for an anchor and the
+     screen did not render it. The step is removed; the rest stand.
+     Used for the folder search (no papers, no field) and for any
+     step whose screen is not actually in the running app. */
+  function dropUnplaced(steps, missingAnchors) {
+    var missing = {};
+    (missingAnchors || []).forEach(function (a) { if (a) missing[a] = 1; });
+    return (steps || []).filter(function (s) { return !s.anchor || !missing[s.anchor]; });
+  }
+
+  function staffKey(id) {
+    var s = String(id == null ? '' : id).trim().toLowerCase();
+    return s || null;
+  }
+
+  function read(storage) {
+    if (!storage || typeof storage.getItem !== 'function') return {};
+    var raw;
+    try { raw = storage.getItem(KEY); } catch (e) { return {}; }
+    if (!raw) return {};
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      return parsed;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  /* `skipped` and `finished` both mean do not show it again.
+     Anything else (a half-written row, a future status) shows the
+     tour, which is the safe side of a bad read. */
+  function outcome(book, id) {
+    var key = staffKey(id);
+    if (!key || !book) return null;
+    var row = book[key];
+    if (!row) return null;
+    if (row.status === 'skipped' || row.status === 'finished') return row.status;
+    return null;
+  }
+
+  function shouldShow(book, id) {
+    if (!staffKey(id)) return false;
+    return outcome(book, id) == null;
+  }
+
+  /* Writes this person's row and leaves every other person alone.
+     `now` is injectable so a test does not depend on the clock. */
+  function record(storage, id, status, tour, now) {
+    var book = read(storage);
+    var key = staffKey(id);
+    if (!key) return book;
+    if (status !== 'skipped' && status !== 'finished') return book;
+    var kind = tour === 'owner' ? 'owner' : 'employee';
+    book[key] = {
+      status: status,
+      tour: kind,
+      at: now || new Date().toISOString(),
+    };
+    try { storage.setItem(KEY, JSON.stringify(book)); } catch (e) {}
+    return book;
+  }
+
+  window.CDOS_TOUR = {
+    KEY: KEY,
+    kindForRole: kindForRole,
+    stepsFor: stepsFor,
+    clientForTour: clientForTour,
+    hasClient: hasClient,
+    dropUnplaced: dropUnplaced,
+    staffKey: staffKey,
+    read: read,
+    outcome: outcome,
+    shouldShow: shouldShow,
+    record: record,
+  };
+})();
+
+
+/* ---- os-src/cdos-tour.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS — first-run tour, on the desk
+
+   The decisions (who, which steps, whether they have already
+   skipped or finished) live in cdos-tour.js so they can be tested
+   without a browser. This file only puts that answer on screen:
+   it opens the real app, finds the real anchor, and draws a card
+   beside it.
+
+   The card uses the desk's own type and colours. It is not a
+   scrim and it does not add a dock icon. Skip is on every step.
+   Escape skips too — a person mid-count should be able to leave
+   without hunting for the button.
+
+   Once they skip or finish, the choice is written to
+   `cdos_tour_v1` and `CDOS_PERSIST.save()` is asked to flush.
+   The four-second autosave would usually be enough; a refresh
+   in those four seconds would restore the server copy and show
+   the tour again, which is the bug the flush is there to avoid.
+   On a desk with no server session the flush is a no-op and the
+   localStorage key is the copy that survives, the same way the
+   rest of an offline desk survives.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useLayoutEffect,
+    useRef
+  } = React;
+  const api = function () {
+    return window.CDOS_TOUR;
+  };
+  function boxOf(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    var r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    return {
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height
+    };
+  }
+  function overlaps(a, b) {
+    return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+  }
+
+  /* Everything the card must not sit on. Open windows (the shop, the
+     till, and the ledger the desk opens on its own), the customer sheet
+     when the step is inside one, the anchor itself, and the menu,
+     tenant, and app bars. "New transaction" is named because it sits on
+     the ledger beside the till — a card in that gap covers the control
+     the till step is standing next to. */
+  function keepClear(anchorEl) {
+    var rects = [];
+    function add(el) {
+      var box = boxOf(el);
+      if (box) rects.push(box);
+    }
+    document.querySelectorAll('.win.show').forEach(add);
+    ['menubar', 'tenantbar', 'appbar'].forEach(function (id) {
+      add(document.getElementById(id));
+    });
+    document.querySelectorAll('[data-tour="shop"], [data-tour="file-folder"], [data-tour="till-count"]').forEach(add);
+    if (anchorEl) {
+      add(anchorEl);
+      var sheet = anchorEl.closest('.fixed');
+      if (sheet) add(sheet.firstElementChild || sheet);
+    }
+    document.querySelectorAll('button').forEach(function (b) {
+      if ((b.textContent || '').replace(/\s+/g, ' ').trim() === 'New transaction') add(b);
+    });
+    return rects;
+  }
+  function overlapArea(a, b) {
+    var w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    var h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (w <= 1 || h <= 1) return 0;
+    return w * h;
+  }
+
+  /* A spot in a gap, using the card's real width and height. The card
+     used to drop onto the anchor when the window filled the obvious
+     side, which covered the shop figures, the drawer's neighbour
+     "New transaction", and the file list. Narrower cards are tried by
+     the caller so a profile sheet (which leaves only a gutter) still
+     has a place for Skip. */
+  function placeCard(avoid, cardW, cardH) {
+    var margin = 14;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var spots = [{
+      left: vw - cardW - margin,
+      top: vh - cardH - margin
+    }, {
+      left: margin,
+      top: vh - cardH - margin
+    }, {
+      left: vw - cardW - margin,
+      top: margin
+    }, {
+      left: margin,
+      top: margin
+    }];
+    avoid.forEach(function (r) {
+      spots.push({
+        left: r.right + margin,
+        top: Math.max(margin, r.top)
+      });
+      spots.push({
+        left: r.left - cardW - margin,
+        top: Math.max(margin, r.top)
+      });
+      spots.push({
+        left: Math.max(margin, Math.min(r.left, vw - cardW - margin)),
+        top: r.bottom + margin
+      });
+      spots.push({
+        left: Math.max(margin, Math.min(r.right - cardW, vw - cardW - margin)),
+        top: r.top - cardH - margin
+      });
+    });
+    var best = null;
+    var bestArea = Infinity;
+    for (var i = 0; i < spots.length; i++) {
+      var s = spots[i];
+      if (s.left < margin || s.top < margin) continue;
+      if (s.left + cardW > vw - margin || s.top + cardH > vh - margin) continue;
+      var card = {
+        left: s.left,
+        top: s.top,
+        right: s.left + cardW,
+        bottom: s.top + cardH
+      };
+      var area = 0;
+      for (var j = 0; j < avoid.length; j++) area += overlapArea(card, avoid[j]);
+      if (area < bestArea) {
+        bestArea = area;
+        best = {
+          left: card.left,
+          top: card.top,
+          width: cardW,
+          overlap: area
+        };
+        if (area === 0) return best;
+      }
+    }
+    if (best) return best;
+    return {
+      left: margin,
+      top: Math.max(margin, vh - cardH - margin),
+      width: cardW,
+      overlap: Infinity
+    };
+  }
+
+  /* A window starts at opacity 0 and only then gains `.show`. An
+     anchor inside a window that has not appeared yet is not a screen
+     a person can see, so the card waits. */
+  function visibleBox(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    var win = el.closest ? el.closest('.win') : null;
+    if (win && (!win.classList.contains('show') || win.classList.contains('min'))) return null;
+    var rect = el.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return null;
+    var host = win ? win.getBoundingClientRect() : null;
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      bottom: rect.bottom,
+      right: rect.right,
+      host: host ? {
+        top: host.top,
+        left: host.left,
+        width: host.width,
+        height: host.height,
+        bottom: host.bottom,
+        right: host.right
+      } : null
+    };
+  }
+  function FirstRun({
+    role,
+    staffId,
+    apps,
+    clients,
+    openApp,
+    openClient,
+    paused
+  }) {
+    const tour = api();
+    const [run, setRun] = useState(null); // null until read; false once declined or empty
+    const [box, setBox] = useState(null);
+    const [frame, setFrame] = useState(null);
+    const cardRef = useRef(null);
+    const clientsRef = useRef(clients);
+    const openAppRef = useRef(openApp);
+    const openClientRef = useRef(openClient);
+    clientsRef.current = clients;
+    openAppRef.current = openApp;
+    openClientRef.current = openClient;
+    const sawRef = useRef(false);
+    const personRef = useRef(null);
+    /* A joined string, not the array. The shell builds a new array on
+       every render; depending on it would restart the tour forever. */
+    const appsKey = (apps || []).join('|');
+    const clientReady = !!(tour && tour.hasClient(clients));
+
+    /* Decide per person. A colleague (different staff id) is read
+       again, so one skip does not dismiss theirs. Clients often
+       arrive a moment after the desk does; if that happens while
+       this person is still on the first step, the folder steps are
+       added. Past the first step, new steps are appended rather
+       than rewinding the tour. A skip or a finish is already in
+       the preference document, and shouldShow stays false. */
+    useEffect(() => {
+      if (personRef.current !== staffId) {
+        personRef.current = staffId;
+        sawRef.current = false;
+        setBox(null);
+      }
+      if (!tour || !tour.shouldShow(tour.read(window.localStorage), staffId)) {
+        setRun(false);
+        return;
+      }
+      var steps = tour.stepsFor({
+        role: role,
+        apps: appsKey ? appsKey.split('|') : apps,
+        hasClient: tour.hasClient(clientsRef.current)
+      });
+      setRun(function (cur) {
+        if (cur && cur.steps && cur.index > 0) {
+          var have = {};
+          cur.steps.forEach(function (s) {
+            have[s.id] = 1;
+          });
+          var extra = steps.filter(function (s) {
+            return !have[s.id];
+          });
+          if (!extra.length) return cur;
+          return {
+            steps: cur.steps.concat(extra),
+            index: cur.index
+          };
+        }
+        if (!steps.length) return false;
+        if (cur && cur.steps && cur.steps.length === steps.length) {
+          var same = cur.steps.every(function (s, i) {
+            return s.id === steps[i].id;
+          });
+          if (same) return cur;
+        }
+        return {
+          steps: steps,
+          index: 0
+        };
+      });
+    }, [staffId, role, appsKey, clientReady]);
+    const step = run && run.steps ? run.steps[run.index] : null;
+    useEffect(() => {
+      if (!run || !step || paused) return undefined;
+      var cancelled = false;
+      var tries = 0;
+      var timer = 0;
+      var placed = false;
+      function openSurface() {
+        try {
+          if (step.needsClient) {
+            var name = tour.clientForTour(clientsRef.current);
+            if (name && openClientRef.current) openClientRef.current(name);else if (step.app && openAppRef.current) openAppRef.current(step.app);
+          } else if (step.app && openAppRef.current) {
+            openAppRef.current(step.app);
+          }
+        } catch (e) {}
+      }
+      function look() {
+        if (cancelled || !tour) return;
+        tries += 1;
+        /* Keep asking until the window is actually up. The desk opens
+           the ledger on its own a moment after sign-in; one call, made
+           too early, loses that race and the card is left on an empty
+           desktop. There is no tab to click here — the close panel is
+           not a step, and clicking it is how a close error gets on screen. */
+        if (!placed) openSurface();
+        var el = document.querySelector('[data-tour="' + step.anchor + '"]');
+        var boxNow = visibleBox(el);
+        if (boxNow) {
+          try {
+            el.scrollIntoView({
+              block: 'nearest',
+              inline: 'nearest'
+            });
+          } catch (e) {}
+          boxNow = visibleBox(el) || boxNow;
+          placed = true;
+          sawRef.current = true;
+          setBox(boxNow);
+          return;
+        }
+        /* Twelve looks is about a second and a half. Past that the
+           screen is not going to draw this anchor — drop the step. */
+        if (tries >= 12) {
+          setRun(function (cur) {
+            if (!cur || !cur.steps) return cur;
+            var next = tour.dropUnplaced(cur.steps, [step.anchor]);
+            if (next.length === cur.steps.length) return cur;
+            /* The missing step was the current one. The step now at
+               this index is the one that followed it. If nothing
+               follows, leave the tour up only when earlier steps
+               remain — the card still has Skip. An empty list hides
+               it without recording, so a desk whose screens were
+               slow rather than absent can try again next sign-in. */
+            if (!next.length) return false;
+            /* Past the last step that still exists: the walk is over.
+               `complete` asks the effect below to record finished,
+               and only if a step was actually shown. */
+            if (cur.index >= next.length) return {
+              steps: next,
+              index: next.length,
+              complete: true
+            };
+            return {
+              steps: next,
+              index: cur.index
+            };
+          });
+          return;
+        }
+        timer = window.setTimeout(look, 120);
+      }
+      timer = window.setTimeout(look, 180);
+      function follow() {
+        if (!placed) return;
+        var el = document.querySelector('[data-tour="' + step.anchor + '"]');
+        var boxNow = visibleBox(el);
+        if (!boxNow) return;
+        setBox(boxNow);
+      }
+      window.addEventListener('resize', follow);
+      window.addEventListener('scroll', follow, true);
+      return function () {
+        cancelled = true;
+        window.clearTimeout(timer);
+        window.removeEventListener('resize', follow);
+        window.removeEventListener('scroll', follow, true);
+      };
+    }, [run && run.index, step && step.id, staffId, paused]);
+    useEffect(() => {
+      if (!run || !run.complete || !sawRef.current) return;
+      if (!tour) return;
+      tour.record(window.localStorage, staffId, 'finished', tour.kindForRole(role));
+      try {
+        if (window.CDOS_PERSIST && typeof window.CDOS_PERSIST.save === 'function') window.CDOS_PERSIST.save();
+      } catch (e) {}
+      setRun(false);
+    }, [run && run.complete, staffId, role]);
+    function persist(status) {
+      if (!tour) return;
+      tour.record(window.localStorage, staffId, status, tour.kindForRole(role));
+      try {
+        if (window.CDOS_PERSIST && typeof window.CDOS_PERSIST.save === 'function') {
+          window.CDOS_PERSIST.save();
+        }
+      } catch (e) {}
+    }
+    function skip() {
+      persist('skipped');
+      setRun(false);
+      setBox(null);
+    }
+    function next() {
+      if (!run) return;
+      if (run.index >= run.steps.length - 1) {
+        persist('finished');
+        setRun(false);
+        setBox(null);
+        return;
+      }
+      setBox(null);
+      setRun({
+        steps: run.steps,
+        index: run.index + 1
+      });
+    }
+
+    /* Rebound when the step or the person changes, so Escape skips
+       the tour that is actually on screen. No dependency array would
+       rebind on every render for the same result. */
+    useEffect(() => {
+      if (!run || paused) return undefined;
+      function onKey(e) {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        skip();
+      }
+      window.addEventListener('keydown', onKey);
+      return function () {
+        window.removeEventListener('keydown', onKey);
+      };
+    }, [run, paused, staffId, role]);
+
+    /* Measure the card, then sit it in a gap. Widths are tried widest
+       first; the first one that misses the shop figures, the drawer,
+       the count, the file list, and New transaction wins. */
+    useLayoutEffect(() => {
+      if (!run || !step || paused || !box) {
+        setFrame(null);
+        return;
+      }
+      var node = cardRef.current;
+      if (!node) return;
+      var anchorEl = document.querySelector('[data-tour="' + step.anchor + '"]');
+      var avoid = keepClear(anchorEl);
+      var widths = [320, 280, 248];
+      var chosen = null;
+      for (var i = 0; i < widths.length; i++) {
+        node.style.width = widths[i] + 'px';
+        var spot = placeCard(avoid, widths[i], node.offsetHeight);
+        if (!chosen || spot.overlap < chosen.overlap) chosen = spot;
+        if (spot.overlap === 0) break;
+      }
+      setFrame(function (cur) {
+        if (cur && chosen && cur.left === chosen.left && cur.top === chosen.top && cur.width === chosen.width) return cur;
+        return chosen;
+      });
+    }, [box && box.top, box && box.left, box && box.width, box && box.height, step && step.id, run && run.index, paused]);
+
+    /* No card until the screen it describes is open. A card in the
+       corner of an empty desktop is the bug this guard exists for. */
+    if (!run || !step || paused || !box) return null;
+    var last = run.index >= run.steps.length - 1;
+    var cardStyle = frame ? {
+      left: frame.left,
+      top: frame.top,
+      width: frame.width
+    } : {
+      left: 16,
+      top: 16,
+      width: 320,
+      visibility: 'hidden'
+    };
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "cdos-tour",
+      "data-tour-root": "1"
+    }, box && /*#__PURE__*/React.createElement("div", {
+      className: "cdos-tour-ring",
+      style: {
+        top: box.top - 4,
+        left: box.left - 4,
+        width: box.width + 8,
+        height: box.height + 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      ref: cardRef,
+      className: "cdos-tour-card",
+      role: "dialog",
+      "aria-modal": "false",
+      "aria-labelledby": "cdos-tour-title",
+      style: cardStyle
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cdos-tour-kicker"
+    }, "First run \xB7 ", run.index + 1, " of ", run.steps.length), /*#__PURE__*/React.createElement("div", {
+      id: "cdos-tour-title",
+      className: "cdos-tour-title"
+    }, step.title), /*#__PURE__*/React.createElement("p", {
+      className: "cdos-tour-body"
+    }, step.body), /*#__PURE__*/React.createElement("div", {
+      className: "cdos-tour-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "cdos-tour-skip",
+      onClick: skip
+    }, "Skip"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "cdos-tour-next",
+      onClick: next
+    }, last ? 'Done' : 'Next')))), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    FirstRun: FirstRun
+  });
+})();
+
 /* ---- os-src/cdos-os.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -64178,6 +64940,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setClients: setClients,
       onClose: () => setAddContactOpen(false),
       onDone: () => setAddContactOpen(false)
+    }), window.CDOS.FirstRun && /*#__PURE__*/React.createElement(window.CDOS.FirstRun, {
+      role: me.role,
+      staffId: srvUser && srvUser.id || user || me && me.name,
+      apps: visibleApps,
+      clients: clients,
+      openApp: openApp,
+      openClient: openClientProfile,
+      paused: !!(deskLocked || handover || pinGate)
     }));
   }
   window.CDOS_App = App;
