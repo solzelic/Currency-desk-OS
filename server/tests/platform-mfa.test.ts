@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import * as OTPAuth from "otpauth";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { decryptSecret, encryptSecret } from "../src/auth/totp-secret.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { ensurePlatformAdmin } from "../src/admin-bootstrap.js";
@@ -261,4 +262,41 @@ describe("platform admin MFA", () => {
     expect(trail).not.toContain(body.manualSecret);
     for (const code of body.backupCodes) expect(trail).not.toContain(code);
   }, 60_000);
+});
+
+describe("TOTP key", () => {
+  const prior = {
+    node: process.env.NODE_ENV,
+    key: process.env.PLATFORM_MFA_KEY,
+    database: process.env.DATABASE_URL,
+  };
+  afterAll(() => {
+    if (prior.node === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prior.node;
+    if (prior.key === undefined) delete process.env.PLATFORM_MFA_KEY;
+    else process.env.PLATFORM_MFA_KEY = prior.key;
+    if (prior.database === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = prior.database;
+  });
+
+  it("does not derive the pepper from DATABASE_URL, in production or beside a seam database", async () => {
+    const plain = "JBSWY3DPEHPK3PXP";
+    delete process.env.PLATFORM_MFA_KEY;
+    delete process.env.NODE_ENV;
+    process.env.DATABASE_URL = "postgres://seam-user:seam-secret@localhost/currencydesk_seam";
+    const stored = await encryptSecret(plain);
+    delete process.env.DATABASE_URL;
+    expect(await decryptSecret(stored)).toBe(plain);
+
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL = "postgres://prod-user:prod-secret@localhost/currencydesk";
+    await expect(encryptSecret(plain)).rejects.toThrow("mfa_key_unavailable");
+
+    process.env.PLATFORM_MFA_KEY = "dedicated-test-key";
+    const keyed = await encryptSecret(plain);
+    process.env.DATABASE_URL = "postgres://rotated@localhost/other";
+    expect(await decryptSecret(keyed)).toBe(plain);
+    delete process.env.PLATFORM_MFA_KEY;
+    await expect(decryptSecret(keyed)).rejects.toThrow("mfa_secret_unreadable");
+  });
 });

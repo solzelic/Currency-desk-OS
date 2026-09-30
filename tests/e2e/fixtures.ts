@@ -1,5 +1,6 @@
 import { test as base, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 /* ============================================================
@@ -174,21 +175,96 @@ export function ledger(page: Page) {
   };
 }
 
-/* Sign in as the platform operator. The panel's own form takes an email
-   address and the seeded owner is a staff id, so this goes through the
-   API the form posts to — the session cookie is what the panel reads. */
+/* Sign in as the platform operator through the panel's own door.
+
+   A desk password session is not enough: once the operator has an
+   authenticator, /admin stays on the sign-in screen until a code is
+   accepted, and before that the shell still will not open. The first
+   call in a process enrolls (the secret is shown once, on that
+   response). Later calls in the same worker reuse it. Playwright runs
+   one worker against one database, so that is the whole suite.
+
+   The secret is remembered here and nowhere else — not logged, not
+   written to a file. A reused local server whose database already
+   enrolled j.masri has nothing left to read; this throws instead of
+   opening a back door. Desk sign-in (signInAtDesk) stays password-only. */
+type OperatorTotp = { period: number; generate(opts?: { timestamp?: number }): string };
+const requireFromServer = createRequire(path.join(ROOT, "server/package.json"));
+const OTPAuth = requireFromServer("otpauth") as {
+  URI: { parse(uri: string): OperatorTotp };
+};
+let operatorTotp: OperatorTotp | null = null;
+let operatorTotpLastStep = -1;
+
+async function operatorCode(totp: OperatorTotp): Promise<string> {
+  const period = (totp.period || 30) * 1000;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const now = Date.now();
+    const current = Math.floor(now / period);
+    /* The server accepts the current step and one either side, and it
+       refuses a step it has already accepted. Stay on the current step
+       or the next one so a boundary does not hand it a code that has
+       just fallen out of the window. */
+    const open = [current, current + 1].filter((step) => step > operatorTotpLastStep);
+    if (open.length) {
+      const step = Math.min(...open);
+      operatorTotpLastStep = step;
+      return totp.generate({ timestamp: step * period + Math.floor(period / 2) });
+    }
+    const resumeAt = operatorTotpLastStep * period;
+    const wait = Math.min(Math.max(resumeAt - now + 250, 250), period);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  throw new Error("operator authenticator window did not advance");
+}
+
 export async function signInAsOperator(page: Page): Promise<void> {
   await page.goto("/admin");
-  await page.waitForTimeout(500);
-  const status = await page.evaluate(async () => {
-    const r = await fetch("/api/auth/login", {
+  const started = await page.evaluate(async () => {
+    const r = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" }),
     });
-    return r.status;
+    const body = await r.json().catch(() => ({}));
+    return { status: r.status, body: body as { step?: string; ticket?: string; otpauthUri?: string } };
   });
-  if (status !== 200) throw new Error(`operator sign-in failed: ${status}`);
+  if (started.status !== 200) throw new Error(`operator sign-in failed: ${started.status}`);
+  const step = started.body.step;
+  const ticket = started.body.ticket;
+  if (!ticket) throw new Error("operator sign-in did not return a ticket");
+
+  let totp = operatorTotp;
+  if (step === "enroll") {
+    const uri = started.body.otpauthUri;
+    if (!uri) throw new Error("operator enrollment did not return a setup URI");
+    totp = OTPAuth.URI.parse(uri);
+    operatorTotp = totp;
+    operatorTotpLastStep = -1;
+  } else if (step === "totp") {
+    if (!totp) {
+      throw new Error(
+        "j.masri is already enrolled and this process never saw the authenticator secret. The panel shows it once. Restart the seam server against a fresh database.",
+      );
+    }
+  } else {
+    throw new Error(`operator sign-in returned an unexpected step`);
+  }
+
+  const code = await operatorCode(totp);
+  const confirmPath = step === "enroll" ? "/api/admin/login/enroll" : "/api/admin/login/totp";
+  const confirmed = await page.evaluate(
+    async ({ confirmPath, ticket, code }) => {
+      const r = await fetch(confirmPath, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticket, code }),
+      });
+      return r.status;
+    },
+    { confirmPath, ticket, code },
+  );
+  if (confirmed !== 200) throw new Error(`operator ${step} failed: ${confirmed}`);
 }
 
 /* Wait for a Babel-compiled page to have actually rendered. These pages

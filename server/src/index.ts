@@ -28,6 +28,7 @@ for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVE
   if (value !== undefined && (!Number.isFinite(Number(value)) || Number(value) <= 0)) throw new Error(`Invalid ${key}`);
 }
 if (process.env.NODE_ENV === "production" && (!process.env.DATABASE_URL || !process.env.SEED_PASSWORD)) throw new Error("DATABASE_URL and SEED_PASSWORD are required in production.");
+if (process.env.NODE_ENV === "production" && !process.env.PLATFORM_MFA_KEY?.trim()) throw new Error("PLATFORM_MFA_KEY is required in production.");
 
 const handle = await createDb();
 // seed on every boot — it's idempotent (onConflictDoNothing throughout), so

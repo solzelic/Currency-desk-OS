@@ -114,6 +114,7 @@ the Render dashboard:
 | `TWILIO_MESSAGING_SERVICE_SID` | Optional. For A2P 10DLC, set this (`MG…`) to send through a campaign-linked Messaging Service; it takes precedence over `TWILIO_FROM` |
 | `TWILIO_WHATSAPP_FROM` | Optional. Set to a WhatsApp sender (e.g. `whatsapp:+14155238886`, the Twilio sandbox) to deliver quotes over WhatsApp instead of SMS; takes precedence over the SMS senders |
 | `RESET_STAFF_PASSWORD` | Break-glass only (`staffId:newpassword`), remove after use |
+| `PLATFORM_MFA_KEY` | Required in production. Encrypts platform-operator TOTP secrets. Not derived from `DATABASE_URL`. Leave unset locally |
 
 Custom domains: record the customer's domain in the OS (Settings → Business
 profile → Your public site), have them point DNS (CNAME/ALIAS) at this service,

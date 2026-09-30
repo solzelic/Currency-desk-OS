@@ -207,9 +207,10 @@ An operator who has never enrolled sets the authenticator up on the first
 sign-in — the secret is shown once, as an otpauth URI — and receives
 one-time backup codes stored only as scrypt hashes. After that, a session
 from the desk door does not open the panel. The TOTP secret is AES-256-GCM
-ciphertext; the key is scrypt-derived from `PLATFORM_MFA_KEY` when that is
-set, otherwise from `DATABASE_URL`, and it is not stored in the database.
-Desk tills stay password-only.
+ciphertext. The key is scrypt-derived from `PLATFORM_MFA_KEY` only — never
+from `DATABASE_URL` — and it is not stored in the database. Production
+refuses to boot without that variable. Development and tests leave it
+unset and use a fixed development pepper. Desk tills stay password-only.
 
 **Least privilege on our own side.** Support does not need the permission
 that suspends a desk. The default for a new platform capability is "the role

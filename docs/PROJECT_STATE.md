@@ -162,11 +162,13 @@ authenticated narrative dashboard.
 **2026-09-30**, platform-operator MFA (issue #33): `/admin` sign-in requires
 TOTP once the operator has enrolled. First sign-in enrolls (otpauth URI
 shown once; backup codes are scrypt hashes and single-use). The secret is
-AES-256-GCM, keyed from `PLATFORM_MFA_KEY` or else `DATABASE_URL`, not
+AES-256-GCM, keyed only from `PLATFORM_MFA_KEY` (required in production;
+development and tests use a fixed pepper and never `DATABASE_URL`), not
 stored beside the ciphertext. Desk `/login` is unchanged. Until that first
 enrollment, an existing password session can still call the admin API —
 that is the window in which the current operator sets the authenticator
-up, and the panel itself will not open until they do.
+up, and the panel itself will not open until they do. The browser seam
+signs the operator in through that same door, so the panel renders.
 
 Prior stamp **2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
 `DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
