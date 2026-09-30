@@ -122,6 +122,9 @@ export const platformMfaChallenges = pgTable(
   {
     id: text("id").primaryKey(),
     email: text("email").notNull().references(() => platformUsers.email),
+    /* The staff row that proved the password. A platform owner can be a
+       desk staff id, so this is not assumed to live in tnt-platform. */
+    staffUserId: text("staff_user_id").notNull(),
     purpose: text("purpose").notNull(),
     secretEnc: text("secret_enc"),
     backupHashes: jsonb("backup_hashes").$type<string[]>(),

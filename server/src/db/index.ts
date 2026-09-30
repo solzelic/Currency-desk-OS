@@ -105,6 +105,7 @@ CREATE INDEX IF NOT EXISTS platform_mfa_backup_codes_email_idx ON platform_mfa_b
 CREATE TABLE IF NOT EXISTS platform_mfa_challenges (
   id text PRIMARY KEY,
   email text NOT NULL REFERENCES platform_users(email) ON DELETE CASCADE,
+  staff_user_id text NOT NULL,
   purpose text NOT NULL CHECK (purpose IN ('enroll', 'login')),
   secret_enc text,
   backup_hashes jsonb,

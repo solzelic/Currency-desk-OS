@@ -37,10 +37,10 @@ export type MfaFailure = "no_challenge" | "expired" | "too_many_attempts" | "wro
 
 export type MfaResult<T> =
   | { ok: true; value: T }
-  | { ok: false; error: MfaFailure; email?: string };
+  | { ok: false; error: MfaFailure; email?: string; staffUserId?: string };
 
-function failed(error: MfaFailure, email?: string): MfaResult<never> {
-  return { ok: false, error, ...(email ? { email } : {}) };
+function failed(error: MfaFailure, email?: string, staffUserId?: string): MfaResult<never> {
+  return { ok: false, error, ...(email ? { email } : {}), ...(staffUserId ? { staffUserId } : {}) };
 }
 
 export function normalizeBackupCode(input: string): string {
@@ -103,11 +103,11 @@ async function loadChallenge(db: Db, ticket: string, purpose: "enroll" | "login"
   if (!row || row.purpose !== purpose) return failed("no_challenge");
   if (row.expiresAt.getTime() < Date.now()) {
     await db.delete(schema.platformMfaChallenges).where(eq(schema.platformMfaChallenges.id, row.id));
-    return failed("expired", row.email);
+    return failed("expired", row.email, row.staffUserId);
   }
   if (row.attempts >= MAX_ATTEMPTS) {
     await db.delete(schema.platformMfaChallenges).where(eq(schema.platformMfaChallenges.id, row.id));
-    return failed("too_many_attempts", row.email);
+    return failed("too_many_attempts", row.email, row.staffUserId);
   }
   return { ok: true, value: row };
 }
@@ -132,7 +132,7 @@ async function matchedStep(totp: TOTP, token: string): Promise<number | null> {
   return TOTP.counter({ period: PERIOD_SECONDS, timestamp }) + delta;
 }
 
-export async function beginPlatformMfa(db: Db, email: string): Promise<
+export async function beginPlatformMfa(db: Db, email: string, staffUserId: string): Promise<
   | { step: "enroll"; ticket: string; otpauthUri: string; manualSecret: string; backupCodes: string[] }
   | { step: "totp"; ticket: string }
 > {
@@ -148,6 +148,7 @@ export async function beginPlatformMfa(db: Db, email: string): Promise<
     await db.insert(schema.platformMfaChallenges).values({
       id: sha256(ticket),
       email: key,
+      staffUserId,
       purpose: "enroll",
       secretEnc: await encryptSecret(created.base32),
       backupHashes,
@@ -164,6 +165,7 @@ export async function beginPlatformMfa(db: Db, email: string): Promise<
   await db.insert(schema.platformMfaChallenges).values({
     id: sha256(ticket),
     email: key,
+    staffUserId,
     purpose: "login",
     expiresAt,
   });
@@ -175,23 +177,23 @@ async function hashesOf(value: unknown): Promise<string[]> {
   return value.filter((item): item is string => typeof item === "string");
 }
 
-export async function confirmPlatformEnrollment(db: Db, ticket: string, code: string): Promise<MfaResult<{ email: string }>> {
+export async function confirmPlatformEnrollment(db: Db, ticket: string, code: string): Promise<MfaResult<{ email: string; staffUserId: string }>> {
   const loaded = await loadChallenge(db, ticket, "enroll");
   if (!loaded.ok) return loaded;
   const row = loaded.value;
   const token = code.trim();
   if (!/^\d{6}$/.test(token) || !row.secretEnc) {
-    return failed(await rejectCode(db, row), row.email);
+    return failed(await rejectCode(db, row), row.email, row.staffUserId);
   }
   let base32: string;
   try {
     base32 = await decryptSecret(row.secretEnc);
   } catch {
     console.error("[platform-mfa] stored authenticator secret could not be decrypted");
-    return failed(await rejectCode(db, row), row.email);
+    return failed(await rejectCode(db, row), row.email, row.staffUserId);
   }
   const step = await matchedStep(totpFor(row.email, base32), token);
-  if (step === null) return failed(await rejectCode(db, row), row.email);
+  if (step === null) return failed(await rejectCode(db, row), row.email, row.staffUserId);
 
   /* First confirmer wins. A second ticket must not replace the secret
      the owner just saved — that is how a stolen password locks them out
@@ -203,7 +205,7 @@ export async function confirmPlatformEnrollment(db: Db, ticket: string, code: st
     .returning();
   if (!wrote.length) {
     await db.delete(schema.platformMfaChallenges).where(eq(schema.platformMfaChallenges.id, row.id));
-    return failed("already_enrolled", row.email);
+    return failed("already_enrolled", row.email, row.staffUserId);
   }
   const hashes = await hashesOf(row.backupHashes);
   await db.delete(schema.platformMfaBackupCodes).where(eq(schema.platformMfaBackupCodes.email, row.email));
@@ -215,7 +217,7 @@ export async function confirmPlatformEnrollment(db: Db, ticket: string, code: st
     })));
   }
   await db.delete(schema.platformMfaChallenges).where(eq(schema.platformMfaChallenges.id, row.id));
-  return { ok: true, value: { email: row.email } };
+  return { ok: true, value: { email: row.email, staffUserId: row.staffUserId } };
 }
 
 async function acceptTotp(db: Db, email: string, secretEnc: string, token: string): Promise<boolean> {
@@ -264,7 +266,7 @@ export async function confirmPlatformLogin(
   db: Db,
   ticket: string,
   code: string,
-): Promise<MfaResult<{ email: string; factor: "totp" | "backup" }>> {
+): Promise<MfaResult<{ email: string; staffUserId: string; factor: "totp" | "backup" }>> {
   const loaded = await loadChallenge(db, ticket, "login");
   if (!loaded.ok) return loaded;
   const row = loaded.value;
@@ -274,14 +276,14 @@ export async function confirmPlatformLogin(
     .where(eq(schema.platformUsers.email, row.email))
     .limit(1);
   const secret = enrolled[0]?.secret;
-  if (!secret) return failed(await rejectCode(db, row), row.email);
+  if (!secret) return failed(await rejectCode(db, row), row.email, row.staffUserId);
 
   const token = code.trim();
   const factor = /^\d{6}$/.test(token) ? "totp" : "backup";
   const accepted = factor === "totp"
     ? await acceptTotp(db, row.email, secret, token)
     : await acceptBackup(db, row.email, token);
-  if (!accepted) return failed(await rejectCode(db, row), row.email);
+  if (!accepted) return failed(await rejectCode(db, row), row.email, row.staffUserId);
   await db.delete(schema.platformMfaChallenges).where(eq(schema.platformMfaChallenges.id, row.id));
-  return { ok: true, value: { email: row.email, factor } };
+  return { ok: true, value: { email: row.email, staffUserId: row.staffUserId, factor } };
 }

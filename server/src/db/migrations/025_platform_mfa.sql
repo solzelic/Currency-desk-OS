@@ -16,6 +16,10 @@
 -- valid authenticator or backup code. A desk session does not have it,
 -- and once the operator has enrolled, the panel refuses a session
 -- without it.
+--
+-- staff_user_id is the staff row that proved the password. The platform
+-- owner can be a desk staff id (j.masri), not a row in tnt-platform, and
+-- the session has to be that person.
 
 ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS totp_secret_enc text;
 ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS totp_enrolled_at timestamptz;
@@ -35,6 +39,7 @@ CREATE INDEX IF NOT EXISTS platform_mfa_backup_codes_email_idx ON platform_mfa_b
 CREATE TABLE IF NOT EXISTS platform_mfa_challenges (
   id text PRIMARY KEY,
   email text NOT NULL REFERENCES platform_users(email) ON DELETE CASCADE,
+  staff_user_id text NOT NULL,
   purpose text NOT NULL CHECK (purpose IN ('enroll', 'login')),
   secret_enc text,
   backup_hashes jsonb,

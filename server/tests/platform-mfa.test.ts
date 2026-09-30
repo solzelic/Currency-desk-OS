@@ -262,6 +262,45 @@ describe("platform admin MFA", () => {
     expect(trail).not.toContain(body.manualSecret);
     for (const code of body.backupCodes) expect(trail).not.toContain(code);
   }, 60_000);
+
+  it("opens a panel session for a desk staff id that owns the platform", async () => {
+    await handle.db.insert(schema.platformUsers).values({
+      email: "j.masri",
+      role: "support",
+      status: "active",
+      addedBy: "test",
+    }).onConflictDoNothing();
+    const start = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
+    });
+    expect(start.statusCode).toBe(200);
+    const body = start.json() as { step: string; ticket: string; otpauthUri: string };
+    expect(body.step).toBe("enroll");
+    const authenticator = OTPAuth.URI.parse(body.otpauthUri) as OTPAuth.TOTP;
+    const enrolled = await app.inject({
+      method: "POST",
+      url: "/api/admin/login/enroll",
+      payload: { ticket: body.ticket, code: authenticator.generate() },
+    });
+    expect(enrolled.statusCode).toBe(200);
+    expect(cookieOf(enrolled)).toBeTruthy();
+    const me = await app.inject({ method: "GET", url: "/api/admin/me", headers: { cookie: cookieOf(enrolled) } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().isAdmin).toBe(true);
+    expect(me.json().mfaEnrolled).toBe(true);
+
+    const desk = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
+    });
+    expect(desk.statusCode).toBe(200);
+    const blocked = await app.inject({ method: "GET", url: "/api/admin/tenants", headers: { cookie: cookieOf(desk) } });
+    expect(blocked.statusCode).toBe(401);
+    expect(blocked.json().error).toBe("mfa_required");
+  }, 60_000);
 });
 
 describe("TOTP key", () => {

@@ -15,8 +15,9 @@
    same 401 as a wrong one: this door is not a way to ask whether a till
    login exists. */
 import type { FastifyInstance } from "fastify";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
-import type { Db } from "../db/index.js";
+import { schema, type Db } from "../db/index.js";
 import { verifyPassword } from "../auth/password.js";
 import { findStaffForLogin } from "../auth/login-user.js";
 import { member } from "../platform/team.js";
@@ -65,8 +66,13 @@ export function registerAdminMfaRoutes(app: FastifyInstance, db: Db) {
     path: "/",
   };
 
-  async function openSession(email: string, factor: "totp" | "backup" | "enroll") {
-    const staff = await findStaffForLogin(db, email, "tnt-platform");
+  async function staffById(staffUserId: string) {
+    const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, staffUserId)).limit(1);
+    return rows[0];
+  }
+
+  async function openSession(staffUserId: string, factor: "totp" | "backup" | "enroll") {
+    const staff = await staffById(staffUserId);
     if (!staff?.active) return null;
     const { token, expiresAt } = await createSession(db, staff.id, { platformMfa: true });
     await audit(db, {
@@ -90,9 +96,9 @@ export function registerAdminMfaRoutes(app: FastifyInstance, db: Db) {
     return { staff, token, expiresAt };
   }
 
-  async function noteFailure(email: string | undefined, step: "enroll" | "login") {
-    if (!email) return;
-    const staff = await findStaffForLogin(db, email, "tnt-platform");
+  async function noteFailure(staffUserId: string | undefined, step: "enroll" | "login") {
+    if (!staffUserId) return;
+    const staff = await staffById(staffUserId);
     if (!staff) return;
     await audit(db, {
       tenantId: staff.tenantId,
@@ -125,7 +131,7 @@ export function registerAdminMfaRoutes(app: FastifyInstance, db: Db) {
     const me = await member(db, user.staffId);
     if (!me) return reply.code(401).send({ error: "invalid_credentials" });
     try {
-      return await beginPlatformMfa(db, me.email);
+      return await beginPlatformMfa(db, me.email, user.id);
     } catch {
       req.log.error("platform mfa could not start");
       return reply.code(500).send({ error: "unavailable" });
@@ -137,11 +143,11 @@ export function registerAdminMfaRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const result = await confirmPlatformEnrollment(db, parsed.data.ticket, parsed.data.code);
     if (!result.ok) {
-      await noteFailure(result.email, "enroll");
+      await noteFailure(result.staffUserId, "enroll");
       const failure = failureStatus(result.error);
       return reply.code(failure.status).send(failure.body);
     }
-    const opened = await openSession(result.value.email, "enroll");
+    const opened = await openSession(result.value.staffUserId, "enroll");
     if (!opened) return reply.code(401).send({ error: "invalid_credentials" });
     reply.setCookie(SESSION_COOKIE, opened.token, { ...cookieOpts, expires: opened.expiresAt });
     return { ok: true };
@@ -152,11 +158,11 @@ export function registerAdminMfaRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const result = await confirmPlatformLogin(db, parsed.data.ticket, parsed.data.code);
     if (!result.ok) {
-      await noteFailure(result.email, "login");
+      await noteFailure(result.staffUserId, "login");
       const failure = failureStatus(result.error);
       return reply.code(failure.status).send(failure.body);
     }
-    const opened = await openSession(result.value.email, result.value.factor);
+    const opened = await openSession(result.value.staffUserId, result.value.factor);
     if (!opened) return reply.code(401).send({ error: "invalid_credentials" });
     reply.setCookie(SESSION_COOKIE, opened.token, { ...cookieOpts, expires: opened.expiresAt });
     return { ok: true };

@@ -167,8 +167,10 @@ development and tests use a fixed pepper and never `DATABASE_URL`), not
 stored beside the ciphertext. Desk `/login` is unchanged. Until that first
 enrollment, an existing password session can still call the admin API —
 that is the window in which the current operator sets the authenticator
-up, and the panel itself will not open until they do. The browser seam
-signs the operator in through that same door, so the panel renders.
+up, and the panel itself will not open until they do. The session is
+the staff user who proved the password, including a desk staff id that
+is the platform owner. The browser seam signs that operator in through
+the same door, so the panel renders.
 
 Prior stamp **2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
 `DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
