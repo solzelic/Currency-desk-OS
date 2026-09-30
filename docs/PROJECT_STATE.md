@@ -172,15 +172,15 @@ the staff user who proved the password, including a desk staff id that
 is the platform owner. The browser seam signs that operator in through
 the same door, so the panel renders.
 
-Prior stamp **2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
-`DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
-Posted through the existing ledger/quote/client services; other tenants
-are out of scope. `docs/DEMO_DESK.md`.
-
 Prior stamp **2026-09-30**, signup mobile reaches the admin call. A Canada desk's
 setup mobile fills an empty `enquiries.details.phone` at signup or
 launch. The applications record shows the call confirmation and
 transcript; recordings are not kept. No automatic dial.
+
+Prior stamp **2026-09-11**, product-demo desk on York FX: staff id `demo` (one-shot
+`DEMO_STAFF_BOOTSTRAP`) and opt-in `DEMO_POPULATE=1` activity seeder.
+Posted through the existing ledger/quote/client services; other tenants
+are out of scope. `docs/DEMO_DESK.md`.
 
 Prior stamp **2026-09-09**, storefront SMS holds and rate-board margins are
 `numeric`; the public quote path uses Decimal (audit Slice F). JSON
