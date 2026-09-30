@@ -22,34 +22,92 @@
    rest of an offline desk survives.
    ============================================================ */
 (function () {
-  const { useState, useEffect, useRef } = React;
+  const { useState, useEffect, useLayoutEffect, useRef } = React;
   const api = function () { return window.CDOS_TOUR; };
 
-  /* The card sits beside the window, not on the thing it is
-     describing. A wide anchor (the shop masthead, the till header)
-     has no room to its right inside the window, so the first choice
-     is outside the window itself. */
-  function placeBeside(anchor, host) {
-    var cardW = Math.min(340, window.innerWidth - 24);
-    var cardH = 210;
-    var gap = 16;
-    var bounds = host || anchor;
+  function boxOf(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    var r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  }
+
+  function overlaps(a, b) {
+    return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+  }
+
+  /* Everything the card must not sit on. Open windows (the shop, the
+     till, and the ledger the desk opens on its own), the customer sheet
+     when the step is inside one, the anchor itself, and the menu,
+     tenant, and app bars. "New transaction" is named because it sits on
+     the ledger beside the till — a card in that gap covers the control
+     the till step is standing next to. */
+  function keepClear(anchorEl) {
+    var rects = [];
+    function add(el) {
+      var box = boxOf(el);
+      if (box) rects.push(box);
+    }
+    document.querySelectorAll('.win.show').forEach(add);
+    ['menubar', 'tenantbar', 'appbar'].forEach(function (id) { add(document.getElementById(id)); });
+    document.querySelectorAll('[data-tour="shop"], [data-tour="file-folder"], [data-tour="till-count"]').forEach(add);
+    if (anchorEl) {
+      add(anchorEl);
+      var sheet = anchorEl.closest('.fixed');
+      if (sheet) add(sheet.firstElementChild || sheet);
+    }
+    document.querySelectorAll('button').forEach(function (b) {
+      if ((b.textContent || '').replace(/\s+/g, ' ').trim() === 'New transaction') add(b);
+    });
+    return rects;
+  }
+
+  function overlapArea(a, b) {
+    var w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    var h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (w <= 1 || h <= 1) return 0;
+    return w * h;
+  }
+
+  /* A spot in a gap, using the card's real width and height. The card
+     used to drop onto the anchor when the window filled the obvious
+     side, which covered the shop figures, the drawer's neighbour
+     "New transaction", and the file list. Narrower cards are tried by
+     the caller so a profile sheet (which leaves only a gutter) still
+     has a place for Skip. */
+  function placeCard(avoid, cardW, cardH) {
+    var margin = 14;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
     var spots = [
-      { left: bounds.right + gap, top: bounds.top },
-      { left: bounds.left - cardW - gap, top: bounds.top },
-      { left: bounds.left, top: bounds.bottom + gap },
-      { left: anchor.left, top: anchor.bottom + gap },
-      { left: anchor.left, top: anchor.top - cardH - gap },
+      { left: vw - cardW - margin, top: vh - cardH - margin },
+      { left: margin, top: vh - cardH - margin },
+      { left: vw - cardW - margin, top: margin },
+      { left: margin, top: margin },
     ];
+    avoid.forEach(function (r) {
+      spots.push({ left: r.right + margin, top: Math.max(margin, r.top) });
+      spots.push({ left: r.left - cardW - margin, top: Math.max(margin, r.top) });
+      spots.push({ left: Math.max(margin, Math.min(r.left, vw - cardW - margin)), top: r.bottom + margin });
+      spots.push({ left: Math.max(margin, Math.min(r.right - cardW, vw - cardW - margin)), top: r.top - cardH - margin });
+    });
+    var best = null;
+    var bestArea = Infinity;
     for (var i = 0; i < spots.length; i++) {
-      var spot = spots[i];
-      if (spot.left >= 12 && spot.top >= 12 && spot.left + cardW <= window.innerWidth - 12 && spot.top + cardH <= window.innerHeight - 12) {
-        return { left: spot.left, top: spot.top, width: cardW };
+      var s = spots[i];
+      if (s.left < margin || s.top < margin) continue;
+      if (s.left + cardW > vw - margin || s.top + cardH > vh - margin) continue;
+      var card = { left: s.left, top: s.top, right: s.left + cardW, bottom: s.top + cardH };
+      var area = 0;
+      for (var j = 0; j < avoid.length; j++) area += overlapArea(card, avoid[j]);
+      if (area < bestArea) {
+        bestArea = area;
+        best = { left: card.left, top: card.top, width: cardW, overlap: area };
+        if (area === 0) return best;
       }
     }
-    var left = Math.max(12, Math.min(anchor.left, window.innerWidth - cardW - 12));
-    var top = Math.max(12, Math.min(anchor.bottom + gap, window.innerHeight - cardH - 12));
-    return { left: left, top: top, width: cardW };
+    if (best) return best;
+    return { left: margin, top: Math.max(margin, vh - cardH - margin), width: cardW, overlap: Infinity };
   }
 
   /* A window starts at opacity 0 and only then gains `.show`. An
@@ -72,6 +130,8 @@
     const tour = api();
     const [run, setRun] = useState(null);   // null until read; false once declined or empty
     const [box, setBox] = useState(null);
+    const [frame, setFrame] = useState(null);
+    const cardRef = useRef(null);
     const clientsRef = useRef(clients);
     const openAppRef = useRef(openApp);
     const openClientRef = useRef(openClient);
@@ -259,18 +319,42 @@
       return function () { window.removeEventListener('keydown', onKey); };
     }, [run, paused, staffId, role]);
 
+    /* Measure the card, then sit it in a gap. Widths are tried widest
+       first; the first one that misses the shop figures, the drawer,
+       the count, the file list, and New transaction wins. */
+    useLayoutEffect(() => {
+      if (!run || !step || paused || !box) { setFrame(null); return; }
+      var node = cardRef.current;
+      if (!node) return;
+      var anchorEl = document.querySelector('[data-tour="' + step.anchor + '"]');
+      var avoid = keepClear(anchorEl);
+      var widths = [320, 280, 248];
+      var chosen = null;
+      for (var i = 0; i < widths.length; i++) {
+        node.style.width = widths[i] + 'px';
+        var spot = placeCard(avoid, widths[i], node.offsetHeight);
+        if (!chosen || spot.overlap < chosen.overlap) chosen = spot;
+        if (spot.overlap === 0) break;
+      }
+      setFrame(function (cur) {
+        if (cur && chosen && cur.left === chosen.left && cur.top === chosen.top && cur.width === chosen.width) return cur;
+        return chosen;
+      });
+    }, [box && box.top, box && box.left, box && box.width, box && box.height, step && step.id, run && run.index, paused]);
+
     /* No card until the screen it describes is open. A card in the
        corner of an empty desktop is the bug this guard exists for. */
     if (!run || !step || paused || !box) return null;
 
-    var spot = placeBeside(box, box.host);
     var last = run.index >= run.steps.length - 1;
-    var cardStyle = { left: spot.left, top: spot.top, width: spot.width };
+    var cardStyle = frame
+      ? { left: frame.left, top: frame.top, width: frame.width }
+      : { left: 16, top: 16, width: 320, visibility: 'hidden' };
 
     return ReactDOM.createPortal(
       <div className="cdos-tour" data-tour-root="1">
         {box && <div className="cdos-tour-ring" style={{ top: box.top - 4, left: box.left - 4, width: box.width + 8, height: box.height + 8 }} />}
-        <div className="cdos-tour-card" role="dialog" aria-modal="false" aria-labelledby="cdos-tour-title" style={cardStyle}>
+        <div ref={cardRef} className="cdos-tour-card" role="dialog" aria-modal="false" aria-labelledby="cdos-tour-title" style={cardStyle}>
           <div className="cdos-tour-kicker">First run · {run.index + 1} of {run.steps.length}</div>
           <div id="cdos-tour-title" className="cdos-tour-title">{step.title}</div>
           <p className="cdos-tour-body">{step.body}</p>
