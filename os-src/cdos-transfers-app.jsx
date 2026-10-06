@@ -360,7 +360,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const [fxRate, setFxRate] = useState(mid ? String(mid.toFixed(6)) : '');
     const [note, setNote] = useState('');
     const amt = +amount || 0, rate = +fxRate || mid || 0;
-    const cadCost = +(amt * rate).toFixed(2);
+    const rateMissing = !(rate > 0);
+    const cadCost = rateMissing ? null : +(amt * rate).toFixed(2);
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9300 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 440, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
@@ -374,12 +375,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           </div>
           <Field label={`Amount to wire (${p.ccy})`}><input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
           <Field label={`FX rate (${home} per unit)`} hint={mid ? `spot ${mid.toFixed(6)}` : 'spot unavailable'}><input value={fxRate} onChange={e => setFxRate(e.target.value)} inputMode="decimal" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
-          <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{homeCcy() ? homeCcy() + ' cost' : 'Local cost'} of this wire</span><span className="text-[14px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{fmtHome(cadCost)}</span></div>
+          <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{homeCcy() ? homeCcy() + ' cost' : 'Local cost'} of this wire</span><span className="text-[14px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{rateMissing ? 'Rate unavailable' : fmtHome(cadCost)}</span></div>
           <Field label="Reference / note"><input value={note} onChange={e => setNote(e.target.value)} placeholder="Wire ref, settlement batch…" className={inputCls} style={inputSty} /></Field>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <button onClick={onClose} className="px-3.5 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Cancel</button>
-          <button onClick={() => amt > 0 && onSettle(p, amt, rate, note)} disabled={!(amt > 0)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: amt > 0 ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: amt > 0 ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> Record settlement</button>
+          <button onClick={() => amt > 0 && !rateMissing && onSettle(p, amt, rate, note)} disabled={!(amt > 0 && !rateMissing)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (amt > 0 && !rateMissing) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (amt > 0 && !rateMissing) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> Record settlement</button>
         </div>
       </div>
     </div></Portal>);

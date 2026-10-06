@@ -34,7 +34,7 @@
   };
   const SKEY = 'cdos_stations_v2', MKEY = 'cdos_branch_moves_v2';
   const BCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY'];
-  const bookCcys = () => { const home = homeCcy(); return bookCcys().indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS); };
+  const bookCcys = () => { const home = homeCcy(); return BCCYS.indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS); };
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = { CAD: 'var(--cd-ink)', USD: '#3c3b38', EUR: '#615f58', GBP: '#86837b', INR: '#a8a59b', PHP: '#c6c2b8', CNY: CD.brass };
 

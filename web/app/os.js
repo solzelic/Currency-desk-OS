@@ -963,20 +963,15 @@
      global default; rounding of the customer pay-out is configurable. */
   const DEFAULT_SPREAD = 0.015;
   function spreadOf(code, settings) {
-    if (code === deskHomeCcy()) return 0;
+    if (code === 'CAD') return 0;
     const sp = settings && settings.spreads;
     if (sp && sp[code] != null && sp[code] !== '' && !isNaN(sp[code])) return Math.max(0, +sp[code]) / 100;
     if (settings && settings.defaultSpread != null && !isNaN(settings.defaultSpread)) return Math.max(0, +settings.defaultSpread) / 100;
     return DEFAULT_SPREAD;
   }
-  const unitCadMid = code => {
-    const home = deskHomeCcy();
-    if (code === home) return 1;
-    if (home === 'CAD') return crossRate(code, 'CAD') || 0;
-    return homePerUnit(code) || 0;
-  };
-  const buyUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 - spreadOf(code, s)); // we pay this to acquire 1 unit
-  const sellUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 + spreadOf(code, s)); // we charge this to release 1 unit
+  const unitCadMid = code => code === 'CAD' ? 1 : crossRate(code, 'CAD') || 0;
+  const buyUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 - spreadOf(code, s)); // we pay this to acquire 1 unit
+  const sellUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 + spreadOf(code, s)); // we charge this to release 1 unit
 
   // round a customer pay-out per the configured rule. mode: nearest|down|up
   // ('down' favours the desk, 'up' favours the customer); inc is the increment.
@@ -1015,7 +1010,7 @@
     const midCadIn = amt * unitCadMid(inCcy);
     const midCadOut = outAmt * unitCadMid(outCcy);
     const marginCad = +(midCadIn - midCadOut).toFixed(2);
-    const side = inCcy === deskHomeCcy() ? 'sell' : outCcy === deskHomeCcy() ? 'buy' : 'cross';
+    const side = inCcy === 'CAD' ? 'sell' : outCcy === 'CAD' ? 'buy' : 'cross';
     const spreadPct = midCadIn ? marginCad / midCadIn * 100 : 0;
     return {
       rate: +(+rate).toFixed(6),
@@ -1048,11 +1043,6 @@
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
-    const home = deskHomeCcy();
-    const openRate = home === 'CAD' ? crossRate('CAD', 'USD') : (() => {
-      const per = homePerUnit('USD');
-      return per ? +(1 / per).toFixed(6) : crossRate(home, 'USD');
-    })();
     return Object.assign({
       id: Date.now() + Math.floor(Math.random() * 1000),
       /* the TRADING day, not the wall clock — a record's date is what it
@@ -1063,10 +1053,10 @@
       customer: '',
       beneficiary: '',
       type: 'Currency Exchange',
-      inCcy: home,
+      inCcy: 'CAD',
       inAmt: '',
-      rate: openRate,
-      outCcy: home === 'USD' ? 'EUR' : 'USD',
+      rate: crossRate('CAD', 'USD'),
+      outCcy: 'USD',
       outAmt: '',
       fee: '',
       midRate: null,
@@ -18649,7 +18639,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const BCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY'];
   const bookCcys = () => {
     const home = homeCcy();
-    return bookCcys().indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS);
+    return BCCYS.indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS);
   };
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = {
@@ -31484,6 +31474,33 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return pack && pack.homeCurrency || 'CAD';
   };
+  /* The published board's home-per-unit mid — the same number the server
+     multiplies the cash by (`input × fromMid`). A missing row is null,
+     never zero: zero is how a real pile of foreign notes looks like
+     nothing and walks past the identification line. */
+  function boardHomePerUnit(ccy) {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      const row = cfg && cfg.rows && cfg.rows[String(ccy || '').toUpperCase()];
+      if (!row || row.show === false) return null;
+      const mid = typeof row.mid === 'number' ? row.mid : Number(row.mid);
+      if (mid > 0 && isFinite(mid)) return mid;
+    } catch (e) {}
+    return null;
+  }
+  /* Home value of cash handed over. Canada keeps the CAD cross this
+     form has always used. Any other desk uses the board mid above.
+     Nothing handed over is 0. A positive foreign amount with no mid
+     is null — identification required, not "no ID needed". */
+  function cashInHome(amount, ccy, home) {
+    const n = +amount || 0;
+    if (!ccy || ccy === home) return n;
+    if (home === 'CAD') return n / (crossRate('CAD', ccy) || 1);
+    if (!(n > 0)) return 0;
+    const per = boardHomePerUnit(ccy);
+    return per == null ? null : n * per;
+  }
+  const shownRate = r => r > 0 && isFinite(r) ? num(r) : 'Rate unavailable';
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2',
@@ -31586,6 +31603,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
   function boardOrderedCCY() {
+    const home = deskHome();
+    const base = home && CCY.indexOf(home) < 0 ? [home].concat(CCY) : CCY;
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
@@ -31593,10 +31612,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         order.forEach((c, i) => {
           rank[c] = i;
         });
-        return [...CCY].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return CCY;
+    return base;
   }
   // remittance destinations → payout currency
   const DEST = [{
@@ -32293,19 +32312,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
-      const asHome = (a, c) => c === home ? +a || 0 : home === 'CAD' ? (+a || 0) / (crossRate('CAD', c) || 1) : 0;
       const winDays = settings && settings.structuringDays || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
       let total = 0,
-        windowCad = 0;
+        windowCad = 0,
+        unknown = false;
       const cc = {};
       h.forEach(r => {
-        const cad = asHome(r.inAmt, r.inCcy);
-        total += cad;
-        if (r.date >= cutoff) windowCad += cad;
+        const cad = cashInHome(r.inAmt, r.inCcy, home);
+        if (cad == null) {
+          unknown = true;
+        } else {
+          total += cad;
+          if (r.date >= cutoff) windowCad += cad;
+        }
         const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) cc[c] = (cc[c] || 0) + 1;
       });
+      if (unknown) {
+        total = null;
+        windowCad = null;
+      }
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return {
@@ -32353,8 +32380,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
-    const over = line != null && s.windowCad >= line;
-    const near = line != null && !over && s.windowCad >= line * 0.7;
+    const over = line != null && s.windowCad != null && s.windowCad >= line;
+    const near = line != null && s.windowCad != null && !over && s.windowCad >= line * 0.7;
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return /*#__PURE__*/React.createElement("div", {
       className: "mt-2 overflow-hidden",
@@ -32428,14 +32455,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
-      value: fmt(s.windowCad, deskHome()),
-      sub: over ? 'over the line' : near ? 'nearing line' : 'within range',
+      value: s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome()),
+      sub: s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range',
       tone: over ? CD.flag : near ? CD.amber : CD.ink,
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
       value: s.top || '—',
-      sub: s.count > 0 ? `${fmt(s.total, deskHome())} lifetime` : 'new',
+      sub: s.count > 0 ? s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
       divider: true
     })));
@@ -32839,8 +32866,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ccy: home
     }; // MO / Bill: face value out
 
-    // CAD-equivalent of the cash the customer hands over (threshold basis)
-    const toHome = (amount, ccy) => ccy === home ? +amount || 0 : home === 'CAD' ? (+amount || 0) / (crossRate('CAD', ccy) || 1) : 0;
+    // Home value of the cash the customer hands over (threshold basis).
+    const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
     const collectCad = isExchange ? toHome(amtN, inCcy) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are already in the desk's currency
     const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
@@ -32875,14 +32902,32 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
-    const single = TH != null && inCadEquiv >= TH;
-    const idRequired = !paused && (single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor means every deal
+    const unpriced = inCadEquiv == null;
+    const single = TH != null && !unpriced && inCadEquiv >= TH;
+    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
-    const recentTotal = useMemo(() => {
-      if (!customer) return 0;
-      return live.filter(o => o.customer === customer).reduce((s, o) => s + toHome(o.inAmt, o.inCcy), 0) + inCadEquiv;
-    }, [customer, live, inCadEquiv]);
-    const structuring = TH != null && !single && customer && recentTotal >= TH;
+    const recent = useMemo(() => {
+      if (!customer) return {
+        sum: 0,
+        unknown: false
+      };
+      let sum = 0,
+        unknown = false;
+      live.forEach(o => {
+        if (o.customer !== customer) return;
+        const v = toHome(o.inAmt, o.inCcy);
+        if (v == null) unknown = true;else sum += v;
+      });
+      return {
+        sum,
+        unknown
+      };
+    }, [customer, live, inCcy, home]);
+    const recentTotal = recent.unknown || unpriced ? null : recent.sum + inCadEquiv;
+    /* A prior deal we cannot value is not a zero. Leaving it out would
+       let the window sit under the line. The deal in front of us is
+       already identification-required when it itself has no rate. */
+    const structuring = TH != null && !single && !!customer && (recent.unknown || recentTotal != null && recentTotal >= TH || unpriced && recent.sum >= TH);
 
     // ---- per-type requirement checklist (the "make it green" list) ----
     const reqs = [];
@@ -33464,7 +33509,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx.serverObligationId = posted.obligationId;
       }
       // house auto-tag rules (Settings → Tagged) — applied once, as the deal posts
-      const _atOver = +(settings || {}).autoTagOver > 0 && collectCad >= +settings.autoTagOver;
+      const _atOver = +(settings || {}).autoTagOver > 0 && collectCad != null && collectCad >= +settings.autoTagOver;
       const _atRiskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /enhanced|high/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
       const _atRisk = !!(settings || {}).autoTagRisk && rec && (_atRiskLvl === 'Medium' || _atRiskLvl === 'High');
       const _atNew = !!(settings || {}).autoTagNew && customer && !live.some(o => o.customer === customer);
@@ -33542,7 +33587,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
       give: `${num(amtN)} ${home}`,
-      rateLine: `1 ${home} = ${num(rateN)} ${payoutCcy}`,
+      rateLine: `1 ${home} = ${shownRate(rateN)} ${payoutCcy}`,
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
@@ -33552,7 +33597,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`,
+      rateLine: `1 ${inCcy} = ${shownRate(rateN)} ${outCcy}`,
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -33735,7 +33780,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", rateN ? num(rateN) : '—', " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       className: "p-1",
@@ -33768,10 +33813,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : num(rateN),
+      value: override ? manualRate : shownRate(rateN),
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(num(pricing.deskRate));
+          setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : '');
           setOverride(true);
         }
       },
@@ -34048,7 +34093,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " 1 ", home, " = ", num(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " 1 ", home, " = ", shownRate(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -34583,7 +34628,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -37730,7 +37775,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const [note, setNote] = useState('');
     const amt = +amount || 0,
       rate = +fxRate || mid || 0;
-    const cadCost = +(amt * rate).toFixed(2);
+    const rateMissing = !(rate > 0);
+    const cadCost = rateMissing ? null : +(amt * rate).toFixed(2);
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -37847,7 +37893,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono',
         color: CD.ink
       }
-    }, fmtHome(cadCost))), /*#__PURE__*/React.createElement(Field, {
+    }, rateMissing ? 'Rate unavailable' : fmtHome(cadCost))), /*#__PURE__*/React.createElement(Field, {
       label: "Reference / note"
     }, /*#__PURE__*/React.createElement("input", {
       value: note,
@@ -37870,13 +37916,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         borderRadius: 8
       }
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => amt > 0 && onSettle(p, amt, rate, note),
-      disabled: !(amt > 0),
+      onClick: () => amt > 0 && !rateMissing && onSettle(p, amt, rate, note),
+      disabled: !(amt > 0 && !rateMissing),
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
-        background: amt > 0 ? CD.ink : 'var(--cd-disabled)',
+        background: amt > 0 && !rateMissing ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: amt > 0 ? 'pointer' : 'not-allowed'
+        cursor: amt > 0 && !rateMissing ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",

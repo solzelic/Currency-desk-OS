@@ -763,20 +763,15 @@
      global default; rounding of the customer pay-out is configurable. */
   const DEFAULT_SPREAD = 0.015;
   function spreadOf(code, settings) {
-    if (code === deskHomeCcy()) return 0;
+    if (code === 'CAD') return 0;
     const sp = settings && settings.spreads;
     if (sp && sp[code] != null && sp[code] !== '' && !isNaN(sp[code])) return Math.max(0, +sp[code]) / 100;
     if (settings && settings.defaultSpread != null && !isNaN(settings.defaultSpread)) return Math.max(0, +settings.defaultSpread) / 100;
     return DEFAULT_SPREAD;
   }
-  const unitCadMid = (code) => {
-    const home = deskHomeCcy();
-    if (code === home) return 1;
-    if (home === 'CAD') return crossRate(code, 'CAD') || 0;
-    return homePerUnit(code) || 0;
-  };
-  const buyUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 - spreadOf(code, s));   // we pay this to acquire 1 unit
-  const sellUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 + spreadOf(code, s));  // we charge this to release 1 unit
+  const unitCadMid = (code) => code === 'CAD' ? 1 : (crossRate(code, 'CAD') || 0);
+  const buyUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 - spreadOf(code, s));   // we pay this to acquire 1 unit
+  const sellUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 + spreadOf(code, s));  // we charge this to release 1 unit
 
   // round a customer pay-out per the configured rule. mode: nearest|down|up
   // ('down' favours the desk, 'up' favours the customer); inc is the increment.
@@ -809,7 +804,7 @@
     const midCadIn = amt * unitCadMid(inCcy);
     const midCadOut = outAmt * unitCadMid(outCcy);
     const marginCad = +(midCadIn - midCadOut).toFixed(2);
-    const side = inCcy === deskHomeCcy() ? 'sell' : outCcy === deskHomeCcy() ? 'buy' : 'cross';
+    const side = inCcy === 'CAD' ? 'sell' : outCcy === 'CAD' ? 'buy' : 'cross';
     const spreadPct = midCadIn ? (marginCad / midCadIn) * 100 : 0;
     return { rate: +(+rate).toFixed(6), deskRate: +deskRate.toFixed(6), midRate: +midRate.toFixed(6), outAmt, outAmtRaw, marginCad, spreadPct, side, midCadIn };
   }
@@ -828,15 +823,13 @@
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
-    const home = deskHomeCcy();
-    const openRate = home === 'CAD' ? crossRate('CAD', 'USD') : (() => { const per = homePerUnit('USD'); return per ? +(1 / per).toFixed(6) : crossRate(home, 'USD'); })();
     return Object.assign({
       id: Date.now() + Math.floor(Math.random() * 1000),
       /* the TRADING day, not the wall clock — a record's date is what it
          has to line up with in the book afterwards */
       ref: '', date: businessDate(), time: nowTime(),
       customer: '', beneficiary: '', type: 'Currency Exchange',
-      inCcy: home, inAmt: '', rate: openRate, outCcy: home === 'USD' ? 'EUR' : 'USD', outAmt: '', fee: '',
+      inCcy: 'CAD', inAmt: '', rate: crossRate('CAD', 'USD'), outCcy: 'USD', outAmt: '', fee: '',
       midRate: null, spreadCad: null, side: null,   /* two-sided pricing: booked margin vs mid */
       quoteRef: null, lockedUntil: null,            /* rate-lock provenance, if quoted */
       teller: '', notes: '',

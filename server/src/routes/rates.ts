@@ -11,7 +11,7 @@
    contract, no drift.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, lte } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -67,14 +67,33 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       .from(schema.legalEntities)
       .where(eq(schema.legalEntities.id, who.legalEntityId))
       .limit(1);
-    const home = (entity[0]?.homeCurrency || "CAD").trim().toUpperCase();
+    /* An entity with no home currency is not a Canada desk. Substituting
+       CAD here quoted a dinar shop in Canadian dollars. */
+    const home = (entity[0]?.homeCurrency ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(home)) return { home: null, priced: false, quotes: [] };
     const rows = await db
       .select()
       .from(schema.marketRates)
       .orderBy(desc(schema.marketRates.fetchedAt))
       .limit(1);
     const snap = rows[0];
-    const quoted = quoteHomeMarket(home, (snap?.mids as Record<string, unknown> | undefined) ?? null);
+    /* Same 24-hour line the compliance gate uses
+       (`fetched_at >= now() - interval '24 hours'`). A snapshot older
+       than that, or no snapshot from about a day earlier, is not a
+       change — the prices may still show, the percent does not. */
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const fresh = !!snap && Date.now() - snap.fetchedAt.getTime() <= DAY_MS;
+    let prior: Record<string, unknown> | null = null;
+    if (snap && fresh) {
+      const earlier = await db
+        .select()
+        .from(schema.marketRates)
+        .where(lte(schema.marketRates.fetchedAt, new Date(snap.fetchedAt.getTime() - DAY_MS)))
+        .orderBy(desc(schema.marketRates.fetchedAt))
+        .limit(1);
+      prior = (earlier[0]?.mids as Record<string, unknown> | undefined) ?? null;
+    }
+    const quoted = quoteHomeMarket(home, (snap?.mids as Record<string, unknown> | undefined) ?? null, prior);
     return { home, priced: quoted.priced, quotes: quoted.quotes };
   });
 

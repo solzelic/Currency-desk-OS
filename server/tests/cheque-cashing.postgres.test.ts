@@ -356,6 +356,54 @@ postgres("cheque cashing on the ledger", () => {
     expect(await tillCad()).toBe("5000.00");
   });
 
+  it("cashes a home-currency cheque on a dinar desk and still refuses a foreign one", async () => {
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency = 'RSD', jurisdiction_pack_id = 'pack-intl-v1', jurisdiction_pack_version = 1
+        WHERE id = $1`,
+      [DEMO.legalEntityId],
+    );
+    await pool.query(
+      "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'RSD',5000)",
+      scope,
+    );
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies, { currency: "RSD" });
+    expect(cashed.cheque.currency).toBe("RSD");
+    expect(cashed.cheque.netAmount).toBe("965.00");
+    const journal = await journalOf(cashed.transactionId);
+    expect(imbalance(journal)).toBe(0);
+    expect(journal).toEqual([
+      { account: "asset:cheques_held", side: "debit", amount: "1000.00" },
+      { account: "till:RSD", side: "credit", amount: "965.00" },
+      { account: "revenue:cheque_fee", side: "credit", amount: "35.00" },
+    ]);
+    const dinar = await pool.query(
+      "SELECT available_amount FROM ledger_till_balances WHERE till_id=$1 AND currency='RSD'",
+      [TILL],
+    );
+    expect(dinar.rows[0].available_amount).toBe("4035.00");
+
+    const foreign = await cashCheque(cookies, { currency: "CAD" });
+    expect(foreign.statusCode).toBe(422);
+    expect(foreign.json().code).toBe("CHEQUE_CURRENCY_NOT_HOME");
+    expect(foreign.json().message).toMatch(/RSD/);
+
+    /* Canada is the same rule, not a special case. Put the desk back and
+       a US-dollar cheque is still refused, by name, in Canadian dollars. */
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency = 'CAD', jurisdiction_pack_id = 'pack-ca-v1', jurisdiction_pack_version = 1
+        WHERE id = $1`,
+      [DEMO.legalEntityId],
+    );
+    const canada = await cashCheque(cookies, { currency: "USD" });
+    expect(canada.statusCode).toBe(422);
+    expect(canada.json().code).toBe("CHEQUE_CURRENCY_NOT_HOME");
+    expect(canada.json().message).toMatch(/CAD/);
+    expect(await tillCad()).toBe("5000.00");
+  });
+
   it("refuses a cheque that is not in the desk's own currency, and says why", async () => {
     const cookies = await cookie();
     const refused = await cashCheque(cookies, { currency: "USD" });

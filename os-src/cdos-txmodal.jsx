@@ -18,6 +18,33 @@
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return (pack && pack.homeCurrency) || 'CAD';
   };
+  /* The published board's home-per-unit mid — the same number the server
+     multiplies the cash by (`input × fromMid`). A missing row is null,
+     never zero: zero is how a real pile of foreign notes looks like
+     nothing and walks past the identification line. */
+  function boardHomePerUnit(ccy) {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      const row = cfg && cfg.rows && cfg.rows[String(ccy || '').toUpperCase()];
+      if (!row || row.show === false) return null;
+      const mid = typeof row.mid === 'number' ? row.mid : Number(row.mid);
+      if (mid > 0 && isFinite(mid)) return mid;
+    } catch (e) {}
+    return null;
+  }
+  /* Home value of cash handed over. Canada keeps the CAD cross this
+     form has always used. Any other desk uses the board mid above.
+     Nothing handed over is 0. A positive foreign amount with no mid
+     is null — identification required, not "no ID needed". */
+  function cashInHome(amount, ccy, home) {
+    const n = +amount || 0;
+    if (!ccy || ccy === home) return n;
+    if (home === 'CAD') return n / (crossRate('CAD', ccy) || 1);
+    if (!(n > 0)) return 0;
+    const per = boardHomePerUnit(ccy);
+    return per == null ? null : n * per;
+  }
+  const shownRate = (r) => (r > 0 && isFinite(r)) ? num(r) : 'Rate unavailable';
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
@@ -55,14 +82,16 @@
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
   function boardOrderedCCY() {
+    const home = deskHome();
+    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY;
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
         const rank = {}; order.forEach((c, i) => { rank[c] = i; });
-        return [...CCY].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return CCY;
+    return base;
   }
   // remittance destinations → payout currency
   const DEST = [
@@ -215,11 +244,11 @@
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
-      const asHome = (a, c) => c === home ? (+a || 0) : (home === 'CAD' ? (+a || 0) / (crossRate('CAD', c) || 1) : 0);
       const winDays = (settings && settings.structuringDays) || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
-      let total = 0, windowCad = 0; const cc = {};
-      h.forEach(r => { const cad = asHome(r.inAmt, r.inCcy); total += cad; if (r.date >= cutoff) windowCad += cad; const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
+      let total = 0, windowCad = 0, unknown = false; const cc = {};
+      h.forEach(r => { const cad = cashInHome(r.inAmt, r.inCcy, home); if (cad == null) { unknown = true; } else { total += cad; if (r.date >= cutoff) windowCad += cad; } const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
+      if (unknown) { total = null; windowCad = null; }
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return { count: h.length, total, windowCad, winDays, days, top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null };
@@ -236,8 +265,8 @@
       : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
-    const over = line != null && s.windowCad >= line;
-    const near = line != null && !over && s.windowCad >= line * 0.7;
+    const over = line != null && s.windowCad != null && s.windowCad >= line;
+    const near = line != null && s.windowCad != null && !over && s.windowCad >= line * 0.7;
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return (
       <div className="mt-2 overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: 'var(--cd-panel)' }}>
@@ -251,8 +280,8 @@
         </div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
-          <CCstat label={`Last ${s.winDays}d`} value={fmt(s.windowCad, deskHome())} sub={over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
-          <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? `${fmt(s.total, deskHome())} lifetime` : 'new'} tone={CD.ink} divider />
+          <CCstat label={`Last ${s.winDays}d`} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
+          <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
       </div>
     );
@@ -429,8 +458,8 @@
       : isReceive ? { amt: amtN, ccy: outCcy }
       : { amt: amtN, ccy: home };   // MO / Bill: face value out
 
-    // CAD-equivalent of the cash the customer hands over (threshold basis)
-    const toHome = (amount, ccy) => ccy === home ? (+amount || 0) : (home === 'CAD' ? (+amount || 0) / (crossRate('CAD', ccy) || 1) : 0);
+    // Home value of the cash the customer hands over (threshold basis).
+    const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
     const collectCad = isExchange ? toHome(amtN, inCcy)
       : (isMO || isBill) ? amtN + feeN
       : isCheque ? amtN
@@ -464,14 +493,26 @@
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
-    const single = TH != null && inCadEquiv >= TH;
-    const idRequired = !paused && (single || idFloor == null || inCadEquiv >= idFloor || isSend);   // remittance always needs sender ID; a null floor means every deal
+    const unpriced = inCadEquiv == null;
+    const single = TH != null && !unpriced && inCadEquiv >= TH;
+    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
-    const recentTotal = useMemo(() => {
-      if (!customer) return 0;
-      return live.filter(o => o.customer === customer).reduce((s, o) => s + toHome(o.inAmt, o.inCcy), 0) + inCadEquiv;
-    }, [customer, live, inCadEquiv]);
-    const structuring = TH != null && !single && customer && recentTotal >= TH;
+    const recent = useMemo(() => {
+      if (!customer) return { sum: 0, unknown: false };
+      let sum = 0, unknown = false;
+      live.forEach(o => {
+        if (o.customer !== customer) return;
+        const v = toHome(o.inAmt, o.inCcy);
+        if (v == null) unknown = true;
+        else sum += v;
+      });
+      return { sum, unknown };
+    }, [customer, live, inCcy, home]);
+    const recentTotal = recent.unknown || unpriced ? null : recent.sum + inCadEquiv;
+    /* A prior deal we cannot value is not a zero. Leaving it out would
+       let the window sit under the line. The deal in front of us is
+       already identification-required when it itself has no rate. */
+    const structuring = TH != null && !single && !!customer && (recent.unknown || (recentTotal != null && recentTotal >= TH) || (unpriced && recent.sum >= TH));
 
     // ---- per-type requirement checklist (the "make it green" list) ----
     const reqs = [];
@@ -755,7 +796,7 @@
         tx.serverObligationId = posted.obligationId;
       }
       // house auto-tag rules (Settings → Tagged) — applied once, as the deal posts
-      const _atOver = +((settings || {}).autoTagOver) > 0 && collectCad >= +settings.autoTagOver;
+      const _atOver = +((settings || {}).autoTagOver) > 0 && collectCad != null && collectCad >= +settings.autoTagOver;
       const _atRiskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/enhanced|high/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
       const _atRisk = !!(settings || {}).autoTagRisk && rec && (_atRiskLvl === 'Medium' || _atRiskLvl === 'High');
       const _atNew = !!(settings || {}).autoTagNew && customer && !live.some(o => o.customer === customer);
@@ -788,8 +829,8 @@
 
     // present-quote payload (exchange + send)
     const presentQ = isSend
-      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${num(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${shownRate(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${shownRate(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -837,13 +878,13 @@
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
                   <div className="flex items-center justify-center gap-2 py-2">
                     <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
-                    <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {rateN ? num(rateN) : '—'} {outCcy}</span>
+                    <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {shownRate(rateN)} {outCcy}</span>
                     <button onClick={swap} title="Swap" className="p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : num(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(num(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -894,7 +935,7 @@
                   <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                     <Lbl>Customer pays ({home})</Lbl>
                     <Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus />
-                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 {home} = {num(rateN)} {payoutCcy}</div>
+                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 {home} = {shownRate(rateN)} {payoutCcy}</div>
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
                     <Money value={out.amt ? num(out.amt) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1024,7 +1065,7 @@
                     <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></div>
                   </div>
                   <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                     <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                   </div>
                 </div>

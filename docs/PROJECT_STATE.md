@@ -283,10 +283,17 @@ line and the desk's own identification line, and the lower one binds.
 A missing or stale rate requires identification. A Canada desk still
 uses its own line, in Canadian dollars. The rate tape quotes every
 market mid in the desk's home currency (`home per unit = CAD per unit
-÷ CAD per home`) before a change is computed or a price is shown, and
-the home currency is not a row on its own tape. When that home rate
-is missing the tape shows the published board and no change. A Canada
-desk's tape stays Canadian dollars per unit. Pipeline, settlement,
+÷ CAD per home`). The change is that home cross now against the
+snapshot about 24 hours earlier. No earlier snapshot, or a current
+snapshot older than 24 hours, shows no change percent. An unknown
+home currency returns an empty tape, not a Canadian one. The home
+currency is not a row on its own tape. When the home rate is missing
+the tape shows the published board and no change. A Canada desk's
+tape stays Canadian dollars per unit. Foreign cash on any other desk
+is valued for identification at the published board's home-per-unit
+mid, the same mid the server uses; no mid requires identification.
+Deal prices still come from that board. A missing rate is shown as
+unavailable. Pipeline, settlement,
 and the other desk screens label money in the home currency; a
 Canada desk still reads CAD. CurrencyDesk's own subscription prices
 stay in Canadian dollars.
