@@ -75,9 +75,11 @@ commit the generated output — CI diffs `web/` against a fresh build.
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
   Migration `029_rate_board_home_currency` records which home currency a
-  rate board was published in. The owner changes the book in
-  `server/src/ledger/home-currency.ts`. Currencies of sanctioned
-  countries are refused by `server/src/compliance/sanctioned-currencies.ts`
+  rate board was published in. Migration `030_cost_event_rebase` allows a
+  `rebase` cost event when the creating owner changes the book in
+  `server/src/ledger/home-currency.ts`. Historic cost rows are not
+  updated. Currencies of sanctioned countries are refused by
+  `server/src/compliance/sanctioned-currencies.ts`
   (`setSanctionedCurrencyLookup`). That module is the plug for a sourced
   list. It does not ship one.
 

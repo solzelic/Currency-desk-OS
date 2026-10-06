@@ -20,7 +20,7 @@ import {
   RULES_UNAVAILABLE_NOTICE,
   type JurisdictionPack,
 } from "./jurisdiction.js";
-import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
+import { readDeskThresholds, resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
 import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -209,34 +209,42 @@ export async function requireIdentification(
   deal: { kind: string; cash: boolean },
 ): Promise<ComplianceStamp> {
   requireInstalledPack(pack);
-  const priced = pack.baseline
-    ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
-    : { block: false, rate: "1.000000000000", rateAt: null };
-  const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
-  if (idStatus === "verified") return stamp;
-  if (pack.baseline) {
-    /* A missing or stale market rate already sets block. A desk's own
-       tighter line, stored in home currency, can only add a refusal. */
-    const desk = await deskIdLine(client, actor.legalEntityId);
-    if (priced.block || (desk !== null && amountHome.gte(desk))) {
+  /* A country pack's lines may have been converted out of the currency
+     they were written in. The deal records that rate, including when the
+     customer is already verified and the gate does not refuse the post.
+     The baseline keeps its own stamp. This branch does not replace it. */
+  if (!pack.baseline) {
+    const thresholds = await readDeskThresholds(client, actor.legalEntityId, pack);
+    const stamp: ComplianceStamp = {
+      rate: thresholds.conversionRate,
+      rateAt: thresholds.conversionRateAt ? new Date(thresholds.conversionRateAt) : null,
+    };
+    if (idStatus === "verified") return stamp;
+    const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
+    if (line === null)
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
+      );
+    if (amountHome.gte(line))
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
         "Authoritative compliance policy blocked posting.",
       );
-    }
     return stamp;
   }
-  const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
-  if (line === null)
-    throw new LedgerError(
-      "COMPLIANCE_BLOCKED",
-      "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
-    );
-  if (amountHome.gte(line))
+  const priced = await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash);
+  const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
+  if (idStatus === "verified") return stamp;
+  /* A missing or stale market rate already sets block. A desk's own
+     tighter line, stored in home currency, can only add a refusal. */
+  const desk = await deskIdLine(client, actor.legalEntityId);
+  if (priced.block || (desk !== null && amountHome.gte(desk))) {
     throw new LedgerError(
       "COMPLIANCE_BLOCKED",
       "Authoritative compliance policy blocked posting.",
     );
+  }
   return stamp;
 }
 

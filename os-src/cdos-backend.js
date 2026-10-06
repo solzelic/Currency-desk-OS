@@ -529,10 +529,10 @@
       previewHomeCurrency: function (currency) {
         return request("/api/ledger/home-currency/preview?currency=" + encodeURIComponent(currency));
       },
-      setHomeCurrency: function (currency, password) {
+      setHomeCurrency: function (currency, password, snapshotId) {
         return request("/api/ledger/home-currency", {
           method: "POST",
-          body: JSON.stringify({ currency: currency, password: password }),
+          body: JSON.stringify({ currency: currency, password: password, snapshotId: snapshotId }),
         });
       },
 

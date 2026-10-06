@@ -2420,10 +2420,10 @@
       previewHomeCurrency: function (currency) {
         return request("/api/ledger/home-currency/preview?currency=" + encodeURIComponent(currency));
       },
-      setHomeCurrency: function (currency, password) {
+      setHomeCurrency: function (currency, password, snapshotId) {
         return request("/api/ledger/home-currency", {
           method: "POST",
-          body: JSON.stringify({ currency: currency, password: password }),
+          body: JSON.stringify({ currency: currency, password: password, snapshotId: snapshotId }),
         });
       },
 
@@ -5806,8 +5806,7 @@
   function HomeCurrencyRow() {
     const {
       setSettings,
-      log,
-      me
+      log
     } = React.useContext(SettingsCtx);
     const [status, setStatus] = useState('loading');
     const [view, setView] = useState(null);
@@ -5850,7 +5849,7 @@
       setBusy(true);
       setErr('');
       try {
-        const answer = await api.setHomeCurrency(next, password);
+        const answer = await api.setHomeCurrency(next, password, preview && preview.snapshotId);
         if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
         if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
         setSettings(s => ({
@@ -5891,7 +5890,7 @@
       }, "The base currency is changed on the hosted desk, where the ledger keeps the books.");
     }
     const currency = view && view.currency || '';
-    const owner = !!(view && view.owner) || me && me.role === 'Owner';
+    const owner = !!(view && view.owner);
     return /*#__PURE__*/React.createElement("div", {
       "data-testid": "home-currency",
       className: "py-3",
@@ -5966,7 +5965,17 @@
         color: CD.ink,
         lineHeight: 1.45
       }
-    }, line)), /*#__PURE__*/React.createElement("div", {
+    }, line)), preview.rateAt && /*#__PURE__*/React.createElement("p", {
+      "data-testid": "home-currency-rate-at",
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, "That market rate was fetched ", new Date(preview.rateAt).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }), "."), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mt-2 mb-1",
       style: {
         color: CD.faint,
@@ -9820,7 +9829,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     })), tab === 'localization' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "globe",
       title: "Localization",
-      sub: "Make the desk work for your region \u2014 not just Canada."
+      sub: "Make the desk work for your region, not just Canada."
     }), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1",
       style: {
@@ -48586,6 +48595,17 @@ ${snap}`;
   /* ============================================================
      The report builder
      ============================================================ */
+  function otherCurrencyCopy(book) {
+    const n = book && Number(book.otherCurrencyDeals);
+    if (!n) return '';
+    const others = (book.byHomeCurrency || []).filter(row => row.homeCurrency && row.homeCurrency !== book.homeCurrency);
+    if (n === 1) {
+      const where = others[0] ? others[0].homeCurrency : 'another currency';
+      return '1 deal was posted in ' + where + '. It is not in these totals.';
+    }
+    const which = others.map(row => row.deals + ' in ' + row.homeCurrency).join(', ');
+    return which ? n + ' deals were posted in another currency: ' + which + '. They are not in these totals.' : n + ' deals were posted in another currency. They are not in these totals.';
+  }
   function Reports({
     rows,
     clients,
@@ -49138,7 +49158,15 @@ ${snap}`;
             fontSize: 12.5,
             color: closed ? '#14543a' : CD.mute
           }
-        }, closed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "Closed and counted"), " \u2014 every figure below is the ledger's, for the trading day named above. Review, then sign.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "This till is not closed."), " The figures below are the ledger's as of now; the counts are whatever has been recorded so far. A sign-off sheet for a day still trading is a snapshot, not a close-out."))), /*#__PURE__*/React.createElement(KpiRow, {
+        }, closed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "Closed and counted"), " \u2014 every figure below is the ledger's, for the trading day named above. Review, then sign.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "This till is not closed."), " The figures below are the ledger's as of now; the counts are whatever has been recorded so far. A sign-off sheet for a day still trading is a snapshot, not a close-out."))), otherCurrencyCopy(d) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(d)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Transactions',
             value: d ? d.posted : '—',
@@ -49456,7 +49484,15 @@ ${snap}`;
           title: "Profit & Loss",
           subtitle: `${branchName} · ${sub}`,
           rangeLabel: effRangeLabel
-        }), /*#__PURE__*/React.createElement(KpiRow, {
+        }), otherCurrencyCopy(book) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(book)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Gross revenue',
             value: orDash(gross, homeCcy, noBook),
@@ -49633,7 +49669,15 @@ ${snap}`;
           title: "Period Summary",
           subtitle: sub,
           rangeLabel: effRangeLabel
-        }), /*#__PURE__*/React.createElement(KpiRow, {
+        }), otherCurrencyCopy(book) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(book)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Pay-in volume',
             value: orDash(volume, homeCcy, noBook),

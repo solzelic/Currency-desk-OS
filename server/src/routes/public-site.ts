@@ -75,6 +75,27 @@ async function latestBoard(db: Db, tenantId: string) {
   return rows[0] ?? null;
 }
 
+async function deskHomeCurrency(db: Db, tenantId: string): Promise<string> {
+  const rows = await db
+    .select({ homeCurrency: schema.legalEntities.homeCurrency })
+    .from(schema.legalEntities)
+    .where(eq(schema.legalEntities.tenantId, tenantId))
+    .limit(1);
+  return String(rows[0]?.homeCurrency ?? "").trim().toUpperCase();
+}
+
+/* A board with no label is the legacy one and still served. A board
+   labelled in some other currency is not this desk's prices. */
+async function liveBoard(db: Db, tenantId: string) {
+  const board = await latestBoard(db, tenantId);
+  if (!board) return null;
+  const quoted = String(board.homeCurrency ?? "").trim().toUpperCase();
+  if (!quoted) return board;
+  const home = await deskHomeCurrency(db, tenantId);
+  if (home && quoted !== home) return null;
+  return board;
+}
+
 const fmtAmount = (n: Decimal.Value, ccy: string) =>
   `${jsonMoney(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${ccy}`;
 const fmtTime = (d: Date) =>
@@ -124,7 +145,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
      JavaScript for anyone to read off.
      ---------------------------------------------------------------- */
   const boardJson = async (t: typeof schema.tenants.$inferSelect) => {
-    const board = await latestBoard(db, t.id);
+    const board = await liveBoard(db, t.id);
     if (!board) return { published: false, rates: [] as unknown[] };
     const rows = board.boardRows ?? {};
     const order = board.boardOrder ?? Object.keys(rows);
@@ -210,7 +231,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
       return reply.code(429).send({ error: "slow_down", detail: "Too many quotes — try again in a bit, or call the desk." });
     }
 
-    const board = await latestBoard(db, t.id);
+    const board = await liveBoard(db, t.id);
     if (!board) return reply.code(503).send({ error: "no_board" });
     const rowOf = (ccy: string) => board.boardRows[ccy];
     if (b.from !== "CAD" && !rowOf(b.from)) return reply.code(400).send({ error: "unknown_currency", detail: b.from });

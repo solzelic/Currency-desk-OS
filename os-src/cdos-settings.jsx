@@ -613,7 +613,7 @@
      cannot describe a different change from the one that will be saved.
      It does not multiply thresholds locally. */
   function HomeCurrencyRow() {
-    const { setSettings, log, me } = React.useContext(SettingsCtx);
+    const { setSettings, log } = React.useContext(SettingsCtx);
     const [status, setStatus] = useState('loading');
     const [view, setView] = useState(null);
     const [next, setNext] = useState('');
@@ -655,7 +655,7 @@
       setBusy(true);
       setErr('');
       try {
-        const answer = await api.setHomeCurrency(next, password);
+        const answer = await api.setHomeCurrency(next, password, preview && preview.snapshotId);
         if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
         if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
         setSettings((s) => ({ ...s, baseCurrency: answer.currency }));
@@ -679,7 +679,7 @@
     }
 
     const currency = (view && view.currency) || '';
-    const owner = !!(view && view.owner) || (me && me.role === 'Owner');
+    const owner = !!(view && view.owner);
     return (
       <div data-testid="home-currency" className="py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
         <div className="text-sm" style={{ color: CD.ink }}>Base currency</div>
@@ -716,6 +716,11 @@
             {preview.willChange && preview.willChange.map((line) => (
               <p key={line} className="text-[12.5px] mb-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{line}</p>
             ))}
+            {preview.rateAt && (
+              <p data-testid="home-currency-rate-at" className="text-[12.5px] mb-2" style={{ color: CD.ink, lineHeight: 1.45 }}>
+                That market rate was fetched {new Date(preview.rateAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.
+              </p>
+            )}
             <div className="text-[10px] uppercase tracking-widest mt-2 mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>This stays as it is</div>
             {(preview.willNotChange || []).map((line) => (
               <p key={line} className="text-[12.5px] mb-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{line}</p>
@@ -1805,7 +1810,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         </div>)}
 
         {tab === 'localization' && (<div>
-          <SectionTitle icon="globe" title="Localization" sub="Make the desk work for your region — not just Canada." />
+          <SectionTitle icon="globe" title="Localization" sub="Make the desk work for your region, not just Canada." />
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Region</div>
           <HomeCurrencyRow />
           <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || ''} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>

@@ -117,9 +117,12 @@ required on every deal. A line already written in the home currency
 does not need a snapshot. A USD book does not either. The owner can
 move the book to another currency in Settings. Pack numbers stay
 written in the currency they were authored in (`rulesCurrency`) and
-convert on read. A desk-chosen money line is restated once, at the
-change, into the new book currency, and is not converted again. Past
-deals are not rewritten. The threshold editors stay available. The
+convert on read. When that read converts a country pack's lines, the
+rate and the time it was fetched are what the deal stores. A desk-chosen
+money line is restated once, at the change, into the new book currency,
+and is not converted again. Past deals are not rewritten. A read does
+not rewrite the pack id or the stored lines of a desk whose book still
+matches the currency the pack was written in. The threshold editors stay available. The
 till and Settings show: "We don't have rules for your country yet.
 These are the international anti-money-laundering rules. Please check
 they match your country's laws." Compliance names that pack

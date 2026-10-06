@@ -1237,17 +1237,31 @@ export class ObligationService {
          table exists: a desk with forty open remittances has forty
          payouts to fund, and it should be able to read that as one
          number rather than counting rows in a browser store. */
+      const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
       const outstanding = await client.query(
-        `SELECT direction, sum(carrying_amount_home) AS total, count(*) AS count
+        `SELECT direction, btrim(home_currency::text) AS home_currency,
+                sum(carrying_amount_home) AS total, count(*)::int AS count
            FROM ledger_obligations
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND status='open'
-          GROUP BY direction`,
+          GROUP BY direction, btrim(home_currency::text)`,
         entityScope(actor),
       );
       await client.query("COMMIT");
       const totals = { payable: null as string | null, receivable: null as string | null };
-      for (const row of outstanding.rows)
-        totals[row.direction as "payable" | "receivable"] = new Decimal(row.total).toFixed(2);
+      let otherCurrencyOpen = 0;
+      const byHomeCurrency = outstanding.rows.map((row) => ({
+        direction: String(row.direction),
+        homeCurrency: String(row.home_currency ?? "").trim().toUpperCase(),
+        total: new Decimal(row.total).toFixed(2),
+        count: Number(row.count),
+      }));
+      for (const row of byHomeCurrency) {
+        if (row.homeCurrency === home) {
+          totals[row.direction as "payable" | "receivable"] = row.total;
+        } else {
+          otherCurrencyOpen += row.count;
+        }
+      }
       return {
         obligations: rows.rows.map((row) => ({
           obligationId: row.obligation_id,
@@ -1275,6 +1289,10 @@ export class ObligationService {
            that has never taken a remittance has no payable position, and
            "0.00" is a claim about a book nobody has written in. */
         outstanding: totals,
+        /* Open promises booked in some other home currency. Their amounts
+           are not in `outstanding`, which is this book's currency only. */
+        otherCurrencyOpen,
+        byHomeCurrency,
       };
     } catch (error) {
       await client.query("ROLLBACK");

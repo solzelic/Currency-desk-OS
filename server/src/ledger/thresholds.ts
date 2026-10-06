@@ -87,6 +87,14 @@ export type DeskThresholds = {
   aggregationHours: ThresholdSetting<number>;
   /** how long filed reports and their records are kept */
   retentionYears: ThresholdSetting<number>;
+  /** Home units per 1 unit of the currency the pack lines are written in.
+      "1.000000000000" when that currency is already the book. Null when a
+      conversion was needed and no fresh snapshot could do it. The posting
+      path stores this on the deal. */
+  conversionRate: string | null;
+  /** When the snapshot behind conversionRate was fetched. Null when the
+      lines needed no conversion, or when no snapshot was used. */
+  conversionRateAt: string | null;
 };
 
 /* Which way "stricter" points, per number.
@@ -271,6 +279,13 @@ export async function readDeskThresholds(
         }
       : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
   const remittanceIdThreshold = await remittanceLine(client, pack);
+  const conversionRate = !needsFx
+    ? "1.000000000000"
+    : market
+      ? market.rate.toDecimalPlaces(12).toFixed(12)
+      : null;
+  const conversionRateAt =
+    needsFx && market?.rateAt ? market.rateAt.toISOString() : null;
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,
@@ -293,6 +308,8 @@ export async function readDeskThresholds(
       pack.available ? (count(row.pack_retention_years) ?? 5) : null,
       "higher_is_stricter",
     ),
+    conversionRate,
+    conversionRateAt,
   };
 }
 

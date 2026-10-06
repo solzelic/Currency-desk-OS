@@ -142,14 +142,18 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   const confirm = page.getByTestId("home-currency-confirm");
   await expect(confirm).toBeVisible();
   await expect(confirm).toContainText("The desk keeps its books in GBP");
+  await expect(confirm).toContainText("1 USD = 0.8000 GBP");
   await expect(confirm).toContainText("Nothing already written is rewritten");
   await expect(confirm).toContainText("comes off the counter");
+  await expect(confirm.getByTestId("home-currency-rate-at")).toContainText("That market rate was fetched");
   await page.locator(".win.active").screenshot({ path: `${shots}/home-currency-confirm-1280.png` });
 
   await page.setViewportSize({ width: 390, height: 844 });
   const maximized = page.locator(".win.active.win.max");
   if ((await maximized.count()) === 0) await page.locator(".win.active .win-zoom").click();
-  await confirm.scrollIntoViewIfNeeded();
+  const box = await confirm.boundingBox();
+  expect(box, "confirm box is in the layout").toBeTruthy();
+  expect(box!.y).toBeLessThan(844 / 2);
   await page.locator(".win.active").screenshot({ path: `${shots}/home-currency-confirm-390.png` });
 
   await page.setViewportSize({ width: 1280, height: 800 });

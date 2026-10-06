@@ -257,6 +257,14 @@ export class TillControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
+      /* Share-lock the legal entity before the session exists. The base
+         currency change takes the same row FOR UPDATE, so one of the two
+         waits: a till cannot open in the gap between the change's check
+         and its commit. */
+      await client.query(
+        "SELECT 1 FROM legal_entities WHERE id = $1 FOR SHARE",
+        [actor.legalEntityId],
+      );
       const existing = await client.query(
         `SELECT *
            FROM ledger_till_sessions
@@ -323,6 +331,12 @@ export class TillControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
+      /* Same share lock as opening a till. A count is proof the drawer
+         is in use, and it must not land while the books are moving. */
+      await client.query(
+        "SELECT 1 FROM legal_entities WHERE id = $1 FOR SHARE",
+        [actor.legalEntityId],
+      );
       const session = await this.openSession(client, actor);
       const existing = await client.query(
         `SELECT batch_id

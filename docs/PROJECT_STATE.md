@@ -181,21 +181,36 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   baseline and keeps its currency. The known-wrong country packs are
   not assigned by that backfill.
 
-- **The owner can change the desk's base currency in Settings.** Only
-  the owner, and only after they type their password again. Every till
-  must be closed and every cash count closed out. The new currency
-  needs a market snapshot from the last 24 hours. Past ledger rows keep
-  the currency they were posted in. Cash in a till or a vault is not
-  converted. A desk-chosen money threshold is restated once, rounded
-  down to the cent. Pack lines stay written in the currency the pack
-  was authored in and convert on the next read. The published rate
-  board is labelled with the old currency and comes off the counter
-  until someone publishes it again. The audit row records who, when,
-  both currencies, the rate, and when that rate was fetched. Currencies
-  of sanctioned countries are refused through
+- **The creating owner can change the desk's base currency in Settings.**
+  There is no separate owner role. The creating owner is the earliest
+  administrator on the desk (`staff_users`, by `created_at`, then id).
+  A later administrator cannot move the book. The seeded York
+  demonstration desk (`tnt-yorkfx`) cannot either. The owner types their
+  password again. Five wrong passwords share the PIN lockout (five
+  tries, then five minutes) and each failure is audited in its own
+  transaction. A wrong password is refused with 403. Every till must be
+  closed and every cash count closed out. Opening a till or recording a
+  count takes a share lock on the legal entity, which the change holds
+  for update. Open obligations and held cheques block the change.
+  The rate is the market snapshot the confirm screen named, and it must
+  be from the last 24 hours. Past ledger rows keep the currency they
+  were posted in. Cash is not converted. What that cash cost is restated
+  by appending a `rebase` cost event (migration `030_cost_event_rebase`).
+  Historic cost events are not updated. A desk-chosen money threshold
+  is restated once, rounded down to the cent, and both the old and new
+  figures are on the audit row. Pack lines stay written in the currency
+  the pack was authored in and convert on the next read. That conversion
+  rate is stored on a country-pack deal. Reading thresholds does not
+  rewrite an existing desk's pack or its stored lines. The published
+  rate board is labelled with the old currency and comes off the counter,
+  including the public website, until someone publishes it again.
+  Period totals count money only in the currency the book uses now, and
+  say how many deals were posted in another currency. Currencies of
+  sanctioned countries are refused through
   `server/src/compliance/sanctioned-currencies.ts`. That file is a
   hook. It does not contain a list. A sourced list plugs in with
-  `setSanctionedCurrencyLookup`.
+  `setSanctionedCurrencyLookup`. PR #59 had not landed on main when this
+  was written, so the hook is still the default that allows every code.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not

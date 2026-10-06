@@ -34,6 +34,7 @@ const migrations: readonly Migration[] = [
   ["026_client_supporting_files", "src/db/migrations/026_client_supporting_files.sql"],
   ["028_pack_rule_fields", "src/db/migrations/028_pack_rule_fields.sql"],
   ["029_rate_board_home_currency", "src/db/migrations/029_rate_board_home_currency.sql"],
+  ["030_cost_event_rebase", "src/db/migrations/030_cost_event_rebase.sql"],
 ] as const;
 
 export async function runMigrations(

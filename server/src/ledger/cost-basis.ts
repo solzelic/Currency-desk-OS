@@ -38,7 +38,8 @@ export type CostEventKind =
   | "transfer_out"
   | "sale"
   | "withdrawal"
-  | "reversal";
+  | "reversal"
+  | "rebase";
 
 /* A till is identified here by its till id rather than its workspace id,
    while `ledger_till_balances` is keyed by both. That is safe only because
@@ -872,4 +873,157 @@ export async function basisHistory(
     ],
   );
   return result.rows;
+}
+
+/* The book moved. Live averages and open lots are still stated in the
+   old home currency, and a later sale would subtract that old cost from
+   a price in the new one. This appends one rebase event per balance and
+   per open lot, and writes the new cost onto the live row.
+
+   Historic events are not updated. A purchase that cost 1.50 dollars
+   still cost 1.50 dollars. Closed lots are left alone for the same
+   reason: they are a record of what was here, not of what is here.
+
+   A unit of the old home currency cost one of itself, so its opening
+   cost in the new currency is the rate (new per 1 old), even when the
+   box had no average yet. Foreign cash that already has a cost is
+   multiplied by that same rate. Foreign cash with no cost stays
+   unknown. A rebase is a restatement, not cash arriving: the quantity
+   before and after are the quantity on hand. */
+export async function restateHomeCosts(
+  client: pg.PoolClient,
+  desk: { tenantId: string; legalEntityId: string; actorId: string },
+  previousHome: string,
+  rate: Decimal,
+): Promise<void> {
+  const now = new Date();
+  const previous = previousHome.trim().toUpperCase();
+  const tills = await client.query(
+    `SELECT branch_id, till_id, currency, available_amount, avg_cost
+       FROM ledger_till_balances
+      WHERE tenant_id = $1 AND legal_entity_id = $2 AND available_amount > 0`,
+    [desk.tenantId, desk.legalEntityId],
+  );
+  for (const row of tills.rows) {
+    await restateBalance(
+      client,
+      {
+        tenantId: desk.tenantId,
+        legalEntityId: desk.legalEntityId,
+        branchId: String(row.branch_id),
+        locationKind: "till",
+        locationId: String(row.till_id),
+        currency: String(row.currency).trim().toUpperCase(),
+      },
+      row.available_amount,
+      row.avg_cost,
+      previous,
+      rate,
+      desk.actorId,
+      now,
+    );
+  }
+  const vaults = await client.query(
+    `SELECT branch_id, currency, available_amount, avg_cost
+       FROM ledger_vault_balances
+      WHERE tenant_id = $1 AND legal_entity_id = $2 AND available_amount > 0`,
+    [desk.tenantId, desk.legalEntityId],
+  );
+  for (const row of vaults.rows) {
+    const branchId = String(row.branch_id);
+    await restateBalance(
+      client,
+      {
+        tenantId: desk.tenantId,
+        legalEntityId: desk.legalEntityId,
+        branchId,
+        locationKind: "vault",
+        locationId: branchId,
+        currency: String(row.currency).trim().toUpperCase(),
+      },
+      row.available_amount,
+      row.avg_cost,
+      previous,
+      rate,
+      desk.actorId,
+      now,
+    );
+  }
+  const lots = await client.query(
+    `SELECT lot_id, branch_id, location_kind, location_id, currency,
+            remaining_quantity, unit_cost_home
+       FROM ledger_cost_lots
+      WHERE tenant_id = $1 AND legal_entity_id = $2 AND remaining_quantity > 0`,
+    [desk.tenantId, desk.legalEntityId],
+  );
+  for (const row of lots.rows) {
+    const currency = String(row.currency).trim().toUpperCase();
+    const before = new Decimal(row.unit_cost_home);
+    const after = currency === previous ? rate : before.mul(rate);
+    const quantity = new Decimal(row.remaining_quantity);
+    if (!quantity.gt(0)) continue;
+    await client.query(
+      "UPDATE ledger_cost_lots SET unit_cost_home = $2 WHERE lot_id = $1",
+      [row.lot_id, cost(after)],
+    );
+    await record(
+      client,
+      {
+        tenantId: desk.tenantId,
+        legalEntityId: desk.legalEntityId,
+        branchId: String(row.branch_id),
+        locationKind: row.location_kind === "vault" ? "vault" : "till",
+        locationId: String(row.location_id),
+        currency,
+      },
+      {
+        eventKind: "rebase",
+        direction: "in",
+        quantity,
+        unitCost: after,
+        avgBefore: before,
+        avgAfter: after,
+        qtyBefore: quantity,
+        qtyAfter: quantity,
+        sourceKind: "home_currency",
+        sourceId: desk.legalEntityId,
+        actorId: desk.actorId,
+        now,
+      },
+    );
+  }
+}
+
+async function restateBalance(
+  client: pg.PoolClient,
+  scope: Scope,
+  available: unknown,
+  avgCost: unknown,
+  previousHome: string,
+  rate: Decimal,
+  actorId: string,
+  now: Date,
+) {
+  const quantity = new Decimal(String(available));
+  if (!quantity.gt(0)) return;
+  const before = avgCost == null ? null : new Decimal(String(avgCost));
+  /* Old-home cash is worth its face in the old book, so one unit costs
+     `rate` units of the new book. Anything else keeps the ratio it had. */
+  const after = scope.currency === previousHome ? rate : before ? before.mul(rate) : null;
+  if (!after) return;
+  await writeAverage(client, scope, after);
+  await record(client, scope, {
+    eventKind: "rebase",
+    direction: "in",
+    quantity,
+    unitCost: after,
+    avgBefore: before,
+    avgAfter: after,
+    qtyBefore: quantity,
+    qtyAfter: quantity,
+    sourceKind: "home_currency",
+    sourceId: scope.legalEntityId,
+    actorId,
+    now,
+  });
 }

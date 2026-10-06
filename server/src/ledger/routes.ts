@@ -22,7 +22,8 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
-import { HomeCurrencyService } from "./home-currency.js";
+import { HomeCurrencyService, recordHomeCurrencyPasswordFailure } from "./home-currency.js";
+import { clearPinAttempts, lockState, recordFailure } from "../routes/pin.js";
 import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
@@ -354,8 +355,11 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =
-      error.code === "AUTHENTICATION_REQUIRED" || error.code === "PASSWORD_REJECTED" ? 401
-        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
+      error.code === "AUTHENTICATION_REQUIRED" ? 401
+        : error.code === "PASSWORD_REJECTED" ||
+            error.code === "AUTHORIZATION_DENIED" ||
+            error.code === "SCOPE_DENIED" ||
+            error.code === "DEMO_DESK" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
@@ -804,6 +808,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const homeCurrencyBody = z.object({
     currency: currencyCode,
     password: z.string().min(1).max(512),
+    snapshotId: z.string().min(1).max(200),
   }).strict();
 
   app.get("/api/ledger/home-currency", async (req, reply) => {
@@ -835,9 +840,32 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
     try {
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send(await homeCurrency.change(actor, parsed.data.currency, parsed.data.password))
-        : undefined;
+      if (!actor) return undefined;
+      /* Same five-try lock as a wrong PIN. Checked before the change so a
+         locked keypad never reaches the book. */
+      if (lockState(actor.userId).locked) {
+        return reply.code(429).send({
+          code: "PASSWORD_LOCKED",
+          message: "Too many wrong passwords. Wait five minutes and try again. The base currency was not changed.",
+        });
+      }
+      try {
+        const saved = await homeCurrency.change(
+          actor,
+          parsed.data.currency,
+          parsed.data.password,
+          parsed.data.snapshotId,
+        );
+        clearPinAttempts(actor.userId);
+        return reply.send(saved);
+      } catch (error) {
+        if (error instanceof LedgerError && error.code === "PASSWORD_REJECTED") {
+          recordFailure(actor.userId);
+          await recordHomeCurrencyPasswordFailure(pool, actor);
+          return reply.code(403).send({ code: "PASSWORD_REJECTED", message: error.message });
+        }
+        return failure(reply, error);
+      }
     } catch (error) {
       return failure(reply, error);
     }

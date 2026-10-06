@@ -873,7 +873,34 @@ button { font-family: inherit; }
 .rate-board-notice { flex: none; padding: 10px 14px; font-size: 13px; line-height: 1.45; background: var(--brass-soft, #f4efe4); color: var(--ink); }
 @media (max-width: 520px) {
   .settings-shell { flex-direction: column; }
-  .settings-nav { width: auto !important; max-height: 38vh; border-right: none !important; border-bottom: 1px solid var(--line); }
+  /* One scrolling strip. A stacked nav with a max height pushed the
+     confirm box below the fold on a phone. */
+  .settings-nav {
+    width: auto !important;
+    max-height: none;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 6px;
+    border-right: none !important;
+    border-bottom: 1px solid var(--line);
+  }
+  .settings-nav > div {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    flex: none;
+    margin: 0;
+  }
+  .settings-nav button {
+    flex: none;
+    width: auto !important;
+    white-space: nowrap;
+  }
   .settings-main { max-width: none !important; }
 }
 /* Controls must always be their own click target: inner text/icons (and any
