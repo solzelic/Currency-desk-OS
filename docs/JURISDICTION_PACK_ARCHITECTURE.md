@@ -9,6 +9,21 @@ onboarding installs the pack; and the posting path resolves home currency
 from it rather than assuming CAD. Generalized money columns are added and
 backfilled alongside the CAD-named ones — nothing is renamed or retired yet.
 
+A pack can also name an identification line per kind of deal
+(`jurisdiction_id_thresholds`: foreign exchange, remittance, electronic
+funds transfer, virtual currency). Null means that kind has no line.
+Zero means every deal of that kind. The single `id_threshold` column
+on the pack is still what the posting gate reads. Seeded packs copy
+that column onto all four kinds, so the two agree. A report row can
+name a filing deadline, an aggregation window (`fixed_24h`,
+`calendar_month`, or `none`), a comparator (`gte` or `gt`), a cash
+direction, and the currency the threshold is written in. A threshold
+written in another currency is converted to home currency at the rate
+on the deal; the product does not convert yet. Seeded report rows were
+mapped onto those columns without changing a trigger amount.
+`aggregation_hours` is unchanged. A country with no installed pack
+resolves to no pack. It is not given the Canada pack.
+
 Still to do: dual-write the generalized values on new postings (step 4),
 make them authoritative (step 5), and retire the CAD-specific columns
 (step 6). Compliance policy versioning is not started.

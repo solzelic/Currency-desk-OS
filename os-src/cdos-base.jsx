@@ -389,6 +389,18 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
+  /* Set when the server says this country has no pack. The sentence is
+     the server's. The fallback is the same words, for a desk whose setup
+     already recorded that before the jurisdiction call returned. */
+  let _rulesNotice = null;
+  const RULES_NOTICE = 'Rules for your country are not available yet';
+  const rulesNotice = () => _rulesNotice;
+  function rulesMissing(settings) {
+    const pack = _pack;
+    if (pack && pack.available === false) return true;
+    if (pack && pack.packId) return false;
+    return !!(settings && settings.rulesUnavailable);
+  }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
      They arrive in the same answer as the pack and were being dropped on
@@ -437,11 +449,12 @@
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
 
-  const setDeskPack = (pack, reports, currencies) => {
+  const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
+    _rulesNotice = (_pack && _pack.available === false) ? (notice || RULES_NOTICE) : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
-    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies } })); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies, notice: _rulesNotice } })); } catch (e) {}
     return _pack;
   };
   async function refreshJurisdiction() {
@@ -449,7 +462,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
@@ -486,6 +499,10 @@
     return line && _positive(line.effective) ? +line.effective : null;
   };
   function reportingLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
+      return { amount: null, currency, code: null, label: '—' };
+    }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold')
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
@@ -524,6 +541,10 @@
      number from the one the server will enforce is how a teller ends up
      arguing with a refusal they were told would not come. */
   function identificationLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
+      return { amount: null, currency, label: '—' };
+    }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold')
       : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
@@ -1178,6 +1199,7 @@
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
+    rulesNotice, rulesMissing,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds, setDeskThresholds, refreshDeskThresholds,

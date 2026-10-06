@@ -14,6 +14,7 @@
    under, so installing a new pack — or correcting a threshold — can never
    change what already happened.
    ============================================================ */
+import { sql } from "drizzle-orm";
 import type pg from "pg";
 
 export type JurisdictionPack = {
@@ -34,27 +35,51 @@ export type JurisdictionPack = {
      may run FIFO whether their pack proposes it or not. See
      server/src/ledger/cost-method.ts. */
   defaultCostMethod: "weighted_average" | "fifo";
+  /* False when this desk's country has no pack. The thresholds on that
+     object are empty. They are not Canada's. */
+  available: boolean;
 };
 
-/* The pilot's pack, used only when an entity has somehow not been given one
-   — a database predating the packs, or a row created by a path that has not
-   been taught about them yet. It is a floor, not a default anybody should
-   be relying on, and `resolvePack` says so by preferring the real row. */
-const PILOT: JurisdictionPack = {
-  packId: "pack-ca-v1",
-  jurisdiction: "CA",
-  version: 1,
-  name: "Canada",
-  homeCurrency: "CAD",
-  regulator: "FINTRAC",
-  reportName: "LCTR",
-  reportThreshold: "10000.00",
-  idThreshold: "3000.00",
-  reportCurrency: "CAD",
+/* The four kinds of deal an identification line can name.
+   fx — foreign exchange
+   remittance — a money transfer
+   eft — an electronic funds transfer
+   virtual_currency — a virtual-currency deal */
+export const ID_DEAL_KINDS = ["fx", "remittance", "eft", "virtual_currency"] as const;
+export type IdDealKind = (typeof ID_DEAL_KINDS)[number];
+
+/* The setup screen asks one question, "when do you take ID?". That
+   question is about foreign exchange, the deal at the counter. The
+   other three lines stay on the pack. */
+export const SETUP_ID_DEAL: IdDealKind = "fx";
+
+export const RULES_UNAVAILABLE_NOTICE =
+  "Rules for your country are not available yet";
+
+export type InstalledPack = {
+  packId: string;
+  version: number;
+  homeCurrency: string;
+};
+
+/* A desk whose country has no pack. Home currency is whatever the entity
+   already booked in. Nothing else is filled in from Canada. */
+const unavailablePack = (homeCurrency: string): JurisdictionPack => ({
+  packId: "",
+  jurisdiction: "",
+  version: 0,
+  name: "",
+  homeCurrency,
+  regulator: "",
+  reportName: "",
+  reportThreshold: "",
+  idThreshold: "",
+  reportCurrency: "",
   allowCrossCurrency: true,
   permittedCurrencies: [],
   defaultCostMethod: "weighted_average",
-};
+  available: false,
+});
 
 const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
   packId: String(row.pack_id),
@@ -73,6 +98,7 @@ const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
     : [],
   defaultCostMethod:
     row.default_cost_method === "fifo" ? "fifo" : "weighted_average",
+  available: true,
 });
 
 /**
@@ -95,16 +121,16 @@ export async function resolvePack(
   );
   if (found.rowCount) return fromRow(found.rows[0]);
 
-  /* No pack on the entity. Rather than guess a country, fall back to the
-     entity's own home currency if it has one, and to the pilot only when it
-     has neither — an entity created before any of this existed. */
+  /* No pack on the entity. Use the home currency it already has, and do
+     not borrow Canada's regulator, thresholds, or report name. A missing
+     pack is a missing pack. */
   const entity = await client.query(
     "SELECT home_currency FROM legal_entities WHERE id=$1",
     [legalEntityId],
   );
   const home = entity.rows[0]?.home_currency;
-  if (home) return { ...PILOT, homeCurrency: String(home).trim().toUpperCase() };
-  return PILOT;
+  const currency = home ? String(home).trim().toUpperCase() : "";
+  return unavailablePack(currency);
 }
 
 /** Is this pair tradeable under this pack, as a single deal? */
@@ -133,15 +159,9 @@ export function pairAllowed(
   return { ok: true };
 }
 
-/* Country → pack. This is the "plug in a Canada pack or a UK pack" step:
-   onboarding already asks which country the desk operates in, and that
-   answer is what installs its rules, its regulator, its reporting
-   thresholds and the currency its books are kept in.
-
-   A country with no pack yet falls back to the pilot's, so a desk can still
-   be created while its jurisdiction is being written — but it is recorded
-   as Canadian rather than silently unlabelled, which is a state somebody
-   can find and fix. */
+/* Country code → pack. The names underneath are the words the signup
+   screen and the wizard already store ("Canada", "Somewhere else"),
+   so a desk that said Canada by name still gets the Canada pack. */
 export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   CA: "pack-ca-v1",
   US: "pack-us-v1",
@@ -150,6 +170,25 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   EU: "pack-eu-v1",
   AU: "pack-au-v1",
   AE: "pack-ae-v1",
+};
+
+const COUNTRY_CODE: Readonly<Record<string, string>> = {
+  CA: "CA",
+  CANADA: "CA",
+  US: "US",
+  USA: "US",
+  "UNITED STATES": "US",
+  GB: "GB",
+  UK: "UK",
+  "UNITED KINGDOM": "GB",
+  EU: "EU",
+  "EUROPEAN UNION": "EU",
+  EUROZONE: "EU",
+  AU: "AU",
+  AUSTRALIA: "AU",
+  AE: "AE",
+  UAE: "AE",
+  "UNITED ARAB EMIRATES": "AE",
 };
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
@@ -161,13 +200,75 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-ae-v1": "AED",
 };
 
-/** What a legal entity in this country should be created pointing at. */
-export function packForCountry(country: string | null | undefined): {
-  packId: string;
-  version: number;
-  homeCurrency: string;
-} {
-  const packId =
-    PACK_FOR_COUNTRY[String(country ?? "").trim().toUpperCase()] ?? "pack-ca-v1";
-  return { packId, version: 1, homeCurrency: HOME_FOR_PACK[packId] ?? "CAD" };
+/**
+ * The pack a new desk in this country should point at.
+ * Null when that country has no pack. It is not the Canada pack.
+ */
+export function packForCountry(
+  country: string | null | undefined,
+): InstalledPack | null {
+  const raw = String(country ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+  const code = COUNTRY_CODE[raw];
+  if (!code) return null;
+  const packId = PACK_FOR_COUNTRY[code];
+  if (!packId) return null;
+  const homeCurrency = HOME_FOR_PACK[packId];
+  if (!homeCurrency) return null;
+  return { packId, version: 1, homeCurrency };
+}
+
+/** A country that is known to have a pack. Used where the caller is Canada on purpose. */
+export function requirePackForCountry(country: string): InstalledPack {
+  const pack = packForCountry(country);
+  if (!pack) {
+    throw new Error(`No jurisdiction pack is installed for ${country}.`);
+  }
+  return pack;
+}
+
+/* Read one identification line off the pack.
+   Null means that kind of deal has no line. Zero means every deal.
+   A database without the pack tables — the embedded one, which does
+   not run these migrations — falls back to the pack's single
+   id_threshold. It never falls back to the report threshold. */
+export async function packIdThreshold(
+  db: { execute: (query: ReturnType<typeof sql>) => Promise<unknown> },
+  packId: string,
+  dealKind: IdDealKind,
+): Promise<number | null> {
+  const first = (found: unknown): Record<string, unknown> | undefined => {
+    const rows =
+      (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
+    return rows[0] as Record<string, unknown> | undefined;
+  };
+  const asNumber = (value: unknown, allowZero: boolean): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    if (parsed === 0 && !allowZero) return null;
+    return parsed;
+  };
+  try {
+    const row = first(
+      await db.execute(
+        sql`SELECT threshold FROM jurisdiction_id_thresholds WHERE pack_id = ${packId} AND deal_kind = ${dealKind}`,
+      ),
+    );
+    if (row && "threshold" in row) return asNumber(row.threshold, true);
+  } catch {
+    /* The per-deal table is not on this database. Try the single column. */
+  }
+  try {
+    const row = first(
+      await db.execute(
+        sql`SELECT id_threshold FROM jurisdiction_packs WHERE pack_id = ${packId}`,
+      ),
+    );
+    return asNumber(row?.id_threshold, false);
+  } catch {
+    return null;
+  }
 }

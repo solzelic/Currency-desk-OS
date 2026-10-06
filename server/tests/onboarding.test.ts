@@ -154,6 +154,16 @@ describe("the answers reaching the desk that was opened", () => {
     expect(setup.idThreshold).toBe(5000);
   });
 
+  it("does not copy the report line into a blank identification field", () => {
+    const blank = specFromAnswers(
+      resolve({ ...answers, idOver: "" }, {}),
+      {},
+    );
+    const setup = blank.setup as Record<string, unknown>;
+    expect(setup.reportThreshold).toBe(10000);
+    expect(setup.idThreshold).toBeNull();
+  });
+
   /** A tenant, entity and branch for the board to hang off. */
   async function marginDesk(branchId: string) {
     const { schema } = await import("../src/db/index.js");

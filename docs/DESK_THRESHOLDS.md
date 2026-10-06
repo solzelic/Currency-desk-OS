@@ -71,7 +71,12 @@ sitting at the old figure unwritable — and would fail the very UPDATE
 trying to fix them. The relationship between the two numbers is a **posture
 the desk is told about**, not a constraint that stops a row existing. Only
 the arithmetic is guarded: a negative or zero threshold is not a strict
-desk, it is a broken one.
+desk, it is a broken one. That zero is the desk's override column and
+the pack's single `id_threshold` column. It is not the per-deal line in
+`jurisdiction_id_thresholds`, where null means "this kind of deal has
+no line" and zero means "every deal". The posting gate does not read
+that table yet. It still resolves the single column, and `money()`
+still treats zero there as "cannot say".
 
 ## What the ledger does with it
 

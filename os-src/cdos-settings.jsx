@@ -1645,13 +1645,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const myCountry = settings.bizCountry || 'Canada';
           const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
           const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+          const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+          const rulesNotice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
+            || (rulesMissing ? 'Rules for your country are not available yet' : '');
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
           return (<div>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
 
-          {/* one-click jurisdiction packs */}
-          <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>
-          <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
+          {/* one-click jurisdiction packs. Hidden when this country has no pack,
+              so the desk is not offered Canada's rules to apply instead. */}
+          {rulesNotice ? <div role="status" data-rules-notice className="mb-4 px-3 py-2 text-[13px]" style={{ background: 'var(--cd-brass-soft, #f4efe4)', color: CD.ink, borderRadius: 9 }}>{rulesNotice}</div> : null}
+          {!rulesNotice && <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>}
+          {!rulesNotice && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
             {shownRegimes.map(r => { const on = activeRid === r.id; return (
               <button key={r.id} onClick={() => isOwner && applyRegime(r.id)} className="text-left p-3" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1.5px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, cursor: isOwner ? 'pointer' : 'default' }}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1660,9 +1665,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 </div>
                 <div className="text-[11px]" style={{ color: CD.mute }}>{fmt(r.threshold, r.currency)} · {r.aggHours}h rule · {r.largeCode}/{r.wireCode}/{r.strCode} · {r.watchlists.join('/')}</div>
               </button>); })}
-          </div>
-          {!isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>
+          </div>}
+          {!rulesNotice && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
+          {!rulesNotice && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ---- */}

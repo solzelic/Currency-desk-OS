@@ -497,6 +497,18 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
+  /* Set when the server says this country has no pack. The sentence is
+     the server's. The fallback is the same words, for a desk whose setup
+     already recorded that before the jurisdiction call returned. */
+  let _rulesNotice = null;
+  const RULES_NOTICE = 'Rules for your country are not available yet';
+  const rulesNotice = () => _rulesNotice;
+  function rulesMissing(settings) {
+    const pack = _pack;
+    if (pack && pack.available === false) return true;
+    if (pack && pack.packId) return false;
+    return !!(settings && settings.rulesUnavailable);
+  }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
      They arrive in the same answer as the pack and were being dropped on
@@ -540,8 +552,9 @@
     const set = _currencies && (_currencies.stated || _currencies.suggested);
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
-  const setDeskPack = (pack, reports, currencies) => {
+  const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
+    _rulesNotice = _pack && _pack.available === false ? notice || RULES_NOTICE : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try {
@@ -549,7 +562,8 @@
         detail: {
           pack: _pack,
           reports: _reports,
-          currencies: _currencies
+          currencies: _currencies,
+          notice: _rulesNotice
         }
       }));
     } catch (e) {}
@@ -560,7 +574,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
@@ -603,6 +617,15 @@
     return line && _positive(line.effective) ? +line.effective : null;
   };
   function reportingLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || null;
+      return {
+        amount: null,
+        currency,
+        code: null,
+        label: '—'
+      };
+    }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold') : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
     const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
@@ -634,6 +657,14 @@
      number from the one the server will enforce is how a teller ends up
      arguing with a refusal they were told would not come. */
   function identificationLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || null;
+      return {
+        amount: null,
+        currency,
+        label: '—'
+      };
+    }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold') : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
     const currency = _thresholds && _thresholds.currency || _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
@@ -1792,6 +1823,8 @@
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
+    rulesNotice,
+    rulesMissing,
     deskCurrencies,
     deskCurrencyList,
     deskTrades,
@@ -9590,18 +9623,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const myCountry = settings.bizCountry || 'Canada';
       const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
       const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+      const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (rulesMissing ? 'Rules for your country are not available yet' : '');
       const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
         title: "Compliance & jurisdiction",
         sub: "Set your regulator once \u2014 the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
-      }), /*#__PURE__*/React.createElement("div", {
+      }), rulesNotice ? /*#__PURE__*/React.createElement("div", {
+        role: "status",
+        "data-rules-notice": true,
+        className: "mb-4 px-3 py-2 text-[13px]",
+        style: {
+          background: 'var(--cd-brass-soft, #f4efe4)',
+          color: CD.ink,
+          borderRadius: 9
+        }
+      }, rulesNotice) : null, !rulesNotice && /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Your jurisdiction"), /*#__PURE__*/React.createElement("div", {
+      }, "Your jurisdiction"), !rulesNotice && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -9660,7 +9704,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.mute
           }
         }, fmt(r.threshold, r.currency), " \xB7 ", r.aggHours, "h rule \xB7 ", r.largeCode, "/", r.wireCode, "/", r.strCode, " \xB7 ", r.watchlists.join('/')));
-      })), !isOwner && /*#__PURE__*/React.createElement("div", {
+      })), !rulesNotice && !isOwner && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2",
         style: {
           background: CD.brassSoft,
@@ -9671,7 +9715,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "lock",
         s: 12,
         c: "var(--cd-brass-text)"
-      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), /*#__PURE__*/React.createElement("div", {
+      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !rulesNotice && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-5 flex items-start gap-1.5",
         style: {
           color: CD.faint
@@ -39690,6 +39734,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   /* Every line, judged. Reads the ledger's answer when there is one and
      falls back to the browser's regime table when there is not. */
   function jurisdictionPosture(settings) {
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) return [];
     const server = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
     const REG = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
     /* No server answer yet. Build the same shape out of what the browser
@@ -39821,6 +39866,28 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       Below that, the owner's saved settings, which is all the standalone
      build has. */
   function getRegime(settings) {
+    /* No pack for this country. Do not fill the gap with Canada's rules. */
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) {
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      return {
+        id: null,
+        authority: null,
+        country: null,
+        currency: pack && pack.homeCurrency || settings && settings.baseCurrency || null,
+        threshold: null,
+        aggHours: null,
+        idAt: null,
+        retentionYears: null,
+        largeCode: '',
+        largeLabel: '',
+        wireCode: '',
+        wireLabel: '',
+        strCode: '',
+        strLabel: '',
+        fileFormat: null,
+        watchlists: []
+      };
+    }
     const base = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
     const r = Object.assign({}, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold; // owner override
@@ -40056,6 +40123,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   function aggregateEvents(events, regime, settings, kind) {
     const TH = regime.threshold,
       H = regime.aggHours || 24;
+    /* No threshold means no aggregate. A missing number is not zero, and
+       it is not Canada's 10,000. */
+    if (!(TH > 0)) return [];
     const startMins = parseHHMM(settings && settings.aggWindowStart || '00:00');
     const buckets = {};
     (events || []).forEach(e => {
@@ -63920,7 +63990,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => typeof v === 'number' && v > 0 ? v : fallback;
       const reportOver = num(setup.reportThreshold, 10000);
-      const idOver = Math.min(num(setup.idThreshold, reportOver), reportOver);
+      /* A blank identification field is not the report line. The pack's
+         own identification line is what provision stored when it had one.
+         When the country has no pack, neither number is applied. */
+      const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
+      const idOver = setup.rulesUnavailable || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = setup.rulesUnavailable ? null : reportOver;
       const owner = {
         id: 'e_owner',
         name: ownerName,
@@ -63947,8 +64022,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         bizRegion: addr.region || '',
         bizPostal: addr.postal || '',
         baseCurrency: homeCcy,
-        threshold: reportOver,
+        threshold: reportLine,
         idRequiredOver: idOver,
+        rulesUnavailable: !!setup.rulesUnavailable,
         receiptHeader: bizName,
         fintracContactName: ownerName,
         reportingEntityNumber: '',
@@ -65083,7 +65159,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 16
     }), " ", /*#__PURE__*/React.createElement("span", {
       className: "mb-menu-lbl"
-    }, "Sign out"))))))), /*#__PURE__*/React.createElement("div", {
+    }, "Sign out"))))))), (() => {
+      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.rulesUnavailable ? 'Rules for your country are not available yet' : '');
+      if (!notice) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        role: "status",
+        "data-rules-notice": true,
+        style: {
+          padding: '8px 16px',
+          background: 'var(--cd-brass-soft, #f4efe4)',
+          color: 'var(--cd-ink)',
+          fontSize: 13,
+          borderBottom: '1px solid var(--cd-line)'
+        }
+      }, notice);
+    })(), /*#__PURE__*/React.createElement("div", {
       id: "tenantbar",
       className: chromeCollapsed ? 'collapsed' : ''
     }, /*#__PURE__*/React.createElement("div", {

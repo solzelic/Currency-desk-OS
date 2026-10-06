@@ -207,15 +207,14 @@ export async function readDeskThresholds(
     ),
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
-      /* The pack's own column when the entity actually points at a pack,
-         and the pilot's 24 when `resolvePack` had to fall back — an entity
-         with no pack row has no pack column to read. */
-      count(row.pack_aggregation_hours) ?? 24,
+      /* No pack: do not invent a 24-hour window. That number is Canada's,
+         and a desk with no pack is not a Canadian desk. */
+      pack.available ? (count(row.pack_aggregation_hours) ?? 24) : null,
       "higher_is_stricter",
     ),
     retentionYears: asCountSetting(
       count(row.retention_years),
-      count(row.pack_retention_years) ?? 5,
+      pack.available ? (count(row.pack_retention_years) ?? 5) : null,
       "higher_is_stricter",
     ),
   };

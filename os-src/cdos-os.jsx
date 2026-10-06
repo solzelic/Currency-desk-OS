@@ -1932,12 +1932,18 @@
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => (typeof v === 'number' && v > 0 ? v : fallback);
       const reportOver = num(setup.reportThreshold, 10000);
-      const idOver = Math.min(num(setup.idThreshold, reportOver), reportOver);
+      /* A blank identification field is not the report line. The pack's
+         own identification line is what provision stored when it had one.
+         When the country has no pack, neither number is applied. */
+      const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
+      const idOver = setup.rulesUnavailable || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = setup.rulesUnavailable ? null : reportOver;
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
-        baseCurrency: homeCcy, threshold: reportOver, idRequiredOver: idOver,
+        baseCurrency: homeCcy, threshold: reportLine, idRequiredOver: idOver,
+        rulesUnavailable: !!setup.rulesUnavailable,
         receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
         employees: [owner] };
       // a fresh desk holds NO cash — zero every vault/till balance and clear the
@@ -2294,6 +2300,14 @@
           </div>
         </div>
       </div>
+
+      {/* A country with no pack. Sign-in is not blocked. Canada's rules are not applied. */}
+      {(() => {
+        const notice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
+          || (settings.rulesUnavailable ? 'Rules for your country are not available yet' : '');
+        if (!notice) return null;
+        return <div role="status" data-rules-notice style={{ padding: '8px 16px', background: 'var(--cd-brass-soft, #f4efe4)', color: 'var(--cd-ink)', fontSize: 13, borderBottom: '1px solid var(--cd-line)' }}>{notice}</div>;
+      })()}
 
       {/* TENANT BAR — the exchange house using the software */}
       <div id="tenantbar" className={chromeCollapsed ? 'collapsed' : ''}>

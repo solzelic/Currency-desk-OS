@@ -20,6 +20,7 @@ import {
   pairAllowed,
   resolvePack,
 } from "../src/ledger/jurisdiction.js";
+import { readDeskThresholds } from "../src/ledger/thresholds.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -28,6 +29,7 @@ let handle: DbHandle;
 
 async function entity(id: string, country: string) {
   const pack = packForCountry(country);
+  if (!pack) throw new Error(`This test expected a pack for ${country}.`);
   await pool.query(
     "INSERT INTO tenants (id,name) VALUES ($1,$1) ON CONFLICT DO NOTHING",
     [`tnt-${id}`],
@@ -136,5 +138,20 @@ postgres("jurisdiction packs against real PostgreSQL", () => {
     );
     const pack = await withClient((c) => resolvePack(c, "le-jur-old"));
     expect(pack.homeCurrency).toBe("EUR");
+    /* And it is not handed Canada's pack in place of the one it does not
+       have. An empty regulator is a missing pack. FINTRAC is a claim. */
+    expect(pack.available).toBe(false);
+    expect(pack.packId).toBe("");
+    expect(pack.regulator).toBe("");
+    expect(pack.reportName).toBe("");
+    expect(pack.reportThreshold).toBe("");
+    expect(pack.idThreshold).toBe("");
+    const desk = await withClient((c) => readDeskThresholds(c, "le-jur-old"));
+    expect(desk.regulator).toBe("");
+    expect(desk.reportName).toBe("");
+    expect(desk.reportThreshold.effective).toBeNull();
+    expect(desk.idThreshold.effective).toBeNull();
+    expect(desk.aggregationHours.effective).toBeNull();
+    expect(desk.retentionYears.effective).toBeNull();
   });
 });

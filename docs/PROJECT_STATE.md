@@ -107,6 +107,26 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
 
+- **Country rules packs can hold the rule as written.** A pack stores
+  an identification line for each of foreign exchange, remittance,
+  electronic funds transfer, and virtual currency. Null on that line
+  means the kind of deal has no line; zero means every deal of that
+  kind. A report row stores a filing deadline (a count of calendar or
+  business days), how deals are added together (a fixed 24-hour window,
+  a calendar month, or not at all), whether the threshold is "at or
+  above" or "more than", which direction of cash it covers, and the
+  currency the threshold is written in. A threshold written in a
+  currency other than the pack's home currency is converted at the rate
+  on the deal. Nothing converts yet, and every seeded pack already
+  states its threshold in home currency. The six seeded packs keep the
+  numbers they had. A country with no pack is not given Canada's. The
+  desk says "Rules for your country are not available yet" and sign-in
+  still works. A blank identification answer at setup uses the pack's
+  foreign-exchange identification line, not the report line. A posted
+  deal keeps the pack snapshot it was posted under. The posting gate
+  still reads the pack's single identification column, so the lines the
+  gate enforces have not moved.
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -186,7 +206,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-05**, first-run tour. The tour does not open or raise a window.
+**2026-10-06**, country-pack schema. Packs can store a per-deal
+identification line and the extra facts a report row was missing
+(deadline, window, comparator, direction, threshold currency). Seeded
+thresholds are unchanged. A country with no pack is not given Canada's,
+and a blank identification answer at setup is not filled with the
+report line. The posting gate still reads the single identification
+column.
+
+Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until
 then the card offers Open the till or Open the dashboard, and only that
 click opens it. The card sits in a gap, clear of the shop figures, the

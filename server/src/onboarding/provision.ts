@@ -18,7 +18,11 @@
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
-import { packForCountry } from "../ledger/jurisdiction.js";
+import {
+  packForCountry,
+  packIdThreshold,
+  SETUP_ID_DEAL,
+} from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
@@ -87,6 +91,16 @@ export interface DeskSpec {
 const str = (r: Record<string, Resolved>, id: string): string =>
   typeof r[id]?.value === "string" ? (r[id]!.value as string).trim() : "";
 
+/* A number the owner typed on the identification screen. Blank, zero,
+   and anything that is not a number are not a choice. Zero on the pack's
+   own table means "every deal"; zero in this field means the box was empty. */
+export function typedIdentificationLine(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 /* Build the spec from resolved answers. Resolved, not raw, so that the
    regulator and home currency that follow from the country come along
    without anybody having typed them. */
@@ -124,6 +138,10 @@ export function specFromAnswers(
 
   const val = (id: string): unknown => resolved[id]?.value ?? null;
 
+  /* A blank identification field used to copy the report threshold.
+     10,000 is what Canada reports at. It is not what Canada identifies
+     at. Blank stays blank here; provisionDesk fills it from the pack's
+     identification line for foreign exchange, once it can read the pack. */
   return {
     businessName,
     legalName,
@@ -150,7 +168,7 @@ export function specFromAnswers(
       homeCurrency: str(resolved, "homeCurrency") || j.currency,
       reportThreshold: val("reportThreshold") ?? j.reportThreshold,
       reportName: val("reportName") ?? j.report,
-      idThreshold: Number(val("idOver")) || j.reportThreshold,
+      idThreshold: typedIdentificationLine(val("idOver")),
 
       operatingName: businessName,
       bizName: legalName,
@@ -261,13 +279,26 @@ export async function provisionDesk(
   const branchId = "br-" + slug + "-main";
   const workspaceId = "ws-" + slug + "-till-01";
 
-  await db.insert(schema.tenants).values({
-    id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup: spec.setup,
-  }).onConflictDoNothing();
   /* The country they picked installs the jurisdiction: its regulator, its
      reporting thresholds, and the currency this desk keeps its books in.
-     Nothing downstream asks "is this Canada" — it asks the pack. */
-  const pack = packForCountry((spec.setup as Record<string, unknown>)?.country as string);
+     A country with no pack still gets a desk. It does not get Canada's.
+     Done before the tenant row is written, because the identification
+     line filled in below is part of the setup that row stores. */
+  const setup = spec.setup;
+  const pack = packForCountry(
+    typeof setup.country === "string" ? setup.country : null,
+  );
+  if (!pack) setup.rulesUnavailable = true;
+  if (pack && typedIdentificationLine(setup.idThreshold) == null) {
+    const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
+    if (line != null && line > 0) setup.idThreshold = line;
+  }
+  const statedHome =
+    typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim().toUpperCase() : "";
+
+  await db.insert(schema.tenants).values({
+    id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
+  }).onConflictDoNothing();
   /* "When should the desk ask for ID?" — screen four of onboarding, and the
      answer used to land in `tenants.setup` and stop there. The browser read
      it once into its own saved state on first run; the ledger, which is
@@ -288,12 +319,14 @@ export async function provisionDesk(
      on the day it opened, on the strength of a question it thought it was
      answering about something else. NULL means "follow the pack", and for
      every answer except a real tightening that is the truthful state. */
-  const chosenIdLine = await idThresholdFromSetup(spec.setup, pack.packId, db);
+  const chosenIdLine = pack
+    ? await idThresholdFromSetup(setup, pack.packId, db)
+    : null;
   await db.insert(schema.legalEntities).values({
     id: legalEntityId, tenantId, name: spec.legalName, msbNumber: spec.msbNumber, jurisdiction: spec.regulator,
-    homeCurrency: pack.homeCurrency,
-    jurisdictionPackId: pack.packId,
-    jurisdictionPackVersion: pack.version,
+    homeCurrency: pack?.homeCurrency ?? (statedHome || null),
+    jurisdictionPackId: pack?.packId ?? null,
+    jurisdictionPackVersion: pack?.version ?? null,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
@@ -312,7 +345,6 @@ export async function provisionDesk(
      safe, and inventing a figure for somebody's cash is exactly what the
      cash-ownership invariants forbid. The Vault screen asks them to count
      it in. */
-  const setup = (spec.setup ?? {}) as Record<string, unknown>;
   const board = await publishStartingBoard(db, {
     tenantId, legalEntityId, branchId,
     currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],

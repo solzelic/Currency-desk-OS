@@ -99,6 +99,7 @@
   /* Every line, judged. Reads the ledger's answer when there is one and
      falls back to the browser's regime table when there is not. */
   function jurisdictionPosture(settings) {
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) return [];
     const server = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
     const REG = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
     /* No server answer yet. Build the same shape out of what the browser
@@ -179,6 +180,17 @@
      Below that, the owner's saved settings, which is all the standalone
      build has. */
   function getRegime(settings) {
+    /* No pack for this country. Do not fill the gap with Canada's rules. */
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) {
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      return {
+        id: null, authority: null, country: null,
+        currency: (pack && pack.homeCurrency) || (settings && settings.baseCurrency) || null,
+        threshold: null, aggHours: null, idAt: null, retentionYears: null,
+        largeCode: '', largeLabel: '', wireCode: '', wireLabel: '',
+        strCode: '', strLabel: '', fileFormat: null, watchlists: [],
+      };
+    }
     const base = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
     const r = Object.assign({}, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;     // owner override
@@ -291,6 +303,9 @@
   // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
   function aggregateEvents(events, regime, settings, kind) {
     const TH = regime.threshold, H = regime.aggHours || 24;
+    /* No threshold means no aggregate. A missing number is not zero, and
+       it is not Canada's 10,000. */
+    if (!(TH > 0)) return [];
     const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
     const buckets = {};
     (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
