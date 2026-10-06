@@ -245,15 +245,27 @@ export class LedgerReportingService {
                AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
                AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
                AND ($8::timestamptz IS NULL OR t.posted_at <  $8)) AS reversed,
-           (SELECT sum(volume_home) FROM live) AS volume_home,
-           (SELECT count(*)::int FROM live WHERE volume_home IS NULL) AS unvalued,
-           (SELECT sum(fee_home) FROM live) AS fees_home,
-           (SELECT sum(realized_pnl_home) FROM live
-             WHERE realized_pnl_home IS NOT NULL) AS realized_home,
-           (SELECT sum(cost_of_sale_home) FROM live
-             WHERE cost_of_sale_home IS NOT NULL) AS cost_of_sale_home,
+           /* Money is summed only in the currency the book uses now.
+              A deal posted while the book was in another currency is a
+              different unit, and adding it here would mix the two. */
+           (SELECT sum(volume_home) FROM live
+             WHERE btrim(home_currency::text) = btrim($6::text)) AS volume_home,
            (SELECT count(*)::int FROM live
-             WHERE realized_pnl_home IS NOT NULL) AS priced,
+             WHERE btrim(home_currency::text) IS DISTINCT FROM btrim($6::text)) AS other_currency_deals,
+           (SELECT count(*)::int FROM live
+             WHERE volume_home IS NULL
+               AND btrim(home_currency::text) = btrim($6::text)) AS unvalued,
+           (SELECT sum(fee_home) FROM live
+             WHERE btrim(home_currency::text) = btrim($6::text)) AS fees_home,
+           (SELECT sum(realized_pnl_home) FROM live
+             WHERE realized_pnl_home IS NOT NULL
+               AND btrim(home_currency::text) = btrim($6::text)) AS realized_home,
+           (SELECT sum(cost_of_sale_home) FROM live
+             WHERE cost_of_sale_home IS NOT NULL
+               AND btrim(home_currency::text) = btrim($6::text)) AS cost_of_sale_home,
+           (SELECT count(*)::int FROM live
+             WHERE realized_pnl_home IS NOT NULL
+               AND btrim(home_currency::text) = btrim($6::text)) AS priced,
            (SELECT min(posted_at) FROM live) AS first_at,
            (SELECT max(posted_at) FROM live) AS last_at`,
         [...tillScope(actor), home, window.from ?? null, window.to ?? null],
@@ -283,14 +295,18 @@ export class LedgerReportingService {
       const byActor = await client.query(
         `SELECT t.actor_id AS actor_id,
                 count(*)::int AS deals,
-                sum(COALESCE(t.fee_amount, t.fee_cad)) AS fees_home,
+                sum(COALESCE(t.fee_amount, t.fee_cad)) FILTER (
+                  WHERE btrim(t.home_currency::text) = btrim($6::text)) AS fees_home,
                 sum(t.realized_pnl_home) FILTER (
-                  WHERE t.realized_pnl_home IS NOT NULL) AS realized_home,
+                  WHERE t.realized_pnl_home IS NOT NULL
+                    AND btrim(t.home_currency::text) = btrim($6::text)) AS realized_home,
                 count(*) FILTER (
-                  WHERE t.realized_pnl_home IS NOT NULL)::int AS priced,
+                  WHERE t.realized_pnl_home IS NOT NULL
+                    AND btrim(t.home_currency::text) = btrim($6::text))::int AS priced,
                 sum(CASE WHEN t.from_currency = $6 THEN t.input_amount
                          WHEN t.to_currency   = $6 THEN t.output_amount
-                         ELSE NULL END) AS volume_home
+                         ELSE NULL END) FILTER (
+                  WHERE btrim(t.home_currency::text) = btrim($6::text)) AS volume_home
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
@@ -322,10 +338,32 @@ export class LedgerReportingService {
             AND t.workspace_id=$4 AND t.till_id=$5
             AND r.reversal_id IS NULL
             AND t.to_currency <> $6
+            AND btrim(t.home_currency::text) = btrim($6::text)
             AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
             AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
           GROUP BY t.to_currency
           ORDER BY t.to_currency`,
+        [...tillScope(actor), home, window.from ?? null, window.to ?? null],
+      );
+      const byHomeCurrency = await client.query(
+        `SELECT btrim(t.home_currency::text) AS home_currency,
+                count(*)::int AS deals,
+                sum(CASE WHEN t.from_currency = $6 THEN t.input_amount
+                         WHEN t.to_currency   = $6 THEN t.output_amount
+                         ELSE NULL END) AS volume_home,
+                sum(COALESCE(t.fee_amount, t.fee_cad)) AS fees_home,
+                sum(t.realized_pnl_home) FILTER (
+                  WHERE t.realized_pnl_home IS NOT NULL) AS realized_home
+           FROM ledger_transactions t
+           LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+          WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
+            AND t.workspace_id=$4 AND t.till_id=$5
+            AND r.reversal_id IS NULL
+            AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
+            AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
+            AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
+          GROUP BY btrim(t.home_currency::text)
+          ORDER BY 1`,
         [...tillScope(actor), home, window.from ?? null, window.to ?? null],
       );
       await client.query("COMMIT");
@@ -350,6 +388,16 @@ export class LedgerReportingService {
            volume figure that silently omits deals is worse than one that
            says how many it omitted. */
         unvaluedDeals: Number(row.unvalued),
+        /* Deals in this window that were posted in some other book
+           currency. Their money is not in the totals above. */
+        otherCurrencyDeals: Number(row.other_currency_deals),
+        byHomeCurrency: byHomeCurrency.rows.map((item) => ({
+          homeCurrency: String(item.home_currency ?? "").trim(),
+          deals: Number(item.deals),
+          volumeHome: item.volume_home == null ? null : money(item.volume_home),
+          feesHome: item.fees_home == null ? null : money(item.fees_home),
+          realizedPnlHome: item.realized_home == null ? null : money(item.realized_home),
+        })),
         feesHome: fees,
         /* What the desk EARNED, from the figure `dispose()` wrote at the
            moment of the sale. A purchase realizes nothing and carries

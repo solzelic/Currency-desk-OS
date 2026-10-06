@@ -145,6 +145,31 @@ describe("SMS rate holds", () => {
     expect(badCcy.statusCode).toBe(400);
   });
 
+  it("hides a board labelled in a currency other than the desk's", async () => {
+    await handle.db
+      .update(schema.rateBoards)
+      .set({ homeCurrency: "USD" })
+      .where(eq(schema.rateBoards.tenantId, DEMO.tenantId));
+    const hidden = await app.inject({ method: "GET", url: "/api/sites/yorkfx/rates" });
+    expect(hidden.statusCode).toBe(200);
+    expect(hidden.json().published).toBe(false);
+    expect(hidden.json().rates).toEqual([]);
+    const quote = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes",
+      payload: { phone: "6475550166", from: "CAD", to: "USD", amount: 100 },
+    });
+    expect(quote.statusCode).toBe(503);
+    expect(quote.json().error).toBe("no_board");
+    await handle.db
+      .update(schema.rateBoards)
+      .set({ homeCurrency: "CAD" })
+      .where(eq(schema.rateBoards.tenantId, DEMO.tenantId));
+    const shown = await app.inject({ method: "GET", url: "/api/sites/yorkfx/rates" });
+    expect(shown.json().published).toBe(true);
+    expect(shown.json().rates.length).toBeGreaterThan(0);
+  });
+
   it("staff see the desk's incoming holds", async () => {
     const teller = await login("m.costa");
     const res = await app.inject({ method: "GET", url: "/api/quotes", cookies: cookieOf(teller) });

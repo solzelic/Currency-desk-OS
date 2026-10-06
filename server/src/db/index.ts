@@ -433,6 +433,7 @@ CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, publ
 ALTER TABLE rate_boards
   ALTER COLUMN buy_margin TYPE numeric(24,12) USING buy_margin::numeric(24,12),
   ALTER COLUMN sell_margin TYPE numeric(24,12) USING sell_margin::numeric(24,12);
+ALTER TABLE rate_boards ADD COLUMN IF NOT EXISTS home_currency char(3);
 CREATE TABLE IF NOT EXISTS stripe_customers (
   tenant_id text PRIMARY KEY REFERENCES tenants(id),
   stripe_customer_id text NOT NULL UNIQUE,

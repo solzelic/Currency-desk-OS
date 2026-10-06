@@ -2410,6 +2410,23 @@
         });
       },
 
+      /* The currency the books are kept in. The browser used to change
+         this with a dropdown and a float. The ledger is the only place
+         the change is real: the owner, their password, every till closed,
+         and a market rate from the last 24 hours. */
+      loadHomeCurrency: function () {
+        return request("/api/ledger/home-currency");
+      },
+      previewHomeCurrency: function (currency) {
+        return request("/api/ledger/home-currency/preview?currency=" + encodeURIComponent(currency));
+      },
+      setHomeCurrency: function (currency, password, snapshotId) {
+        return request("/api/ledger/home-currency", {
+          method: "POST",
+          body: JSON.stringify({ currency: currency, password: password, snapshotId: snapshotId }),
+        });
+      },
+
       /* ---- the four lines that are cash on one side and a promise on
              the other ----
 
@@ -5781,6 +5798,255 @@
       c: "var(--cd-on-ink)"
     }), " ", busy ? 'Saving…' : 'Save PIN')));
   }
+
+  /* The books' currency. Owner only, password confirmed, and the
+     sentences on the confirm step come from the ledger so this screen
+     cannot describe a different change from the one that will be saved.
+     It does not multiply thresholds locally. */
+  function HomeCurrencyRow() {
+    const {
+      setSettings,
+      log
+    } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading');
+    const [view, setView] = useState(null);
+    const [next, setNext] = useState('');
+    const [preview, setPreview] = useState(null);
+    const [password, setPassword] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const [done, setDone] = useState(null);
+    const api = window.CDOS && window.CDOS.Backend;
+    const load = () => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      api.loadHomeCurrency().then(answer => {
+        setView(answer);
+        setStatus('ready');
+      }).catch(() => setStatus('offline'));
+    };
+    useEffect(load, []);
+    const review = async code => {
+      setNext(code);
+      setPreview(null);
+      setDone(null);
+      setErr('');
+      setPassword('');
+      if (!code) return;
+      setBusy(true);
+      try {
+        setPreview(await api.previewHomeCurrency(code));
+      } catch (e) {
+        setErr(e && e.message || 'Could not review that change.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    const save = async () => {
+      if (busy || !next) return;
+      setBusy(true);
+      setErr('');
+      try {
+        const answer = await api.setHomeCurrency(next, password, preview && preview.snapshotId);
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+        setSettings(s => ({
+          ...s,
+          baseCurrency: answer.currency
+        }));
+        log('Base currency changed', `${answer.previous} to ${answer.currency}`);
+        setDone(answer);
+        setPreview(null);
+        setPassword('');
+        setNext('');
+        const again = await api.loadHomeCurrency();
+        setView(again);
+      } catch (e) {
+        setErr(e && e.message || 'The base currency was not changed.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    if (status === 'loading') {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "home-currency",
+        className: "py-3 text-[12px]",
+        style: {
+          color: CD.faint,
+          borderTop: `1px solid ${CD.lineSoft}`
+        }
+      }, "Reading the base currency.");
+    }
+    if (status === 'offline') {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "home-currency",
+        className: "py-3 text-[12px]",
+        style: {
+          color: CD.mute,
+          borderTop: `1px solid ${CD.lineSoft}`
+        }
+      }, "The base currency is changed on the hosted desk, where the ledger keeps the books.");
+    }
+    const currency = view && view.currency || '';
+    const owner = !!(view && view.owner);
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency",
+      className: "py-3",
+      style: {
+        borderTop: `1px solid ${CD.lineSoft}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm",
+      style: {
+        color: CD.ink
+      }
+    }, "Base currency"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5",
+      style: {
+        color: CD.mute,
+        maxWidth: 520,
+        lineHeight: 1.45
+      }
+    }, "The currency the books are kept in. Reporting lines, the rate tape, and Transfers follow it. Past deals stay as they were posted."), /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Books are kept in ", /*#__PURE__*/React.createElement("b", {
+      "data-testid": "home-currency-current"
+    }, currency), "."), view && view.rateBoardNotice && !done && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, view.rateBoardNotice), view && view.notice && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency-notice",
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, view.notice), !owner && !(view && view.notice) && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Only the owner can change the base currency."), owner && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "block text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "New base currency"), /*#__PURE__*/React.createElement("select", {
+      "data-testid": "home-currency-select",
+      value: next,
+      disabled: busy,
+      onChange: e => review(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width: '100%',
+        maxWidth: 220
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, currency, " (current)"), (view.choices || []).map(code => /*#__PURE__*/React.createElement("option", {
+      key: code,
+      value: code
+    }, code)))), preview && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency-confirm",
+      className: "mt-3 p-3",
+      style: {
+        background: 'var(--cd-paper-soft)',
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10
+      }
+    }, preview.willChange && preview.willChange.map(line => /*#__PURE__*/React.createElement("p", {
+      key: line,
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, line)), preview.rateAt && /*#__PURE__*/React.createElement("p", {
+      "data-testid": "home-currency-rate-at",
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, "That market rate was fetched ", new Date(preview.rateAt).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }), "."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mt-2 mb-1",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "This stays as it is"), (preview.willNotChange || []).map(line => /*#__PURE__*/React.createElement("p", {
+      key: line,
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.mute,
+        lineHeight: 1.45
+      }
+    }, line)), (preview.blockers || []).map(line => /*#__PURE__*/React.createElement("p", {
+      key: line,
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.flag,
+        lineHeight: 1.45
+      }
+    }, line)), !(preview.blockers || []).length && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "block text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Confirm with your password"), /*#__PURE__*/React.createElement("input", {
+      "data-testid": "home-currency-password",
+      type: "password",
+      autoComplete: "current-password",
+      value: password,
+      onChange: e => setPassword(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none w-full",
+      style: {
+        ...inSty,
+        maxWidth: 280
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "home-currency-submit",
+      disabled: busy || !password,
+      onClick: save,
+      className: "mt-2 text-[12px] px-3 py-2",
+      style: {
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8,
+        opacity: busy || !password ? 0.5 : 1
+      }
+    }, "Change the base currency"))), done && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency-done",
+      className: "mt-3 text-[12.5px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, "The books are now kept in ", done.currency, ". ", done.rateBoardNotice), err && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency-error",
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.flag
+      }
+    }, err));
+  }
   function SettingsView({
     perms,
     setPerms,
@@ -6371,7 +6637,8 @@
       set,
       base,
       setSettings,
-      log
+      log,
+      me
     };
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
     const quoteHome = (() => {
@@ -6394,12 +6661,12 @@
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex",
+      className: "flex settings-shell",
       style: {
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 overflow-auto",
+      className: "flex-none p-3 overflow-auto settings-nav",
       style: {
         width: 212,
         borderRight: `1px solid ${CD.line}`,
@@ -6497,7 +6764,7 @@
         color: CD.faint
       }
     }, "Nothing matches \u201C", navQ.trim(), "\u201D.")), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto p-5",
+      className: "flex-1 overflow-auto p-5 settings-main",
       style: {
         maxWidth: 700
       }
@@ -9569,45 +9836,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     })), tab === 'localization' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "globe",
       title: "Localization",
-      sub: "Make the desk work for your region \u2014 not just Canada."
+      sub: "Make the desk work for your region, not just Canada."
     }), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Region"), /*#__PURE__*/React.createElement(Row, {
-      title: "Base currency",
-      desc: "Thresholds, drawer totals and reports are expressed in this currency. Changing it converts your thresholds at the live rate."
-    }, /*#__PURE__*/React.createElement("select", {
-      value: base,
-      onChange: e => {
-        const nb = e.target.value;
-        const ob = base;
-        if (nb === ob) return;
-        const conv = v => {
-          const n = +v || 0;
-          if (!n) return v;
-          const cad = ob === 'CAD' ? n : n / (crossRate('CAD', ob) || 1);
-          const out = nb === 'CAD' ? cad : cad * (crossRate('CAD', nb) || 1);
-          return Math.round(out);
-        };
-        setSettings(s => ({
-          ...s,
-          baseCurrency: nb,
-          threshold: conv(s.threshold),
-          idRequiredOver: conv(s.idRequiredOver)
-        }));
-        log('Base currency changed', `${ob} → ${nb} · thresholds converted`);
-      },
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 120
-      }
-    }, [...new Set(['CAD', 'USD', 'EUR', 'GBP', 'AUD', ...CURX])].map(c => /*#__PURE__*/React.createElement("option", {
-      key: c
-    }, c)))), /*#__PURE__*/React.createElement(Row, {
+    }, "Region"), /*#__PURE__*/React.createElement(HomeCurrencyRow, null), /*#__PURE__*/React.createElement(Row, {
       title: "Operating country / jurisdiction",
       desc: "Where this desk operates \u2014 pick the country, then the state or province when one applies."
     }, /*#__PURE__*/React.createElement("select", {
@@ -9675,18 +9911,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       value: settings.timeFormat || '12h',
       onPick: v => set('timeFormat', v, `time ${v}`),
       opts: [['12h', '12-hour'], ['24h', '24-hour']]
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2",
-      style: {
-        background: CD.brassSoft,
-        color: 'var(--cd-brass-text)',
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "alert",
-      s: 13,
-      c: "var(--cd-brass-text)"
-    }), /*#__PURE__*/React.createElement("span", null, "The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held."))), tab === 'compliance' && (() => {
+    }))), tab === 'compliance' && (() => {
       const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
       const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
       const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
@@ -48377,6 +48602,17 @@ ${snap}`;
   /* ============================================================
      The report builder
      ============================================================ */
+  function otherCurrencyCopy(book) {
+    const n = book && Number(book.otherCurrencyDeals);
+    if (!n) return '';
+    const others = (book.byHomeCurrency || []).filter(row => row.homeCurrency && row.homeCurrency !== book.homeCurrency);
+    if (n === 1) {
+      const where = others[0] ? others[0].homeCurrency : 'another currency';
+      return '1 deal was posted in ' + where + '. It is not in these totals.';
+    }
+    const which = others.map(row => row.deals + ' in ' + row.homeCurrency).join(', ');
+    return which ? n + ' deals were posted in another currency: ' + which + '. They are not in these totals.' : n + ' deals were posted in another currency. They are not in these totals.';
+  }
   function Reports({
     rows,
     clients,
@@ -48929,7 +49165,15 @@ ${snap}`;
             fontSize: 12.5,
             color: closed ? '#14543a' : CD.mute
           }
-        }, closed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "Closed and counted"), " \u2014 every figure below is the ledger's, for the trading day named above. Review, then sign.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "This till is not closed."), " The figures below are the ledger's as of now; the counts are whatever has been recorded so far. A sign-off sheet for a day still trading is a snapshot, not a close-out."))), /*#__PURE__*/React.createElement(KpiRow, {
+        }, closed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "Closed and counted"), " \u2014 every figure below is the ledger's, for the trading day named above. Review, then sign.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("b", null, "This till is not closed."), " The figures below are the ledger's as of now; the counts are whatever has been recorded so far. A sign-off sheet for a day still trading is a snapshot, not a close-out."))), otherCurrencyCopy(d) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(d)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Transactions',
             value: d ? d.posted : '—',
@@ -49247,7 +49491,15 @@ ${snap}`;
           title: "Profit & Loss",
           subtitle: `${branchName} · ${sub}`,
           rangeLabel: effRangeLabel
-        }), /*#__PURE__*/React.createElement(KpiRow, {
+        }), otherCurrencyCopy(book) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(book)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Gross revenue',
             value: orDash(gross, homeCcy, noBook),
@@ -49424,7 +49676,15 @@ ${snap}`;
           title: "Period Summary",
           subtitle: sub,
           rangeLabel: effRangeLabel
-        }), /*#__PURE__*/React.createElement(KpiRow, {
+        }), otherCurrencyCopy(book) ? /*#__PURE__*/React.createElement("div", {
+          "data-testid": "other-currency-deals",
+          style: {
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            color: CD.ink,
+            margin: '0 0 12px'
+          }
+        }, otherCurrencyCopy(book)) : null, /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Pay-in volume',
             value: orDash(volume, homeCcy, noBook),
@@ -62209,6 +62469,36 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       chg: c.chg
     }));
   }
+  function RateBoardPane() {
+    const [notice, setNotice] = useState('');
+    useEffect(() => {
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates', {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (!stop) setNotice(d && d.notice ? String(d.notice) : '');
+        }).catch(() => {});
+      };
+      pull();
+      window.addEventListener('cdos-jurisdiction', pull);
+      return () => {
+        stop = true;
+        window.removeEventListener('cdos-jurisdiction', pull);
+      };
+    }, []);
+    const src = window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1';
+    return /*#__PURE__*/React.createElement("div", {
+      className: "rate-board-frame"
+    }, notice ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "rate-board-notice",
+      role: "status",
+      className: "rate-board-notice"
+    }, notice) : null, /*#__PURE__*/React.createElement("iframe", {
+      src: src,
+      title: "Rate Board"
+    }));
+  }
   function Ticker({
     locked,
     cfg,
@@ -62225,15 +62515,32 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const hidden = c0.hidden || [];
     const [home, setHome] = useState(deskHome);
     const [tape, setTape] = useState(null);
+    /* Set when the published board was quoted in a previous home and has
+       been taken off the counter. A Canada desk normally reads that board.
+       After the books move back to CAD the board is the old currency, so
+       the tape follows the market quote instead of the stale cache. */
+    const [boardOff, setBoardOff] = useState(false);
     useEffect(() => {
       const sync = () => setHome(deskHome());
       window.addEventListener('cdos-jurisdiction', sync);
       sync();
       return () => window.removeEventListener('cdos-jurisdiction', sync);
     }, []);
-    const foreign = !!(home && home !== 'CAD');
     useEffect(() => {
-      if (!foreign) return undefined;
+      let stop = false;
+      fetch('/api/rates', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(d => {
+        if (!stop) setBoardOff(!!(d && d.notice));
+      }).catch(() => {});
+      return () => {
+        stop = true;
+      };
+    }, [home]);
+    const foreign = !!(home && home !== 'CAD');
+    const quoted = foreign || boardOff;
+    useEffect(() => {
+      if (!quoted) return undefined;
       let stop = false;
       const pull = () => {
         fetch('/api/rates/ticker', {
@@ -62250,12 +62557,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         stop = true;
         clearInterval(t);
       };
-    }, [foreign, home]);
-    const frozen = locked && book && !foreign;
+    }, [quoted, home]);
+    const frozen = locked && book && !quoted;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
-      if (foreign) {
+      if (quoted) {
         setItems(tape && tape.priced ? quoteTape(tape.quotes, home) : boardTape(home));
         return;
       }
@@ -62275,7 +62582,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, 4000);
       return () => clearInterval(t);
-    }, [foreign, frozen, frozenSig, tape, home]);
+    }, [quoted, frozen, frozenSig, tape, home]);
     const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return /*#__PURE__*/React.createElement("div", {
       className: "mb-ticker-wrap"
@@ -64984,10 +65291,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     function renderApp(id) {
       switch (baseApp(id)) {
         case 'rates':
-          return /*#__PURE__*/React.createElement("iframe", {
-            src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
-            title: "Rate Board"
-          });
+          return /*#__PURE__*/React.createElement(RateBoardPane, null);
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {
             settings: settings,

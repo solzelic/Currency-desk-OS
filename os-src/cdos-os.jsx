@@ -673,20 +673,59 @@
     const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
     return list.map(c => ({ code: c.code, name: c.name, flag: c.flag, mid: book[c.code] ? 1 / book[c.code] : 1 / c.perCadDefault, show: true, chg: c.chg }));
   }
+  function RateBoardPane() {
+    const [notice, setNotice] = useState('');
+    useEffect(() => {
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (!stop) setNotice(d && d.notice ? String(d.notice) : ''); })
+          .catch(() => {});
+      };
+      pull();
+      window.addEventListener('cdos-jurisdiction', pull);
+      return () => { stop = true; window.removeEventListener('cdos-jurisdiction', pull); };
+    }, []);
+    const src = (window.__resources && window.__resources.rateBoard)
+      ? window.__resources.rateBoard + '#embed'
+      : 'YorkFX/YorkFX Rate Board.html?embed=1';
+    return (
+      <div className="rate-board-frame">
+        {notice ? <div data-testid="rate-board-notice" role="status" className="rate-board-notice">{notice}</div> : null}
+        <iframe src={src} title="Rate Board"></iframe>
+      </div>
+    );
+  }
+
   function Ticker({ locked, cfg, book }) {
     const c0 = cfg || { speed: 'medium', direction: 'left', metric: 'cadPerUnit', showFlags: true, showChange: true, hidden: [] };
     const hidden = c0.hidden || [];
     const [home, setHome] = useState(deskHome);
     const [tape, setTape] = useState(null);
+    /* Set when the published board was quoted in a previous home and has
+       been taken off the counter. A Canada desk normally reads that board.
+       After the books move back to CAD the board is the old currency, so
+       the tape follows the market quote instead of the stale cache. */
+    const [boardOff, setBoardOff] = useState(false);
     useEffect(() => {
       const sync = () => setHome(deskHome());
       window.addEventListener('cdos-jurisdiction', sync);
       sync();
       return () => window.removeEventListener('cdos-jurisdiction', sync);
     }, []);
-    const foreign = !!(home && home !== 'CAD');
     useEffect(() => {
-      if (!foreign) return undefined;
+      let stop = false;
+      fetch('/api/rates', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (!stop) setBoardOff(!!(d && d.notice)); })
+        .catch(() => {});
+      return () => { stop = true; };
+    }, [home]);
+    const foreign = !!(home && home !== 'CAD');
+    const quoted = foreign || boardOff;
+    useEffect(() => {
+      if (!quoted) return undefined;
       let stop = false;
       const pull = () => {
         fetch('/api/rates/ticker', { credentials: 'same-origin' })
@@ -701,12 +740,12 @@
       pull();
       const t = setInterval(pull, 15000);
       return () => { stop = true; clearInterval(t); };
-    }, [foreign, home]);
-    const frozen = locked && book && !foreign;
+    }, [quoted, home]);
+    const frozen = locked && book && !quoted;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
-      if (foreign) {
+      if (quoted) {
         setItems((tape && tape.priced) ? quoteTape(tape.quotes, home) : boardTape(home));
         return;
       }
@@ -715,7 +754,7 @@
       let last = boardSig(next0);
       const t = setInterval(() => { const next = readBoard(); const s = boardSig(next); if (s !== last) { last = s; setItems(next); } }, 4000);
       return () => clearInterval(t);
-    }, [foreign, frozen, frozenSig, tape, home]);
+    }, [quoted, frozen, frozenSig, tape, home]);
     const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return <div className="mb-ticker-wrap" />;
     const SPEED = { slow: 5.2, medium: 3.4, fast: 2.0 };
@@ -2186,7 +2225,7 @@
 
     function renderApp(id) {
       switch (baseApp(id)) {
-        case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        case 'rates': return <RateBoardPane />;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />

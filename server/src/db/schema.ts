@@ -5,7 +5,7 @@
    Staff roles are the same union as src/domain/types.ts StaffRole,
    so the two sides can never drift apart on authorization.
    ============================================================ */
-import { boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, char, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
   "teller",
@@ -397,6 +397,10 @@ export const rateBoards = pgTable(
     boardOrder: jsonb("board_order").$type<string[]>(),
     publishedBy: text("published_by"),
     marketSnapshotId: text("market_snapshot_id"),
+    /* Which home currency these mids are quoted in. Null on a publication
+       that predates the column and has not been labelled yet. A mismatch
+       with the entity's current home is not a live board. */
+    homeCurrency: char("home_currency", { length: 3 }),
     publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("rate_boards_branch_idx").on(t.branchId, t.publishedAt)],

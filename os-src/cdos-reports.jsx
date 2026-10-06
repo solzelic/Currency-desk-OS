@@ -236,6 +236,20 @@
   /* ============================================================
      The report builder
      ============================================================ */
+  function otherCurrencyCopy(book) {
+    const n = book && Number(book.otherCurrencyDeals);
+    if (!n) return '';
+    const others = (book.byHomeCurrency || []).filter((row) => row.homeCurrency && row.homeCurrency !== book.homeCurrency);
+    if (n === 1) {
+      const where = others[0] ? others[0].homeCurrency : 'another currency';
+      return '1 deal was posted in ' + where + '. It is not in these totals.';
+    }
+    const which = others.map((row) => row.deals + ' in ' + row.homeCurrency).join(', ');
+    return which
+      ? n + ' deals were posted in another currency: ' + which + '. They are not in these totals.'
+      : n + ' deals were posted in another currency. They are not in these totals.';
+  }
+
   function Reports({ rows, clients, settings, me, baseline, receipts, day, station, branches, openSignal }) {
     const [range, setRange] = useState('today');
     /* The trading day and the jurisdiction pack, from the server. Reports
@@ -583,6 +597,7 @@
               $223.00 · Transactions 10" for a desk that had posted one deal
               and voided it. A dash here is correct and signable; a wrong
               number is not. */}
+          {otherCurrencyCopy(d) ? <div data-testid="other-currency-deals" style={{ fontSize: 12.5, lineHeight: 1.45, color: CD.ink, margin: '0 0 12px' }}>{otherCurrencyCopy(d)}</div> : null}
           <KpiRow items={[
             { label: 'Transactions', value: d ? d.posted : '—', sub: d ? (d.reversed ? `${d.reversed} voided` : 'none voided') : whyNoDay },
             { label: 'Pay-in volume', value: d && d.volumeHome != null ? fmt(d.volumeHome, homeCcy) : '—', sub: d && d.volumeHome != null ? `in ${homeCcy}` : whyNoDay },
@@ -690,6 +705,7 @@
         const taxAuthority = (settings && settings.taxAuthority) || null;
         return (<div>
           <DocHead title="Profit & Loss" subtitle={`${branchName} · ${sub}`} rangeLabel={effRangeLabel} />
+          {otherCurrencyCopy(book) ? <div data-testid="other-currency-deals" style={{ fontSize: 12.5, lineHeight: 1.45, color: CD.ink, margin: '0 0 12px' }}>{otherCurrencyCopy(book)}</div> : null}
           <KpiRow items={[
             { label: 'Gross revenue', value: orDash(gross, homeCcy, noBook), accent: CD.green, sub: 'commission + realized margin' },
             { label: 'Commission (fees)', value: orDash(fees, homeCcy, noBook) },
@@ -731,6 +747,7 @@
         const revenue = book && book.earningsHome != null ? Number(book.earningsHome) : null;
         return (<div>
           <DocHead title="Period Summary" subtitle={sub} rangeLabel={effRangeLabel} />
+          {otherCurrencyCopy(book) ? <div data-testid="other-currency-deals" style={{ fontSize: 12.5, lineHeight: 1.45, color: CD.ink, margin: '0 0 12px' }}>{otherCurrencyCopy(book)}</div> : null}
           <KpiRow items={[
             { label: 'Pay-in volume', value: orDash(volume, homeCcy, noBook), sub: book && book.unvaluedDeals ? `${book.unvaluedDeals} cross-currency deal(s) this book cannot value in ${homeCcy}` : null },
             { label: 'Transactions', value: posted == null ? '—' : posted, sub: posted == null ? noBook : (book.reversed ? `${book.reversed} voided` : null) },

@@ -181,6 +181,37 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   baseline and keeps its currency. The known-wrong country packs are
   not assigned by that backfill.
 
+- **The creating owner can change the desk's base currency in Settings.**
+  There is no separate owner role. The creating owner is the earliest
+  administrator on the desk (`staff_users`, by `created_at`, then id).
+  A later administrator cannot move the book. The seeded York
+  demonstration desk (`tnt-yorkfx`) cannot either. The owner types their
+  password again. Five wrong passwords share the PIN lockout (five
+  tries, then five minutes) and each failure is audited in its own
+  transaction. A wrong password is refused with 403. Every till must be
+  closed and every cash count closed out. Opening a till or recording a
+  count takes a share lock on the legal entity, which the change holds
+  for update. Open obligations and held cheques block the change.
+  The rate is the market snapshot the confirm screen named, and it must
+  be from the last 24 hours. Past ledger rows keep the currency they
+  were posted in. Cash is not converted. What that cash cost is restated
+  by appending a `rebase` cost event (migration `030_cost_event_rebase`).
+  Historic cost events are not updated. A desk-chosen money threshold
+  is restated once, rounded down to the cent, and both the old and new
+  figures are on the audit row. Pack lines stay written in the currency
+  the pack was authored in and convert on the next read. That conversion
+  rate is stored on a country-pack deal. Reading thresholds does not
+  rewrite an existing desk's pack or its stored lines. The published
+  rate board is labelled with the old currency and comes off the counter,
+  including the public website, until someone publishes it again.
+  Period totals count money only in the currency the book uses now, and
+  say how many deals were posted in another currency. Currencies of
+  sanctioned countries are refused through
+  `server/src/compliance/sanctioned-currencies.ts`. That file is a
+  hook. It does not contain a list. A sourced list plugs in with
+  `setSanctionedCurrencyLookup`. PR #59 had not landed on main when this
+  was written, so the hook is still the default that allows every code.
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -260,7 +291,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-06**, international baseline. A country with no pack is not
+**2026-10-06**, owner base-currency change and the international
+baseline. The owner can move the book in Settings after a password
+check, with every till and cash count closed and a market rate from
+the last 24 hours. Past ledger rows are not rewritten. A rate board
+quoted in the old currency comes off the counter until it is
+published again. Sanctioned currencies are refused through a hook
+that does not hard-code a list. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.
 Cash foreign exchange is identified at 3,000 USD or more; remittance,
 electronic transfer, and virtual currency at 1,000 USD or more; the

@@ -107,6 +107,16 @@ rate lineage so later configuration changes cannot rewrite history.
 
 No destructive rename occurs in the initial migration.
 
+## Moving the book
+
+The creating owner (the earliest administrator; there is no separate
+owner role) can change the legal entity home currency after the desk is
+open. The seeded demonstration desk cannot. `withBookCurrency` follows
+that entity for a baseline pack and for a country pack. The pack's own
+numbers stay in `rulesCurrency` and are not rewritten. Deploying that
+behaviour does not update an existing desk's pack id or its stored
+thresholds. The change itself is `server/src/ledger/home-currency.ts`.
+
 ## Test Configurations
 
 - Canada: `homeCurrency=CAD`; CAD/USD allowed.

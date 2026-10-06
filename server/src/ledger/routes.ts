@@ -22,6 +22,8 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
+import { HomeCurrencyService, recordHomeCurrencyPasswordFailure } from "./home-currency.js";
+import { clearPinAttempts, lockState, recordFailure } from "../routes/pin.js";
 import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
@@ -311,6 +313,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
   const currencies = new CurrencyService(pool);
+  const homeCurrency = new HomeCurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
@@ -353,7 +356,10 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
     const status =
       error.code === "AUTHENTICATION_REQUIRED" ? 401
-        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
+        : error.code === "PASSWORD_REJECTED" ||
+            error.code === "AUTHORIZATION_DENIED" ||
+            error.code === "SCOPE_DENIED" ||
+            error.code === "DEMO_DESK" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
@@ -788,6 +794,78 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return actor
         ? reply.send(await currencies.set(actor, parsed.data.currencies))
         : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The currency the books are kept in.
+
+     Read by anyone who can see the ledger. Changed only by the owner,
+     and only after they type the password they sign in with. The
+     preview is the confirm screen: what will move, what will not, and
+     why a move is refused. Nothing is written on the preview. */
+  const homeCurrencyBody = z.object({
+    currency: currencyCode,
+    password: z.string().min(1).max(512),
+    snapshotId: z.string().min(1).max(200),
+  }).strict();
+
+  app.get("/api/ledger/home-currency", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await homeCurrency.view(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/home-currency/preview", async (req, reply) => {
+    const parsed = z.object({ currency: currencyCode }).safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: "A base currency is a three letter code." });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await homeCurrency.preview(actor, parsed.data.currency)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/home-currency", async (req, reply) => {
+    const parsed = homeCurrencyBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: "Name the new base currency and confirm your password." });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      /* Same five-try lock as a wrong PIN. Checked before the change so a
+         locked keypad never reaches the book. */
+      if (lockState(actor.userId).locked) {
+        return reply.code(429).send({
+          code: "PASSWORD_LOCKED",
+          message: "Too many wrong passwords. Wait five minutes and try again. The base currency was not changed.",
+        });
+      }
+      try {
+        const saved = await homeCurrency.change(
+          actor,
+          parsed.data.currency,
+          parsed.data.password,
+          parsed.data.snapshotId,
+        );
+        clearPinAttempts(actor.userId);
+        return reply.send(saved);
+      } catch (error) {
+        if (error instanceof LedgerError && error.code === "PASSWORD_REJECTED") {
+          recordFailure(actor.userId);
+          await recordHomeCurrencyPasswordFailure(pool, actor);
+          return reply.code(403).send({ code: "PASSWORD_REJECTED", message: error.message });
+        }
+        return failure(reply, error);
+      }
     } catch (error) {
       return failure(reply, error);
     }

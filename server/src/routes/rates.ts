@@ -21,6 +21,7 @@ import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { jsonMargin } from "../sites/storefront-hold.js";
 import { quoteHomeMarket } from "../rates/ticker-quotes.js";
+import { rateBoardCurrencyNotice } from "../ledger/home-currency.js";
 
 const DEMO_BRANCH = "br-yorkville";
 
@@ -51,7 +52,12 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
     marketSnapshotId: row.marketSnapshotId ?? undefined,
     branchId: row.branchId,
     publicationId: row.id,
+    homeCurrency: row.homeCurrency?.trim() || undefined,
   };
+}
+
+function labelledHome(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
 }
 
 export function registerRatesRoutes(app: FastifyInstance, db: Db) {
@@ -140,7 +146,24 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.rateBoards.branchId, branchId))
       .orderBy(desc(schema.rateBoards.publishedAt))
       .limit(1);
-    return { board: rows[0] ? toBoardJson(rows[0]) : null, serverTime: Date.now() };
+    const row = rows[0];
+    if (!row) return { board: null, serverTime: Date.now() };
+    /* A board stamped with a home currency is priced in that currency.
+       After the books move, serving it would quote the old home as if
+       it were the new one. An unstamped board is still the live one:
+       it predates the stamp, and labelling it is the currency change's
+       own job. */
+    const entity = await db
+      .select({ homeCurrency: schema.legalEntities.homeCurrency })
+      .from(schema.legalEntities)
+      .where(eq(schema.legalEntities.id, row.legalEntityId))
+      .limit(1);
+    const notice = rateBoardCurrencyNotice(
+      labelledHome(row.homeCurrency),
+      labelledHome(entity[0]?.homeCurrency),
+    );
+    if (notice) return { board: null, notice, serverTime: Date.now() };
+    return { board: toBoardJson(row), serverTime: Date.now() };
   });
 
   app.get("/api/rates/history", async (req, reply) => {
@@ -176,6 +199,12 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       return reply.code(403).send({ error: "branch_denied" });
     }
 
+    const entity = await db
+      .select({ homeCurrency: schema.legalEntities.homeCurrency })
+      .from(schema.legalEntities)
+      .where(eq(schema.legalEntities.id, who.legalEntityId))
+      .limit(1);
+    const book = labelledHome(entity[0]?.homeCurrency);
     const id = randomUUID();
     const inserted = await db
       .insert(schema.rateBoards)
@@ -189,6 +218,7 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
         boardRows: body.rows,
         boardOrder: body.order ?? null,
         publishedBy: who.staffId,
+        homeCurrency: /^[A-Z]{3}$/.test(book) ? book : null,
       })
       .returning();
     await db.insert(schema.auditEvents).values({

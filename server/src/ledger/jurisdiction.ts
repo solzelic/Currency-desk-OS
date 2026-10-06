@@ -24,7 +24,15 @@ export type JurisdictionPack = {
   jurisdiction: string;
   version: number;
   name: string;
+  /** The currency the books are kept in. For a baseline desk this is the
+      currency the entity named. For a country pack it starts as the pack's
+      currency and follows the entity if the owner moves the book. */
   homeCurrency: string;
+  /** The currency the pack's own threshold numbers are written in.
+      USD on the international baseline. The country's currency on a
+      country pack. This does not move when the book does: the numbers
+      are converted into `homeCurrency` when they are read. */
+  rulesCurrency: string;
   regulator: string;
   reportName: string;
   reportThreshold: string;
@@ -103,6 +111,7 @@ const unavailablePack = (homeCurrency: string): JurisdictionPack => ({
   version: 0,
   name: "",
   homeCurrency,
+  rulesCurrency: homeCurrency,
   regulator: "",
   reportName: "",
   reportThreshold: "",
@@ -122,6 +131,7 @@ const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
   version: Number(row.version),
   name: String(row.name),
   homeCurrency: String(row.home_currency).trim().toUpperCase(),
+  rulesCurrency: String(row.home_currency).trim().toUpperCase(),
   regulator: String(row.regulator),
   reportName: String(row.report_name),
   reportThreshold: String(row.report_threshold),
@@ -143,13 +153,23 @@ function bookCurrency(value: unknown): string {
   return /^[A-Z]{3}$/.test(code) ? code : "";
 }
 
-/* A baseline pack is written in USD. The desk's book is the currency
-   the entity named, or USD when it named none. A country pack keeps
-   the currency on the pack. */
+/* The pack row says which currency its threshold numbers are written
+   in (`rulesCurrency`). The entity says which currency the books are
+   kept in.
+
+   A baseline pack is written in USD. The book is the currency the
+   entity named, or USD when it named none.
+
+   A country pack is written in that country's currency. The book
+   starts there. If the owner has moved it (`home-currency.ts`), the
+   book follows the entity and the pack numbers stay written where
+   they were. They are converted on read. They are not rewritten. */
 function withBookCurrency(pack: JurisdictionPack, entityHome: unknown): JurisdictionPack {
-  if (!pack.baseline) return pack;
-  const home = bookCurrency(entityHome) || "USD";
-  return home === pack.homeCurrency ? pack : { ...pack, homeCurrency: home };
+  const written = (pack.rulesCurrency || pack.homeCurrency).trim().toUpperCase();
+  const named = bookCurrency(entityHome);
+  const home = pack.baseline ? named || "USD" : named || written;
+  if (pack.homeCurrency === home && pack.rulesCurrency === written) return pack;
+  return { ...pack, homeCurrency: home, rulesCurrency: written };
 }
 
 /**
