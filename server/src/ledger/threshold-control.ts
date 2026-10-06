@@ -166,4 +166,68 @@ export class ThresholdService {
       client.release();
     }
   }
+
+  /**
+   * Move this desk from the Canada pack version 1 onto version 2.
+   *
+   * One way, and only from version 1. The desk's own identification
+   * number is left as it is: NULL still means follow the pack, and a
+   * number the owner already saved stays saved. Posted deals keep the
+   * pack version stamped on them. Nothing else on the book moves.
+   */
+  async optInCanadaV2(actor: LedgerActor): Promise<DeskThresholds> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "compliance:thresholds");
+      const installed = await client.query(
+        "SELECT 1 FROM jurisdiction_packs WHERE pack_id = 'pack-ca-v2'",
+      );
+      if (!installed.rowCount) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "The current Canada pack is not installed on this database.",
+        );
+      }
+      const moved = await client.query(
+        `UPDATE legal_entities
+            SET jurisdiction_pack_id = 'pack-ca-v2',
+                jurisdiction_pack_version = 2
+          WHERE id = $1
+            AND jurisdiction_pack_id = 'pack-ca-v1'`,
+        [actor.legalEntityId],
+      );
+      if (!moved.rowCount) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "Only a desk on the Canada pack version 1 can move to version 2.",
+        );
+      }
+      await client.query(
+        `INSERT INTO ledger_audit_events
+          (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+           action,target_id,reason,correlation_id,created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,'compliance.pack.opt_in',$7,$8,$9,now())`,
+        [
+          randomUUID(),
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+          actor.workspaceId,
+          actor.userId,
+          actor.legalEntityId,
+          "Owner moved this desk from pack-ca-v1 to pack-ca-v2. Posted deals keep the pack they were stamped with.",
+          randomUUID(),
+        ],
+      );
+      const after = await readDeskThresholds(client, actor.legalEntityId);
+      await client.query("COMMIT");
+      return after;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }

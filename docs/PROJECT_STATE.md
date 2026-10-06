@@ -170,8 +170,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   is that amount plus the fee; a receive is the payout. The binding
   line is the lower of the remittance line and the desk's own
   identification line. No line, or no fresh rate, means identification
-  is required. A Canada desk still identifies at its own line, in
-  Canadian dollars.
+  is required. A desk already on the Canada pack version 1 still
+  identifies at that pack's single line, in Canadian dollars. A new
+  Canada desk opens on version 2. See docs/CANADA_PACK.md.
   The threshold editors stay available. A void, a cheque
   clearance or return, and an obligation settlement or write-off still
   post, and they keep the pack the original deal was stamped with.
@@ -180,6 +181,34 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   where it was blank. Every other home currency is pointed at the
   baseline and keeps its currency. The known-wrong country packs are
   not assigned by that backfill.
+
+- **Canada pack version 2 (`pack-ca-v2`).** New Canada desks open on
+  it. A desk already on `pack-ca-v1`, including the York seed, stays
+  there until an owner opts in from Compliance, on the Jurisdiction
+  tab. The move is one way. It does not rewrite posted deals and it
+  does not change the desk's own identification number. Version 2
+  identifies a foreign exchange and a money order at CAD 3,000, and a
+  remittance, an electronic funds transfer, or virtual currency at
+  CAD 1,000. A looser desk number can replace the 3,000 lines. It
+  cannot raise the 1,000 lines. A large cash report is cash received,
+  due within 15 calendar days. The 24-hour total includes every
+  amount, on three axes that are not mixed: conducted by, on behalf
+  of, and for the benefit of. Identity is also required when that
+  total reaches CAD 10,000, including a receipt that is under the
+  identification line on its own. An electronic funds transfer report
+  and a large virtual currency report are due within 5 working days.
+  The listed person or entity property report is immediate. It is
+  property of a listed person or a terrorist group, not a country
+  sanctions stop. At a foreign exchange of CAD 3,000 or more the
+  ticket needs the customer's name, address, occupation, and date of
+  birth. A remittance at CAD 1,000 or more stores the beneficiary's
+  name and address on the ledger. The counter does not book virtual
+  currency. Ministerial directives stay a free-text note. A full
+  compliance program, a politically exposed person check at an
+  electronic transfer of CAD 100,000, and a business relationship on
+  the second verification are not in this pack. Working days are
+  Monday to Friday. Statutory holidays are not skipped. Citations,
+  the opt-in, and those gaps are in docs/CANADA_PACK.md.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
@@ -280,8 +309,10 @@ It does not fall back to Canada or FINTRAC. The new-transfer form
 treats the typed amount as home currency. A send adds the fee; a
 receive uses the payout. That figure is compared with the remittance
 line and the desk's own identification line, and the lower one binds.
-A missing or stale rate requires identification. A Canada desk still
-uses its own line, in Canadian dollars. The rate tape quotes every
+A missing or stale rate requires identification. A desk already on
+the Canada pack version 1 still uses that pack's single line, in
+Canadian dollars. A new Canada desk opens on version 2. See
+docs/CANADA_PACK.md. The rate tape quotes every
 market mid in the desk's home currency (`home per unit = CAD per unit
 ÷ CAD per home`). The change is that home cross now against the
 snapshot about 24 hours earlier. No earlier snapshot, or a current
@@ -302,9 +333,10 @@ the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,
 empty, or null home currency at the Canada pack, and every other home
 currency at the baseline. The known-wrong country packs are not
-assigned. Country packs still use their own single identification
-column. A blank identification answer at setup is not filled with the
-report line.
+assigned. A country pack whose identification lines all equal its
+single column still posts on that column. Canada pack version 2 is
+the exception, and it is described in docs/CANADA_PACK.md. A blank
+identification answer at setup is not filled with the report line.
 
 Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until

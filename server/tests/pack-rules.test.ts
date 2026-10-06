@@ -22,11 +22,11 @@ import { resolve } from "../src/onboarding/flow.js";
 describe("which country gets a pack", () => {
   it("gives the countries that already have one the pack they had", () => {
     expect(packForCountry("CA")).toEqual({
-      packId: "pack-ca-v1",
-      version: 1,
+      packId: "pack-ca-v2",
+      version: 2,
       homeCurrency: "CAD",
     });
-    expect(packForCountry("Canada")?.packId).toBe("pack-ca-v1");
+    expect(packForCountry("Canada")?.packId).toBe("pack-ca-v2");
     expect(packForCountry("United States")?.packId).toBe("pack-us-v1");
     expect(packForCountry("UK")?.packId).toBe("pack-gb-v1");
     expect(packForCountry("United Kingdom")?.homeCurrency).toBe("GBP");
@@ -82,6 +82,8 @@ describe("what a report row can now say", () => {
       direction: "both",
       thresholdCurrency: "EUR",
       cashOnly: false,
+      aggregateAllAmounts: false,
+      aggregationAxes: null,
     });
   });
 

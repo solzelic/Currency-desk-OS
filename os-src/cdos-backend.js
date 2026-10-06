@@ -470,6 +470,15 @@
         return request("/api/ledger/jurisdiction");
       },
 
+      /* Owner only, and only from Canada pack version 1. The server
+         refuses anything else. There is no route back. */
+      optInCanadaV2: function () {
+        return request("/api/ledger/jurisdiction-pack/canada-v2", {
+          method: "POST",
+          body: "{}",
+        });
+      },
+
       /* ---- the desk's own thresholds ----
 
          The pack states what the regulator requires; these are what the

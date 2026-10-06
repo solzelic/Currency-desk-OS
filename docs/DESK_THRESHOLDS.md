@@ -132,8 +132,10 @@ shown Canada, FINTRAC, or the unconverted 3,000 and 10,000. The
 new-transfer form treats the typed amount as the desk's home
 currency. A send adds the fee; a receive uses the payout. That cash
 is compared with the remittance line and the desk's own
-identification line, and the lower one binds. A Canada desk still
-uses its own line, in Canadian dollars. No line, or no fresh rate,
+identification line, and the lower one binds. A desk on the Canada
+pack version 1 still uses that pack's single line, in Canadian
+dollars. A new Canada desk opens on version 2, which is described
+in docs/CANADA_PACK.md. No line, or no fresh rate,
 means identification is required.
 
 These still post, because they are not a new deal:

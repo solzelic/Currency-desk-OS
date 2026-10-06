@@ -2361,6 +2361,15 @@
         return request("/api/ledger/jurisdiction");
       },
 
+      /* Owner only, and only from Canada pack version 1. The server
+         refuses anything else. There is no route back. */
+      optInCanadaV2: function () {
+        return request("/api/ledger/jurisdiction-pack/canada-v2", {
+          method: "POST",
+          body: "{}",
+        });
+      },
+
       /* ---- the desk's own thresholds ----
 
          The pack states what the regulator requires; these are what the
@@ -29944,12 +29953,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }, c.subject, " ", /*#__PURE__*/React.createElement("span", {
         className: "text-[9px] px-1.5 py-0.5",
         style: {
-          background: c.basis === 'beneficiary' ? '#dbe5fb' : CD.lineSoft,
-          color: c.basis === 'beneficiary' ? '#1d4ed8' : CD.ink,
+          background: c.basis === 'beneficiary' ? '#dbe5fb' : c.basis === 'on_behalf_of' ? '#f3e8ff' : CD.lineSoft,
+          color: c.basis === 'beneficiary' ? '#1d4ed8' : c.basis === 'on_behalf_of' ? '#6d28d9' : CD.ink,
           borderRadius: 4,
           fontFamily: 'Space Mono, monospace'
         }
-      }, c.basis === 'beneficiary' ? 'BY BENEFICIARY' : 'BY CONDUCTOR')), /*#__PURE__*/React.createElement("div", {
+      }, c.basis === 'beneficiary' ? 'BY BENEFICIARY' : c.basis === 'on_behalf_of' ? 'ON BEHALF OF' : 'BY CONDUCTOR')), /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
         style: {
           color: CD.mute
@@ -35539,7 +35548,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       key: p.name
     }, p.name)), !partners.length && /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "No partner for this method"))), b.method === 'bank' && /*#__PURE__*/React.createElement("div", {
+    }, "No partner for this method"))), /*#__PURE__*/React.createElement(Field, {
+      label: "Address",
+      hint: "Street, city, country. Required on a Canada version 2 desk once the transfer is at the identification line."
+    }, /*#__PURE__*/React.createElement("input", {
+      value: b.address || '',
+      onChange: e => set('address', e.target.value),
+      placeholder: "Where the beneficiary is",
+      className: inputCls,
+      style: inputSty
+    })), b.method === 'bank' && /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(Field, {
       label: "Bank"
@@ -35668,6 +35686,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [direction, setDirection] = useState('send');
     const [senderName, setSenderName] = useState('');
     const [benId, setBenId] = useState('');
+    const [receiveBeneficiaryName, setReceiveBeneficiaryName] = useState('');
+    const [receiveBeneficiaryAddress, setReceiveBeneficiaryAddress] = useState('');
     const [addBen, setAddBen] = useState(false);
     const [corridorId, setCorridorId] = useState('PH');
     const [partner, setPartner] = useState('');
@@ -35800,6 +35820,23 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (B) {
         setBusy(true);
         setServerError('');
+        /* Version 2 asks for the beneficiary's name and address once
+           the cash is at the remittance line. Version 1 does not, and
+           a transfer under the line does not. The server is the
+           authority; this stops the teller finding out only after the
+           round trip. */
+        const packId = packNow && packNow.packId;
+        const remLine = thresholds && thresholds.remittanceIdThreshold && thresholds.remittanceIdThreshold.effective != null ? Number(thresholds.remittanceIdThreshold.effective) : null;
+        const cashHome = direction === 'send' ? amtN + feeN : Number(recvAmt) || 0;
+        if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+          const name = direction === 'send' ? ben && ben.name : receiveBeneficiaryName;
+          const address = direction === 'send' ? ben && ben.address : receiveBeneficiaryAddress;
+          if (!String(name || '').trim() || !String(address || '').trim()) {
+            setServerError('This transfer needs the beneficiary name and address on the record.');
+            setBusy(false);
+            return;
+          }
+        }
         try {
           const synced = await B.syncCustomer(senderName, clients[senderName]);
           setClients && setClients(list => ({
@@ -35829,6 +35866,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             corridor: corridorId,
             partner: partner,
             beneficiaryName: ben ? ben.name : senderName,
+            beneficiaryAddress: ben && ben.address ? ben.address : '',
             ...capture
           }) : await B.postRemittanceReceive({
             idempotencyKey: 'web:transfer:' + attemptKey(),
@@ -35840,6 +35878,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             feeAmount: B.asMoney(feeN),
             corridor: corridorId,
             partner: partner,
+            beneficiaryName: receiveBeneficiaryName,
+            beneficiaryAddress: receiveBeneficiaryAddress,
             ...capture
           });
         } catch (error) {
@@ -36019,7 +36059,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: ic,
       s: 14,
       c: direction === d ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", l))), /*#__PURE__*/React.createElement(Field, {
+    }), " ", l))), direction === 'receive' && packNow && packNow.packId === 'pack-ca-v2' && /*#__PURE__*/React.createElement("div", {
+      className: "grid grid-cols-2 gap-3"
+    }, /*#__PURE__*/React.createElement(Field, {
+      label: "Beneficiary name"
+    }, /*#__PURE__*/React.createElement("input", {
+      value: receiveBeneficiaryName,
+      onChange: e => setReceiveBeneficiaryName(e.target.value),
+      placeholder: "Who the funds are for",
+      className: inputCls,
+      style: inputSty
+    })), /*#__PURE__*/React.createElement(Field, {
+      label: "Beneficiary address"
+    }, /*#__PURE__*/React.createElement("input", {
+      value: receiveBeneficiaryAddress,
+      onChange: e => setReceiveBeneficiaryAddress(e.target.value),
+      placeholder: "Street, city, country",
+      className: inputCls,
+      style: inputSty
+    }))), /*#__PURE__*/React.createElement(Field, {
       label: direction === 'send' ? 'Sender (your client)' : 'Recipient (your client)'
     }, /*#__PURE__*/React.createElement("div", {
       ref: senderWrap,
@@ -40640,16 +40698,43 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
   }
 
-  // generic core: aggregate a list of normalized cash-in/transfer-out events
-  // ({ id, ref, date, time, t:Date, amt, customer, beneficiary }) over the static
-  // window, by conductor AND beneficiary. `kind` is the report code stamped on
-  // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
-  function aggregateEvents(events, regime, settings, kind) {
+  /* The large-cash report on this pack, when it says to add every
+     amount. Absent on pack-ca-v1 and on an EFTR, which still leave a
+     single already at the line out of the aggregate and file it alone.
+     FINTRAC's 24-hour guidance (updated 2023-10-23) is the split:
+     LCTR and LVCTR include every amount; EFTR does not, until its new
+     form exists. */
+  function largePolicy(regime) {
+    const report = (regime && regime.reports || []).find(r => r && r.kind === 'large_cash');
+    if (!report || !report.aggregateAllAmounts) return null;
+    const axes = report.aggregationAxes && report.aggregationAxes.length ? report.aggregationAxes : ['conductor', 'on_behalf_of', 'beneficiary'];
+    return {
+      includeAll: true,
+      axes: axes
+    };
+  }
+  function reportByKind(regime, kind) {
+    return (regime && regime.reports || []).find(r => r && r.kind === kind) || null;
+  }
+
+  // Events: { id, ref, date, time, t:Date, amt, customer, beneficiary, onBehalfOf }.
+  // `kind` is the report code stamped on each cluster.
+  // `policy` null keeps the older rule (drop a single already at the
+  // line; conductor and beneficiary only). A policy with includeAll
+  // keeps every amount, and uses the axes the pack named.
+  function aggregateEvents(events, regime, settings, kind, policy) {
     const TH = regime.threshold,
       H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];
+    const includeAll = !!(policy && policy.includeAll);
+    const axisFns = {
+      conductor: e => e.customer,
+      on_behalf_of: e => e.onBehalfOf,
+      beneficiary: e => e.beneficiary
+    };
+    const axes = includeAll ? policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'] : ['conductor', 'beneficiary'];
     const startMins = parseHHMM(settings && settings.aggWindowStart || '00:00');
     const buckets = {};
     (events || []).forEach(e => {
@@ -40678,7 +40763,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {
-          if (e.amt >= TH) return;
+          /* Older rule: a receipt already at the line is its own report
+             and is not also added into the cluster. includeAll is the
+             opposite: 12,000 plus 1,000 is one report of 13,000. */
+          if (!includeAll && e.amt >= TH) return;
           const k = keyFn(e);
           if (!k) return;
           (groups[k] = groups[k] || []).push(e);
@@ -40686,6 +40774,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         return Object.keys(groups).map(subject => {
           const txs = groups[subject].slice().sort((a, b) => a.t - b.t);
           const total = txs.reduce((s, o) => s + o.amt, 0);
+          /* One transaction, however large, stays a single report.
+             Two or more, of any amount, become one report once the
+             total reaches the line. */
           if (txs.length < 2 || total < TH) return null;
           const endRow = txs[txs.length - 1];
           const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey;
@@ -40706,18 +40797,26 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           };
         }).filter(Boolean);
       };
-      const conductors = mk('conductor', e => e.customer);
-      const beneficiaries = mk('beneficiary', e => e.beneficiary);
-      // identical transaction set on both axes = the same event — file once.
+      /* The same set of transactions on two axes is one report.
+         A partial overlap is two reports. Conductor is emitted first
+         so it keeps the identical set. */
       const sig = c => c.txs.map(t => t.id).sort().join(',');
-      const condSigs = new Set(conductors.map(sig));
-      out.push(...conductors, ...beneficiaries.filter(c => !condSigs.has(sig(c))));
+      const seen = new Set();
+      axes.forEach(axis => {
+        const keyFn = axisFns[axis];
+        if (!keyFn) return;
+        mk(axis, keyFn).forEach(cluster => {
+          const mark = sig(cluster);
+          if (seen.has(mark)) return;
+          seen.add(mark);
+          out.push(cluster);
+        });
+      });
     });
     return out.sort((a, b) => b.total - a.total);
   }
-  // LCTR — cash-in from the ledger
-  function aggClusters(rows, regime, settings) {
-    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(r => ({
+  function eventFromRow(r) {
+    return {
       id: r.id,
       ref: r.ref,
       date: r.date,
@@ -40725,9 +40824,44 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       t: dt(r),
       amt: cashIn(r),
       customer: r.customer,
-      beneficiary: r.beneficiary
-    }));
-    return aggregateEvents(events, regime, settings, regime.largeCode);
+      beneficiary: r.beneficiary,
+      onBehalfOf: r.capture && r.capture.thirdPartyName || r.thirdPartyName || ''
+    };
+  }
+  // LCTR: cash received. The policy comes from the large-cash report.
+  function aggClusters(rows, regime, settings) {
+    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
+    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+  }
+  /* Receipts already inside an include-all cluster are not also filed
+     as their own large-cash report. A lone receipt at the line is not
+     in a cluster, so it stays a single. */
+  function includeAllCoveredRefs(rows, regime, settings) {
+    if (!largePolicy(regime)) return [];
+    const refs = [];
+    aggClusters(rows, regime, settings).forEach(c => c.txs.forEach(t => refs.push(t.ref)));
+    return refs;
+  }
+  /* LVCTR. Same window as a large cash report, over rows the book
+     marked as virtual currency received. The counter does not book
+     that instrument yet, so this returns nothing until one exists. */
+  function aggClustersVc(rows, regime, settings) {
+    const report = reportByKind(regime, 'virtual_currency');
+    if (!report || !report.aggregateAllAmounts) return [];
+    const threshold = report.triggerThreshold != null ? +report.triggerThreshold : regime.threshold;
+    const events = (rows || []).filter(r => r.status !== 'void' && r.receivedInstrument === 'virtual_currency').map(r => {
+      const base = eventFromRow(r);
+      const amt = cashIn(r) > 0 ? cashIn(r) : home(r.inAmt, r.inCcy);
+      return Object.assign({}, base, {
+        amt: amt
+      });
+    }).filter(e => e.amt > 0);
+    return aggregateEvents(events, Object.assign({}, regime, {
+      threshold: threshold
+    }), settings, report.code || 'LVCTR', {
+      includeAll: true,
+      axes: report.aggregationAxes && report.aggregationAxes.length ? report.aggregationAxes : ['conductor', 'on_behalf_of', 'beneficiary']
+    });
   }
   // EFTR — international electronic transfers. Same $10k / 24h machinery, wires not cash.
   function aggClustersEFT(transfers, beneficiaries, regime, settings) {
@@ -40761,6 +40895,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       STAT,
       aggClusters,
       aggClustersEFT,
+      aggClustersVc,
+      includeAllCoveredRefs,
+      largePolicy,
       cadIn,
       cashIn,
       dt,
@@ -42169,6 +42306,9 @@ ${(filing.map || []).map(blockHTML).join('')}
     STAT,
     aggClusters,
     aggClustersEFT,
+    aggClustersVc,
+    includeAllCoveredRefs,
+    largePolicy,
     cadIn,
     cashIn
   } = C;
@@ -42370,9 +42510,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     /* `cashIn`, not `cadIn` — the figure on a large-CASH report is the
        cash the customer put on the counter. `f.single` is raised from
        the same number, so a deal that took no cash never reaches here. */
+    const cashClusters = aggClusters(rows, regime, settings);
+    /* A receipt already inside an include-all cluster is that report.
+       Filing it again on its own would be the second copy FINTRAC says
+       not to send. A lone receipt at the line is not in a cluster. */
+    const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
     rows.filter(r => r.status !== 'void').forEach(r => {
       const f = flags[r.id] || {};
-      if (f.single) out.push({
+      if (f.single && !covered.has(r.ref)) out.push({
         id: 'L-' + r.ref,
         groupId: 'L-' + r.ref,
         kind: regime.largeCode,
@@ -42385,13 +42530,27 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
     });
     // LCTR 24h aggregates (cash)
-    aggClusters(rows, regime, settings).forEach(c => out.push({
+    cashClusters.forEach(c => out.push({
       id: c.id,
       groupId: c.groupId,
       kind: c.kind,
       subject: c.subject,
       amount: c.total,
       detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`,
+      date: c.endRow.date,
+      refs: c.txs.map(t => t.ref),
+      basis: c.basis,
+      window: c.windowLabel,
+      windowStart: c.windowStart,
+      windowEnd: c.windowEnd
+    }));
+    if (aggClustersVc) aggClustersVc(rows, regime, settings).forEach(c => out.push({
+      id: c.id,
+      groupId: c.groupId,
+      kind: c.kind,
+      subject: c.subject,
+      amount: c.total,
+      detail: `${c.txs.length}-receipt ${regime.aggHours}h aggregate · by ${c.basis}`,
       date: c.endRow.date,
       refs: c.txs.map(t => t.ref),
       basis: c.basis,
@@ -42841,7 +43000,15 @@ ${(filing.map || []).map(blockHTML).join('')}
         borderRadius: 5,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "BY BENEFICIARY") : /*#__PURE__*/React.createElement("span", {
+    }, "BY BENEFICIARY") : b === 'on_behalf_of' ? /*#__PURE__*/React.createElement("span", {
+      className: "text-[9.5px] px-1.5 py-0.5 font-semibold",
+      style: {
+        background: '#f3e8ff',
+        color: '#6d28d9',
+        borderRadius: 5,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "ON BEHALF OF") : /*#__PURE__*/React.createElement("span", {
       className: "text-[9.5px] px-1.5 py-0.5 font-semibold",
       style: {
         background: CD.lineSoft,
@@ -42870,28 +43037,49 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "The 24-hour rule, handled for you ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "The 24-hour rule",
-      body: "Several smaller deals from the same person in one day are added up. Once the running total crosses the reporting threshold, it must be reported as if it were one large transaction.",
-      lines: [{
+      body: largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.',
+      lines: largePolicy(regime) ? [{
+        k: 'By conductor',
+        v: 'totals what one person brings in'
+      }, {
+        k: 'On behalf of',
+        v: 'totals what was done for the same third party'
+      }, {
+        k: 'By beneficiary',
+        v: 'totals what one person is paid, even via different senders'
+      }] : [{
         k: 'By conductor',
         v: 'totals what one person brings in'
       }, {
         k: 'By beneficiary',
-        v: 'totals what one person is paid — even via different senders'
+        v: 'totals what one person is paid, even via different senders'
       }]
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
       }
-    }, "Someone can stay under the ", /*#__PURE__*/React.createElement("b", {
+    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across one static window of ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in \u2014 or sends to the same recipient \u2014 across each day (your day runs ", regime.aggHours, " hours starting ", /*#__PURE__*/React.createElement("b", {
+    }, winStart), ". Every amount counts, including one already at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, winStart), "). The moment the total reaches ", fmt(regime.threshold, regime.currency), ", it has to be reported \u2014 and we file it for you: an ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(regime.threshold, regime.currency)), ". Two or more that reach that line are one ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, regime.largeCode), ". We keep three separate totals: who conducted the deal, who it was on behalf of, and who it was for. Those totals are not mixed. Wires follow their own rule.") : /*#__PURE__*/React.createElement(React.Fragment, null, "Someone can stay under the ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, winStart), "). A single deal already at the line is filed on its own. The moment the smaller ones reach ", fmt(regime.threshold, regime.currency), ", they have to be reported: an ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -42899,7 +43087,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, regime.wireCode), " for wires. We watch both sides \u2014 who paid in ", /*#__PURE__*/React.createElement("i", null, "and"), " who's being paid \u2014 so even three different people quietly funding the same person gets caught.")), /*#__PURE__*/React.createElement("div", {
+    }, regime.wireCode), " for wires."))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "p-3",
@@ -43850,14 +44038,63 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, "No filed records yet \u2014 they appear here, sealed, once you file.")));
   }
 
-  /* ===================== JURISDICTION (read-only — set in owner Settings) ===================== */
+  /* The words on the report row. "business_days" is shown as working
+     days, which is what PCMLTFR s.132 says. A deadline_label wins when
+     the unit cannot say it, as with "as soon as practicable". */
+  function deadlineSentence(report) {
+    const label = report && report.formatRules && report.formatRules.deadline_label;
+    if (label) return String(label);
+    const unit = report && report.deadlineUnit;
+    const value = report && report.deadlineValue;
+    if (unit === 'immediately') return 'Immediately';
+    if (unit === 'before_execution') return 'Before the deal';
+    if (unit === 'calendar_days' && value) return 'Within ' + value + ' calendar days';
+    if (unit === 'business_days' && value) return 'Within ' + value + ' working days';
+    if (unit === 'hours' && value) return 'Within ' + value + ' hours';
+    if (unit === 'monthly_day' && value) return 'By day ' + value + ' of the next month';
+    return 'Deadline not stated';
+  }
+  function moneyOf(report) {
+    if (!report || report.triggerThreshold == null) return 'No amount threshold';
+    return fmt(+report.triggerThreshold, report.triggerCurrency || report.thresholdCurrency);
+  }
+
+  /* ===================== JURISDICTION =====================
+     When the ledger has answered, the list is that pack's reports.
+     The two-country cards remain only for a build with no server. */
   function Regime({
     settings,
     me,
     onOpenSettings
   }) {
-    const active = settings && settings.regime || 'FINTRAC';
+    const [, setTick] = useState(0);
+    useEffect(() => {
+      const bump = () => setTick(n => n + 1);
+      window.addEventListener('cdos-jurisdiction', bump);
+      return () => window.removeEventListener('cdos-jurisdiction', bump);
+    }, []);
+    const regime = getRegime(settings);
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const reports = (regime.reports || []).filter(r => r && r.kind);
     const isOwner = me && me.role === 'Owner';
+    const [optError, setOptError] = useState('');
+    const [opting, setOpting] = useState(false);
+    const onV1 = pack && pack.packId === 'pack-ca-v1';
+    const optIn = async () => {
+      const B = window.CDOS.Backend;
+      if (!B || !B.optInCanadaV2) return;
+      setOpting(true);
+      setOptError('');
+      try {
+        await B.optInCanadaV2();
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+      } catch (error) {
+        setOptError(error && error.message ? error.message : 'The desk could not be moved.');
+      } finally {
+        setOpting(false);
+      }
+    };
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -43871,9 +44108,9 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "text-[11px]",
       style: {
         color: CD.mute,
-        maxWidth: 460
+        maxWidth: 520
       }
-    }, "Thresholds, the aggregation window, report types, terminology and the fileable format all follow your regulator. This is set once when the business is configured \u2014 the desk only reads it here.")), /*#__PURE__*/React.createElement("button", {
+    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The 24 hour window is a static 24 consecutive hours.")), /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenSettings && onOpenSettings(),
       className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",
       style: {
@@ -43885,10 +44122,40 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "gear",
       s: 14
-    }), " ", isOwner ? 'Change in Settings' : 'View in Settings')), /*#__PURE__*/React.createElement("div", {
+    }), " ", isOwner ? 'Change in Settings' : 'View in Settings')), reports.length > 0 ? /*#__PURE__*/React.createElement("div", {
+      className: "space-y-2"
+    }, reports.map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.code,
+      className: "p-3",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, r.code, " \xB7 ", r.name), /*#__PURE__*/React.createElement("span", {
+      className: "text-[10px] px-1.5 py-0.5",
+      style: {
+        background: CD.lineSoft,
+        color: CD.ink,
+        borderRadius: 5,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, deadlineSentence(r))), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, moneyOf(r), r.aggregateAllAmounts ? ' · every amount in the static window, including one already over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
       className: "grid sm:grid-cols-2 gap-2.5"
     }, Object.values(REGIMES).map(r => {
-      const on = active === r.id;
+      const on = (settings && settings.regime || 'FINTRAC') === r.id;
       return /*#__PURE__*/React.createElement("div", {
         key: r.id,
         className: "text-left p-3.5",
@@ -43946,7 +44213,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, r.aggHours, "h rolling"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
+      }, r.aggHours, "h static window"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
         className: "text-right",
         style: {
           color: CD.ink
@@ -43961,18 +44228,38 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, r.strCode), /*#__PURE__*/React.createElement("span", null, "Watchlists"), /*#__PURE__*/React.createElement("span", {
-        className: "text-right",
-        style: {
-          color: CD.ink
-        }
-      }, r.watchlists.join(' · ')), /*#__PURE__*/React.createElement("span", null, "Fileable"), /*#__PURE__*/React.createElement("span", {
-        className: "text-right",
-        style: {
-          color: CD.ink
-        }
-      }, r.fileFormat)));
-    })), /*#__PURE__*/React.createElement("div", {
+      }, r.strCode)));
+    })), onV1 && isOwner && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3 p-3",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Canada rules, version 2"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, "This desk is still on version 1. Version 2 splits the identification lines, names the report deadlines, and adds the virtual currency report and the listed person report. Posted deals stay on the pack they were stamped with. Only an owner can move the desk, and the move is one way."), /*#__PURE__*/React.createElement("button", {
+      onClick: optIn,
+      disabled: opting,
+      className: "mt-2 px-3 py-2 text-[12px] font-semibold text-white",
+      style: {
+        background: CD.ink,
+        borderRadius: 8
+      }
+    }, opting ? 'Moving…' : 'Use the current Canada rules'), optError && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-2",
+      style: {
+        color: CD.flag
+      }
+    }, optError)), /*#__PURE__*/React.createElement("div", {
       className: "mt-3 p-3 text-[11px] flex items-start gap-2",
       style: {
         background: CD.brassSoft,
@@ -43983,7 +44270,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 13,
       c: CD.brass
-    }), /*#__PURE__*/React.createElement("span", null, "Locked configuration. Switching regulator re-bases the entire AML engine, so it lives in ", /*#__PURE__*/React.createElement("b", null, "Settings \u25B8 Compliance & jurisdiction"), " and is owner-only.")));
+    }), /*#__PURE__*/React.createElement("span", null, "The pack is chosen when the desk is opened. An owner changes the desk's own lines in Settings, Compliance and jurisdiction.")));
   }
 
   /* ===================== ROOT ===================== */

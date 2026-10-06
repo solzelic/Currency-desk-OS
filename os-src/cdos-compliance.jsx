@@ -414,15 +414,43 @@
     return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
   }
 
-  // generic core: aggregate a list of normalized cash-in/transfer-out events
-  // ({ id, ref, date, time, t:Date, amt, customer, beneficiary }) over the static
-  // window, by conductor AND beneficiary. `kind` is the report code stamped on
-  // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
-  function aggregateEvents(events, regime, settings, kind) {
+  /* The large-cash report on this pack, when it says to add every
+     amount. Absent on pack-ca-v1 and on an EFTR, which still leave a
+     single already at the line out of the aggregate and file it alone.
+     FINTRAC's 24-hour guidance (updated 2023-10-23) is the split:
+     LCTR and LVCTR include every amount; EFTR does not, until its new
+     form exists. */
+  function largePolicy(regime) {
+    const report = (regime && regime.reports || []).find(r => r && r.kind === 'large_cash');
+    if (!report || !report.aggregateAllAmounts) return null;
+    const axes = (report.aggregationAxes && report.aggregationAxes.length)
+      ? report.aggregationAxes
+      : ['conductor', 'on_behalf_of', 'beneficiary'];
+    return { includeAll: true, axes: axes };
+  }
+  function reportByKind(regime, kind) {
+    return (regime && regime.reports || []).find(r => r && r.kind === kind) || null;
+  }
+
+  // Events: { id, ref, date, time, t:Date, amt, customer, beneficiary, onBehalfOf }.
+  // `kind` is the report code stamped on each cluster.
+  // `policy` null keeps the older rule (drop a single already at the
+  // line; conductor and beneficiary only). A policy with includeAll
+  // keeps every amount, and uses the axes the pack named.
+  function aggregateEvents(events, regime, settings, kind, policy) {
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];
+    const includeAll = !!(policy && policy.includeAll);
+    const axisFns = {
+      conductor: e => e.customer,
+      on_behalf_of: e => e.onBehalfOf,
+      beneficiary: e => e.beneficiary,
+    };
+    const axes = includeAll
+      ? (policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'])
+      : ['conductor', 'beneficiary'];
     const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
     const buckets = {};
     (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
@@ -434,29 +462,80 @@
       const dayKey = w.start.toISOString().slice(0, 10);
       const mk = (basis, keyFn) => {
         const groups = {};
-        evs.forEach(e => { if (e.amt >= TH) return; const k = keyFn(e); if (!k) return; (groups[k] = groups[k] || []).push(e); });
+        evs.forEach(e => {
+          /* Older rule: a receipt already at the line is its own report
+             and is not also added into the cluster. includeAll is the
+             opposite: 12,000 plus 1,000 is one report of 13,000. */
+          if (!includeAll && e.amt >= TH) return;
+          const k = keyFn(e); if (!k) return; (groups[k] = groups[k] || []).push(e);
+        });
         return Object.keys(groups).map(subject => {
           const txs = groups[subject].slice().sort((a, b) => a.t - b.t);
           const total = txs.reduce((s, o) => s + o.amt, 0);
+          /* One transaction, however large, stays a single report.
+             Two or more, of any amount, become one report once the
+             total reaches the line. */
           if (txs.length < 2 || total < TH) return null;
           const endRow = txs[txs.length - 1];
           const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey;
           return { id: groupId + '-' + setFingerprint(txs.map(t => t.id)), groupId, kind, basis, subject, customer: subject, txs, total, end: endRow.date + ' ' + (endRow.time || ''), endRow, windowStart: w.start.toISOString(), windowEnd: w.end.toISOString(), windowLabel };
         }).filter(Boolean);
       };
-      const conductors = mk('conductor', e => e.customer);
-      const beneficiaries = mk('beneficiary', e => e.beneficiary);
-      // identical transaction set on both axes = the same event — file once.
+      /* The same set of transactions on two axes is one report.
+         A partial overlap is two reports. Conductor is emitted first
+         so it keeps the identical set. */
       const sig = (c) => c.txs.map(t => t.id).sort().join(',');
-      const condSigs = new Set(conductors.map(sig));
-      out.push(...conductors, ...beneficiaries.filter(c => !condSigs.has(sig(c))));
+      const seen = new Set();
+      axes.forEach(axis => {
+        const keyFn = axisFns[axis];
+        if (!keyFn) return;
+        mk(axis, keyFn).forEach(cluster => {
+          const mark = sig(cluster);
+          if (seen.has(mark)) return;
+          seen.add(mark);
+          out.push(cluster);
+        });
+      });
     });
     return out.sort((a, b) => b.total - a.total);
   }
-  // LCTR — cash-in from the ledger
+  function eventFromRow(r) {
+    return {
+      id: r.id, ref: r.ref, date: r.date, time: r.time, t: dt(r),
+      amt: cashIn(r), customer: r.customer, beneficiary: r.beneficiary,
+      onBehalfOf: (r.capture && r.capture.thirdPartyName) || r.thirdPartyName || '',
+    };
+  }
+  // LCTR: cash received. The policy comes from the large-cash report.
   function aggClusters(rows, regime, settings) {
-    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(r => ({ id: r.id, ref: r.ref, date: r.date, time: r.time, t: dt(r), amt: cashIn(r), customer: r.customer, beneficiary: r.beneficiary }));
-    return aggregateEvents(events, regime, settings, regime.largeCode);
+    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
+    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+  }
+  /* Receipts already inside an include-all cluster are not also filed
+     as their own large-cash report. A lone receipt at the line is not
+     in a cluster, so it stays a single. */
+  function includeAllCoveredRefs(rows, regime, settings) {
+    if (!largePolicy(regime)) return [];
+    const refs = [];
+    aggClusters(rows, regime, settings).forEach(c => c.txs.forEach(t => refs.push(t.ref)));
+    return refs;
+  }
+  /* LVCTR. Same window as a large cash report, over rows the book
+     marked as virtual currency received. The counter does not book
+     that instrument yet, so this returns nothing until one exists. */
+  function aggClustersVc(rows, regime, settings) {
+    const report = reportByKind(regime, 'virtual_currency');
+    if (!report || !report.aggregateAllAmounts) return [];
+    const threshold = report.triggerThreshold != null ? +report.triggerThreshold : regime.threshold;
+    const events = (rows || []).filter(r => r.status !== 'void' && r.receivedInstrument === 'virtual_currency').map(r => {
+      const base = eventFromRow(r);
+      const amt = cashIn(r) > 0 ? cashIn(r) : home(r.inAmt, r.inCcy);
+      return Object.assign({}, base, { amt: amt });
+    }).filter(e => e.amt > 0);
+    return aggregateEvents(events, Object.assign({}, regime, { threshold: threshold }), settings, report.code || 'LVCTR', {
+      includeAll: true,
+      axes: (report.aggregationAxes && report.aggregationAxes.length) ? report.aggregationAxes : ['conductor', 'on_behalf_of', 'beneficiary'],
+    });
   }
   // EFTR — international electronic transfers. Same $10k / 24h machinery, wires not cash.
   function aggClustersEFT(transfers, beneficiaries, regime, settings) {
@@ -469,7 +548,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, cashIn, dt, setFingerprint },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

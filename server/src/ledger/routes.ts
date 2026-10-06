@@ -763,6 +763,18 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* An owner moves a Canada desk from pack version 1 to version 2.
+     There is no route back. Existing desks are not moved by the
+     migration that installs version 2. */
+  app.post("/api/ledger/jurisdiction-pack/canada-v2", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.optInCanadaV2(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   /* WHICH CURRENCIES THIS DESK DEALS IN.
 
      Read by anyone who can see the ledger; changed by whoever may move a
@@ -1212,6 +1224,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     corridor,
     partner: counterparty,
     beneficiaryName: z.string().trim().min(1).max(200),
+    beneficiaryAddress: z.string().trim().max(500).optional(),
     ...capture,
   }).strict());
 
@@ -1225,6 +1238,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     feeAmount: monetary("0"),
     corridor,
     partner: counterparty,
+    beneficiaryName: z.string().trim().max(200).optional(),
+    beneficiaryAddress: z.string().trim().max(500).optional(),
     ...capture,
   }).strict());
 

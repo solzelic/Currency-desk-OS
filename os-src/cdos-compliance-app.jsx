@@ -7,7 +7,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
   const C = window.CDOS._compliance;
-  const { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, cadIn, cashIn } = C;
+  const { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const SUBKEY = 'cdos_submissions_v1';
@@ -172,9 +172,15 @@
     /* `cashIn`, not `cadIn` — the figure on a large-CASH report is the
        cash the customer put on the counter. `f.single` is raised from
        the same number, so a deal that took no cash never reaches here. */
-    rows.filter(r => r.status !== 'void').forEach(r => { const f = flags[r.id] || {}; if (f.single) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
+    const cashClusters = aggClusters(rows, regime, settings);
+    /* A receipt already inside an include-all cluster is that report.
+       Filing it again on its own would be the second copy FINTRAC says
+       not to send. A lone receipt at the line is not in a cluster. */
+    const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
+    rows.filter(r => r.status !== 'void').forEach(r => { const f = flags[r.id] || {}; if (f.single && !covered.has(r.ref)) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
     // LCTR 24h aggregates (cash)
-    aggClusters(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
+    cashClusters.forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
+    if (aggClustersVc) aggClustersVc(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-receipt ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     // single international transfers at/over threshold
     transfers.filter(t => t.status !== 'cancelled').forEach(t => { const cad = t.direction === 'send' ? t.payAmt : (t.recvAmt / xr(t.ccy)); if (regime.threshold != null && cad >= regime.threshold) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] }); });
     // EFTR 24h aggregates (wires) — same engine, different trigger
@@ -308,10 +314,12 @@
     const eftCount = clusters.filter(c => c.kind === regime.wireCode).length;
     const basisPill = (b) => b === 'beneficiary'
       ? <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: '#dbe5fb', color: '#1d4ed8', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>BY BENEFICIARY</span>
-      : <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.ink, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>BY CONDUCTOR</span>;
+      : b === 'on_behalf_of'
+        ? <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: '#f3e8ff', color: '#6d28d9', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>ON BEHALF OF</span>
+        : <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.ink, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>BY CONDUCTOR</span>;
     const kindPill = (k) => <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: k === regime.wireCode ? '#e7e0f7' : '#f1e3df', color: k === regime.wireCode ? '#6d28d9' : CD.flag, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{k}</span>;
     return (<div className="p-4">
-      <div className="mb-3"><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>The 24-hour rule, handled for you <window.CDOS.InfoTip title="The 24-hour rule" body="Several smaller deals from the same person in one day are added up. Once the running total crosses the reporting threshold, it must be reported as if it were one large transaction." lines={[{k:'By conductor',v:'totals what one person brings in'},{k:'By beneficiary',v:'totals what one person is paid — even via different senders'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Someone can stay under the <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b> reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in — or sends to the same recipient — across each day (your day runs {regime.aggHours} hours starting <b style={{ color: CD.ink }}>{winStart}</b>). The moment the total reaches {fmt(regime.threshold, regime.currency)}, it has to be reported — and we file it for you: an <b style={{ color: CD.ink }}>{regime.largeCode}</b> for cash, an <b style={{ color: CD.ink }}>{regime.wireCode}</b> for wires. We watch both sides — who paid in <i>and</i> who's being paid — so even three different people quietly funding the same person gets caught.</div></div>
+      <div className="mb-3"><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>The 24-hour rule, handled for you <window.CDOS.InfoTip title="The 24-hour rule" body={largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.'} lines={largePolicy(regime) ? [{k:'By conductor',v:'totals what one person brings in'},{k:'On behalf of',v:'totals what was done for the same third party'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}] : [{k:'By conductor',v:'totals what one person brings in'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{largePolicy(regime) ? <>Cash received is added across one static window of {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>. Every amount counts, including one already at <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b>. Two or more that reach that line are one <b style={{ color: CD.ink }}>{regime.largeCode}</b>. We keep three separate totals: who conducted the deal, who it was on behalf of, and who it was for. Those totals are not mixed. Wires follow their own rule.</> : <>Someone can stay under the <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b> reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>). A single deal already at the line is filed on its own. The moment the smaller ones reach {fmt(regime.threshold, regime.currency)}, they have to be reported: an <b style={{ color: CD.ink }}>{regime.largeCode}</b> for cash, an <b style={{ color: CD.ink }}>{regime.wireCode}</b> for wires.</>}</div></div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="p-3" style={{ background: clusters.length ? CD.amberSoft : CD.panel, border: `1px solid ${clusters.length ? CD.amber : CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Reportable events</div><div className="text-xl font-bold" style={{ color: 'var(--cd-brass-text)' }}>{clusters.length}</div></div>
         <div className="p-3" style={{ background: benCount ? '#eaf0fc' : CD.panel, border: `1px solid ${benCount ? '#1d4ed8' : CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: '#1d4ed8', fontFamily: 'Space Mono, monospace' }}>Caught by beneficiary</div><div className="text-xl font-bold" style={{ color: '#1d4ed8' }}>{benCount}</div></div>
@@ -551,34 +559,103 @@
     </div>);
   }
 
-  /* ===================== JURISDICTION (read-only — set in owner Settings) ===================== */
+  /* The words on the report row. "business_days" is shown as working
+     days, which is what PCMLTFR s.132 says. A deadline_label wins when
+     the unit cannot say it, as with "as soon as practicable". */
+  function deadlineSentence(report) {
+    const label = report && report.formatRules && report.formatRules.deadline_label;
+    if (label) return String(label);
+    const unit = report && report.deadlineUnit;
+    const value = report && report.deadlineValue;
+    if (unit === 'immediately') return 'Immediately';
+    if (unit === 'before_execution') return 'Before the deal';
+    if (unit === 'calendar_days' && value) return 'Within ' + value + ' calendar days';
+    if (unit === 'business_days' && value) return 'Within ' + value + ' working days';
+    if (unit === 'hours' && value) return 'Within ' + value + ' hours';
+    if (unit === 'monthly_day' && value) return 'By day ' + value + ' of the next month';
+    return 'Deadline not stated';
+  }
+  function moneyOf(report) {
+    if (!report || report.triggerThreshold == null) return 'No amount threshold';
+    return fmt(+report.triggerThreshold, report.triggerCurrency || report.thresholdCurrency);
+  }
+
+  /* ===================== JURISDICTION =====================
+     When the ledger has answered, the list is that pack's reports.
+     The two-country cards remain only for a build with no server. */
   function Regime({ settings, me, onOpenSettings }) {
-    const active = (settings && settings.regime) || 'FINTRAC';
+    const [, setTick] = useState(0);
+    useEffect(() => {
+      const bump = () => setTick(n => n + 1);
+      window.addEventListener('cdos-jurisdiction', bump);
+      return () => window.removeEventListener('cdos-jurisdiction', bump);
+    }, []);
+    const regime = getRegime(settings);
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const reports = (regime.reports || []).filter(r => r && r.kind);
     const isOwner = me && me.role === 'Owner';
+    const [optError, setOptError] = useState('');
+    const [opting, setOpting] = useState(false);
+    const onV1 = pack && pack.packId === 'pack-ca-v1';
+    const optIn = async () => {
+      const B = window.CDOS.Backend;
+      if (!B || !B.optInCanadaV2) return;
+      setOpting(true);
+      setOptError('');
+      try {
+        await B.optInCanadaV2();
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+      } catch (error) {
+        setOptError(error && error.message ? error.message : 'The desk could not be moved.');
+      } finally {
+        setOpting(false);
+      }
+    };
     return (<div className="p-4">
       <div className="flex items-start justify-between gap-3 mb-3">
-        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Active jurisdiction</div><div className="text-[11px]" style={{ color: CD.mute, maxWidth: 460 }}>Thresholds, the aggregation window, report types, terminology and the fileable format all follow your regulator. This is set once when the business is configured — the desk only reads it here.</div></div>
+        <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Active jurisdiction</div><div className="text-[11px]" style={{ color: CD.mute, maxWidth: 520 }}>{regime.authority || 'No pack'}{regime.country ? ' · ' + regime.country : ''}. Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The 24 hour window is a static 24 consecutive hours.</div></div>
         <button onClick={() => onOpenSettings && onOpenSettings()} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="gear" s={14} /> {isOwner ? 'Change in Settings' : 'View in Settings'}</button>
       </div>
-      <div className="grid sm:grid-cols-2 gap-2.5">
-        {Object.values(REGIMES).map(r => { const on = active === r.id; return (
-          <div key={r.id} className="text-left p-3.5" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, opacity: on ? 1 : 0.55 }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2"><span style={{ fontSize: 22 }}>{r.flag}</span><div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{r.authority}</div><div className="text-[11px]" style={{ color: CD.mute }}>{r.country}</div></div></div>
-              {on ? <span className="text-[10px] px-2 py-0.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}>ACTIVE</span> : <span className="text-[10px] px-2 py-0.5" style={{ border: `1px solid ${CD.line}`, color: CD.faint, borderRadius: 999 }}>not active</span>}
+      {reports.length > 0 ? (
+        <div className="space-y-2">
+          {reports.map(r => (
+            <div key={r.code} className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.code} · {r.name}</div>
+                <span className="text-[10px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.ink, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{deadlineSentence(r)}</span>
+              </div>
+              <div className="text-[11px] mt-1" style={{ color: CD.mute }}>{moneyOf(r)}{r.aggregateAllAmounts ? ' · every amount in the static window, including one already over the line' : ''}{r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : ''}</div>
             </div>
-            <div className="grid grid-cols-2 gap-y-1 text-[11.5px]" style={{ color: CD.mute }}>
-              <span>Threshold</span><span className="text-right" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.threshold, r.currency)}</span>
-              <span>Aggregation</span><span className="text-right" style={{ color: CD.ink }}>{r.aggHours}h rolling</span>
-              <span>Large cash</span><span className="text-right" style={{ color: CD.ink }}>{r.largeCode}</span>
-              <span>Wire</span><span className="text-right" style={{ color: CD.ink }}>{r.wireCode}</span>
-              <span>Suspicious</span><span className="text-right" style={{ color: CD.ink }}>{r.strCode}</span>
-              <span>Watchlists</span><span className="text-right" style={{ color: CD.ink }}>{r.watchlists.join(' · ')}</span>
-              <span>Fileable</span><span className="text-right" style={{ color: CD.ink }}>{r.fileFormat}</span>
-            </div>
-          </div>); })}
-      </div>
-      <div className="mt-3 p-3 text-[11px] flex items-start gap-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 9 }}><Ic n="lock" s={13} c={CD.brass} /><span>Locked configuration. Switching regulator re-bases the entire AML engine, so it lives in <b>Settings ▸ Compliance &amp; jurisdiction</b> and is owner-only.</span></div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-2.5">
+          {Object.values(REGIMES).map(r => { const on = ((settings && settings.regime) || 'FINTRAC') === r.id; return (
+            <div key={r.id} className="text-left p-3.5" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, opacity: on ? 1 : 0.55 }}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2"><span style={{ fontSize: 22 }}>{r.flag}</span><div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{r.authority}</div><div className="text-[11px]" style={{ color: CD.mute }}>{r.country}</div></div></div>
+                {on ? <span className="text-[10px] px-2 py-0.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}>ACTIVE</span> : <span className="text-[10px] px-2 py-0.5" style={{ border: `1px solid ${CD.line}`, color: CD.faint, borderRadius: 999 }}>not active</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-y-1 text-[11.5px]" style={{ color: CD.mute }}>
+                <span>Threshold</span><span className="text-right" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(r.threshold, r.currency)}</span>
+                <span>Aggregation</span><span className="text-right" style={{ color: CD.ink }}>{r.aggHours}h static window</span>
+                <span>Large cash</span><span className="text-right" style={{ color: CD.ink }}>{r.largeCode}</span>
+                <span>Wire</span><span className="text-right" style={{ color: CD.ink }}>{r.wireCode}</span>
+                <span>Suspicious</span><span className="text-right" style={{ color: CD.ink }}>{r.strCode}</span>
+              </div>
+            </div>); })}
+        </div>
+      )}
+      {onV1 && isOwner && (
+        <div className="mt-3 p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+          <div className="text-[12px] font-semibold" style={{ color: CD.ink }}>Canada rules, version 2</div>
+          <div className="text-[11px] mt-1" style={{ color: CD.mute }}>This desk is still on version 1. Version 2 splits the identification lines, names the report deadlines, and adds the virtual currency report and the listed person report. Posted deals stay on the pack they were stamped with. Only an owner can move the desk, and the move is one way.</div>
+          <button onClick={optIn} disabled={opting} className="mt-2 px-3 py-2 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}>{opting ? 'Moving…' : 'Use the current Canada rules'}</button>
+          {optError && <div className="text-[11px] mt-2" style={{ color: CD.flag }}>{optError}</div>}
+        </div>
+      )}
+      <div className="mt-3 p-3 text-[11px] flex items-start gap-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 9 }}><Ic n="lock" s={13} c={CD.brass} /><span>The pack is chosen when the desk is opened. An owner changes the desk's own lines in Settings, Compliance and jurisdiction.</span></div>
     </div>);
   }
 

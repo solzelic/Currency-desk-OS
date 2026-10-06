@@ -96,6 +96,14 @@ export type ReportRuleFields = {
   thresholdCurrency: string | null;
   /* True when the report counts cash only. Seeded rows are false. */
   cashOnly: boolean;
+  /* LCTR and LVCTR add every amount in the window, including one
+     already over the line. False, which is the default on every older
+     row, keeps the previous rule: a single at the line is filed alone
+     and left out of the aggregate. */
+  aggregateAllAmounts: boolean;
+  /* conductor, on_behalf_of, beneficiary. Null when the report does
+     not name axes. The three are not mixed into one total. */
+  aggregationAxes: ("conductor" | "on_behalf_of" | "beneficiary")[] | null;
 };
 
 const DEADLINE_UNITS = [
@@ -157,7 +165,22 @@ export function reportRuleFields(row: Record<string, unknown>): ReportRuleFields
         ? null
         : String(row.threshold_currency).trim().toUpperCase() || null,
     cashOnly: row.cash_only === true,
+    aggregateAllAmounts: row.aggregate_all_amounts === true,
+    aggregationAxes: axesOf(row.aggregation_axes),
   };
+}
+
+const AXIS = ["conductor", "on_behalf_of", "beneficiary"] as const;
+
+function axesOf(
+  value: unknown,
+): ReportRuleFields["aggregationAxes"] {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const axes = value.filter(
+    (item): item is (typeof AXIS)[number] =>
+      AXIS.includes(item as (typeof AXIS)[number]),
+  );
+  return axes.length ? axes : null;
 }
 
 export function idLineFromRow(row: Record<string, unknown>): {
@@ -683,7 +706,8 @@ export class LedgerReportingService {
                     code, name, kind, trigger_threshold, trigger_currency,
                     aggregation_hours, filing_format, fields, format_rules, version,
                     deadline_value, deadline_unit, window_kind, window_days,
-                    comparator, direction, threshold_currency, cash_only
+                    comparator, direction, threshold_currency, cash_only,
+                    aggregate_all_amounts, aggregation_axes
                FROM jurisdiction_reports
               WHERE pack_id=$1
               ORDER BY code, version DESC`,

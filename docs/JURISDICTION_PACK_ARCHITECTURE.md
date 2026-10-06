@@ -14,8 +14,11 @@ A pack can also name an identification line per kind of deal
 funds transfer, virtual currency). Null means that kind has no line.
 Zero means every deal of that kind. A line can say `gte` or `gt`, a
 due-diligence level (`identify`, `cdd`, `edd`), and whether it is
-cash-only. A country pack's posting gate still reads the single
-`id_threshold` column. The baseline gate reads the per-deal rows.
+cash-only. A country pack whose lines all equal that pack's single
+`id_threshold` still posts on the single column. `pack-ca-v2` does
+not: its lines differ, and the gate reads the line for the kind of
+deal. Money orders are their own line on that pack. The baseline
+gate reads the per-deal rows.
 Seeded packs copy a positive value of that
 column onto all four kinds, so the two agree. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,
@@ -59,7 +62,9 @@ required on every deal. The new-transfer form treats the typed amount as the des
 currency. A send adds the fee; a receive uses the payout. The
 binding line is the lower of the converted remittance line and the
 desk's own identification line. A missing or stale rate requires
-identification. A Canada desk still uses its own line.
+identification. A desk on the Canada pack version 1 still uses
+that pack's single line. A new Canada desk opens on version 2.
+See docs/CANADA_PACK.md.
 
 A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
