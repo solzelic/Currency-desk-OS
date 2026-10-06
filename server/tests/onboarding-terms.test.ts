@@ -80,7 +80,11 @@ describe("the ID on the invite link", () => {
     expect(page).toContain("This is your ID");
     expect(page).toContain("This is the reference from your invite email. It stays with your desk, so keep it handy.");
     expect(page).toContain("Please read and accept our Terms of Service to set up your desk.");
-    expect(page).toContain('type="checkbox"');
+    /* The page file stores the wizard as a JSON string, so the attribute
+       quotes are escaped. The marker and the label are the stable check
+       that the control is a checkbox, not a line of text. */
+    expect(page).toContain("data-terms-check");
+    expect(page).toContain("I accept the Terms of Service (26 July 2026)");
     expect(page).toContain("data-issued-id");
     expect(page).toContain('termsVersion: "2026-07-26"');
     expect(page).not.toContain("/api/onboarding/account");
