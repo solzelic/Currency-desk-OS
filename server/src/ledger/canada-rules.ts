@@ -205,9 +205,11 @@ async function largeCashRule(
   const row = found.rows[0];
   const trigger = positive(row?.trigger_threshold);
   if (!row || !trigger) return null;
-  const raw = Array.isArray(row.aggregation_axes) ? row.aggregation_axes : [];
+  const raw: unknown[] = Array.isArray(row.aggregation_axes)
+    ? row.aggregation_axes
+    : [];
   const axes = raw.filter((item): item is Axis =>
-    AXES.includes(item as Axis),
+    typeof item === "string" && (AXES as readonly string[]).includes(item),
   );
   return {
     trigger,
@@ -464,9 +466,12 @@ export async function countryIdentification(
 
 /**
  * Beneficiary name and address, s.36(c.1) to (f).
- * Required only on a split pack, at or above that pack's remittance
- * line. A looser desk number cannot push the line up. Under the line
- * the fields may be omitted, and they are still stored when present.
+ * Required only on a split country pack, at or above that pack's
+ * remittance line. The international baseline also has lines that
+ * differ, and it is not this rule: its own gate already ran, and a
+ * transfer there does not need a Canadian ticket. A looser desk
+ * number cannot push the line up. Under the line the fields may be
+ * omitted, and they are still stored when present.
  * Returns the refusal message, or null when the record is acceptable.
  */
 export async function beneficiaryRecordGap(
@@ -476,6 +481,7 @@ export async function beneficiaryRecordGap(
   name: string | null | undefined,
   address: string | null | undefined,
 ): Promise<string | null> {
+  if (pack.baseline) return null;
   const rows = await idRows(client, pack.packId);
   if (!isSplit(rows, positive(pack.idThreshold))) return null;
   const remittance = rows.find((row) => row.dealKind === "remittance");

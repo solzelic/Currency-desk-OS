@@ -82,7 +82,7 @@ test("an owner can move York onto the current Canada rules and see them", async 
   await expect(win.getByText("Within 5 working days").first()).toBeVisible();
   await expect(win.getByText("Immediately")).toBeVisible();
   await expect(win.getByText("as soon as practicable")).toBeVisible();
-  await expect(win.getByText("every amount in the static window, including one already over the line")).toBeVisible();
+  await expect(win.getByText("every amount in the static window, including one already over the line").first()).toBeVisible();
   await expect(win.getByText("cash received").first()).toBeVisible();
 
   const jurisdiction = await win.innerText();

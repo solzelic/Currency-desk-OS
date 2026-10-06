@@ -70,11 +70,13 @@ describe("Canada pack deadlines and the 24 hour window", () => {
       new URL("../src/db/migrations/029_pack_ca_v2.sql", import.meta.url),
       "utf8",
     );
-    expect(sql).not.toMatch(/\bUPDATE\b/i);
+    /* Comments may say the word. The statements must not. */
+    const statements = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "");
+    expect(statements).not.toMatch(/\bUPDATE\b/i);
     expect(sql).toMatch(/'pack-ca-v2'/);
-    expect(sql).not.toMatch(/UPDATE\s+legal_entities/i);
-    expect(sql).not.toMatch(/UPDATE\s+jurisdiction_packs/i);
-    expect(sql).not.toMatch(/UPDATE\s+jurisdiction_reports/i);
-    expect(sql).not.toMatch(/UPDATE\s+jurisdiction_id_thresholds/i);
+    expect(statements).not.toMatch(/UPDATE\s+legal_entities/i);
+    expect(statements).not.toMatch(/UPDATE\s+jurisdiction_packs/i);
+    expect(statements).not.toMatch(/UPDATE\s+jurisdiction_reports/i);
+    expect(statements).not.toMatch(/UPDATE\s+jurisdiction_id_thresholds/i);
   });
 });
