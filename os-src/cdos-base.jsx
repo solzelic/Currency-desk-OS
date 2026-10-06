@@ -456,6 +456,7 @@
     _rulesNotice = baseline || (_pack && _pack.available === false) ? (notice || BASELINE_NOTICE) : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
+    try { window.__cdosHome = (_pack && _pack.homeCurrency) ? String(_pack.homeCurrency).toUpperCase() : ''; } catch (e) {}
     try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies, notice: _rulesNotice } })); } catch (e) {}
     return _pack;
   };
@@ -620,6 +621,32 @@
     }
     return +(PER_CAD[outC] / PER_CAD[inC]).toFixed(4);
   }
+  /* The currency this desk keeps its book in. Before the pack arrives,
+     and on every Canada desk, that is CAD — the identity the rate
+     functions below were written for. */
+  function deskHomeCcy() {
+    try {
+      const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+      const code = pack && pack.homeCurrency;
+      if (code && /^[A-Za-z]{3}$/.test(String(code))) return String(code).toUpperCase();
+    } catch (e) {}
+    return 'CAD';
+  }
+  /* Home-currency units per 1 unit of `code`. Canada reads the CAD
+     cross, which is what every total on a Canada desk already used.
+     Any other desk reads the tape quote (/api/rates/ticker), already
+     crossed. A missing quote is 0: a CAD mid is not a stand-in. */
+  function homePerUnit(code) {
+    const home = deskHomeCcy();
+    const c = String(code || '').toUpperCase();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const quotes = tape && tape.priced && tape.home === home && tape.quotes;
+    const row = quotes && quotes.find(q => q.code === c);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 && isFinite(mid) ? mid : 0;
+  }
   function perCadLive(code) {
     if (typeof BY !== 'undefined' && BY[code]) return +BY[code].perCad.toFixed(code === 'CAD' ? 0 : 4);
     return PER_CAD[code];
@@ -736,15 +763,20 @@
      global default; rounding of the customer pay-out is configurable. */
   const DEFAULT_SPREAD = 0.015;
   function spreadOf(code, settings) {
-    if (code === 'CAD') return 0;
+    if (code === deskHomeCcy()) return 0;
     const sp = settings && settings.spreads;
     if (sp && sp[code] != null && sp[code] !== '' && !isNaN(sp[code])) return Math.max(0, +sp[code]) / 100;
     if (settings && settings.defaultSpread != null && !isNaN(settings.defaultSpread)) return Math.max(0, +settings.defaultSpread) / 100;
     return DEFAULT_SPREAD;
   }
-  const unitCadMid = (code) => code === 'CAD' ? 1 : (crossRate(code, 'CAD') || 0);
-  const buyUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 - spreadOf(code, s));   // we pay this to acquire 1 unit
-  const sellUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 + spreadOf(code, s));  // we charge this to release 1 unit
+  const unitCadMid = (code) => {
+    const home = deskHomeCcy();
+    if (code === home) return 1;
+    if (home === 'CAD') return crossRate(code, 'CAD') || 0;
+    return homePerUnit(code) || 0;
+  };
+  const buyUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 - spreadOf(code, s));   // we pay this to acquire 1 unit
+  const sellUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 + spreadOf(code, s));  // we charge this to release 1 unit
 
   // round a customer pay-out per the configured rule. mode: nearest|down|up
   // ('down' favours the desk, 'up' favours the customer); inc is the increment.
@@ -777,7 +809,7 @@
     const midCadIn = amt * unitCadMid(inCcy);
     const midCadOut = outAmt * unitCadMid(outCcy);
     const marginCad = +(midCadIn - midCadOut).toFixed(2);
-    const side = inCcy === 'CAD' ? 'sell' : outCcy === 'CAD' ? 'buy' : 'cross';
+    const side = inCcy === deskHomeCcy() ? 'sell' : outCcy === deskHomeCcy() ? 'buy' : 'cross';
     const spreadPct = midCadIn ? (marginCad / midCadIn) * 100 : 0;
     return { rate: +(+rate).toFixed(6), deskRate: +deskRate.toFixed(6), midRate: +midRate.toFixed(6), outAmt, outAmtRaw, marginCad, spreadPct, side, midCadIn };
   }
@@ -796,13 +828,15 @@
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
+    const home = deskHomeCcy();
+    const openRate = home === 'CAD' ? crossRate('CAD', 'USD') : (() => { const per = homePerUnit('USD'); return per ? +(1 / per).toFixed(6) : crossRate(home, 'USD'); })();
     return Object.assign({
       id: Date.now() + Math.floor(Math.random() * 1000),
       /* the TRADING day, not the wall clock — a record's date is what it
          has to line up with in the book afterwards */
       ref: '', date: businessDate(), time: nowTime(),
       customer: '', beneficiary: '', type: 'Currency Exchange',
-      inCcy: 'CAD', inAmt: '', rate: crossRate('CAD', 'USD'), outCcy: 'USD', outAmt: '', fee: '',
+      inCcy: home, inAmt: '', rate: openRate, outCcy: home === 'USD' ? 'EUR' : 'USD', outAmt: '', fee: '',
       midRate: null, spreadCad: null, side: null,   /* two-sided pricing: booked margin vs mid */
       quoteRef: null, lockedUntil: null,            /* rate-lock provenance, if quoted */
       teller: '', notes: '',
@@ -1206,7 +1240,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

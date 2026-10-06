@@ -545,7 +545,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                     {lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}
                   </div>
                 </Field>
-                <Field label="Fee (CAD)">
+                <Field label={`Fee (${homeCcy() || 'CAD'})`}>
                   <input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, fontVariantNumeric: 'tabular-nums' }} />
                 </Field>
               </div>
@@ -907,7 +907,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                       <input value={sameCcy ? '1' : rate} onChange={e => setRate(e.target.value)} disabled={sameCcy} inputMode="decimal" className="w-full px-2.5 py-2 text-sm text-right outline-none" style={{ ...fieldWrap('rate'), fontVariantNumeric: 'tabular-nums', opacity: sameCcy ? 0.5 : 1 }} />
                     </div>
                     <div>
-                      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Fee (CAD)</div>
+                      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Fee ({homeCcy() || 'CAD'})</div>
                       <input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full px-2.5 py-2 text-sm text-right outline-none" style={{ ...fieldWrap('fee'), fontVariantNumeric: 'tabular-nums' }} />
                     </div>
                     <div className="col-span-2">
@@ -1252,7 +1252,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
             <div className="flex items-center gap-2.5">
               <span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="bars" s={16} c="var(--cd-on-ink)" /></span>
-              <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Volume & earnings{client ? ` · ${client}` : ''}</div><div className="text-[11px]" style={{ color: CD.mute }}>{d.n} posted transactions · CAD-equivalent</div></div>
+              <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Volume & earnings{client ? ` · ${client}` : ''}</div><div className="text-[11px]" style={{ color: CD.mute }}>{d.n} posted transactions · {homeCcy() || 'CAD'}-equivalent</div></div>
             </div>
             <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>

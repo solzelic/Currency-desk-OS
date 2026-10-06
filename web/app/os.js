@@ -560,6 +560,9 @@
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try {
+      window.__cdosHome = _pack && _pack.homeCurrency ? String(_pack.homeCurrency).toUpperCase() : '';
+    } catch (e) {}
+    try {
       window.dispatchEvent(new CustomEvent('cdos-jurisdiction', {
         detail: {
           pack: _pack,
@@ -812,6 +815,32 @@
     }
     return +(PER_CAD[outC] / PER_CAD[inC]).toFixed(4);
   }
+  /* The currency this desk keeps its book in. Before the pack arrives,
+     and on every Canada desk, that is CAD — the identity the rate
+     functions below were written for. */
+  function deskHomeCcy() {
+    try {
+      const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+      const code = pack && pack.homeCurrency;
+      if (code && /^[A-Za-z]{3}$/.test(String(code))) return String(code).toUpperCase();
+    } catch (e) {}
+    return 'CAD';
+  }
+  /* Home-currency units per 1 unit of `code`. Canada reads the CAD
+     cross, which is what every total on a Canada desk already used.
+     Any other desk reads the tape quote (/api/rates/ticker), already
+     crossed. A missing quote is 0: a CAD mid is not a stand-in. */
+  function homePerUnit(code) {
+    const home = deskHomeCcy();
+    const c = String(code || '').toUpperCase();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const quotes = tape && tape.priced && tape.home === home && tape.quotes;
+    const row = quotes && quotes.find(q => q.code === c);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 && isFinite(mid) ? mid : 0;
+  }
   function perCadLive(code) {
     if (typeof BY !== 'undefined' && BY[code]) return +BY[code].perCad.toFixed(code === 'CAD' ? 0 : 4);
     return PER_CAD[code];
@@ -934,15 +963,20 @@
      global default; rounding of the customer pay-out is configurable. */
   const DEFAULT_SPREAD = 0.015;
   function spreadOf(code, settings) {
-    if (code === 'CAD') return 0;
+    if (code === deskHomeCcy()) return 0;
     const sp = settings && settings.spreads;
     if (sp && sp[code] != null && sp[code] !== '' && !isNaN(sp[code])) return Math.max(0, +sp[code]) / 100;
     if (settings && settings.defaultSpread != null && !isNaN(settings.defaultSpread)) return Math.max(0, +settings.defaultSpread) / 100;
     return DEFAULT_SPREAD;
   }
-  const unitCadMid = code => code === 'CAD' ? 1 : crossRate(code, 'CAD') || 0;
-  const buyUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 - spreadOf(code, s)); // we pay this to acquire 1 unit
-  const sellUnitCad = (code, s) => code === 'CAD' ? 1 : unitCadMid(code) * (1 + spreadOf(code, s)); // we charge this to release 1 unit
+  const unitCadMid = code => {
+    const home = deskHomeCcy();
+    if (code === home) return 1;
+    if (home === 'CAD') return crossRate(code, 'CAD') || 0;
+    return homePerUnit(code) || 0;
+  };
+  const buyUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 - spreadOf(code, s)); // we pay this to acquire 1 unit
+  const sellUnitCad = (code, s) => code === deskHomeCcy() ? 1 : unitCadMid(code) * (1 + spreadOf(code, s)); // we charge this to release 1 unit
 
   // round a customer pay-out per the configured rule. mode: nearest|down|up
   // ('down' favours the desk, 'up' favours the customer); inc is the increment.
@@ -981,7 +1015,7 @@
     const midCadIn = amt * unitCadMid(inCcy);
     const midCadOut = outAmt * unitCadMid(outCcy);
     const marginCad = +(midCadIn - midCadOut).toFixed(2);
-    const side = inCcy === 'CAD' ? 'sell' : outCcy === 'CAD' ? 'buy' : 'cross';
+    const side = inCcy === deskHomeCcy() ? 'sell' : outCcy === deskHomeCcy() ? 'buy' : 'cross';
     const spreadPct = midCadIn ? marginCad / midCadIn * 100 : 0;
     return {
       rate: +(+rate).toFixed(6),
@@ -1014,6 +1048,11 @@
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
+    const home = deskHomeCcy();
+    const openRate = home === 'CAD' ? crossRate('CAD', 'USD') : (() => {
+      const per = homePerUnit('USD');
+      return per ? +(1 / per).toFixed(6) : crossRate(home, 'USD');
+    })();
     return Object.assign({
       id: Date.now() + Math.floor(Math.random() * 1000),
       /* the TRADING day, not the wall clock — a record's date is what it
@@ -1024,10 +1063,10 @@
       customer: '',
       beneficiary: '',
       type: 'Currency Exchange',
-      inCcy: 'CAD',
+      inCcy: home,
       inAmt: '',
-      rate: crossRate('CAD', 'USD'),
-      outCcy: 'USD',
+      rate: openRate,
+      outCcy: home === 'USD' ? 'EUR' : 'USD',
       outAmt: '',
       fee: '',
       midRate: null,
@@ -1806,6 +1845,8 @@
     dataUrlBytes,
     readableSize,
     crossRate,
+    deskHomeCcy,
+    homePerUnit,
     perCadLive,
     fmt,
     num,
@@ -3717,7 +3758,8 @@
     const {
       useEffect
     } = React;
-    const FXC = typeof CUR !== 'undefined' ? CUR.filter(c => c.code !== 'CAD').map(c => c.code) : CCY.filter(c => c !== 'CAD');
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    const FXC = typeof CUR !== 'undefined' ? CUR.filter(c => c.code !== home).map(c => c.code) : CCY.filter(c => c !== home);
     let _s = {};
     try {
       _s = JSON.parse(localStorage.getItem('cdos_calc_v1')) || {};
@@ -3729,10 +3771,10 @@
     const [waiting, setWaiting] = useState(_s.waiting != null ? _s.waiting : true);
     const [amt, setAmt] = useState(_s.amt || '100');
     const [from, setFrom] = useState(_s.from || 'USD');
-    const [to, setTo] = useState(_s.to || 'CAD');
+    const [to, setTo] = useState(_s.to || home);
     const [mIn, setMIn] = useState(_s.mIn || '');
     const [mOut, setMOut] = useState(_s.mOut || '');
-    const [mCcy, setMCcy] = useState(_s.mCcy || 'CAD');
+    const [mCcy, setMCcy] = useState(_s.mCcy || home);
     const [mTgt, setMTgt] = useState(_s.mTgt || '');
     const [hist, setHist] = useState(Array.isArray(_s.hist) ? _s.hist : []);
     useEffect(() => {
@@ -3757,7 +3799,7 @@
     const r = crossRate(from, to);
     const out = (parseFloat(amt) || 0) * r;
     const flagOf = c => typeof BY !== 'undefined' && BY[c] && BY[c].flag ? BY[c].flag : '';
-    const foreign = from !== 'CAD' ? from : to !== 'CAD' ? to : 'USD';
+    const foreign = from !== home ? from : to !== home ? to : 'USD';
     const fBuy = window.CDOS.buyUnitCad ? window.CDOS.buyUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const fSell = window.CDOS.sellUnitCad ? window.CDOS.sellUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const inv = r ? 1 / r : 0;
@@ -4072,7 +4114,7 @@
         borderLeft: `1px solid ${CD.ink}`,
         background: 'var(--cd-chip)'
       }
-    }, [...FXC, 'CAD'].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [...FXC, home].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("div", {
@@ -4113,7 +4155,7 @@
         borderLeft: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)'
       }
-    }, ['CAD', ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [home, ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("div", {
@@ -4169,7 +4211,7 @@
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Our desk \xB7 ", flagOf(foreign), " ", foreign, " (CAD)"), /*#__PURE__*/React.createElement("div", {
+    }, "Our desk \xB7 ", flagOf(foreign), " ", foreign, " (", home, ")"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between text-[12.5px]"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -4222,7 +4264,7 @@
         borderRadius: 7,
         background: 'var(--cd-chip)'
       }
-    }, ['CAD', ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [home, ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("label", {
@@ -6171,7 +6213,13 @@
       }
     }, [settings.bizCountry, settings.baselineRules, deskFacts]);
     // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
-    const cadOfX = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+    const cadOfX = (a, c) => {
+      const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+      if (home === 'CAD') return c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+      if (c === home) return +a || 0;
+      const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+      return per ? (+a || 0) * per : 0;
+    };
     const expList = (() => {
       const list = rows || [];
       const today = new Date().toISOString().slice(0, 10);
@@ -6187,7 +6235,8 @@
         return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
       };
       const full = expOpts.cols === 'all';
-      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', 'CAD value', 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', 'CAD value'];
+      const valueHead = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD') + ' value';
+      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', valueHead, 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', valueHead];
       const lines = expList.map(x => {
         const cad = cadOfX(x.inAmt, x.inCcy).toFixed(2);
         return (full ? [x.ref, x.date, x.time, x.customer, x.type, x.inCcy, x.inAmt, x.rate, x.outCcy, x.outAmt, x.fee, cad, x.teller, x.status, x.filed ? x.filedInfo && x.filedInfo.ref || 'yes' : '', x.notes] : [x.ref, x.date, x.customer, x.type, x.inAmt + ' ' + x.inCcy, x.outAmt + ' ' + x.outCcy, x.fee, cad]).map(esc).join(',');
@@ -6290,7 +6339,7 @@
         teller: '',
         status: 'open',
         cash: {
-          CAD: 0
+          [window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD']: 0
         }
       }]
     }]);
@@ -6316,7 +6365,7 @@
           teller: '',
           status: 'open',
           cash: {
-            CAD: 0
+            [window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD']: 0
           }
         }]
       };
@@ -6335,7 +6384,11 @@
       log
     };
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
-    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
+    const quoteHome = (() => {
+      const p = window.CDOS.deskPack && window.CDOS.deskPack();
+      return p && p.homeCurrency || 'CAD';
+    })();
+    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD' && c.code !== quoteHome);
     const hidden = tickerCfg.hidden || [];
     const setT = (patch, note) => {
       setTicker(t => ({
@@ -7418,7 +7471,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Default pay-in currency",
       desc: "Used when a row doesn't name a currency."
     }, /*#__PURE__*/React.createElement("select", {
-      value: icfg.defaultInCcy || 'CAD',
+      value: icfg.defaultInCcy || quoteHome,
       onChange: e => setIc({
         defaultInCcy: e.target.value
       }, `import ccy ${e.target.value}`),
@@ -9471,6 +9524,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fund
       }) => {
         const id = 'b' + Date.now();
+        const homeKey = quoteHome || 'CAD';
         const nb = {
           id,
           name,
@@ -9481,7 +9535,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           dealsToday: 0,
           volToday: 0,
           vault: {
-            CAD: 0
+            [homeKey]: 0
           },
           tills: [{
             id: id + 't1',
@@ -9490,7 +9544,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             operator: '',
             status: 'open',
             cash: {
-              CAD: 0
+              [homeKey]: 0
             }
           }]
         };
@@ -9501,7 +9555,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             kind: 'vault',
             fromB: mainB.id,
             toB: id,
-            ccy: 'CAD',
+            ccy: homeKey,
             amt: fund,
             fromLabel: mainB.code + ' · Vault',
             toLabel: code + ' · Vault'
@@ -10252,15 +10306,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Spot \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "Spread %"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "We buy"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== 'CAD').map(c => {
+    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
       const spreads = settings.spreads || {};
-      const mid = crossRate(c, 'CAD');
+      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
       const eff = spreadOf(c, settings) * 100;
       const custom = spreads[c] != null && spreads[c] !== '';
       return /*#__PURE__*/React.createElement("tr", {
@@ -10601,11 +10655,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Price shown",
       desc: "How each rate is quoted."
     }, /*#__PURE__*/React.createElement(Seg, {
-      value: tickerCfg.metric,
+      value: quoteHome === 'CAD' ? tickerCfg.metric : 'cadPerUnit',
       onPick: v => setT({
         metric: v
       }, `metric ${v}`),
-      opts: [['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']]
+      opts: quoteHome === 'CAD' ? [['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']] : [['cadPerUnit', quoteHome + ' / unit']]
     })), /*#__PURE__*/React.createElement(Row, {
       title: "Show flags"
     }, /*#__PURE__*/React.createElement(Sw, {
@@ -15399,7 +15453,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Date"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Total (CAD)"), /*#__PURE__*/React.createElement("th", {
+    }, "Total (", homeCcy || 'CAD', ")"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
     }, "Currencies"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
@@ -15813,7 +15867,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   /* Display-only conversion, for totalling a float across currencies in
      the assign modal. It never produces a HOLDING — every quantity on
      this screen came from the ledger. */
-  const cadPer = c => c === 'CAD' ? 1 : crossRate(c, 'CAD') || 0;
+  const cadPer = c => {
+    const home = homeCcy();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    return window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
+  };
   const cadVal = (units, c) => (+units || 0) * cadPer(c);
 
   /* ---- the branch's position, from the book ----
@@ -16663,7 +16722,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Teller"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Float \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Float \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "Variance"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
@@ -18113,7 +18172,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, totalOnHand == null ? '—' : fmt(totalOnHand, position && position.homeCurrency || 'CAD'), " on hand", onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : '', lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
+    }, totalOnHand == null ? '—' : fmt(totalOnHand, position && position.homeCurrency || homeCcy()), " on hand", onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : '', lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2",
       style: {
         position: 'relative'
@@ -18574,10 +18633,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return '';
     }
   };
-  const cadOf = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) * (crossRate(c, 'CAD') || 0);
+  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+  /* Canada: CAD notes count as themselves, everything else at the CAD
+     cross — the same sum this screen has always shown. Any other desk
+     values the home pile at par and the rest from the tape quote. */
+  const cadOf = (a, c) => {
+    const home = homeCcy();
+    if (c === home) return +a || 0;
+    if (home === 'CAD') return (+a || 0) * (crossRate(c, homeCcy()) || 0);
+    const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+    return per ? (+a || 0) * per : 0;
+  };
   const SKEY = 'cdos_stations_v2',
     MKEY = 'cdos_branch_moves_v2';
   const BCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY'];
+  const bookCcys = () => {
+    const home = homeCcy();
+    return bookCcys().indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS);
+  };
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = {
     CAD: 'var(--cd-ink)',
@@ -18719,9 +18792,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }]
     }];
   }
-  const tillCad = t => BCCYS.reduce((s, c) => s + cadOf(t.cash && t.cash[c] || 0, c), 0);
+  const tillCad = t => bookCcys().reduce((s, c) => s + cadOf(t.cash && t.cash[c] || 0, c), 0);
   const vaultUnits = (b, c) => b.vault && b.vault[c] || 0;
-  const vaultCad = b => BCCYS.reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
+  const vaultCad = b => bookCcys().reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
   const tillsCad = b => (b.tills || []).reduce((s, t) => s + tillCad(t), 0);
   const branchUnits = (b, c) => vaultUnits(b, c) + (b.tills || []).reduce((s, t) => s + (t.cash && t.cash[c] || 0), 0);
   const branchCad = b => vaultCad(b) + tillsCad(b);
@@ -18830,7 +18903,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return o && o.id;
     });
     const toB = branches.find(x => x.id === toBId);
-    const [ccy, setCcy] = useState('CAD');
+    const [ccy, setCcy] = useState(homeCcy);
     const [amount, setAmount] = useState('');
     const amt = +amount || 0;
     useEffect(() => {
@@ -19178,7 +19251,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       mono: true,
       value: ccy,
       onChange: setCcy
-    }, BCCYS.map(c => /*#__PURE__*/React.createElement("option", {
+    }, bookCcys().map(c => /*#__PURE__*/React.createElement("option", {
       key: c
     }, c)))), /*#__PURE__*/React.createElement("input", {
       value: amount,
@@ -19244,7 +19317,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: amt > 0 && !short && !sameV ? CD.mute : CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), 'CAD')}` : 'Recorded to History with your name on it'), /*#__PURE__*/React.createElement("div", {
+    }, amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), homeCcy())}` : 'Recorded to History with your name on it'), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
@@ -19292,7 +19365,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return base + '-' + String(n + 1).padStart(2, '0');
     };
     const effCode = (code.trim() || autoCode()).toUpperCase();
-    const mainAvail = mainB ? (mainB.vault || {}).CAD || 0 : 0;
+    const home = homeCcy();
+    const mainAvail = mainB ? (mainB.vault || {})[home] || 0 : 0;
     const amt = +fund || 0;
     const short = amt > mainAvail;
     const valid = !!name.trim() && !short;
@@ -19414,7 +19488,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: e.id,
       value: e.id
     }, e.name, " \xB7 ", e.role)))), /*#__PURE__*/React.createElement(F, {
-      label: "Opening float \xB7 CAD",
+      label: `Opening float · ${home}`,
       hint: `main vault holds ${num(mainAvail)}`
     }, /*#__PURE__*/React.createElement("input", {
       value: fund,
@@ -19434,7 +19508,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.flag,
         borderRadius: 8
       }
-    }, "The main vault only holds ", num(mainAvail), " CAD \u2014 run more cash in first."), amt > 0 && !short && /*#__PURE__*/React.createElement("div", {
+    }, "The main vault only holds ", num(mainAvail), " ", home, " \u2014 run more cash in first."), amt > 0 && !short && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -19455,7 +19529,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         fontFamily: 'Space Mono',
         color: CD.ink
       }
-    }, num(amt), " CAD")), /*#__PURE__*/React.createElement("div", {
+    }, num(amt), " ", home)), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -19623,7 +19697,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     h = 10
   }) {
     const total = branchCad(b) || 1;
-    const segs = BCCYS.map(c => ({
+    const segs = bookCcys().map(c => ({
       c,
       v: cadOf(branchUnits(b, c), c)
     })).filter(s => s.v > 0).sort((a, z) => z.v - a.v);
@@ -20129,7 +20203,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           operator: '',
           status: 'open',
           cash: {
-            CAD: 0
+            [homeCcy()]: 0
           }
         }]
       };
@@ -20205,7 +20279,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.mute
       }
-    }, openN, " of ", branches.length, " branches open \xB7 ", tillsOpen, " tills live \xB7 ", fmt(netCash, 'CAD'), " network cash"))), /*#__PURE__*/React.createElement("div", {
+    }, openN, " of ", branches.length, " branches open \xB7 ", tillsOpen, " tills live \xB7 ", fmt(netCash, homeCcy()), " network cash"))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, canRail && /*#__PURE__*/React.createElement("button", {
       onClick: () => setMoving({}),
@@ -20254,7 +20328,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "flex-1 overflow-auto p-4"
     }, tab === 'network' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-5 gap-2 mb-3"
-    }, [['Network cash · CAD', fmt(netCash, 'CAD')], ['In vaults', fmt(netVault, 'CAD')], ['In tills', fmt(netTills, 'CAD')], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, 'CAD')]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
+    }, [['Network cash · ' + homeCcy(), fmt(netCash, homeCcy())], ['In vaults', fmt(netVault, homeCcy())], ['In tills', fmt(netTills, homeCcy())], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, homeCcy())]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       className: "p-3",
       style: {
@@ -20297,7 +20371,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "units held \xB7 CAD value")), /*#__PURE__*/React.createElement("table", {
+    }, "units held \xB7 ", homeCcy(), " value")), /*#__PURE__*/React.createElement("table", {
       className: "w-full text-sm border-collapse"
     }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
       style: {
@@ -20320,9 +20394,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "Network"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "CAD value"), /*#__PURE__*/React.createElement("th", {
+    }, homeCcy(), " value"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Mix"))), /*#__PURE__*/React.createElement("tbody", null, BCCYS.map(c => {
+    }, "Mix"))), /*#__PURE__*/React.createElement("tbody", null, bookCcys().map(c => {
       const netUnits = branches.reduce((s, b) => s + branchUnits(b, c), 0);
       const cad = cadOf(netUnits, c);
       const mix = netCash ? cad / netCash * 100 : 0;
@@ -20364,7 +20438,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontVariantNumeric: 'tabular-nums',
           color: CD.mute
         }
-      }, fmt(cad, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, fmt(cad, homeCcy())), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex items-center justify-end gap-2"
@@ -20403,7 +20477,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.ink
       }
-    }, "Total \xB7 CAD"), branches.map(b => /*#__PURE__*/React.createElement("td", {
+    }, "Total \xB7 ", homeCcy()), branches.map(b => /*#__PURE__*/React.createElement("td", {
       key: b.id,
       className: "px-2 py-2 text-right font-semibold",
       style: {
@@ -20420,7 +20494,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.ink
       },
       colSpan: 2
-    }, fmt(netCash, 'CAD')), /*#__PURE__*/React.createElement("td", null))))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(netCash, homeCcy())), /*#__PURE__*/React.createElement("td", null))))), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] font-semibold mb-2",
       style: {
         color: CD.ink
@@ -20430,7 +20504,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, branches.map(b => {
       const cash = branchCad(b);
       const closed = b.status === 'closed';
-      const fx = BCCYS.filter(c => c !== 'CAD').reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0);
+      const fx = bookCcys().filter(c => c !== homeCcy()).reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0);
       return /*#__PURE__*/React.createElement("div", {
         key: b.id,
         className: "p-3.5",
@@ -20466,7 +20540,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           color: CD.mute
         }
-      }, "vault ", fmt(vaultCad(b), 'CAD'), " \xB7 tills ", fmt(tillsCad(b), 'CAD'), " \xB7 ", cash ? Math.round(fx / cash * 100) : 0, "% in FX")), /*#__PURE__*/React.createElement("button", {
+      }, "vault ", fmt(vaultCad(b), homeCcy()), " \xB7 tills ", fmt(tillsCad(b), homeCcy()), " \xB7 ", cash ? Math.round(fx / cash * 100) : 0, "% in FX")), /*#__PURE__*/React.createElement("button", {
         onClick: () => toggleBranch(b.id),
         className: "text-[10px] px-2 py-0.5 font-semibold",
         style: {
@@ -20478,7 +20552,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         b: b
       }), /*#__PURE__*/React.createElement("div", {
         className: "mt-2.5 flex flex-wrap gap-1.5"
-      }, BCCYS.filter(c => branchUnits(b, c) > 0).map(c => /*#__PURE__*/React.createElement("span", {
+      }, bookCcys().filter(c => branchUnits(b, c) > 0).map(c => /*#__PURE__*/React.createElement("span", {
         key: c,
         className: "flex items-center gap-1 text-[10.5px]",
         style: {
@@ -20545,7 +20619,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           color: CD.mute
         }
-      }, b.city, " \xB7 ", fmt(branchCad(b), 'CAD')))), /*#__PURE__*/React.createElement("div", {
+      }, b.city, " \xB7 ", fmt(branchCad(b), homeCcy())))), /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2"
       }, /*#__PURE__*/React.createElement("button", {
         onClick: () => addTill(b.id),
@@ -20588,7 +20662,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const runOut = sumIf(m => m.kind === 'vault' && m.from === vLabel);
         const net = returned + runIn - issued - runOut;
         const recent = vMoves.slice(0, 5);
-        const held = BCCYS.filter(c => vaultUnits(b, c) > 0);
+        const held = bookCcys().filter(c => vaultUnits(b, c) > 0);
         return /*#__PURE__*/React.createElement("div", {
           style: {
             borderBottom: `1px solid ${CD.lineSoft}`,
@@ -20633,7 +20707,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           style: {
             color: CD.mute
           }
-        }, today.length ? `today · issued ${fmt(issued, 'CAD')} · back ${fmt(returned + runIn, 'CAD')} · net ${net >= 0 ? '+' : ''}${fmt(net, 'CAD')}` : b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)), /*#__PURE__*/React.createElement("div", {
+        }, today.length ? `today · issued ${fmt(issued, homeCcy())} · back ${fmt(returned + runIn, homeCcy())} · net ${net >= 0 ? '+' : ''}${fmt(net, homeCcy())}` : b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)), /*#__PURE__*/React.createElement("div", {
           className: "text-right flex-none",
           style: {
             width: 110
@@ -20644,14 +20718,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             color: CD.faint,
             fontFamily: 'Space Mono, monospace'
           }
-        }, "Vault \xB7 CAD"), /*#__PURE__*/React.createElement("div", {
+        }, "Vault \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("div", {
           className: "text-[13.5px] font-bold",
           style: {
             color: CD.ink,
             fontFamily: 'Space Mono',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(vaultCad(b), 'CAD'))), /*#__PURE__*/React.createElement("div", {
+        }, fmt(vaultCad(b), homeCcy()))), /*#__PURE__*/React.createElement("div", {
           className: "flex items-center gap-1.5 flex-none",
           onClick: e => e.stopPropagation()
         }, canRail && /*#__PURE__*/React.createElement("button", {
@@ -20740,7 +20814,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               color: CD.faint,
               width: 90
             }
-          }, fmt(cadOf(u, c), 'CAD')));
+          }, fmt(cadOf(u, c), homeCcy())));
         }) : /*#__PURE__*/React.createElement("div", {
           className: "px-3 py-4 text-center text-[11px]",
           style: {
@@ -20902,14 +20976,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             color: CD.faint,
             fontFamily: 'Space Mono, monospace'
           }
-        }, "Drawer \xB7 CAD"), /*#__PURE__*/React.createElement("div", {
+        }, "Drawer \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("div", {
           className: "text-[13.5px] font-bold",
           style: {
             color: CD.ink,
             fontFamily: 'Space Mono',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(tillCad(t), 'CAD'))), /*#__PURE__*/React.createElement("div", {
+        }, fmt(tillCad(t), homeCcy()))), /*#__PURE__*/React.createElement("div", {
           className: "flex items-center gap-1.5 flex-none"
         }, tillCad(t) === 0 && !isActive && !t.operator && (b.tills || []).length > 1 ? /*#__PURE__*/React.createElement("button", {
           onClick: () => setConfirmDel({
@@ -20994,7 +21068,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           maxWidth: 720
         }
-      }, [['Ordered in · today', fmt(ordered, 'CAD'), CD.green], ['Issued to tills · today', fmt(issued, 'CAD'), CD.mute], ['Back to vaults · today', fmt(returned, 'CAD'), CD.green], ['Between branches · today', fmt(runs, 'CAD'), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
+      }, [['Ordered in · today', fmt(ordered, homeCcy()), CD.green], ['Issued to tills · today', fmt(issued, homeCcy()), CD.mute], ['Back to vaults · today', fmt(returned, homeCcy()), CD.green], ['Between branches · today', fmt(runs, homeCcy()), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
         key: l,
         className: "px-3 py-2",
         style: {
@@ -21063,7 +21137,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         className: "px-3 py-2 text-right"
       }, "Amount"), /*#__PURE__*/React.createElement("th", {
         className: "px-3 py-2 text-right"
-      }, "CAD"), /*#__PURE__*/React.createElement("th", {
+      }, homeCcy()), /*#__PURE__*/React.createElement("th", {
         className: "px-3 py-2"
       }, "By"))), /*#__PURE__*/React.createElement("tbody", null, scoped.map(m => {
         const KB = {
@@ -21151,7 +21225,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             fontVariantNumeric: 'tabular-nums',
             color: CD.mute
           }
-        }, fmt(m.cadVal, 'CAD')), /*#__PURE__*/React.createElement("td", {
+        }, fmt(m.cadVal, homeCcy())), /*#__PURE__*/React.createElement("td", {
           className: "px-3 py-2 text-[11.5px]",
           style: {
             color: CD.mute
@@ -21253,7 +21327,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(0, 'CAD'), " \u2014 empty \u2713")), /*#__PURE__*/React.createElement("p", {
+      }, fmt(0, homeCcy()), " \u2014 empty \u2713")), /*#__PURE__*/React.createElement("p", {
         className: "text-[12px] m-0",
         style: {
           color: CD.mute,
@@ -27304,7 +27378,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       s: 11,
       c: CD.amber
     }), lockClock))), /*#__PURE__*/React.createElement(Field, {
-      label: "Fee (CAD)"
+      label: `Fee (${homeCcy() || 'CAD'})`
     }, /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
@@ -28360,7 +28434,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }, "Fee (", homeCcy() || 'CAD', ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -29488,7 +29562,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, d.n, " posted transactions \xB7 CAD-equivalent"))), /*#__PURE__*/React.createElement("button", {
+    }, d.n, " posted transactions \xB7 ", homeCcy() || 'CAD', "-equivalent"))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "p-1.5",
       style: {
@@ -31406,6 +31480,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     sellUnitCad,
     CommitBtn
   } = window.CDOS;
+  const deskHome = () => {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    return pack && pack.homeCurrency || 'CAD';
+  };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2',
@@ -32214,17 +32292,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   }) {
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
-      const cadOf = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+      const home = deskHome();
+      const asHome = (a, c) => c === home ? +a || 0 : home === 'CAD' ? (+a || 0) / (crossRate('CAD', c) || 1) : 0;
       const winDays = settings && settings.structuringDays || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
       let total = 0,
         windowCad = 0;
       const cc = {};
       h.forEach(r => {
-        const cad = cadOf(r.inAmt, r.inCcy);
+        const cad = asHome(r.inAmt, r.inCcy);
         total += cad;
         if (r.date >= cutoff) windowCad += cad;
-        const c = r.outCcy && r.outCcy !== 'CAD' ? r.outCcy : r.inCcy !== 'CAD' ? r.inCcy : null;
+        const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) cc[c] = (cc[c] || 0) + 1;
       });
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
@@ -32349,14 +32428,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
-      value: fmt(s.windowCad, 'CAD'),
+      value: fmt(s.windowCad, deskHome()),
       sub: over ? 'over the line' : near ? 'nearing line' : 'within range',
       tone: over ? CD.flag : near ? CD.amber : CD.ink,
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
       value: s.top || '—',
-      sub: s.count > 0 ? `${fmt(s.total, 'CAD')} lifetime` : 'new',
+      sub: s.count > 0 ? `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
       divider: true
     })));
@@ -32590,6 +32669,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     serverBacked,
     onServerPosted
   }) {
+    const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients));
@@ -32624,7 +32704,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
 
     // exchange
-    const [inCcy, setInCcy] = useState('CAD');
+    const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false);
@@ -32706,7 +32786,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       lockedRate: lockLive && !override ? lockLive.rate : null,
       overrideRate: override && manualRate !== '' ? manualRate : null
     } : isSend ? {
-      inCcy: 'CAD',
+      inCcy: home,
       outCcy: payoutCcy,
       inAmt: amtN,
       settings,
@@ -32750,18 +32830,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ccy: payoutCcy
     } : isCheque ? {
       amt: +(amtN - chequeFee).toFixed(2),
-      ccy: 'CAD'
+      ccy: home
     } : isReceive ? {
       amt: amtN,
       ccy: outCcy
     } : {
       amt: amtN,
-      ccy: 'CAD'
+      ccy: home
     }; // MO / Bill: face value out
 
     // CAD-equivalent of the cash the customer hands over (threshold basis)
-    const collectCad = isExchange ? inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are in CAD or treated as CAD-equiv
-    const inCadEquiv = isExchange ? inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1) : amtN;
+    const toHome = (amount, ccy) => ccy === home ? +amount || 0 : home === 'CAD' ? (+amount || 0) / (crossRate('CAD', ccy) || 1) : 0;
+    const collectCad = isExchange ? toHome(amtN, inCcy) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are already in the desk's currency
+    const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
     // margin (exchange + send carry FX spread; others are fee-only)
     const spreadCadLive = isExchange || isSend ? pricing.marginCad || 0 : 0;
@@ -32799,7 +32880,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
-      return live.filter(o => o.customer === customer).reduce((s, o) => s + (o.inCcy === 'CAD' ? +o.inAmt || 0 : (+o.inAmt || 0) / (crossRate('CAD', o.inCcy) || 1)), 0) + inCadEquiv;
+      return live.filter(o => o.customer === customer).reduce((s, o) => s + toHome(o.inAmt, o.inCcy), 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
     const structuring = TH != null && !single && customer && recentTotal >= TH;
 
@@ -32871,7 +32952,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: !!customer && idOk,
       warn: !!customer && !idOk,
       label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -32974,7 +33055,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         return;
       }
       const held = (r.status === 'held' || r.status === 'verified') && r.rate > 0 && r.total > 0;
-      setInCcy('CAD');
+      setInCcy(home);
       setOutCcy(r.ccy);
       if (held) {
         setInAmt(String(r.total));
@@ -33052,7 +33133,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           to: outCcy,
           inputAmount: window.CDOS.Backend.asMoney(amtN),
           feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === 'CAD' ? 'customer_buy_foreign' : 'customer_sell_foreign'
+          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign'
         });
         if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
@@ -33199,7 +33280,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         draweeBank: draweeBank.trim() || undefined,
         chequeType: chequeType.id,
         typeLabel: chequeType.label,
-        currency: 'CAD',
+        currency: home,
         faceAmount: window.CDOS.Backend.asMoney(amtN),
         feeAmount: window.CDOS.Backend.asMoney(chequeFee),
         holdDays: chequeType.holdDays || 0,
@@ -33310,7 +33391,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: `${benName.trim()} · ${dest.country}`,
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: rateN,
           outCcy: payoutCcy,
@@ -33338,10 +33419,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       } else if (isCheque) {
         tx = newTx({
           ...base,
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: +(amtN - chequeFee).toFixed(2),
           fee: chequeFee,
           profitCad: chequeFee,
@@ -33351,10 +33432,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: payee.trim(),
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: amtN,
           fee: feeN,
           profitCad: feeN,
@@ -33365,10 +33446,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: biller.trim(),
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: amtN,
           fee: feeN,
           profitCad: feeN,
@@ -33392,7 +33473,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx.tagInfo = {
           by: 'Auto-rule',
           at: stamp(),
-          note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, 'CAD')}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client'
+          note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, home)}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client'
         };
       }
       setRows(r => [tx, ...r]);
@@ -33414,7 +33495,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           customer: customer || 'Walk-in (no client)',
           typeId: chequeType.id,
           typeLabel: chequeType.label,
-          ccy: 'CAD',
+          ccy: home,
           amount: amtN,
           feeCad: chequeFee,
           netCad: net,
@@ -33437,7 +33518,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           createdBy: me.name
         }, ...(listv || [])]);
       }
-      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : 'CAD'}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
+      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : home}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
       if (tq && isExchange) {
         tgRedeem(tq.ref, ref);
         log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone);
@@ -33460,11 +33541,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       title: 'Send money',
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
-      give: `${num(amtN)} CAD`,
-      rateLine: `1 CAD = ${num(rateN)} ${payoutCcy}`,
+      give: `${num(amtN)} ${home}`,
+      rateLine: `1 ${home} = ${num(rateN)} ${payoutCcy}`,
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} fee` : 'No service fee'
+      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
@@ -33474,7 +33555,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`,
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
+      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
     /* ---------------- render ---------------- */
@@ -33717,7 +33798,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "lock",
       s: 11,
       c: CD.amber
-    }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -33951,10 +34032,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays (CAD)"), /*#__PURE__*/React.createElement(Money, {
+    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays (", home, ")"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
     }), /*#__PURE__*/React.createElement("div", {
@@ -33967,7 +34048,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " 1 CAD = ", num(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " 1 ", home, " = ", num(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -33975,7 +34056,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-3 grid grid-cols-2 gap-2"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -34026,7 +34107,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onCcy: setOutCcy,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -34044,7 +34125,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
-      hint: `${chequeType.feePct}% · min ${fmt(chequeType.feeMin, 'CAD')} · ${chequeType.holdDays}d hold`
+      hint: `${chequeType.feePct}% · min ${fmt(chequeType.feeMin, home)} · ${chequeType.holdDays}d hold`
     }, "Cheque type"), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, chequeSched.map(t => {
@@ -34063,7 +34144,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Cheque amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", {
@@ -34132,7 +34213,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: 'var(--cd-brass-text)'
       }
-    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmt(out.amt, 'CAD')), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmt(chequeFee, 'CAD')), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(TODAY, chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'))), isMO && /*#__PURE__*/React.createElement("div", {
+    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmt(out.amt, home)), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmt(chequeFee, home)), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(TODAY, chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'))), isMO && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-3",
       style: {
         background: 'var(--cd-panel)',
@@ -34148,10 +34229,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Face amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -34172,11 +34253,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, fmt(amtN + feeN, 'CAD')), " for a ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(amtN + feeN, home)), " for a ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, fmt(amtN, 'CAD')), " money order.")), isBill && /*#__PURE__*/React.createElement("div", {
+    }, fmt(amtN, home)), " money order.")), isBill && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-3",
       style: {
         background: 'var(--cd-panel)',
@@ -34200,10 +34281,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -34224,7 +34305,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, fmt(amtN + feeN, 'CAD')), " \u2014 ", fmt(amtN, 'CAD'), " to biller, ", fmt(feeN, 'CAD'), " fee.")), single && /*#__PURE__*/React.createElement("div", {
+    }, fmt(amtN + feeN, home)), " \u2014 ", fmt(amtN, home), " to biller, ", fmt(feeN, home), " fee.")), single && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
@@ -34450,7 +34531,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 15,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? inCcy : isReceive ? out.ccy : 'CAD'))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? inCcy : isReceive ? out.ccy : home))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 py-1",
       style: {
         color: 'var(--cd-on-ink-faint)'
@@ -34502,7 +34583,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : 'CAD'} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, 'CAD')}` : feeN > 0 ? `fee ${fmt(feeN, 'CAD')}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -34525,7 +34606,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(profitCad, 'CAD'), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
+    }, fmt(profitCad, home), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         background: 'var(--cd-panel)',
@@ -34565,7 +34646,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "shield",
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
-    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, 'CAD')}.`))), /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
       className: "flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -36607,6 +36688,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const c = homeCcy();
     return c ? fmt(v, c) : num(v);
   };
+  /* Home per 1 unit of a payout currency. Canada still reads the CAD
+     cross. Any other desk uses the tape quote, which is already in
+     home currency — a missing quote is not filled in with a CAD figure. */
+  const homePerUnit = code => {
+    const home = homeCcy() || 'CAD';
+    if (!code || code === home) return 1;
+    if (home === 'CAD') return crossRate(code, 'CAD');
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const row = tape && tape.priced && tape.quotes && tape.quotes.find(q => q.code === code);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 ? mid : null;
+  };
+  const homeLeg = t => t.direction === 'send' ? +t.payAmt || 0 : +t.recvAmt || 0;
   const authority = () => {
     const p = deskPack();
     return p && p.regulator || null;
@@ -36700,7 +36794,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       });
       return c;
     }, [transfers]);
-    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
+    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && homeLeg(t) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -36770,7 +36864,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, list.map(t => {
       const cor = corOf(t.corridor);
       const dir = t.direction;
-      const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD');
+      const cadAmt = homeLeg(t);
       const rpt = threshold != null && cadAmt >= threshold;
       return /*#__PURE__*/React.createElement("button", {
         key: t.id,
@@ -37016,7 +37110,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const vol = useMemo(() => {
       const m = {};
       transfers.forEach(t => {
-        if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'));
+        if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + homeLeg(t);
       });
       return m;
     }, [transfers]);
@@ -37129,7 +37223,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const threshold = reportingLimit(settings).amount;
     const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({
       t,
-      cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')
+      cad: homeLeg(t)
     })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
     const print = () => {
@@ -37380,7 +37474,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // from posted records — committed payouts (transfers routed through them) drawn
   // down by float we've settled (wired) to them. If payouts > settled we owe them;
   // if settled > payouts we hold float on deposit. The corridor margin (customer
-  // CAD collected − partner CAD cost) shows whether the wholesale FX nets out.
+  // home collected − partner home cost) shows whether the wholesale FX nets out.
   function Settlement({
     transfers,
     corridors,
@@ -37426,7 +37520,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         const settled = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.amount || 0), 0);
         const settledCad = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.cadCost || 0), 0);
         const net = settled - p.payouts; // >0 float on deposit, <0 we owe
-        const margin = p.custCad - settledCad; // customer CAD in − partner CAD out (settled portion)
+        const margin = p.custCad - settledCad; // customer home in − partner home out (settled portion)
         return {
           ...p,
           settled,
@@ -37441,7 +37535,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const doSettle = (p, amount, fxRate, note) => {
       const amt = +amount || 0;
       if (!amt) return;
-      const cadCost = +(amt * (fxRate || crossRate(p.ccy, 'CAD') || 0)).toFixed(2);
+      const spot = homePerUnit(p.ccy);
+      const cadCost = +(amt * (fxRate || spot || 0)).toFixed(2);
       /* A settlement reference is minted from the TRADING DAY, not the wall
          clock. `TODAY` is a snapshot taken when the page loaded, so a desk
          left open overnight minted this morning's references under
@@ -37455,7 +37550,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         corridor: p.corridor,
         ccy: p.ccy,
         amount: amt,
-        fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6),
+        fxRate: +(+fxRate || spot || 0).toFixed(6),
         cadCost,
         date: businessDate(),
         by: me.name,
@@ -37629,11 +37724,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }) {
     const owe = p.net < 0;
     const [amount, setAmount] = useState(owe ? String(Math.round(-p.net)) : '');
-    const mid = crossRate(p.ccy, 'CAD');
-    const [fxRate, setFxRate] = useState(String(mid.toFixed(6)));
+    const home = homeCcy() || 'CAD';
+    const mid = homePerUnit(p.ccy);
+    const [fxRate, setFxRate] = useState(mid ? String(mid.toFixed(6)) : '');
     const [note, setNote] = useState('');
     const amt = +amount || 0,
-      rate = +fxRate || mid;
+      rate = +fxRate || mid || 0;
     const cadCost = +(amt * rate).toFixed(2);
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
@@ -37722,8 +37818,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono'
       }
     })), /*#__PURE__*/React.createElement(Field, {
-      label: "FX rate (CAD per unit)",
-      hint: `spot ${mid.toFixed(6)}`
+      label: `FX rate (${home} per unit)`,
+      hint: mid ? `spot ${mid.toFixed(6)}` : 'spot unavailable'
     }, /*#__PURE__*/React.createElement("input", {
       value: fxRate,
       onChange: e => setFxRate(e.target.value),
@@ -37872,9 +37968,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           set: 0
         }).set += +s.amount || 0;
       });
+      const home = homeCcy() || 'CAD';
       return Object.values(m).reduce((a, p) => {
         const net = p.set - p.pay;
-        return a + (net < 0 ? p.ccy === 'CAD' ? -net : -net / (crossRate('CAD', p.ccy) || 1) : 0);
+        if (net >= 0) return a;
+        if (p.ccy === home) return a + -net;
+        if (home === 'CAD') return a + -net / (crossRate('CAD', p.ccy) || 1);
+        const per = homePerUnit(p.ccy);
+        return per ? a + -net * per : a;
       }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
@@ -38082,6 +38183,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     newTx,
     mkRef
   } = window.CDOS;
+  const homeCcy = () => {
+    const p = window.CDOS.deskPack && window.CDOS.deskPack();
+    return p && p.homeCurrency || 'CAD';
+  };
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
@@ -38562,7 +38667,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
              offers and the only thing the server will take. A cheque in
              anything else is an exchange as well as a cheque and belongs
              on the quote path; the server refuses it by name. */
-          currency: 'CAD',
+          currency: homeCcy(),
           faceAmount: book.asMoney(amtN),
           feeAmount: book.asMoney(fee),
           holdDays: holdDays,
@@ -38586,7 +38691,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), 'CAD')} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -38666,7 +38771,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       value: n
     })))), /*#__PURE__*/React.createElement(Field, {
       label: "Cheque type",
-      hint: `${type.feePct}% · min ${fmt(type.feeMin, 'CAD')} · ${type.holdDays}d hold`
+      hint: `${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, schedule.map(t => {
@@ -38843,7 +38948,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "fee ", fmt(fee, 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, "fee ", fmt(fee, homeCcy()))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -38857,7 +38962,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(net, 'CAD'))), /*#__PURE__*/React.createElement(Ic, {
+    }, fmt(net, homeCcy()))), /*#__PURE__*/React.createElement(Ic, {
       n: "arrowright",
       s: 16,
       c: CD.faint
@@ -38917,11 +39022,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.ink
       }
-    }, fmt(net, 'CAD')), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(net, homeCcy())), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.green
       }
-    }, fmt(fee, 'CAD'))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
+    }, fmt(fee, homeCcy()))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
       onClick: save,
       disabled: !canSave || busy,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
@@ -38988,12 +39093,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       idempotencyKey: key,
       reason: 'NSF — insufficient funds',
       nsf: true
-    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
+    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
     const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
       reason: 'Fraud — suspect cheque',
       fraud: true
-    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -39076,7 +39181,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: overdue ? CD.flag : 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(c.netCad, 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(c.netCad, homeCcy()))), /*#__PURE__*/React.createElement("div", {
       className: "text-right"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -39104,7 +39209,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, "Returned \u2014 ", fmt(c.netCad, 'CAD'), " loss"), /*#__PURE__*/React.createElement("div", {
+    }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: '#8a3b30'
@@ -39137,16 +39242,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       accent: c.endorsed ? CD.green : CD.flag
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Face value",
-      v: fmt(c.amount, 'CAD'),
+      v: fmt(c.amount, homeCcy()),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee kept",
-      v: fmt(c.feeCad, 'CAD'),
+      v: fmt(c.feeCad, homeCcy()),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Cash fronted",
-      v: fmt(c.netCad, 'CAD'),
+      v: fmt(c.netCad, homeCcy()),
       mono: true
     }), c.image && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
@@ -39303,6 +39408,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     num,
     TODAY
   } = window.CDOS;
+  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
   const K = window.CDOS._cheques;
   const {
     defaultSchedule,
@@ -39406,7 +39512,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.exposure, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmt(stats.exposure, homeCcy())), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -39458,7 +39564,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: stats.lossN ? CD.flag : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.losses, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmt(stats.losses, homeCcy())), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -39548,7 +39654,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(c.amount, 'CAD')), /*#__PURE__*/React.createElement("div", {
+      }, fmt(c.amount, homeCcy())), /*#__PURE__*/React.createElement("div", {
         className: "text-[10.5px] mt-0.5",
         style: {
           color: overdue ? CD.flag : CD.mute
@@ -39697,7 +39803,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, 'CAD')));
+      }, fmt(eg, homeCcy())));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
@@ -39799,7 +39905,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, fmt(exposure, 'CAD'), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, fmt(exposure, homeCcy()), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setModal(true),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
@@ -47141,12 +47247,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     let rates = '';
     try {
       const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
-      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD').slice(0, 8);
+      const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== home).slice(0, 8);
       rates = list.map(c => {
         const r = cfg && cfg.rows && cfg.rows[c.code];
-        const mid = r && r.mid > 0 ? r.mid : 1 / c.perCadDefault;
-        return `${c.code}=${mid.toFixed(4)} CAD`;
-      }).join(', ');
+        const mid = r && r.mid > 0 ? r.mid : home === 'CAD' ? 1 / c.perCadDefault : null;
+        return mid ? `${c.code}=${Number(mid).toFixed(4)} ${home}` : null;
+      }).filter(Boolean).join(', ');
     } catch (e) {}
     const locked = (() => {
       try {
@@ -47155,7 +47262,8 @@ ${(filing.map || []).map(blockHTML).join('')}
         return false;
       }
     })();
-    return [`Records: ${live.length}. Pay-in volume: ${fmt(vol, 'CAD')}. Fees: ${fmt(fees, 'CAD')}. Est. FX margin: ${fmt(margin, 'CAD')}.`, `Top pay-in currencies: ${topCcy || 'none yet'}.`, `Open compliance items — reportable (LCTR ≥ $10k): ${alerts.rpt}, possible structuring: ${alerts.str}, KYC/ID gaps: ${alerts.id}.`, `Mid rates (CAD per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`, `Clients on file: ${Object.keys(clients || {}).length}.`].join('\n');
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    return [`Records: ${live.length}. Pay-in volume: ${fmt(vol, home)}. Fees: ${fmt(fees, home)}. Est. FX margin: ${fmt(margin, home)}.`, `Top pay-in currencies: ${topCcy || 'none yet'}.`, `Open compliance items — reportable (LCTR ≥ $10k): ${alerts.rpt}, possible structuring: ${alerts.str}, KYC/ID gaps: ${alerts.id}.`, `Mid rates (${home} per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`, `Clients on file: ${Object.keys(clients || {}).length}.`].join('\n');
   }
   const SYSTEM = snap => `You are the assistant inside CurrencyDesk OS — back-office software for a Canadian currency exchange house (a registered MSB). You help the teller/owner with their day: reading the ledger, explaining compliance (LCTR/large cash transaction reports at the CAD $10,000 threshold, 24h aggregation, structuring, KYC/ID requirements under FINTRAC), reasoning about FX margin and rates, and drafting short notes. Be concise, practical and plain-spoken — a few sentences or a tight list. Use CAD and real figures from the snapshot when relevant. You are not a lawyer; for edge cases say so briefly. Never invent transactions that aren't in the snapshot.
 
@@ -47380,9 +47488,10 @@ ${snap}`;
       };
     }, [amount, rate, years, ppy]);
     const freqLabel = (FREQ.find(f => f[0] === ppy) || ['', ''])[1].toLowerCase();
+    const loanCcy = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
     const money = v => v.toLocaleString('en-CA', {
       style: 'currency',
-      currency: 'CAD',
+      currency: loanCcy,
       maximumFractionDigits: 2
     });
     return /*#__PURE__*/React.createElement("div", {
@@ -47395,7 +47504,7 @@ ${snap}`;
       className: "ln-title"
     }, "Loan terms"), /*#__PURE__*/React.createElement(LField, {
       label: "Loan amount",
-      suffix: "CAD"
+      suffix: loanCcy
     }, /*#__PURE__*/React.createElement("input", {
       type: "number",
       value: amount,
@@ -51273,7 +51382,6 @@ ${snap}`;
     MXN: 'Mexican Peso',
     AED: 'UAE Dirham'
   };
-  const FOREIGN = (CCY || []).filter(c => c !== 'CAD');
   const PROVIDERS = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
   const card = {
     background: 'var(--cd-panel)',
@@ -51339,6 +51447,8 @@ ${snap}`;
     me,
     log
   }) {
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+    const FOREIGN = (CCY || []).filter(c => c !== home);
     const set = (k, v, note) => {
       setSettings(s => ({
         ...s,
@@ -51368,7 +51478,7 @@ ${snap}`;
     // deliberate deviation the owner owns. ----
     const ov = settings.spotOverride || {};
     const isPinned = c => ov[c] != null && ov[c] !== '';
-    const spotOf = c => c === 'CAD' ? 1 : isPinned(c) ? +ov[c] : crossRate(c, 'CAD') || 0;
+    const spotOf = c => c === home ? 1 : isPinned(c) ? +ov[c] : home === 'CAD' ? crossRate(c, 'CAD') || 0 : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
     const setSpot = (c, v) => setSettings(s => ({
       ...s,
       spotOverride: {
@@ -51467,23 +51577,26 @@ ${snap}`;
     const pinnedCount = FOREIGN.filter(c => isPinned(c)).length;
 
     // live deal simulator
-    const [sim, setSim] = useState({
-      inCcy: 'CAD',
-      outCcy: 'USD',
-      inAmt: '1000'
+    const [sim, setSim] = useState(() => {
+      const h = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+      return {
+        inCcy: h,
+        outCcy: h === 'USD' ? 'EUR' : 'USD',
+        inAmt: '1000'
+      };
     });
     const simP = useMemo(() => {
       const inC = sim.inCcy,
         outC = sim.outCcy,
         amt = parseFloat(sim.inAmt) || 0;
-      const sprdOf = c => c === 'CAD' ? 0 : spreadOf(c, settings);
-      const inUnit = inC === 'CAD' ? 1 : spotOf(inC) * (1 - sprdOf(inC));
-      const outUnit = outC === 'CAD' ? 1 : spotOf(outC) * (1 + sprdOf(outC));
+      const sprdOf = c => c === home ? 0 : spreadOf(c, settings);
+      const inUnit = inC === home ? 1 : spotOf(inC) * (1 - sprdOf(inC));
+      const outUnit = outC === home ? 1 : spotOf(outC) * (1 + sprdOf(outC));
       const rate = outUnit ? inUnit / outUnit : 0;
       const outAmt = roundPayout(amt * rate, settings);
-      const midIn = amt * (inC === 'CAD' ? 1 : spotOf(inC));
-      const midOut = outAmt * (outC === 'CAD' ? 1 : spotOf(outC));
-      const midRate = (outC === 'CAD' ? 1 : spotOf(outC)) ? (inC === 'CAD' ? 1 : spotOf(inC)) / (outC === 'CAD' ? 1 : spotOf(outC)) : 0;
+      const midIn = amt * (inC === home ? 1 : spotOf(inC));
+      const midOut = outAmt * (outC === home ? 1 : spotOf(outC));
+      const midRate = (outC === home ? 1 : spotOf(outC)) ? (inC === home ? 1 : spotOf(inC)) / (outC === home ? 1 : spotOf(outC)) : 0;
       return {
         rate: +rate.toFixed(6),
         outAmt,
@@ -51863,7 +51976,7 @@ ${snap}`;
         padding: '8px 10px',
         textAlign: 'right'
       }
-    }, "Spot \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Spot \xB7 ", home), /*#__PURE__*/React.createElement("th", {
       style: {
         padding: '8px 10px',
         textAlign: 'center'
@@ -51888,7 +52001,7 @@ ${snap}`;
       const custom = sp[c] != null && sp[c] !== '';
       const pinned = isPinned(c);
       const spot = spotOf(c);
-      const liveMid = crossRate(c, 'CAD') || 0;
+      const liveMid = (home === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0) || 0;
       const sprd = spreadOf(c, settings);
       const buy = spot * (1 - sprd),
         sell = spot * (1 + sprd);
@@ -52037,7 +52150,7 @@ ${snap}`;
           color: CD.ink,
           fontWeight: 600
         }
-      }, '$' + perUnit.toFixed(3)));
+      }, (home === 'CAD' ? '$' : '') + perUnit.toFixed(3)));
     }))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-4 text-[11px]",
       style: {
@@ -52054,7 +52167,7 @@ ${snap}`;
         borderRadius: 2,
         background: CD.flag
       }
-    }), " We buy \u2014 CAD we pay per unit acquired"), /*#__PURE__*/React.createElement("span", {
+    }), " We buy \u2014 ", home, " we pay per unit acquired"), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -52063,7 +52176,7 @@ ${snap}`;
         borderRadius: 2,
         background: CD.green
       }
-    }), " We sell \u2014 CAD we charge per unit released"), /*#__PURE__*/React.createElement("span", {
+    }), " We sell \u2014 ", home, " we charge per unit released"), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -52143,11 +52256,11 @@ ${snap}`;
         fontFamily: 'Space Mono, monospace',
         color: CD.ink
       }
-    }, "$1,234.567 ", /*#__PURE__*/React.createElement("span", {
+    }, home === 'CAD' ? '$' : '', "1,234.567 ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
-    }, "\u2192"), " ", /*#__PURE__*/React.createElement("b", null, fmt(roundEx, 'CAD')))), /*#__PURE__*/React.createElement("div", {
+    }, "\u2192"), " ", /*#__PURE__*/React.createElement("b", null, fmt(roundEx, home)))), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] mt-2",
       style: {
         color: CD.faint
@@ -52309,7 +52422,7 @@ ${snap}`;
         color: simZone,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(simP.marginCad, 'CAD'), " \xB7 ", simPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(simP.marginCad, home), " \xB7 ", simPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] mt-2",
       style: {
         color: CD.faint
@@ -52348,16 +52461,20 @@ ${snap}`;
   const ICFG_KEY = 'cdos_import_cfg_v1';
   const DEF_CFG = {
     dateFormat: 'auto',
-    defaultInCcy: 'CAD',
     defaultType: 'Currency Exchange',
     autoCreateClients: true,
     skipDuplicateRefs: true
   };
   const loadCfg = () => {
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
     try {
-      return Object.assign({}, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {});
+      return Object.assign({
+        defaultInCcy: home
+      }, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {});
     } catch (e) {
-      return Object.assign({}, DEF_CFG);
+      return Object.assign({
+        defaultInCcy: home
+      }, DEF_CFG);
     }
   };
   const saveCfgPatch = patch => {
@@ -52712,9 +52829,10 @@ ${snap}`;
     if (!customer) errors.push('customer');
     const inAmt = toNum(g('inAmt'));
     if (inAmt == null || inAmt <= 0) errors.push('amount');
-    let inCcy = (g('inCcy') || cfg.defaultInCcy || 'CAD').toUpperCase().slice(0, 3);
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    let inCcy = (g('inCcy') || cfg.defaultInCcy || home).toUpperCase().slice(0, 3);
     if (!/^[A-Z]{3}$/.test(inCcy)) {
-      inCcy = cfg.defaultInCcy || 'CAD';
+      inCcy = cfg.defaultInCcy || home;
       warns.push('pay-in ccy');
     } else if (!CCY.includes(inCcy)) warns.push('ccy ' + inCcy);
     let type = matchType(g('type'));
@@ -52724,7 +52842,7 @@ ${snap}`;
     }
     const flat = type === 'Cheque Cashing' || type === 'Money Order' || type === 'Bill Payment';
     let outCcy = (g('outCcy') || '').toUpperCase().slice(0, 3);
-    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : inCcy === 'CAD' ? 'USD' : 'CAD';
+    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : inCcy === home ? 'USD' : home;
     let rate = toNum(g('rate'));
     let outAmt = toNum(g('outAmt'));
     if (inAmt != null) {
@@ -53337,7 +53455,7 @@ ${snap}`;
           color: CD.mute,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, t.fee === '' ? '—' : fmt(t.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, t.fee === '' ? '—' : fmt(t.fee, window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD')), /*#__PURE__*/React.createElement("td", {
         className: "px-2.5 py-1.5",
         style: {
           color: CD.faint,
@@ -61955,8 +62073,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
 
   /* ====================== LIVE RATE TICKER ====================== */
-  // Reads the staff-published rate board (localStorage) so the ticker always
-  // shows the owner's current mid rates (CAD per unit), and reflows when they republish.
+  // A Canada desk reads the published board as CAD per unit. Any other
+  // home currency is quoted by /api/rates/ticker, which has already
+  // crossed the market snapshot into that currency. The home currency
+  // itself is not a row.
+  function deskHome() {
+    const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+    const code = pack && pack.homeCurrency;
+    return code ? String(code).toUpperCase() : null;
+  }
+  function curOf(code) {
+    return typeof BY !== 'undefined' && BY[code] || (typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null) || {};
+  }
   function readBoard() {
     let cfg = null;
     try {
@@ -61977,6 +62105,40 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         chg: c.chg
       };
     }).filter(x => x.show);
+  }
+  /* No fresh rate for the home currency: the published board is already
+     in that currency. Catalog fallbacks are CAD per unit, so they stay off. */
+  function boardTape(home) {
+    let cfg = null;
+    try {
+      cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+    } catch (e) {}
+    const rows = cfg && cfg.rows || {};
+    return Object.keys(rows).filter(code => code !== home && rows[code] && typeof rows[code].mid === 'number' && rows[code].mid > 0 && rows[code].show !== false).map(code => {
+      const c = curOf(code);
+      return {
+        code,
+        name: c.name || code,
+        flag: c.flag || '',
+        mid: rows[code].mid,
+        show: true,
+        chg: null
+      };
+    });
+  }
+  function quoteTape(quotes, home) {
+    return (quotes || []).filter(q => q && q.code && q.code !== home && q.mid != null).map(q => {
+      const c = curOf(q.code);
+      const chg = q.chg == null || q.chg === '' ? null : Number(q.chg);
+      return {
+        code: q.code,
+        name: c.name || q.code,
+        flag: c.flag || '',
+        mid: Number(q.mid),
+        show: true,
+        chg: Number.isFinite(chg) ? chg : null
+      };
+    });
   }
   function tkMid(v) {
     const dp = v >= 100 ? 2 : v >= 1 ? 4 : 5;
@@ -62015,10 +62177,42 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hidden: []
     };
     const hidden = c0.hidden || [];
-    const frozen = locked && book;
+    const [home, setHome] = useState(deskHome);
+    const [tape, setTape] = useState(null);
+    useEffect(() => {
+      const sync = () => setHome(deskHome());
+      window.addEventListener('cdos-jurisdiction', sync);
+      sync();
+      return () => window.removeEventListener('cdos-jurisdiction', sync);
+    }, []);
+    const foreign = !!(home && home !== 'CAD');
+    useEffect(() => {
+      if (!foreign) return undefined;
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates/ticker', {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (stop || !d) return;
+          setTape(d);
+          if (window.CDOS) window.CDOS._tickerQuotes = d;
+        }).catch(() => {});
+      };
+      pull();
+      const t = setInterval(pull, 15000);
+      return () => {
+        stop = true;
+        clearInterval(t);
+      };
+    }, [foreign, home]);
+    const frozen = locked && book && !foreign;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
+      if (foreign) {
+        setItems(tape && tape.priced ? quoteTape(tape.quotes, home) : boardTape(home));
+        return;
+      }
       if (frozen) {
         setItems(readFrozen(book));
         return;
@@ -62035,8 +62229,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, 4000);
       return () => clearInterval(t);
-    }, [frozen, frozenSig]);
-    const shown = items.filter(it => !hidden.includes(it.code));
+    }, [foreign, frozen, frozenSig, tape, home]);
+    const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return /*#__PURE__*/React.createElement("div", {
       className: "mb-ticker-wrap"
     });
@@ -62046,7 +62240,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       fast: 2.0
     };
     const dur = Math.max(20, shown.length * (SPEED[c0.speed] || 3.4));
-    const price = it => c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const price = it => !foreign && c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const showChg = foreign ? !!(tape && tape.priced && c0.showChange) : c0.showChange;
     const cell = (it, i, k) => /*#__PURE__*/React.createElement("span", {
       className: "tk-item",
       key: k + it.code + i
@@ -62056,7 +62251,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "tk-code"
     }, it.code), /*#__PURE__*/React.createElement("span", {
       className: "tk-price"
-    }, price(it)), c0.showChange && /*#__PURE__*/React.createElement("span", {
+    }, price(it)), showChg && it.chg != null && /*#__PURE__*/React.createElement("span", {
       className: 'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')
     }, it.chg >= 0 ? '▲' : '▼', Math.abs(it.chg).toFixed(2), "%"));
     return /*#__PURE__*/React.createElement("div", {
@@ -65297,7 +65492,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "bell-row-name"
     }, it.customer), /*#__PURE__*/React.createElement("span", {
       className: "bell-row-sub"
-    }, it.count, " just-under deal", it.count === 1 ? '' : 's', " \xB7 ", fmt(it.agg, 'CAD'), " over ", settings.structuringDays, "d")), /*#__PURE__*/React.createElement("button", {
+    }, it.count, " just-under deal", it.count === 1 ? '' : 's', " \xB7 ", fmt(it.agg, deskHome() || 'CAD'), " over ", settings.structuringDays, "d")), /*#__PURE__*/React.createElement("button", {
       className: "bell-act ghost lg",
       title: "Mark this watch reviewed \u2014 the menu stays open so you can clear several in a row",
       onClick: e => {

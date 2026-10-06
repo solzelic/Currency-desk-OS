@@ -20,6 +20,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { jsonMargin } from "../sites/storefront-hold.js";
+import { quoteHomeMarket } from "../rates/ticker-quotes.js";
 
 const DEMO_BRANCH = "br-yorkville";
 
@@ -54,6 +55,29 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
 }
 
 export function registerRatesRoutes(app: FastifyInstance, db: Db) {
+  /* The desk's tape, in its own currency. The public snapshot below stays
+     Canadian dollars per unit — the storefront and the rate sync read it
+     that way. This one is the signed-in desk, so the cross is applied
+     before anything is shown. */
+  app.get("/api/rates/ticker", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const entity = await db
+      .select({ homeCurrency: schema.legalEntities.homeCurrency })
+      .from(schema.legalEntities)
+      .where(eq(schema.legalEntities.id, who.legalEntityId))
+      .limit(1);
+    const home = (entity[0]?.homeCurrency || "CAD").trim().toUpperCase();
+    const rows = await db
+      .select()
+      .from(schema.marketRates)
+      .orderBy(desc(schema.marketRates.fetchedAt))
+      .limit(1);
+    const snap = rows[0];
+    const quoted = quoteHomeMarket(home, (snap?.mids as Record<string, unknown> | undefined) ?? null);
+    return { home, priced: quoted.priced, quotes: quoted.quotes };
+  });
+
   // latest raw market snapshot (mid-market is public information)
   app.get("/api/rates/market", async () => {
     const rows = await db

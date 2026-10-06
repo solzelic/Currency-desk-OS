@@ -816,12 +816,19 @@
       }
     }, [settings.bizCountry, settings.baselineRules, deskFacts]);
     // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
-    const cadOfX = (a, c) => c === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', c) || 1);
+    const cadOfX = (a, c) => {
+      const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+      if (home === 'CAD') return c === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', c) || 1);
+      if (c === home) return +a || 0;
+      const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+      return per ? (+a || 0) * per : 0;
+    };
     const expList = (() => { const list = rows || []; const today = new Date().toISOString().slice(0, 10); const ym = today.slice(0, 7), yy = today.slice(0, 4); let l = expOpts.range === 'month' ? list.filter(r => String(r.date || '').slice(0, 7) === ym) : expOpts.range === 'year' ? list.filter(r => String(r.date || '').slice(0, 4) === yy) : list.slice(); if (!expOpts.includeVoid) l = l.filter(r => r.status !== 'void'); return l; })();
     const exportLedger = () => {
       const esc = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
       const full = expOpts.cols === 'all';
-      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', 'CAD value', 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', 'CAD value'];
+      const valueHead = ((window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD') + ' value';
+      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', valueHead, 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', valueHead];
       const lines = expList.map(x => { const cad = cadOfX(x.inAmt, x.inCcy).toFixed(2); return (full
         ? [x.ref, x.date, x.time, x.customer, x.type, x.inCcy, x.inAmt, x.rate, x.outCcy, x.outAmt, x.fee, cad, x.teller, x.status, x.filed ? (x.filedInfo && x.filedInfo.ref || 'yes') : '', x.notes]
         : [x.ref, x.date, x.customer, x.type, (x.inAmt + ' ' + x.inCcy), (x.outAmt + ' ' + x.outCcy), x.fee, cad]).map(esc).join(','); });
@@ -862,10 +869,10 @@
     // ---- locations / tills / people setup (single source: branches) ----
     const setBranchF = (id, patch) => setBranches && setBranches(list => list.map(b => b.id === id ? { ...b, ...patch } : b));
     const removeBranchF = (id) => setBranches && setBranches(list => list.length > 1 ? list.filter(b => b.id !== id) : list);
-    const addBranchF = () => setBranches && setBranches(list => [...list, { id: 'b' + Date.now(), name: 'New location', code: 'LOC-' + ((list ? list.length : 0) + 1), city: '', status: 'open', dealsToday: 0, volToday: 0, tills: [{ id: 't' + Date.now(), name: 'Till 1', teller: '', status: 'open', cash: { CAD: 0 } }] }]);
+    const addBranchF = () => setBranches && setBranches(list => [...list, { id: 'b' + Date.now(), name: 'New location', code: 'LOC-' + ((list ? list.length : 0) + 1), city: '', status: 'open', dealsToday: 0, volToday: 0, tills: [{ id: 't' + Date.now(), name: 'Till 1', teller: '', status: 'open', cash: { [(window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD']: 0 } }] }]);
     const setTillF = (bId, tId, patch) => setBranches && setBranches(list => list.map(b => b.id === bId ? { ...b, tills: (b.tills || []).map(t => t.id === tId ? { ...t, ...patch } : t) } : b));
     const removeTillF = (bId, tId) => setBranches && setBranches(list => list.map(b => b.id === bId ? { ...b, tills: (b.tills || []).length > 1 ? b.tills.filter(t => t.id !== tId) : b.tills } : b));
-    const addTillF = (bId) => setBranches && setBranches(list => list.map(b => { if (b.id !== bId) return b; const n = (b.tills || []).length + 1; return { ...b, tills: [...(b.tills || []), { id: 't' + Date.now(), name: 'Till ' + n, teller: '', status: 'open', cash: { CAD: 0 } }] }; }));
+    const addTillF = (bId) => setBranches && setBranches(list => list.map(b => { if (b.id !== bId) return b; const n = (b.tills || []).length + 1; return { ...b, tills: [...(b.tills || []), { id: 't' + Date.now(), name: 'Till ' + n, teller: '', status: 'open', cash: { [(window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD']: 0 } }] }; }));
 
     /* shared controls live at module scope (stable identity → inputs keep
        focus). Value-bearing ones read this via SettingsCtx, provided below. */
@@ -875,7 +882,8 @@
     const ctxVal = { settings, set, base, setSettings, log };
 
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
-    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
+    const quoteHome = (() => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; })();
+    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD' && c.code !== quoteHome);
     const hidden = tickerCfg.hidden || [];
     const setT = (patch, note) => { setTicker(t => ({ ...t, ...patch })); if (note) log('Ticker updated', note); };
     const toggleCcy = (code) => setT({ hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code] }, code);
@@ -1169,7 +1177,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* import defaults — these drive the importer's column reading + posting */}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Import defaults</div>
           <Row title="Date format in your files" desc="How dates are written in the file you upload. Auto handles most exports."><Seg value={icfg.dateFormat || 'auto'} onPick={v => setIc({ dateFormat: v }, `import date ${v}`)} opts={[['auto', 'Auto'], ['YYYY-MM-DD', 'Y-M-D'], ['DD/MM/YYYY', 'D/M/Y'], ['MM/DD/YYYY', 'M/D/Y']]} /></Row>
-          <Row title="Default pay-in currency" desc="Used when a row doesn't name a currency."><select value={icfg.defaultInCcy || 'CAD'} onChange={e => setIc({ defaultInCcy: e.target.value }, `import ccy ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{CCY.map(c => <option key={c}>{c}</option>)}</select></Row>
+          <Row title="Default pay-in currency" desc="Used when a row doesn't name a currency."><select value={icfg.defaultInCcy || quoteHome} onChange={e => setIc({ defaultInCcy: e.target.value }, `import ccy ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{CCY.map(c => <option key={c}>{c}</option>)}</select></Row>
           <Row title="Default transaction type" desc="Used when a row's type is blank or unrecognised."><select value={icfg.defaultType || 'Currency Exchange'} onChange={e => setIc({ defaultType: e.target.value }, `import type ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}>{(window.CDOS.TYPES || []).map(t => <option key={t}>{t}</option>)}</select></Row>
           <Row title="Auto-create unknown customers" desc="New names become client records (flagged for KYC follow-up)."><Sw on={icfg.autoCreateClients !== false} click={() => setIc({ autoCreateClients: !(icfg.autoCreateClients !== false) }, 'import auto-create clients')} /></Row>
           <Row title="Skip rows whose reference already exists" desc="Avoids importing the same deal twice."><Sw on={icfg.skipDuplicateRefs !== false} click={() => setIc({ skipDuplicateRefs: !(icfg.skipDuplicateRefs !== false) }, 'import skip duplicates')} /></Row>
@@ -1631,11 +1639,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             onClose: () => setAddingLoc(false),
             onCreate: ({ name, code, city, managerId, fund }) => {
               const id = 'b' + Date.now();
-              const nb = { id, name, code, city, status: 'open', main: false, dealsToday: 0, volToday: 0, vault: { CAD: 0 }, tills: [{ id: id + 't1', name: 'Till 1', teller: '', operator: '', status: 'open', cash: { CAD: 0 } }] };
+              const homeKey = quoteHome || 'CAD';
+              const nb = { id, name, code, city, status: 'open', main: false, dealsToday: 0, volToday: 0, vault: { [homeKey]: 0 }, tills: [{ id: id + 't1', name: 'Till 1', teller: '', operator: '', status: 'open', cash: { [homeKey]: 0 } }] };
               let list = [...(branches || []), nb];
               const mainB = list.find(b => b.main);
               if (fund > 0 && mainB && setBranchMoves && window.CDOS._stations.applyMove) {
-                const r = window.CDOS._stations.applyMove(list, branchMoves || [], { kind: 'vault', fromB: mainB.id, toB: id, ccy: 'CAD', amt: fund, fromLabel: mainB.code + ' · Vault', toLabel: code + ' · Vault' }, me.name);
+                const r = window.CDOS._stations.applyMove(list, branchMoves || [], { kind: 'vault', fromB: mainB.id, toB: id, ccy: homeKey, amt: fund, fromLabel: mainB.code + ' · Vault', toLabel: code + ' · Vault' }, me.name);
                 list = r.branches; setBranchMoves(r.moves); log(r.verb, r.detail);
               }
               setBranches(list);
@@ -1802,11 +1811,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
               <table className="w-full text-sm border-collapse">
                 <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-                  <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Spot · CAD</th><th className="px-3 py-2 text-right">Spread %</th><th className="px-3 py-2 text-right">We buy</th><th className="px-3 py-2 text-right">We sell</th>
+                  <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Spot · {quoteHome}</th><th className="px-3 py-2 text-right">Spread %</th><th className="px-3 py-2 text-right">We buy</th><th className="px-3 py-2 text-right">We sell</th>
                 </tr></thead>
-                <tbody>{(CCY || []).filter(c => c !== 'CAD').map(c => {
+                <tbody>{(CCY || []).filter(c => c !== quoteHome).map(c => {
                   const spreads = settings.spreads || {};
-                  const mid = crossRate(c, 'CAD');
+                  const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : ((window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0);
                   const eff = (spreadOf(c, settings) * 100);
                   const custom = spreads[c] != null && spreads[c] !== '';
                   return (<tr key={c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -1885,7 +1894,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <SectionTitle icon="bars" title="Ticker tape" sub="The scrolling rate strip in the desk header. Rates come from the Rate Board — these control how it looks." />
           <Row title="Scroll speed"><Seg value={tickerCfg.speed} onPick={v => setT({ speed: v }, `speed ${v}`)} opts={[['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']]} /></Row>
           <Row title="Direction"><Seg value={tickerCfg.direction} onPick={v => setT({ direction: v }, `direction ${v}`)} opts={[['left', '← Left'], ['right', 'Right →']]} /></Row>
-          <Row title="Price shown" desc="How each rate is quoted."><Seg value={tickerCfg.metric} onPick={v => setT({ metric: v }, `metric ${v}`)} opts={[['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']]} /></Row>
+          <Row title="Price shown" desc="How each rate is quoted."><Seg value={quoteHome === 'CAD' ? tickerCfg.metric : 'cadPerUnit'} onPick={v => setT({ metric: v }, `metric ${v}`)} opts={quoteHome === 'CAD' ? [['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']] : [['cadPerUnit', quoteHome + ' / unit']]} /></Row>
           <Row title="Show flags"><Sw on={tickerCfg.showFlags} click={() => setT({ showFlags: !tickerCfg.showFlags })} /></Row>
           <Row title="Show % change"><Sw on={tickerCfg.showChange} click={() => setT({ showChange: !tickerCfg.showChange })} /></Row>
           <div className="pt-4">

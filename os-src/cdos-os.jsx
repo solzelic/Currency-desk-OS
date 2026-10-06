@@ -624,8 +624,18 @@
   }
 
   /* ====================== LIVE RATE TICKER ====================== */
-  // Reads the staff-published rate board (localStorage) so the ticker always
-  // shows the owner's current mid rates (CAD per unit), and reflows when they republish.
+  // A Canada desk reads the published board as CAD per unit. Any other
+  // home currency is quoted by /api/rates/ticker, which has already
+  // crossed the market snapshot into that currency. The home currency
+  // itself is not a row.
+  function deskHome() {
+    const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+    const code = pack && pack.homeCurrency;
+    return code ? String(code).toUpperCase() : null;
+  }
+  function curOf(code) {
+    return (typeof BY !== 'undefined' && BY[code]) || (typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null) || {};
+  }
   function readBoard() {
     let cfg = null;
     try { const raw = localStorage.getItem('yorkfx_rates_v1'); cfg = raw ? JSON.parse(raw) : null; } catch (e) {}
@@ -636,6 +646,24 @@
       const show = r ? r.show !== false : true;
       return { code: c.code, name: c.name, flag: c.flag, mid, show, chg: c.chg };
     }).filter(x => x.show);
+  }
+  /* No fresh rate for the home currency: the published board is already
+     in that currency. Catalog fallbacks are CAD per unit, so they stay off. */
+  function boardTape(home) {
+    let cfg = null;
+    try { cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null'); } catch (e) {}
+    const rows = (cfg && cfg.rows) || {};
+    return Object.keys(rows).filter(code => code !== home && rows[code] && typeof rows[code].mid === 'number' && rows[code].mid > 0 && rows[code].show !== false).map(code => {
+      const c = curOf(code);
+      return { code, name: c.name || code, flag: c.flag || '', mid: rows[code].mid, show: true, chg: null };
+    });
+  }
+  function quoteTape(quotes, home) {
+    return (quotes || []).filter(q => q && q.code && q.code !== home && q.mid != null).map(q => {
+      const c = curOf(q.code);
+      const chg = q.chg == null || q.chg === '' ? null : Number(q.chg);
+      return { code: q.code, name: c.name || q.code, flag: c.flag || '', mid: Number(q.mid), show: true, chg: Number.isFinite(chg) ? chg : null };
+    });
   }
   function tkMid(v) { const dp = v >= 100 ? 2 : v >= 1 ? 4 : 5; return v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
   function boardSig(items) { return items.map(i => i.code + ':' + i.mid).join('|'); }
@@ -648,27 +676,58 @@
   function Ticker({ locked, cfg, book }) {
     const c0 = cfg || { speed: 'medium', direction: 'left', metric: 'cadPerUnit', showFlags: true, showChange: true, hidden: [] };
     const hidden = c0.hidden || [];
-    const frozen = locked && book;
+    const [home, setHome] = useState(deskHome);
+    const [tape, setTape] = useState(null);
+    useEffect(() => {
+      const sync = () => setHome(deskHome());
+      window.addEventListener('cdos-jurisdiction', sync);
+      sync();
+      return () => window.removeEventListener('cdos-jurisdiction', sync);
+    }, []);
+    const foreign = !!(home && home !== 'CAD');
+    useEffect(() => {
+      if (!foreign) return undefined;
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates/ticker', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (stop || !d) return;
+            setTape(d);
+            if (window.CDOS) window.CDOS._tickerQuotes = d;
+          })
+          .catch(() => {});
+      };
+      pull();
+      const t = setInterval(pull, 15000);
+      return () => { stop = true; clearInterval(t); };
+    }, [foreign, home]);
+    const frozen = locked && book && !foreign;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
+      if (foreign) {
+        setItems((tape && tape.priced) ? quoteTape(tape.quotes, home) : boardTape(home));
+        return;
+      }
       if (frozen) { setItems(readFrozen(book)); return; }   // held at last pull — no polling
       let next0 = readBoard(); setItems(next0);
       let last = boardSig(next0);
       const t = setInterval(() => { const next = readBoard(); const s = boardSig(next); if (s !== last) { last = s; setItems(next); } }, 4000);
       return () => clearInterval(t);
-    }, [frozen, frozenSig]);
-    const shown = items.filter(it => !hidden.includes(it.code));
+    }, [foreign, frozen, frozenSig, tape, home]);
+    const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return <div className="mb-ticker-wrap" />;
     const SPEED = { slow: 5.2, medium: 3.4, fast: 2.0 };
     const dur = Math.max(20, shown.length * (SPEED[c0.speed] || 3.4));
-    const price = (it) => c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const price = (it) => (!foreign && c0.metric === 'perCad') ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const showChg = foreign ? !!(tape && tape.priced && c0.showChange) : c0.showChange;
     const cell = (it, i, k) => (
       <span className="tk-item" key={k + it.code + i}>
         {c0.showFlags && <span className="tk-flag">{it.flag}</span>}
         <span className="tk-code">{it.code}</span>
         <span className="tk-price">{price(it)}</span>
-        {c0.showChange && <span className={'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')}>{it.chg >= 0 ? '▲' : '▼'}{Math.abs(it.chg).toFixed(2)}%</span>}
+        {showChg && it.chg != null && <span className={'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')}>{it.chg >= 0 ? '▲' : '▼'}{Math.abs(it.chg).toFixed(2)}%</span>}
       </span>
     );
     return (
@@ -2233,7 +2292,7 @@
                             <div key={it.customer} className="bell-row tall" onClick={() => { setBellMenu(false); openApp('compliance'); }}>
                               <div className="bell-row-main">
                                 <span className="bell-row-name">{it.customer}</span>
-                                <span className="bell-row-sub">{it.count} just-under deal{it.count === 1 ? '' : 's'} · {fmt(it.agg, 'CAD')} over {settings.structuringDays}d</span>
+                                <span className="bell-row-sub">{it.count} just-under deal{it.count === 1 ? '' : 's'} · {fmt(it.agg, deskHome() || 'CAD')} over {settings.structuringDays}d</span>
                               </div>
                               <button className="bell-act ghost lg" title="Mark this watch reviewed — the menu stays open so you can clear several in a row" onClick={(e) => { e.stopPropagation(); ackStructuringFor(it.customer); }}>Acknowledge</button>
                             </div>

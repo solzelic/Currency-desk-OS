@@ -281,7 +281,15 @@ treats the typed amount as home currency. A send adds the fee; a
 receive uses the payout. That figure is compared with the remittance
 line and the desk's own identification line, and the lower one binds.
 A missing or stale rate requires identification. A Canada desk still
-uses its own line, in Canadian dollars.
+uses its own line, in Canadian dollars. The rate tape quotes every
+market mid in the desk's home currency (`home per unit = CAD per unit
+÷ CAD per home`) before a change is computed or a price is shown, and
+the home currency is not a row on its own tape. When that home rate
+is missing the tape shows the published board and no change. A Canada
+desk's tape stays Canadian dollars per unit. Pipeline, settlement,
+and the other desk screens label money in the home currency; a
+Canada desk still reads CAD. CurrencyDesk's own subscription prices
+stay in Canadian dollars.
 The till and Settings show
 the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,

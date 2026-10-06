@@ -18,6 +18,19 @@
      wrong one. */
   const homeCcy = () => { const p = deskPack(); return (p && p.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const fmtHome = (v) => { const c = homeCcy(); return c ? fmt(v, c) : num(v); };
+  /* Home per 1 unit of a payout currency. Canada still reads the CAD
+     cross. Any other desk uses the tape quote, which is already in
+     home currency — a missing quote is not filled in with a CAD figure. */
+  const homePerUnit = (code) => {
+    const home = homeCcy() || 'CAD';
+    if (!code || code === home) return 1;
+    if (home === 'CAD') return crossRate(code, 'CAD');
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const row = tape && tape.priced && tape.quotes && tape.quotes.find(q => q.code === code);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 ? mid : null;
+  };
+  const homeLeg = (t) => t.direction === 'send' ? (+t.payAmt || 0) : (+t.recvAmt || 0);
   const authority = () => { const p = deskPack(); return (p && p.regulator) || null; };
   /* The cross-border report this desk owes, as the pack names it. Canada's
      is the EFTR; other jurisdictions call it other things, and a pack that
@@ -46,7 +59,7 @@
       transfers.forEach(t => { if (t.status === 'hold') c.hold++; else if (t.status === 'paid') c.paid++; else if (t.status !== 'cancelled') c.active++; });
       return c;
     }, [transfers]);
-    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
+    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && homeLeg(t) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -68,7 +81,7 @@
       </div>
 
       <div className="space-y-2">
-        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'); const rpt = threshold != null && cadAmt >= threshold; return (
+        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = homeLeg(t); const rpt = threshold != null && cadAmt >= threshold; return (
           <button key={t.id} onClick={() => onOpen(t.id)} className="w-full text-left p-3 flex items-center gap-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
             <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, borderRadius: '50%', background: CD.lineSoft, fontSize: 18 }}>{cor.flag || '🌐'}</span>
             <div className="flex-1 min-w-0">
@@ -132,7 +145,7 @@
 
   /* ===================== CORRIDORS ===================== */
   function Corridors({ corridors, setCorridors, transfers, log }) {
-    const vol = useMemo(() => { const m = {}; transfers.forEach(t => { if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')); }); return m; }, [transfers]);
+    const vol = useMemo(() => { const m = {}; transfers.forEach(t => { if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + homeLeg(t); }); return m; }, [transfers]);
     const toggle = (id) => { setCorridors(list => list.map(c => c.id === id ? { ...c, active: !c.active } : c)); log && log('Corridor updated', id); };
     return (<div className="p-4">
       <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Corridors & payout partners</div><div className="text-[11px]" style={{ color: CD.mute }}>Where money lands and who pays it out. Toggle a corridor off to remove it from new transfers.</div></div>
@@ -163,7 +176,7 @@
     const benName = (id) => { const b = beneficiaries.find(x => x.id === id); return b ? b.name : '—'; };
     const corOf = (id) => corridors.find(c => c.id === id) || {};
     const threshold = reportingLimit(settings).amount;
-    const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({ t, cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD') })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
+    const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({ t, cad: homeLeg(t) })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
 
     const print = () => {
@@ -259,7 +272,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // from posted records — committed payouts (transfers routed through them) drawn
   // down by float we've settled (wired) to them. If payouts > settled we owe them;
   // if settled > payouts we hold float on deposit. The corridor margin (customer
-  // CAD collected − partner CAD cost) shows whether the wholesale FX nets out.
+  // home collected − partner home cost) shows whether the wholesale FX nets out.
   function Settlement({ transfers, corridors, settlements, setSettlements, settings, me, log }) {
     const [settling, setSettling] = useState(null);   // { partner, corridor, ccy } or null
     const corOf = (id) => corridors.find(c => c.id === id) || {};
@@ -277,7 +290,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         const settled = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.amount || 0), 0);
         const settledCad = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.cadCost || 0), 0);
         const net = settled - p.payouts;                 // >0 float on deposit, <0 we owe
-        const margin = p.custCad - settledCad;            // customer CAD in − partner CAD out (settled portion)
+        const margin = p.custCad - settledCad;            // customer home in − partner home out (settled portion)
         return { ...p, settled, settledCad, net, margin };
       }).sort((a, b) => a.net - b.net);
     }, [transfers, settlements]);
@@ -287,14 +300,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
     const doSettle = (p, amount, fxRate, note) => {
       const amt = +amount || 0; if (!amt) return;
-      const cadCost = +(amt * (fxRate || (crossRate(p.ccy, 'CAD') || 0))).toFixed(2);
+      const spot = homePerUnit(p.ccy);
+      const cadCost = +(amt * (fxRate || (spot || 0))).toFixed(2);
       /* A settlement reference is minted from the TRADING DAY, not the wall
          clock. `TODAY` is a snapshot taken when the page loaded, so a desk
          left open overnight minted this morning's references under
          yesterday's date and put them on the audit trail. */
       const bookDate = businessDate();
       const ref = 'STL-' + String(bookDate).slice(2).replace(/-/g, '') + '-' + ((settlements || []).filter(s => s.date === bookDate).length + 1).toString().padStart(2, '0');
-      const rec = { id: 's' + Date.now(), ref, partner: p.partner, corridor: p.corridor, ccy: p.ccy, amount: amt, fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6), cadCost, date: businessDate(), by: me.name, note: note || '' };
+      const rec = { id: 's' + Date.now(), ref, partner: p.partner, corridor: p.corridor, ccy: p.ccy, amount: amt, fxRate: +(+fxRate || spot || 0).toFixed(6), cadCost, date: businessDate(), by: me.name, note: note || '' };
       setSettlements(list => [rec, ...(list || [])]);
       log && log('Partner settled', `${p.partner} · ${num(amt)} ${p.ccy} · ${fmtHome(cadCost)}`);
       setSettling(null);
@@ -341,10 +355,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   function SettleModal({ p, corridor, onClose, onSettle }) {
     const owe = p.net < 0;
     const [amount, setAmount] = useState(owe ? String(Math.round(-p.net)) : '');
-    const mid = crossRate(p.ccy, 'CAD');
-    const [fxRate, setFxRate] = useState(String(mid.toFixed(6)));
+    const home = homeCcy() || 'CAD';
+    const mid = homePerUnit(p.ccy);
+    const [fxRate, setFxRate] = useState(mid ? String(mid.toFixed(6)) : '');
     const [note, setNote] = useState('');
-    const amt = +amount || 0, rate = +fxRate || mid;
+    const amt = +amount || 0, rate = +fxRate || mid || 0;
     const cadCost = +(amt * rate).toFixed(2);
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9300 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 440, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
@@ -358,7 +373,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
             <span className="text-[13px] font-bold" style={{ fontFamily: 'Space Mono', color: owe ? CD.flag : CD.green }}>{num(Math.abs(p.net))} {p.ccy}</span>
           </div>
           <Field label={`Amount to wire (${p.ccy})`}><input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
-          <Field label="FX rate (CAD per unit)" hint={`spot ${mid.toFixed(6)}`}><input value={fxRate} onChange={e => setFxRate(e.target.value)} inputMode="decimal" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
+          <Field label={`FX rate (${home} per unit)`} hint={mid ? `spot ${mid.toFixed(6)}` : 'spot unavailable'}><input value={fxRate} onChange={e => setFxRate(e.target.value)} inputMode="decimal" className={inputCls} style={{ ...inputSty, textAlign: 'right', fontFamily: 'Space Mono' }} /></Field>
           <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{homeCcy() ? homeCcy() + ' cost' : 'Local cost'} of this wire</span><span className="text-[14px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{fmtHome(cadCost)}</span></div>
           <Field label="Reference / note"><input value={note} onChange={e => setNote(e.target.value)} placeholder="Wire ref, settlement batch…" className={inputCls} style={inputSty} /></Field>
         </div>
@@ -396,7 +411,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       const m = {};
       transfers.forEach(t => { if (t.direction === 'send' && t.status !== 'cancelled' && t.status !== 'created') { const k = t.corridor + '|' + t.partner; (m[k] = m[k] || { ccy: t.ccy, pay: 0, set: 0 }).pay += +t.recvAmt || 0; } });
       (settlements || []).forEach(s => { const k = s.corridor + '|' + s.partner; (m[k] = m[k] || { ccy: s.ccy, pay: 0, set: 0 }).set += +s.amount || 0; });
-      return Object.values(m).reduce((a, p) => { const net = p.set - p.pay; return a + (net < 0 ? (p.ccy === 'CAD' ? -net : (-net) / (crossRate('CAD', p.ccy) || 1)) : 0); }, 0);
+      const home = homeCcy() || 'CAD';
+      return Object.values(m).reduce((a, p) => {
+        const net = p.set - p.pay;
+        if (net >= 0) return a;
+        if (p.ccy === home) return a + -net;
+        if (home === 'CAD') return a + (-net) / (crossRate('CAD', p.ccy) || 1);
+        const per = homePerUnit(p.ccy);
+        return per ? a + (-net) * per : a;
+      }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
 

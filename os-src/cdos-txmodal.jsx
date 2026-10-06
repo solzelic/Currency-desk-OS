@@ -14,6 +14,10 @@
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
+  const deskHome = () => {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    return (pack && pack.homeCurrency) || 'CAD';
+  };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
@@ -210,11 +214,12 @@
   function CustomerCard({ name, rec, live, settings }) {
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
-      const cadOf = (a, c) => c === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', c) || 1);
+      const home = deskHome();
+      const asHome = (a, c) => c === home ? (+a || 0) : (home === 'CAD' ? (+a || 0) / (crossRate('CAD', c) || 1) : 0);
       const winDays = (settings && settings.structuringDays) || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
       let total = 0, windowCad = 0; const cc = {};
-      h.forEach(r => { const cad = cadOf(r.inAmt, r.inCcy); total += cad; if (r.date >= cutoff) windowCad += cad; const c = (r.outCcy && r.outCcy !== 'CAD') ? r.outCcy : (r.inCcy !== 'CAD' ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
+      h.forEach(r => { const cad = asHome(r.inAmt, r.inCcy); total += cad; if (r.date >= cutoff) windowCad += cad; const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return { count: h.length, total, windowCad, winDays, days, top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null };
@@ -246,8 +251,8 @@
         </div>
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
-          <CCstat label={`Last ${s.winDays}d`} value={fmt(s.windowCad, 'CAD')} sub={over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
-          <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? `${fmt(s.total, 'CAD')} lifetime` : 'new'} tone={CD.ink} divider />
+          <CCstat label={`Last ${s.winDays}d`} value={fmt(s.windowCad, deskHome())} sub={over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
+          <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? `${fmt(s.total, deskHome())} lifetime` : 'new'} tone={CD.ink} divider />
         </div>
       </div>
     );
@@ -302,6 +307,7 @@
      MAIN
   ===================================================================== */
   function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
+    const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => { const s = new Set(Object.keys(clients)); live.forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, live]);
 
@@ -338,7 +344,7 @@
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
 
     // exchange
-    const [inCcy, setInCcy] = useState('CAD');
+    const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false);
@@ -400,7 +406,7 @@
     // pricing: exchange uses both legs; send uses CAD→payout; receive/mo/bill are face-value
     const priceArgs = isExchange
       ? { inCcy, outCcy, inAmt: amtN, settings, lockedRate: lockLive && !override ? lockLive.rate : null, overrideRate: override && manualRate !== '' ? manualRate : null }
-      : isSend ? { inCcy: 'CAD', outCcy: payoutCcy, inAmt: amtN, settings, lockedRate: null, overrideRate: null }
+      : isSend ? { inCcy: home, outCcy: payoutCcy, inAmt: amtN, settings, lockedRate: null, overrideRate: null }
       : null;
     const pricing = useMemo(() => priceArgs ? priceDeal(priceArgs) : { rate: 1, outAmt: amtN, midRate: null, marginCad: 0, side: null, midCadIn: amtN, deskRate: 1, outAmtRaw: amtN }, [JSON.stringify(priceArgs), rateVersion]);
     const rateN = pricing.rate;
@@ -419,16 +425,17 @@
     const feeN = parseFloat(fee) || 0;
     const out = isExchange ? { amt: pricing.outAmt, ccy: outCcy }
       : isSend ? { amt: pricing.outAmt, ccy: payoutCcy }
-      : isCheque ? { amt: +(amtN - chequeFee).toFixed(2), ccy: 'CAD' }
+      : isCheque ? { amt: +(amtN - chequeFee).toFixed(2), ccy: home }
       : isReceive ? { amt: amtN, ccy: outCcy }
-      : { amt: amtN, ccy: 'CAD' };   // MO / Bill: face value out
+      : { amt: amtN, ccy: home };   // MO / Bill: face value out
 
     // CAD-equivalent of the cash the customer hands over (threshold basis)
-    const collectCad = isExchange ? (inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1))
+    const toHome = (amount, ccy) => ccy === home ? (+amount || 0) : (home === 'CAD' ? (+amount || 0) / (crossRate('CAD', ccy) || 1) : 0);
+    const collectCad = isExchange ? toHome(amtN, inCcy)
       : (isMO || isBill) ? amtN + feeN
       : isCheque ? amtN
-      : amtN; // send/receive amounts are in CAD or treated as CAD-equiv
-    const inCadEquiv = isExchange ? (inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1)) : amtN;
+      : amtN; // send/receive amounts are already in the desk's currency
+    const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
     // margin (exchange + send carry FX spread; others are fee-only)
     const spreadCadLive = (isExchange || isSend) ? (pricing.marginCad || 0) : 0;
@@ -462,7 +469,7 @@
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
-      return live.filter(o => o.customer === customer).reduce((s, o) => s + (o.inCcy === 'CAD' ? (+o.inAmt || 0) : (+o.inAmt || 0) / (crossRate('CAD', o.inCcy) || 1)), 0) + inCadEquiv;
+      return live.filter(o => o.customer === customer).reduce((s, o) => s + toHome(o.inAmt, o.inCcy), 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
     const structuring = TH != null && !single && customer && recentTotal >= TH;
 
@@ -479,7 +486,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -517,7 +524,7 @@
       if (r.status === 'new' || r.status === 'order_new') { setTqErr(r.ref + ' hasn’t been quoted yet — answer it in the Texts app first.'); return; }
       if (CCY.indexOf(r.ccy) < 0) { setTqErr(r.ccy + ' isn’t on your board — price this one by hand.'); return; }
       const held = (r.status === 'held' || r.status === 'verified') && r.rate > 0 && r.total > 0;
-      setInCcy('CAD'); setOutCcy(r.ccy);
+      setInCcy(home); setOutCcy(r.ccy);
       if (held) { setInAmt(String(r.total)); setOverride(false); setManualRate(''); setLock({ rate: r.amount / r.total, until: r.holdUntil, ref: r.ref }); }
       else { const est = Math.round(r.amount * sellUnitCad(r.ccy, settings) * 100) / 100; setInAmt(String(est)); setLock(null); setOverride(false); setManualRate(''); }
       const nm = r.name || tgContactName(r.phone);
@@ -546,7 +553,7 @@
           to: outCcy,
           inputAmount: window.CDOS.Backend.asMoney(amtN),
           feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === 'CAD' ? 'customer_buy_foreign' : 'customer_sell_foreign',
+          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign',
         });
         if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
@@ -671,7 +678,7 @@
         draweeBank: draweeBank.trim() || undefined,
         chequeType: chequeType.id,
         typeLabel: chequeType.label,
-        currency: 'CAD',
+        currency: home,
         faceAmount: window.CDOS.Backend.asMoney(amtN),
         feeAmount: window.CDOS.Backend.asMoney(chequeFee),
         holdDays: chequeType.holdDays || 0,
@@ -730,15 +737,15 @@
       if (isExchange) {
         tx = newTx({ ...base, inCcy, inAmt: amtN, rate: rateN, outCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, priced: override ? 'override' : (lockLive ? 'locked' : 'desk'), quoteRef: tq ? tq.ref : (lockLive ? lockLive.ref : null), quotePhone: tq ? tq.phone : null, quoteVia: tq ? 'texts' : null, marginPct: +marginPct.toFixed(2), profitCad, lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null });
       } else if (isSend) {
-        tx = newTx({ ...base, beneficiary: `${benName.trim()} · ${dest.country}`, inCcy: 'CAD', inAmt: amtN, rate: rateN, outCcy: payoutCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, marginPct: +marginPct.toFixed(2), profitCad, notes: purpose || memo });
+        tx = newTx({ ...base, beneficiary: `${benName.trim()} · ${dest.country}`, inCcy: home, inAmt: amtN, rate: rateN, outCcy: payoutCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, marginPct: +marginPct.toFixed(2), profitCad, notes: purpose || memo });
       } else if (isReceive) {
         tx = newTx({ ...base, inCcy: outCcy, inAmt: amtN, rate: 1, outCcy, outAmt: amtN, fee: feeN, profitCad, notes: `Ref ${recvRef.trim()}${memo ? ' · ' + memo : ''}` });
       } else if (isCheque) {
-        tx = newTx({ ...base, inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: +(amtN - chequeFee).toFixed(2), fee: chequeFee, profitCad: chequeFee, notes: `${chequeType.label} cheque #${chequeNumber.trim()}${memo ? ' · ' + memo : ''}` });
+        tx = newTx({ ...base, inCcy: home, inAmt: amtN, rate: 1, outCcy: home, outAmt: +(amtN - chequeFee).toFixed(2), fee: chequeFee, profitCad: chequeFee, notes: `${chequeType.label} cheque #${chequeNumber.trim()}${memo ? ' · ' + memo : ''}` });
       } else if (isMO) {
-        tx = newTx({ ...base, beneficiary: payee.trim(), inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Money order to ${payee.trim()}${memo ? ' · ' + memo : ''}` });
+        tx = newTx({ ...base, beneficiary: payee.trim(), inCcy: home, inAmt: amtN, rate: 1, outCcy: home, outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Money order to ${payee.trim()}${memo ? ' · ' + memo : ''}` });
       } else { // bill
-        tx = newTx({ ...base, beneficiary: biller.trim(), inCcy: 'CAD', inAmt: amtN, rate: 1, outCcy: 'CAD', outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Bill: ${biller.trim()} · acct ${account.trim()}${memo ? ' · ' + memo : ''}` });
+        tx = newTx({ ...base, beneficiary: biller.trim(), inCcy: home, inAmt: amtN, rate: 1, outCcy: home, outAmt: amtN, fee: feeN, profitCad: feeN, notes: `Bill: ${biller.trim()} · acct ${account.trim()}${memo ? ' · ' + memo : ''}` });
       }
       /* Where the ledger holds it, the browser row carries the book's own
          names for the deal and for the promise it left behind, so the two
@@ -754,7 +761,7 @@
       const _atNew = !!(settings || {}).autoTagNew && customer && !live.some(o => o.customer === customer);
       if (_atOver || _atRisk || _atNew) {
         tx.tagged = true;
-        tx.tagInfo = { by: 'Auto-rule', at: stamp(), note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, 'CAD')}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client' };
+        tx.tagInfo = { by: 'Auto-rule', at: stamp(), note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, home)}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client' };
       }
       setRows(r => [tx, ...r]);
       /* The local cheque register is written HERE only when the ledger
@@ -766,9 +773,9 @@
         const holdUntil = _K.addDays(TODAY, chequeType.holdDays || 0);
         const seqC = (cheques || []).filter(c => c.receivedDate === TODAY).length + 1;
         const cref = 'CHQ-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqC).padStart(3, '0');
-        setCheques(listv => [{ id: 'c' + Date.now(), ref: cref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer || 'Walk-in (no client)', typeId: chequeType.id, typeLabel: chequeType.label, ccy: 'CAD', amount: amtN, feeCad: chequeFee, netCad: net, endorsed: endorsed, image: chequeImage, holdDays: chequeType.holdDays || 0, receivedDate: TODAY, holdUntil, status: 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cashed at the till · ${(chequeType.holdDays || 0) === 0 ? 'no hold' : chequeType.holdDays + '-day hold'}${chequeImage ? ' · image on file' : ''}` }], txId: tx.id, txRef: ref, createdBy: me.name }, ...(listv || [])]);
+        setCheques(listv => [{ id: 'c' + Date.now(), ref: cref, chequeNumber: chequeNumber.trim(), maker: maker.trim(), draweeBank: draweeBank.trim(), customer: customer || 'Walk-in (no client)', typeId: chequeType.id, typeLabel: chequeType.label, ccy: home, amount: amtN, feeCad: chequeFee, netCad: net, endorsed: endorsed, image: chequeImage, holdDays: chequeType.holdDays || 0, receivedDate: TODAY, holdUntil, status: 'held', nsf: false, fraud: false, timeline: [{ status: 'held', ts: stamp(), by: me.name, note: `Cashed at the till · ${(chequeType.holdDays || 0) === 0 ? 'no hold' : chequeType.holdDays + '-day hold'}${chequeImage ? ' · image on file' : ''}` }], txId: tx.id, txRef: ref, createdBy: me.name }, ...(listv || [])]);
       }
-      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : 'CAD'}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
+      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : home}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
       if (tq && isExchange) { tgRedeem(tq.ref, ref); log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone); }
       /* The drawer just moved on the server, so the screen behind this
          modal is showing yesterday's figure until it is told. */
@@ -781,8 +788,8 @@
 
     // present-quote payload (exchange + send)
     const presentQ = isSend
-      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} CAD`, rateLine: `1 CAD = ${num(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${num(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -837,7 +844,7 @@
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : num(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(num(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
-                    <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                     {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
@@ -885,13 +892,13 @@
                     <div className="mt-2"><Lbl>Beneficiary name</Lbl><input value={benName} onChange={e => setBenName(e.target.value)} placeholder="Who receives the money" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   </div>
                   <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                    <Lbl>Customer pays (CAD)</Lbl>
-                    <Money value={inAmt} onChange={setInAmt} ccy="CAD" big autoFocus />
-                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 CAD = {num(rateN)} {payoutCcy}</div>
+                    <Lbl>Customer pays ({home})</Lbl>
+                    <Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus />
+                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 {home} = {num(rateN)} {payoutCcy}</div>
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
                     <Money value={out.amt ? num(out.amt) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
-                      <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                      <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                       <div><Lbl>Purpose</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Family support, etc." className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                     </div>
                   </div>
@@ -905,17 +912,17 @@
                 <div className="p-3.5 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div><Lbl>Transfer / tracking reference</Lbl><input value={recvRef} onChange={e => setRecvRef(e.target.value)} placeholder="MTCN or partner reference" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   <div><Lbl>Pay recipient</Lbl><Money value={inAmt} onChange={setInAmt} ccy={outCcy} onCcy={setOutCcy} big autoFocus /></div>
-                  <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                 </div>
               )}
 
               {/* ---------------- CHEQUE ---------------- */}
               {isCheque && (
                 <div className="p-3.5 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                  <div><Lbl hint={`${chequeType.feePct}% · min ${fmt(chequeType.feeMin, 'CAD')} · ${chequeType.holdDays}d hold`}>Cheque type</Lbl>
+                  <div><Lbl hint={`${chequeType.feePct}% · min ${fmt(chequeType.feeMin, home)} · ${chequeType.holdDays}d hold`}>Cheque type</Lbl>
                     <div className="flex flex-wrap gap-1.5">{chequeSched.map(t => { const on = chequeTypeId === t.id; return <button key={t.id} onClick={() => setChequeTypeId(t.id)} className="px-2.5 py-1.5 text-[12px] font-medium" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.text }}>{t.label}</button>; })}</div>
                   </div>
-                  <div><Lbl>Cheque amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy="CAD" big autoFocus /></div>
+                  <div><Lbl>Cheque amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus /></div>
                   <div className="grid grid-cols-2 gap-2">
                     <div><Lbl>Cheque number</Lbl><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="e.g. 004821" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                     <div><Lbl>Drawee bank</Lbl><input value={draweeBank} onChange={e => setDraweeBank(e.target.value)} placeholder="e.g. RBC" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
@@ -933,7 +940,7 @@
                       </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-2.5" style={{ background: CD.amberSoft, borderRadius: 9 }}><span className="text-[11px]" style={{ color: 'var(--cd-brass-text)' }}>{amtN > 0 ? <>Front <b>{fmt(out.amt, 'CAD')}</b> · keep <b>{fmt(chequeFee, 'CAD')}</b>{(chequeType.holdDays || 0) > 0 && _K ? <> · holds to {_K.addDays(TODAY, chequeType.holdDays)}</> : ' · no hold'}</> : 'Enter the cheque amount'}</span></div>
+                  <div className="flex items-center gap-2 p-2.5" style={{ background: CD.amberSoft, borderRadius: 9 }}><span className="text-[11px]" style={{ color: 'var(--cd-brass-text)' }}>{amtN > 0 ? <>Front <b>{fmt(out.amt, home)}</b> · keep <b>{fmt(chequeFee, home)}</b>{(chequeType.holdDays || 0) > 0 && _K ? <> · holds to {_K.addDays(TODAY, chequeType.holdDays)}</> : ' · no hold'}</> : 'Enter the cheque amount'}</span></div>
                 </div>
               )}
 
@@ -941,9 +948,9 @@
               {isMO && (
                 <div className="p-3.5 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div><Lbl>Payee</Lbl><input value={payee} onChange={e => setPayee(e.target.value)} placeholder="Who the money order is for" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
-                  <div><Lbl>Face amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy="CAD" big autoFocus /></div>
-                  <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
-                  {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, 'CAD')}</b> for a <b style={{ color: CD.ink }}>{fmt(amtN, 'CAD')}</b> money order.</div>}
+                  <div><Lbl>Face amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, home)}</b> for a <b style={{ color: CD.ink }}>{fmt(amtN, home)}</b> money order.</div>}
                 </div>
               )}
 
@@ -954,9 +961,9 @@
                     <div><Lbl>Biller</Lbl><input value={biller} onChange={e => setBiller(e.target.value)} placeholder="e.g. Toronto Hydro" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                     <div><Lbl>Account number</Lbl><input value={account} onChange={e => setAccount(e.target.value)} placeholder="Biller account #" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   </div>
-                  <div><Lbl>Amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy="CAD" big autoFocus /></div>
-                  <div><Lbl>Fee (CAD)</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
-                  {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, 'CAD')}</b> — {fmt(amtN, 'CAD')} to biller, {fmt(feeN, 'CAD')} fee.</div>}
+                  <div><Lbl>Amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, home)}</b> — {fmt(amtN, home)} to biller, {fmt(feeN, home)} fee.</div>}
                 </div>
               )}
 
@@ -1009,7 +1016,7 @@
                   </div>
                   <div style={{ padding: '12px 0' }}>
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer gives' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'}</div>
-                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? inCcy : isReceive ? out.ccy : 'CAD'}</span></div>
+                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? inCcy : isReceive ? out.ccy : home}</span></div>
                   </div>
                   {(isExchange || isSend || isCheque) && <div className="flex items-center gap-2 py-1" style={{ color: 'var(--cd-on-ink-faint)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><Ic n="arrowdown" s={13} c="var(--cd-on-ink-soft)" /><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
                   <div style={{ paddingTop: 8 }}>
@@ -1017,8 +1024,8 @@
                     <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></div>
                   </div>
                   <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : 'CAD'} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
-                    <span>{isCheque ? `fee ${fmt(chequeFee, 'CAD')}` : feeN > 0 ? `fee ${fmt(feeN, 'CAD')}` : 'no fee'}</span>
+                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                    <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                   </div>
                 </div>
 
@@ -1026,7 +1033,7 @@
                 {(isExchange || isSend) && amtN > 0 && (
                   <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-panel)', border: `1px solid ${belowFloor ? CD.flag : CD.line}`, borderRadius: 10 }}>
                     <span className="text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> MARGIN</span>
-                    <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{fmt(profitCad, 'CAD')} · {marginPct.toFixed(2)}%</span>
+                    <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{fmt(profitCad, home)} · {marginPct.toFixed(2)}%</span>
                   </div>
                 )}
 
@@ -1043,7 +1050,7 @@
                 {(single || structuring) && (
                   <div className="px-3 py-2.5 text-[11px] flex items-start gap-2" style={{ background: single ? CD.flagSoft : CD.amberSoft, borderRadius: 10, color: single ? CD.flag : 'var(--cd-brass-text)' }}>
                     <Ic n="shield" s={13} c={single ? CD.flag : 'var(--cd-brass-text)'} />
-                    <span>{single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, 'CAD')}.`}</span>
+                    <span>{single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`}</span>
                   </div>
                 )}
               </div>

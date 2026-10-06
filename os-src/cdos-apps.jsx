@@ -24,15 +24,17 @@
     let rates = '';
     try {
       const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
-      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD').slice(0, 8);
-      rates = list.map(c => { const r = cfg && cfg.rows && cfg.rows[c.code]; const mid = r && r.mid > 0 ? r.mid : (1 / c.perCadDefault); return `${c.code}=${mid.toFixed(4)} CAD`; }).join(', ');
+      const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== home).slice(0, 8);
+      rates = list.map(c => { const r = cfg && cfg.rows && cfg.rows[c.code]; const mid = r && r.mid > 0 ? r.mid : (home === 'CAD' ? (1 / c.perCadDefault) : null); return mid ? `${c.code}=${Number(mid).toFixed(4)} ${home}` : null; }).filter(Boolean).join(', ');
     } catch (e) {}
     const locked = (() => { try { return localStorage.getItem('yorkfx_rates_locked') === '1'; } catch (e) { return false; } })();
+    const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
     return [
-      `Records: ${live.length}. Pay-in volume: ${fmt(vol, 'CAD')}. Fees: ${fmt(fees, 'CAD')}. Est. FX margin: ${fmt(margin, 'CAD')}.`,
+      `Records: ${live.length}. Pay-in volume: ${fmt(vol, home)}. Fees: ${fmt(fees, home)}. Est. FX margin: ${fmt(margin, home)}.`,
       `Top pay-in currencies: ${topCcy || 'none yet'}.`,
       `Open compliance items — reportable (LCTR ≥ $10k): ${alerts.rpt}, possible structuring: ${alerts.str}, KYC/ID gaps: ${alerts.id}.`,
-      `Mid rates (CAD per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`,
+      `Mid rates (${home} per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`,
       `Clients on file: ${Object.keys(clients || {}).length}.`
     ].join('\n');
   }
@@ -167,14 +169,15 @@ ${snap}`;
     }, [amount, rate, years, ppy]);
 
     const freqLabel = (FREQ.find(f => f[0] === ppy) || ['', ''])[1].toLowerCase();
-    const money = (v) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 2 });
+    const loanCcy = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+    const money = (v) => v.toLocaleString('en-CA', { style: 'currency', currency: loanCcy, maximumFractionDigits: 2 });
 
     return (<div className="ln-wrap">
       <div className="ln-grid">
         {/* inputs */}
         <div className="ln-inputs">
           <div className="ln-title">Loan terms</div>
-          <LField label="Loan amount" suffix="CAD"><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="ln-input" /></LField>
+          <LField label="Loan amount" suffix={loanCcy}><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="ln-input" /></LField>
           <LField label="Annual interest rate" suffix="%"><input type="number" step="0.01" value={rate} onChange={e => setRate(e.target.value)} className="ln-input" /></LField>
           <LField label="Term" suffix="years"><input type="number" step="0.5" value={years} onChange={e => setYears(e.target.value)} className="ln-input" /></LField>
           <div className="ln-field"><div className="ln-lbl">Payment frequency</div>
