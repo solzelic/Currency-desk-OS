@@ -89,6 +89,9 @@ describe("the ID on the invite link", () => {
        that the control is a checkbox, not a line of text. */
     expect(page).toContain("data-terms-check");
     expect(page).toContain("I accept the Terms of Service (26 July 2026)");
+    expect(page).toContain("Open full terms");
+    expect(page).toContain('href=\\"/legal#terms\\"');
+    expect(page).toContain('target=\\"_blank\\"');
     expect(page).toContain("data-issued-id");
     expect(page).toContain('termsVersion: "2026-07-26"');
     expect(page).not.toContain("/api/onboarding/account");

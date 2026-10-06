@@ -76,9 +76,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `CD-XXXXXX` and `/onboarding/CD-XXXXXX`. That link shows the reference
   it already carries ("This is your ID"), then the Terms of Service
   dated 26 July 2026. That card shows the full terms in a fixed-height
-  scroll window. The checkbox stays off until the bottom of the window
-  is in view, and Continue stays off, and looks off, until the box is
-  checked. The words on those two screens are for the customer. The
+  scroll window, and "Open full terms" opens `/legal#terms` in a new
+  tab. The checkbox stays off until the bottom of the window is in
+  view, and Continue stays off, and looks off, until the box is
+  checked. On a laptop the whole card, including Continue, fits the
+  screen. The words on those two screens are for the customer. The
   server records the version, the time, and the application's email,
   and refuses any other version. The database check on `onboarding`
   allows only `2026-07-26` together with a time and a person (migration
@@ -208,8 +210,10 @@ authenticated narrative dashboard.
 **2026-10-06**, invite then terms, together with the first-run tour.
 `/onboarding/CD-XXXXXX` shows the reference from the link, then the
 26 July 2026 terms in a scroll window on the card, then the existing
-setup wizard. The checkbox stays off until the bottom of that window
-is in view. Launch refuses without that acceptance. Bare `/onboarding`
+setup wizard. "Open full terms" opens the legal page in a new tab.
+The checkbox stays off until the bottom of that window is in view.
+On a laptop the card, including Continue, fits without a page scroll.
+Launch refuses without that acceptance. Bare `/onboarding`
 and the login "Create your desk" link go to `/signup`. Migration 027
 records the acceptance on the onboarding row and checks the version.
 The tour is not on those screens.

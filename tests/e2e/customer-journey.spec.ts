@@ -163,7 +163,14 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   await expect(termsWindow).toBeVisible();
   await expect(termsWindow).toContainText("These terms govern your use of CurrencyDesk.");
   await expect(termsWindow).toContainText("Your records are yours and you can take them with you.");
+  const windowHeight = await termsWindow.evaluate((el) => el.getBoundingClientRect().height);
+  expect(windowHeight).toBeGreaterThanOrEqual(170);
+  expect(windowHeight).toBeLessThanOrEqual(190);
   await expect(page.getByText("Scroll to the end to accept")).toBeVisible();
+  const fullTerms = page.getByRole("link", { name: "Open full terms" });
+  await expect(fullTerms).toBeVisible();
+  await expect(fullTerms).toHaveAttribute("href", "/legal#terms");
+  await expect(fullTerms).toHaveAttribute("target", "_blank");
   await expect(termsBox).toBeDisabled();
   await expect(termsBox).not.toBeChecked();
   await expect(continueBtn).toBeDisabled();

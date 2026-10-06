@@ -934,6 +934,41 @@ patch(
   meta(i, d, j, home, selCcy) {`,
 );
 patch(
+  "the hero column — terms spacing has to be able to find it",
+  'align-items: center; text-align: center; padding: 26px 4px 10px;">',
+  'align-items: center; text-align: center; padding: 26px 4px 10px;" data-hero="1">',
+);
+patch(
+  "the door wrapper on the hero",
+  'position: relative; margin: 8px 0 26px;">',
+  'position: relative; margin: 8px 0 26px;" data-door="1">',
+);
+patch(
+  "the door glow — it is absolute, so it does not add height, but it has to shrink with the mark",
+  '<div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 210px; height: 210px;',
+  '<div data-door-glow="1" aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 210px; height: 210px;',
+);
+patch(
+  "the door mark",
+  '<div style="position: relative; width: 104px; height: 104px;',
+  '<div data-door-mark="1" style="position: relative; width: 104px; height: 104px;',
+);
+patch(
+  "the hero eyebrow",
+  'color: var(--primary); font-weight: 700; margin-top: 12px;">{{ eyebrow }}</div>',
+  'color: var(--primary); font-weight: 700; margin-top: 12px;" data-eyebrow="1">{{ eyebrow }}</div>',
+);
+patch(
+  "the hero subtitle",
+  '<p style="font-size: 14.5px; color: var(--mute); margin: 12px 0 0; max-width: 366px; line-height: 1.55;">',
+  '<p data-hero-sub="1" style="font-size: 14.5px; color: var(--mute); margin: 12px 0 0; max-width: 366px; line-height: 1.55;">',
+);
+patch(
+  "the hero Continue — the other Continue uses ctaStyle",
+  '<button sc-camel-on-click="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"',
+  '<button data-hero-cta="1" sc-camel-on-click="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"',
+);
+patch(
   "the terms checkbox — size, colour, and a keyboard focus ring",
   "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }",
   "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }\n" +
@@ -945,10 +980,24 @@ patch(
   "    input[data-terms-check]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}\n" +
   "    label[data-terms-label]{cursor:pointer}\n" +
   "    label[data-terms-label]:has(input:disabled){cursor:default}\n" +
-  "    /* The agreement window from the payment screen, reused here. */\n" +
-  "    [data-terms-box]{height:190px;overflow-y:auto;overflow-x:hidden;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--line);text-align:left;overscroll-behavior:contain}\n" +
+  "    /* The agreement window from the payment screen, reused here.\n" +
+  "       180px stays inside the 170 to 190 window the card can afford. */\n" +
+  "    [data-terms-box]{height:180px;overflow-y:auto;overflow-x:hidden;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--line);text-align:left;overscroll-behavior:contain}\n" +
   "    [data-terms-box]:focus{outline:none}\n" +
-  "    [data-terms-box]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}",
+  "    [data-terms-box]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}\n" +
+  "    /* Terms only. The ID screen shares this hero and keeps the design\n" +
+  "       spacing. Inline styles win unless these say important, so the\n" +
+  "       door, the gaps, and Continue shrink on this step alone. Nothing\n" +
+  "       is removed: the smaller door is still the door. */\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]){padding:4px 4px 0 !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door]{margin:0 0 8px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-glow]{width:120px !important;height:120px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-mark]{width:58px !important;height:58px !important;border-radius:16px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-mark] svg{width:30px !important;height:30px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-eyebrow]{margin-top:6px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-sub]{margin-top:6px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-note]{margin:0 !important;font-size:0 !important;line-height:0 !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-cta]{margin-top:10px !important}",
 );
 patch(
   "Continue's colour follows the disabled state immediately",
@@ -1035,20 +1084,20 @@ patch(
   '                  </div>\n' +
   '                </sc-if>\n' +
   '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
-  '                  <div data-screen="terms" style="width: 100%; margin-top: 18px; text-align: left;">\n' +
+  '                  <div data-screen="terms" style="width: 100%; margin-top: 8px; text-align: left;">\n' +
   '                    <div data-terms-box="true" role="region" aria-label="Terms of Service" sc-camel-tab-index="0" sc-camel-on-scroll="{{ onTermsScroll }}">' + TERMS_INNER + '</div>\n' +
   '                    <sc-if value="{{ showTermsHint }}" hint-placeholder-val="{{ false }}">\n' +
-  '                      <p id="cd-terms-hint" data-terms-hint="1" style="margin:10px 0 0;font-size:12.5px;line-height:1.4;color:var(--mute);">Scroll to the end to accept</p>\n' +
+  '                      <p id="cd-terms-hint" data-terms-hint="1" style="margin:6px 0 0;font-size:12.5px;line-height:1.4;color:var(--mute);">Scroll to the end to accept</p>\n' +
   '                    </sc-if>\n' +
-  '                    <label for="cd-accept-terms" data-terms-label="1" style="display:flex;align-items:flex-start;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
+  '                    <label for="cd-accept-terms" data-terms-label="1" style="display:flex;align-items:flex-start;gap:12px;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
   '                      <input id="cd-accept-terms" type="checkbox" data-terms-check="1" data-terms-toggle="1" checked="{{ termsOn }}" disabled="{{ termsLocked }}" aria-describedby="cd-terms-hint" sc-camel-on-change="{{ onCta }}" />\n' +
   '                      <span>I accept the Terms of Service (26 July 2026)</span>\n' +
   '                    </label>\n' +
-  '                    <div style="margin-top: 10px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Read the Terms of Service</a></div>\n' +
-  '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 8px; min-height: 1.2em;">{{ termsErr }}</div>\n' +
+  '                    <div style="margin-top: 6px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Open full terms</a></div>\n' +
+  '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 4px; min-height: 0;">{{ termsErr }}</div>\n' +
   '                  </div>\n' +
   '                </sc-if>\n' +
-  '                <p style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
+  '                <p data-hero-note="1" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
 );
 
 /* --- 6. Verify by email, in the channel's own words ---------------- */
