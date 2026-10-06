@@ -154,7 +154,9 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   await expect(continueBtn).toBeDisabled();
   await expect.poll(continuePaint).toBe("rgba(23, 20, 15, 0.09)");
   await continueBtn.evaluate((el) => (el as HTMLButtonElement).click());
-  await expect(page.getByText(/^Terms of Service$/)).toBeVisible();
+  /* The window repeats the document title, so the screen heading is
+     the one that proves Continue did not leave this step. */
+  await expect(page.getByRole("heading", { name: "Terms of Service" })).toBeVisible();
 
   const termsBox = page.getByRole("checkbox", { name: "I accept the Terms of Service (26 July 2026)" });
   const termsWindow = page.locator("[data-terms-box]");
