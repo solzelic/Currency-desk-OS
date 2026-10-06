@@ -2364,6 +2364,19 @@
       {moveCash && _ST.MoveModal && React.createElement(_ST.MoveModal, { branches, station, preset: moveCash, onClose: () => setMoveCash(null), onMove: doOsMove })}
       {addContactOpen && window.CDOS.KYC && window.CDOS.KYC.NewContactFlow &&
         <window.CDOS.KYC.NewContactFlow by={me.name} setClients={setClients} onClose={() => setAddContactOpen(false)} onDone={() => setAddContactOpen(false)} />}
+      {/* First sign-in. Mounted only on the desk, after the lock and the
+          station picker, so it never talks over a screen the person has
+          not reached yet. `paused` hides it under the PIN, the lock, and
+          a handover without forgetting the step they were on. */}
+      {window.CDOS.FirstRun && <window.CDOS.FirstRun
+        role={me.role}
+        staffId={(srvUser && srvUser.id) || user || (me && me.name)}
+        apps={visibleApps}
+        clients={clients}
+        openApp={openApp}
+        openClient={openClientProfile}
+        paused={!!(deskLocked || handover || pinGate)}
+      />}
     </div>);
   }
 

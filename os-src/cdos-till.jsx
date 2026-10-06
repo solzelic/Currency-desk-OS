@@ -769,7 +769,7 @@
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
-      <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
+      <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center gap-2.5 pb-3">
           <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
           <div className="min-w-0"><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
@@ -815,7 +815,7 @@
           </div>
         </div>
         <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>
-          {TABS.map(([id, label, ic]) => <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
+          {TABS.map(([id, label, ic]) => <button key={id} data-tour={id === 'reconcile' ? 'till-reconcile-tab' : undefined} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
         </div>
       </div>
 
@@ -924,8 +924,10 @@
               </button>); })}
           </div>
           {/* denomination columns */}
-          {/* count mode: by denomination, or a quick total */}
-          <div className="flex items-center justify-between mb-3">
+          {/* count mode: by denomination, or a quick total.
+              The tour points at this switch, not at the whole panel,
+              so the card sits beside the count rather than on top of it. */}
+          <div data-tour="till-count" className="flex items-center justify-between mb-3">
             <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
               {[['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => <button key={m} onClick={() => setMode(o => ({ ...o, [ccy]: m }))} className="text-[11.5px] px-3 py-1.5" style={{ background: ccyMode(ccy) === m ? CD.ink : 'transparent', color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>{l}</button>)}
             </div>
@@ -990,7 +992,7 @@
             it, and an old one left in localStorage is exactly the stale
             second figure this pass exists to remove. */}
         {/* ===== RECONCILE / CLOSE ===== */}
-        {tab === 'reconcile' && (bookClosed ? (<div className="p-5 flex flex-col" style={{ minHeight: '100%' }}>
+        {tab === 'reconcile' && (bookClosed ? (<div data-tour="till-reconcile" className="p-5 flex flex-col" style={{ minHeight: '100%' }}>
           {/* pleasant green closed banner */}
           <div className="flex items-start gap-3 p-4" style={{ background: CD.greenSoft, border: `1px solid ${CD.green}`, borderRadius: 14 }}>
             <span className="grid place-items-center flex-none" style={{ width: 40, height: 40, background: CD.green, borderRadius: 11 }}><Ic n="checkcircle" s={21} c="var(--cd-on-ink)" /></span>
@@ -1037,7 +1039,7 @@
               ? <button onClick={startNextSession} disabled={opening} className="till-save flex items-center gap-2 px-4 py-2.5 text-sm font-semibold flex-none" style={{ background: opening ? CD.green : 'transparent', color: opening ? 'var(--cd-on-ink)' : CD.ink, border: `1px solid ${opening ? CD.green : CD.line}`, borderRadius: 9, transition: 'background .25s ease, color .25s ease, border-color .25s ease' }} onMouseEnter={e => { if (!opening) { e.currentTarget.style.background = CD.ink; e.currentTarget.style.color = '#fff'; } }} onMouseLeave={e => { if (!opening) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = CD.ink; } }}><Ic n={opening ? 'checkcircle' : 'calendar'} s={15} c={opening ? 'var(--cd-on-ink)' : 'currentColor'} /> {opening ? 'Opening…' : 'Open next day'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px] flex-none" style={{ color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Owner / permitted staff only</span>}
           </div>
-        </div>) : (<div className="p-4">
+        </div>) : (<div data-tour="till-reconcile" className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>

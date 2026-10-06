@@ -213,6 +213,18 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   if (await open.count()) { await open.click(); await rendered(page, /LEDGER|RATE BOARD/i); }
   expect(await page.locator("body").innerText()).toContain(APPLICANT.shop);
 
+  /* The owner's tour offers itself once the desk is actually open.
+     The invite screens above already required the terms, and this
+     card is not those screens: the terms are not here, and Skip
+     only dismisses the tour. */
+  const tourCard = page.locator(".cdos-tour-card");
+  await expect(tourCard).toBeVisible();
+  await expect(page.locator("#cdos-tour-title")).toHaveText("The shop");
+  await expect(tourCard.getByRole("button", { name: "Open the dashboard" })).toBeVisible();
+  await expect(page.getByText("I accept the Terms of Service")).toHaveCount(0);
+  await tourCard.getByRole("button", { name: "Skip" }).click();
+  await expect(page.locator("[data-tour-root]")).toHaveCount(0);
+
   /* A brand-new desk has no trading on it.
 
      Asked of the desk's own data rather than of a screen. The OS opens on
