@@ -1,16 +1,39 @@
 # Sanctioned jurisdictions
 
 The list lives in `server/src/compliance/sanctioned-jurisdictions.ts`.
-It is versioned (`SANCTIONS_LIST_VERSION`) and each entry carries the
-instrument, the URL, and the date that source was current. The browser
-does not keep a copy. Signup, transfers, and deal posting all call
-this module.
+It is versioned (`SANCTIONS_LIST_VERSION`, currently `2026-10-07.1`)
+and each entry carries its tier, the instrument, the URL, and the
+date that source was current. The browser does not keep a copy.
+Signup, transfers, and deal posting all call this module.
+
+Two tiers live on the same data, so a country can move between them
+later without a code change:
+
+- **blocked.** A desk cannot open there. A transfer cannot touch it.
+  A deal with a client there is stopped. The stop code is always
+  `SANCTIONS-STOP`. It is not a row on a jurisdiction pack.
+- **enhanced due diligence.** The deal can post. The client must be
+  identified in full, whatever the amount, and the deal must carry a
+  short reason and source of funds. Those two notes are the
+  `purpose` and `source_of_funds` already stored on the deal.
 
 `lookupSanctionedJurisdiction` and `lookupSanctionedCurrency` are the
 functions other features call. A currency lookup is exact on the ISO
-code (`CUP`, `IRR`, `KPW`, `MMK`). A name lookup is exact on the whole
-string after normalisation. "Korea" is not North Korea. "DPR" is
-Donetsk. "DPRK" is North Korea.
+code (`CUP`, `IRR`, `KPW` are blocked; `MMK` is enhanced due
+diligence). A name lookup is exact on the whole string after
+normalisation: case, extra whitespace, and diacritics are ignored.
+"Korea" is not North Korea. "DPR" is Donetsk. "DPRK" is North Korea.
+Official spellings match too: "Iran, Islamic Republic of",
+"Korea, Democratic People's Republic of", "Myanmar (Burma)", "Burma".
+
+A bare two-letter token is an ISO country code. It matches a country
+field only. A region field does not read it, so a Pakistani region
+stored as `KP` is not North Korea. "NK" is not an alias. On a region
+field, a trailing Oblast, Region, Province, or City is dropped once,
+so "Donetsk Oblast" is Donetsk.
+
+The client country picker stores the ISO alpha-2 code and shows the
+English name. Older free-text values ("Canada", "Iran") are still read.
 
 ## What the list is
 
@@ -30,10 +53,21 @@ corridor is an ISO alpha-2 code, so a corridor of `UA` is allowed. A
 client whose country, region, or incorporation jurisdiction names a
 listed region is stopped.
 
-Kherson and Zaporizhzhia are matched on the oblast name. The measures
-cover the occupied part of the oblast. Matching the name also catches
-the government-controlled part, because the file cannot see which side
-of the line an address is on.
+Donetsk, Luhansk, Kherson, and Zaporizhzhia are matched on the whole
+oblast. That is deliberately broader than the occupied part. The
+measures name the occupied part. This list matches the oblast, so a
+government-controlled address in the same oblast is stopped as well.
+Kherson and Zaporizhzhia are not cited to US Executive Order 14065.
+Donetsk and Luhansk are. Canada SOR/2014-60 section 4.2 and EU
+Regulation 2022/263 cover all four.
+
+Cuba is blocked as a conservative business choice. OFAC's program is
+comprehensive. Canada, the EU, the UN, and FATF do not have a
+country-wide program. The desk still refuses Cuba.
+
+Myanmar is the enhanced due diligence tier, not a block. FATF's June
+2026 call for action asked for enhanced due diligence, not
+countermeasures, and said remittances should not be disrupted.
 
 ## What was left off, and why
 
@@ -56,25 +90,49 @@ Checked 2026-10-06.
 - The UN snapback on Iran, which reimposed nuclear-related measures.
   It is not a ban on every person in Iran.
 
+## Known gaps
+
+Russia and Belarus banknote restrictions are out of scope for this
+list. A desk can still buy and sell those notes. This file does not
+claim to enforce cash-instrument rules that name a currency without
+closing the country.
+
 ## Where it is enforced
 
-1. A desk cannot sign up with a listed country, and cannot set its
+1. A desk cannot sign up in a blocked country, and cannot set its
    country to one. The check is on the existing signup post, on
-   saving onboarding answers, on launch, and again inside
-   `provisionDesk`, which is the only function that creates a desk.
-   There is no second signup path.
-2. A transfer cannot be sent to or received from a listed country.
-   The code is `SANCTIONED_JURISDICTION`. A corridor cannot name a
-   region, so occupied Ukrainian regions are not blocked as corridors.
-3. A deal with a client in a listed country or region is stopped.
-   The code is the pack's report whose `format_rules` contain
-   `sanctionsStop`. That is `SANCTIONS-STOP` on `pack-intl-v1` and
-   `TPR` (Terrorist Property Report) on `pack-ca-v1`. A corridor
-   block is decided first, so a send to a listed country stays a
-   transfer block even when the client is listed too.
+   `PUT /api/onboarding/:ref/state`, on `PATCH /api/onboarding/:ref`,
+   on launch, and again inside `provisionDesk`, which is the only
+   function that creates a desk. There is no second signup path.
+   Enhanced due diligence does not refuse a desk.
+2. Every send and every receive must name a corridor, so a walk-in
+   transfer can be checked. A transfer cannot be sent to or received
+   from a blocked country. The code is `SANCTIONED_JURISDICTION`.
+   The payout currency on a send, and the sent currency on a receive,
+   are checked the same way, so an IRR, KPW, or CUP payout through
+   another corridor is still stopped. MMK is enhanced due diligence,
+   not a stop. A corridor cannot name a region, so occupied Ukrainian
+   regions are not blocked as corridors. A corridor of UA is allowed.
+3. A deal with a client in a blocked country or region is stopped.
+   The code is always `SANCTIONS-STOP`, on every pack, including
+   Canada. It is not looked up from `jurisdiction_reports`. A blocked
+   corridor is decided first, then a blocked currency, then the
+   client, so a send to a blocked country stays a transfer block even
+   when the client is blocked too.
+4. A deal or transfer that touches an enhanced due diligence
+   jurisdiction, and is not already blocked, forces full
+   identification regardless of amount and requires a short reason
+   and source of funds before it posts. Those notes are recorded on
+   the deal. The code while they are missing is `COMPLIANCE_BLOCKED`.
+
+A stopped deal rolls back, so the ledger row is not kept. The stop
+itself is written to `audit_events` afterwards, on a different
+connection: who, which desk, what was blocked, which jurisdiction,
+and the list version. Action `sanctions.stop`.
 
 A walk-in ledger customer with no `desk_clients` row has no country
-to read. Only the corridor can stop that deal.
+to read. The corridor and the payout or sent currency can still stop
+that deal.
 
 Quote creation is not a posted deal. The stop runs when the deal is
 posted.
@@ -91,9 +149,10 @@ posted.
    instrument or page.
 4. Keep a region a region. Do not add `UA` as a sanctioned country
    because an oblast is occupied.
-5. A new report code for a pack is a new migration. Do not edit a
-   merged one. Flag the row with
-   `format_rules = format_rules || '{"sanctionsStop": true}'`.
+5. The stop code stays `SANCTIONS-STOP`. Do not add it to a
+   published pack, and do not edit `pack-ca-v1` or `pack-intl-v1`.
+   Moving a country between blocked and enhanced due diligence is a
+   change to `tier` on its row in this file, not a migration.
 6. Run the postgres test against a fresh database:
 
 ```bash

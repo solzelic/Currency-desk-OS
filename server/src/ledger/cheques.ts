@@ -63,13 +63,14 @@ import {
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
+  applyDealScreen,
   LedgerError,
   requireIdentification,
   requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
-import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
+import { recordSanctionsStop, screenDeal } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -369,13 +370,18 @@ export class ChequeService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
-      const stopped = await dealSanctionsStop(
-        client,
-        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
-        pack.packId,
-        { customerId: input.customerId },
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          { customerId: input.customerId, dealKind: "cheque_cashing" },
+        ),
+        {
+          idStatus: customer.rows[0].id_status,
+          purpose: input.purpose,
+          sourceOfFunds: input.sourceOfFunds,
+        },
       );
-      if (stopped) throw new LedgerError(stopped.code, stopped.message);
       /* The desk's identification line does not become optional because
          the customer handed over paper instead of notes. The deal's size
          is the FACE amount — that is what is being presented and what the
@@ -628,6 +634,7 @@ export class ChequeService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      await recordSanctionsStop(this.pool, actor, error);
       throw error;
     } finally {
       client.release();

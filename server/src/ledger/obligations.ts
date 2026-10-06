@@ -78,6 +78,7 @@ import {
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
 import {
+  applyDealScreen,
   assertIndiaPurpose,
   LedgerError,
   requireIdentification,
@@ -86,7 +87,7 @@ import {
   requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
-import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
+import { recordSanctionsStop, screenDeal } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -638,26 +639,39 @@ export class ObligationService {
           "Customer is not in the active workspace.",
         );
 
-      /* A listed corridor is a transfer block, checked before the
-         client's country, so a send to a listed country stays a
-         transfer block even when the client is listed too. A listed
-         client on an ordinary corridor is the pack's sanctions stop. */
+      /* Every send and receive names a corridor, so a walk-in with
+         no client country can still be checked. A blocked corridor
+         is decided before the client, then the payout or sent
+         currency, then the client's country. The stop code for a
+         client is SANCTIONS-STOP on every pack. */
       const transfer = spec.dealKind === "remittance_send"
         ? "send" as const
         : spec.dealKind === "remittance_receive"
           ? "receive" as const
           : null;
-      const stopped = await dealSanctionsStop(
-        client,
-        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
-        pack.packId,
+      const screenedCurrency = transfer === "send"
+        ? spec.to
+        : transfer === "receive"
+          ? spec.from
+          : null;
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          {
+            customerId: spec.customerId,
+            dealKind: spec.dealKind,
+            corridor: spec.obligation.corridor,
+            currency: screenedCurrency,
+            transfer,
+          },
+        ),
         {
-          customerId: spec.customerId,
-          corridor: spec.obligation.corridor,
-          transfer,
+          idStatus: customer.rows[0].id_status,
+          purpose: spec.capture.purpose,
+          sourceOfFunds: spec.capture.sourceOfFunds,
         },
       );
-      if (stopped) throw new LedgerError(stopped.code, stopped.message);
 
       /* ---- the two compliance gates, on the CASH ----
 
@@ -939,6 +953,7 @@ export class ObligationService {
       return response;
     } catch (error) {
       if (!committed) await client.query("ROLLBACK");
+      await recordSanctionsStop(this.pool, actor, error);
       throw error;
     } finally {
       client.release();

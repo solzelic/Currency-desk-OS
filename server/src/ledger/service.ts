@@ -69,7 +69,12 @@ import {
   aePurposeDecision,
 } from "./uae-exchange.js";
 import { assertTradeable } from "./currencies.js";
-import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
+import {
+  enhancedDueDiligenceGap,
+  recordSanctionsStop,
+  screenDeal,
+  type DealScreen,
+} from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -141,6 +146,37 @@ export class LedgerError extends Error {
   ) {
     super(message);
   }
+}
+
+/* A blocked jurisdiction throws, and the audit payload rides on the
+   error so the caller can write it after ROLLBACK. Enhanced due
+   diligence is not a stop: the deal posts once the client is
+   identified in full and a reason and source of funds are present.
+   A missing corridor is a validation error and is not audited. */
+export function applyDealScreen(
+  screen: DealScreen,
+  compliance: {
+    idStatus: string | null | undefined;
+    purpose?: string | null;
+    sourceOfFunds?: string | null;
+  },
+): void {
+  if (screen.outcome === "clear") return;
+  if (screen.outcome === "enhanced_due_diligence") {
+    const gap = enhancedDueDiligenceGap(
+      screen.entry,
+      compliance.idStatus,
+      compliance.purpose,
+      compliance.sourceOfFunds,
+    );
+    if (gap) throw new LedgerError(gap.code, gap.message);
+    return;
+  }
+  const error = new LedgerError(screen.code, screen.message);
+  if (screen.outcome === "stop") {
+    Object.assign(error, { sanctionsAudit: screen.audit });
+  }
+  throw error;
 }
 
 
@@ -786,15 +822,22 @@ export class LedgerService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
-      /* A client in a listed jurisdiction stops the deal before
-         identification. The report code is the pack's. */
-      const quoteStopped = await dealSanctionsStop(
-        client,
-        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
-        pack.packId,
-        { customerId: quote.customerId },
+      /* A client in a blocked jurisdiction stops the deal before
+         identification. The code is SANCTIONS-STOP on every pack.
+         Enhanced due diligence still demands full identification
+         and a reason, whatever the amount. */
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          { customerId: quote.customerId, dealKind: "exchange" },
+        ),
+        {
+          idStatus: customer.rows[0].id_status,
+          purpose: quote.purpose,
+          sourceOfFunds: quote.sourceOfFunds,
+        },
       );
-      if (quoteStopped) throw new LedgerError(quoteStopped.code, quoteStopped.message);
       const input = decimal(quote.inputAmount, "0.01"),
         output = decimal(quote.outputAmount, "0"),
         fee = decimal(quote.feeCad, "0"),
@@ -1240,6 +1283,7 @@ export class LedgerService {
       if ((error as { code?: string }).code === "40001") {
         throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Retry the idempotent request.");
       }
+      await recordSanctionsStop(this.pool, actor, error);
       throw error;
     } finally {
       client.release();
@@ -1342,13 +1386,18 @@ export class LedgerService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
-      const directStopped = await dealSanctionsStop(
-        client,
-        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
-        pack.packId,
-        { customerId: request.customerId },
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          { customerId: request.customerId, dealKind: "exchange" },
+        ),
+        {
+          idStatus: customer.rows[0].id_status,
+          purpose: request.purpose,
+          sourceOfFunds: request.sourceOfFunds,
+        },
       );
-      if (directStopped) throw new LedgerError(directStopped.code, directStopped.message);
       const rows = await client.query(
         "SELECT currency,units_per_cad FROM ledger_rates WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4",
         scope(actor).slice(0, 4),
@@ -1619,6 +1668,7 @@ export class LedgerService {
           "Retry the idempotent request.",
         );
       }
+      await recordSanctionsStop(this.pool, actor, error);
       throw error;
     } finally {
       client.release();

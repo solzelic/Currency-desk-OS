@@ -1,15 +1,18 @@
-/* A listed jurisdiction cannot open a desk, cannot become a desk's
+/* A blocked jurisdiction cannot open a desk, cannot become a desk's
    country, cannot sit on either end of a transfer, and stops a deal
-   with a client who is there. The report code is the pack's. */
+   with a client who is there. The stop code is SANCTIONS-STOP on
+   every pack. Myanmar is enhanced due diligence, not a block. */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import {
+  blockedDeskCountry,
   countryChangeRefusal,
   lookupSanctionedCurrency,
   lookupSanctionedJurisdiction,
+  missingCorridorMessage,
   SANCTIONED_JURISDICTIONS,
   SANCTIONS_LIST_VERSION,
   signupRefusal,
@@ -25,11 +28,16 @@ function plain(text: string) {
 
 describe("sanctioned jurisdiction lookup", () => {
   it("matches listed countries, regions, and currencies, and nothing nearby", () => {
-    expect(SANCTIONS_LIST_VERSION).toBe("2026-10-06.1");
+    expect(SANCTIONS_LIST_VERSION).toBe("2026-10-07.1");
     expect(lookupSanctionedJurisdiction("KP")?.name).toBe("North Korea");
     expect(lookupSanctionedJurisdiction("DPRK")?.name).toBe("North Korea");
     expect(lookupSanctionedJurisdiction("North Korea")?.id).toBe("KP");
     expect(lookupSanctionedJurisdiction("Democratic People's Republic of Korea")?.id).toBe("KP");
+    expect(lookupSanctionedJurisdiction("Korea, Democratic People's Republic of")?.id).toBe("KP");
+    expect(lookupSanctionedJurisdiction("  north   korea ")?.id).toBe("KP");
+    expect(lookupSanctionedJurisdiction("Irán")?.id).toBe("IR");
+    expect(lookupSanctionedJurisdiction("Iran, Islamic Republic of")?.id).toBe("IR");
+    expect(lookupSanctionedJurisdiction("NK")).toBeNull();
     expect(lookupSanctionedJurisdiction("Korea")).toBeNull();
     expect(lookupSanctionedJurisdiction("South Korea")).toBeNull();
     expect(lookupSanctionedJurisdiction("DPR")?.name).toBe("Donetsk");
@@ -47,17 +55,56 @@ describe("sanctioned jurisdiction lookup", () => {
     expect(lookupSanctionedCurrency("cup")?.id).toBe("CU");
     expect(lookupSanctionedCurrency("IRR")?.id).toBe("IR");
     expect(lookupSanctionedCurrency("MMK")?.id).toBe("MM");
+    expect(lookupSanctionedCurrency("MMK")?.tier).toBe("enhanced_due_diligence");
     expect(lookupSanctionedCurrency("USD")).toBeNull();
     expect(lookupSanctionedCurrency("RUB")).toBeNull();
     expect(lookupSanctionedCurrency("SYP")).toBeNull();
     expect(lookupSanctionedJurisdiction("CUP")).toBeNull();
+    /* A two-letter code is a country. A region field does not read it,
+       so the Pakistani region KP is not North Korea. */
+    expect(lookupSanctionedJurisdiction("KP", "country")?.id).toBe("KP");
+    expect(lookupSanctionedJurisdiction("KP", "region")).toBeNull();
+    expect(lookupSanctionedJurisdiction("Donetsk Oblast", "region")?.id).toBe("UA-14");
+    expect(lookupSanctionedJurisdiction("Kherson Region", "region")?.id).toBe("UA-65");
+    expect(lookupSanctionedJurisdiction("Zaporizhzhia Province", "region")?.id).toBe("UA-23");
+    expect(lookupSanctionedJurisdiction("Sevastopol City", "region")?.id).toBe("UA-43");
+    expect(lookupSanctionedJurisdiction("Myanmar (Burma)")?.id).toBe("MM");
+    expect(lookupSanctionedJurisdiction("Burma")?.tier).toBe("enhanced_due_diligence");
+    expect(lookupSanctionedJurisdiction("Myanmar")?.tier).toBe("enhanced_due_diligence");
+    expect(blockedDeskCountry({ country: "Myanmar" })).toBeNull();
+    expect(blockedDeskCountry({ country: "MM" })).toBeNull();
+    expect(blockedDeskCountry({ region: "KP" })).toBeNull();
+    expect(blockedDeskCountry({ country: "KP" })?.id).toBe("KP");
+    expect(blockedDeskCountry({ region: "Donetsk Oblast" })?.id).toBe("UA-14");
+    plain(missingCorridorMessage("send"));
+    plain(missingCorridorMessage("receive"));
+    expect(missingCorridorMessage("send")).toContain("destination country");
+    expect(missingCorridorMessage("receive")).toContain("source country");
     for (const entry of SANCTIONED_JURISDICTIONS) {
-      plain(signupRefusal(entry).detail);
-      plain(countryChangeRefusal(entry).detail);
-      plain(transferRefusal(entry, "send").message);
-      plain(transferRefusal(entry, "receive").message);
+      if (entry.tier === "blocked") {
+        plain(signupRefusal(entry).detail);
+        plain(countryChangeRefusal(entry).detail);
+        plain(transferRefusal(entry, "send").message);
+        plain(transferRefusal(entry, "receive").message);
+      }
       expect(entry.sources.every((source) => source.url.startsWith("https://") && source.asOf)).toBe(true);
     }
+    const kherson = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-65")!;
+    const zap = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-23")!;
+    const donetsk = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-14")!;
+    const luhansk = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-09")!;
+    for (const region of [kherson, zap]) {
+      expect(region.sources.some((source) => source.instrument.includes("14065"))).toBe(false);
+      expect(region.sources.some((source) => source.authority === "US-OFAC")).toBe(false);
+    }
+    expect(donetsk.sources.some((source) => source.instrument.includes("14065"))).toBe(true);
+    expect(luhansk.sources.some((source) => source.instrument.includes("14065"))).toBe(true);
+    for (const region of [donetsk, luhansk, kherson, zap]) {
+      expect(region.sources.every((source) => source.note?.includes("deliberately broader"))).toBe(true);
+    }
+    const cuba = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "CU")!;
+    expect(cuba.tier).toBe("blocked");
+    expect(cuba.sources[0]?.note).toContain("business choice");
   });
 });
 
@@ -214,12 +261,20 @@ postgres("sanctioned jurisdictions on the book", () => {
   it("refuses signup in a listed country and still accepts Canada and somewhere else", async () => {
     await refusedSignup(`skp${stamp}`, `kp-${stamp}@sanctioned.example`, { country: "KP" }, "North Korea");
     await refusedSignup(`scu${stamp}`, `cu-${stamp}@sanctioned.example`, { country: "Cuba" }, "Cuba");
-    await refusedSignup(
-      `smm${stamp}`,
-      `mm-${stamp}@sanctioned.example`,
-      { country: "XX", elseCountry: "Myanmar" },
-      "Myanmar",
-    );
+    /* Myanmar is enhanced due diligence. A desk can open there. */
+    const myanmar = await app.inject({
+      method: "POST",
+      url: "/api/signup",
+      payload: {
+        businessName: `smm${stamp}`,
+        ownerName: "Owner",
+        email: `mm-${stamp}@sanctioned.example`,
+        password: "a-strong-pass",
+        slug: `smm${stamp}`,
+        onboarding: { country: "XX", elseCountry: "Myanmar (Burma)" },
+      },
+    });
+    expect(myanmar.statusCode, myanmar.body).toBe(201);
     baseline.cookie = await signup(baseline.slug, baseline.email, { country: "XX" });
     canada.cookie = await signup(canada.slug, canada.email, { country: "Canada" });
     const pack = await pool.query(
@@ -317,7 +372,15 @@ postgres("sanctioned jurisdictions on the book", () => {
     return counter.json().customerId as string;
   }
 
-  function send(cookie: string, customerId: string, corridor: string, key: string) {
+  function send(
+    cookie: string,
+    customerId: string,
+    corridor: string,
+    key: string,
+    payoutCurrency = "EUR",
+    purpose = "Family support",
+    sourceOfFunds = "Salary",
+  ) {
     return app.inject({
       method: "POST",
       url: "/api/ledger/remittances/send",
@@ -328,13 +391,13 @@ postgres("sanctioned jurisdictions on the book", () => {
         reference: key,
         principalAmount: "10.00",
         feeAmount: "0.00",
-        payoutCurrency: "EUR",
+        payoutCurrency,
         payoutAmount: "1.00",
         corridor,
         partner: "Corridor partner",
         beneficiaryName: "Ann Beneficiary",
-        purpose: "Family support",
-        sourceOfFunds: "Salary",
+        purpose,
+        sourceOfFunds,
       },
     });
   }
@@ -425,15 +488,287 @@ postgres("sanctioned jurisdictions on the book", () => {
     expect(russiaSend.statusCode, russiaSend.body).toBe(201);
   });
 
-  it("uses the Canada pack's TPR code for the same stop", async () => {
+  it("stops a Canada desk on the same SANCTIONS-STOP code and writes an audit row", async () => {
     await openTill(canada.cookie, canada.slug, "CAD");
     const cuba = await makeClient(canada.cookie, "Cuba Client", { country: "Cuba" });
     const stopped = await send(canada.cookie, cuba, "DE", `deal-ca-cu-${stamp}`);
     expect(stopped.statusCode, stopped.body).toBe(422);
-    expect(stopped.json().code).toBe("TPR");
-    expect(stopped.json().message).toContain("TPR");
+    expect(stopped.json().code).toBe("SANCTIONS-STOP");
+    expect(stopped.json().message).toContain("SANCTIONS-STOP");
     expect(stopped.json().message).toContain("Cuba");
     plain(stopped.json().message);
     expect(await dealsFor(canada.slug, cuba)).toBe(0);
+    const audit = await pool.query(
+      `SELECT action, actor_id, detail
+         FROM audit_events
+        WHERE tenant_id=$1 AND action='sanctions.stop'`,
+      [`tnt-${canada.slug}`],
+    );
+    expect(audit.rows.length).toBeGreaterThan(0);
+    const detail = audit.rows[0].detail;
+    expect(detail.jurisdictionId).toBe("CU");
+    expect(detail.listVersion).toBe(SANCTIONS_LIST_VERSION);
+    expect(detail.customerId).toBe(cuba);
+    expect(detail.blocked).toBe("client");
+    expect(audit.rows[0].actor_id).toBeTruthy();
+  });
+
+  it("refuses a patched onboarding country and does not save it", async () => {
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/onboarding/${enquiryRef}`,
+      payload: { stepId: "jurisdiction", answers: { country: "KP" } },
+    });
+    expect(patched.statusCode, patched.body).toBe(403);
+    expect(patched.json().detail).toContain("North Korea");
+    plain(patched.json().detail);
+    const still = await pool.query(
+      "SELECT answers->>'country' AS country FROM onboarding WHERE enquiry_id=$1",
+      [enquiryId],
+    );
+    expect(still.rows[0].country).toBe("CA");
+    const cuba = await app.inject({
+      method: "PATCH",
+      url: `/api/onboarding/${enquiryRef}`,
+      payload: { stepId: "jurisdiction", answers: { elseCountry: "Cuba" } },
+    });
+    expect(cuba.statusCode, cuba.body).toBe(403);
+    const saved = await pool.query("SELECT answers FROM onboarding WHERE enquiry_id=$1", [enquiryId]);
+    expect(JSON.stringify(saved.rows[0].answers)).not.toContain("Cuba");
+    const allowed = await app.inject({
+      method: "PATCH",
+      url: `/api/onboarding/${enquiryRef}`,
+      payload: { stepId: "jurisdiction", answers: { elseCountry: "Germany" } },
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+  });
+
+  it("provisionDesk refuses a listed country that skipped the signup check", async () => {
+    const email = `net-${stamp}@sanctioned.example`;
+    const slug = `snet${stamp}`;
+    logged = [];
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/signup",
+      payload: {
+        businessName: slug,
+        ownerName: "Owner",
+        email,
+        password: "a-strong-pass",
+        slug,
+        onboarding: { country: "XX" },
+      },
+    });
+    expect(started.statusCode, started.body).toBe(201);
+    await pool.query(
+      "UPDATE pending_signups SET onboarding = '{\"country\":\"KP\"}'::jsonb WHERE email=$1",
+      [email],
+    );
+    const verified = await app.inject({
+      method: "POST",
+      url: "/api/signup/verify",
+      payload: { email, code: codeFromLog() },
+    });
+    expect(verified.statusCode, verified.body).toBe(403);
+    expect(verified.json().error).toBe("sanctioned_country");
+    expect(verified.json().detail).toContain("cannot be opened");
+    plain(verified.json().detail);
+    const tenant = await pool.query("SELECT count(*)::int AS n FROM tenants WHERE site_slug=$1", [slug]);
+    expect(tenant.rows[0].n).toBe(0);
+    await pool.query("DELETE FROM pending_signups WHERE email=$1", [email]);
+  });
+
+  function postJson(cookie: string, url: string, payload: Record<string, unknown>) {
+    return app.inject({
+      method: "POST",
+      url,
+      cookies: { cdos_session: cookie },
+      payload,
+    });
+  }
+
+  it("stops quotes, exchanges, cheques, bills, money orders and receives for a listed client", async () => {
+    const iran = await makeClient(baseline.cookie, "Iran Deal Client", { country: "IR" });
+    const quote = await postJson(baseline.cookie, "/api/quotes", {
+      customerId: iran,
+      from: "USD",
+      to: "EUR",
+      inputAmount: "10.00",
+      feeCad: "0.00",
+      direction: "customer_buy_foreign",
+    });
+    expect(quote.statusCode, quote.body).toBe(201);
+    const quoted = await postJson(baseline.cookie, `/api/quotes/${quote.json().quoteId}/post`, {
+      idempotencyKey: `q-ir-${stamp}`,
+      purpose: "Travel",
+      sourceOfFunds: "Salary",
+    });
+    expect(quoted.statusCode, quoted.body).toBe(422);
+    expect(quoted.json().code).toBe("SANCTIONS-STOP");
+
+    const exchange = await postJson(baseline.cookie, "/api/ledger/exchanges", {
+      idempotencyKey: `ex-ir-${stamp}`,
+      customerId: iran,
+      from: "USD",
+      to: "EUR",
+      inputAmount: "10.00",
+      feeCad: "0.00",
+      purpose: "Travel",
+      sourceOfFunds: "Salary",
+    });
+    expect(exchange.statusCode, exchange.body).toBe(422);
+    expect(exchange.json().code).toBe("SANCTIONS-STOP");
+
+    const cheque = await postJson(baseline.cookie, "/api/ledger/cheques", {
+      idempotencyKey: `ch-ir-${stamp}`,
+      customerId: iran,
+      chequeNumber: "1001",
+      maker: "Iran Deal Client",
+      chequeType: "personal",
+      typeLabel: "Personal",
+      currency: "USD",
+      faceAmount: "10.00",
+      feeAmount: "0.00",
+      holdDays: 0,
+    });
+    expect(cheque.statusCode, cheque.body).toBe(422);
+    expect(cheque.json().code).toBe("SANCTIONS-STOP");
+
+    const bill = await postJson(baseline.cookie, "/api/ledger/bill-payments", {
+      idempotencyKey: `bill-ir-${stamp}`,
+      customerId: iran,
+      reference: `bill-ir-${stamp}`,
+      billAmount: "10.00",
+      feeAmount: "0.00",
+      biller: "Hydro",
+      accountRef: "acct-1",
+    });
+    expect(bill.statusCode, bill.body).toBe(422);
+    expect(bill.json().code).toBe("SANCTIONS-STOP");
+
+    const moneyOrder = await postJson(baseline.cookie, "/api/ledger/money-orders", {
+      idempotencyKey: `mo-ir-${stamp}`,
+      customerId: iran,
+      reference: `mo-ir-${stamp}`,
+      faceAmount: "10.00",
+      feeAmount: "0.00",
+      payee: "Ann Payee",
+      serial: "MO-100",
+    });
+    expect(moneyOrder.statusCode, moneyOrder.body).toBe(422);
+    expect(moneyOrder.json().code).toBe("SANCTIONS-STOP");
+
+    const incoming = await receive(baseline.cookie, iran, "DE", `recv-ir-client-${stamp}`);
+    expect(incoming.statusCode, incoming.body).toBe(422);
+    expect(incoming.json().code).toBe("SANCTIONS-STOP");
+    expect(await dealsFor(baseline.slug, iran)).toBe(0);
+
+    const audit = await pool.query(
+      `SELECT count(*)::int AS n FROM audit_events
+        WHERE tenant_id=$1 AND action='sanctions.stop'
+          AND detail->>'customerId'=$2`,
+      [`tnt-${baseline.slug}`, iran],
+    );
+    expect(audit.rows[0].n).toBeGreaterThanOrEqual(6);
+  });
+
+  it("stops a payout or sent currency on a clean corridor, and does not treat region KP as North Korea", async () => {
+    const clean = await makeClient(baseline.cookie, "Currency Client");
+    const irr = await send(baseline.cookie, clean, "DE", `pay-irr-${stamp}`, "IRR");
+    expect(irr.statusCode, irr.body).toBe(422);
+    expect(irr.json().code).toBe("SANCTIONED_JURISDICTION");
+    expect(irr.json().message).toContain("IRR");
+    expect(irr.json().message).toContain("Iran");
+    plain(irr.json().message);
+    const cup = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/receive",
+      cookies: { cdos_session: baseline.cookie },
+      payload: {
+        idempotencyKey: `recv-cup-${stamp}`,
+        customerId: clean,
+        reference: `recv-cup-${stamp}`,
+        sentCurrency: "CUP",
+        sentAmount: "10.00",
+        payoutAmount: "10.00",
+        feeAmount: "0.00",
+        corridor: "DE",
+        partner: "Corridor partner",
+        purpose: "Family support",
+        sourceOfFunds: "Salary",
+      },
+    });
+    expect(cup.statusCode, cup.body).toBe(422);
+    expect(cup.json().code).toBe("SANCTIONED_JURISDICTION");
+    expect(cup.json().message).toContain("CUP");
+    expect(await dealsFor(baseline.slug, clean)).toBe(0);
+
+    const pakistan = await makeClient(baseline.cookie, "Peshawar Client", { country: "Pakistan", region: "KP" });
+    const ordinary = await send(baseline.cookie, pakistan, "DE", `pk-kp-${stamp}`);
+    expect(ordinary.statusCode, ordinary.body).toBe(201);
+
+    const omitted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: { cdos_session: baseline.cookie },
+      payload: {
+        idempotencyKey: `no-corridor-${stamp}`,
+        customerId: clean,
+        reference: `no-corridor-${stamp}`,
+        principalAmount: "10.00",
+        feeAmount: "0.00",
+        payoutCurrency: "EUR",
+        payoutAmount: "1.00",
+        partner: "Corridor partner",
+        beneficiaryName: "Ann Beneficiary",
+      },
+    });
+    expect(omitted.statusCode, omitted.body).toBe(400);
+  });
+
+  it("requires full identification and a reason before an enhanced-diligence deal posts", async () => {
+    const unverified = await makeClient(baseline.cookie, "Myanmar Client", { country: "Myanmar" });
+    const gap = await send(baseline.cookie, unverified, "DE", `mm-gap-${stamp}`, "EUR", "", "");
+    expect(gap.statusCode, gap.body).toBe(422);
+    expect(gap.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(gap.json().message).toContain("enhanced due diligence");
+    expect(gap.json().message).toContain("Myanmar");
+    plain(gap.json().message);
+    expect(await dealsFor(baseline.slug, unverified)).toBe(0);
+    const notedOnly = await send(baseline.cookie, unverified, "DE", `mm-note-${stamp}`);
+    expect(notedOnly.statusCode, notedOnly.body).toBe(422);
+    expect(notedOnly.json().message).toContain("enhanced due diligence");
+
+    const identified = await makeClient(baseline.cookie, "Myanmar Identified", { country: "MM" });
+    /* The ledger's word for papers on file. The desk's "identified"
+       and "verified" both land here; this is what the gate reads. */
+    await pool.query(
+      "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
+      [identified],
+    );
+    const still = await send(baseline.cookie, identified, "DE", `mm-blank-${stamp}`, "EUR", "", "");
+    expect(still.statusCode, still.body).toBe(422);
+    expect(still.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(still.json().message).toContain("enhanced due diligence");
+
+    const posted = await send(baseline.cookie, identified, "DE", `mm-ok-${stamp}`, "EUR", "Family support", "Salary");
+    expect(posted.statusCode, posted.body).toBe(201);
+    const row = await pool.query(
+      "SELECT purpose, source_of_funds FROM ledger_transactions WHERE tenant_id=$1 AND customer_id=$2",
+      [`tnt-${baseline.slug}`, identified],
+    );
+    expect(row.rows[0].purpose).toBe("Family support");
+    expect(row.rows[0].source_of_funds).toBe("Salary");
+
+    const viaCurrency = await makeClient(baseline.cookie, "Kyat Client");
+    const kyat = await send(baseline.cookie, viaCurrency, "DE", `mmk-gap-${stamp}`, "MMK", "", "");
+    expect(kyat.statusCode, kyat.body).toBe(422);
+    expect(kyat.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(kyat.json().message).toContain("Myanmar");
+
+    const iran = await makeClient(baseline.cookie, "Iran Over Myanmar", { country: "Iran" });
+    const blockedWins = await send(baseline.cookie, iran, "MM", `ir-mm-${stamp}`, "MMK");
+    expect(blockedWins.statusCode, blockedWins.body).toBe(422);
+    expect(blockedWins.json().code).toBe("SANCTIONS-STOP");
   });
 });

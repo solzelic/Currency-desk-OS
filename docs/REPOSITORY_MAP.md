@@ -124,9 +124,9 @@ is not load-bearing.
 
 - API/business logic → `server/src/<domain>/` (routes registered in `app.ts`)
 - Sanctioned jurisdictions → `server/src/compliance/sanctioned-jurisdictions.ts`
-  (versioned data plus the lookup other features call). Refresh procedure:
-  `docs/SANCTIONED_JURISDICTIONS.md`. The pack report that names the stop
-  is flagged `format_rules.sanctionsStop` (migration `029_sanctioned_stop_reports`).
+  (versioned data, two tiers, plus the lookup other features call). Refresh procedure:
+  `docs/SANCTIONED_JURISDICTIONS.md`. The deal stop code is the constant
+  `SANCTIONS-STOP`. Published packs are not edited to name it.
 - Schema → a **new** migration (never edit an old one)
 - OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`
 - Marketing/site content → `design/site/`, then `npm run build:site`

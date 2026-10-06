@@ -145,12 +145,12 @@ rate lineage so later configuration changes cannot rewrite history.
 No destructive rename occurs in the initial migration.
 
 The sanctions list is not a pack threshold. It is versioned data in
-`server/src/compliance/sanctioned-jurisdictions.ts`. Posting stops a
-deal when the client, or a transfer corridor, is on that list. The
-report code is whichever `jurisdiction_reports` row for the desk's
-pack has `format_rules.sanctionsStop` set: `SANCTIONS-STOP` on the
-baseline, `TPR` on the Canada pack. How to refresh the list is
-`docs/SANCTIONED_JURISDICTIONS.md`.
+`server/src/compliance/sanctioned-jurisdictions.ts`, with a blocked
+tier and an enhanced due diligence tier. Posting stops a deal when
+the client, a transfer corridor, or a payout or sent currency is
+blocked. The report code is the constant `SANCTIONS-STOP` on every
+pack. Published packs are not edited to name it. How to refresh the
+list is `docs/SANCTIONED_JURISDICTIONS.md`.
 
 ## Test Configurations
 

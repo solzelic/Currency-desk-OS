@@ -71,12 +71,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **Sanctioned jurisdictions.** A sourced, dated list blocks a desk
-  from opening in a listed country or later setting its country to
-  one, blocks a transfer either way, and stops a deal with a client
-  in a listed country or region. The report code is the pack's
-  (`SANCTIONS-STOP` on the international baseline, `TPR` on the
-  Canada pack). The list is
+- **Sanctioned jurisdictions.** A sourced, dated list
+  (`2026-10-07.1`) has two tiers. Blocked countries and the four
+  occupied Ukrainian oblasts stop a desk from opening or setting its
+  country there, stop a transfer either way (corridor and payout or
+  sent currency), and stop a deal with a client there. The stop code
+  is always `SANCTIONS-STOP`, including in Canada. Myanmar is
+  enhanced due diligence: the deal posts only with full
+  identification and a short reason and source of funds. The list is
   `server/src/compliance/sanctioned-jurisdictions.ts`. How to refresh
   it is `docs/SANCTIONED_JURISDICTIONS.md`.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
@@ -497,13 +499,14 @@ identification number moves only the cash line. Linked transactions
 and the Article 80 cash payment limit are not enforced.
 `docs/EU_AMLR_PACK.md`.
 
-**2026-10-06**, sanctioned jurisdictions. A desk cannot be opened in,
-or later set to, a listed country. A transfer cannot be sent to or
-received from one. A deal with a client whose country, region, or
-incorporation jurisdiction is listed stops and names the pack's
-sanctions report (`SANCTIONS-STOP`, or `TPR` in Canada). The list
-is data, with a version and an as-of date on every entry. See
-`docs/SANCTIONED_JURISDICTIONS.md`.
+**2026-10-06**, sanctioned jurisdictions, list `2026-10-07.1`. A desk
+cannot be opened in, or later set to, a blocked country. A transfer
+cannot be sent to or received from one, and a payout or sent
+currency on the blocked list stops it too. A deal with a client
+whose country, region, or incorporation jurisdiction is blocked
+stops under `SANCTIONS-STOP` on every pack. Myanmar is enhanced due
+diligence, not a block. Each stop is written to `audit_events`
+after the deal rolls back. See `docs/SANCTIONED_JURISDICTIONS.md`.
 
 **2026-10-06**, international baseline. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.
