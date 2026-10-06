@@ -86,6 +86,7 @@ import {
   requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
+import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -636,6 +637,27 @@ export class ObligationService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
+
+      /* A listed corridor is a transfer block, checked before the
+         client's country, so a send to a listed country stays a
+         transfer block even when the client is listed too. A listed
+         client on an ordinary corridor is the pack's sanctions stop. */
+      const transfer = spec.dealKind === "remittance_send"
+        ? "send" as const
+        : spec.dealKind === "remittance_receive"
+          ? "receive" as const
+          : null;
+      const stopped = await dealSanctionsStop(
+        client,
+        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+        pack.packId,
+        {
+          customerId: spec.customerId,
+          corridor: spec.obligation.corridor,
+          transfer,
+        },
+      );
+      if (stopped) throw new LedgerError(stopped.code, stopped.message);
 
       /* ---- the two compliance gates, on the CASH ----
 

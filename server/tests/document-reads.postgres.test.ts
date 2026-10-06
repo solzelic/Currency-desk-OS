@@ -320,7 +320,16 @@ postgres("the reads a signed document is built from", () => {
     const byCode = Object.fromEntries(
       canada.reports.map((r: { code: string }) => [r.code, r]),
     );
-    expect(Object.keys(byCode).sort()).toEqual(["EFTR", "LCTR", "STR"]);
+    expect(Object.keys(byCode).sort()).toEqual(["EFTR", "LCTR", "STR", "TPR"]);
+    /* TPR is the Canada pack's sanctions stop. The form is not
+       transcribed, so the filing format stays empty. */
+    expect(byCode.TPR).toMatchObject({
+      name: "Terrorist Property Report",
+      kind: "other",
+      triggerThreshold: null,
+      filingFormat: null,
+      formatRules: { sanctionsStop: true },
+    });
     expect(byCode.LCTR).toMatchObject({
       name: "Large Cash Transaction Report",
       kind: "large_cash",

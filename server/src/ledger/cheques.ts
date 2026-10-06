@@ -69,6 +69,7 @@ import {
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
+import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -368,6 +369,13 @@ export class ChequeService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
+      const stopped = await dealSanctionsStop(
+        client,
+        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+        pack.packId,
+        { customerId: input.customerId },
+      );
+      if (stopped) throw new LedgerError(stopped.code, stopped.message);
       /* The desk's identification line does not become optional because
          the customer handed over paper instead of notes. The deal's size
          is the FACE amount — that is what is being presented and what the

@@ -21,6 +21,11 @@ import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
 import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
+import {
+  blockedDeskCountry,
+  SanctionedCountryError,
+  signupRefusal,
+} from "../compliance/sanctioned-jurisdictions.js";
 import { tenantPlan } from "./tenant.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -155,6 +160,11 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
       });
     }
 
+    /* Before a code is emailed. A listed country is not a desk we are
+       going to create, and the applicant should hear that now. */
+    const blocked = blockedDeskCountry((b.onboarding ?? {}) as Record<string, unknown>);
+    if (blocked) return reply.code(403).send(signupRefusal(blocked));
+
     const passwordHash = await hashPassword(b.password);
     const row = {
       id: randomUUID(),
@@ -222,23 +232,34 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
 
     forgetClaimedCount();
-    const { tenantId, legalEntityId, branchId, ownerId } = await provisionDesk(
-      db,
-      {
-        businessName: p.businessName,
-        legalName: p.businessName,
-        ownerName: p.ownerName,
-        email,
-        slug: p.slug,
-        plan: chosenPlan,
-        setup: (p.onboarding ?? {}) as Record<string, unknown>,
-        msbNumber,
-        regulator,
-        team: [],
-      },
-      p.passwordHash,
-      "signup",
-    );
+    let tenantId: string;
+    let legalEntityId: string;
+    let branchId: string;
+    let ownerId: string;
+    try {
+      ({ tenantId, legalEntityId, branchId, ownerId } = await provisionDesk(
+        db,
+        {
+          businessName: p.businessName,
+          legalName: p.businessName,
+          ownerName: p.ownerName,
+          email,
+          slug: p.slug,
+          plan: chosenPlan,
+          setup: (p.onboarding ?? {}) as Record<string, unknown>,
+          msbNumber,
+          regulator,
+          team: [],
+        },
+        p.passwordHash,
+        "signup",
+      ));
+    } catch (error) {
+      if (error instanceof SanctionedCountryError) {
+        return reply.code(403).send({ error: error.error, detail: error.detail });
+      }
+      throw error;
+    }
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
     await closeApplication(db, { email }, tenantId, "signup", p.onboarding ?? {});
 

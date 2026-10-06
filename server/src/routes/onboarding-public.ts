@@ -32,6 +32,12 @@ import {
   type Answers,
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
+import {
+  blockedDeskCountry,
+  countryChangeRefusal,
+  SanctionedCountryError,
+  signupRefusal,
+} from "../compliance/sanctioned-jurisdictions.js";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
@@ -408,6 +414,11 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     delete answers.__flow; // the old shape, retired on first write
     answers.__at = parsed.data.at;
 
+    /* Setting the desk's country is the same rule as opening it.
+       The save is refused whole: a listed country is not written. */
+    const blockedCountry = blockedDeskCountry(answers);
+    if (blockedCountry) return reply.code(403).send(countryChangeRefusal(blockedCountry));
+
     /* Where each answer came from. An operator looking at this record needs to
        know which of it arrived through the customer's own screens — that is
        the difference between "they told us this" and "confirm it with them".
@@ -577,6 +588,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     const supplied = parsed.data.data ?? {};
     const merged = { ...flowAnswers(row), ...stripSecrets(supplied) };
+    /* Before the password check, so the sanctions sentence is the one
+       they see. Launch is how a desk is opened; the wording matches signup. */
+    const blockedCountry = blockedDeskCountry(merged);
+    if (blockedCountry) return reply.code(403).send(signupRefusal(blockedCountry));
     const resolved = resolve(merged, fromApplication(a));
 
     /* The password never touches the stored answers, so it has to come off
@@ -618,7 +633,15 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     spec.slug = await freeSlug(db, spec.slug, spec.email);
 
     forgetClaimedCount();
-    const made = await provisionDesk(db, spec, await hashPassword(password), "onboarding");
+    let made: Awaited<ReturnType<typeof provisionDesk>>;
+    try {
+      made = await provisionDesk(db, spec, await hashPassword(password), "onboarding");
+    } catch (error) {
+      if (error instanceof SanctionedCountryError) {
+        return reply.code(403).send({ error: error.error, detail: error.detail });
+      }
+      throw error;
+    }
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, spec.email));
     await db
       .update(schema.onboarding)

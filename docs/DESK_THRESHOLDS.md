@@ -137,7 +137,10 @@ These are the international anti-money-laundering rules. Please check
 they match your country's laws." Compliance names that pack
 International baseline (FATF), names no regulator, and lists Large
 cash record (CASH-RECORD), Suspicious transaction (SUSPICIOUS), and
-Terrorist or sanctioned property (SANCTIONS-STOP). Each money line is a plain sentence. A desk following the
+Terrorist or sanctioned property (SANCTIONS-STOP). The places that
+trip that stop are the sanctioned-jurisdiction list
+(`docs/SANCTIONED_JURISDICTIONS.md`), not a figure on this pack.
+Each money line is a plain sentence. A desk following the
 baseline reads "Following the international baseline: £8,000.00,
 which is 10,000 USD at today's market rate." A stricter line names
 the desk's own figure and the converted baseline separately: the

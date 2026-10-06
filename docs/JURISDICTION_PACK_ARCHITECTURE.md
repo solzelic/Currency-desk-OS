@@ -144,6 +144,14 @@ rate lineage so later configuration changes cannot rewrite history.
 
 No destructive rename occurs in the initial migration.
 
+The sanctions list is not a pack threshold. It is versioned data in
+`server/src/compliance/sanctioned-jurisdictions.ts`. Posting stops a
+deal when the client, or a transfer corridor, is on that list. The
+report code is whichever `jurisdiction_reports` row for the desk's
+pack has `format_rules.sanctionsStop` set: `SANCTIONS-STOP` on the
+baseline, `TPR` on the Canada pack. How to refresh the list is
+`docs/SANCTIONED_JURISDICTIONS.md`.
+
 ## Test Configurations
 
 - Canada: `homeCurrency=CAD`; CAD/USD allowed.

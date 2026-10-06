@@ -69,6 +69,7 @@ import {
   aePurposeDecision,
 } from "./uae-exchange.js";
 import { assertTradeable } from "./currencies.js";
+import { dealSanctionsStop } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -785,6 +786,15 @@ export class LedgerService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
+      /* A client in a listed jurisdiction stops the deal before
+         identification. The report code is the pack's. */
+      const quoteStopped = await dealSanctionsStop(
+        client,
+        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+        pack.packId,
+        { customerId: quote.customerId },
+      );
+      if (quoteStopped) throw new LedgerError(quoteStopped.code, quoteStopped.message);
       const input = decimal(quote.inputAmount, "0.01"),
         output = decimal(quote.outputAmount, "0"),
         fee = decimal(quote.feeCad, "0"),
@@ -1332,6 +1342,13 @@ export class LedgerService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
+      const directStopped = await dealSanctionsStop(
+        client,
+        { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+        pack.packId,
+        { customerId: request.customerId },
+      );
+      if (directStopped) throw new LedgerError(directStopped.code, directStopped.message);
       const rows = await client.query(
         "SELECT currency,units_per_cad FROM ledger_rates WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4",
         scope(actor).slice(0, 4),

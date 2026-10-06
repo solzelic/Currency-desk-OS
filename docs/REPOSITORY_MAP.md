@@ -108,7 +108,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 ```bash
 npm run check:parse                     # every browser script parses
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
-TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 22 Postgres invariant suites
+TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 29 Postgres invariant suites
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
 ```
 
@@ -123,6 +123,10 @@ is not load-bearing.
 ## Where new work normally lives
 
 - API/business logic → `server/src/<domain>/` (routes registered in `app.ts`)
+- Sanctioned jurisdictions → `server/src/compliance/sanctioned-jurisdictions.ts`
+  (versioned data plus the lookup other features call). Refresh procedure:
+  `docs/SANCTIONED_JURISDICTIONS.md`. The pack report that names the stop
+  is flagged `format_rules.sanctionsStop` (migration `029_sanctioned_stop_reports`).
 - Schema → a **new** migration (never edit an old one)
 - OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`
 - Marketing/site content → `design/site/`, then `npm run build:site`
