@@ -149,8 +149,16 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   await page.locator(".win.active").screenshot({ path: `${shots}/home-currency-confirm-1280.png` });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const maximized = page.locator(".win.active.win.max");
-  if ((await maximized.count()) === 0) await page.locator(".win.active .win-zoom").click();
+  /* The title-bar zoom control hides itself, so a normal click can miss
+     it. Call the same button from the page, then wait until the window
+     actually fills the desktop. Measuring before that reports the
+     confirm's place in the small window, which sits in the bottom half. */
+  await page.evaluate(() => {
+    const win = document.querySelector(".win.active");
+    const btn = win && win.querySelector(".win-zoom");
+    if (win && btn instanceof HTMLButtonElement && !win.classList.contains("max")) btn.click();
+  });
+  await expect(page.locator(".win.active.win.max")).toHaveCount(1);
   const box = await confirm.boundingBox();
   expect(box, "confirm box is in the layout").toBeTruthy();
   expect(box!.y).toBeLessThan(844 / 2);

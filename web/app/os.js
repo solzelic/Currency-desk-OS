@@ -5922,7 +5922,14 @@
         color: CD.ink,
         lineHeight: 1.45
       }
-    }, view.rateBoardNotice), !owner && /*#__PURE__*/React.createElement("div", {
+    }, view.rateBoardNotice), view && view.notice && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "home-currency-notice",
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, view.notice), !owner && !(view && view.notice) && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[12px]",
       style: {
         color: CD.mute

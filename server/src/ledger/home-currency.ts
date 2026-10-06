@@ -63,6 +63,8 @@ export type HomeCurrencyView = {
   /** Codes the sanctions hook refused. Empty until that lookup is installed. */
   blocked: string[];
   owner: boolean;
+  /** Why this desk cannot change its base currency. Null on a normal desk. */
+  notice: string | null;
   /** Set when the live board was quoted in some other currency. */
   rateBoardNotice: string | null;
 };
@@ -133,6 +135,11 @@ async function creatingOwnerId(client: pg.PoolClient, tenantId: string): Promise
 }
 
 async function ownerOrThrow(client: pg.PoolClient, actor: LedgerActor): Promise<void> {
+  /* Before the permission check, so a teller on the demonstration desk
+     hears why this desk cannot move, not that they lack a role. */
+  if (actor.tenantId === DEMO_TENANT_ID) {
+    throw new LedgerError("DEMO_DESK", DEMO_REFUSED);
+  }
   try {
     await authorizeLedgerActor(client, actor, "compliance:thresholds");
   } catch (error) {
@@ -140,9 +147,6 @@ async function ownerOrThrow(client: pg.PoolClient, actor: LedgerActor): Promise<
       throw new LedgerError("AUTHORIZATION_DENIED", OWNER_ONLY);
     }
     throw error;
-  }
-  if (actor.tenantId === DEMO_TENANT_ID) {
-    throw new LedgerError("DEMO_DESK", DEMO_REFUSED);
   }
   const ownerId = await creatingOwnerId(client, actor.tenantId);
   if (!ownerId || actor.userId !== ownerId) {
@@ -399,6 +403,7 @@ export class HomeCurrencyService {
         choices: listed.choices,
         blocked: listed.blocked,
         owner: actor.tenantId !== DEMO_TENANT_ID && actor.userId === ownerId,
+        notice: actor.tenantId === DEMO_TENANT_ID ? DEMO_REFUSED : null,
         rateBoardNotice: notice,
       };
     } catch (error) {
@@ -425,6 +430,7 @@ export class HomeCurrencyService {
         choices: listed.choices,
         blocked: listed.blocked,
         owner: true,
+        notice: null,
         rate: assessed.rate?.toDecimalPlaces(12).toFixed(12) ?? null,
         rateAt: assessed.rateAt,
         snapshotId: assessed.snapshot?.id ?? null,

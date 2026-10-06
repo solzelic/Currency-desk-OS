@@ -692,7 +692,10 @@
         {view && view.rateBoardNotice && !done && (
           <div className="mt-2 text-[12px]" style={{ color: CD.ink, lineHeight: 1.45 }}>{view.rateBoardNotice}</div>
         )}
-        {!owner && (
+        {view && view.notice && (
+          <div data-testid="home-currency-notice" className="mt-2 text-[12px]" style={{ color: CD.ink, lineHeight: 1.45 }}>{view.notice}</div>
+        )}
+        {!owner && !(view && view.notice) && (
           <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>Only the owner can change the base currency.</div>
         )}
         {owner && (

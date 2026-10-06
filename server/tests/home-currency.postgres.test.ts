@@ -15,6 +15,8 @@ import { requireIdentification } from "../src/ledger/service.js";
 import { resolvePack } from "../src/ledger/jurisdiction.js";
 import { publishFromMarket } from "../src/rates/market.js";
 import { clearPinAttempts } from "../src/routes/pin.js";
+import { hashPassword } from "../src/auth/password.js";
+import { DEMO, seed } from "../src/seed.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -129,6 +131,7 @@ postgres("the owner changes the base currency", () => {
     app = await buildApp(handle.db);
     await removeDesk(slug, email);
     await removeDesk(canada.slug, canada.email);
+    await pool.query("DELETE FROM market_rates WHERE id LIKE 'snap-home%'");
     await pool.query(
       `INSERT INTO market_rates (id, provider, mids, fetched_at)
        VALUES ('snap-home-currency', 'test', $1::jsonb, now())`,
@@ -176,17 +179,20 @@ postgres("the owner changes the base currency", () => {
     });
   }
 
+  /* Row locks between FOR UPDATE and FOR SHARE show up as a transaction
+     lock, not an ungranted lock on the table. The waiting query is the
+     proof that one side has not gone through. */
   async function waitForWaitingLock(): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < 8000) {
-      const locks = await pool.query(
-        `SELECT 1
-           FROM pg_locks l
-           JOIN pg_class c ON c.oid = l.relation
-          WHERE c.relname = 'legal_entities' AND NOT l.granted
+      const waiting = await pool.query(
+        `SELECT 1 FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+            AND query ILIKE '%legal_entities%'
           LIMIT 1`,
       );
-      if (locks.rowCount) return true;
+      if (waiting.rowCount) return true;
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
     return false;
@@ -337,6 +343,7 @@ postgres("the owner changes the base currency", () => {
       });
       expect(closed.statusCode, closed.body).toBe(200);
     } finally {
+      await holder.query("ROLLBACK").catch(() => undefined);
       holder.release();
     }
 
@@ -364,6 +371,7 @@ postgres("the owner changes the base currency", () => {
       expect(blocked.json().code).toBe("TILL_NOT_CLOSED");
       expect(await home()).toBe("USD");
     } finally {
+      await share.query("ROLLBACK").catch(() => undefined);
       share.release();
     }
     await pool.query("DELETE FROM ledger_till_sessions WHERE session_id = 'till-session-race'");
@@ -810,6 +818,54 @@ postgres("the owner changes the base currency", () => {
       await client.query("ROLLBACK");
     } finally {
       client.release();
+    }
+  });
+
+  it("refuses the demonstration desk, including its creating owner", async () => {
+    await seed(handle.db);
+    const staffId = `${DEMO.tenantId}:j.masri`;
+    const prior = await pool.query("SELECT password_hash FROM staff_users WHERE id = $1", [staffId]);
+    expect(prior.rowCount).toBe(1);
+    await pool.query("UPDATE staff_users SET password_hash = $2 WHERE id = $1", [
+      staffId,
+      await hashPassword("demo-home-pass"),
+    ]);
+    try {
+      const signed = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { staffId: "j.masri", password: "demo-home-pass", tenantId: DEMO.tenantId },
+      });
+      expect(signed.statusCode, signed.body).toBe(200);
+      const session = signed.cookies.find((item) => item.name === "cdos_session")?.value;
+      if (!session) throw new Error("no demo session");
+      const view = await app.inject({
+        method: "GET",
+        url: "/api/ledger/home-currency",
+        cookies: { cdos_session: session },
+      });
+      expect(view.statusCode, view.body).toBe(200);
+      expect(view.json().owner).toBe(false);
+      expect(view.json().notice).toMatch(/demonstration desk/i);
+      const refused = await app.inject({
+        method: "POST",
+        url: "/api/ledger/home-currency",
+        cookies: { cdos_session: session },
+        payload: { currency: "USD", password: "demo-home-pass", snapshotId: "snap-home-fresh" },
+      });
+      expect(refused.statusCode).toBe(403);
+      expect(refused.json().code).toBe("DEMO_DESK");
+      expect(refused.json().message).toMatch(/demonstration desk/i);
+      const book = await pool.query(
+        "SELECT btrim(home_currency::text) AS home FROM legal_entities WHERE id = $1",
+        [DEMO.legalEntityId],
+      );
+      expect(book.rows[0].home).toBe("CAD");
+    } finally {
+      await pool.query("UPDATE staff_users SET password_hash = $2 WHERE id = $1", [
+        staffId,
+        prior.rows[0].password_hash,
+      ]);
     }
   });
 });

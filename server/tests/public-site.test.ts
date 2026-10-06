@@ -170,31 +170,6 @@ describe("SMS rate holds", () => {
     expect(shown.json().rates.length).toBeGreaterThan(0);
   });
 
-  it("refuses a base currency change on the demonstration desk", async () => {
-    const owner = await login("j.masri");
-    const view = await app.inject({
-      method: "GET",
-      url: "/api/ledger/home-currency",
-      cookies: cookieOf(owner),
-    });
-    expect(view.statusCode, view.body).toBe(200);
-    expect(view.json().owner).toBe(false);
-    expect(view.json().currency).toBe("CAD");
-    const refused = await app.inject({
-      method: "POST",
-      url: "/api/ledger/home-currency",
-      cookies: cookieOf(owner),
-      payload: { currency: "USD", password: DEMO.password, snapshotId: "not-a-snapshot" },
-    });
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json().message).toMatch(/demonstration desk/i);
-    const home = await handle.db
-      .select({ homeCurrency: schema.legalEntities.homeCurrency })
-      .from(schema.legalEntities)
-      .where(eq(schema.legalEntities.id, DEMO.legalEntityId));
-    expect(home[0]?.homeCurrency).toBe("CAD");
-  });
-
   it("staff see the desk's incoming holds", async () => {
     const teller = await login("m.costa");
     const res = await app.inject({ method: "GET", url: "/api/quotes", cookies: cookieOf(teller) });

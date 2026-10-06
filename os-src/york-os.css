@@ -872,36 +872,85 @@ button { font-family: inherit; }
 .rate-board-frame iframe { flex: 1 1 auto; width: 100%; height: auto !important; min-height: 0; border: 0; display: block; }
 .rate-board-notice { flex: none; padding: 10px 14px; font-size: 13px; line-height: 1.45; background: var(--brass-soft, #f4efe4); color: var(--ink); }
 @media (max-width: 520px) {
-  .settings-shell { flex-direction: column; }
-  /* One scrolling strip. A stacked nav with a max height pushed the
-     confirm box below the fold on a phone. */
+  /* The title bar and the rules banner are shorter, so a maximised
+     settings window starts higher on a phone. */
+  .win-bar { height: 28px; }
+  .win-body { padding-top: 28px; }
+  [data-rules-notice] {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden !important;
+    line-height: 1.35 !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+  .settings-shell { flex-direction: column; min-height: 0; }
+  /* One short strip. The account chip, the search box, and each group
+     sit on a single row and scroll sideways. A stacked rail, even one
+     capped at 38vh, pushed the base-currency confirm below the fold. */
   .settings-nav {
+    box-sizing: border-box;
     width: auto !important;
-    max-height: none;
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    flex: 0 0 32px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     gap: 6px;
+    padding: 2px 8px !important;
     border-right: none !important;
     border-bottom: 1px solid var(--line);
   }
+  .settings-nav > button > span:first-child { display: none !important; }
+  .settings-nav > button .min-w-0 > span:last-child { display: none !important; }
   .settings-nav > div {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-    flex: none;
-    margin: 0;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    flex: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    gap: 4px;
   }
   .settings-nav button {
-    flex: none;
+    flex: none !important;
     width: auto !important;
-    white-space: nowrap;
+    height: 26px !important;
+    white-space: nowrap !important;
+    margin: 0 !important;
+    padding: 0 8px !important;
   }
-  .settings-main { max-width: none !important; }
+  .settings-main {
+    max-width: none !important;
+    padding: 6px 12px !important;
+    min-height: 0;
+  }
+  /* The Localization title and the Region label sit under the currency
+     block on a phone, so the confirm starts in the top half. */
+  .settings-main > div { display: flex; flex-direction: column; }
+  .settings-main .mb-5 { margin-bottom: 6px !important; }
+  .settings-main .pb-4 { padding-bottom: 6px !important; }
+  [data-testid="home-currency"] { order: -1; padding-top: 0 !important; padding-bottom: 0 !important; }
+  [data-testid="home-currency"] > div { margin-top: 2px !important; }
+  [data-testid="home-currency"] label.block {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  [data-testid="home-currency-select"] { padding-top: 4px !important; padding-bottom: 4px !important; }
 }
 /* Controls must always be their own click target: inner text/icons (and any
    overlay text-wrappers laid over them) never swallow the click. */
