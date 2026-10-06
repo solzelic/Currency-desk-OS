@@ -401,7 +401,7 @@ postgres("a desk with no pack cannot post", () => {
       },
     });
     expect(sent.statusCode).toBe(201);
-    const chequeId = cashed.json().chequeId as string;
+    const chequeId = cashed.json().cheque.chequeId as string;
     const cashingId = cashed.json().transactionId as string;
     const obligationId = sent.json().obligationId as string;
 
@@ -561,7 +561,7 @@ postgres("a desk with no pack cannot post", () => {
     expect(exchangeVoid.statusCode).toBe(201);
     const chequeVoid = await app.inject({
       method: "POST",
-      url: `/api/ledger/cheques/${cashed.json().chequeId}/reversal`,
+      url: `/api/ledger/cheques/${cashed.json().cheque.chequeId}/reversal`,
       cookies: owner,
       payload: { idempotencyKey: "void-cheque-now", reason: "Wrong cheque" },
     });
