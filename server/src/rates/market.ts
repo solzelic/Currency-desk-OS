@@ -89,6 +89,18 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
   const prev = last[0];
   if (!prev) return null; // no seed yet — nothing to inherit scope/margins from
 
+  const entity = await db
+    .select({ homeCurrency: schema.legalEntities.homeCurrency })
+    .from(schema.legalEntities)
+    .where(eq(schema.legalEntities.id, prev.legalEntityId))
+    .limit(1);
+  const book = String(entity[0]?.homeCurrency ?? "").trim().toUpperCase();
+  const labelled = String(prev.homeCurrency ?? "").trim().toUpperCase();
+  /* The previous publication was priced in another home. Copying its
+     rows forward would put those mids on a new timestamp and the desk
+     would quote them as the current currency. Staff publish again. */
+  if (labelled && book && labelled !== book) return null;
+
   // the board's contents are a STAFF decision — market sync only refreshes
   // mids for currencies already on the board, never adds or removes any
   const rows: Record<string, { mid: number; spread?: number; show?: boolean }> = {};
@@ -109,6 +121,7 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
     boardOrder: prev.boardOrder,
     publishedBy: `market-sync (${pull.provider})`,
     marketSnapshotId: marketSnapshotId ?? null,
+    homeCurrency: labelled || (/^[A-Z]{3}$/.test(book) ? book : null),
   });
   return id;
 }

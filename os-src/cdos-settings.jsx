@@ -608,6 +608,155 @@
     );
   }
 
+  /* The books' currency. Owner only, password confirmed, and the
+     sentences on the confirm step come from the ledger so this screen
+     cannot describe a different change from the one that will be saved.
+     It does not multiply thresholds locally. */
+  function HomeCurrencyRow() {
+    const { setSettings, log, me } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading');
+    const [view, setView] = useState(null);
+    const [next, setNext] = useState('');
+    const [preview, setPreview] = useState(null);
+    const [password, setPassword] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const [done, setDone] = useState(null);
+    const api = window.CDOS && window.CDOS.Backend;
+
+    const load = () => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      api.loadHomeCurrency()
+        .then((answer) => { setView(answer); setStatus('ready'); })
+        .catch(() => setStatus('offline'));
+    };
+    useEffect(load, []);
+
+    const review = async (code) => {
+      setNext(code);
+      setPreview(null);
+      setDone(null);
+      setErr('');
+      setPassword('');
+      if (!code) return;
+      setBusy(true);
+      try {
+        setPreview(await api.previewHomeCurrency(code));
+      } catch (e) {
+        setErr((e && e.message) || 'Could not review that change.');
+      } finally { setBusy(false); }
+    };
+
+    const save = async () => {
+      if (busy || !next) return;
+      setBusy(true);
+      setErr('');
+      try {
+        const answer = await api.setHomeCurrency(next, password);
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+        setSettings((s) => ({ ...s, baseCurrency: answer.currency }));
+        log('Base currency changed', `${answer.previous} to ${answer.currency}`);
+        setDone(answer);
+        setPreview(null);
+        setPassword('');
+        setNext('');
+        const again = await api.loadHomeCurrency();
+        setView(again);
+      } catch (e) {
+        setErr((e && e.message) || 'The base currency was not changed.');
+      } finally { setBusy(false); }
+    };
+
+    if (status === 'loading') {
+      return <div data-testid="home-currency" className="py-3 text-[12px]" style={{ color: CD.faint, borderTop: `1px solid ${CD.lineSoft}` }}>Reading the base currency.</div>;
+    }
+    if (status === 'offline') {
+      return <div data-testid="home-currency" className="py-3 text-[12px]" style={{ color: CD.mute, borderTop: `1px solid ${CD.lineSoft}` }}>The base currency is changed on the hosted desk, where the ledger keeps the books.</div>;
+    }
+
+    const currency = (view && view.currency) || '';
+    const owner = !!(view && view.owner) || (me && me.role === 'Owner');
+    return (
+      <div data-testid="home-currency" className="py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+        <div className="text-sm" style={{ color: CD.ink }}>Base currency</div>
+        <div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 520, lineHeight: 1.45 }}>
+          The currency the books are kept in. Reporting lines, the rate tape, and Transfers follow it. Past deals stay as they were posted.
+        </div>
+        <div className="mt-2 text-[13px]" style={{ color: CD.ink }}>
+          Books are kept in <b data-testid="home-currency-current">{currency}</b>.
+        </div>
+        {view && view.rateBoardNotice && !done && (
+          <div className="mt-2 text-[12px]" style={{ color: CD.ink, lineHeight: 1.45 }}>{view.rateBoardNotice}</div>
+        )}
+        {!owner && (
+          <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>Only the owner can change the base currency.</div>
+        )}
+        {owner && (
+          <div className="mt-3">
+            <label className="block text-[11px] mb-1" style={{ color: CD.mute }}>New base currency</label>
+            <select
+              data-testid="home-currency-select"
+              value={next}
+              disabled={busy}
+              onChange={(e) => review(e.target.value)}
+              className="text-sm px-2.5 py-2 outline-none"
+              style={{ ...inSty, width: '100%', maxWidth: 220 }}
+            >
+              <option value="">{currency} (current)</option>
+              {(view.choices || []).map((code) => <option key={code} value={code}>{code}</option>)}
+            </select>
+          </div>
+        )}
+        {preview && (
+          <div data-testid="home-currency-confirm" className="mt-3 p-3" style={{ background: 'var(--cd-paper-soft)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+            {preview.willChange && preview.willChange.map((line) => (
+              <p key={line} className="text-[12.5px] mb-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{line}</p>
+            ))}
+            <div className="text-[10px] uppercase tracking-widest mt-2 mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>This stays as it is</div>
+            {(preview.willNotChange || []).map((line) => (
+              <p key={line} className="text-[12.5px] mb-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{line}</p>
+            ))}
+            {(preview.blockers || []).map((line) => (
+              <p key={line} className="text-[12.5px] mb-2" style={{ color: CD.flag, lineHeight: 1.45 }}>{line}</p>
+            ))}
+            {!(preview.blockers || []).length && (
+              <div className="mt-2">
+                <label className="block text-[11px] mb-1" style={{ color: CD.mute }}>Confirm with your password</label>
+                <input
+                  data-testid="home-currency-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="text-sm px-2.5 py-2 outline-none w-full"
+                  style={{ ...inSty, maxWidth: 280 }}
+                />
+                <button
+                  type="button"
+                  data-testid="home-currency-submit"
+                  disabled={busy || !password}
+                  onClick={save}
+                  className="mt-2 text-[12px] px-3 py-2"
+                  style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: busy || !password ? 0.5 : 1 }}
+                >Change the base currency</button>
+              </div>
+            )}
+          </div>
+        )}
+        {done && (
+          <div data-testid="home-currency-done" className="mt-3 text-[12.5px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
+            The books are now kept in {done.currency}. {done.rateBoardNotice}
+          </div>
+        )}
+        {err && <div data-testid="home-currency-error" className="mt-2 text-[12px]" style={{ color: CD.flag }}>{err}</div>}
+      </div>
+    );
+  }
+
   function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
@@ -879,7 +1028,7 @@
     /* `setSettings` and `log` ride along for DeskThresholdRows, which
        writes the LEDGER and only mirrors the result here — see its
        header. Everything else in the context is unchanged. */
-    const ctxVal = { settings, set, base, setSettings, log };
+    const ctxVal = { settings, set, base, setSettings, log, me };
 
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
     const quoteHome = (() => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; })();
@@ -916,9 +1065,9 @@
       ]],
     ] : [];
 
-    return (<SettingsCtx.Provider value={ctxVal}><div className="flex" style={{ height: '100%' }}>
+    return (<SettingsCtx.Provider value={ctxVal}><div className="flex settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
-      <div className="flex-none p-3 overflow-auto" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
+      <div className="flex-none p-3 overflow-auto settings-nav" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
         <button onClick={() => setTab('account')} className="w-full flex items-center gap-2.5 p-2 mb-3" style={{ borderRadius: 11, background: tab === 'account' ? CD.ink : CD.panel, border: `1px solid ${tab === 'account' ? CD.ink : CD.line}`, textAlign: 'left' }}>
           <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: tab === 'account' ? 'var(--cd-panel)' : CD.ink, color: tab === 'account' ? CD.ink : 'var(--cd-on-ink)', fontSize: 12, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(me.name)}</span>
           <span className="min-w-0">
@@ -948,7 +1097,7 @@
       </div>
 
       {/* panels */}
-      <div className="flex-1 overflow-auto p-5" style={{ maxWidth: 700 }}>
+      <div className="flex-1 overflow-auto p-5 settings-main" style={{ maxWidth: 700 }}>
 
         {tab === 'account' && (<div>
           <SectionTitle icon="id" title="My account" sub="Your personal details and preferences. Every staff member manages their own here — no system access needed." />
@@ -1658,7 +1807,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         {tab === 'localization' && (<div>
           <SectionTitle icon="globe" title="Localization" sub="Make the desk work for your region — not just Canada." />
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Region</div>
-          <Row title="Base currency" desc="Thresholds, drawer totals and reports are expressed in this currency. Changing it converts your thresholds at the live rate."><select value={base} onChange={e => { const nb = e.target.value; const ob = base; if (nb === ob) return; const conv = (v) => { const n = +v || 0; if (!n) return v; const cad = ob === 'CAD' ? n : n / (crossRate('CAD', ob) || 1); const out = nb === 'CAD' ? cad : cad * (crossRate('CAD', nb) || 1); return Math.round(out); }; setSettings(s => ({ ...s, baseCurrency: nb, threshold: conv(s.threshold), idRequiredOver: conv(s.idRequiredOver) })); log('Base currency changed', `${ob} → ${nb} · thresholds converted`); }} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[...new Set(['CAD', 'USD', 'EUR', 'GBP', 'AUD', ...CURX])].map(c => <option key={c}>{c}</option>)}</select></Row>
+          <HomeCurrencyRow />
           <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || ''} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
           {JURIS_REGIONS[settings.bizCountry || ''] && (() => { const jr = JURIS_REGIONS[settings.bizCountry || '']; return (
             <Row title={jr.label} desc={`The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`}><select value={settings.bizRegion || ''} onChange={e => set('bizRegion', e.target.value, `${jr.label} ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 240 }}><option value="">Select {jr.label.toLowerCase()}…</option>{jr.opts.map(o => <option key={o}>{o}</option>)}</select></Row>); })()}
@@ -1666,7 +1815,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Formats</div>
           <Row title="Date format"><Seg value={settings.dateFormat || 'YYYY-MM-DD'} onPick={v => set('dateFormat', v, `date ${v}`)} opts={[['YYYY-MM-DD', 'YYYY-MM-DD'], ['DD/MM/YYYY', 'DD/MM/YYYY'], ['MM/DD/YYYY', 'MM/DD/YYYY']]} /></Row>
           <Row title="Time format" desc="How times read across the desk — e.g. the Audit Trail."><Seg value={settings.timeFormat || '12h'} onPick={v => set('timeFormat', v, `time ${v}`)} opts={[['12h', '12-hour'], ['24h', '24-hour']]} /></Row>
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 9 }}><Ic n="alert" s={13} c="var(--cd-brass-text)" /><span>The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held.</span></div>
         </div>)}
 
         {tab === 'compliance' && (() => {

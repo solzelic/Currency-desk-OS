@@ -74,13 +74,19 @@ commit the generated output — CI diffs `web/` against a fresh build.
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+  Migration `029_rate_board_home_currency` records which home currency a
+  rate board was published in. The owner changes the book in
+  `server/src/ledger/home-currency.ts`. Currencies of sanctioned
+  countries are refused by `server/src/compliance/sanctioned-currencies.ts`
+  (`setSanctionedCurrencyLookup`). That module is the plug for a sourced
+  list. It does not ship one.
 
 ## Test commands
 
 ```bash
 npm run check:parse                     # every browser script parses
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
-TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 22 Postgres invariant suites
+TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the Postgres invariant suites
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
 ```
 

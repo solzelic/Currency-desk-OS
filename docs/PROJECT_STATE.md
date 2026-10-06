@@ -181,6 +181,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   baseline and keeps its currency. The known-wrong country packs are
   not assigned by that backfill.
 
+- **The owner can change the desk's base currency in Settings.** Only
+  the owner, and only after they type their password again. Every till
+  must be closed and every cash count closed out. The new currency
+  needs a market snapshot from the last 24 hours. Past ledger rows keep
+  the currency they were posted in. Cash in a till or a vault is not
+  converted. A desk-chosen money threshold is restated once, rounded
+  down to the cent. Pack lines stay written in the currency the pack
+  was authored in and convert on the next read. The published rate
+  board is labelled with the old currency and comes off the counter
+  until someone publishes it again. The audit row records who, when,
+  both currencies, the rate, and when that rate was fetched. Currencies
+  of sanctioned countries are refused through
+  `server/src/compliance/sanctioned-currencies.ts`. That file is a
+  hook. It does not contain a list. A sourced list plugs in with
+  `setSanctionedCurrencyLookup`.
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -260,7 +276,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-06**, international baseline. A country with no pack is not
+**2026-10-06**, owner base-currency change and the international
+baseline. The owner can move the book in Settings after a password
+check, with every till and cash count closed and a market rate from
+the last 24 hours. Past ledger rows are not rewritten. A rate board
+quoted in the old currency comes off the counter until it is
+published again. Sanctioned currencies are refused through a hook
+that does not hard-code a list. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.
 Cash foreign exchange is identified at 3,000 USD or more; remittance,
 electronic transfer, and virtual currency at 1,000 USD or more; the

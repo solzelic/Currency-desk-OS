@@ -519,6 +519,23 @@
         });
       },
 
+      /* The currency the books are kept in. The browser used to change
+         this with a dropdown and a float. The ledger is the only place
+         the change is real: the owner, their password, every till closed,
+         and a market rate from the last 24 hours. */
+      loadHomeCurrency: function () {
+        return request("/api/ledger/home-currency");
+      },
+      previewHomeCurrency: function (currency) {
+        return request("/api/ledger/home-currency/preview?currency=" + encodeURIComponent(currency));
+      },
+      setHomeCurrency: function (currency, password) {
+        return request("/api/ledger/home-currency", {
+          method: "POST",
+          body: JSON.stringify({ currency: currency, password: password }),
+        });
+      },
+
       /* ---- the four lines that are cash on one side and a promise on
              the other ----
 

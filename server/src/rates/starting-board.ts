@@ -132,6 +132,9 @@ export async function publishStartingBoard(
     boardRows: rows,
     boardOrder: Object.keys(rows),
     publishedBy: args.publishedBy ?? "system:provisioning",
+    /* These mids were just restated in `home`. Say so, so a later move
+       of the book can tell this publication from one in the new currency. */
+    homeCurrency: /^[A-Z]{3}$/.test(home) ? home : null,
   });
   return { published: true, currencies: Object.keys(rows) };
 }

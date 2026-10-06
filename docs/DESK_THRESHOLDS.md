@@ -114,7 +114,12 @@ snapshot is missing, older than 24 hours, or has no mid for the home
 currency, those lines come back unset: an unverified customer is
 identified on every deal, and purpose and source of funds are
 required on every deal. A line already written in the home currency
-does not need a snapshot. A USD book does not either. The threshold editors stay available. The
+does not need a snapshot. A USD book does not either. The owner can
+move the book to another currency in Settings. Pack numbers stay
+written in the currency they were authored in (`rulesCurrency`) and
+convert on read. A desk-chosen money line is restated once, at the
+change, into the new book currency, and is not converted again. Past
+deals are not rewritten. The threshold editors stay available. The
 till and Settings show: "We don't have rules for your country yet.
 These are the international anti-money-laundering rules. Please check
 they match your country's laws." Compliance names that pack

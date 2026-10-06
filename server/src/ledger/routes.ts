@@ -22,6 +22,7 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
+import { HomeCurrencyService } from "./home-currency.js";
 import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
@@ -311,6 +312,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
   const currencies = new CurrencyService(pool);
+  const homeCurrency = new HomeCurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
@@ -352,7 +354,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =
-      error.code === "AUTHENTICATION_REQUIRED" ? 401
+      error.code === "AUTHENTICATION_REQUIRED" || error.code === "PASSWORD_REJECTED" ? 401
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
@@ -787,6 +789,54 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.send(await currencies.set(actor, parsed.data.currencies))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The currency the books are kept in.
+
+     Read by anyone who can see the ledger. Changed only by the owner,
+     and only after they type the password they sign in with. The
+     preview is the confirm screen: what will move, what will not, and
+     why a move is refused. Nothing is written on the preview. */
+  const homeCurrencyBody = z.object({
+    currency: currencyCode,
+    password: z.string().min(1).max(512),
+  }).strict();
+
+  app.get("/api/ledger/home-currency", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await homeCurrency.view(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/home-currency/preview", async (req, reply) => {
+    const parsed = z.object({ currency: currencyCode }).safeParse(req.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: "A base currency is a three letter code." });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await homeCurrency.preview(actor, parsed.data.currency)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/home-currency", async (req, reply) => {
+    const parsed = homeCurrencyBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: "Name the new base currency and confirm your password." });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await homeCurrency.change(actor, parsed.data.currency, parsed.data.password))
         : undefined;
     } catch (error) {
       return failure(reply, error);

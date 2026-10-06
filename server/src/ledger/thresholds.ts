@@ -167,13 +167,14 @@ const asCountSetting = (
 });
 
 /* The pack's remittance identification line, in the desk's home currency.
-   Same conversion as the cash-exchange line: a USD figure times the newest
-   market snapshot, rounded down to the cent. No fresh rate, no line.
-   A line already in home currency does not need a snapshot. */
+   A figure already in the book currency is used as written. Any other
+   currency, including the baseline's US dollars and a country pack's
+   own currency after the owner moves the book, is multiplied by the
+   newest market snapshot and rounded down to the cent. No fresh rate,
+   no line. */
 async function remittanceLine(
   client: pg.PoolClient,
   pack: JurisdictionPack,
-  market: { rate: Decimal } | null,
 ): Promise<ThresholdSetting<string>> {
   const unset: ThresholdSetting<string> = {
     effective: null,
@@ -201,7 +202,10 @@ async function remittanceLine(
   const home = pack.homeCurrency.trim().toUpperCase();
   let converted: Decimal | null = null;
   if (currency && currency === home) converted = amount;
-  else if (currency === "USD" && market) converted = roundDownCents(amount.mul(market.rate));
+  else if (currency) {
+    const fx = await marketHomePerUnit(client, currency, home);
+    if (fx) converted = roundDownCents(amount.mul(fx.rate));
+  }
   if (!converted) return unset;
   const value = converted.toFixed(2);
   return { effective: value, deskChoice: null, packValue: value, posture: "following" };
@@ -236,22 +240,29 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
-  /* A baseline pack states its dollar lines in the desk's currency, at
-     the same market rate the posting gate uses, rounded down to the cent.
-     No fresh rate: the lines are unset, and identification is required. */
-  const baselineForeign =
-    pack.baseline && pack.homeCurrency.trim().toUpperCase() !== "USD";
-  const market = baselineForeign
-    ? await marketHomePerUnit(client, "USD", pack.homeCurrency)
+  /* Pack numbers are written in `rulesCurrency` (USD on the baseline,
+     the country's currency on a country pack). The book may be a
+     different currency after the owner moves it. The same market
+     snapshot the posting gate uses turns those numbers into the book,
+     rounded down to the cent. No fresh rate: the lines are unset, and
+     identification is required. A desk's own choice is already stored
+     in the book currency. The move converts it once, in the same
+     transaction as the currency change, so it is not converted again
+     here. */
+  const written = (pack.rulesCurrency || pack.homeCurrency).trim().toUpperCase();
+  const book = pack.homeCurrency.trim().toUpperCase();
+  const needsFx = written !== book;
+  const market = needsFx
+    ? await marketHomePerUnit(client, written, book)
     : { rate: new Decimal(1), rateAt: null };
   const packMoney = (raw: unknown): Decimal | null => {
     const amount = money(raw);
-    if (!baselineForeign) return amount;
+    if (!needsFx) return amount;
     if (!market || !amount) return null;
     return roundDownCents(amount.mul(market.rate));
   };
   const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
-    baselineForeign && !market
+    needsFx && !market
       ? {
           effective: null,
           deskChoice: money(deskRaw)?.toFixed(2) ?? null,
@@ -259,7 +270,7 @@ export async function readDeskThresholds(
           posture: "unknown" as const,
         }
       : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
-  const remittanceIdThreshold = await remittanceLine(client, pack, market);
+  const remittanceIdThreshold = await remittanceLine(client, pack);
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,

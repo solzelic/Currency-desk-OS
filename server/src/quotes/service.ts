@@ -6,6 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
+import { rateBoardCurrencyNotice } from "../ledger/home-currency.js";
 import { assertTradeable } from "../ledger/currencies.js";
 import { withSerializationRetry } from "../ledger/retry.js";
 import {
@@ -249,8 +250,14 @@ export class QuoteService {
           "RATE_NOT_AVAILABLE",
           "No published branch board.",
         );
-      const board = boards.rows[0],
-        maxAge = boardMaxAgeSeconds();
+      const board = boards.rows[0];
+      /* Mids are home currency per one unit. A board still labelled
+         with the previous home is not a price in this one. */
+      const quotedHome = String(board.home_currency ?? "").trim().toUpperCase();
+      const boardNotice = rateBoardCurrencyNotice(quotedHome, home);
+      if (boardNotice)
+        throw new LedgerError("RATE_NOT_AVAILABLE", boardNotice);
+      const maxAge = boardMaxAgeSeconds();
       if (
         !Number.isFinite(maxAge) ||
         maxAge < 1 ||
