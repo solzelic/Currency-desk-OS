@@ -107,6 +107,27 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
 
+- **First-run tour** — the first time someone reaches the desk, a
+  skippable walk-through points at the real screens. The tour does not
+  open or raise a window. A step runs only when that window is already
+  open and in front; until then the card offers a button (Open the till,
+  Open the dashboard) and only that click opens it. The card sits in a
+  gap so the shop figures, the drawer, the count, and the file list stay
+  readable. Skip and Open sit off the desk's own controls, and the card
+  moves if one appears underneath them (a sealed-copy button, for
+  example). Skip stays on the card. An owner is shown the shop,
+  then clients, then the file folder on a customer record (identification
+  standing, the papers filed there, and search). Anyone else is shown the
+  cash drawer: the till, then the count — and only if that app is on their
+  dock. Reconcile and close is not a step: that panel is the close, and
+  with no count saved it shows an error. The tour does not count, post,
+  or close cash. A step whose screen is not there is left out; the tour
+  does not add a screen, a dock icon, or a second dashboard. Skip or
+  finish is stored per person in the desk preference document
+  (`cdos_tour_v1`), the same save that keeps the rest of the desk across
+  a refresh. It does not file a paper and does not change identification
+  standing.
+
 - **Product-demo desk** — York FX can be opened as a lived-in shop for a
   meeting. Staff id `demo` is created on that tenant if missing; the
   password is stamped only from `DEMO_STAFF_BOOTSTRAP` and is never
@@ -165,7 +186,22 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-30**, operator file folder. Supporting papers (proof of address,
+**2026-10-05**, first-run tour. The tour does not open or raise a window.
+A step runs only when that window is already open and in front. Until
+then the card offers Open the till or Open the dashboard, and only that
+click opens it. The card sits in a gap, clear of the shop figures, the
+drawer, the count, and the file list. Skip and Open stay off the desk's
+own controls, and the card moves if one shows up underneath them. Skip
+stays on the card. Reconcile
+and close is not a step. That panel is the close, and the tour does not
+count or close cash to make it presentable. Skip or finish is a per-person preference in the
+desk document, so a refresh does not bring the tour back. Papers and
+identification standing are unchanged.
+The KYC badge and identification standing were already separate reads
+(a document number on the record, versus the standing the desk stores);
+this tour does not write either.
+
+Prior stamp **2026-09-30**, operator file folder. Supporting papers (proof of address,
 source of funds, corporate filings) are `supporting_file` rows on
 `desk_client_images`. The client record lists them without the bytes;
 opening one writes an audit row. A file does not change identification.

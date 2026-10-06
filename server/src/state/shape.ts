@@ -193,6 +193,23 @@ export const CATALOGUE: readonly KeyShape[] = [
   { key: "yorkfx_rates_locked", kind: "preference", what: "Whether the board is held" },
   { key: "yorkfx_board_order", kind: "preference", what: "Currency order on the board" },
   { key: "yorkfx_rate_provider", kind: "preference", what: "Which rate source is selected" },
+  /* Per person, not per desk: the value is a map of staff id →
+     { status: 'skipped' | 'finished', tour: 'owner' | 'employee' }.
+     One key because that is how every other preference is saved.
+     See the header of os-src/cdos-tour.js. */
+  {
+    key: "cdos_tour_v1",
+    kind: "preference",
+    what: "Whether each person has skipped or finished the first-run tour",
+    schema: z.record(
+      z
+        .object({
+          status: z.enum(["skipped", "finished"]),
+          tour: z.enum(["owner", "employee"]),
+        })
+        .passthrough(),
+    ),
+  },
 
   /* `cdos_kyc_seed_v3` and `cdos_report_history_seed_v3` were catalogued
      here: markers saying "this desk has already been given its
