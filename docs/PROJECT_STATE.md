@@ -66,10 +66,31 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Production/build surfaces
 
 `marketing site` (`/`) · `OS` (`/app`, `/login`) · `admin` (`/admin`) ·
-`onboarding` (`/onboarding/:code`) · `customer storefront` (`/sites/yorkfx`)
+`onboarding` (`/onboarding` redirects to `/signup`; `/onboarding/:code` is the invite: the reference, the 26 July 2026 terms, then setup) · `customer storefront` (`/sites/yorkfx`)
 · `server/API` (`/api/*`).
 
 ## Current active work
+
+- **Invite, then terms, then the existing setup** — "Get early access"
+  still applies at `/signup`. "Approve & invite" still emails
+  `CD-XXXXXX` and `/onboarding/CD-XXXXXX`. That link shows the reference
+  it already carries ("This is your ID"), then the Terms of Service
+  dated 26 July 2026. That card shows the full terms in a fixed-height
+  scroll window, and "Open full terms" opens `/legal#terms` in a new
+  tab. The checkbox stays off until the bottom of the window is in
+  view, and Continue stays off, and looks off, until the box is
+  checked. On a laptop the whole card, including Continue, fits the
+  screen. The words on those two screens are for the customer. The
+  server records the version, the time, and the application's email,
+  and refuses any other version. The database check on `onboarding`
+  allows only `2026-07-26` together with a time and a person (migration
+  027). Setup and launch refuse until that acceptance is on the
+  reference. The wizard after that is the one that already shipped.
+  A bare `/onboarding` redirects to `/signup`. `/login` "Create your
+  desk" goes to `/signup`. `OnboardWizard` and `POST /api/signup` are
+  still in the tree, unlinked; removing them is follow-up. The admin
+  enquiry list, the approval email, auth, MFA, and migrations 025 and
+  026 are unchanged.
 
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
@@ -186,20 +207,37 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-05**, first-run tour. The tour does not open or raise a window.
-A step runs only when that window is already open and in front. Until
-then the card offers Open the till or Open the dashboard, and only that
-click opens it. The card sits in a gap, clear of the shop figures, the
-drawer, the count, and the file list. Skip and Open stay off the desk's
-own controls, and the card moves if one shows up underneath them. Skip
-stays on the card. Reconcile
-and close is not a step. That panel is the close, and the tour does not
-count or close cash to make it presentable. Skip or finish is a per-person preference in the
-desk document, so a refresh does not bring the tour back. Papers and
-identification standing are unchanged.
-The KYC badge and identification standing were already separate reads
-(a document number on the record, versus the standing the desk stores);
-this tour does not write either.
+**2026-10-06**, invite then terms, together with the first-run tour.
+`/onboarding/CD-XXXXXX` shows the reference from the link, then the
+26 July 2026 terms in a scroll window on the card, then the existing
+setup wizard. "Open full terms" opens the legal page in a new tab.
+The checkbox stays off until the bottom of that window is in view.
+On a laptop the card, including Continue, fits without a page scroll.
+Launch refuses without that acceptance. Bare `/onboarding`
+and the login "Create your desk" link go to `/signup`. Migration 027
+records the acceptance on the onboarding row and checks the version.
+The tour is not on those screens.
+When the desk opens, the owner's tour offers itself once and stays
+skippable. It does not skip the terms, and it does not show them again.
+
+Prior stamp **2026-10-05**, first-run tour. The tour does not open or
+raise a window. A step runs only when that window is already open and
+in front. Until then the card offers Open the till or Open the dashboard,
+and only that click opens it. The card sits in a gap, clear of the shop
+figures, the drawer, the count, and the file list. Skip and Open stay
+off the desk's own controls, and the card moves if one shows up
+underneath them. Skip stays on the card. Reconcile and close is not a
+step. That panel is the close, and the tour does not count or close
+cash to make it presentable. Skip or finish is a per-person preference
+in the desk document, so a refresh does not bring the tour back. Papers
+and identification standing are unchanged. The KYC badge and
+identification standing were already separate reads (a document number
+on the record, versus the standing the desk stores); this tour does not
+write either.
+
+Prior stamp **2026-09-30**, public account opening. That draft put a
+second signup at `/onboarding` and issued another id. It is not the
+path. The invite chain above is.
 
 Prior stamp **2026-09-30**, operator file folder. Supporting papers (proof of address,
 source of funds, corporate filings) are `supporting_file` rows on

@@ -19,6 +19,7 @@ import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { JURISDICTION, resolve, fromApplication } from "../src/onboarding/flow.js";
 import { slugFrom, specFromAnswers } from "../src/onboarding/provision.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -68,6 +69,7 @@ beforeAll(async () => {
   const listed = (await app.inject({ method: "GET", url: "/api/admin/enquiries?kind=early_access", cookies: adminCookie })).json();
   const mine = (listed.enquiries as { id: string; reference: string }[]).find((e) => e.reference === ref)!;
   await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${mine.id}`, cookies: adminCookie, payload: { status: "invited" } as Record<string, unknown> });
+  await acceptOnboardingTerms(app, ref);
   /* Then they start filling it in, on their own screens. This used to be
      typed on their behalf in the panel; there is no panel copy of the flow
      any more, so the answers arrive the only way they can — from them. */
@@ -478,6 +480,10 @@ describe("confirming and opening the desk", () => {
 describe("the walkthrough", () => {
   const W = "CD-WALKTHRU";
   const state = () => app.inject({ method: "GET", url: `/api/onboarding/${W}/state` });
+
+  beforeAll(async () => {
+    await acceptOnboardingTerms(app, W);
+  });
 
   it("is always there, on the applicant's own door, with a real reference", async () => {
     const res = await state();

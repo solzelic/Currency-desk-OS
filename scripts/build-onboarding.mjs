@@ -225,7 +225,8 @@ const BRIDGE = `<script>
 
     /* The end of it. Creates the tenant and the owner, signs them in and
        closes the application. Everything before this is answers; this is
-       the desk. */
+       the desk. Launch refuses unless the terms for this reference are
+       already on the row. */
     launch: function (d) {
       if (!CD.code) return Promise.resolve({ ok: true, simulated: true });
       CD.err = "";
@@ -239,16 +240,44 @@ const BRIDGE = `<script>
       });
     },
 
+    /* The terms screen. The version is the date on the legal page.
+       The server records the time and who accepted (the application's
+       email). A different version is refused and nothing is stored.
+       The checkbox in the browser is not the record. */
+    acceptTerms: function () {
+      if (!CD.code) return Promise.resolve(false);
+      CD.err = "";
+      return api("/terms", { termsAccepted: true, termsVersion: "2026-07-26" }).then(function (r) {
+        if (r.status === 200 && r.body.ok) { CD.termsAccepted = true; return true; }
+        CD.err = (r.body && r.body.detail) || "We couldn\\u2019t record that acceptance.";
+        return false;
+      }).catch(function () {
+        CD.err = "We couldn\\u2019t record that acceptance.";
+        return false;
+      });
+    },
+
     /* Debounced, and never blocks a keystroke. A failure stays quiet on
        purpose: the answers are still in localStorage, and telling somebody
-       mid-sentence that the network blinked helps nobody. */
+       mid-sentence that the network blinked helps nobody.
+
+       termsChecked is the box on the terms screen. It does not travel:
+       acceptance is the row written by acceptTerms. */
     save: function (i, data) {
       if (!CD.code) return;
       clearTimeout(CD._t);
+      var clean = {};
+      if (data) {
+        for (var k in data) {
+          if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+          if (k === "termsChecked" || String(k).indexOf("__") === 0) continue;
+          clean[k] = data[k];
+        }
+      }
       CD._t = setTimeout(function () {
         fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/state", {
           method: "PUT", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ at: i, data: data }),
+          body: JSON.stringify({ at: i, data: clean }),
         }).catch(function () {});
       }, 700);
     },
@@ -433,6 +462,9 @@ const BRIDGE = `<script>
       'button[style*="--cd-cta"]:hover{transform:translateY(-1px);box-shadow:0 12px 26px -8px rgba(29,107,69,0.55)}' +
       'button[style*="--cd-cta"]:active{transform:translateY(1px) scale(0.995);box-shadow:0 4px 12px -6px rgba(29,107,69,0.5)}' +
       'button[style*="--cd-cta"]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}' +
+      /* The terms checkbox's own rules are in the design stylesheet.
+         This script runs on the loading page, and the unpacker replaces
+         that document, so a style added here never reaches the box. */
       '@media (prefers-reduced-motion: reduce){button[style*="--cd-cta"]{transition:none}' +
       'button[style*="--cd-cta"]:hover,button[style*="--cd-cta"]:active{transform:none}}';
     document.head.appendChild(css);
@@ -476,6 +508,86 @@ const BRIDGE = `<script>
 })();
 </script>
 `;
+
+/* The scroll window on the terms card.
+
+   The shape is the agreement box already in this design: data-terms-box,
+   190px tall, white, 12px corners, 16px by 18px padding. It lives on the
+   payment screen of design/onboarding/currencydesk-onboarding.html, and
+   it has been there since 8064ead (then CurrencyDesk Onboarding.html).
+   That box still holds a placeholder "Service Agreement". This window
+   uses the same chrome and puts the 26 July 2026 Terms of Service in it,
+   taken from design/site/CurrencyDesk Legal.dc.html. */
+function inviteTermsInner() {
+  const legalPath = path.join(ROOT, "design/site/CurrencyDesk Legal.dc.html");
+  const legal = readFileSync(legalPath, "utf8");
+  if (!legal.includes(">26 July 2026<")) {
+    throw new Error("onboarding: design/site/CurrencyDesk Legal.dc.html no longer shows 26 July 2026");
+  }
+  const start = legal.indexOf('<div id="terms"');
+  const end = legal.indexOf('<div style="margin-top: 40px; border-top:', start);
+  if (start < 0 || end < 0) throw new Error("onboarding: Terms of Service block not found in the legal page");
+  const parts = legal.slice(start, end).split('<div id="t');
+  /* parts[0] is empty, parts[1] is the intro (id "terms"), then t1..t16. */
+  if (parts.length !== 18) {
+    throw new Error("onboarding: expected the terms intro plus 16 sections, found " + (parts.length - 1));
+  }
+
+  const hStyle = "font-family:var(--m);font-size:9.5px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink);font-weight:700;margin:15px 0 0;";
+  const pStyle = "font-size:12.5px;line-height:1.6;color:var(--mute);margin:5px 0 0;";
+
+  const links = (html) => html.replace(/<a\s+href="([^"]*)"[^>]*>/gi, (_, href) => {
+    let to = href;
+    if (to.endsWith("CurrencyDesk Contact.dc.html")) to = "/contact";
+    const blank = to.startsWith("/") ? ' target="_blank" rel="noopener"' : "";
+    return `<a href="${to}"${blank} style="color:var(--primary);font-weight:700;">`;
+  }).replace(/\s+/g, " ").trim();
+
+  const paragraphs = (block) => {
+    const out = [];
+    const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+    let m;
+    while ((m = re.exec(block))) out.push(links(m[1]));
+    return out;
+  };
+
+  const intro = parts[1];
+  const h2 = /<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(intro);
+  let html = `<div style="font-family:var(--serif);font-size:19px;line-height:1.15;color:var(--ink);">${links(h2 ? h2[1] : "Terms of Service")}</div>`;
+  html += '<div style="font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);margin-top:5px;">26 July 2026</div>';
+  for (const p of paragraphs(intro)) html += `<p style="${pStyle}">${p}</p>`;
+
+  for (let i = 2; i < parts.length; i++) {
+    const block = parts[i];
+    const num = /<div[^>]*>\s*(\d{1,2})\s*<\/div>/.exec(block);
+    const h3 = /<h3[^>]*>([\s\S]*?)<\/h3>/i.exec(block);
+    const label = `${num ? num[1] : String(i - 1).padStart(2, "0")} ${links(h3 ? h3[1] : "")}`;
+    html += `<div style="${hStyle}">${label}</div>`;
+    const ps = paragraphs(block);
+    if (block.includes(">In short<") && ps.length) {
+      const last = ps.pop();
+      for (const p of ps) html += `<p style="${pStyle}">${p}</p>`;
+      html += `<div style="${hStyle}">In short</div>`;
+      html += `<p style="${pStyle}">${last}</p>`;
+    } else {
+      for (const p of ps) html += `<p style="${pStyle}">${p}</p>`;
+    }
+  }
+  html += '<div data-terms-end="1" style="height:1px;"></div>';
+
+  if (!html.includes("These terms govern your use of CurrencyDesk.")) {
+    throw new Error("onboarding: terms window is missing the opening of the 26 July 2026 terms");
+  }
+  if (!html.includes("Your records are yours and you can take them with you.")) {
+    throw new Error("onboarding: terms window is missing the end of the 26 July 2026 terms");
+  }
+  if (html.includes("{{") || html.includes(".dc.html")) {
+    throw new Error("onboarding: terms window still has a design-tool link or a template hole");
+  }
+  return html;
+}
+
+const TERMS_INNER = inviteTermsInner();
 
 /* ------------------------------------------------------------------
    Patches. Each is [what must be there, what replaces it, why], applied
@@ -572,7 +684,8 @@ patch(
   "    if (wasI !== this.state.i && this.state.i === 14 && window.__cdOnb && window.__cdOnb.code) {\n" +
   "      window.__cdOnb.sendCode(this.state.data).then(() => this.forceUpdate());\n" +
   "    }\n" +
-  "    if (prevS.i !== this.state.i) this.focusStage();",
+  "    if (prevS.i !== this.state.i) this.focusStage();\n" +
+  "    this.armTermsBox();",
 );
 
 /* --- 3. The invite code, in the shape we actually issue ------------
@@ -645,6 +758,346 @@ patch(
   "code:'000001'",
   "code:''",
   2,
+);
+
+/* --- 5b. The link's first two views, still on screen 0 -------------
+   Screen 0 used to ask them to type the ID. The ID is already in the
+   link. Show it, then the terms, then leave screens 1–16 alone.
+   Inserting a screen would move verify (14) and done (16), and the
+   patches below are pinned to those numbers. */
+patch(
+  "screen 0 — the ID from the link, then the terms, then the existing wizard",
+  "  meta(i, d, j, home, selCcy) {",
+  `  /* The invite link's first two views, both still on screen 0.
+
+     'id'    — show the reference that is already in the link.
+     'terms' — the customer reads the 26 July 2026 terms in the
+               scroll window, then accepts them. The checkbox stays
+               off until the bottom of that window is in view.
+               Continue stays off until the box is checked.
+               The server still records the version, the time, and
+               who accepted. The screen does not talk about that.
+     'typed' — the design tool, which has no link and still asks
+               for an ID. The served page always has window.__cdOnb.
+
+     Screens 1–16 are the setup wizard, untouched. */
+  preface() {
+    if (!window.__cdOnb) return 'typed';
+    return this._preface || 'id';
+  }
+
+  prefaceFace(M) {
+    const g = this.preface();
+    if (g === 'id') return {
+      eyebrow: 'Your invite',
+      title: 'This is your ID',
+      paras: ['This is the reference from your invite email. It stays with your desk, so keep it handy.'],
+      note: '',
+      cta: 'Continue',
+    };
+    if (g === 'terms') return {
+      eyebrow: '26 July 2026',
+      title: 'Terms of Service',
+      paras: ['Please read and accept our Terms of Service to set up your desk.'],
+      note: '',
+      cta: 'Continue',
+    };
+    return { eyebrow: '', title: M.title || '', paras: M.paras || [], note: M.note || '', cta: M.ctaLabel || 'Continue' };
+  }
+
+  heroReady(d) {
+    if (!window.__cdOnb) return this.cdIdValid(d.cdId);
+    const g = this.preface();
+    if (g === 'id') return !!window.__cdOnb.refValid(window.__cdOnb.code);
+    if (g === 'terms') return !!d.termsChecked && !this._termsBusy;
+    return this.cdIdValid(d.cdId);
+  }
+
+  /* The shop name they typed on the application, if they typed one.
+     Nothing is invented from the workspace address. No new column:
+     it is already on the enquiry details, which GET /state returns
+     as application.told. */
+  shopLabel() {
+    const told = window.__cdOnb && window.__cdOnb.application && window.__cdOnb.application.told;
+    if (!told) return '';
+    return String(told.shopName || told.businessName || '').trim();
+  }
+
+  idNext() {
+    if (this.preface() !== 'id' || !window.__cdOnb) return '';
+    if (!window.__cdOnb.refValid(window.__cdOnb.code)) return '';
+    return 'Next, accept the terms. Then set up your desk.';
+  }
+
+  issuedHint() {
+    if (!window.__cdOnb || !window.__cdOnb.code) return 'Open the link from your invite email. That link is this ID.';
+    const s = window.__cdOnb.refState(window.__cdOnb.code);
+    if (s === 'ok') return '';
+    if (s === 'no') return "We don't have this reference. Use the link from the email we sent when you were approved.";
+    if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and open the link again.';
+    return 'Checking this reference…';
+  }
+
+  onPrefaceCta(e) {
+    /* The checkbox reuses this handler. A brand-new name in this
+       runtime never fires, so the input is wired to onCta and marked
+       data-terms-toggle.
+
+       It listens for change, not click. Click runs before the browser
+       has toggled the box, and preventDefault on that click makes React
+       paint the box empty while termsChecked is already true. change
+       runs after the toggle, so the tick on screen is the box itself. */
+    const el = e && (e.target || e.currentTarget);
+    const toggle = el && el.closest && el.closest("[data-terms-toggle]");
+    if (toggle) {
+      const input = toggle.tagName === "INPUT" ? toggle : toggle.querySelector("input");
+      this.set('termsChecked', !!(input && input.checked));
+      return;
+    }
+    if (!window.__cdOnb || this.state.i > 0 || this.preface() === 'typed') { this.next(); return; }
+    if (this.preface() === 'id') {
+      if (!window.__cdOnb.refValid(window.__cdOnb.code)) return;
+      this._preface = 'terms';
+      this.forceUpdate();
+      return;
+    }
+    if (this.preface() === 'terms') {
+      if (!this.state.data.termsChecked || this._termsBusy) return;
+      this._termsBusy = true;
+      const self = this;
+      this.forceUpdate();
+      window.__cdOnb.acceptTerms().then(function (ok) {
+        self._termsBusy = false;
+        if (!ok) { self.forceUpdate(); return; }
+        self._preface = 'setup';
+        self.next();
+      });
+      return;
+    }
+    this.next();
+  }
+
+  /* The terms window. Same chrome as the payment screen's agreement
+     box: a fixed height, and they scroll. The checkbox stays disabled
+     until the bottom is in view. If the text already fits, it is
+     enabled on the next frame. 24px is the same slack that box used,
+     so the last line counts once it is actually in view. */
+  termsAtEnd(el) {
+    if (!el || el.clientHeight < 1) return false;
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
+  }
+
+  noteTermsEnd(el) {
+    if (this._inviteTermsRead || !this.termsAtEnd(el)) return;
+    this._inviteTermsRead = true;
+    this._termsScroll = el.scrollTop;
+    this.forceUpdate();
+  }
+
+  onTermsKeys(e) {
+    const el = e.currentTarget;
+    if (!el) return;
+    if (e.target !== el && (e.key === ' ' || e.key === 'Enter')) return;
+    const line = 28;
+    const page = Math.max(48, el.clientHeight - 28);
+    let top = null;
+    if (e.key === 'ArrowDown') top = el.scrollTop + line;
+    else if (e.key === 'ArrowUp') top = el.scrollTop - line;
+    else if (e.key === 'PageDown' || e.key === ' ') top = el.scrollTop + page;
+    else if (e.key === 'PageUp') top = el.scrollTop - page;
+    else if (e.key === 'End') top = el.scrollHeight;
+    else if (e.key === 'Home') top = 0;
+    if (top === null) return;
+    e.preventDefault();
+    if (top < 0) top = 0;
+    el.scrollTop = top;
+    this.noteTermsEnd(el);
+  }
+
+  armTermsBox() {
+    if (this.preface() !== 'terms') return;
+    const el = document.querySelector('[data-terms-box]');
+    if (!el) return;
+    if (this._inviteTermsRead && this._termsScroll && el.scrollTop + 4 < this._termsScroll) {
+      el.scrollTop = this._termsScroll;
+    }
+    if (!el._cdArmed) {
+      el._cdArmed = true;
+      const self = this;
+      el.addEventListener('scroll', function () { self.noteTermsEnd(el); });
+      el.addEventListener('keydown', function (e) { self.onTermsKeys(e); });
+    }
+    const self = this;
+    requestAnimationFrame(function () { self.noteTermsEnd(el); });
+  }
+
+  meta(i, d, j, home, selCcy) {`,
+);
+patch(
+  "the hero column — terms spacing has to be able to find it",
+  'align-items: center; text-align: center; padding: 26px 4px 10px;">',
+  'align-items: center; text-align: center; padding: 26px 4px 10px;" data-hero="1">',
+);
+patch(
+  "the door wrapper on the hero",
+  'position: relative; margin: 8px 0 26px;">',
+  'position: relative; margin: 8px 0 26px;" data-door="1">',
+);
+patch(
+  "the door glow — it is absolute, so it does not add height, but it has to shrink with the mark",
+  '<div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 210px; height: 210px;',
+  '<div data-door-glow="1" aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 210px; height: 210px;',
+);
+patch(
+  "the door mark",
+  '<div style="position: relative; width: 104px; height: 104px;',
+  '<div data-door-mark="1" style="position: relative; width: 104px; height: 104px;',
+);
+patch(
+  "the hero eyebrow",
+  'color: var(--primary); font-weight: 700; margin-top: 12px;">{{ eyebrow }}</div>',
+  'color: var(--primary); font-weight: 700; margin-top: 12px;" data-eyebrow="1">{{ eyebrow }}</div>',
+);
+patch(
+  "the hero subtitle",
+  '<p style="font-size: 14.5px; color: var(--mute); margin: 12px 0 0; max-width: 366px; line-height: 1.55;">',
+  '<p data-hero-sub="1" style="font-size: 14.5px; color: var(--mute); margin: 12px 0 0; max-width: 366px; line-height: 1.55;">',
+);
+patch(
+  "the hero Continue — the other Continue uses ctaStyle",
+  '<button sc-camel-on-click="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"',
+  '<button data-hero-cta="1" sc-camel-on-click="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"',
+);
+patch(
+  "the terms checkbox — size, colour, and a keyboard focus ring",
+  "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }",
+  "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }\n" +
+  "    /* The terms box. Native checkbox: the tick is the browser's, not a\n" +
+  "       character, and the ring is on the input because tabbing focuses\n" +
+  "       the input, not the label. */\n" +
+  "    input[data-terms-check]{width:18px;height:18px;margin:2px 0 0;flex:none;accent-color:#1D6B45;cursor:pointer}\n" +
+  "    input[data-terms-check]:disabled{cursor:default}\n" +
+  "    input[data-terms-check]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}\n" +
+  "    label[data-terms-label]{cursor:pointer}\n" +
+  "    label[data-terms-label]:has(input:disabled){cursor:default}\n" +
+  "    /* The agreement window from the payment screen, reused here.\n" +
+  "       180px stays inside the 170 to 190 window the card can afford. */\n" +
+  "    [data-terms-box]{height:180px;overflow-y:auto;overflow-x:hidden;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--line);text-align:left;overscroll-behavior:contain}\n" +
+  "    [data-terms-box]:focus{outline:none}\n" +
+  "    [data-terms-box]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}\n" +
+  "    /* Terms only. The ID screen shares this hero and keeps the design\n" +
+  "       spacing. Inline styles win unless these say important, so the\n" +
+  "       door, the gaps, and Continue shrink on this step alone. Nothing\n" +
+  "       is removed: the smaller door is still the door. */\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]){padding:4px 4px 0 !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door]{margin:0 0 8px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-glow]{width:120px !important;height:120px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-mark]{width:58px !important;height:58px !important;border-radius:16px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-door-mark] svg{width:30px !important;height:30px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-eyebrow]{margin-top:6px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-sub]{margin-top:6px !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-note]{margin:0 !important;font-size:0 !important;line-height:0 !important}\n" +
+  "    [data-hero]:has([data-screen=\"terms\"]) [data-hero-cta]{margin-top:10px !important}",
+);
+patch(
+  "Continue's colour follows the disabled state immediately",
+  "transition:transform .1s ease,background .2s ease,color .2s ease;' + (M.valid === false",
+  "transition:transform .1s ease;' + (M.valid === false",
+);
+patch(
+  "screen 0's Continue — it used to require a typed ID",
+  "valid: this.cdIdValid(d.cdId) };",
+  "valid: this.heroReady(d) };",
+);
+patch(
+  "the hero's words and button — the link shows the ID, then the terms",
+  "eyebrow: M.eyebrow || '', q: M.q || '', help: M.help || '',\n" +
+  "      heroTitle: M.title || '', heroParas: M.paras || [], heroNote: M.note || '',\n" +
+  "      onCta: () => this.next(), ctaLabel: M.ctaLabel || 'Continue',\n" +
+  "      ctaDisabled: M.valid === false,",
+  "eyebrow: this.prefaceFace(M).eyebrow || M.eyebrow || '', q: M.q || '', help: M.help || '',\n" +
+  "      heroTitle: this.prefaceFace(M).title, heroParas: this.prefaceFace(M).paras, heroNote: this.prefaceFace(M).note,\n" +
+  "      onCta: (e) => this.onPrefaceCta(e), ctaLabel: this.prefaceFace(M).cta,\n" +
+  "      ctaDisabled: M.valid === false,\n" +
+  "      showIssuedId: this.preface() === 'id',\n" +
+  "      showTerms: this.preface() === 'terms',\n" +
+  "      showTypedId: this.preface() === 'typed',\n" +
+  "      linkId: (window.__cdOnb && window.__cdOnb.code) || '',\n" +
+  "      shopLabel: this.shopLabel(),\n" +
+  "      showShop: !!this.shopLabel(),\n" +
+  "      idNext: this.idNext(),\n" +
+  "      showIdNext: !!this.idNext(),\n" +
+  "      issuedHint: this.issuedHint(),\n" +
+  "      showIssuedHint: !!this.issuedHint(),\n" +
+  "      termsOn: !!this.state.data.termsChecked,\n" +
+  "      termsLocked: this.preface() === 'terms' && !this._inviteTermsRead,\n" +
+  "      showTermsHint: this.preface() === 'terms' && !this._inviteTermsRead,\n" +
+  "      onTermsScroll: (e) => this.noteTermsEnd(e.currentTarget || e.target),\n" +
+  "      termsErr: (window.__cdOnb && this.preface() === 'terms' && window.__cdOnb.err) || '',",
+);
+patch(
+  "back — from the first setup screen to the terms, and from the terms to the ID",
+  "back() { this.setState(s => ({ i: Math.max(0, s.i - 1), adding: false, paid: false })); }",
+  "back() {\n" +
+  "    /* Screen 0 is two views. Back from the first setup screen returns\n" +
+  "       to the terms; back from the terms returns to the ID. Later\n" +
+  "       screens still step back one. */\n" +
+  "    if (window.__cdOnb && this.state.i === 0 && this.preface() === 'terms') {\n" +
+  "      this._preface = 'id';\n" +
+  "      this.forceUpdate();\n" +
+  "      return;\n" +
+  "    }\n" +
+  "    if (window.__cdOnb && this.state.i === 1) {\n" +
+  "      this._preface = 'terms';\n" +
+  "      this.setState({ i: 0, adding: false, paid: false });\n" +
+  "      return;\n" +
+  "    }\n" +
+  "    this.setState(s => ({ i: Math.max(0, s.i - 1), adding: false, paid: false }));\n" +
+  "  }",
+);
+patch(
+  "start over — back to the ID on the link, not a half-finished view",
+  "reset() { try { localStorage.removeItem(this.KEY); }",
+  "reset() { this._preface = 'id'; this._inviteTermsRead = false; this._termsScroll = 0; try { localStorage.removeItem(this.KEY); }",
+);
+patch(
+  "the typed-ID field — hidden once the page has a link",
+  '<sc-if value="{{ hero }}" hint-placeholder-val="{{ false }}">\n                  <div style="width: 100%; max-width: 340px; margin-top: 24px; text-align: left;">',
+  '<sc-if value="{{ showTypedId }}" hint-placeholder-val="{{ false }}">\n                  <div style="width: 100%; max-width: 340px; margin-top: 24px; text-align: left;">',
+);
+patch(
+  "the ID and the terms, in place of the typed field",
+  '{{ cdIdHint }}</div>\n                  </div>\n                </sc-if>\n                <p style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
+  '{{ cdIdHint }}</div>\n                  </div>\n                </sc-if>\n' +
+  '                <sc-if value="{{ showIssuedId }}" hint-placeholder-val="{{ false }}">\n' +
+  '                  <div data-screen="issued-id" style="width: 100%; max-width: 340px; margin-top: 22px; text-align: center;">\n' +
+  '                    <sc-if value="{{ showShop }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div data-shop-name="{{ shopLabel }}" style="font-size: 13px; line-height: 1.4; color: var(--mute); margin-bottom: 8px;">{{ shopLabel }}</div>\n' +
+  '                    </sc-if>\n' +
+  '                    <div data-issued-id="{{ linkId }}" style="font-family: var(--m); font-size: 28px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink);">{{ linkId }}</div>\n' +
+  '                    <sc-if value="{{ showIdNext }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div data-id-next="1" style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ idNext }}</div>\n' +
+  '                    </sc-if>\n' +
+  '                    <sc-if value="{{ showIssuedHint }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ issuedHint }}</div>\n' +
+  '                    </sc-if>\n' +
+  '                  </div>\n' +
+  '                </sc-if>\n' +
+  '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
+  '                  <div data-screen="terms" style="width: 100%; margin-top: 8px; text-align: left;">\n' +
+  '                    <div data-terms-box="true" role="region" aria-label="Terms of Service" sc-camel-tab-index="0" sc-camel-on-scroll="{{ onTermsScroll }}">' + TERMS_INNER + '</div>\n' +
+  '                    <sc-if value="{{ showTermsHint }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <p id="cd-terms-hint" data-terms-hint="1" style="margin:6px 0 0;font-size:12.5px;line-height:1.4;color:var(--mute);">Scroll to the end to accept</p>\n' +
+  '                    </sc-if>\n' +
+  '                    <label for="cd-accept-terms" data-terms-label="1" style="display:flex;align-items:flex-start;gap:12px;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
+  '                      <input id="cd-accept-terms" type="checkbox" data-terms-check="1" data-terms-toggle="1" checked="{{ termsOn }}" disabled="{{ termsLocked }}" aria-describedby="cd-terms-hint" sc-camel-on-change="{{ onCta }}" />\n' +
+  '                      <span>I accept the Terms of Service (26 July 2026)</span>\n' +
+  '                    </label>\n' +
+  '                    <div style="margin-top: 6px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Open full terms</a></div>\n' +
+  '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 4px; min-height: 0;">{{ termsErr }}</div>\n' +
+  '                  </div>\n' +
+  '                </sc-if>\n' +
+  '                <p data-hero-note="1" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
 );
 
 /* --- 6. Verify by email, in the channel's own words ---------------- */

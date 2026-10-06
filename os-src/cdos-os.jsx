@@ -14,18 +14,23 @@
   } = window.CDOS;
 
   /* How the public site hands off into the product. The marketing front door
-     serves at "/" and sends people here two ways: "/signup" opens the new-desk
-     wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
-     are served the same file as "/app", which still accepts "?signup=1" and
-     "#signup" so older links keep working. */
+     serves at "/" and sends a new shop to /signup, the early-access
+     application. /login is sign-in. OnboardWizard is still in this file,
+     and POST /api/signup still exists; nothing here opens either of them.
+     Removing them is a follow-up. Older links (?signup=1, #signup) go to
+     /signup, unless this file is itself what /signup is serving — that
+     only happens when the application page has not been built, and
+     redirecting then would loop. */
   const ENTRY = (function () {
     try {
       const q = new URLSearchParams(window.location.search);
       const plan = q.get('plan');
       const path = String(window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
+      const wantsSignup = q.get('signup') !== null ||
+        String(window.location.hash || '').toLowerCase() === '#signup';
+      if (wantsSignup && path !== '/signup') location.replace('/signup');
       return {
-        signup: path === '/signup' || q.get('signup') !== null ||
-                String(window.location.hash || '').toLowerCase() === '#signup',
+        signup: false,
         plan: ['basic', 'pro', 'premium'].indexOf(plan) >= 0 ? plan : null,
       };
     } catch (e) {
@@ -203,7 +208,7 @@
         <div className="lock-err">{err}</div>
         <button className="go" type="submit">Continue →</button>
       </form>
-      {onSignup && <div style={{ textAlign: 'center', marginTop: 4, marginBottom: 14, fontSize: 12.5, color: 'var(--soft)' }}>New to CurrencyDesk? <button type="button" onClick={onSignup} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--ink)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button></div>}
+      {onSignup && <div style={{ textAlign: 'center', marginTop: 4, marginBottom: 14, fontSize: 12.5, color: 'var(--soft)' }}>New to CurrencyDesk? <a href="/signup" style={{ color: 'var(--ink)', fontWeight: 700, textDecoration: 'underline' }}>Create your desk →</a></div>}
       <div className="lock-hint" style={{ textAlign: 'left' }}>
         <div style={{ marginBottom: 7 }}>Staff directory — each ID routes to its own workspace:</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
@@ -253,9 +258,10 @@
   }
 
   /* ====================== GUIDED ONBOARDING ======================
-     The official 4-phase setup: Business -> Money -> Rules -> Launch.
-     Collects the desk's regulator, identity, plan and compliance rules,
-     then creates the tenant (POST /api/signup) and emails a code. */
+     Kept, unlinked. A new shop applies at /signup. Once invited, they
+     open /onboarding/CD-XXXXXX. This wizard and POST /api/signup are
+     the old door; removing them is a follow-up, not this change.
+     The official 4-phase setup: Business -> Money -> Rules -> Launch. */
   function OnboardWizard({ onBack, onSent, plan }) {
     const ACC = '#1D6B45';
     const REG = [
@@ -2027,7 +2033,6 @@
 
     if (stage === 'lock') return <SignIn
       employees={settings.employees || []}
-      onSignup={() => setStage('signup')}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));

@@ -182,10 +182,21 @@ describe("the public site", () => {
     expect(login.statusCode).toBe(200);
     expect(login.body).toContain("CurrencyDesk OS");
 
-    // an accepted operator still creates their desk from the OS's own wizard
+    // /app?signup=1 still serves the OS. The page itself sends that old
+    // link on to /signup; it does not open a second wizard.
     const wizard = await app.inject({ method: "GET", url: "/app?signup=1" });
     expect(wizard.statusCode).toBe(200);
     expect(wizard.body).toContain("CurrencyDesk OS");
+
+    const bare = await app.inject({ method: "GET", url: "/onboarding" });
+    expect(bare.statusCode).toBe(302);
+    expect(bare.headers.location).toBe("/signup");
+
+    const coded = await app.inject({ method: "GET", url: "/onboarding/CD-WALKTHRU" });
+    expect(coded.statusCode).toBe(200);
+    expect(coded.body).toContain("This is your ID");
+    expect(coded.body).toContain("26 July 2026");
+    expect(coded.body).not.toContain("/api/onboarding/account");
   });
 
   it("leaves no link pointing at a design file", async () => {

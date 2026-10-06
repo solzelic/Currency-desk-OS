@@ -18,6 +18,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { forget as forgetCooldown } from "../src/cooldown.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const ADMIN = "j.masri";
@@ -40,6 +41,7 @@ beforeAll(async () => {
   const row = (await handle.db.select().from(schema.enquiries)).find((e) => e.email === "applicant@sendtest.example")!;
   reference = row.reference;
   await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${row.id}`, cookies: admin, payload: { status: "invited" } as Record<string, unknown> });
+  await acceptOnboardingTerms(app, reference);
   await app.inject({ method: "PUT", url: `/api/onboarding/${reference}/state`,
     payload: { at: 3, data: { ownerEmail: OWNER, operatingName: "Send Test FX" } } as Record<string, unknown> });
 });
@@ -90,6 +92,7 @@ describe("when it is refused for a reason", () => {
       payload: { kind: "early_access", email: "noaddr@sendtest.example", name: "No Addr", details: { jurisdiction: "CA" } } as Record<string, unknown> });
     const row = (await handle.db.select().from(schema.enquiries)).find((e) => e.email === "noaddr@sendtest.example")!;
     await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${row.id}`, cookies: admin, payload: { status: "invited" } as Record<string, unknown> });
+    await acceptOnboardingTerms(app, row.reference);
     await app.inject({ method: "PUT", url: `/api/onboarding/${row.reference}/state`,
       payload: { at: 3, data: { ownerEmail: "not-an-address" } } as Record<string, unknown> });
     const bad = await app.inject({ method: "POST", url: `/api/onboarding/${row.reference}/verify/send`, payload: { data: {} } as Record<string, unknown> });

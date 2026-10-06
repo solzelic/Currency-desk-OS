@@ -217,6 +217,15 @@ export const onboarding = pgTable("onboarding", {
   // steps with nothing to type: paperwork sighted, payment cleared
   marks: jsonb("marks").$type<Record<string, unknown>>().notNull().default({}),
   tenantId: text("tenant_id"),
+  /* Terms accepted on the invite link, before setup. The version is the
+     date on the legal page (26 July 2026). All three stay null until
+     they accept. The database check (migration 027, and the same check
+     in the bootstrap DDL) allows only that version, and only together
+     with a time and a person. The person is the application's email,
+     written by the server. */
+  termsVersion: text("terms_version"),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsAcceptedBy: text("terms_accepted_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -47,7 +47,7 @@ test("an application arrives from the public site", async ({ page, request }) =>
       email: APPLICANT.email,
       name: APPLICANT.name,
       details: {
-        jurisdiction: "CA", workspace: `${APPLICANT.slug}.currencydeskos.com`,
+        jurisdiction: "CA", shopName: APPLICANT.shop, workspace: `${APPLICANT.slug}.currencydeskos.com`,
         monthlyVolume: "$500K – $2M", phone: "+1 4165550148", bestTime: "Afternoons",
       },
     },
@@ -91,17 +91,108 @@ test("approving is one press, and it hands them a working link", async ({ page }
    the desk creates — which is precisely the handover that was broken, and
    splitting it would have hidden the bug rather than caught it. */
 test("they set the desk up, and land inside their own desk signed in", async ({ page }) => {
-  /* The link in the invitation opens at the BEGINNING.
+  /* The link in the invitation opens at the BEGINNING: the ID, then
+     the terms, then the setup wizard.
 
      It used to restore the screen they last saved on, so the button that
      promises "set up your desk, takes about ten minutes" could drop
      somebody straight onto the last step — "Confirm your email" — with no
      idea how they got there and no way back to check what they had typed.
-     Their answers are still restored; only the position is not. */
+     Their answers are still restored; only the position is not.
+
+     The ID on this first screen is the application reference already in
+     the link. The desk keeps that reference. It does not issue another. */
   await page.goto(`/onboarding/${reference}`);
-  await rendered(page, /Let.s open your desk/i);
+  await rendered(page, /This is your ID/i);
+  await page.locator("[data-screen='issued-id']").evaluate(async (el) => {
+    /* The fade is on the card, which is an ancestor. subtree only sees
+       descendants, so waiting on the screen alone returns while the card
+       is still transparent. */
+    const nodes: Element[] = [];
+    for (let n: Element | null = el; n; n = n.parentElement) nodes.push(n);
+    const animations = nodes.flatMap((n) => n.getAnimations());
+    await Promise.all(animations.map((a) => a.finished.catch(() => undefined)));
+  });
+  await expect(page.locator("[data-issued-id]")).toHaveText(reference);
+  await expect(page.getByText(APPLICANT.shop).first()).toBeVisible();
   const opened = await page.locator("body").innerText();
+  expect(opened).toContain(reference);
+  expect(opened).toContain("This is the reference from your invite email.");
+  expect(opened).toContain("Next, accept the terms. Then set up your desk.");
+  expect(opened).not.toMatch(/Same reference as the link/i);
   expect(opened).not.toMatch(/Confirm your email/i);
+
+  /* Setup and launch both refuse until the 26 July 2026 terms are on
+     this reference. A different version is refused and stores nothing.
+     These are the same doors the wizard uses; the clicks below are how
+     a person records the acceptance. */
+  const blockedSave = await page.request.put(`/api/onboarding/${reference}/state`, {
+    data: { at: 3, data: { operatingName: APPLICANT.shop } },
+  });
+  expect(blockedSave.status()).toBe(403);
+  expect((await blockedSave.json()).error).toBe("terms_required");
+
+  const blockedLaunch = await page.request.post(`/api/onboarding/${reference}/launch`, {
+    data: { data: { ownerPass: "a-strong-pass-2026" } },
+  });
+  expect(blockedLaunch.status()).toBe(403);
+  expect((await blockedLaunch.json()).error).toBe("terms_required");
+
+  const wrongVersion = await page.request.post(`/api/onboarding/${reference}/terms`, {
+    data: { termsAccepted: true, termsVersion: "1999-01-01" },
+  });
+  expect(wrongVersion.status()).toBe(400);
+
+  const continueBtn = page.getByRole("button", { name: "Continue" });
+  const continuePaint = () => continueBtn.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await expect(continueBtn).toBeEnabled();
+  await expect.poll(continuePaint).toBe("rgb(29, 107, 69)");
+  await continueBtn.click();
+  await rendered(page, /^Terms of Service$/);
+  /* Disabled is both the control and the paint. A green button that
+     ignores clicks, or a grey one that still continues, is the bug. */
+  await expect(continueBtn).toBeDisabled();
+  await expect.poll(continuePaint).toBe("rgba(23, 20, 15, 0.09)");
+  await continueBtn.evaluate((el) => (el as HTMLButtonElement).click());
+  /* The window repeats the document title, so the screen heading is
+     the one that proves Continue did not leave this step. */
+  await expect(page.getByRole("heading", { name: "Terms of Service" })).toBeVisible();
+
+  const termsBox = page.getByRole("checkbox", { name: "I accept the Terms of Service (26 July 2026)" });
+  const termsWindow = page.locator("[data-terms-box]");
+  await expect(termsWindow).toBeVisible();
+  await expect(termsWindow).toContainText("These terms govern your use of CurrencyDesk.");
+  await expect(termsWindow).toContainText("Your records are yours and you can take them with you.");
+  const windowHeight = await termsWindow.evaluate((el) => el.getBoundingClientRect().height);
+  expect(windowHeight).toBeGreaterThanOrEqual(170);
+  expect(windowHeight).toBeLessThanOrEqual(190);
+  await expect(page.getByText("Scroll to the end to accept")).toBeVisible();
+  const fullTerms = page.getByRole("link", { name: "Open full terms" });
+  await expect(fullTerms).toBeVisible();
+  await expect(fullTerms).toHaveAttribute("href", "/legal#terms");
+  await expect(fullTerms).toHaveAttribute("target", "_blank");
+  await expect(termsBox).toBeDisabled();
+  await expect(termsBox).not.toBeChecked();
+  await expect(continueBtn).toBeDisabled();
+  /* The full terms are taller than the window, so the box stays off
+     until the bottom is actually reached. End is the keyboard path. */
+  const overflow = await termsWindow.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow).toBeGreaterThan(24);
+  await termsWindow.focus();
+  await page.keyboard.press("End");
+  await expect.poll(() => termsWindow.evaluate((el) => el.scrollTop)).toBeGreaterThan(24);
+  await expect(termsBox).toBeEnabled();
+  await expect(termsBox).not.toBeChecked();
+  await expect(continueBtn).toBeDisabled();
+  await expect.poll(continuePaint).toBe("rgba(23, 20, 15, 0.09)");
+  await termsBox.focus();
+  await page.keyboard.press("Space");
+  await expect(termsBox).toBeChecked();
+  await expect(page.getByText("I accept the Terms of Service (26 July 2026)")).toBeVisible();
+  await expect(continueBtn).toBeEnabled();
+  await expect.poll(continuePaint).toBe("rgb(29, 107, 69)");
+  await continueBtn.click();
+  await rendered(page, /Which country are you licensed in/i);
 
   /* Their answers, through the endpoint their own page saves to. The
      owner email is deliberately DIFFERENT from the one they applied
@@ -148,6 +239,18 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   const open = page.getByRole("button", { name: /OPEN WORKSPACE/i }).first();
   if (await open.count()) { await open.click(); await rendered(page, /LEDGER|RATE BOARD/i); }
   expect(await page.locator("body").innerText()).toContain(APPLICANT.shop);
+
+  /* The owner's tour offers itself once the desk is actually open.
+     The invite screens above already required the terms, and this
+     card is not those screens: the terms are not here, and Skip
+     only dismisses the tour. */
+  const tourCard = page.locator(".cdos-tour-card");
+  await expect(tourCard).toBeVisible();
+  await expect(page.locator("#cdos-tour-title")).toHaveText("The shop");
+  await expect(tourCard.getByRole("button", { name: "Open the dashboard" })).toBeVisible();
+  await expect(page.getByText("I accept the Terms of Service")).toHaveCount(0);
+  await tourCard.getByRole("button", { name: "Skip" }).click();
+  await expect(page.locator("[data-tour-root]")).toHaveCount(0);
 
   /* A brand-new desk has no trading on it.
 

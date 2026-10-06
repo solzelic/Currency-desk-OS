@@ -45,11 +45,9 @@ const SITE_PAGES = {
   "/contact": "web/contact.html",
   "/add-ons": "web/add-ons.html",
   // the Early Access application — what every "Get early access" on the site
-  // leads to. Applying is not the same as opening a desk: an accepted
-  // operator creates theirs from the OS's own wizard, at /app?signup=1.
+  // leads to. An invited shop continues at /onboarding/CD-XXXXXX. A bare
+  // /onboarding has no code, so it comes back here.
   "/signup": "web/early-access.html",
-  // where the invite email lands: type your code, walk the setup
-  "/onboarding": "web/onboarding.html",
 } as const satisfies Record<string, string>;
 
 /* Phones and small tablets get the phone design. Deliberately coarse: the
@@ -271,11 +269,13 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
           app.get(route, (_req, reply) => reply.sendFile(file));
         }
       }
-      /* The invite link reads like an address rather than a query string:
-         currencydeskos.com/onboarding/CD-A3V5ZE. The page pulls the code off
-         the path itself, so every one of these serves the same file. */
-      if (existsSync(path.join(staticDir, SITE_PAGES["/onboarding"]))) {
-        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
+      /* /onboarding/CD-XXXXXX is the invite link: the reference, then the
+         terms, then the setup wizard. A bare /onboarding has no reference,
+         so it goes to the application. */
+      const onboardingWizard = "web/onboarding.html";
+      app.get("/onboarding", (_req, reply) => reply.redirect("/signup", 302));
+      if (existsSync(path.join(staticDir, onboardingWizard))) {
+        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(onboardingWizard));
       }
     }
     // the platform control panel — served whether prod ships the vite build or

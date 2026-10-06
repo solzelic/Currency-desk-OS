@@ -49,12 +49,14 @@ desktop one.
 | `/faq` · `/compliance` · `/contact` · `/legal` | the standalone pages |
 | `/signup` | the Early Access application |
 | `/login` | the OS sign-in |
-| `/app` | the OS (`?signup=1` opens the new-desk wizard) |
+| `/app` | the OS |
 
 Applying and opening a desk are two different things: `/signup` takes an
-application, and an accepted operator creates their desk from the OS's own
-wizard. The Early Access and contact forms both `POST /api/enquiries`, which
-records the message and emails everyone in `PLATFORM_ADMIN_EMAILS`.
+application, and an invited shop finishes at `/onboarding/CD-XXXXXX` —
+their ID, the terms, then setup. `?signup=1` and `#signup` on the OS
+send people to `/signup`. The Early Access and contact forms both
+`POST /api/enquiries`, which records the message and emails everyone in
+`PLATFORM_ADMIN_EMAILS`.
 
 To change the site, edit or replace a page in `design/site/` and rebuild:
 

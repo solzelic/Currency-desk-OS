@@ -20,6 +20,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { forget, CODE_GAP_MS } from "../src/cooldown.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const TENANT = "tnt-yorkfx";
@@ -141,6 +142,7 @@ describe("confirming a desk during setup", () => {
       payload: { kind: "early_access", email: "setup@cooldown.example", name: "Dana", details: { jurisdiction: "CA" } } as Record<string, unknown> });
     const row = (await handle.db.select().from(schema.enquiries)).find((e) => e.email === "setup@cooldown.example")!;
     await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${row.id}`, cookies: admin, payload: { status: "invited" } as Record<string, unknown> });
+    await acceptOnboardingTerms(app, row.reference);
     await app.inject({ method: "PUT", url: `/api/onboarding/${row.reference}/state`,
       payload: { at: 3, data: { ownerEmail: "setup@cooldown.example" } } as Record<string, unknown> });
 

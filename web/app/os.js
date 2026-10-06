@@ -56684,7 +56684,6 @@ ${snap}`;
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
   function SignIn({
     employees,
-    onSignup,
     onComplete,
     onMustChange
   }) {
@@ -57312,22 +57311,17 @@ ${snap}`;
         textDecoration: 'underline',
         fontSize: 11.5
       }
-    }, "Can't get in?")), onSignup && /*#__PURE__*/React.createElement("div", {
+    }, "Can't get in?")), /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: 'center',
         fontSize: 12,
         marginTop: 10
       }
-    }, "New to CurrencyDesk? ", /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: onSignup,
+    }, "New to CurrencyDesk? ", /*#__PURE__*/React.createElement("a", {
+      href: "/signup",
       style: {
-        background: 'none',
-        border: 'none',
-        padding: 0,
         color: 'var(--si-primary)',
         fontWeight: 700,
-        cursor: 'pointer',
         textDecoration: 'underline'
       }
     }, "Create your desk \u2192")))));
@@ -59664,17 +59658,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   } = window.CDOS;
 
   /* How the public site hands off into the product. The marketing front door
-     serves at "/" and sends people here two ways: "/signup" opens the new-desk
-     wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
-     are served the same file as "/app", which still accepts "?signup=1" and
-     "#signup" so older links keep working. */
+     serves at "/" and sends a new shop to /signup, the early-access
+     application. /login is sign-in. OnboardWizard is still in this file,
+     and POST /api/signup still exists; nothing here opens either of them.
+     Removing them is a follow-up. Older links (?signup=1, #signup) go to
+     /signup, unless this file is itself what /signup is serving — that
+     only happens when the application page has not been built, and
+     redirecting then would loop. */
   const ENTRY = function () {
     try {
       const q = new URLSearchParams(window.location.search);
       const plan = q.get('plan');
       const path = String(window.location.pathname || '').replace(/\/+$/, '').toLowerCase();
+      const wantsSignup = q.get('signup') !== null || String(window.location.hash || '').toLowerCase() === '#signup';
+      if (wantsSignup && path !== '/signup') location.replace('/signup');
       return {
-        signup: path === '/signup' || q.get('signup') !== null || String(window.location.hash || '').toLowerCase() === '#signup',
+        signup: false,
         plan: ['basic', 'pro', 'premium'].indexOf(plan) >= 0 ? plan : null
       };
     } catch (e) {
@@ -60190,16 +60189,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         fontSize: 12.5,
         color: 'var(--soft)'
       }
-    }, "New to CurrencyDesk? ", /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: onSignup,
+    }, "New to CurrencyDesk? ", /*#__PURE__*/React.createElement("a", {
+      href: "/signup",
       style: {
-        background: 'none',
-        border: 'none',
-        padding: 0,
         color: 'var(--ink)',
         fontWeight: 700,
-        cursor: 'pointer',
         textDecoration: 'underline'
       }
     }, "Create your desk \u2192")), /*#__PURE__*/React.createElement("div", {
@@ -60345,9 +60339,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
 
   /* ====================== GUIDED ONBOARDING ======================
-     The official 4-phase setup: Business -> Money -> Rules -> Launch.
-     Collects the desk's regulator, identity, plan and compliance rules,
-     then creates the tenant (POST /api/signup) and emails a code. */
+     Kept, unlinked. A new shop applies at /signup. Once invited, they
+     open /onboarding/CD-XXXXXX. This wizard and POST /api/signup are
+     the old door; removing them is a follow-up, not this change.
+     The official 4-phase setup: Business -> Money -> Rules -> Launch. */
   function OnboardWizard({
     onBack,
     onSent,
@@ -64103,7 +64098,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     };
     if (stage === 'lock') return /*#__PURE__*/React.createElement(SignIn, {
       employees: settings.employees || [],
-      onSignup: () => setStage('signup'),
       onMustChange: (rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({
           ...s,

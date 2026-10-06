@@ -11,6 +11,7 @@ import { placeOutboundCall, type OutboundCallRequest } from "../src/growth/calls
 import { growthWorkflow } from "../src/growth/workflow.js";
 import { canadaDeskMobile } from "../src/onboarding/applicant-phone.js";
 import { seed } from "../src/seed.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -117,6 +118,7 @@ async function apply(email: string, details: Record<string, unknown>) {
 }
 
 async function launch(reference: string, email: string, data: Record<string, unknown>) {
+  await acceptOnboardingTerms(app, reference);
   const send = await app.inject({
     method: "POST", url: `/api/onboarding/${reference}/verify/send`,
     payload: { data: { ownerEmail: email, operatingName: data.operatingName } },

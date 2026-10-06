@@ -9,6 +9,11 @@
    The tenant is created ONLY after the email is verified, so abandoned
    signups leave no orphan shops. The owner is an administrator whose
    staff id is their email (email-as-identity).
+
+   Follow-up: nothing in the product links here. A new shop applies at
+   /signup (the early-access page) and, once invited, finishes on
+   /onboarding/CD-XXXXXX. This route stays until that removal is its
+   own change. OnboardWizard in os-src/cdos-os.jsx is the same leftover.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { forgetClaimedCount } from "./early-access.js";
