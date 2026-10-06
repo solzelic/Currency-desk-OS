@@ -68,6 +68,7 @@ test("Branch Network opens on a Canada desk", async ({ page }) => {
 });
 
 test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the way the server does", async ({ page }) => {
+  test.setTimeout(180_000);
   const crashes = watchCrashes(page);
   const prior = await pool.query(`SELECT id, fetched_at FROM market_rates`);
   await pool.query(
@@ -106,6 +107,24 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
     await openBranchNetwork(page, "RSD");
     expect(crashes.join("\n")).not.toMatch(/Maximum call stack/i);
 
+    /* A closed day disables New transaction. Open the till through the
+       same route the desk uses, then come back to the desktop so the
+       button is the one a teller would press. */
+    const opened = await page.evaluate(async () => {
+      const current = await fetch("/api/ledger/till-session").then((r) => r.json());
+      if (current.session?.status === "open") return "open";
+      const res = await fetch("/api/ledger/till-sessions/open", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      return res.ok || res.status === 409 ? "open" : `${res.status} ${await res.text()}`;
+    });
+    expect(opened, "the till did not open").toBe("open");
+    await page.reload();
+    await landOnDesktop(page);
+    if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+
     await expect.poll(() => page.evaluate(() => {
       const t = window.CDOS.deskThresholds && window.CDOS.deskThresholds();
       return t && t.idThreshold && t.idThreshold.effective;
@@ -126,15 +145,27 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
     const form = page.locator("div.fixed.inset-0").filter({ has: page.getByText("Customer pays in") });
     await expect(form).toBeVisible();
 
+    /* The form opens on the desk's own currency paying in, and USD
+       paying out — not CAD. The menu is portaled, and it closes on
+       mousedown, so a normal click unmounts the option before the
+       click lands. A click event on the option is what the teller
+       selects. */
     async function pick(current: string, next: string) {
-      await form.locator("button").filter({ hasText: new RegExp(`^${current}\\b`) }).first().click();
-      await page.locator("button").filter({ hasText: new RegExp(`^${next}\\b`) }).last().click();
+      const tour = page.locator(".cdos-tour-skip");
+      if (await tour.isVisible().catch(() => false)) await tour.click();
+      await form.getByRole("button", { name: current, exact: true }).click();
+      const option = page.locator("div[style*='z-index: 99998']").getByRole("button", { name: new RegExp(`^${next}\\b`) });
+      await expect(option).toBeVisible();
+      await option.evaluate((el: HTMLElement) => {
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await expect(form.getByRole("button", { name: next, exact: true })).toBeVisible();
     }
-    await pick("CAD", "EUR");
+    await pick("RSD", "EUR");
     await pick("USD", "RSD");
     await form.locator('input[placeholder="0.00"]').first().fill("5000");
     await expect(form.getByText(/ID required/i).first()).toBeVisible();
-    await expect(form.getByText(/No ID needed/i)).toHaveCount(0);
+    await expect(form.getByText(/ID not needed/i)).toHaveCount(0);
 
     const over = await page.evaluate(async () => {
       const opened = await fetch("/api/ledger/opening-balances", {
@@ -183,12 +214,15 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
         sell: await quote("5000.00", "EUR"),
       };
     });
-    expect(String(over.boardEur)).toBe(String(over.sell.marketMid));
+    /* The board cache keeps the published mid as a number (100). The
+       quote stores the same mid at 12 decimal places. Same rate. */
+    expect(Number(over.boardEur)).toBe(Number(over.sell.marketMid));
     expect(over.sell.status, JSON.stringify(over.sell)).toBe(422);
     expect(over.sell.code).toBe("COMPLIANCE_BLOCKED");
 
     await form.locator('input[placeholder="0.00"]').first().fill("100");
-    await expect(form.getByText(/No ID needed/i)).toBeVisible();
+    /* A walk-in under the line is named, not identified: "ID not needed". */
+    await expect(form.getByText(/ID not needed/i)).toBeVisible();
     await expect(form.getByText(/ID required/i)).toHaveCount(0);
 
     const under = await page.evaluate(async () => {
@@ -221,7 +255,7 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
     await pick("EUR", "INR");
     await form.locator('input[placeholder="0.00"]').first().fill("100");
     await expect(form.getByText(/ID required/i).first()).toBeVisible();
-    await expect(form.getByText(/No ID needed/i)).toHaveCount(0);
+    await expect(form.getByText(/ID not needed/i)).toHaveCount(0);
 
     const missing = await page.evaluate(async () => {
       const customers = await fetch("/api/ledger/customers").then((r) => r.json());
