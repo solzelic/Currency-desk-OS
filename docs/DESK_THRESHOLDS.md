@@ -74,9 +74,9 @@ the arithmetic is guarded: a negative or zero threshold is not a strict
 desk, it is a broken one. That zero is the desk's override column and
 the pack's single `id_threshold` column. It is not the per-deal line in
 `jurisdiction_id_thresholds`, where null means "this kind of deal has
-no line" and zero means "every deal". The posting gate does not read
-that table yet. It still resolves the single column, and `money()`
-still treats zero there as "cannot say".
+no line" and zero means "every deal". A country pack's posting gate
+still resolves the single column, and `money()` still treats zero
+there as "cannot say". The baseline gate reads the per-deal rows.
 
 ## What the ledger does with it
 
@@ -85,10 +85,9 @@ refuses to post a deal at or above it for a customer nobody has identified,
 on both posting paths, **in the currency the pack states the book is kept
 in**.
 
-A desk with no pack is not given a line to move. No pack: new deals
-paused; voids and settling existing deals still work. These new deals
-refuse with `no_jurisdiction_pack`, including a verified customer and
-including an owner writing a threshold override:
+A desk with no country pack is not paused and is not given Canada's
+line. It trades under the international baseline (`pack-intl-v1`).
+The same new deals post under that pack:
 
 - a quote
 - an exchange
@@ -98,6 +97,21 @@ including an owner writing a threshold override:
 - a bill payment
 - a money order
 - a cheque being cashed
+- an owner writing a threshold override
+
+The baseline states those identification lines in US dollars. A cash
+foreign exchange is identified at 3,000 USD or more. A remittance, an
+electronic transfer, and a virtual-currency deal are identified at
+1,000 USD or more. The posting gate converts that figure into the
+desk's home currency at the newest market snapshot (CAD per 1 unit),
+not at a mid the shop set on its board, and stores the rate and the
+snapshot time on the deal. If the snapshot is missing, older than 24
+hours, or has no mid for the home currency, an unverified customer is
+identified on every deal. A line already written in the home currency
+does not need a snapshot. The threshold editors stay available. The
+till and Settings show: "We don't have rules for your country yet.
+These are the international anti-money-laundering rules. Please check
+they match your country's laws."
 
 These still post, because they are not a new deal:
 
@@ -111,8 +125,7 @@ These still post, because they are not a new deal:
 
 A settlement row is stamped with the pack the original deal was
 stamped with. A deal that was never stamped stays NULL. The Settings
-editors for the threshold lines are hidden, and the till says deals
-are paused.
+editors stay available on a baseline desk.
 
 It used to be this, in a code path documented as jurisdiction-neutral:
 
@@ -138,7 +151,7 @@ fires stops a working shop trading. So the gate does not give a blanket
 answer:
 
 This is a pack that is installed and states no line. A desk with no
-pack at all does not reach it: new deals are paused, as above.
+country pack does not land here: it trades under the baseline, as above.
 
 - **A verified customer trades.** They satisfy every possible value of a
   line nobody can state. There is nothing to be unsure about, and a

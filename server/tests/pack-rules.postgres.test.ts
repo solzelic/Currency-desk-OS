@@ -74,6 +74,9 @@ postgres("pack rule fields against real PostgreSQL", () => {
     expectPack("pack-eu-v1", "EUR", "AMLD", "STR", "10000.00", "1000.00", 5);
     expectPack("pack-au-v1", "AUD", "AUSTRAC", "TTR", "10000.00", "1000.00", 7);
     expectPack("pack-ae-v1", "AED", "CBUAE", "STR", "55000.00", "3500.00", 5);
+    expectPack("pack-intl-v1", "USD", "", "CASH-RECORD", "10000.00", "3000.00", 5);
+    const baseline = row("pack-intl-v1");
+    expect(baseline.regulator).not.toBe("FINTRAC");
   });
 
   it("maps each seeded report onto the new fields without moving its trigger", async () => {
@@ -151,6 +154,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
          FROM jurisdiction_id_thresholds t
          JOIN jurisdiction_packs p ON p.pack_id = t.pack_id
         WHERE t.pack_id LIKE 'pack-%-v1'
+          AND t.pack_id <> 'pack-intl-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];
@@ -408,7 +412,8 @@ postgres("pack rule fields against real PostgreSQL", () => {
       "test",
     );
     expect(created.tenantId).toBe(`tnt-${slug}`);
-    expect(setup.rulesUnavailable).toBe(true);
+    expect(setup.baselineRules).toBe(true);
+    expect(setup.rulesUnavailable).toBe(false);
     expect(setup.idThreshold ?? null).toBeNull();
     const entity = (
       await pool.query(
@@ -417,17 +422,20 @@ postgres("pack rule fields against real PostgreSQL", () => {
         [`le-${slug}`],
       )
     ).rows[0];
-    expect(entity.jurisdiction_pack_id).toBeNull();
+    expect(entity.jurisdiction_pack_id).toBe("pack-intl-v1");
     expect(text(entity.home_currency)).toBe("USD");
     expect(entity.id_threshold).toBeNull();
     const client = await pool.connect();
     try {
       const pack = await resolvePack(client, `le-${slug}`);
-      expect(pack.available).toBe(false);
+      expect(pack.available).toBe(true);
+      expect(pack.baseline).toBe(true);
+      expect(pack.packId).toBe("pack-intl-v1");
       expect(pack.packId).not.toBe("pack-ca-v1");
+      expect(pack.regulator).toBe("");
       expect(pack.regulator).not.toBe("FINTRAC");
+      expect(pack.reportName).toBe("CASH-RECORD");
       expect(pack.reportName).not.toBe("LCTR");
-      expect(pack.idThreshold).not.toBe("3000.00");
       expect(pack.homeCurrency).toBe("USD");
     } finally {
       client.release();
@@ -458,8 +466,10 @@ postgres("pack rule fields against real PostgreSQL", () => {
         "hash",
         "test",
       );
-      expect(setup.rulesUnavailable).toBe(true);
-      expect(setup.homeCurrency ?? "").not.toBe("CAD");
+      expect(setup.baselineRules).toBe(true);
+      expect(setup.rulesUnavailable).toBe(false);
+      expect(setup.homeCurrency).toBe("USD");
+      expect(setup.homeCurrency).not.toBe("CAD");
       const entity = (
         await pool.query(
           `SELECT jurisdiction, jurisdiction_pack_id, home_currency
@@ -468,8 +478,8 @@ postgres("pack rule fields against real PostgreSQL", () => {
         )
       ).rows[0];
       expect(entity.jurisdiction).not.toBe("FINTRAC");
-      expect(entity.jurisdiction_pack_id).toBeNull();
-      expect(entity.home_currency).toBeNull();
+      expect(entity.jurisdiction_pack_id).toBe("pack-intl-v1");
+      expect(text(entity.home_currency)).toBe("USD");
     }
   });
 
@@ -541,9 +551,12 @@ const migrationSlice = (name: string) => {
       expect(blank.home_currency).toBe("CAD");
       for (const id of ["le-bf-gbp", "le-bf-aud", "le-bf-aed", "le-bf-eur", "le-bf-usd", "le-bf-rsd"]) {
         const row = await packOf(id);
-        expect(row.jurisdiction_pack_id).toBeNull();
+        expect(row.jurisdiction_pack_id).toBe("pack-intl-v1");
+        expect(row.jurisdiction_pack_id).not.toBe("pack-ca-v1");
+        expect(row.jurisdiction_pack_id).not.toMatch(/pack-(gb|au|ae|eu|us)-v1/);
       }
       expect((await packOf("le-bf-gbp")).home_currency).toBe("GBP");
+      expect((await packOf("le-bf-usd")).home_currency).toBe("USD");
       expect((await packOf("le-bf-kept")).jurisdiction_pack_id).toBe("pack-us-v1");
       const stillMissing = await client.query(
         `SELECT 1 FROM legal_entities WHERE id='le-does-not-exist'`,
@@ -554,7 +567,8 @@ const migrationSlice = (name: string) => {
       notices.length = 0;
       await client.query(migrationSlice("pack-backfill"));
       expect((await packOf("le-bf-cad")).jurisdiction_pack_id).toBe("pack-ca-v1");
-      expect((await packOf("le-bf-usd")).jurisdiction_pack_id).toBeNull();
+      expect((await packOf("le-bf-usd")).jurisdiction_pack_id).toBe("pack-intl-v1");
+      expect((await packOf("le-bf-gbp")).home_currency).toBe("GBP");
       expect(notices.some((line) => /pack backfill: 0 legal_entities/.test(line))).toBe(true);
       await client.query("ROLLBACK");
     } finally {

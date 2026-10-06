@@ -34,6 +34,7 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
 import {
+  BASELINE_NOTICE,
   RULES_UNAVAILABLE_NOTICE,
   resolvePack,
   type IdDealKind,
@@ -742,8 +743,14 @@ export class LedgerReportingService {
               .filter(([, places]) => places !== LEDGER_SCALE),
           ),
         },
-        /* Null when this country has a pack. The sentence when it does not. */
-        notice: pack.available ? null : RULES_UNAVAILABLE_NOTICE,
+        /* The disclaimer when this desk is on the international baseline.
+           Null when a country pack is installed. The unavailable sentence
+           only when even the baseline row is missing. */
+        notice: pack.baseline
+          ? BASELINE_NOTICE
+          : pack.available
+            ? null
+            : RULES_UNAVAILABLE_NOTICE,
         idThresholds: idLines.rows.map((row) =>
           idLineFromRow(row as Record<string, unknown>),
         ),

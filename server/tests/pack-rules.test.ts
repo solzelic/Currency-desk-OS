@@ -5,10 +5,11 @@
    seeded packs actually hold are in pack-rules.postgres.test.ts. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { homePerUnit } from "../src/ledger/compliance-gate.js";
 import {
+  BASELINE_NOTICE,
   packForCountry,
   packIdThreshold,
-  RULES_UNAVAILABLE_NOTICE,
 } from "../src/ledger/jurisdiction.js";
 import {
   idLineAmount,
@@ -155,9 +156,16 @@ describe("migration 028 does not restamp history", () => {
   });
 
   it("uses the sentence the desk shows when a country has no pack", () => {
-    expect(RULES_UNAVAILABLE_NOTICE).toBe(
-      "Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.",
+    expect(BASELINE_NOTICE).toBe(
+      "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.",
     );
+  });
+
+  it("converts a USD line through CAD-per-unit market mids, not a shop rate", () => {
+    const rate = homePerUnit({ USD: "1.36", GBP: "1.70" }, "USD", "GBP");
+    expect(rate?.toFixed(1)).toBe("0.8");
+    expect(homePerUnit({ USD: "1.36" }, "USD", "CAD")?.toFixed(2)).toBe("1.36");
+    expect(homePerUnit({ USD: "1.36" }, "USD", "RSD")).toBeNull();
   });
 
   it("copies only a positive identification line and refuses to mislabel a window", () => {
@@ -171,14 +179,15 @@ describe("migration 028 does not restamp history", () => {
     expect(sql).toMatch(/'before_execution'/);
   });
 
-  it("backfills only a CAD or blank home currency, and the runner wraps the file in a transaction", () => {
+  it("backfills CAD onto Canada and every other currency onto the baseline", () => {
     const start = sql.indexOf("-- pack-backfill:start");
     const end = sql.indexOf("-- pack-backfill:end");
     const backfill = sql.slice(start, end);
     expect(backfill).toMatch(/upper\(btrim\(home_currency::text\)\) = 'CAD'/);
     expect(backfill).toMatch(/home_currency = 'CAD'/);
     expect(backfill).toMatch(/pack-ca-v1/);
-    expect(backfill).not.toMatch(/pack-gb-v1|pack-au-v1|pack-ae-v1|pack-eu-v1/);
+    expect(backfill).toMatch(/pack-intl-v1/);
+    expect(backfill).not.toMatch(/pack-gb-v1|pack-au-v1|pack-ae-v1|pack-eu-v1|pack-us-v1/);
     const runner = readFileSync(
       new URL("../src/db/migrations.ts", import.meta.url),
       "utf8",

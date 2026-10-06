@@ -1645,9 +1645,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const myCountry = settings.bizCountry || 'Canada';
           const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
           const shownRegimes = matched.length ? matched : Object.values(REGIMES);
-          const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+          const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+          const disclaimer = (window.CDOS.baselineNotice && window.CDOS.baselineNotice())
+            || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
           const rulesNotice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
-            || (rulesMissing ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
+            || ((settings && settings.baselineRules) || paused ? disclaimer : '');
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
           return (<div>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
@@ -1655,8 +1657,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* one-click jurisdiction packs. Hidden when this country has no pack,
               so the desk is not offered Canada's rules to apply instead. */}
           {rulesNotice ? <div role="status" data-rules-notice className="mb-4 px-3 py-2 text-[13px]" style={{ background: 'var(--cd-brass-soft, #f4efe4)', color: CD.ink, borderRadius: 9 }}>{rulesNotice}</div> : null}
-          {!rulesNotice && <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>}
-          {!rulesNotice && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
+          {!paused && <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>}
+          {!paused && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
             {shownRegimes.map(r => { const on = activeRid === r.id; return (
               <button key={r.id} onClick={() => isOwner && applyRegime(r.id)} className="text-left p-3" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1.5px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, cursor: isOwner ? 'pointer' : 'default' }}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1666,21 +1668,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 <div className="text-[11px]" style={{ color: CD.mute }}>{fmt(r.threshold, r.currency)} · {r.aggHours}h rule · {r.largeCode}/{r.wireCode}/{r.strCode} · {r.watchlists.join('/')}</div>
               </button>); })}
           </div>}
-          {!rulesNotice && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!rulesNotice && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
+          {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
+          {!paused && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----
-              Hidden while this country has no pack. An override written
-              now would be a number with no rule behind it, and the server
-              refuses that write. */}
-          {rulesNotice ? null : <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>}
-          {rulesNotice ? null : <DeskThresholdRows />}
+              Hidden only when even the baseline pack is missing. A
+              baseline desk keeps these editors: it is operating. */}
+          {paused ? null : <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>}
+          {paused ? null : <DeskThresholdRows />}
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          {rulesNotice ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
-          {rulesNotice ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
+          {paused ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {paused ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}

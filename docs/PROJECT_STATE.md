@@ -120,39 +120,43 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   a calendar month, a rolling number of days, one banking day, or not
   at all), whether the threshold is "at or above" or "more than", which
   direction of cash it covers, whether it counts cash only, and the
-  currency the threshold is written in. A threshold written in a
-  currency other than the pack's home currency is converted at the rate
-  on the deal. Nothing converts yet, and every seeded pack already
-  states its threshold in home currency, with the new fields at their
-  defaults. The six seeded packs keep the numbers they had. A country
-  with no pack is not given Canada's. A signup that names Canada and
-  leaves home currency blank still opens on that pack and a CAD rate
-  board, so the first quote can be priced. A desk that names neither a
-  pack nor a home currency still opens with no board. Sign-in still
-  works, and the desk can be looked at and set up. No pack: new deals
-  paused; voids and
-  settling existing deals still work. A new quote, exchange, frozen
-  quote, remittance send, remittance receive, bill payment, money
-  order, or cheque cashing is refused until a pack is installed, and
-  so is a threshold override. The till says "Rules for your country
-  are not available yet, so deals are paused. We will let you know
-  when they are ready." Those editors are hidden. A void of a deal
-  already on the book still posts, and so does clearing or returning
-  a cheque already held, and settling or writing off an obligation
-  already open. Those settlement rows keep the pack the original deal
-  was stamped with, or NULL when it had none. Vault and till cash
-  movements still post. A blank identification answer at setup uses
-  the pack's foreign-exchange identification line, not the report
-  line. A new posting stamps the pack id, version, and home currency
-  it was posted under. Older rows are not restamped. The posting gate
-  still reads the pack's single identification column, so the lines
-  the gate enforces have not moved. Migration 028 backfills only a
-  desk whose home currency, ignoring case and surrounding spaces, is
-  CAD, empty, or null: that desk is pointed at the Canada pack, and a
-  blank home currency is stored as CAD. GBP, AUD, AED, EUR, USD, and
-  every other currency are left with no pack. The non-Canada packs
-  have known-wrong numbers, and assigning them would change live
-  limits. Those desks stay paused until a corrected pack is built.
+  currency the threshold is written in. A baseline threshold written
+  in US dollars is converted at the newest market snapshot. The six
+  country packs still state their thresholds in home currency, with
+  the new fields at their defaults, and they keep the numbers they
+  had. A country
+  with no pack is not given Canada's, and it is not paused. It
+  operates under `pack-intl-v1`, an international baseline that is not
+  a country. A signup that names Canada and leaves home currency blank
+  still opens on the Canada pack and a CAD rate board, so the first
+  quote can be priced. A baseline desk that names a home currency keeps
+  it. One that names none keeps its books in USD and opens a USD rate
+  board. The baseline identifies a cash foreign exchange at 3,000 USD
+  or more, and a remittance, electronic transfer, or virtual-currency
+  deal at 1,000 USD or more. Full due diligence and the large-cash
+  record are 10,000 USD or more in a fixed 24-hour window. That record
+  is internal; the desk checks whether its own authority wants a
+  report. A suspicious transaction has no amount and is due
+  immediately, to the country's financial intelligence unit. Terrorist
+  or sanctioned property stops the deal and is reported immediately.
+  No sanctions list ships with the pack. Records are kept five years.
+  The regulator field is empty. USD lines convert to the desk's home
+  currency at the newest market snapshot (CAD per 1 unit, the same
+  source the rate sync stores), and that rate and its timestamp are
+  written on the deal. The shop's board mid is not used. A missing
+  snapshot, one older than 24 hours, or a missing mid requires
+  identification on every deal. When the line is already in the home
+  currency, no snapshot is required. The till and Settings say "We
+  don't have rules for your country yet. These are the international
+  anti-money-laundering rules. Please check they match your country's
+  laws." The threshold editors stay available. A void, a cheque
+  clearance or return, and an obligation settlement or write-off still
+  post, and they keep the pack the original deal was stamped with.
+  Vault and till cash movements still post. Migration 028 points a
+  CAD, empty, or null home currency at the Canada pack and stores CAD
+  where it was blank. Every other home currency is pointed at the
+  baseline and keeps its currency. The known-wrong country packs are
+  not assigned by that backfill.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
@@ -233,21 +237,22 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-06**, country-pack schema. Packs can store a per-deal
-identification line (including comparator, due-diligence level, and
-cash-only) and the extra facts a report row was missing (deadline,
-window, comparator, direction, threshold currency, cash-only). Seeded
-thresholds are unchanged. A country with no pack is not given Canada's.
-No pack: new deals paused; voids and settling existing deals still
-work. A new quote, exchange, transfer, cheque cashing, or threshold
-change is refused. Clearing a held cheque, settling or writing off an
-open obligation, voiding an old deal, and moving vault or till cash
-still post. Migration 028 backfills only CAD, empty, or null home
-currency onto the Canada pack, and stores CAD where home was blank.
-Other currencies, including GBP, AUD, AED, EUR, and USD, stay without
-a pack. A blank identification answer at setup is not filled with the
-report line. The posting gate still reads the single identification
-column.
+**2026-10-06**, international baseline. A country with no pack is not
+given Canada's and is not paused. It operates under `pack-intl-v1`.
+Cash foreign exchange is identified at 3,000 USD or more; remittance,
+electronic transfer, and virtual currency at 1,000 USD or more; the
+large-cash record is 10,000 USD in a fixed 24-hour window. Those USD
+lines convert at the newest market snapshot, and the rate and its
+timestamp are stored on the deal. A missing or stale snapshot (older
+than 24 hours) requires identification on every deal. A baseline desk
+that names no home currency books in USD. The till and Settings show
+the international-rules disclaimer, and the threshold editors stay
+available. The regulator field is empty. Migration 028 points CAD,
+empty, or null home currency at the Canada pack, and every other home
+currency at the baseline. The known-wrong country packs are not
+assigned. Country packs still use their own single identification
+column. A blank identification answer at setup is not filled with the
+report line.
 
 Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until

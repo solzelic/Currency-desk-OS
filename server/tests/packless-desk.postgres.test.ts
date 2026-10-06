@@ -1,9 +1,10 @@
-/* No pack: new deals paused; voids and settling existing deals still
-   work. A quote, an exchange, a transfer, a cheque being cashed, and
-   an owner moving a threshold are refused. Clearing a cheque already
-   held, settling an obligation already open, and voiding a deal posted
-   while a pack was installed all still post. Vault and till cash
-   movements are not deals, and they still post. */
+/* No country pack: the desk trades under the international baseline.
+   Voids and settling existing deals still work. A quote can be priced.
+   With no market mid for the home currency, an unverified customer is
+   identified on every deal. Clearing a cheque already held, settling
+   an obligation already open, and voiding a deal posted while a pack
+   was installed all still post. Vault and till cash movements are not
+   deals, and they still post. */
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -37,7 +38,7 @@ const teller: LedgerActor = {
 
 const quoteBody = {
   customerId: "customer-demo",
-  from: "CAD",
+  from: "RSD",
   to: "USD",
   inputAmount: "0.01",
   feeCad: "0.00",
@@ -63,8 +64,10 @@ async function reset() {
     "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
     [DEMO.tenantId],
   );
-  /* RSD is not one of the currencies migration 028 backfills, so this
-     desk stays without a pack. */
+  /* RSD is not a country pack. The row is left with no pack id so
+     resolution has to pick the baseline. The snapshot has USD and not
+     RSD, so a USD threshold cannot be priced and every unverified
+     deal asks for identification. */
   await pool.query(
     `INSERT INTO legal_entities
        (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
@@ -116,14 +119,13 @@ async function reset() {
   await pool.query("INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'CAD',1),($1,$2,$3,$4,'USD',0.731)", scope.slice(0, 4));
 }
 
-async function expectPaused(response: { statusCode: number; json: () => { code?: string } }) {
+async function expectIdentified(response: { statusCode: number; json: () => { code?: string } }) {
   expect(response.statusCode).toBe(422);
-  expect(response.json().code).toBe("no_jurisdiction_pack");
-  const posted = await pool.query("SELECT count(*) FROM ledger_transactions");
-  expect(posted.rows[0].count).toBe("0");
+  expect(response.json().code).toBe("COMPLIANCE_BLOCKED");
+  expect(response.json().code).not.toBe("no_jurisdiction_pack");
 }
 
-postgres("a desk with no pack cannot post", () => {
+postgres("a desk with no country pack uses the baseline", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     const real = await createDb();
@@ -155,26 +157,27 @@ postgres("a desk with no pack cannot post", () => {
   });
   beforeEach(reset);
 
-  it("refuses a quote, an exchange and a transfer for an unverified customer at 0.01", async () => {
-    await expectPaused(
+  it("quotes, and identifies every unverified deal when the market rate cannot price the home currency", async () => {
+    const quoted = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: quoteBody,
+    });
+    expect(quoted.statusCode, quoted.body).toBe(201);
+    await expectIdentified(
       await app.inject({
         method: "POST",
-        url: "/api/quotes",
+        url: `/api/quotes/${quoted.json().quoteId}/post`,
         cookies: await cookie(),
-        payload: quoteBody,
+        payload: {
+          idempotencyKey: "packless-post",
+          purpose: "Travel",
+          sourceOfFunds: "Cash",
+        },
       }),
     );
-    await expect(service.post(teller, {
-      idempotencyKey: "packless-exchange",
-      customerId: "customer-demo",
-      from: "CAD",
-      to: "USD",
-      inputAmount: "0.01",
-      feeCad: "0.00",
-      purpose: "Travel",
-      sourceOfFunds: "Cash",
-    })).rejects.toMatchObject({ code: "no_jurisdiction_pack" });
-    await expectPaused(
+    await expectIdentified(
       await app.inject({
         method: "POST",
         url: "/api/ledger/remittances/send",
@@ -195,52 +198,52 @@ postgres("a desk with no pack cannot post", () => {
         },
       }),
     );
+    const posted = await pool.query("SELECT count(*) FROM ledger_transactions");
+    expect(posted.rows[0].count).toBe("0");
   });
 
-  it("refuses the same paths for a verified customer", async () => {
+  it("posts a verified deal under the baseline and does not name FINTRAC", async () => {
     await pool.query(
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id='customer-demo'",
     );
-    await expectPaused(
-      await app.inject({
-        method: "POST",
-        url: "/api/quotes",
-        cookies: await cookie(),
-        payload: quoteBody,
-      }),
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-send-verified",
+        customerId: "customer-demo",
+        reference: "RM-2",
+        principalAmount: "0.01",
+        feeAmount: "0.00",
+        payoutCurrency: "USD",
+        payoutAmount: "0.01",
+        corridor: "US",
+        partner: "Corridor partner",
+        beneficiaryName: "Ann Beneficiary",
+        purpose: "Family support",
+        sourceOfFunds: "Salary",
+      },
+    });
+    expect(sent.statusCode, sent.body).toBe(201);
+    const row = (
+      await pool.query(
+        `SELECT jurisdiction_pack_id, home_currency, compliance_threshold_rate
+           FROM ledger_transactions WHERE transaction_id=$1`,
+        [sent.json().transactionId],
+      )
+    ).rows[0];
+    expect(row.jurisdiction_pack_id).toBe("pack-intl-v1");
+    expect(String(row.home_currency).trim()).toBe("RSD");
+    expect(row.compliance_threshold_rate).toBeNull();
+    const pack = await pool.query(
+      "SELECT regulator FROM jurisdiction_packs WHERE pack_id='pack-intl-v1'",
     );
-    await expect(service.post(teller, {
-      idempotencyKey: "packless-verified",
-      customerId: "customer-demo",
-      from: "CAD",
-      to: "USD",
-      inputAmount: "0.01",
-      feeCad: "0.00",
-      purpose: "Travel",
-      sourceOfFunds: "Cash",
-    })).rejects.toMatchObject({ code: "no_jurisdiction_pack" });
-    await expectPaused(
-      await app.inject({
-        method: "POST",
-        url: "/api/ledger/remittances/send",
-        cookies: await cookie(),
-        payload: {
-          idempotencyKey: "packless-send-verified",
-          customerId: "customer-demo",
-          reference: "RM-2",
-          principalAmount: "0.01",
-          feeAmount: "0.00",
-          payoutCurrency: "USD",
-          payoutAmount: "0.01",
-          corridor: "US",
-          partner: "Corridor partner",
-          beneficiaryName: "Ann Beneficiary",
-        },
-      }),
-    );
+    expect(pack.rows[0].regulator).toBe("");
+    expect(pack.rows[0].regulator).not.toBe("FINTRAC");
   });
 
-  it("refuses a frozen quote that was priced before the pack was gone", async () => {
+  it("posts a frozen quote under the baseline after the country pack is removed", async () => {
     await pool.query(
       `UPDATE legal_entities
           SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1
@@ -251,48 +254,60 @@ postgres("a desk with no pack cannot post", () => {
       method: "POST",
       url: "/api/quotes",
       cookies: await cookie(),
-      payload: { ...quoteBody, inputAmount: "100.00", feeCad: "0.00" },
+      payload: {
+        customerId: "customer-demo",
+        from: "CAD",
+        to: "USD",
+        inputAmount: "100.00",
+        feeCad: "0.00",
+        direction: "customer_buy_foreign",
+      },
     });
     expect(made.statusCode).toBe(201);
     const quote = made.json();
     await pool.query(
       `UPDATE legal_entities
-          SET home_currency='RSD', jurisdiction_pack_id=NULL, jurisdiction_pack_version=NULL
+          SET jurisdiction_pack_id=NULL, jurisdiction_pack_version=NULL
         WHERE id=$1`,
       [DEMO.legalEntityId],
     );
-    await expectPaused(
-      await app.inject({
-        method: "POST",
-        url: `/api/quotes/${quote.quoteId}/post`,
-        cookies: await cookie(),
-        payload: {
-          idempotencyKey: "packless-frozen",
-          purpose: "Personal travel",
-          sourceOfFunds: "Employment income",
-        },
-      }),
-    );
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${quote.quoteId}/post`,
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-frozen",
+        purpose: "Personal travel",
+        sourceOfFunds: "Employment income",
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+    const stamp = (
+      await pool.query(
+        "SELECT jurisdiction_pack_id FROM ledger_transactions WHERE transaction_id=$1",
+        [posted.json().transactionId],
+      )
+    ).rows[0];
+    expect(stamp.jurisdiction_pack_id).toBe("pack-intl-v1");
   });
 
-  it("refuses an owner override while there is no pack", async () => {
+  it("lets an owner set a threshold on a baseline desk", async () => {
     const changed = await app.inject({
       method: "PUT",
       url: "/api/ledger/desk-thresholds",
       cookies: await cookie("j.masri"),
       payload: { idThreshold: "1000.00" },
     });
-    expect(changed.statusCode).toBe(422);
-    expect(changed.json().code).toBe("no_jurisdiction_pack");
+    expect(changed.statusCode, changed.body).toBe(200);
     const row = await pool.query(
       "SELECT id_threshold FROM legal_entities WHERE id=$1",
       [DEMO.legalEntityId],
     );
-    expect(row.rows[0].id_threshold).toBeNull();
+    expect(row.rows[0].id_threshold).toBe("1000.00");
   });
 
-  it("refuses a new cheque, a remittance receive, a bill payment and a money order", async () => {
-    await expectPaused(await app.inject({
+  it("identifies an unverified cheque, remittance receive, bill payment and money order when the rate is missing", async () => {
+    await expectIdentified(await app.inject({
       method: "POST",
       url: "/api/ledger/cheques",
       cookies: await cookie(),
@@ -309,7 +324,7 @@ postgres("a desk with no pack cannot post", () => {
         holdDays: 0,
       },
     }));
-    await expectPaused(await app.inject({
+    await expectIdentified(await app.inject({
       method: "POST",
       url: "/api/ledger/remittances/receive",
       cookies: await cookie(),
@@ -325,7 +340,7 @@ postgres("a desk with no pack cannot post", () => {
         partner: "Corridor partner",
       },
     }));
-    await expectPaused(await app.inject({
+    await expectIdentified(await app.inject({
       method: "POST",
       url: "/api/ledger/bill-payments",
       cookies: await cookie(),
@@ -339,7 +354,7 @@ postgres("a desk with no pack cannot post", () => {
         accountRef: "acct-1",
       },
     }));
-    await expectPaused(await app.inject({
+    await expectIdentified(await app.inject({
       method: "POST",
       url: "/api/ledger/money-orders",
       cookies: await cookie(),

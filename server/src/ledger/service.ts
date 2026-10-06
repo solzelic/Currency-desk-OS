@@ -13,6 +13,7 @@ import {
   ensureBasis,
   reverseEvent,
 } from "./cost-basis.js";
+import { baselineIdentification, type ComplianceStamp } from "./compliance-gate.js";
 import {
   pairAllowed,
   resolvePack,
@@ -173,16 +174,30 @@ export async function requireOpenTill(
    alternative is a silent hole in the desk's file. The browser follows
    the same rule for the reporting line — see `overReportingLimit` in
    os-src/cdos-base.jsx, which answers null rather than false. */
-/* No pack: new deals paused; voids and settling existing deals still
-   work. This guard is the pause. It sits on a quote, an exchange, a
-   frozen quote, a cheque being cashed, and a new obligation. It does
-   not sit on a void, a cheque clearance or return, or an obligation
-   settlement or write-off — those record a deal already on the book.
-   There is no rule to post a new deal under, and guessing Canada's
-   would be the bug this exists to stop. */
+/* A country with no pack trades under the international baseline, so
+   this guard passes for that desk. It refuses only when that baseline
+   row is missing too. It sits on a quote, an exchange, a frozen quote,
+   a cheque being cashed, and a new obligation. It does not sit on a
+   void, a cheque clearance or return, or an obligation settlement or
+   write-off — those record a deal already on the book. */
 export function requireInstalledPack(pack: JurisdictionPack): void {
   if (pack.available) return;
   throw new LedgerError("no_jurisdiction_pack", RULES_UNAVAILABLE_NOTICE);
+}
+
+async function deskIdLine(client: pg.PoolClient, legalEntityId: string): Promise<Decimal | null> {
+  const found = await client.query(
+    "SELECT id_threshold FROM legal_entities WHERE id=$1",
+    [legalEntityId],
+  );
+  const value = found.rows[0]?.id_threshold;
+  if (value == null || value === "") return null;
+  try {
+    const parsed = new Decimal(String(value));
+    return parsed.isFinite() && parsed.gt(0) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function requireIdentification(
@@ -191,9 +206,26 @@ export async function requireIdentification(
   pack: JurisdictionPack,
   amountHome: Decimal,
   idStatus: unknown,
-) {
+  deal: { kind: string; cash: boolean },
+): Promise<ComplianceStamp> {
   requireInstalledPack(pack);
-  if (idStatus === "verified") return;
+  const priced = pack.baseline
+    ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
+    : { block: false, rate: "1.000000000000", rateAt: null };
+  const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
+  if (idStatus === "verified") return stamp;
+  if (pack.baseline) {
+    /* A missing or stale market rate already sets block. A desk's own
+       tighter line, stored in home currency, can only add a refusal. */
+    const desk = await deskIdLine(client, actor.legalEntityId);
+    if (priced.block || (desk !== null && amountHome.gte(desk))) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return stamp;
+  }
   const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
   if (line === null)
     throw new LedgerError(
@@ -205,6 +237,7 @@ export async function requireIdentification(
       "COMPLIANCE_BLOCKED",
       "Authoritative compliance policy blocked posting.",
     );
+  return stamp;
 }
 
 export class LedgerService {
@@ -242,8 +275,9 @@ export class LedgerService {
     pack: JurisdictionPack,
     amountHome: Decimal,
     idStatus: unknown,
+    deal: { kind: string; cash: boolean },
   ) {
-    return requireIdentification(client, actor, pack, amountHome, idStatus);
+    return requireIdentification(client, actor, pack, amountHome, idStatus, deal);
   }
 
   /* Retried on a serialization failure, like every other write here. A
@@ -396,12 +430,13 @@ export class LedgerService {
          kept in, taken on each side at that side's own rate. */
       const inputHome = input.mul(fromMid).toDecimalPlaces(2);
       const outputCad = output.mul(toMid).toDecimalPlaces(2);
-      await this.requireIdentification(
+      const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         inputHome,
         customer.rows[0].id_status,
+        { kind: "exchange", cash: true },
       );
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
@@ -602,7 +637,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)",
         [
           transactionId,
           transactionRef,
@@ -643,6 +678,8 @@ export class LedgerService {
           pack.packId,
           pack.version,
           home,
+          compliance.rate,
+          compliance.rateAt,
         ],
       );
       for (const [account, side, value] of journal)
@@ -853,12 +890,13 @@ export class LedgerService {
       const output = input.mul(rate).toDecimalPlaces(2);
       const outputCad = output.div(toRate).toDecimalPlaces(2);
       const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
-      await this.requireIdentification(
+      const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         inputHome,
         customer.rows[0].id_status,
+        { kind: "exchange", cash: true },
       );
       /* Purpose and source of funds, over the desk's REPORTING line — the
          details the report itself is made of. Same story as the ID gate: a
@@ -939,7 +977,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)",
         [
           transactionId,
           transactionRef,
@@ -967,6 +1005,8 @@ export class LedgerService {
           pack.packId,
           pack.version,
           pack.homeCurrency,
+          compliance.rate,
+          compliance.rateAt,
         ],
       );
       for (const [account, side, value] of journal)

@@ -603,12 +603,13 @@ export class ObligationService {
          engine can apply its own rule — see the columns migration 018
          adds — and the gate here does not pretend to be that engine. */
       const amountHome = spec.cash.amount;
-      await requireIdentification(
+      const compliance = await requireIdentification(
         client,
         actor,
         pack,
         amountHome,
         customer.rows[0].id_status,
+        { kind: spec.dealKind, cash: true },
       );
       if (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim()) {
         const reporting = await resolveReportThreshold(
@@ -694,6 +695,8 @@ export class ObligationService {
         fee: spec.fee,
         capture: spec.capture,
         journal,
+        complianceRate: compliance.rate,
+        complianceRateAt: compliance.rateAt,
       });
 
       const delta =
@@ -1308,6 +1311,8 @@ export class ObligationService {
       fee: Decimal;
       capture: ComplianceCapture;
       journal: JournalLine[];
+      complianceRate?: string | null;
+      complianceRateAt?: Date | null;
     },
   ) {
     /* The check the whole file exists to pass, and it is not routed
@@ -1329,8 +1334,9 @@ export class ObligationService {
           fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,
           compliance_captured_by,compliance_captured_at,posted_at,
           deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home,
-          jurisdiction_pack_id,jurisdiction_pack_version,home_currency)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
+          jurisdiction_pack_id,jurisdiction_pack_version,home_currency,
+          compliance_threshold_rate,compliance_threshold_rate_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1364,6 +1370,8 @@ export class ObligationService {
         row.packId,
         row.packVersion,
         row.homeCurrency,
+        row.complianceRate ?? null,
+        row.complianceRateAt ?? null,
       ],
     );
     for (const [account, side, value] of row.journal) {

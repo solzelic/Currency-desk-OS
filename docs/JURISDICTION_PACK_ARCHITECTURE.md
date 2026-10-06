@@ -14,34 +14,48 @@ A pack can also name an identification line per kind of deal
 funds transfer, virtual currency). Null means that kind has no line.
 Zero means every deal of that kind. A line can say `gte` or `gt`, a
 due-diligence level (`identify`, `cdd`, `edd`), and whether it is
-cash-only. The single `id_threshold` column on the pack is still what
-the posting gate reads. Seeded packs copy a positive value of that
+cash-only. A country pack's posting gate still reads the single
+`id_threshold` column. The baseline gate reads the per-deal rows.
+Seeded packs copy a positive value of that
 column onto all four kinds, so the two agree. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,
 `hours`, `before_execution`, `monthly_day`, `calendar_days`,
 `business_days`), an aggregation window (`fixed_24h`, `calendar_month`,
 `rolling_days`, `banking_day`, or `none`), a comparator (`gte` or `gt`),
 a cash direction, whether it counts cash only, and the currency the
-threshold is written in. A threshold written in another currency is
-converted to home currency at the rate on the deal; the product does
-not convert yet. Seeded report rows were mapped onto those columns
+threshold is written in. A baseline threshold written in US dollars
+is converted to the desk's home currency at the newest market
+snapshot. The six country packs still state their thresholds in home
+currency. Seeded report rows were mapped onto those columns
 without changing a trigger amount. Only `aggregation_hours = 24` is
-labelled `fixed_24h`. A country with no installed pack resolves to no
-pack. It is not given the Canada pack. No pack: new deals paused;
-voids and settling existing deals still work. A new quote, exchange,
-frozen quote, remittance send or receive, bill payment, money order,
-or cheque cashing is refused. Clearing or returning a cheque already
-held, settling or writing off an obligation already open, and voiding
-a deal already posted still succeed. A settlement row carries the pack
-the original deal was stamped with, or NULL when that deal has none.
+labelled `fixed_24h`. A country with no installed pack resolves to `pack-intl-v1`, the
+international baseline. It is not given the Canada pack, and new deals
+are not paused. A quote, exchange, frozen quote, remittance send or
+receive, bill payment, money order, cheque cashing, and a threshold
+override all post under that baseline. Clearing or returning a cheque
+already held, settling or writing off an obligation already open, and
+voiding a deal already posted still succeed. A settlement row carries
+the pack the original deal was stamped with, or NULL when that deal
+has none.
+
+The baseline is not a country. Its identification lines are in US
+dollars: 3,000 for a cash foreign exchange, 1,000 for a remittance, an
+electronic transfer, or virtual currency. The large-cash record is
+10,000 USD in a fixed 24-hour window. The regulator field is empty.
+A USD line is converted to the desk's home currency at the newest
+market snapshot, and the rate and its timestamp are stored on the
+deal. A missing or stale snapshot requires identification on every
+deal. A baseline desk that names no home currency books in USD. The
+till and Settings show the international-rules disclaimer.
 
 A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
 on the transaction row. Rows written before that are not rewritten.
-Migration 028 backfills a missing pack only where the home currency is
-CAD, empty, or null, and stores CAD in that case. GBP, AUD, AED, EUR,
-and every other currency stay without a pack, because those seeded
-packs have known-wrong numbers.
+Migration 028 backfills a missing pack to the Canada pack where the
+home currency is CAD, empty, or null, and stores CAD in that case.
+GBP, AUD, AED, EUR, USD, and every other currency are pointed at the
+baseline and keep their home currency. The known-wrong country packs
+are not assigned, because those seeded numbers are wrong.
 
 Still to do: dual-write the generalized fee and spread amounts on every
 posting (step 4; cheques already do this), make them authoritative

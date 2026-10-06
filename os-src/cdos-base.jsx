@@ -389,17 +389,18 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
-  /* Set when the server says this country has no pack. The sentence is
-     the server's. The fallback is the same words, for a desk whose setup
-     already recorded that before the jurisdiction call returned. */
+  /* The sentence a baseline desk shows. The server sends the same words.
+     A country pack clears it. */
   let _rulesNotice = null;
-  const RULES_NOTICE = 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.';
+  const BASELINE_NOTICE = "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+  const RULES_NOTICE = BASELINE_NOTICE;
   const rulesNotice = () => _rulesNotice;
-  function rulesMissing(settings) {
+  const baselineNotice = () => BASELINE_NOTICE;
+  function rulesMissing() {
     const pack = _pack;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
     if (pack && pack.available === false) return true;
-    if (pack && pack.packId) return false;
-    return !!(settings && settings.rulesUnavailable);
+    return false;
   }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
@@ -451,7 +452,8 @@
 
   const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
-    _rulesNotice = (_pack && _pack.available === false) ? (notice || RULES_NOTICE) : null;
+    const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    _rulesNotice = baseline || (_pack && _pack.available === false) ? (notice || BASELINE_NOTICE) : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies, notice: _rulesNotice } })); } catch (e) {}
@@ -1199,7 +1201,7 @@
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
-    rulesNotice, rulesMissing,
+    rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds, setDeskThresholds, refreshDeskThresholds,

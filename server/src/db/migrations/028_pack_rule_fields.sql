@@ -17,10 +17,9 @@
    It also points an existing desk that has no pack at the Canada pack
    when that desk's home currency, after upper(btrim(...)), is CAD,
    empty, or null, and it sets home_currency to CAD where that column
-   was empty or null. It does not assign GBP, AUD, AED, EUR, or any
-   other currency. Those packs have known-wrong numbers, and assigning
-   them would silently change live limits. Those desks stay with no
-   pack, and new deals stay paused, until a corrected pack is built.
+   was empty or null. Every other home currency is pointed at the
+   international baseline, pack-intl-v1, and keeps the currency it
+   already named. The known-wrong country packs are not assigned.
 
    The migration runner applies this file inside one transaction. If
    the aggregation guard below raises, none of this file is kept.
@@ -237,17 +236,94 @@ ALTER TABLE jurisdiction_reports
   ADD CONSTRAINT jurisdiction_reports_direction_check
     CHECK (direction IS NULL OR direction IN ('in', 'out', 'both'));
 
+/* ---- international baseline ----
+
+   Not a country. A desk whose country has no pack trades under this
+   row. The numbers are the stricter of the Canadian and EU lines,
+   stated in US dollars, and each one cites the FATF recommendation
+   it comes from. The regulator is deliberately blank: this pack does
+   not name FINTRAC or any other authority.
+
+   Full customer due diligence is 10,000 USD (FATF R.10). That figure
+   is the large-cash record below. One identification row per deal
+   kind cannot also store it, so the identify lines are the lower
+   numbers and the 10,000 is the report.
+
+   The market snapshot (CAD per 1 unit) converts a USD line into the
+   desk's home currency at posting time. This migration does not
+   convert anything itself. */
+ALTER TABLE jurisdiction_packs
+  ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'country';
+
+ALTER TABLE jurisdiction_packs
+  DROP CONSTRAINT IF EXISTS jurisdiction_packs_kind_check;
+ALTER TABLE jurisdiction_packs
+  ADD CONSTRAINT jurisdiction_packs_kind_check
+    CHECK (kind IN ('country', 'baseline'));
+
+INSERT INTO jurisdiction_packs
+  (pack_id, jurisdiction, version, name, home_currency, regulator,
+   report_name, report_threshold, id_threshold, report_currency,
+   allow_cross_currency, kind, aggregation_hours, retention_years)
+VALUES
+  ('pack-intl-v1', 'INTL', 1, 'International baseline', 'USD', '',
+   'CASH-RECORD', 10000, 3000, 'USD',
+   true, 'baseline', 24, 5)
+ON CONFLICT (pack_id) DO NOTHING;
+
+INSERT INTO jurisdiction_id_thresholds
+  (pack_id, deal_kind, threshold, currency, comparator, diligence, cash_only)
+VALUES
+  /* FATF R.10, the stricter of Canada's cash foreign-exchange line
+     and the EU cash rule: identify a cash exchange at 3,000 USD or more. */
+  ('pack-intl-v1', 'fx', 3000, 'USD', 'gte', 'identify', true),
+  /* FATF R.16: every remittance or electronic transfer at 1,000 USD or more. */
+  ('pack-intl-v1', 'remittance', 1000, 'USD', 'gte', 'identify', false),
+  ('pack-intl-v1', 'eft', 1000, 'USD', 'gte', 'identify', false),
+  /* FATF R.15: a virtual-currency deal at 1,000 USD or more. */
+  ('pack-intl-v1', 'virtual_currency', 1000, 'USD', 'gte', 'identify', false)
+ON CONFLICT (pack_id, deal_kind) DO NOTHING;
+
+INSERT INTO jurisdiction_reports
+  (report_id, pack_id, code, name, kind,
+   trigger_threshold, trigger_currency, aggregation_hours,
+   deadline_unit, window_kind, comparator, direction, threshold_currency, cash_only)
+VALUES
+  /* FATF R.10. 10,000 USD or more in a fixed 24-hour window.
+     An internal record for the desk to review, not a filing to a
+     named authority. Check whether the local authority requires a report. */
+  ('intl-cash-record-v1', 'pack-intl-v1', 'CASH-RECORD', 'Large cash record', 'large_cash',
+   10000, 'USD', 24,
+   NULL, 'fixed_24h', 'gte', 'in', 'USD', true),
+  /* No amount. Report to your country's financial intelligence unit
+     as soon as practicable. FATF R.20. */
+  ('intl-suspicious-v1', 'pack-intl-v1', 'SUSPICIOUS', 'Suspicious transaction', 'suspicious',
+   NULL, NULL, NULL,
+   'immediately', 'none', 'gte', NULL, NULL, false),
+  /* FATF R.6. Terrorist or sanctioned property: stop the deal and
+     report immediately. No sanctions list is shipped with this pack. */
+  ('intl-sanctions-v1', 'pack-intl-v1', 'SANCTIONS-STOP', 'Terrorist or sanctioned property', 'other',
+   NULL, NULL, NULL,
+   'immediately', 'none', 'gte', NULL, NULL, false)
+ON CONFLICT (report_id) DO NOTHING;
+
+/* The market rate used to turn a USD threshold into home currency,
+   and when that snapshot was fetched. Null when the line was already
+   in home currency, or when no fresh rate was available. */
+ALTER TABLE ledger_transactions
+  ADD COLUMN IF NOT EXISTS compliance_threshold_rate numeric(24,12),
+  ADD COLUMN IF NOT EXISTS compliance_threshold_rate_at timestamptz;
+
 /* ---- desks that were already open, and had no pack ----
 
-   Backfill ONLY a home currency that, after upper(btrim(...)), is
-   CAD, empty, or null. Those rows become pack-ca-v1, and an empty
-   or null home_currency is set to CAD, because that is the book
-   those desks were actually keeping.
+   A home currency that, after upper(btrim(...)), is CAD, empty, or
+   null becomes pack-ca-v1, and an empty or null home_currency is set
+   to CAD, because that is the book those desks were actually keeping.
 
-   Do not assign GBP, AUD, AED, EUR, or anything else. The current
-   non-Canada packs have known-wrong numbers. Assigning them would
-   silently change live limits. Those desks stay with no pack, and
-   new deals stay paused, until a corrected pack is built.
+   Every other currency keeps its home currency and is pointed at the
+   international baseline. Do not assign pack-gb-v1, pack-au-v1,
+   pack-ae-v1, pack-eu-v1, or pack-us-v1. Those seeded numbers are
+   known to be wrong, and assigning them would change live limits.
 
    A ledger principal that names an entity with no legal_entities row
    has no home currency to read, so it is counted and left alone.
@@ -257,6 +333,7 @@ ALTER TABLE jurisdiction_reports
 DO $$
 DECLARE
   assigned integer := 0;
+  baseline integer := 0;
   orphans integer := 0;
 BEGIN
   UPDATE legal_entities
@@ -271,6 +348,12 @@ BEGIN
      );
   GET DIAGNOSTICS assigned = ROW_COUNT;
 
+  UPDATE legal_entities
+     SET jurisdiction_pack_id = 'pack-intl-v1',
+         jurisdiction_pack_version = COALESCE(jurisdiction_pack_version, 1)
+   WHERE jurisdiction_pack_id IS NULL;
+  GET DIAGNOSTICS baseline = ROW_COUNT;
+
   /* No legal_entities row means there is no home currency to match.
      Nothing is inserted for them. */
   SELECT count(*) INTO orphans
@@ -281,6 +364,6 @@ BEGIN
        WHERE e.id IS NULL
     ) missing;
 
-  RAISE NOTICE 'pack backfill: % legal_entities assigned a pack from home currency; % ledger principals name an entity with no legal_entities row and were left without a pack', assigned, orphans;
+  RAISE NOTICE 'pack backfill: % legal_entities assigned the Canada pack, % assigned the international baseline; % ledger principals name an entity with no legal_entities row and were left without a pack', assigned, baseline, orphans;
 END $$;
 -- pack-backfill:end

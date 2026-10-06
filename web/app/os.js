@@ -497,17 +497,18 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
-  /* Set when the server says this country has no pack. The sentence is
-     the server's. The fallback is the same words, for a desk whose setup
-     already recorded that before the jurisdiction call returned. */
+  /* The sentence a baseline desk shows. The server sends the same words.
+     A country pack clears it. */
   let _rulesNotice = null;
-  const RULES_NOTICE = 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.';
+  const BASELINE_NOTICE = "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+  const RULES_NOTICE = BASELINE_NOTICE;
   const rulesNotice = () => _rulesNotice;
-  function rulesMissing(settings) {
+  const baselineNotice = () => BASELINE_NOTICE;
+  function rulesMissing() {
     const pack = _pack;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
     if (pack && pack.available === false) return true;
-    if (pack && pack.packId) return false;
-    return !!(settings && settings.rulesUnavailable);
+    return false;
   }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
@@ -554,7 +555,8 @@
   };
   const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
-    _rulesNotice = _pack && _pack.available === false ? notice || RULES_NOTICE : null;
+    const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    _rulesNotice = baseline || _pack && _pack.available === false ? notice || BASELINE_NOTICE : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try {
@@ -1825,6 +1827,7 @@
     useDeskFacts,
     rulesNotice,
     rulesMissing,
+    baselineNotice,
     deskCurrencies,
     deskCurrencyList,
     deskTrades,
@@ -9623,8 +9626,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const myCountry = settings.bizCountry || 'Canada';
       const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
       const shownRegimes = matched.length ? matched : Object.values(REGIMES);
-      const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
-      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (rulesMissing ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
+      const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings && settings.baselineRules || paused ? disclaimer : '');
       const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
@@ -9639,13 +9643,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           borderRadius: 9
         }
-      }, rulesNotice) : null, !rulesNotice && /*#__PURE__*/React.createElement("div", {
+      }, rulesNotice) : null, !paused && /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Your jurisdiction"), !rulesNotice && /*#__PURE__*/React.createElement("div", {
+      }, "Your jurisdiction"), !paused && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -9704,7 +9708,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.mute
           }
         }, fmt(r.threshold, r.currency), " \xB7 ", r.aggHours, "h rule \xB7 ", r.largeCode, "/", r.wireCode, "/", r.strCode, " \xB7 ", r.watchlists.join('/')));
-      })), !rulesNotice && !isOwner && /*#__PURE__*/React.createElement("div", {
+      })), !paused && !isOwner && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2",
         style: {
           background: CD.brassSoft,
@@ -9715,7 +9719,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "lock",
         s: 12,
         c: "var(--cd-brass-text)"
-      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !rulesNotice && /*#__PURE__*/React.createElement("div", {
+      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !paused && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-5 flex items-start gap-1.5",
         style: {
           color: CD.faint
@@ -9752,13 +9756,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), rulesNotice ? null : /*#__PURE__*/React.createElement("div", {
+      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), paused ? null : /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-1",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), rulesNotice ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), rulesNotice ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -9776,7 +9780,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), rulesNotice ? null : /*#__PURE__*/React.createElement(Row, {
+      }, settings.aggWindowStart || '00:00')), paused ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -42575,7 +42579,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -42945,7 +42949,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== SUBMISSIONS (worksheet → sealed filing) ===================== */
@@ -43763,7 +43767,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
     }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
@@ -63977,7 +63981,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         region: setup.region || '',
         postal: setup.postal || ''
       };
-      const homeCcy = setup.homeCurrency || 'CAD';
+      const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -63993,10 +63997,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const reportOver = num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
-         When the country has no pack, neither number is applied. */
+         A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
-      const idOver = setup.rulesUnavailable || typedId == null ? null : Math.min(typedId, reportOver);
-      const reportLine = setup.rulesUnavailable ? null : reportOver;
+      const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
+      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = legacyPause ? null : reportOver;
       const owner = {
         id: 'e_owner',
         name: ownerName,
@@ -64025,7 +64030,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         baseCurrency: homeCcy,
         threshold: reportLine,
         idRequiredOver: idOver,
-        rulesUnavailable: !!setup.rulesUnavailable,
+        rulesUnavailable: !!legacyPause,
+        baselineRules: !!setup.baselineRules,
         receiptHeader: bizName,
         fintracContactName: ownerName,
         reportingEntityNumber: '',
@@ -65161,7 +65167,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }), " ", /*#__PURE__*/React.createElement("span", {
       className: "mb-menu-lbl"
     }, "Sign out"))))))), (() => {
-      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.rulesUnavailable ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
+      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.baselineRules || settings.rulesUnavailable ? disclaimer : '');
       if (!notice) return null;
       return /*#__PURE__*/React.createElement("div", {
         role: "status",

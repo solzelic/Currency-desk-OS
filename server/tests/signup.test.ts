@@ -123,10 +123,12 @@ describe("signup", () => {
     const le = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-beogradfx")))[0]!;
     expect(le.jurisdiction).toBe("");
     expect(le.jurisdiction).not.toBe("FINTRAC");
-    expect(le.jurisdictionPackId).toBeNull();
-    expect(le.homeCurrency).toBeNull();
+    expect(le.jurisdictionPackId).toBe("pack-intl-v1");
+    expect(le.homeCurrency).toBe("USD");
+    expect(le.homeCurrency).not.toBe("CAD");
     const boards = await handle.db.select().from(schema.rateBoards).where(eq(schema.rateBoards.branchId, "br-beogradfx-main"));
-    expect(boards).toHaveLength(0);
+    expect(boards).toHaveLength(1);
+    expect(boards[0]!.boardRows.CAD).toBeUndefined();
   });
 
   it("rejects a taken slug and a reserved slug", async () => {

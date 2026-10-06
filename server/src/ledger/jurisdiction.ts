@@ -37,10 +37,22 @@ export type JurisdictionPack = {
      may run FIFO whether their pack proposes it or not. See
      server/src/ledger/cost-method.ts. */
   defaultCostMethod: "weighted_average" | "fifo";
-  /* False when this desk's country has no pack. The thresholds on that
-     object are empty. They are not Canada's. */
+  /* False only when even the international baseline row is missing.
+     The thresholds on that object are empty. They are not Canada's. */
   available: boolean;
+  /* country — a seeded country pack. baseline — the international
+     rules, not tied to a country. A baseline desk keeps its own home
+     currency; the pack row's currency is only the currency the rules
+     are written in. */
+  kind: "country" | "baseline";
+  baseline: boolean;
 };
+
+/* The international baseline. Not a country, and not Canada's pack. */
+export const BASELINE_PACK_ID = "pack-intl-v1";
+
+export const BASELINE_NOTICE =
+  "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
 
 /* The four kinds of deal an identification line can name.
    fx — foreign exchange
@@ -55,8 +67,10 @@ export type IdDealKind = (typeof ID_DEAL_KINDS)[number];
    other three lines stay on the pack. */
 export const SETUP_ID_DEAL: IdDealKind = "fx";
 
+/* Shown only when the baseline row itself is missing. A desk whose
+   country has no pack is not paused: it trades under that baseline. */
 export const RULES_UNAVAILABLE_NOTICE =
-  "Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.";
+  "This desk has no rules pack installed, so a new deal cannot be posted.";
 
 export type InstalledPack = {
   packId: string;
@@ -81,8 +95,8 @@ export function carriedPackStamp(row: {
   return { packId, packVersion: Number.isInteger(parsed) ? parsed : null };
 }
 
-/* A desk whose country has no pack. Home currency is whatever the entity
-   already booked in. Nothing else is filled in from Canada. */
+/* The baseline row itself is missing. Home currency is whatever the
+   entity already booked in. Nothing is filled in from Canada. */
 const unavailablePack = (homeCurrency: string): JurisdictionPack => ({
   packId: "",
   jurisdiction: "",
@@ -98,6 +112,8 @@ const unavailablePack = (homeCurrency: string): JurisdictionPack => ({
   permittedCurrencies: [],
   defaultCostMethod: "weighted_average",
   available: false,
+  kind: "country",
+  baseline: false,
 });
 
 const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
@@ -118,7 +134,23 @@ const fromRow = (row: Record<string, unknown>): JurisdictionPack => ({
   defaultCostMethod:
     row.default_cost_method === "fifo" ? "fifo" : "weighted_average",
   available: true,
+  kind: row.kind === "baseline" ? "baseline" : "country",
+  baseline: row.kind === "baseline",
 });
+
+function bookCurrency(value: unknown): string {
+  const code = value == null ? "" : String(value).trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : "";
+}
+
+/* A baseline pack is written in USD. The desk's book is the currency
+   the entity named, or USD when it named none. A country pack keeps
+   the currency on the pack. */
+function withBookCurrency(pack: JurisdictionPack, entityHome: unknown): JurisdictionPack {
+  if (!pack.baseline) return pack;
+  const home = bookCurrency(entityHome) || "USD";
+  return home === pack.homeCurrency ? pack : { ...pack, homeCurrency: home };
+}
 
 /**
  * The pack a legal entity operates under, inside the caller's transaction.
@@ -132,24 +164,30 @@ export async function resolvePack(
   legalEntityId: string,
 ): Promise<JurisdictionPack> {
   const found = await client.query(
-    `SELECT p.*
+    `SELECT p.*, e.home_currency AS entity_home_currency
        FROM legal_entities e
        JOIN jurisdiction_packs p ON p.pack_id = e.jurisdiction_pack_id
       WHERE e.id = $1`,
     [legalEntityId],
   );
-  if (found.rowCount) return fromRow(found.rows[0]);
+  if (found.rowCount) {
+    return withBookCurrency(fromRow(found.rows[0]), found.rows[0].entity_home_currency);
+  }
 
-  /* No pack on the entity. Use the home currency it already has, and do
-     not borrow Canada's regulator, thresholds, or report name. A missing
-     pack is a missing pack. */
+  /* No country pack on the entity. The international baseline applies.
+     It is not the Canada pack. If that row is missing too, the desk
+     has nothing to post a new deal under. */
   const entity = await client.query(
     "SELECT home_currency FROM legal_entities WHERE id=$1",
     [legalEntityId],
   );
-  const home = entity.rows[0]?.home_currency;
-  const currency = home ? String(home).trim().toUpperCase() : "";
-  return unavailablePack(currency);
+  const entityHome = entity.rows[0]?.home_currency;
+  const baseline = await client.query(
+    "SELECT * FROM jurisdiction_packs WHERE pack_id=$1",
+    [BASELINE_PACK_ID],
+  );
+  if (!baseline.rowCount) return unavailablePack(bookCurrency(entityHome));
+  return withBookCurrency(fromRow(baseline.rows[0]), entityHome);
 }
 
 /** Is this pair tradeable under this pack, as a single deal? */

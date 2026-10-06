@@ -1916,7 +1916,7 @@
       const a0 = setup.address;
       const addr = (a0 && typeof a0 === 'object') ? a0
         : { street: typeof a0 === 'string' ? a0 : '', city: setup.city || '', region: setup.region || '', postal: setup.postal || '' };
-      const homeCcy = setup.homeCurrency || 'CAD';
+      const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -1934,16 +1934,18 @@
       const reportOver = num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
-         When the country has no pack, neither number is applied. */
+         A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
-      const idOver = setup.rulesUnavailable || typedId == null ? null : Math.min(typedId, reportOver);
-      const reportLine = setup.rulesUnavailable ? null : reportOver;
+      const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
+      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = legacyPause ? null : reportOver;
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
         baseCurrency: homeCcy, threshold: reportLine, idRequiredOver: idOver,
-        rulesUnavailable: !!setup.rulesUnavailable,
+        rulesUnavailable: !!legacyPause,
+        baselineRules: !!setup.baselineRules,
         receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
         employees: [owner] };
       // a fresh desk holds NO cash — zero every vault/till balance and clear the
@@ -2301,10 +2303,12 @@
         </div>
       </div>
 
-      {/* A country with no pack. Sign-in is not blocked. Canada's rules are not applied. */}
+      {/* A baseline desk. Sign-in is not blocked. Canada's rules are not applied. */}
       {(() => {
+        const disclaimer = (window.CDOS.baselineNotice && window.CDOS.baselineNotice())
+          || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
         const notice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
-          || (settings.rulesUnavailable ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
+          || (settings.baselineRules || settings.rulesUnavailable ? disclaimer : '');
         if (!notice) return null;
         return <div role="status" data-rules-notice style={{ padding: '8px 16px', background: 'var(--cd-brass-soft, #f4efe4)', color: 'var(--cd-ink)', fontSize: 13, borderBottom: '1px solid var(--cd-line)' }}>{notice}</div>;
       })()}

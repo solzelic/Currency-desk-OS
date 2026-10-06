@@ -291,7 +291,17 @@ export async function provisionDesk(
   const pack = packForCountry(
     typeof setup.country === "string" ? setup.country : null,
   );
-  if (!pack) setup.rulesUnavailable = true;
+  /* A country with no pack is not paused. It trades under the
+     international baseline, in the home currency it named, or USD
+     when it named none. Canada's pack is not applied. */
+  const statedHome =
+    typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim().toUpperCase() : "";
+  const bookHome = pack ? pack.homeCurrency : statedHome || "USD";
+  if (!pack) {
+    setup.baselineRules = true;
+    setup.rulesUnavailable = false;
+    setup.homeCurrency = bookHome;
+  }
   if (pack && typedIdentificationLine(setup.idThreshold) == null) {
     const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
     /* A positive amount fills the blank box. Zero means every deal on
@@ -301,9 +311,6 @@ export async function provisionDesk(
       setup.idThreshold = Number(line.amount.toDecimalPlaces(2).toFixed(2));
     }
   }
-  const statedHome =
-    typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim().toUpperCase() : "";
-
   await db.insert(schema.tenants).values({
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
   }).onConflictDoNothing();
@@ -327,14 +334,16 @@ export async function provisionDesk(
      on the day it opened, on the strength of a question it thought it was
      answering about something else. NULL means "follow the pack", and for
      every answer except a real tightening that is the truthful state. */
-  const chosenIdLine = pack
-    ? await idThresholdFromSetup(setup, pack.packId, db)
-    : null;
+  const chosenIdLine = await idThresholdFromSetup(
+    setup,
+    pack?.packId ?? "pack-intl-v1",
+    db,
+  );
   await db.insert(schema.legalEntities).values({
     id: legalEntityId, tenantId, name: spec.legalName, msbNumber: spec.msbNumber, jurisdiction: spec.regulator,
-    homeCurrency: pack?.homeCurrency ?? (statedHome || null),
-    jurisdictionPackId: pack?.packId ?? null,
-    jurisdictionPackVersion: pack?.version ?? null,
+    homeCurrency: bookHome,
+    jurisdictionPackId: pack?.packId ?? "pack-intl-v1",
+    jurisdictionPackVersion: pack?.version ?? 1,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
@@ -356,13 +365,9 @@ export async function provisionDesk(
   const board = await publishStartingBoard(db, {
     tenantId, legalEntityId, branchId,
     currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
-    /* The pack already named the currency this book is in. A Canada
-       signup can send only the country; the board still has to be CAD
-       or the first quote has nothing to price. No pack and no home
-       currency still publishes nothing. */
-    homeCurrency:
-      pack?.homeCurrency ??
-      (typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined),
+    /* Canada with no home currency in the body is still a CAD book.
+       A baseline desk is priced in the currency it named, or USD. */
+    homeCurrency: bookHome,
     // the margin they set, shown back to them, and previewed on screen 12
     spreadAll: setup.spreadAll,
   });

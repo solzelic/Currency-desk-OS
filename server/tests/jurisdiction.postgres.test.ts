@@ -138,20 +138,21 @@ postgres("jurisdiction packs against real PostgreSQL", () => {
     );
     const pack = await withClient((c) => resolvePack(c, "le-jur-old"));
     expect(pack.homeCurrency).toBe("EUR");
-    /* And it is not handed Canada's pack in place of the one it does not
-       have. An empty regulator is a missing pack. FINTRAC is a claim. */
-    expect(pack.available).toBe(false);
-    expect(pack.packId).toBe("");
+    /* No country pack. The baseline applies, and it is not Canada's.
+       The regulator stays blank. FINTRAC would be a claim. */
+    expect(pack.available).toBe(true);
+    expect(pack.baseline).toBe(true);
+    expect(pack.packId).toBe("pack-intl-v1");
+    expect(pack.packId).not.toBe("pack-ca-v1");
     expect(pack.regulator).toBe("");
-    expect(pack.reportName).toBe("");
-    expect(pack.reportThreshold).toBe("");
-    expect(pack.idThreshold).toBe("");
+    expect(pack.regulator).not.toBe("FINTRAC");
+    expect(pack.reportName).toBe("CASH-RECORD");
     const desk = await withClient((c) => readDeskThresholds(c, "le-jur-old"));
     expect(desk.regulator).toBe("");
-    expect(desk.reportName).toBe("");
-    expect(desk.reportThreshold.effective).toBeNull();
-    expect(desk.idThreshold.effective).toBeNull();
-    expect(desk.aggregationHours.effective).toBeNull();
-    expect(desk.retentionYears.effective).toBeNull();
+    expect(desk.regulator).not.toBe("FINTRAC");
+    expect(desk.reportName).toBe("CASH-RECORD");
+    expect(desk.currency).toBe("EUR");
+    expect(desk.aggregationHours.effective).toBe(24);
+    expect(desk.retentionYears.effective).toBe(5);
   });
 });

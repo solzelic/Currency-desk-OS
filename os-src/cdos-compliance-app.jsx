@@ -348,7 +348,7 @@
                 two new ones in a six-deal cluster are visible at a glance */}
             <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-0.5" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}</button>; })}</div>
           </div>); })}
-        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
+        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -456,7 +456,7 @@
               </>); })()}
             </div>
           </div>))}
-        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : <>No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
+        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -718,7 +718,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="complianceshield" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
           </div>
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
