@@ -85,11 +85,34 @@ refuses to post a deal at or above it for a customer nobody has identified,
 on both posting paths, **in the currency the pack states the book is kept
 in**.
 
-A desk with no pack is not given a line to move. Quote, exchange,
-transfer, and frozen-quote posting all refuse with `no_jurisdiction_pack`,
-including a verified customer and including an owner writing a threshold
-override. The Settings editors for those lines are hidden, and the till
-says deals are paused.
+A desk with no pack is not given a line to move. No pack: new deals
+paused; voids and settling existing deals still work. These new deals
+refuse with `no_jurisdiction_pack`, including a verified customer and
+including an owner writing a threshold override:
+
+- a quote
+- an exchange
+- a frozen quote
+- a remittance being sent
+- a remittance being received
+- a bill payment
+- a money order
+- a cheque being cashed
+
+These still post, because they are not a new deal:
+
+- voiding an exchange already on the book
+- voiding a cheque cashing
+- voiding an open obligation
+- clearing or returning a cheque the desk already holds
+- settling or writing off an obligation already open
+- a vault movement
+- a till cash movement
+
+A settlement row is stamped with the pack the original deal was
+stamped with. A deal that was never stamped stays NULL. The Settings
+editors for the threshold lines are hidden, and the till says deals
+are paused.
 
 It used to be this, in a code path documented as jurisdiction-neutral:
 
@@ -113,6 +136,9 @@ Null is not zero and it is not infinity. Both blanket answers are wrong: a
 gate that never fires clears deals nobody checked, and a gate that always
 fires stops a working shop trading. So the gate does not give a blanket
 answer:
+
+This is a pack that is installed and states no line. A desk with no
+pack at all does not reach it: new deals are paused, as above.
 
 - **A verified customer trades.** They satisfy every possible value of a
   line nobody can state. There is nothing to be unsure about, and a

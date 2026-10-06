@@ -27,11 +27,21 @@ converted to home currency at the rate on the deal; the product does
 not convert yet. Seeded report rows were mapped onto those columns
 without changing a trigger amount. Only `aggregation_hours = 24` is
 labelled `fixed_24h`. A country with no installed pack resolves to no
-pack. It is not given the Canada pack, and it cannot post.
+pack. It is not given the Canada pack. No pack: new deals paused;
+voids and settling existing deals still work. A new quote, exchange,
+frozen quote, remittance send or receive, bill payment, money order,
+or cheque cashing is refused. Clearing or returning a cheque already
+held, settling or writing off an obligation already open, and voiding
+a deal already posted still succeed. A settlement row carries the pack
+the original deal was stamped with, or NULL when that deal has none.
 
-A new exchange, transfer, or cheque movement stamps
+A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
 on the transaction row. Rows written before that are not rewritten.
+Migration 028 backfills a missing pack only where the home currency is
+CAD, empty, or null, and stores CAD in that case. GBP, AUD, AED, EUR,
+and every other currency stay without a pack, because those seeded
+packs have known-wrong numbers.
 
 Still to do: dual-write the generalized fee and spread amounts on every
 posting (step 4; cheques already do this), make them authoritative

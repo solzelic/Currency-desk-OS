@@ -170,6 +170,28 @@ describe("migration 028 does not restamp history", () => {
     expect(sql).toMatch(/'monthly_day'/);
     expect(sql).toMatch(/'before_execution'/);
   });
+
+  it("backfills only a CAD or blank home currency, and the runner wraps the file in a transaction", () => {
+    const start = sql.indexOf("-- pack-backfill:start");
+    const end = sql.indexOf("-- pack-backfill:end");
+    const backfill = sql.slice(start, end);
+    expect(backfill).toMatch(/upper\(btrim\(home_currency::text\)\) = 'CAD'/);
+    expect(backfill).toMatch(/home_currency = 'CAD'/);
+    expect(backfill).toMatch(/pack-ca-v1/);
+    expect(backfill).not.toMatch(/pack-gb-v1|pack-au-v1|pack-ae-v1|pack-eu-v1/);
+    const runner = readFileSync(
+      new URL("../src/db/migrations.ts", import.meta.url),
+      "utf8",
+    );
+    const begin = runner.indexOf('await client.query("BEGIN")');
+    const apply = runner.indexOf("await client.query(sql)");
+    const commit = runner.indexOf('await client.query("COMMIT")');
+    const rollback = runner.indexOf('await client.query("ROLLBACK")');
+    expect(begin).toBeGreaterThan(-1);
+    expect(apply).toBeGreaterThan(begin);
+    expect(commit).toBeGreaterThan(apply);
+    expect(rollback).toBeGreaterThan(commit);
+  });
 });
 
 describe("an identification line, tagged", () => {

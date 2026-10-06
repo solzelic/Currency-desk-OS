@@ -51,7 +51,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type pg from "pg";
-import { resolvePack } from "./jurisdiction.js";
+import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -679,15 +679,25 @@ export class ChequeService {
           : "Cheque clearing journal is unbalanced.",
       );
 
-      const pack = await resolvePack(client, actor.legalEntityId);
-      requireInstalledPack(pack);
+      /* No pack: new deals paused; voids and settling existing deals
+         still work. Clearing or returning a cheque the desk already
+         holds is not a new deal. The row is stamped with the pack the
+         cashing was stamped with, when that cashing has one. Otherwise
+         NULL — never an empty string. */
+      const original = await client.query(
+        `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+           FROM ledger_transactions
+          WHERE transaction_id = $1`,
+        [cheque.cashing_transaction_id],
+      );
+      const carried = carriedPackStamp(original.rows[0]);
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
         customerId: String(cheque.customer_id),
         home,
-        packId: pack.packId,
-        packVersion: pack.version,
+        packId: carried.packId,
+        packVersion: carried.packVersion,
         inputAmount: face,
         outputAmount: face,
         fee: new Decimal(0),
@@ -994,8 +1004,8 @@ export class ChequeService {
       transactionRef: string;
       customerId: string;
       home: string;
-      packId: string;
-      packVersion: number;
+      packId: string | null;
+      packVersion: number | null;
       inputAmount: Decimal;
       outputAmount: Decimal;
       fee: Decimal;

@@ -65,7 +65,7 @@ import Decimal from "decimal.js";
 import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
-import { resolvePack } from "./jurisdiction.js";
+import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import {
   LedgerError,
@@ -954,16 +954,28 @@ export class ObligationService {
       const transactionId = `tx_${randomUUID()}`;
       const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
       const settling = ending === "settled";
-      const pack = await resolvePack(client, actor.legalEntityId);
-      requireInstalledPack(pack);
+      /* No pack: new deals paused; voids and settling existing deals
+         still work. Paying out or writing off an obligation already on
+         the book is not a new deal. The row keeps the pack the opening
+         deal was stamped with, when that deal has one. Otherwise NULL —
+         never an empty string. The home currency is the one on the
+         obligation, which is the book the money was taken in. */
+      const original = await client.query(
+        `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+           FROM ledger_transactions
+          WHERE transaction_id = $1`,
+        [obligation.transaction_id],
+      );
+      const carried = carriedPackStamp(original.rows[0]);
+      const bookedIn = String(home ?? "").trim();
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
         now,
         customerId: obligation.customer_id,
-        packId: pack.packId,
-        packVersion: pack.version,
-        homeCurrency: pack.homeCurrency,
+        packId: carried.packId,
+        packVersion: carried.packVersion,
+        homeCurrency: bookedIn || null,
         dealKind: settling ? "obligation_settlement" : "obligation_write_off",
         /* No cash and no counter. Money moves between the desk and its
            bank on a settlement, and on a write-off nothing moves at
@@ -1285,9 +1297,9 @@ export class ObligationService {
       crossBorder: boolean;
       cashInHome: Decimal;
       cashOutHome: Decimal;
-      packId: string;
-      packVersion: number;
-      homeCurrency: string;
+      packId: string | null;
+      packVersion: number | null;
+      homeCurrency: string | null;
       from: string;
       to: string;
       inputAmount: Decimal;

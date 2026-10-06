@@ -725,7 +725,6 @@ export class LedgerReportingService {
       await client.query("COMMIT");
       return {
         pack,
-        /* Null when this country has a pack. The sentence when it does not. */
         currencies: {
           home: desk.home,
           /* null means the owner has stated no set, which is not the
@@ -743,6 +742,7 @@ export class LedgerReportingService {
               .filter(([, places]) => places !== LEDGER_SCALE),
           ),
         },
+        /* Null when this country has a pack. The sentence when it does not. */
         notice: pack.available ? null : RULES_UNAVAILABLE_NOTICE,
         idThresholds: idLines.rows.map((row) =>
           idLineFromRow(row as Record<string, unknown>),

@@ -64,6 +64,23 @@ export type InstalledPack = {
   homeCurrency: string;
 };
 
+/* The pack already written on a deal, carried onto a later row that
+   settles or clears it. A missing id, a blank id, and a pack that was
+   never stamped are the same answer: NULL. An empty string is not a
+   pack, and a foreign key would reject it if one were added later. */
+export function carriedPackStamp(row: {
+  jurisdiction_pack_id?: unknown;
+  jurisdiction_pack_version?: unknown;
+} | undefined): { packId: string | null; packVersion: number | null } {
+  const raw = row?.jurisdiction_pack_id;
+  const packId = raw == null ? "" : String(raw).trim();
+  if (!packId) return { packId: null, packVersion: null };
+  const version = row?.jurisdiction_pack_version;
+  if (version == null || version === "") return { packId, packVersion: null };
+  const parsed = Number(version);
+  return { packId, packVersion: Number.isInteger(parsed) ? parsed : null };
+}
+
 /* A desk whose country has no pack. Home currency is whatever the entity
    already booked in. Nothing else is filled in from Canada. */
 const unavailablePack = (homeCurrency: string): JurisdictionPack => ({

@@ -197,7 +197,11 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const chosenPlan = ["basic", "pro", "premium"].includes(planFromOnboarding)
       ? planFromOnboarding
       : ({ rates: "basic", full: "premium", ai: "premium" } as Record<string, string>)[planFromOnboarding] ?? "trial";
-    const regulator = typeof onb.regulator === "string" && onb.regulator ? onb.regulator : "FINTRAC";
+    /* A signup that did not name a regulator is not a Canadian desk.
+       The column default is still FINTRAC; writing "" here is what
+       keeps that default from labelling a country that has no pack.
+       Dropping the column default is a later migration. */
+    const regulator = typeof onb.regulator === "string" ? onb.regulator.trim() : "";
     const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
 
     forgetClaimedCount();

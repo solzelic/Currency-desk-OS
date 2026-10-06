@@ -193,12 +193,22 @@ export function registerDeskRoutes(app: FastifyInstance, db: Db) {
        the first quote with "no published branch board". The currencies and
        margin are the desk's own, off the answers it was set up with. */
     const setup = await tenantSetup(db, who.tenantId);
+    const entity = await db
+      .select({ homeCurrency: schema.legalEntities.homeCurrency })
+      .from(schema.legalEntities)
+      .where(eq(schema.legalEntities.id, who.legalEntityId))
+      .limit(1);
+    /* The book already says which currency this desk keeps. A location
+       opened later uses that, not a Canadian default. A desk that has
+       named neither an entity home nor a setup home gets no board. */
+    const fromBook = entity[0]?.homeCurrency?.trim() ?? "";
+    const fromSetup = typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim() : "";
     const board = await publishStartingBoard(db, {
       tenantId: who.tenantId,
       legalEntityId: who.legalEntityId,
       branchId,
       currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
-      homeCurrency: typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined,
+      homeCurrency: fromBook || fromSetup || undefined,
       spreadAll: setup.spreadAll,
       publishedBy: who.staffId,
     });

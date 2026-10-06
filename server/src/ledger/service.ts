@@ -173,10 +173,13 @@ export async function requireOpenTill(
    alternative is a silent hole in the desk's file. The browser follows
    the same rule for the reporting line — see `overReportingLimit` in
    os-src/cdos-base.jsx, which answers null rather than false. */
-/* A desk with no pack can be opened and looked at. It cannot post.
-   Verified or not, a quote or an exchange or a transfer: there is no
-   rule to post under, and guessing Canada's would be the bug this
-   exists to stop. */
+/* No pack: new deals paused; voids and settling existing deals still
+   work. This guard is the pause. It sits on a quote, an exchange, a
+   frozen quote, a cheque being cashed, and a new obligation. It does
+   not sit on a void, a cheque clearance or return, or an obligation
+   settlement or write-off — those record a deal already on the book.
+   There is no rule to post a new deal under, and guessing Canada's
+   would be the bug this exists to stop. */
 export function requireInstalledPack(pack: JurisdictionPack): void {
   if (pack.available) return;
   throw new LedgerError("no_jurisdiction_pack", RULES_UNAVAILABLE_NOTICE);

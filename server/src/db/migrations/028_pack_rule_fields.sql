@@ -14,12 +14,16 @@
    them. It does not change a seeded threshold or a pack version.
    A later pack is a new row.
 
-   It also points an existing desk that has no pack at the pack its
-   home currency already implies, where that reading is unambiguous.
-   Those desks were effectively running on that pack before a missing
-   pack stopped meaning "Canada". A currency that does not match one
-   of those packs is left alone, and that desk cannot post until a
-   pack is installed.
+   It also points an existing desk that has no pack at the Canada pack
+   when that desk's home currency, after upper(btrim(...)), is CAD,
+   empty, or null, and it sets home_currency to CAD where that column
+   was empty or null. It does not assign GBP, AUD, AED, EUR, or any
+   other currency. Those packs have known-wrong numbers, and assigning
+   them would silently change live limits. Those desks stay with no
+   pack, and new deals stay paused, until a corrected pack is built.
+
+   The migration runner applies this file inside one transaction. If
+   the aggregation guard below raises, none of this file is kept.
 
    Draft PR 57 owns migration 027. This is 028 so the two can land in
    either order.
@@ -235,25 +239,20 @@ ALTER TABLE jurisdiction_reports
 
 /* ---- desks that were already open, and had no pack ----
 
-   A missing pack used to be read as Canada. Taking that fallback away
-   without pointing those desks at a pack would pause every one of
-   them. Where the home currency names exactly one seeded pack, that
-   is the pack the desk was effectively running on:
+   Backfill ONLY a home currency that, after upper(btrim(...)), is
+   CAD, empty, or null. Those rows become pack-ca-v1, and an empty
+   or null home_currency is set to CAD, because that is the book
+   those desks were actually keeping.
 
-     CAD, or no home currency   pack-ca-v1
-     GBP                        pack-gb-v1
-     AUD                        pack-au-v1
-     AED                        pack-ae-v1
-     EUR                        pack-eu-v1
-
-   USD is not in that list. A desk that booked in dollars and never
-   named a pack is left without one, and it cannot post until a pack
-   is installed. Any other currency is left the same way.
+   Do not assign GBP, AUD, AED, EUR, or anything else. The current
+   non-Canada packs have known-wrong numbers. Assigning them would
+   silently change live limits. Those desks stay with no pack, and
+   new deals stay paused, until a corrected pack is built.
 
    A ledger principal that names an entity with no legal_entities row
    has no home currency to read, so it is counted and left alone.
    Running this again changes nothing: a desk that already has a pack
-   is not moved. */
+   is not moved, and a row this already filled is no longer null. */
 -- pack-backfill:start
 DO $$
 DECLARE
@@ -261,21 +260,14 @@ DECLARE
   orphans integer := 0;
 BEGIN
   UPDATE legal_entities
-     SET jurisdiction_pack_id = CASE
-           WHEN home_currency IS NULL
-             OR btrim(home_currency::text) = ''
-             OR home_currency = 'CAD' THEN 'pack-ca-v1'
-           WHEN home_currency = 'GBP' THEN 'pack-gb-v1'
-           WHEN home_currency = 'AUD' THEN 'pack-au-v1'
-           WHEN home_currency = 'AED' THEN 'pack-ae-v1'
-           WHEN home_currency = 'EUR' THEN 'pack-eu-v1'
-         END,
-         jurisdiction_pack_version = COALESCE(jurisdiction_pack_version, 1)
+     SET jurisdiction_pack_id = 'pack-ca-v1',
+         jurisdiction_pack_version = COALESCE(jurisdiction_pack_version, 1),
+         home_currency = 'CAD'
    WHERE jurisdiction_pack_id IS NULL
      AND (
        home_currency IS NULL
        OR btrim(home_currency::text) = ''
-       OR home_currency IN ('CAD', 'GBP', 'AUD', 'AED', 'EUR')
+       OR upper(btrim(home_currency::text)) = 'CAD'
      );
   GET DIAGNOSTICS assigned = ROW_COUNT;
 

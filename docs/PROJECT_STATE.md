@@ -126,21 +126,29 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   states its threshold in home currency, with the new fields at their
   defaults. The six seeded packs keep the numbers they had. A country
   with no pack is not given Canada's. Sign-in still works, and the desk
-  can be looked at and set up, but no deal can be posted — not a quote,
-  an exchange, a transfer, or a frozen quote — until a pack is installed.
-  The till says "Rules for your country are not available yet, so deals
-  are paused. We will let you know when they are ready." Threshold
-  overrides are refused, and those editors are hidden. A blank
-  identification answer at setup uses the pack's foreign-exchange
-  identification line, not the report line. A new posting stamps the
-  pack id, version, and home currency it was posted under. Older rows
-  are not restamped. The posting gate still reads the pack's single
-  identification column, so the lines the gate enforces have not moved.
-  Migration 028 also points an existing desk with no pack at the seeded
-  pack its home currency already implies, where that is unambiguous:
-  CAD or a blank home currency to Canada, GBP to the UK, AUD to
-  Australia, AED to the UAE, EUR to the EU. Any other currency, including
-  USD, is left without a pack.
+  can be looked at and set up. No pack: new deals paused; voids and
+  settling existing deals still work. A new quote, exchange, frozen
+  quote, remittance send, remittance receive, bill payment, money
+  order, or cheque cashing is refused until a pack is installed, and
+  so is a threshold override. The till says "Rules for your country
+  are not available yet, so deals are paused. We will let you know
+  when they are ready." Those editors are hidden. A void of a deal
+  already on the book still posts, and so does clearing or returning
+  a cheque already held, and settling or writing off an obligation
+  already open. Those settlement rows keep the pack the original deal
+  was stamped with, or NULL when it had none. Vault and till cash
+  movements still post. A blank identification answer at setup uses
+  the pack's foreign-exchange identification line, not the report
+  line. A new posting stamps the pack id, version, and home currency
+  it was posted under. Older rows are not restamped. The posting gate
+  still reads the pack's single identification column, so the lines
+  the gate enforces have not moved. Migration 028 backfills only a
+  desk whose home currency, ignoring case and surrounding spaces, is
+  CAD, empty, or null: that desk is pointed at the Canada pack, and a
+  blank home currency is stored as CAD. GBP, AUD, AED, EUR, USD, and
+  every other currency are left with no pack. The non-Canada packs
+  have known-wrong numbers, and assigning them would change live
+  limits. Those desks stay paused until a corrected pack is built.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
@@ -226,12 +234,16 @@ identification line (including comparator, due-diligence level, and
 cash-only) and the extra facts a report row was missing (deadline,
 window, comparator, direction, threshold currency, cash-only). Seeded
 thresholds are unchanged. A country with no pack is not given Canada's.
-That desk can sign in, and it cannot post a deal or change a threshold
-until a pack is installed. A new posting stamps the pack it was posted
-under. Migration 028 backfills a missing pack from home currency where
-the match is unambiguous. A blank identification answer at setup is not
-filled with the report line. The posting gate still reads the single
-identification column.
+No pack: new deals paused; voids and settling existing deals still
+work. A new quote, exchange, transfer, cheque cashing, or threshold
+change is refused. Clearing a held cheque, settling or writing off an
+open obligation, voiding an old deal, and moving vault or till cash
+still post. Migration 028 backfills only CAD, empty, or null home
+currency onto the Canada pack, and stores CAD where home was blank.
+Other currencies, including GBP, AUD, AED, EUR, and USD, stay without
+a pack. A blank identification answer at setup is not filled with the
+report line. The posting gate still reads the single identification
+column.
 
 Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until

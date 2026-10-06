@@ -500,7 +500,9 @@ const migrationSlice = (name: string) => {
         `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id)
          VALUES
            ('le-bf-cad','tnt-backfill','CAD desk','x','CAD',NULL),
+           ('le-bf-cad-lower','tnt-backfill','cad desk','x','cad',NULL),
            ('le-bf-empty','tnt-backfill','Empty desk','x',NULL,NULL),
+           ('le-bf-blank','tnt-backfill','Blank desk','x','',NULL),
            ('le-bf-gbp','tnt-backfill','GBP desk','x','GBP',NULL),
            ('le-bf-aud','tnt-backfill','AUD desk','x','AUD',NULL),
            ('le-bf-aed','tnt-backfill','AED desk','x','AED',NULL),
@@ -518,20 +520,30 @@ const migrationSlice = (name: string) => {
       const packOf = async (id: string) =>
         (
           await client.query(
-            `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+            `SELECT btrim(home_currency::text) AS home_currency,
+                    jurisdiction_pack_id, jurisdiction_pack_version
                FROM legal_entities WHERE id=$1`,
             [id],
           )
         ).rows[0];
-      expect((await packOf("le-bf-cad")).jurisdiction_pack_id).toBe("pack-ca-v1");
-      expect(Number((await packOf("le-bf-cad")).jurisdiction_pack_version)).toBe(1);
-      expect((await packOf("le-bf-empty")).jurisdiction_pack_id).toBe("pack-ca-v1");
-      expect((await packOf("le-bf-gbp")).jurisdiction_pack_id).toBe("pack-gb-v1");
-      expect((await packOf("le-bf-aud")).jurisdiction_pack_id).toBe("pack-au-v1");
-      expect((await packOf("le-bf-aed")).jurisdiction_pack_id).toBe("pack-ae-v1");
-      expect((await packOf("le-bf-eur")).jurisdiction_pack_id).toBe("pack-eu-v1");
-      expect((await packOf("le-bf-usd")).jurisdiction_pack_id).toBeNull();
-      expect((await packOf("le-bf-rsd")).jurisdiction_pack_id).toBeNull();
+      const canada = await packOf("le-bf-cad");
+      expect(canada.jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(Number(canada.jurisdiction_pack_version)).toBe(1);
+      expect(canada.home_currency).toBe("CAD");
+      const lower = await packOf("le-bf-cad-lower");
+      expect(lower.jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(lower.home_currency).toBe("CAD");
+      const empty = await packOf("le-bf-empty");
+      expect(empty.jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(empty.home_currency).toBe("CAD");
+      const blank = await packOf("le-bf-blank");
+      expect(blank.jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(blank.home_currency).toBe("CAD");
+      for (const id of ["le-bf-gbp", "le-bf-aud", "le-bf-aed", "le-bf-eur", "le-bf-usd", "le-bf-rsd"]) {
+        const row = await packOf(id);
+        expect(row.jurisdiction_pack_id).toBeNull();
+      }
+      expect((await packOf("le-bf-gbp")).home_currency).toBe("GBP");
       expect((await packOf("le-bf-kept")).jurisdiction_pack_id).toBe("pack-us-v1");
       const stillMissing = await client.query(
         `SELECT 1 FROM legal_entities WHERE id='le-does-not-exist'`,
@@ -549,6 +561,16 @@ const migrationSlice = (name: string) => {
       client.removeListener("notice", onNotice);
       client.release();
     }
+  });
+
+  it("finds every seeded report aggregating over 24 hours or not at all", async () => {
+    const bad = await pool.query(
+      `SELECT pack_id, code, aggregation_hours
+         FROM jurisdiction_reports
+        WHERE aggregation_hours IS NOT NULL
+          AND aggregation_hours <> 24`,
+    );
+    expect(bad.rows).toEqual([]);
   });
 
   it("refuses to label an aggregation window that is not 24 hours", async () => {

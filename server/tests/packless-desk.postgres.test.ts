@@ -1,13 +1,15 @@
-/* A desk whose country has no pack can be signed in to. It cannot post.
-   Not a quote, not an exchange, not a transfer, not a frozen quote, and
-   not an owner moving the identification line. Verified or not, and at
-   one cent. */
+/* No pack: new deals paused; voids and settling existing deals still
+   work. A quote, an exchange, a transfer, a cheque being cashed, and
+   an owner moving a threshold are refused. Clearing a cheque already
+   held, settling an obligation already open, and voiding a deal posted
+   while a pack was installed all still post. Vault and till cash
+   movements are not deals, and they still post. */
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
-import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
+import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -216,16 +218,6 @@ postgres("a desk with no pack cannot post", () => {
       feeCad: "0.00",
       purpose: "Travel",
       sourceOfFunds: "Cash",
-    })).rejects.toBeInstanceOf(LedgerError);
-    await expect(service.post(teller, {
-      idempotencyKey: "packless-verified",
-      customerId: "customer-demo",
-      from: "CAD",
-      to: "USD",
-      inputAmount: "0.01",
-      feeCad: "0.00",
-      purpose: "Travel",
-      sourceOfFunds: "Cash",
     })).rejects.toMatchObject({ code: "no_jurisdiction_pack" });
     await expectPaused(
       await app.inject({
@@ -297,5 +289,330 @@ postgres("a desk with no pack cannot post", () => {
       [DEMO.legalEntityId],
     );
     expect(row.rows[0].id_threshold).toBeNull();
+  });
+
+  it("refuses a new cheque, a remittance receive, a bill payment and a money order", async () => {
+    await expectPaused(await app.inject({
+      method: "POST",
+      url: "/api/ledger/cheques",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-cheque",
+        customerId: "customer-demo",
+        chequeNumber: "1001",
+        maker: "Demo Customer",
+        chequeType: "personal",
+        typeLabel: "Personal",
+        currency: "RSD",
+        faceAmount: "0.01",
+        feeAmount: "0.00",
+        holdDays: 0,
+      },
+    }));
+    await expectPaused(await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/receive",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-receive",
+        customerId: "customer-demo",
+        reference: "RR-1",
+        sentCurrency: "USD",
+        sentAmount: "0.01",
+        payoutAmount: "0.01",
+        feeAmount: "0.00",
+        corridor: "US",
+        partner: "Corridor partner",
+      },
+    }));
+    await expectPaused(await app.inject({
+      method: "POST",
+      url: "/api/ledger/bill-payments",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-bill",
+        customerId: "customer-demo",
+        reference: "BP-1",
+        billAmount: "0.01",
+        feeAmount: "0.00",
+        biller: "Hydro",
+        accountRef: "acct-1",
+      },
+    }));
+    await expectPaused(await app.inject({
+      method: "POST",
+      url: "/api/ledger/money-orders",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "packless-money-order",
+        customerId: "customer-demo",
+        reference: "MO-1",
+        faceAmount: "0.01",
+        feeAmount: "0.00",
+        payee: "Ann Payee",
+        serial: "MO-100",
+      },
+    }));
+  });
+
+  it("still clears a cheque and settles an obligation that were posted under a pack", async () => {
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
+    const tellerCookie = await cookie();
+    const cashed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/cheques",
+      cookies: tellerCookie,
+      payload: {
+        idempotencyKey: "held-cheque",
+        customerId: "customer-demo",
+        chequeNumber: "2002",
+        maker: "Demo Customer",
+        chequeType: "personal",
+        typeLabel: "Personal",
+        currency: "CAD",
+        faceAmount: "100.00",
+        feeAmount: "0.00",
+        holdDays: 0,
+      },
+    });
+    expect(cashed.statusCode).toBe(201);
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookie,
+      payload: {
+        idempotencyKey: "open-send",
+        customerId: "customer-demo",
+        reference: "RM-OPEN",
+        principalAmount: "100.00",
+        feeAmount: "0.00",
+        payoutCurrency: "USD",
+        payoutAmount: "70.00",
+        corridor: "US",
+        partner: "Corridor partner",
+        beneficiaryName: "Ann Beneficiary",
+        purpose: "Family support",
+        sourceOfFunds: "Salary",
+      },
+    });
+    expect(sent.statusCode).toBe(201);
+    const chequeId = cashed.json().chequeId as string;
+    const cashingId = cashed.json().transactionId as string;
+    const obligationId = sent.json().obligationId as string;
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DROP TABLE IF EXISTS tmp_tx");
+      await client.query("DROP TABLE IF EXISTS tmp_chq");
+      await client.query(
+        `CREATE TEMP TABLE tmp_tx AS SELECT * FROM ledger_transactions WHERE transaction_id=$1`,
+        [cashingId],
+      );
+      await client.query(
+        `UPDATE tmp_tx
+            SET transaction_id='tx-unstamped', transaction_ref='CD-UNSTAMPED-1',
+                jurisdiction_pack_id=NULL, jurisdiction_pack_version=NULL`,
+      );
+      await client.query(`INSERT INTO ledger_transactions SELECT * FROM tmp_tx`);
+      await client.query(
+        `CREATE TEMP TABLE tmp_chq AS SELECT * FROM ledger_cheques WHERE cheque_id=$1`,
+        [chequeId],
+      );
+      await client.query(
+        `UPDATE tmp_chq
+            SET cheque_id='chq-unstamped', cheque_ref='CHQ-UNSTAMPED',
+                cashing_transaction_id='tx-unstamped', settlement_transaction_id=NULL`,
+      );
+      await client.query(`INSERT INTO ledger_cheques SELECT * FROM tmp_chq`);
+      await client.query("DROP TABLE tmp_tx");
+      await client.query("DROP TABLE tmp_chq");
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='RSD', jurisdiction_pack_id=NULL, jurisdiction_pack_version=NULL
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
+
+    const cleared = await app.inject({
+      method: "POST",
+      url: `/api/ledger/cheques/${chequeId}/clearance`,
+      cookies: tellerCookie,
+      payload: { idempotencyKey: "clear-held", reference: "BANK-1" },
+    });
+    expect(cleared.statusCode).toBe(201);
+    const owner = await cookie("j.masri");
+    const settled = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligations/${obligationId}/settlement`,
+      cookies: owner,
+      payload: {
+        idempotencyKey: "settle-open",
+        amountHome: sent.json().carryingAmountHome,
+      },
+    });
+    expect(settled.statusCode).toBe(201);
+    const unstamped = await app.inject({
+      method: "POST",
+      url: "/api/ledger/cheques/chq-unstamped/clearance",
+      cookies: tellerCookie,
+      payload: { idempotencyKey: "clear-unstamped" },
+    });
+    expect(unstamped.statusCode).toBe(201);
+
+    const stamp = async (transactionId: string) =>
+      (await pool.query(
+        `SELECT btrim(jurisdiction_pack_id) AS jurisdiction_pack_id, jurisdiction_pack_version
+           FROM ledger_transactions WHERE transaction_id=$1`,
+        [transactionId],
+      )).rows[0];
+    expect(await stamp(cleared.json().transactionId)).toMatchObject({
+      jurisdiction_pack_id: "pack-ca-v1",
+      jurisdiction_pack_version: 1,
+    });
+    expect(await stamp(settled.json().transactionId)).toMatchObject({
+      jurisdiction_pack_id: "pack-ca-v1",
+      jurisdiction_pack_version: 1,
+    });
+    const bare = await stamp(unstamped.json().transactionId);
+    expect(bare.jurisdiction_pack_id).toBeNull();
+    expect(bare.jurisdiction_pack_version).toBeNull();
+  });
+
+  it("still voids a deal, a cheque and an obligation posted before the pack was removed", async () => {
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
+    const tellerCookie = await cookie();
+    const posted = await service.post(teller, {
+      idempotencyKey: "void-exchange",
+      customerId: "customer-demo",
+      from: "CAD",
+      to: "USD",
+      inputAmount: "100.00",
+      feeCad: "0.00",
+      purpose: "Travel",
+      sourceOfFunds: "Cash",
+    });
+    const cashed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/cheques",
+      cookies: tellerCookie,
+      payload: {
+        idempotencyKey: "void-cheque",
+        customerId: "customer-demo",
+        chequeNumber: "3003",
+        maker: "Demo Customer",
+        chequeType: "personal",
+        typeLabel: "Personal",
+        currency: "CAD",
+        faceAmount: "40.00",
+        feeAmount: "0.00",
+        holdDays: 0,
+      },
+    });
+    expect(cashed.statusCode).toBe(201);
+    const sent = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookie,
+      payload: {
+        idempotencyKey: "void-send",
+        customerId: "customer-demo",
+        reference: "RM-VOID",
+        principalAmount: "25.00",
+        feeAmount: "0.00",
+        payoutCurrency: "USD",
+        payoutAmount: "15.00",
+        corridor: "US",
+        partner: "Corridor partner",
+        beneficiaryName: "Ann Beneficiary",
+        purpose: "Family support",
+        sourceOfFunds: "Salary",
+      },
+    });
+    expect(sent.statusCode).toBe(201);
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='RSD', jurisdiction_pack_id=NULL, jurisdiction_pack_version=NULL
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
+    const owner = await cookie("j.masri");
+    const exchangeVoid = await app.inject({
+      method: "POST",
+      url: `/api/ledger/transactions/${posted.transactionId}/reversal`,
+      cookies: owner,
+      payload: { idempotencyKey: "void-exchange-now", reason: "Wrong customer" },
+    });
+    expect(exchangeVoid.statusCode).toBe(201);
+    const chequeVoid = await app.inject({
+      method: "POST",
+      url: `/api/ledger/cheques/${cashed.json().chequeId}/reversal`,
+      cookies: owner,
+      payload: { idempotencyKey: "void-cheque-now", reason: "Wrong cheque" },
+    });
+    expect(chequeVoid.statusCode).toBe(201);
+    const obligationVoid = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${sent.json().transactionId}/reversal`,
+      cookies: owner,
+      payload: { idempotencyKey: "void-send-now", reason: "Wrong beneficiary" },
+    });
+    expect(obligationVoid.statusCode).toBe(201);
+  });
+
+  it("still moves till cash and vault cash", async () => {
+    const owner = await cookie("j.masri");
+    const till = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-movements",
+      cookies: owner,
+      payload: {
+        idempotencyKey: "packless-till",
+        direction: "in",
+        currency: "RSD",
+        amount: "10.00",
+        counterpartyType: "bank",
+        counterpartyRef: "bank-1",
+        reason: "Delivery from the bank",
+      },
+    });
+    expect(till.statusCode).toBe(201);
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/opening-position",
+      cookies: owner,
+      payload: { balances: { RSD: "100.00" } },
+    });
+    expect(opened.statusCode).toBe(201);
+    const received = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/receipts",
+      cookies: owner,
+      payload: {
+        idempotencyKey: "packless-vault",
+        direction: "in",
+        currency: "RSD",
+        amount: "10.00",
+        counterpartyType: "bank",
+        counterpartyRef: "bank-1",
+        reason: "Delivery into the safe",
+      },
+    });
+    expect(received.statusCode).toBe(201);
   });
 });
