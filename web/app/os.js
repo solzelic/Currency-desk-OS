@@ -58976,57 +58976,16 @@ window.CDOS_PERSIST = (function () {
     return hits;
   }
 
-  /* A spot in a gap, using the card's real width and height. Skip and
-     Open have to miss every control that is actually on top; the rest
-     of the card does not, because it does not take a click. Narrower
-     cards are tried by the caller so a profile sheet (which leaves
-     only a gutter) still has a place for Skip. */
-  function placeCard(avoid, controls, cardW, cardH, zones) {
+  /* One pass over a list of candidate spots. A clean spot has Skip
+     and Open on no control, and the card clear of the windows and
+     the chrome. The first clean spot wins. */
+  function searchSpots(spots, avoid, controls, cardW, cardH, zones, seed) {
     var margin = 14;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
-    var spots = [{
-      left: vw - cardW - margin,
-      top: vh - cardH - margin
-    }, {
-      left: margin,
-      top: vh - cardH - margin
-    }, {
-      left: vw - cardW - margin,
-      top: margin
-    }, {
-      left: margin,
-      top: margin
-    }];
-    avoid.forEach(function (r) {
-      spots.push({
-        left: r.right + margin,
-        top: Math.max(margin, r.top)
-      });
-      spots.push({
-        left: r.left - cardW - margin,
-        top: Math.max(margin, r.top)
-      });
-      spots.push({
-        left: Math.max(margin, Math.min(r.left, vw - cardW - margin)),
-        top: r.bottom + margin
-      });
-      spots.push({
-        left: Math.max(margin, Math.min(r.right - cardW, vw - cardW - margin)),
-        top: r.top - cardH - margin
-      });
-    });
-    /* A control can appear after the card has sat down — Sealed PDF
-       is one — so the grid is here for the look timer to try again. */
-    for (var y = margin; y + cardH <= vh - margin; y += 28) {
-      for (var x = margin; x + cardW <= vw - margin; x += 28) spots.push({
-        left: x,
-        top: y
-      });
-    }
-    var best = null;
-    var bestHits = Infinity;
-    var bestArea = Infinity;
+    var best = seed || null;
+    var bestHits = best ? best.hits : Infinity;
+    var bestArea = best ? best.overlap : Infinity;
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
       if (s.left < margin || s.top < margin) continue;
@@ -59053,6 +59012,67 @@ window.CDOS_PERSIST = (function () {
       };
       if (hits === 0 && area === 0) return best;
     }
+    return best;
+  }
+
+  /* A spot in a gap, using the card's real width and height. Skip and
+     Open have to miss every control that is actually on top; the rest
+     of the card does not, because it does not take a click. Narrower
+     cards are tried by the caller so a profile sheet (which leaves
+     only a gutter) still has a place for Skip. The spots beside the
+     anchor come first. The full-screen grid is only for when none
+     of those is clean. */
+  function placeCard(avoid, controls, cardW, cardH, zones) {
+    var margin = 14;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    /* Corners, then the gaps beside the anchor and the other things
+       the card must keep clear of. These are a handful of spots. */
+    var near = [{
+      left: vw - cardW - margin,
+      top: vh - cardH - margin
+    }, {
+      left: margin,
+      top: vh - cardH - margin
+    }, {
+      left: vw - cardW - margin,
+      top: margin
+    }, {
+      left: margin,
+      top: margin
+    }];
+    avoid.forEach(function (r) {
+      near.push({
+        left: r.right + margin,
+        top: Math.max(margin, r.top)
+      });
+      near.push({
+        left: r.left - cardW - margin,
+        top: Math.max(margin, r.top)
+      });
+      near.push({
+        left: Math.max(margin, Math.min(r.left, vw - cardW - margin)),
+        top: r.bottom + margin
+      });
+      near.push({
+        left: Math.max(margin, Math.min(r.right - cardW, vw - cardW - margin)),
+        top: r.top - cardH - margin
+      });
+    });
+    var best = searchSpots(near, avoid, controls, cardW, cardH, zones, null);
+    if (best && best.hits === 0 && best.overlap === 0) return best;
+    /* The grid is the whole screen, step by step. It is only walked
+       when none of the spots above is clean — a till with windows
+       open is that case, and walking it on a timer is what made
+       counting cash expensive. */
+    var grid = [];
+    for (var y = margin; y + cardH <= vh - margin; y += 28) {
+      for (var x = margin; x + cardW <= vw - margin; x += 28) grid.push({
+        left: x,
+        top: y
+      });
+    }
+    best = searchSpots(grid, avoid, controls, cardW, cardH, zones, best);
     if (best) return best;
     return {
       left: margin,
@@ -59069,6 +59089,53 @@ window.CDOS_PERSIST = (function () {
     var win = document.querySelector('.win.show.active');
     if (!win || win.classList.contains('min')) return null;
     return win;
+  }
+
+  /* A whole pixel is enough. Sub-pixel jitter would otherwise look
+     like the desk moved and sit the card again for nothing. */
+  function roundRect(r) {
+    if (!r || r.width < 2 || r.height < 2) return '';
+    return Math.round(r.left) + ',' + Math.round(r.top) + ',' + Math.round(r.width) + ',' + Math.round(r.height);
+  }
+
+  /* Which window is in front. The app name lives on the window body
+     (`data-screen-label`); the rectangle tells two copies of the same
+     app apart. */
+  function frontKey(win) {
+    if (!win) return '';
+    var label = win.querySelector('[data-screen-label]');
+    var name = label ? label.getAttribute('data-screen-label') || '' : '';
+    return name + '@' + roundRect(win.getBoundingClientRect());
+  }
+
+  /* How many controls can take a click right now. A control inside a
+     window that is not in front cannot. This does not sample
+     elementFromPoint and does not touch pointer-events — that work
+     belongs to a real sit, not to the once-a-second look. Counting
+     this way also ignores the tour card itself, so sitting the card
+     does not change the count and sit itself again. */
+  function onTopCount() {
+    var front = frontWin();
+    var n = 0;
+    var list = document.querySelectorAll('button, a, input, textarea, select, [role="button"]');
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (el.closest && el.closest('.cdos-tour')) continue;
+      var host = el.closest ? el.closest('.win') : null;
+      if (host && host !== front) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      n += 1;
+    }
+    return n;
+  }
+
+  /* Cheap read of "did the desk change". The front window and where
+     it sits, where this step's anchor sits, the viewport, and how
+     many controls are on top. */
+  function deskSignature(current) {
+    var anchor = current ? document.querySelector('[data-tour="' + current.anchor + '"]') : null;
+    return [frontKey(frontWin()), roundRect(anchor && anchor.getBoundingClientRect()), window.innerWidth + 'x' + window.innerHeight, String(onTopCount())].join('|');
   }
   function frontIs(app) {
     var win = frontWin();
@@ -59226,9 +59293,10 @@ window.CDOS_PERSIST = (function () {
     }
 
     /* Sit the card so Skip and Open are not on top of a desk control.
-       Called from the watch as well as from layout, because a button
-       such as Sealed PDF can appear after the card has already been
-       placed. It never opens a window. */
+       This is the expensive call — every on-top control, then the
+       spots, then the grid if those spots are not clean. The watch
+       below calls it only when deskSignature changes. It never
+       opens a window. */
     function sitCard() {
       var node = cardRef.current;
       if (!node || !step) return;
@@ -59254,13 +59322,28 @@ window.CDOS_PERSIST = (function () {
     /* Watch the desk. Read only — this effect must not call openApp
        or openClient. Pause is not a dependency: locking the desk and
        unlocking it must not start the watch over, and must not open
-       anything. The click handler below is the only open. */
+       anything. The click handler below is the only open.
+        Sitting the card measures every control and may walk a grid of
+       the whole screen. That used to run several times a second for
+       as long as the card was up, including on the till while someone
+       counted cash. The signature above is the cheap read. The card
+       is sat again only when it changes (a new control, the window
+       moved, the viewport). While it holds, the watch looks at most
+       once a second. A resize of the browser or of the front window
+       still sits the card, after a short pause, so a stretch is not
+       left until that second is up. */
     useEffect(() => {
       if (!run || !step) return undefined;
       var cancelled = false;
-      var tries = 0;
       var timer = 0;
+      var resizeTimer = 0;
       var scrolled = false;
+      var lastSig = '';
+      var absentSince = 0;
+      var observed = null;
+      var ro = typeof ResizeObserver === 'function' ? new ResizeObserver(function () {
+        nudge();
+      }) : null;
       function dropStep() {
         setRun(function (cur) {
           if (!cur || !cur.steps) return cur;
@@ -59281,11 +59364,20 @@ window.CDOS_PERSIST = (function () {
           };
         });
       }
-      function look() {
+      function followFront() {
+        if (!ro) return;
+        var win = frontWin();
+        if (win === observed) return;
+        ro.disconnect();
+        observed = win;
+        if (win) ro.observe(win);
+      }
+      function check() {
         if (cancelled || !tour) return;
+        followFront();
         var boxNow = readyBox(step);
         if (boxNow) {
-          tries = 0;
+          absentSince = 0;
           var el = document.querySelector('[data-tour="' + step.anchor + '"]');
           if (el && !scrolled) {
             scrolled = true;
@@ -59298,38 +59390,69 @@ window.CDOS_PERSIST = (function () {
             boxNow = readyBox(step) || boxNow;
           }
           sawRef.current = true;
+          var next = {
+            top: Math.round(boxNow.top),
+            left: Math.round(boxNow.left),
+            width: Math.round(boxNow.width),
+            height: Math.round(boxNow.height),
+            bottom: Math.round(boxNow.bottom),
+            right: Math.round(boxNow.right),
+            host: boxNow.host
+          };
           setBox(function (cur) {
-            if (cur && cur.top === boxNow.top && cur.left === boxNow.left && cur.width === boxNow.width && cur.height === boxNow.height) return cur;
-            return boxNow;
+            if (cur && cur.top === next.top && cur.left === next.left && cur.width === next.width && cur.height === next.height) return cur;
+            return next;
           });
-          sitCard();
-          timer = window.setTimeout(look, 400);
-          return;
-        }
-        setBox(function (cur) {
-          return cur ? null : cur;
-        });
-        /* Twelve looks is about two seconds of the right window
-           being in front with no anchor. Past that the screen is
-           not going to draw it. */
-        if (absentWhileFront(step)) {
-          tries += 1;
-          if (tries >= 12) {
-            dropStep();
-            return;
-          }
         } else {
-          tries = 0;
+          setBox(function (cur) {
+            return cur ? null : cur;
+          });
+          /* About two seconds of the right window being in front
+             with no anchor. Past that the screen is not going to
+             draw it. Timed, not counted, so a slower look does not
+             leave a missing step up for longer. */
+          if (absentWhileFront(step)) {
+            if (!absentSince) absentSince = Date.now();
+            if (Date.now() - absentSince >= 2000) dropStep();
+          } else {
+            absentSince = 0;
+          }
         }
-        /* A control can show up under Skip after the card has already
-           sat down. Move it. This does not open a window. */
-        sitCard();
-        timer = window.setTimeout(look, 200);
+        /* No card while the desk is locked. Sitting then would
+           measure a screen the person cannot see. */
+        if (cardRef.current) {
+          var sig = deskSignature(step);
+          if (sig !== lastSig) {
+            lastSig = sig;
+            sitCard();
+          }
+        }
       }
-      timer = window.setTimeout(look, 180);
+      function arm(ms) {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(function () {
+          check();
+          if (!cancelled) arm(1000);
+        }, ms);
+      }
+
+      /* Resize is the one event that does not wait for the
+         one-second look. Debounced so a drag does not sit on
+         every pointer move. */
+      function nudge() {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(function () {
+          if (!cancelled) check();
+        }, 250);
+      }
+      window.addEventListener('resize', nudge);
+      arm(180);
       return function () {
         cancelled = true;
         window.clearTimeout(timer);
+        window.clearTimeout(resizeTimer);
+        window.removeEventListener('resize', nudge);
+        if (ro) ro.disconnect();
       };
     }, [run && run.index, step && step.id, staffId]);
     useEffect(() => {
