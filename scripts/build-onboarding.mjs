@@ -734,7 +734,16 @@ patch(
     return 'Checking this reference…';
   }
 
-  onPrefaceCta() {
+  onPrefaceCta(e) {
+    /* The terms box reuses the hero button's click, because a brand-new
+       handler name in this runtime never fires. The box is marked
+       data-terms-toggle; every other click is Continue. */
+    const el = e && (e.currentTarget || e.target);
+    const toggle = el && el.closest && el.closest("[data-terms-toggle]");
+    if (toggle) {
+      this.set('termsChecked', !this.state.data.termsChecked);
+      return;
+    }
     if (!window.__cdOnb || this.state.i > 0 || this.preface() === 'typed') { this.next(); return; }
     if (this.preface() === 'id') {
       if (!window.__cdOnb.refValid(window.__cdOnb.code)) return;
@@ -773,19 +782,16 @@ patch(
   "      ctaDisabled: M.valid === false,",
   "eyebrow: this.prefaceFace(M).eyebrow || M.eyebrow || '', q: M.q || '', help: M.help || '',\n" +
   "      heroTitle: this.prefaceFace(M).title, heroParas: this.prefaceFace(M).paras, heroNote: this.prefaceFace(M).note,\n" +
-  "      onCta: () => this.onPrefaceCta(), ctaLabel: this.prefaceFace(M).cta,\n" +
+  "      onCta: (e) => this.onPrefaceCta(e), ctaLabel: this.prefaceFace(M).cta,\n" +
   "      ctaDisabled: M.valid === false,\n" +
   "      showIssuedId: this.preface() === 'id',\n" +
   "      showTerms: this.preface() === 'terms',\n" +
   "      showTypedId: this.preface() === 'typed',\n" +
   "      linkId: (window.__cdOnb && window.__cdOnb.code) || '',\n" +
   "      issuedHint: this.issuedHint(),\n" +
-  "      onToggleTerms: () => this.set('termsChecked', !this.state.data.termsChecked),\n" +
   "      termsPressed: this.state.data.termsChecked ? 'true' : 'false',\n" +
-  "      termsMark: this.state.data.termsChecked ? '\\u2713' : '',\n" +
-  "      termsBoxStyle: 'flex:none;width:18px;height:18px;margin-top:1px;border-radius:4px;border:1.5px solid var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:' + (this.state.data.termsChecked ? 'var(--primary)' : 'transparent'),\n" +
-  "      termsToggleStyle: 'display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-family:inherit;font-size:14px;line-height:1.45;color:var(--ink);cursor:pointer;',\n" +
-  "      termsToggleLabel: this.state.data.termsChecked ? 'Accepted \\u2014 Terms of Service, 26 July 2026' : 'I accept the Terms of Service (26 July 2026)',\n" +
+  "      termsToggleStyle: 'display:block;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-family:inherit;font-size:14px;line-height:1.45;color:var(--ink);cursor:pointer;',\n" +
+  "      termsToggleLabel: this.state.data.termsChecked ? '\\u2713  Accepted \\u2014 Terms of Service, 26 July 2026' : '\\u2610  I accept the Terms of Service (26 July 2026)',\n" +
   "      termsErr: (window.__cdOnb && this.preface() === 'terms' && window.__cdOnb.err) || '',",
 );
 patch(
@@ -830,10 +836,7 @@ patch(
   '                </sc-if>\n' +
   '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
   '                  <div data-screen="terms" style="width: 100%; max-width: 380px; margin-top: 18px; text-align: left;">\n' +
-  '                    <button type="button" data-terms-toggle="1" aria-pressed="{{ termsPressed }}" sc-camel-on-click="{{ onToggleTerms }}" style="{{ termsToggleStyle }}">\n' +
-  '                      <span aria-hidden="true" style="{{ termsBoxStyle }}">{{ termsMark }}</span>\n' +
-  '                      <span>{{ termsToggleLabel }}</span>\n' +
-  '                    </button>\n' +
+  '                    <button type="button" data-terms-toggle="1" aria-pressed="{{ termsPressed }}" sc-camel-on-click="{{ onCta }}" style="{{ termsToggleStyle }}">{{ termsToggleLabel }}</button>\n' +
   '                    <div style="margin-top: 10px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Read the Terms of Service</a></div>\n' +
   '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 8px; min-height: 1.2em;">{{ termsErr }}</div>\n' +
   '                  </div>\n' +
