@@ -39,13 +39,57 @@ test.afterAll(async () => {
   await pool.end();
 });
 
+/* The first-run card is not a scrim, but it does keep moving while it
+   looks for a gap, and a Playwright click waits for that button to sit
+   still. Skip from the page instead, and tell the tour not to start
+   again when the staff id arrives a moment later. */
+async function dismissTour(page: Page) {
+  await page.evaluate(() => {
+    const tour = (window as unknown as { CDOS_TOUR?: { shouldShow: () => boolean } }).CDOS_TOUR;
+    if (tour) tour.shouldShow = () => false;
+  });
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    if ((await page.locator(".cdos-tour").count()) === 0) {
+      await page.waitForTimeout(400);
+      if ((await page.locator(".cdos-tour").count()) === 0) return;
+    }
+    await page.evaluate(() => {
+      const tour = (window as unknown as { CDOS_TOUR?: { shouldShow: () => boolean } }).CDOS_TOUR;
+      if (tour) tour.shouldShow = () => false;
+      const btn = document.querySelector(".cdos-tour-skip");
+      if (btn instanceof HTMLButtonElement) btn.click();
+    });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+  }
+}
+
 async function openLocalization(page: Page) {
-  await page.getByText(/^Settings$/i).first().click();
-  await page.locator('div[style*="width: 212px"], .settings-nav').getByText(/^Localization$/i).first().click();
-  await page.getByTestId("home-currency").waitFor();
+  await dismissTour(page);
+  /* The dock's Settings label is the last icon and sits under the
+     right-edge rail once the bar scrolls. The menu-bar gear is the
+     same openApp('settings') and stays on screen. */
+  const gear = page.locator('button.mb-op[title="Settings"]');
+  if (await gear.isVisible().catch(() => false)) await gear.click();
+  else {
+    await page.evaluate(() => {
+      const el = document.querySelector('#appbar [data-app="settings"]');
+      if (el instanceof HTMLElement) el.click();
+    });
+  }
+  const nav = page.locator(".win.active .settings-nav");
+  await nav.waitFor({ state: "visible" });
+  await nav.getByText(/^Localization$/).click();
+  await page.getByTestId("home-currency-select").waitFor();
 }
 
 test("the owner reviews the change, confirms it, and the desk follows GBP", async ({ page }) => {
+  await pool.query(
+    `INSERT INTO enquiries (id, reference, kind, email, name, status)
+     VALUES ($1, $2, 'early_access', $3, $4, 'invited')`,
+    [`enq-${stamp}`, `CD-H${String(stamp).slice(-6)}`, EMAIL, "Home Owner"],
+  );
   await pool.query(
     `INSERT INTO market_rates (id, provider, mids, fetched_at)
      VALUES ($1, 'test', $2::jsonb, now())`,
@@ -71,9 +115,6 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/app");
   await landOnDesktop(page);
-  const skip = page.locator(".cdos-tour-skip");
-  if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
-
   await openLocalization(page);
   const panel = page.getByTestId("home-currency");
   await expect(panel.getByTestId("home-currency-current")).toHaveText("USD");
@@ -102,10 +143,11 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   await expect(page.getByTestId("compliance-jurisdiction")).toContainText("£8,000.00");
   await expect(page.getByTestId("compliance-jurisdiction")).toContainText("£2,400.00");
 
-  await page.getByText(/^Transfers$/i).first().click();
+  await page.locator('#appbar [data-app="transfers"]').click();
+  await page.getByRole("button", { name: /New transfer/i }).click();
   await expect(page.getByText("Customer pays in (GBP)")).toBeVisible();
 
-  await page.getByText(/^Rate Board$/i).first().click();
+  await page.locator('#appbar [data-app="rates"]').click();
   const notice = page.getByTestId("rate-board-notice");
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("priced in USD");
