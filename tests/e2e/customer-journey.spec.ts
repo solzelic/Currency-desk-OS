@@ -91,17 +91,55 @@ test("approving is one press, and it hands them a working link", async ({ page }
    the desk creates — which is precisely the handover that was broken, and
    splitting it would have hidden the bug rather than caught it. */
 test("they set the desk up, and land inside their own desk signed in", async ({ page }) => {
-  /* The link in the invitation opens at the BEGINNING.
+  /* The link in the invitation opens at the BEGINNING: the ID, then
+     the terms, then the setup wizard.
 
      It used to restore the screen they last saved on, so the button that
      promises "set up your desk, takes about ten minutes" could drop
      somebody straight onto the last step — "Confirm your email" — with no
      idea how they got there and no way back to check what they had typed.
-     Their answers are still restored; only the position is not. */
+     Their answers are still restored; only the position is not.
+
+     The ID on this first screen is the application reference already in
+     the link. The desk keeps that reference. It does not issue another. */
   await page.goto(`/onboarding/${reference}`);
-  await rendered(page, /Let.s open your desk/i);
+  await rendered(page, /This is your ID/i);
+  await expect(page.locator("[data-issued-id]")).toHaveText(reference);
   const opened = await page.locator("body").innerText();
+  expect(opened).toContain(reference);
   expect(opened).not.toMatch(/Confirm your email/i);
+
+  /* Setup and launch both refuse until the 26 July 2026 terms are on
+     this reference. A different version is refused and stores nothing.
+     These are the same doors the wizard uses; the clicks below are how
+     a person records the acceptance. */
+  const blockedSave = await page.request.put(`/api/onboarding/${reference}/state`, {
+    data: { at: 3, data: { operatingName: APPLICANT.shop } },
+  });
+  expect(blockedSave.status()).toBe(403);
+  expect((await blockedSave.json()).error).toBe("terms_required");
+
+  const blockedLaunch = await page.request.post(`/api/onboarding/${reference}/launch`, {
+    data: { data: { ownerPass: "a-strong-pass-2026" } },
+  });
+  expect(blockedLaunch.status()).toBe(403);
+  expect((await blockedLaunch.json()).error).toBe("terms_required");
+
+  const wrongVersion = await page.request.post(`/api/onboarding/${reference}/terms`, {
+    data: { termsAccepted: true, termsVersion: "1999-01-01" },
+  });
+  expect(wrongVersion.status()).toBe(400);
+
+  const continueBtn = page.getByRole("button", { name: "Continue" });
+  await expect(continueBtn).toBeEnabled();
+  await continueBtn.click();
+  await rendered(page, /^Terms of Service$/);
+  await expect(continueBtn).toBeDisabled();
+  await page.locator("[data-terms-toggle]").click();
+  await expect(page.locator("[data-terms-toggle]")).toContainText(/Accepted/);
+  await expect(continueBtn).toBeEnabled();
+  await continueBtn.click();
+  await rendered(page, /Which country are you licensed in/i);
 
   /* Their answers, through the endpoint their own page saves to. The
      owner email is deliberately DIFFERENT from the one they applied
