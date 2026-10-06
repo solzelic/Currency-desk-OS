@@ -74,13 +74,85 @@
     return w * h;
   }
 
-  /* A spot in a gap, using the card's real width and height. The card
-     used to drop onto the anchor when the window filled the obvious
-     side, which covered the shop figures, the drawer's neighbour
-     "New transaction", and the file list. Narrower cards are tried by
-     the caller so a profile sheet (which leaves only a gutter) still
-     has a place for Skip. */
-  function placeCard(avoid, cardW, cardH) {
+  /* Buttons, links, and fields that can take a click right now.
+     A control under another window cannot, and treating it as an
+     obstacle pushes Skip onto the one that is actually on top.
+     The tour's own buttons are set aside for the sample: if they
+     stayed, the control underneath would look covered and Skip
+     would be left sitting on it. */
+  function controlsToMiss() {
+    var tour = document.querySelector('.cdos-tour');
+    var hidden = [];
+    if (tour) {
+      tour.querySelectorAll('button').forEach(function (b) {
+        hidden.push([b, b.style.pointerEvents]);
+        b.style.pointerEvents = 'none';
+      });
+    }
+    var rects = [];
+    try {
+      document.querySelectorAll('button, a, input, textarea, select, [role="button"]').forEach(function (el) {
+        if (el.closest && el.closest('.cdos-tour')) return;
+        var box = boxOf(el);
+        if (!box) return;
+        var top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        if (!top || (top !== el && !el.contains(top))) return;
+        rects.push(box);
+      });
+    } finally {
+      hidden.forEach(function (pair) { pair[0].style.pointerEvents = pair[1]; });
+    }
+    return rects;
+  }
+
+  /* Skip and Open, as offsets from the card's corner. Measured from
+     the card after its width is set — a guessed strip was wide of
+     "Open the dashboard" at one width and still left Skip on a
+     button at another. The fallback is that strip, used only before
+     the buttons have been drawn. */
+  function buttonOffsets(node) {
+    var card = node.getBoundingClientRect();
+    if (!card || card.width < 2) return null;
+    var zones = [];
+    node.querySelectorAll('.cdos-tour-skip, .cdos-tour-next').forEach(function (b) {
+      var r = b.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return;
+      zones.push({ dx: r.left - card.left, dy: r.top - card.top, w: r.width, h: r.height });
+    });
+    return zones.length ? zones : null;
+  }
+
+  function fallbackOffsets(cardW, cardH) {
+    var top = Math.max(0, cardH - 50);
+    return [
+      { dx: 8, dy: top, w: 70, h: 44 },
+      { dx: Math.max(8, cardW - 196), dy: top, w: 188, h: 44 },
+    ];
+  }
+
+  function actionHits(origin, controls, zones) {
+    var hits = 0;
+    var pad = 6;
+    for (var z = 0; z < zones.length; z++) {
+      var zone = {
+        left: origin.left + zones[z].dx - pad,
+        top: origin.top + zones[z].dy - pad,
+        right: origin.left + zones[z].dx + zones[z].w + pad,
+        bottom: origin.top + zones[z].dy + zones[z].h + pad,
+      };
+      for (var i = 0; i < controls.length; i++) {
+        if (overlaps(zone, controls[i])) hits += 1;
+      }
+    }
+    return hits;
+  }
+
+  /* A spot in a gap, using the card's real width and height. Skip and
+     Open have to miss every control that is actually on top; the rest
+     of the card does not, because it does not take a click. Narrower
+     cards are tried by the caller so a profile sheet (which leaves
+     only a gutter) still has a place for Skip. */
+  function placeCard(avoid, controls, cardW, cardH, zones) {
     var margin = 14;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
@@ -96,23 +168,31 @@
       spots.push({ left: Math.max(margin, Math.min(r.left, vw - cardW - margin)), top: r.bottom + margin });
       spots.push({ left: Math.max(margin, Math.min(r.right - cardW, vw - cardW - margin)), top: r.top - cardH - margin });
     });
+    /* A control can appear after the card has sat down — Sealed PDF
+       is one — so the grid is here for the look timer to try again. */
+    for (var y = margin; y + cardH <= vh - margin; y += 28) {
+      for (var x = margin; x + cardW <= vw - margin; x += 28) spots.push({ left: x, top: y });
+    }
     var best = null;
+    var bestHits = Infinity;
     var bestArea = Infinity;
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
       if (s.left < margin || s.top < margin) continue;
       if (s.left + cardW > vw - margin || s.top + cardH > vh - margin) continue;
       var card = { left: s.left, top: s.top, right: s.left + cardW, bottom: s.top + cardH };
+      var hits = actionHits(card, controls, zones);
       var area = 0;
       for (var j = 0; j < avoid.length; j++) area += overlapArea(card, avoid[j]);
-      if (area < bestArea) {
-        bestArea = area;
-        best = { left: card.left, top: card.top, width: cardW, overlap: area };
-        if (area === 0) return best;
-      }
+      var better = hits < bestHits || (hits === bestHits && area < bestArea);
+      if (!better) continue;
+      bestHits = hits;
+      bestArea = area;
+      best = { left: card.left, top: card.top, width: cardW, overlap: area, hits: hits };
+      if (hits === 0 && area === 0) return best;
     }
     if (best) return best;
-    return { left: margin, top: Math.max(margin, vh - cardH - margin), width: cardW, overlap: Infinity };
+    return { left: margin, top: Math.max(margin, vh - cardH - margin), width: cardW, overlap: Infinity, hits: Infinity };
   }
 
   /* The window in front. `active` is the topmost window, the one
@@ -248,6 +328,32 @@
       return !!document.querySelector('.fixed [data-tour="file-folder"], .fixed [data-tour="identification"]');
     }
 
+    /* Sit the card so Skip and Open are not on top of a desk control.
+       Called from the watch as well as from layout, because a button
+       such as Sealed PDF can appear after the card has already been
+       placed. It never opens a window. */
+    function sitCard() {
+      var node = cardRef.current;
+      if (!node || !step) return;
+      var anchorEl = document.querySelector('[data-tour="' + step.anchor + '"]');
+      var avoid = keepClear(anchorEl);
+      var controls = controlsToMiss();
+      var widths = [320, 280, 248];
+      var chosen = null;
+      for (var i = 0; i < widths.length; i++) {
+        node.style.width = widths[i] + 'px';
+        var zones = buttonOffsets(node) || fallbackOffsets(widths[i], node.offsetHeight);
+        var spot = placeCard(avoid, controls, widths[i], node.offsetHeight, zones);
+        if (!chosen || spot.hits < chosen.hits || (spot.hits === chosen.hits && spot.overlap < chosen.overlap)) chosen = spot;
+        if (spot.hits === 0 && spot.overlap === 0) break;
+      }
+      if (!chosen) return;
+      setFrame(function (cur) {
+        if (cur && cur.left === chosen.left && cur.top === chosen.top && cur.width === chosen.width) return cur;
+        return chosen;
+      });
+    }
+
     /* Watch the desk. Read only — this effect must not call openApp
        or openClient. Pause is not a dependency: locking the desk and
        unlocking it must not start the watch over, and must not open
@@ -289,6 +395,7 @@
             if (cur && cur.top === boxNow.top && cur.left === boxNow.left && cur.width === boxNow.width && cur.height === boxNow.height) return cur;
             return boxNow;
           });
+          sitCard();
           timer = window.setTimeout(look, 400);
           return;
         }
@@ -302,6 +409,9 @@
         } else {
           tries = 0;
         }
+        /* A control can show up under Skip after the card has already
+           sat down. Move it. This does not open a window. */
+        sitCard();
         timer = window.setTimeout(look, 200);
       }
 
@@ -385,22 +495,7 @@
        the count, the file list, and New transaction wins. */
     useLayoutEffect(() => {
       if (!run || !step || paused) { setFrame(null); return; }
-      var node = cardRef.current;
-      if (!node) return;
-      var anchorEl = document.querySelector('[data-tour="' + step.anchor + '"]');
-      var avoid = keepClear(anchorEl);
-      var widths = [320, 280, 248];
-      var chosen = null;
-      for (var i = 0; i < widths.length; i++) {
-        node.style.width = widths[i] + 'px';
-        var spot = placeCard(avoid, widths[i], node.offsetHeight);
-        if (!chosen || spot.overlap < chosen.overlap) chosen = spot;
-        if (spot.overlap === 0) break;
-      }
-      setFrame(function (cur) {
-        if (cur && chosen && cur.left === chosen.left && cur.top === chosen.top && cur.width === chosen.width) return cur;
-        return chosen;
-      });
+      sitCard();
     }, [box && box.top, box && box.left, box && box.width, box && box.height, step && step.id, run && run.index, paused]);
 
     /* The card is up either way. Without a front window it asks the

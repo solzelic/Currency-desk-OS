@@ -113,7 +113,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   open and in front; until then the card offers a button (Open the till,
   Open the dashboard) and only that click opens it. The card sits in a
   gap so the shop figures, the drawer, the count, and the file list stay
-  readable. Skip stays on the card. An owner is shown the shop,
+  readable. Skip and Open sit off the desk's own controls, and the card
+  moves if one appears underneath them (a sealed-copy button, for
+  example). Skip stays on the card. An owner is shown the shop,
   then clients, then the file folder on a customer record (identification
   standing, the papers filed there, and search). Anyone else is shown the
   cash drawer: the till, then the count — and only if that app is on their
@@ -188,7 +190,9 @@ authenticated narrative dashboard.
 A step runs only when that window is already open and in front. Until
 then the card offers Open the till or Open the dashboard, and only that
 click opens it. The card sits in a gap, clear of the shop figures, the
-drawer, the count, and the file list, with Skip on the card. Reconcile
+drawer, the count, and the file list. Skip and Open stay off the desk's
+own controls, and the card moves if one shows up underneath them. Skip
+stays on the card. Reconcile
 and close is not a step. That panel is the close, and the tour does not
 count or close cash to make it presentable. Skip or finish is a per-person preference in the
 desk document, so a refresh does not bring the tour back. Papers and
