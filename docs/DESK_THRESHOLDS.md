@@ -118,11 +118,19 @@ These are the international anti-money-laundering rules. Please check
 they match your country's laws." Compliance names that pack
 International baseline (FATF), names no regulator, and lists Large
 cash record (CASH-RECORD), Suspicious transaction (SUSPICIOUS), and
-Terrorist or sanctioned property (SANCTIONS-STOP). Each money line
-shows the converted home-currency amount and the US-dollar figure it
-came from. A missing or stale rate says identification is required
-on every deal. A baseline desk is not shown Canada, FINTRAC, or the
-unconverted 3,000 and 10,000.
+Terrorist or sanctioned property (SANCTIONS-STOP). Each money line is a plain sentence. A desk following the
+baseline reads "Following the international baseline: £8,000.00,
+which is 10,000 USD at today's market rate." A stricter line names
+the desk's own figure and the converted baseline separately: the
+US-dollar source sits on that converted pack value, not on the
+owner's lower number. A looser line names the same converted
+baseline, not the raw 10,000. A missing or stale rate says
+identification is required on every deal. A baseline desk is not
+shown Canada, FINTRAC, or the unconverted 3,000 and 10,000. The
+new-transfer form still prices a send in Canadian dollars. It
+compares that figure with these lines only after converting it into
+the desk's home currency. Where that conversion cannot be made,
+identification is required and the deal is not marked reportable.
 
 These still post, because they are not a new deal:
 

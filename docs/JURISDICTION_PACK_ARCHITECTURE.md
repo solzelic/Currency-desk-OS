@@ -50,9 +50,14 @@ or stale snapshot leaves both unset, so identification and the
 purpose and source of funds are required on every deal. A baseline desk that names no home currency books in USD. The
 till and Settings show the international-rules disclaimer.
 Compliance names International baseline (FATF), no regulator, and
-the three generic reports, and it prints the converted home amount
-beside the US-dollar source. A missing rate says identification is
-required on every deal.
+the three generic reports. A money line is a plain sentence: the
+converted home amount, then the US-dollar figure it came from. A
+stricter line names the desk's own figure and that converted
+baseline separately. The US-dollar source is not attached to the
+owner's lower number. A missing rate says identification is
+required on every deal. The new-transfer form compares its Canadian
+figure with these lines in the desk's home currency, and requires
+identification when that figure cannot be converted.
 
 A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`

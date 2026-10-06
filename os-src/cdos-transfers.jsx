@@ -22,6 +22,41 @@
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) / (crossRate('CAD', c) || 1);
+  /* A CAD figure, restated in the desk's home currency.
+
+     The new-transfer form still prices a send as Canadian dollars in.
+     The identification line and the reporting line are home-currency
+     amounts: on a baseline desk, US dollars converted at the market
+     snapshot. Comparing the Canadian number with a dinar line does not
+     ask for ID when the rules need it, because 5,000 is a much smaller
+     number than 300,000.
+
+     `homePerCad` is units of the home currency per 1 CAD, from the rate
+     board. No home currency, or no positive rate, means this amount
+     cannot be valued. The caller then requires identification and does
+     not mark the deal reportable — the same closed answer the ledger
+     gives when it cannot price a deal in the desk's own money. */
+  function toHome(cadAmount, home, homePerCad) {
+    const cad = +cadAmount;
+    if (!home || !isFinite(cad)) return null;
+    if (home === 'CAD') return cad;
+    const rate = +homePerCad;
+    if (!isFinite(rate) || rate <= 0) return null;
+    return cad * rate;
+  }
+  function transferRuling({ cadAmount, home, homePerCad, idAt, limitAmount, governed, fallback }) {
+    const homeAmount = toHome(cadAmount, home, homePerCad);
+    const unvalued = homeAmount == null;
+    const line = idAt != null && +idAt > 0 ? +idAt : null;
+    const floor = +fallback > 0 ? +fallback : 3000;
+    return {
+      homeAmount,
+      /* Null is "cannot say", not "under the line". A missing conversion
+         must not clear a deal nobody could price. */
+      reportable: unvalued ? null : (limitAmount != null && homeAmount >= +limitAmount),
+      idRequired: unvalued || (governed ? (line == null || homeAmount >= line) : homeAmount >= floor),
+    };
+  }
 
   /* ---- the lifecycle. Same keys for send & receive; labels adapt. ---- */
   const FLOW = ['created', 'sent', 'transit', 'paid'];
@@ -210,17 +245,29 @@
     const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
 
     const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    /* The desk's own reporting line, from the jurisdiction pack. Null-safe:
-       with no threshold to compare against the honest answer is "cannot
-       say", and treating that as "not reportable" clears a deal nobody
-       checked. */
+    /* The desk's own reporting line, from the jurisdiction pack. Both
+       lines are in home currency. The figure above is still CAD, because
+       this form prices a send that way. The comparison is not. */
     const limit = reportingLimit(settings);
-    const reportable = limit.amount != null && cadEquiv >= limit.amount;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = (packNow && packNow.homeCurrency) || limit.currency || null;
+    const homePerCad = !home || home === 'CAD' ? 1 : crossRate('CAD', home);
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
-    const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
+    const governed = !!((packNow && packNow.packId) || (settings && settings.baselineRules));
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
-    const idRequired = governed ? (idAt == null || cadEquiv >= idAt) : cadEquiv >= (settings.idRequiredOver || 3000);
+    const ruling = transferRuling({
+      cadAmount: cadEquiv,
+      home,
+      homePerCad,
+      idAt,
+      limitAmount: limit.amount,
+      governed,
+      fallback: settings && settings.idRequiredOver,
+    });
+    const homeAmount = ruling.homeAmount;
+    const reportable = ruling.reportable;
+    const idRequired = ruling.idRequired;
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
 
@@ -484,7 +531,7 @@
           {(reportable || idRequired) && (
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
-              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(cadEquiv, 'CAD')} (≥ {limit.label}). An international EFT report will be required.</div>}
+              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home || limit.currency || 'CAD')} (≥ {limit.label}). An international EFT report will be required.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>
@@ -584,6 +631,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, toHome, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

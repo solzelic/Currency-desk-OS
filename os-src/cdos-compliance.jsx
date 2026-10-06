@@ -74,7 +74,7 @@
       standing === 'stricter'
         ? (opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).`)
         : standing === 'looser'
-          ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.`
+          ? (opts.looser || `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.`)
           : standing === 'matching'
             ? `The ${opts.authority} figure, set by hand.`
             : standing === 'following'
@@ -112,7 +112,14 @@
     return !!(settings && settings.baselineRules && !pack);
   }
   /* The converted home amount, with the USD figure it came from. A missing
-     rate has no home amount: identification is required on every deal. */
+     rate has no home amount: identification is required on every deal.
+
+     `effective` is the line this desk operates at. `packValue` is the
+     baseline after the server converted it into home currency — the same
+     number on a following or matching desk, and a different one when the
+     owner chose a stricter or looser line. The US-dollar source belongs
+     on that converted baseline. Putting it next to the owner's lower
+     figure would say a £5,000 line is 10,000 USD. */
   function baselineMoneyCopy(key, line) {
     const pack = loadedPack();
     if (!isBaselinePack(pack)) return null;
@@ -129,15 +136,24 @@
     const src = String(pack.reportCurrency || 'USD').trim().toUpperCase() || 'USD';
     const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
     const home = (desk && desk.currency) || pack.homeCurrency;
-    const shown = fmt(homeAmount, home);
-    const source = Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase()
-      ? ` (${usd.toLocaleString('en-CA', { maximumFractionDigits: 2 })} ${src} at today's market rate)`
+    const yours = fmt(homeAmount, home);
+    const packAmount = line && line.packValue != null && +line.packValue > 0 ? +line.packValue : null;
+    const baseline = packAmount == null ? null : fmt(packAmount, home);
+    const source = baseline && Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase()
+      ? `, which is ${usd.toLocaleString('en-CA', { maximumFractionDigits: 2 })} ${src} at today's market rate`
       : '';
-    const sentence = `${shown}${source}`;
+    const baselineClause = baseline ? `${baseline}${source}` : yours;
     return {
-      following: `Following the international baseline (${sentence}).`,
-      matching: `The international baseline figure, set by hand (${sentence}).`,
-      stricter: `Stricter than the international baseline (${sentence}).`,
+      following: `Following the international baseline: ${baselineClause}.`,
+      matching: `The international baseline figure, set by hand: ${baselineClause}.`,
+      stricter: baseline
+        ? `Stricter than the international baseline. Your line is ${yours}. The baseline is ${baselineClause}.`
+        : `Stricter than the international baseline. Your line is ${yours}.`,
+      /* The mandate here is packValue, already converted into home
+         currency. The raw 10,000 USD must not stand in for it. */
+      looser: baseline
+        ? `${yours} — the international baseline requires no more than ${baseline}.`
+        : `${yours} — the international baseline has no converted figure for this line.`,
     };
   }
 

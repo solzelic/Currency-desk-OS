@@ -34720,6 +34720,47 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }
   };
   const cadOf = (amt, c) => c === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', c) || 1);
+  /* A CAD figure, restated in the desk's home currency.
+      The new-transfer form still prices a send as Canadian dollars in.
+     The identification line and the reporting line are home-currency
+     amounts: on a baseline desk, US dollars converted at the market
+     snapshot. Comparing the Canadian number with a dinar line does not
+     ask for ID when the rules need it, because 5,000 is a much smaller
+     number than 300,000.
+      `homePerCad` is units of the home currency per 1 CAD, from the rate
+     board. No home currency, or no positive rate, means this amount
+     cannot be valued. The caller then requires identification and does
+     not mark the deal reportable — the same closed answer the ledger
+     gives when it cannot price a deal in the desk's own money. */
+  function toHome(cadAmount, home, homePerCad) {
+    const cad = +cadAmount;
+    if (!home || !isFinite(cad)) return null;
+    if (home === 'CAD') return cad;
+    const rate = +homePerCad;
+    if (!isFinite(rate) || rate <= 0) return null;
+    return cad * rate;
+  }
+  function transferRuling({
+    cadAmount,
+    home,
+    homePerCad,
+    idAt,
+    limitAmount,
+    governed,
+    fallback
+  }) {
+    const homeAmount = toHome(cadAmount, home, homePerCad);
+    const unvalued = homeAmount == null;
+    const line = idAt != null && +idAt > 0 ? +idAt : null;
+    const floor = +fallback > 0 ? +fallback : 3000;
+    return {
+      homeAmount,
+      /* Null is "cannot say", not "under the line". A missing conversion
+         must not clear a deal nobody could price. */
+      reportable: unvalued ? null : limitAmount != null && homeAmount >= +limitAmount,
+      idRequired: unvalued || (governed ? line == null || homeAmount >= line : homeAmount >= floor)
+    };
+  }
 
   /* ---- the lifecycle. Same keys for send & receive; labels adapt. ---- */
   const FLOW = ['created', 'sent', 'transit', 'paid'];
@@ -35516,20 +35557,32 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const recvAmt = pricing.outAmt;
     const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
     const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    /* The desk's own reporting line, from the jurisdiction pack. Null-safe:
-       with no threshold to compare against the honest answer is "cannot
-       say", and treating that as "not reportable" clears a deal nobody
-       checked. */
+    /* The desk's own reporting line, from the jurisdiction pack. Both
+       lines are in home currency. The figure above is still CAD, because
+       this form prices a send that way. The comparison is not. */
     const limit = reportingLimit(settings);
-    const reportable = limit.amount != null && cadEquiv >= limit.amount;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = packNow && packNow.homeCurrency || limit.currency || null;
+    const homePerCad = !home || home === 'CAD' ? 1 : crossRate('CAD', home);
     const kyc = (() => {
       const c = clients[senderName];
       return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
     })();
-    const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+    const governed = !!(packNow && packNow.packId || settings && settings.baselineRules);
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
-    const idRequired = governed ? idAt == null || cadEquiv >= idAt : cadEquiv >= (settings.idRequiredOver || 3000);
+    const ruling = transferRuling({
+      cadAmount: cadEquiv,
+      home,
+      homePerCad,
+      idAt,
+      limitAmount: limit.amount,
+      governed,
+      fallback: settings && settings.idRequiredOver
+    });
+    const homeAmount = ruling.homeAmount;
+    const reportable = ruling.reportable;
+    const idRequired = ruling.idRequired;
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
     const pickSender = n => {
@@ -36101,7 +36154,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(cadEquiv, 'CAD'), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable EFT \u2014 ", fmt(homeAmount, home || limit.currency || 'CAD'), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -36467,6 +36520,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       StatusPill,
       flagOf,
       cadOf,
+      toHome,
+      transferRuling,
       BeneficiaryModal,
       TransferModal,
       TransferDetail
@@ -39870,7 +39925,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const money = !!opts.money;
     const show = v => v == null ? '—' : money ? fmt(+v, opts.currency) : `${v}${opts.unit || ''}`;
     const standing = line.posture || 'unknown';
-    const note = standing === 'stricter' ? opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? opts.following || `Following ${opts.authority} (${show(line.packValue)}).` : opts.unknown || `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+    const note = standing === 'stricter' ? opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? opts.looser || `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? opts.following || `Following ${opts.authority} (${show(line.packValue)}).` : opts.unknown || `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
     return {
       field: opts.field,
       label: opts.label,
@@ -39903,7 +39958,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     return !!(settings && settings.baselineRules && !pack);
   }
   /* The converted home amount, with the USD figure it came from. A missing
-     rate has no home amount: identification is required on every deal. */
+     rate has no home amount: identification is required on every deal.
+      `effective` is the line this desk operates at. `packValue` is the
+     baseline after the server converted it into home currency — the same
+     number on a following or matching desk, and a different one when the
+     owner chose a stricter or looser line. The US-dollar source belongs
+     on that converted baseline. Putting it next to the owner's lower
+     figure would say a £5,000 line is 10,000 USD. */
   function baselineMoneyCopy(key, line) {
     const pack = loadedPack();
     if (!isBaselinePack(pack)) return null;
@@ -39918,15 +39979,20 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const src = String(pack.reportCurrency || 'USD').trim().toUpperCase() || 'USD';
     const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
     const home = desk && desk.currency || pack.homeCurrency;
-    const shown = fmt(homeAmount, home);
-    const source = Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase() ? ` (${usd.toLocaleString('en-CA', {
+    const yours = fmt(homeAmount, home);
+    const packAmount = line && line.packValue != null && +line.packValue > 0 ? +line.packValue : null;
+    const baseline = packAmount == null ? null : fmt(packAmount, home);
+    const source = baseline && Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase() ? `, which is ${usd.toLocaleString('en-CA', {
       maximumFractionDigits: 2
-    })} ${src} at today's market rate)` : '';
-    const sentence = `${shown}${source}`;
+    })} ${src} at today's market rate` : '';
+    const baselineClause = baseline ? `${baseline}${source}` : yours;
     return {
-      following: `Following the international baseline (${sentence}).`,
-      matching: `The international baseline figure, set by hand (${sentence}).`,
-      stricter: `Stricter than the international baseline (${sentence}).`
+      following: `Following the international baseline: ${baselineClause}.`,
+      matching: `The international baseline figure, set by hand: ${baselineClause}.`,
+      stricter: baseline ? `Stricter than the international baseline. Your line is ${yours}. The baseline is ${baselineClause}.` : `Stricter than the international baseline. Your line is ${yours}.`,
+      /* The mandate here is packValue, already converted into home
+         currency. The raw 10,000 USD must not stand in for it. */
+      looser: baseline ? `${yours} — the international baseline requires no more than ${baseline}.` : `${yours} — the international baseline has no converted figure for this line.`
     };
   }
   function jurisdictionPosture(settings) {

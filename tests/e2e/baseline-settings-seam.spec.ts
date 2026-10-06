@@ -111,8 +111,82 @@ test("a baseline desk's Settings names the international rules and the converted
     expect(words).not.toMatch(/\bEFTR\b/);
     expect(words).not.toMatch(/\bSTR\b/);
 
-    await expect(panel.getByText("Following the international baseline (£8,000.00 (10,000 USD at today's market rate)).")).toBeVisible();
-    await expect(panel.getByText("Following the international baseline (£2,400.00 (3,000 USD at today's market rate)).")).toBeVisible();
+    await expect(panel.getByText("Following the international baseline: £8,000.00, which is 10,000 USD at today's market rate.")).toBeVisible();
+    await expect(panel.getByText("Following the international baseline: £2,400.00, which is 3,000 USD at today's market rate.")).toBeVisible();
+
+    /* A stricter line names the owner's figure and the converted baseline
+       separately. Printing £5,000 next to "10,000 USD" would be false. */
+    const stricter = await page.evaluate(() =>
+      fetch("/api/ledger/desk-thresholds", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportThreshold: "5000.00" }),
+      }).then(async (r) => ({ status: r.status, body: await r.json() })),
+    );
+    expect(stricter.status, JSON.stringify(stricter.body)).toBe(200);
+    expect(stricter.body.reportThreshold.packValue).toBe("8000.00");
+    expect(stricter.body.reportThreshold.posture).toBe("stricter");
+    await page.reload();
+    await landOnDesktop(page);
+    if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await openComplianceSettings(page);
+    await expect(page.getByTestId("compliance-jurisdiction").getByText(
+      "Stricter than the international baseline. Your line is £5,000.00. The baseline is £8,000.00, which is 10,000 USD at today's market rate.",
+    )).toBeVisible();
+
+    /* Looser prints that same converted baseline, not the raw 10,000. */
+    const looser = await page.evaluate(() =>
+      fetch("/api/ledger/desk-thresholds", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportThreshold: "12000.00" }),
+      }).then(async (r) => ({ status: r.status, body: await r.json() })),
+    );
+    expect(looser.status, JSON.stringify(looser.body)).toBe(200);
+    expect(looser.body.reportThreshold.packValue).toBe("8000.00");
+    await page.reload();
+    await landOnDesktop(page);
+    if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await openComplianceSettings(page);
+    const looserPanel = page.getByTestId("compliance-jurisdiction");
+    await expect(looserPanel.getByText("£12,000.00 — the international baseline requires no more than £8,000.00.")).toBeVisible();
+    expect(await looserPanel.innerText()).not.toMatch(/no more than £10,000/);
+
+    expect((await page.evaluate(() =>
+      fetch("/api/ledger/desk-thresholds", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportThreshold: "pack_default" }),
+      }).then((r) => r.status),
+    ))).toBe(200);
+
+    /* The transfer form prices a send in CAD. The lines are in home
+       currency. 5,000 CAD is under a 300,000 dinar line as a raw number
+       and over it once converted. No rate: ID is required, and the deal
+       is not called reportable. */
+    const ruling = await page.evaluate(() => {
+      const rule = window.CDOS._transfers.transferRuling;
+      return {
+        over: rule({ cadAmount: 5000, home: "RSD", homePerCad: 100, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
+        under: rule({ cadAmount: 100, home: "RSD", homePerCad: 100, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
+        unvalued: rule({ cadAmount: 5000, home: "RSD", homePerCad: null, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
+        cad: rule({ cadAmount: 5000, home: "CAD", homePerCad: 1, idAt: 3000, limitAmount: 10000, governed: true, fallback: 3000 }),
+      };
+    });
+    expect(ruling.over).toMatchObject({ homeAmount: 500000, idRequired: true, reportable: false });
+    expect(ruling.under).toMatchObject({ homeAmount: 10000, idRequired: false, reportable: false });
+    expect(ruling.unvalued).toMatchObject({ homeAmount: null, idRequired: true, reportable: null });
+    expect(ruling.cad).toMatchObject({ homeAmount: 5000, idRequired: true, reportable: false });
+
+    /* On this GBP desk, 3,000 CAD is about £1,700, under the £2,400 line.
+       Compared as a raw 3,000 it would ask for ID. */
+    await page.getByText(/^Transfers$/).first().click();
+    const newTransfer = page.getByRole("button", { name: /New transfer/i }).first();
+    await expect(newTransfer).toBeVisible({ timeout: 30_000 });
+    await newTransfer.click();
+    const form = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("button", { name: /Create transfer/i }) });
+    await form.getByPlaceholder("0.00").first().fill("3000");
+    await expect(form.getByText(/ID required/i)).toHaveCount(0);
 
     /* Age every snapshot, including the one this test added. The newest
        row wins, so leaving an older fresh row in place would still
