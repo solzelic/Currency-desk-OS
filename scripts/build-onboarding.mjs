@@ -509,6 +509,86 @@ const BRIDGE = `<script>
 </script>
 `;
 
+/* The scroll window on the terms card.
+
+   The shape is the agreement box already in this design: data-terms-box,
+   190px tall, white, 12px corners, 16px by 18px padding. It lives on the
+   payment screen of design/onboarding/currencydesk-onboarding.html, and
+   it has been there since 8064ead (then CurrencyDesk Onboarding.html).
+   That box still holds a placeholder "Service Agreement". This window
+   uses the same chrome and puts the 26 July 2026 Terms of Service in it,
+   taken from design/site/CurrencyDesk Legal.dc.html. */
+function inviteTermsInner() {
+  const legalPath = path.join(ROOT, "design/site/CurrencyDesk Legal.dc.html");
+  const legal = readFileSync(legalPath, "utf8");
+  if (!legal.includes(">26 July 2026<")) {
+    throw new Error("onboarding: design/site/CurrencyDesk Legal.dc.html no longer shows 26 July 2026");
+  }
+  const start = legal.indexOf('<div id="terms"');
+  const end = legal.indexOf('<div style="margin-top: 40px; border-top:', start);
+  if (start < 0 || end < 0) throw new Error("onboarding: Terms of Service block not found in the legal page");
+  const parts = legal.slice(start, end).split('<div id="t');
+  /* parts[0] is empty, parts[1] is the intro (id "terms"), then t1..t16. */
+  if (parts.length !== 18) {
+    throw new Error("onboarding: expected the terms intro plus 16 sections, found " + (parts.length - 1));
+  }
+
+  const hStyle = "font-family:var(--m);font-size:9.5px;letter-spacing:0.13em;text-transform:uppercase;color:var(--ink);font-weight:700;margin:15px 0 0;";
+  const pStyle = "font-size:12.5px;line-height:1.6;color:var(--mute);margin:5px 0 0;";
+
+  const links = (html) => html.replace(/<a\s+href="([^"]*)"[^>]*>/gi, (_, href) => {
+    let to = href;
+    if (to.endsWith("CurrencyDesk Contact.dc.html")) to = "/contact";
+    const blank = to.startsWith("/") ? ' target="_blank" rel="noopener"' : "";
+    return `<a href="${to}"${blank} style="color:var(--primary);font-weight:700;">`;
+  }).replace(/\s+/g, " ").trim();
+
+  const paragraphs = (block) => {
+    const out = [];
+    const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+    let m;
+    while ((m = re.exec(block))) out.push(links(m[1]));
+    return out;
+  };
+
+  const intro = parts[1];
+  const h2 = /<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(intro);
+  let html = `<div style="font-family:var(--serif);font-size:19px;line-height:1.15;color:var(--ink);">${links(h2 ? h2[1] : "Terms of Service")}</div>`;
+  html += '<div style="font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);margin-top:5px;">26 July 2026</div>';
+  for (const p of paragraphs(intro)) html += `<p style="${pStyle}">${p}</p>`;
+
+  for (let i = 2; i < parts.length; i++) {
+    const block = parts[i];
+    const num = /<div[^>]*>\s*(\d{1,2})\s*<\/div>/.exec(block);
+    const h3 = /<h3[^>]*>([\s\S]*?)<\/h3>/i.exec(block);
+    const label = `${num ? num[1] : String(i - 1).padStart(2, "0")} ${links(h3 ? h3[1] : "")}`;
+    html += `<div style="${hStyle}">${label}</div>`;
+    const ps = paragraphs(block);
+    if (block.includes(">In short<") && ps.length) {
+      const last = ps.pop();
+      for (const p of ps) html += `<p style="${pStyle}">${p}</p>`;
+      html += `<div style="${hStyle}">In short</div>`;
+      html += `<p style="${pStyle}">${last}</p>`;
+    } else {
+      for (const p of ps) html += `<p style="${pStyle}">${p}</p>`;
+    }
+  }
+  html += '<div data-terms-end="1" style="height:1px;"></div>';
+
+  if (!html.includes("These terms govern your use of CurrencyDesk.")) {
+    throw new Error("onboarding: terms window is missing the opening of the 26 July 2026 terms");
+  }
+  if (!html.includes("Your records are yours and you can take them with you.")) {
+    throw new Error("onboarding: terms window is missing the end of the 26 July 2026 terms");
+  }
+  if (html.includes("{{") || html.includes(".dc.html")) {
+    throw new Error("onboarding: terms window still has a design-tool link or a template hole");
+  }
+  return html;
+}
+
+const TERMS_INNER = inviteTermsInner();
+
 /* ------------------------------------------------------------------
    Patches. Each is [what must be there, what replaces it, why], applied
    to the design's real source and asserted before it is applied.
@@ -604,7 +684,8 @@ patch(
   "    if (wasI !== this.state.i && this.state.i === 14 && window.__cdOnb && window.__cdOnb.code) {\n" +
   "      window.__cdOnb.sendCode(this.state.data).then(() => this.forceUpdate());\n" +
   "    }\n" +
-  "    if (prevS.i !== this.state.i) this.focusStage();",
+  "    if (prevS.i !== this.state.i) this.focusStage();\n" +
+  "    this.armTermsBox();",
 );
 
 /* --- 3. The invite code, in the shape we actually issue ------------
@@ -690,7 +771,9 @@ patch(
   `  /* The invite link's first two views, both still on screen 0.
 
      'id'    — show the reference that is already in the link.
-     'terms' — the customer accepts the 26 July 2026 terms.
+     'terms' — the customer reads the 26 July 2026 terms in the
+               scroll window, then accepts them. The checkbox stays
+               off until the bottom of that window is in view.
                Continue stays off until the box is checked.
                The server still records the version, the time, and
                who accepted. The screen does not talk about that.
@@ -794,6 +877,60 @@ patch(
     this.next();
   }
 
+  /* The terms window. Same chrome as the payment screen's agreement
+     box: a fixed height, and they scroll. The checkbox stays disabled
+     until the bottom is in view. If the text already fits, it is
+     enabled on the next frame. 24px is the same slack that box used,
+     so the last line counts once it is actually in view. */
+  termsAtEnd(el) {
+    if (!el || el.clientHeight < 1) return false;
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
+  }
+
+  noteTermsEnd(el) {
+    if (this._inviteTermsRead || !this.termsAtEnd(el)) return;
+    this._inviteTermsRead = true;
+    this._termsScroll = el.scrollTop;
+    this.forceUpdate();
+  }
+
+  onTermsKeys(e) {
+    const el = e.currentTarget;
+    if (!el) return;
+    if (e.target !== el && (e.key === ' ' || e.key === 'Enter')) return;
+    const line = 28;
+    const page = Math.max(48, el.clientHeight - 28);
+    let top = null;
+    if (e.key === 'ArrowDown') top = el.scrollTop + line;
+    else if (e.key === 'ArrowUp') top = el.scrollTop - line;
+    else if (e.key === 'PageDown' || e.key === ' ') top = el.scrollTop + page;
+    else if (e.key === 'PageUp') top = el.scrollTop - page;
+    else if (e.key === 'End') top = el.scrollHeight;
+    else if (e.key === 'Home') top = 0;
+    if (top === null) return;
+    e.preventDefault();
+    if (top < 0) top = 0;
+    el.scrollTop = top;
+    this.noteTermsEnd(el);
+  }
+
+  armTermsBox() {
+    if (this.preface() !== 'terms') return;
+    const el = document.querySelector('[data-terms-box]');
+    if (!el) return;
+    if (this._inviteTermsRead && this._termsScroll && el.scrollTop + 4 < this._termsScroll) {
+      el.scrollTop = this._termsScroll;
+    }
+    if (!el._cdArmed) {
+      el._cdArmed = true;
+      const self = this;
+      el.addEventListener('scroll', function () { self.noteTermsEnd(el); });
+      el.addEventListener('keydown', function (e) { self.onTermsKeys(e); });
+    }
+    const self = this;
+    requestAnimationFrame(function () { self.noteTermsEnd(el); });
+  }
+
   meta(i, d, j, home, selCcy) {`,
 );
 patch(
@@ -804,7 +941,14 @@ patch(
   "       character, and the ring is on the input because tabbing focuses\n" +
   "       the input, not the label. */\n" +
   "    input[data-terms-check]{width:18px;height:18px;margin:2px 0 0;flex:none;accent-color:#1D6B45;cursor:pointer}\n" +
-  "    input[data-terms-check]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}",
+  "    input[data-terms-check]:disabled{cursor:default}\n" +
+  "    input[data-terms-check]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}\n" +
+  "    label[data-terms-label]{cursor:pointer}\n" +
+  "    label[data-terms-label]:has(input:disabled){cursor:default}\n" +
+  "    /* The agreement window from the payment screen, reused here. */\n" +
+  "    [data-terms-box]{height:190px;overflow-y:auto;overflow-x:hidden;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--line);text-align:left;overscroll-behavior:contain}\n" +
+  "    [data-terms-box]:focus{outline:none}\n" +
+  "    [data-terms-box]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}",
 );
 patch(
   "Continue's colour follows the disabled state immediately",
@@ -837,6 +981,9 @@ patch(
   "      issuedHint: this.issuedHint(),\n" +
   "      showIssuedHint: !!this.issuedHint(),\n" +
   "      termsOn: !!this.state.data.termsChecked,\n" +
+  "      termsLocked: this.preface() === 'terms' && !this._inviteTermsRead,\n" +
+  "      showTermsHint: this.preface() === 'terms' && !this._inviteTermsRead,\n" +
+  "      onTermsScroll: (e) => this.noteTermsEnd(e.currentTarget || e.target),\n" +
   "      termsErr: (window.__cdOnb && this.preface() === 'terms' && window.__cdOnb.err) || '',",
 );
 patch(
@@ -862,7 +1009,7 @@ patch(
 patch(
   "start over — back to the ID on the link, not a half-finished view",
   "reset() { try { localStorage.removeItem(this.KEY); }",
-  "reset() { this._preface = 'id'; try { localStorage.removeItem(this.KEY); }",
+  "reset() { this._preface = 'id'; this._inviteTermsRead = false; this._termsScroll = 0; try { localStorage.removeItem(this.KEY); }",
 );
 patch(
   "the typed-ID field — hidden once the page has a link",
@@ -888,9 +1035,13 @@ patch(
   '                  </div>\n' +
   '                </sc-if>\n' +
   '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
-  '                  <div data-screen="terms" style="width: 100%; max-width: 380px; margin-top: 18px; text-align: left;">\n' +
-  '                    <label for="cd-accept-terms" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;cursor:pointer;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
-  '                      <input id="cd-accept-terms" type="checkbox" data-terms-check="1" data-terms-toggle="1" checked="{{ termsOn }}" sc-camel-on-change="{{ onCta }}" />\n' +
+  '                  <div data-screen="terms" style="width: 100%; margin-top: 18px; text-align: left;">\n' +
+  '                    <div data-terms-box="true" role="region" aria-label="Terms of Service" sc-camel-tab-index="0" sc-camel-on-scroll="{{ onTermsScroll }}">' + TERMS_INNER + '</div>\n' +
+  '                    <sc-if value="{{ showTermsHint }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <p id="cd-terms-hint" data-terms-hint="1" style="margin:10px 0 0;font-size:12.5px;line-height:1.4;color:var(--mute);">Scroll to the end to accept</p>\n' +
+  '                    </sc-if>\n' +
+  '                    <label for="cd-accept-terms" data-terms-label="1" style="display:flex;align-items:flex-start;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
+  '                      <input id="cd-accept-terms" type="checkbox" data-terms-check="1" data-terms-toggle="1" checked="{{ termsOn }}" disabled="{{ termsLocked }}" aria-describedby="cd-terms-hint" sc-camel-on-change="{{ onCta }}" />\n' +
   '                      <span>I accept the Terms of Service (26 July 2026)</span>\n' +
   '                    </label>\n' +
   '                    <div style="margin-top: 10px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Read the Terms of Service</a></div>\n' +

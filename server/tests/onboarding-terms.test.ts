@@ -80,6 +80,10 @@ describe("the ID on the invite link", () => {
     expect(page).toContain("This is your ID");
     expect(page).toContain("This is the reference from your invite email. It stays with your desk, so keep it handy.");
     expect(page).toContain("Please read and accept our Terms of Service to set up your desk.");
+    expect(page).toContain("Scroll to the end to accept");
+    expect(page).toContain("data-terms-box");
+    expect(page).toContain("These terms govern your use of CurrencyDesk.");
+    expect(page).toContain("Your records are yours and you can take them with you.");
     /* The page file stores the wizard as a JSON string, so the attribute
        quotes are escaped. The marker and the label are the stable check
        that the control is a checkbox, not a line of text. */

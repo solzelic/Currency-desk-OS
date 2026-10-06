@@ -157,7 +157,25 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   await expect(page.getByText(/^Terms of Service$/)).toBeVisible();
 
   const termsBox = page.getByRole("checkbox", { name: "I accept the Terms of Service (26 July 2026)" });
+  const termsWindow = page.locator("[data-terms-box]");
+  await expect(termsWindow).toBeVisible();
+  await expect(termsWindow).toContainText("These terms govern your use of CurrencyDesk.");
+  await expect(termsWindow).toContainText("Your records are yours and you can take them with you.");
+  await expect(page.getByText("Scroll to the end to accept")).toBeVisible();
+  await expect(termsBox).toBeDisabled();
   await expect(termsBox).not.toBeChecked();
+  await expect(continueBtn).toBeDisabled();
+  /* The full terms are taller than the window, so the box stays off
+     until the bottom is actually reached. End is the keyboard path. */
+  const overflow = await termsWindow.evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow).toBeGreaterThan(24);
+  await termsWindow.focus();
+  await page.keyboard.press("End");
+  await expect.poll(() => termsWindow.evaluate((el) => el.scrollTop)).toBeGreaterThan(24);
+  await expect(termsBox).toBeEnabled();
+  await expect(termsBox).not.toBeChecked();
+  await expect(continueBtn).toBeDisabled();
+  await expect.poll(continuePaint).toBe("rgba(23, 20, 15, 0.09)");
   await termsBox.focus();
   await page.keyboard.press("Space");
   await expect(termsBox).toBeChecked();
