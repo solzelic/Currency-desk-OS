@@ -177,7 +177,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
       `INSERT INTO jurisdiction_packs
          (pack_id, jurisdiction, version, name, home_currency, regulator,
           report_name, report_threshold, id_threshold, report_currency)
-       VALUES ('pack-probe-v1','ZZ',1,'Probe','EUR','PROBE','STR',1000,1000,'EUR')
+       VALUES ('pack-probe-v1','QP',1,'Probe','EUR','PROBE','STR',1000,1000,'EUR')
        ON CONFLICT (pack_id) DO NOTHING`,
     );
     await pool.query(
@@ -229,6 +229,19 @@ postgres("pack rule fields against real PostgreSQL", () => {
     expect(line("remittance").currency).toBeNull();
     expect(idLineAmount(line("eft").threshold)).toBe("500.00");
     expect(idLineAmount(line("virtual_currency").threshold)).toBe("0.00");
+
+    /* Taken back out. `jurisdiction` plus version is unique, and another
+       suite in this same database inserts its own pack under ZZ. Leaving
+       a probe row behind would make that insert fail. */
+    await pool.query(
+      "DELETE FROM jurisdiction_id_thresholds WHERE pack_id='pack-probe-v1'",
+    );
+    await pool.query(
+      "DELETE FROM jurisdiction_reports WHERE pack_id='pack-probe-v1'",
+    );
+    await pool.query(
+      "DELETE FROM jurisdiction_packs WHERE pack_id='pack-probe-v1'",
+    );
   });
 
   const clearDesk = async (slug: string) => {

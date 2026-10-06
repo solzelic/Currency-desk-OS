@@ -55,8 +55,16 @@ async function reset() {
     "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
     [s[0]],
   );
+  /* This desk is the Canadian demo. It has to name that pack. A missing
+     pack is not filled in with Canada's rules. */
   await pool.query(
-    "INSERT INTO legal_entities (id,tenant_id,name) VALUES ($1,$2,'York FX Canada') ON CONFLICT DO NOTHING",
+    `INSERT INTO legal_entities
+       (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
+     VALUES ($1,$2,'York FX Canada','CAD','pack-ca-v1',1)
+     ON CONFLICT (id) DO UPDATE
+       SET home_currency='CAD',
+           jurisdiction_pack_id='pack-ca-v1',
+           jurisdiction_pack_version=1`,
     [s[1], s[0]],
   );
   await pool.query(
