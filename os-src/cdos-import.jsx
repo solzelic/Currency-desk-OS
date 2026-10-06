@@ -8,8 +8,11 @@
   const { CD, Ic, fmt, num, TYPES, CCY, newTx, mkRef, TODAY, crossRate } = window.CDOS;
 
   const ICFG_KEY = 'cdos_import_cfg_v1';
-  const DEF_CFG = { dateFormat: 'auto', defaultInCcy: 'CAD', defaultType: 'Currency Exchange', autoCreateClients: true, skipDuplicateRefs: true };
-  const loadCfg = () => { try { return Object.assign({}, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {}); } catch (e) { return Object.assign({}, DEF_CFG); } };
+  const DEF_CFG = { dateFormat: 'auto', defaultType: 'Currency Exchange', autoCreateClients: true, skipDuplicateRefs: true };
+  const loadCfg = () => {
+    const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+    try { return Object.assign({ defaultInCcy: home }, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {}); } catch (e) { return Object.assign({ defaultInCcy: home }, DEF_CFG); }
+  };
   const saveCfgPatch = (patch) => { const next = Object.assign({}, loadCfg(), patch); try { localStorage.setItem(ICFG_KEY, JSON.stringify(next)); } catch (e) {} return next; };
 
   // target fields the ledger understands, in display order
@@ -204,14 +207,15 @@
     if (!customer) errors.push('customer');
     const inAmt = toNum(g('inAmt'));
     if (inAmt == null || inAmt <= 0) errors.push('amount');
-    let inCcy = (g('inCcy') || cfg.defaultInCcy || 'CAD').toUpperCase().slice(0, 3);
-    if (!/^[A-Z]{3}$/.test(inCcy)) { inCcy = (cfg.defaultInCcy || 'CAD'); warns.push('pay-in ccy'); }
+    const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+    let inCcy = (g('inCcy') || cfg.defaultInCcy || home).toUpperCase().slice(0, 3);
+    if (!/^[A-Z]{3}$/.test(inCcy)) { inCcy = (cfg.defaultInCcy || home); warns.push('pay-in ccy'); }
     else if (!CCY.includes(inCcy)) warns.push('ccy ' + inCcy);
     let type = matchType(g('type'));
     if (!type) { type = cfg.defaultType || 'Currency Exchange'; if (g('type')) warns.push('type→' + type.split(' ')[0]); }
     const flat = (type === 'Cheque Cashing' || type === 'Money Order' || type === 'Bill Payment');
     let outCcy = (g('outCcy') || '').toUpperCase().slice(0, 3);
-    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : (inCcy === 'CAD' ? 'USD' : 'CAD');
+    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : (inCcy === home ? 'USD' : home);
     let rate = toNum(g('rate'));
     let outAmt = toNum(g('outAmt'));
     if (inAmt != null) {
@@ -420,7 +424,7 @@
                         <td className="px-2.5 py-1.5" style={{ color: CD.mute, whiteSpace: 'nowrap' }}>{t.type}{p.warns.some(w => w.startsWith('type')) && <span title="type defaulted" style={{ color: CD.amber }}> ·</span>}</td>
                         <td className="px-2.5 py-1.5" style={{ whiteSpace: 'nowrap', color: t.inAmt === '' ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{t.inAmt === '' ? '—' : `${num(t.inAmt)} ${t.inCcy}`}</td>
                         <td className="px-2.5 py-1.5" style={{ whiteSpace: 'nowrap', color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{t.outAmt === '' ? '—' : `${num(t.outAmt)} ${t.outCcy}`}</td>
-                        <td className="px-2.5 py-1.5" style={{ whiteSpace: 'nowrap', color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>{t.fee === '' ? '—' : fmt(t.fee, 'CAD')}</td>
+                        <td className="px-2.5 py-1.5" style={{ whiteSpace: 'nowrap', color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>{t.fee === '' ? '—' : fmt(t.fee, (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD')}</td>
                         <td className="px-2.5 py-1.5" style={{ color: CD.faint, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.warns.includes('dup ref') ? <span style={{ color: CD.amber }}>duplicate ref</span> : (t.notes || '')}</td>
                       </tr>);
                     })}

@@ -154,6 +154,16 @@ describe("the answers reaching the desk that was opened", () => {
     expect(setup.idThreshold).toBe(5000);
   });
 
+  it("does not copy the report line into a blank identification field", () => {
+    const blank = specFromAnswers(
+      resolve({ ...answers, idOver: "" }, {}),
+      {},
+    );
+    const setup = blank.setup as Record<string, unknown>;
+    expect(setup.reportThreshold).toBe(10000);
+    expect(setup.idThreshold).toBeNull();
+  });
+
   /** A tenant, entity and branch for the board to hang off. */
   async function marginDesk(branchId: string) {
     const { schema } = await import("../src/db/index.js");
@@ -183,6 +193,52 @@ describe("the answers reaching the desk that was opened", () => {
       .find((row) => row.branchId === branchId)!;
     expect(Number(board.buyMargin)).toBeCloseTo(0.035, 6);
     expect(Number(board.sellMargin)).toBeCloseTo(0.035, 6);
+  });
+
+  it("does not open a Canadian board when the desk named no home currency", async () => {
+    const { schema } = await import("../src/db/index.js");
+    const { publishStartingBoard } = await import("../src/rates/starting-board.js");
+    const branchId = "br-no-home";
+    await marginDesk(branchId);
+    const published = await publishStartingBoard(handle.db, {
+      tenantId: "tnt-margin", legalEntityId: "le-margin", branchId,
+      currencies: ["USD"],
+    });
+    expect(published).toEqual({ published: false, currencies: [] });
+    const blank = await publishStartingBoard(handle.db, {
+      tenantId: "tnt-margin", legalEntityId: "le-margin", branchId: "br-blank-home",
+      currencies: ["USD"], homeCurrency: "  ",
+    });
+    expect(blank.published).toBe(false);
+    await marginDesk("br-blank-home");
+    const boards = await handle.db.select().from(schema.rateBoards);
+    expect(boards.some((row) => row.branchId === branchId || row.branchId === "br-blank-home")).toBe(false);
+  });
+
+  it("opens the board in the home currency the desk named", async () => {
+    const { schema } = await import("../src/db/index.js");
+    const { publishStartingBoard, INDICATIVE_PER_CAD } = await import("../src/rates/starting-board.js");
+    const branchId = "br-gbp-home";
+    await marginDesk(branchId);
+    const published = await publishStartingBoard(handle.db, {
+      tenantId: "tnt-margin", legalEntityId: "le-margin", branchId,
+      currencies: ["USD"], homeCurrency: "gbp",
+    });
+    expect(published).toEqual({ published: true, currencies: ["USD"] });
+    const board = (await handle.db.select().from(schema.rateBoards))
+      .find((row) => row.branchId === branchId)!;
+    const rows = board.boardRows as Record<string, { mid: number }>;
+    expect(rows.GBP).toBeUndefined();
+    const usdPerCad = INDICATIVE_PER_CAD.USD;
+    const gbpPerCad = INDICATIVE_PER_CAD.GBP;
+    expect(usdPerCad).toBeDefined();
+    expect(gbpPerCad).toBeDefined();
+    const cadPerUsd = Number((1 / usdPerCad!).toFixed(6));
+    const cadPerGbp = Number((1 / gbpPerCad!).toFixed(6));
+    const usd = rows.USD;
+    expect(usd).toBeDefined();
+    expect(usd!.mid).toBeCloseTo(cadPerUsd / cadPerGbp, 5);
+    expect(usd!.mid).not.toBeCloseTo(cadPerUsd, 3);
   });
 
   it("falls back rather than publishing a board nobody meant", async () => {

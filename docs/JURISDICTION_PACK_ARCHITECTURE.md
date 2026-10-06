@@ -9,9 +9,71 @@ onboarding installs the pack; and the posting path resolves home currency
 from it rather than assuming CAD. Generalized money columns are added and
 backfilled alongside the CAD-named ones — nothing is renamed or retired yet.
 
-Still to do: dual-write the generalized values on new postings (step 4),
-make them authoritative (step 5), and retire the CAD-specific columns
-(step 6). Compliance policy versioning is not started.
+A pack can also name an identification line per kind of deal
+(`jurisdiction_id_thresholds`: foreign exchange, remittance, electronic
+funds transfer, virtual currency). Null means that kind has no line.
+Zero means every deal of that kind. A line can say `gte` or `gt`, a
+due-diligence level (`identify`, `cdd`, `edd`), and whether it is
+cash-only. A country pack's posting gate still reads the single
+`id_threshold` column. The baseline gate reads the per-deal rows.
+Seeded packs copy a positive value of that
+column onto all four kinds, so the two agree. Zero on the old column
+is not copied. A report row can name a filing deadline (`immediately`,
+`hours`, `before_execution`, `monthly_day`, `calendar_days`,
+`business_days`), an aggregation window (`fixed_24h`, `calendar_month`,
+`rolling_days`, `banking_day`, or `none`), a comparator (`gte` or `gt`),
+a cash direction, whether it counts cash only, and the currency the
+threshold is written in. A baseline threshold written in US dollars
+is converted to the desk's home currency at the newest market
+snapshot. The six country packs still state their thresholds in home
+currency. Seeded report rows were mapped onto those columns
+without changing a trigger amount. Only `aggregation_hours = 24` is
+labelled `fixed_24h`. A country with no installed pack resolves to `pack-intl-v1`, the
+international baseline. It is not given the Canada pack, and new deals
+are not paused. A quote, exchange, frozen quote, remittance send or
+receive, bill payment, money order, cheque cashing, and a threshold
+override all post under that baseline. Clearing or returning a cheque
+already held, settling or writing off an obligation already open, and
+voiding a deal already posted still succeed. A settlement row carries
+the pack the original deal was stamped with, or NULL when that deal
+has none.
+
+The baseline is not a country. Its identification lines are in US
+dollars: 3,000 for a cash foreign exchange, 1,000 for a remittance, an
+electronic transfer, or virtual currency. The large-cash record is
+10,000 USD in a fixed 24-hour window. The regulator field is empty.
+A USD line is converted to the desk's home currency at the newest
+market snapshot, rounded down to the cent, and the rate and its
+timestamp are stored on the deal. The identification line and the
+large-cash line the till reads are converted the same way. A missing
+or stale snapshot leaves both unset, so identification and the
+purpose and source of funds are required on every deal. A baseline desk that names no home currency books in USD. The
+till and Settings show the international-rules disclaimer.
+Compliance names International baseline (FATF), no regulator, and
+the three generic reports. A money line is a plain sentence: the
+converted home amount, then the US-dollar figure it came from. A
+stricter line names the desk's own figure and that converted
+baseline separately. The US-dollar source is not attached to the
+owner's lower number. A missing rate says identification is
+required on every deal. The new-transfer form treats the typed amount as the desk's home
+currency. A send adds the fee; a receive uses the payout. The
+binding line is the lower of the converted remittance line and the
+desk's own identification line. A missing or stale rate requires
+identification. A Canada desk still uses its own line.
+
+A new exchange, transfer, or cheque cashing stamps
+`jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
+on the transaction row. Rows written before that are not rewritten.
+Migration 028 backfills a missing pack to the Canada pack where the
+home currency is CAD, empty, or null, and stores CAD in that case.
+GBP, AUD, AED, EUR, USD, and every other currency are pointed at the
+baseline and keep their home currency. The known-wrong country packs
+are not assigned, because those seeded numbers are wrong.
+
+Still to do: dual-write the generalized fee and spread amounts on every
+posting (step 4; cheques already do this), make them authoritative
+(step 5), and retire the CAD-specific columns (step 6). Compliance
+policy versioning is not started.
 
 ## Target Configuration
 

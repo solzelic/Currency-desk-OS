@@ -51,12 +51,13 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type pg from "pg";
-import { resolvePack } from "./jurisdiction.js";
+import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   LedgerError,
   requireIdentification,
+  requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
@@ -317,6 +318,7 @@ export class ChequeService {
       }
 
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const currency = String(input.currency ?? "").trim().toUpperCase();
       /* IN SCOPE: a cheque written in the currency the desk's book is kept
@@ -363,12 +365,13 @@ export class ChequeService {
          is the FACE amount — that is what is being presented and what the
          desk is exposed to — and the line is the desk's own, resolved
          exactly as it is for an exchange. */
-      await requireIdentification(
+      const compliance = await requireIdentification(
         client,
         actor,
         pack,
         face,
         customer.rows[0].id_status,
+        { kind: "cheque_cashing", cash: true },
       );
 
       /* The desk's own working day, from the till session rather than
@@ -464,6 +467,8 @@ export class ChequeService {
            about. */
         receivedInstrument: "cheque",
         disbursedInstrument: "cash",
+        complianceRate: compliance.rate,
+        complianceRateAt: compliance.rateAt,
         now,
       });
       for (const [account, side, amount] of journal)
@@ -677,14 +682,25 @@ export class ChequeService {
           : "Cheque clearing journal is unbalanced.",
       );
 
-      const pack = await resolvePack(client, actor.legalEntityId);
+      /* No pack: new deals paused; voids and settling existing deals
+         still work. Clearing or returning a cheque the desk already
+         holds is not a new deal. The row is stamped with the pack the
+         cashing was stamped with, when that cashing has one. Otherwise
+         NULL — never an empty string. */
+      const original = await client.query(
+        `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+           FROM ledger_transactions
+          WHERE transaction_id = $1`,
+        [cheque.cashing_transaction_id],
+      );
+      const carried = carriedPackStamp(original.rows[0]);
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
         customerId: String(cheque.customer_id),
         home,
-        packId: pack.packId,
-        packVersion: pack.version,
+        packId: carried.packId,
+        packVersion: carried.packVersion,
         inputAmount: face,
         outputAmount: face,
         fee: new Decimal(0),
@@ -991,8 +1007,8 @@ export class ChequeService {
       transactionRef: string;
       customerId: string;
       home: string;
-      packId: string;
-      packVersion: number;
+      packId: string | null;
+      packVersion: number | null;
       inputAmount: Decimal;
       outputAmount: Decimal;
       fee: Decimal;
@@ -1001,6 +1017,8 @@ export class ChequeService {
       dealKind: string;
       receivedInstrument: string;
       disbursedInstrument: string;
+      complianceRate?: string | null;
+      complianceRateAt?: Date | null;
       now: Date;
     },
   ) {
@@ -1023,13 +1041,14 @@ export class ChequeService {
           compliance_captured_by,compliance_captured_at,posted_at,
           home_currency,fee_amount,fee_currency,spread_home_amount,
           jurisdiction_pack_id,jurisdiction_pack_version,
-          deal_kind,received_instrument,disbursed_instrument)
+          deal_kind,received_instrument,disbursed_instrument,
+          compliance_threshold_rate,compliance_threshold_rate_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$12,1,
                $13,0,$14,$15,false,NULL,
                $16,$17,$18,
                $10,$13,$10,0,
                $19,$20,
-               $21,$22,$23)`,
+               $21,$22,$23,$24,$25)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1050,6 +1069,8 @@ export class ChequeService {
         row.dealKind,
         row.receivedInstrument,
         row.disbursedInstrument,
+        row.complianceRate ?? null,
+        row.complianceRateAt ?? null,
       ],
     );
   }

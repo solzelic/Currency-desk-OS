@@ -47,7 +47,12 @@
   /* Display-only conversion, for totalling a float across currencies in
      the assign modal. It never produces a HOLDING — every quantity on
      this screen came from the ledger. */
-  const cadPer = (c) => c === 'CAD' ? 1 : (crossRate(c, 'CAD') || 0);
+  const cadPer = (c) => {
+    const home = homeCcy();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    return (window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0;
+  };
   const cadVal = (units, c) => (+units || 0) * cadPer(c);
 
   /* ---- the branch's position, from the book ----
@@ -383,7 +388,7 @@
       <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 12 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-            <th className="px-3 py-2">Date</th><th className="px-3 py-2">Teller</th><th className="px-3 py-2 text-right">Float · CAD</th><th className="px-3 py-2 text-right">Variance</th><th className="px-3 py-2">Count</th>
+            <th className="px-3 py-2">Date</th><th className="px-3 py-2">Teller</th><th className="px-3 py-2 text-right">Float · {homeCcy()}</th><th className="px-3 py-2 text-right">Variance</th><th className="px-3 py-2">Count</th>
           </tr></thead>
           <tbody>{settled.slice(0, 30).map(s => { const floatCad = Object.keys(s.opening || {}).reduce((t, c) => t + cadVal(s.opening[c] || 0, c), 0); const off = Math.abs(+s.varCad || 0) >= 0.5; return (
             <tr key={s.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -858,7 +863,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="vaultsafe" s={17} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{totalOnHand == null ? '—' : fmt(totalOnHand, (position && position.homeCurrency) || 'CAD')} on hand{onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : ''}{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
+            <div><div className="font-semibold leading-tight flex items-center gap-2" style={{ color: CD.ink }}>Vault{myB ? <span className="text-[12px] font-normal" style={{ color: CD.mute }}>· {myB.name}</span> : null}{myB && <span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: myB.main ? CD.ink : CD.brassSoft, color: myB.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{myB.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>{totalOnHand == null ? '—' : fmt(totalOnHand, (position && position.homeCurrency) || homeCcy())} on hand{onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : ''}{lowList.length ? ` · ${lowList.length} low` : ''}{openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : ''}{myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''}</div></div>
           </div>
           <div className="flex items-center gap-2" style={{ position: 'relative' }}>
             {/* notifications */}

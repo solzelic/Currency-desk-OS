@@ -497,6 +497,19 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
+  /* The sentence a baseline desk shows. The server sends the same words.
+     A country pack clears it. */
+  let _rulesNotice = null;
+  const BASELINE_NOTICE = "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+  const RULES_NOTICE = BASELINE_NOTICE;
+  const rulesNotice = () => _rulesNotice;
+  const baselineNotice = () => BASELINE_NOTICE;
+  function rulesMissing() {
+    const pack = _pack;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
+    if (pack && pack.available === false) return true;
+    return false;
+  }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
      They arrive in the same answer as the pack and were being dropped on
@@ -540,16 +553,22 @@
     const set = _currencies && (_currencies.stated || _currencies.suggested);
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
-  const setDeskPack = (pack, reports, currencies) => {
+  const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
+    const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    _rulesNotice = baseline || _pack && _pack.available === false ? notice || BASELINE_NOTICE : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
+    try {
+      window.__cdosHome = _pack && _pack.homeCurrency ? String(_pack.homeCurrency).toUpperCase() : '';
+    } catch (e) {}
     try {
       window.dispatchEvent(new CustomEvent('cdos-jurisdiction', {
         detail: {
           pack: _pack,
           reports: _reports,
-          currencies: _currencies
+          currencies: _currencies,
+          notice: _rulesNotice
         }
       }));
     } catch (e) {}
@@ -560,7 +579,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
@@ -597,14 +616,33 @@
      already the desk's choice where it made one and the pack's where it
      did not — the precedence was decided on the server, once, so that the
      number the screen prints and the number the gate enforces cannot
-     drift apart. */
+     drift apart. A loaded answer whose effective is null is still an
+     answer: do not fall through to the pack's raw USD figure. */
   const _serverLine = key => {
     const line = _thresholds && _thresholds[key];
     return line && _positive(line.effective) ? +line.effective : null;
   };
+  const _serverAnswered = key => {
+    const line = _thresholds && _thresholds[key];
+    return !!(line && Object.prototype.hasOwnProperty.call(line, 'effective'));
+  };
   function reportingLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || null;
+      return {
+        amount: null,
+        currency,
+        code: null,
+        label: RULES_NOTICE
+      };
+    }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold') : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
+    /* A baseline pack's 10,000 is US dollars. It is not this desk's
+       reporting line. The server converts it; until that answer arrives
+       the screen shows nothing, rather than those dollars labelled as
+       dinars or pounds. */
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold') : baselineBook ? null : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
     const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -634,8 +672,17 @@
      number from the one the server will enforce is how a teller ends up
      arguing with a refusal they were told would not come. */
   function identificationLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || null;
+      return {
+        amount: null,
+        currency,
+        label: RULES_NOTICE
+      };
+    }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold') : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold') : baselineBook ? null : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
     const currency = _thresholds && _thresholds.currency || _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -768,6 +815,32 @@
     }
     return +(PER_CAD[outC] / PER_CAD[inC]).toFixed(4);
   }
+  /* The currency this desk keeps its book in. Before the pack arrives,
+     and on every Canada desk, that is CAD — the identity the rate
+     functions below were written for. */
+  function deskHomeCcy() {
+    try {
+      const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+      const code = pack && pack.homeCurrency;
+      if (code && /^[A-Za-z]{3}$/.test(String(code))) return String(code).toUpperCase();
+    } catch (e) {}
+    return 'CAD';
+  }
+  /* Home-currency units per 1 unit of `code`. Canada reads the CAD
+     cross, which is what every total on a Canada desk already used.
+     Any other desk reads the tape quote (/api/rates/ticker), already
+     crossed. A missing quote is 0: a CAD mid is not a stand-in. */
+  function homePerUnit(code) {
+    const home = deskHomeCcy();
+    const c = String(code || '').toUpperCase();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const quotes = tape && tape.priced && tape.home === home && tape.quotes;
+    const row = quotes && quotes.find(q => q.code === c);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 && isFinite(mid) ? mid : 0;
+  }
   function perCadLive(code) {
     if (typeof BY !== 'undefined' && BY[code]) return +BY[code].perCad.toFixed(code === 'CAD' ? 0 : 4);
     return PER_CAD[code];
@@ -808,7 +881,7 @@
     if (!book) return '';
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
-  const fmt = (n, c) => isNaN(n) || n === '' ? '' : new Intl.NumberFormat('en-CA', {
+  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency: c || 'CAD',
     maximumFractionDigits: 2
@@ -1762,6 +1835,8 @@
     dataUrlBytes,
     readableSize,
     crossRate,
+    deskHomeCcy,
+    homePerUnit,
     perCadLive,
     fmt,
     num,
@@ -1792,6 +1867,9 @@
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
+    rulesNotice,
+    rulesMissing,
+    baselineNotice,
     deskCurrencies,
     deskCurrencyList,
     deskTrades,
@@ -2962,8 +3040,10 @@
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
-      const idFloor = +settings.idRequiredOver || 3000;
-      const idNeeded = single || cadIn(row) >= idFloor;
+      const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+      const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
+      const idFloor = governed ? idAt : window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
+      const idNeeded = governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
       map[row.id] = {
         single,
         str,
@@ -3668,7 +3748,8 @@
     const {
       useEffect
     } = React;
-    const FXC = typeof CUR !== 'undefined' ? CUR.filter(c => c.code !== 'CAD').map(c => c.code) : CCY.filter(c => c !== 'CAD');
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    const FXC = typeof CUR !== 'undefined' ? CUR.filter(c => c.code !== home).map(c => c.code) : CCY.filter(c => c !== home);
     let _s = {};
     try {
       _s = JSON.parse(localStorage.getItem('cdos_calc_v1')) || {};
@@ -3680,10 +3761,10 @@
     const [waiting, setWaiting] = useState(_s.waiting != null ? _s.waiting : true);
     const [amt, setAmt] = useState(_s.amt || '100');
     const [from, setFrom] = useState(_s.from || 'USD');
-    const [to, setTo] = useState(_s.to || 'CAD');
+    const [to, setTo] = useState(_s.to || home);
     const [mIn, setMIn] = useState(_s.mIn || '');
     const [mOut, setMOut] = useState(_s.mOut || '');
-    const [mCcy, setMCcy] = useState(_s.mCcy || 'CAD');
+    const [mCcy, setMCcy] = useState(_s.mCcy || home);
     const [mTgt, setMTgt] = useState(_s.mTgt || '');
     const [hist, setHist] = useState(Array.isArray(_s.hist) ? _s.hist : []);
     useEffect(() => {
@@ -3708,7 +3789,7 @@
     const r = crossRate(from, to);
     const out = (parseFloat(amt) || 0) * r;
     const flagOf = c => typeof BY !== 'undefined' && BY[c] && BY[c].flag ? BY[c].flag : '';
-    const foreign = from !== 'CAD' ? from : to !== 'CAD' ? to : 'USD';
+    const foreign = from !== home ? from : to !== home ? to : 'USD';
     const fBuy = window.CDOS.buyUnitCad ? window.CDOS.buyUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const fSell = window.CDOS.sellUnitCad ? window.CDOS.sellUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const inv = r ? 1 / r : 0;
@@ -4023,7 +4104,7 @@
         borderLeft: `1px solid ${CD.ink}`,
         background: 'var(--cd-chip)'
       }
-    }, [...FXC, 'CAD'].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [...FXC, home].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("div", {
@@ -4064,7 +4145,7 @@
         borderLeft: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)'
       }
-    }, ['CAD', ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [home, ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("div", {
@@ -4120,7 +4201,7 @@
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Our desk \xB7 ", flagOf(foreign), " ", foreign, " (CAD)"), /*#__PURE__*/React.createElement("div", {
+    }, "Our desk \xB7 ", flagOf(foreign), " ", foreign, " (", home, ")"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between text-[12.5px]"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -4173,7 +4254,7 @@
         borderRadius: 7,
         background: 'var(--cd-chip)'
       }
-    }, ['CAD', ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
+    }, [home, ...FXC].map(c => /*#__PURE__*/React.createElement("option", {
       key: c,
       value: c
     }, (flagOf(c) ? flagOf(c) + ' ' : '') + c)))), /*#__PURE__*/React.createElement("label", {
@@ -4533,6 +4614,18 @@
     background: 'var(--cd-panel)',
     borderRadius: 8
   };
+
+  /* FINTRAC is Canada's regulator. A baseline desk, and any desk whose
+     pack names somebody else, does not get those labels. The York desk
+     still does: its pack says FINTRAC, and the standalone build has no
+     pack to ask. */
+  function showsFintracIdentity(settings) {
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
+    if (settings && settings.baselineRules && !(pack && pack.packId)) return false;
+    if (pack && pack.packId) return /fintrac/i.test(String(pack.regulator || ''));
+    return !(settings && settings.baselineRules);
+  }
 
   /* ---------- shared controls (module scope) ----------
      These MUST live at module scope, not inside SettingsView. Defined inline
@@ -5018,8 +5111,10 @@
     const posture = window.CDOS.jurisdictionPosture ? window.CDOS.jurisdictionPosture(settings) : [];
     const standingOf = settingsField => posture.find(p => p.field === settingsField) || null;
     const line = field => desk && desk[field] || null;
-    const currency = desk && desk.currency || settings.baseCurrency || 'CAD';
-    const authority = desk && desk.regulator || 'your regulator';
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
+    const currency = desk && desk.currency || settings.baseCurrency || '';
+    const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
     const disabled = status !== 'ready' || !!busy;
 
     /* Hand a line back to the pack. Offered only where the desk has taken
@@ -5063,7 +5158,7 @@
         k: 'Looser',
         v: 'above the mandate. A compliance failure, flagged until it is back inside'
       }],
-      example: "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 \u2014 never 12,000"
+      example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
       title: /*#__PURE__*/React.createElement("span", {
@@ -5709,6 +5804,9 @@
     reqPin,
     pinOf
   }) {
+    /* Re-render when the ledger's pack and lines arrive. Without this the
+       compliance tab paints Canada's names and never replaces them. */
+    const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
@@ -6082,8 +6180,15 @@
     // jurisdiction follows Localization: when the operating country resolves to exactly
     // one regulator pack, apply it automatically so the picker, threshold and codes agree.
     useEffect(() => {
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings.baselineRules && !pack);
+      /* A desk the ledger has already named does not get Canada's pack
+         written over it because the country field was blank. */
+      if (pack && pack.packId) return;
+      if (baseline) return;
       const REG = (window.CDOS._compliance || {}).REGIMES || {};
-      const mc = settings.bizCountry || 'Canada';
+      const mc = settings.bizCountry || '';
+      if (!mc) return;
       const match = Object.values(REG).filter(r => r.country === mc);
       if (match.length === 1 && settings.regime !== match[0].id) {
         const r = match[0];
@@ -6096,9 +6201,15 @@
           aggHours: r.aggHours
         }));
       }
-    }, [settings.bizCountry]);
+    }, [settings.bizCountry, settings.baselineRules, deskFacts]);
     // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
-    const cadOfX = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+    const cadOfX = (a, c) => {
+      const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+      if (home === 'CAD') return c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+      if (c === home) return +a || 0;
+      const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+      return per ? (+a || 0) * per : 0;
+    };
     const expList = (() => {
       const list = rows || [];
       const today = new Date().toISOString().slice(0, 10);
@@ -6114,7 +6225,8 @@
         return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
       };
       const full = expOpts.cols === 'all';
-      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', 'CAD value', 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', 'CAD value'];
+      const valueHead = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD') + ' value';
+      const head = full ? ['Ref', 'Date', 'Time', 'Customer', 'Type', 'InCcy', 'InAmt', 'Rate', 'OutCcy', 'OutAmt', 'Fee', valueHead, 'Teller', 'Status', 'Filed', 'Notes'] : ['Ref', 'Date', 'Customer', 'Type', 'Pay-in', 'Pay-out', 'Fee', valueHead];
       const lines = expList.map(x => {
         const cad = cadOfX(x.inAmt, x.inCcy).toFixed(2);
         return (full ? [x.ref, x.date, x.time, x.customer, x.type, x.inCcy, x.inAmt, x.rate, x.outCcy, x.outAmt, x.fee, cad, x.teller, x.status, x.filed ? x.filedInfo && x.filedInfo.ref || 'yes' : '', x.notes] : [x.ref, x.date, x.customer, x.type, x.inAmt + ' ' + x.inCcy, x.outAmt + ' ' + x.outCcy, x.fee, cad]).map(esc).join(',');
@@ -6217,7 +6329,7 @@
         teller: '',
         status: 'open',
         cash: {
-          CAD: 0
+          [window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD']: 0
         }
       }]
     }]);
@@ -6243,7 +6355,7 @@
           teller: '',
           status: 'open',
           cash: {
-            CAD: 0
+            [window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD']: 0
           }
         }]
       };
@@ -6262,7 +6374,11 @@
       log
     };
     const CAPS = [['canDelete', 'Void transactions', 'Reverse a posted record (with a reason).'], ['canExport', 'Export & generate reports', 'CSV export and printable reports.'], ['canViewReports', 'View Dashboard, Reports & Vault', 'Access aggregated figures.'], ['canCloseDay', 'Close out the day', 'Reconcile the drawers and lock / open the trading day.'], ['canEditKYC', 'Edit clients & KYC', 'Create contacts and edit ID details.'], ['canSettings', 'Open Settings', 'Change this configuration.']];
-    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD');
+    const quoteHome = (() => {
+      const p = window.CDOS.deskPack && window.CDOS.deskPack();
+      return p && p.homeCurrency || 'CAD';
+    })();
+    const FXC = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD' && c.code !== quoteHome);
     const hidden = tickerCfg.hidden || [];
     const setT = (patch, note) => {
       setTicker(t => ({
@@ -7345,7 +7461,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Default pay-in currency",
       desc: "Used when a row doesn't name a currency."
     }, /*#__PURE__*/React.createElement("select", {
-      value: icfg.defaultInCcy || 'CAD',
+      value: icfg.defaultInCcy || quoteHome,
       onChange: e => setIc({
         defaultInCcy: e.target.value
       }, `import ccy ${e.target.value}`),
@@ -7821,7 +7937,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Regulatory reporting"), /*#__PURE__*/React.createElement(Row, {
       title: "Cross-border reporting threshold",
-      desc: `International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${settings.regime || 'FINTRAC'}).`
+      desc: `International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${(window.CDOS.getRegime ? window.CDOS.getRegime(settings).authority : '') || 'your regulator'}).`
     }, /*#__PURE__*/React.createElement(Money, {
       k: "threshold"
     })), /*#__PURE__*/React.createElement("div", {
@@ -8895,7 +9011,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       k: "operatingName",
       placeholder: "York Currency Exchange"
     })), /*#__PURE__*/React.createElement(Field, {
-      label: "FINTRAC MSB registration #",
+      label: showsFintracIdentity(settings) ? "FINTRAC MSB registration #" : "MSB registration #",
       desc: "Your money-services-business registration number."
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "msbNumber",
@@ -8941,11 +9057,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }))), /*#__PURE__*/React.createElement(Field, {
       label: "Country"
     }, /*#__PURE__*/React.createElement("select", {
-      value: settings.bizCountry || 'Canada',
+      value: settings.bizCountry || '',
       onChange: e => set('bizCountry', e.target.value),
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
-    }, COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select a country\u2026"), COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
       key: c
     }, c))))), /*#__PURE__*/React.createElement("div", {
       className: "mt-5 pt-4",
@@ -9157,7 +9275,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag
         }
       }, siteMsg));
-    })(), /*#__PURE__*/React.createElement("div", {
+    })(), showsFintracIdentity(settings) ? /*#__PURE__*/React.createElement("div", {
       className: "mt-5 pt-4",
       style: {
         borderTop: `1px solid ${CD.line}`
@@ -9202,7 +9320,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "fintracContactName",
       placeholder: "Compliance officer name"
-    }))))), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })))) : null), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "wallet",
       title: "Locations, tills & people",
       sub: "Set up each branch, add its tills, then assign a staff member to each till. The header station switcher, the Till and the Branch Network all read this one list."
@@ -9396,6 +9514,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fund
       }) => {
         const id = 'b' + Date.now();
+        const homeKey = quoteHome || 'CAD';
         const nb = {
           id,
           name,
@@ -9406,7 +9525,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           dealsToday: 0,
           volToday: 0,
           vault: {
-            CAD: 0
+            [homeKey]: 0
           },
           tills: [{
             id: id + 't1',
@@ -9415,7 +9534,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             operator: '',
             status: 'open',
             cash: {
-              CAD: 0
+              [homeKey]: 0
             }
           }]
         };
@@ -9426,7 +9545,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             kind: 'vault',
             fromB: mainB.id,
             toB: id,
-            ccy: 'CAD',
+            ccy: homeKey,
             amt: fund,
             fromLabel: mainB.code + ' · Vault',
             toLabel: code + ' · Vault'
@@ -9492,7 +9611,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Operating country / jurisdiction",
       desc: "Where this desk operates \u2014 pick the country, then the state or province when one applies."
     }, /*#__PURE__*/React.createElement("select", {
-      value: settings.bizCountry || 'Canada',
+      value: settings.bizCountry || '',
       onChange: e => setSettings(s => ({
         ...s,
         bizCountry: e.target.value,
@@ -9503,10 +9622,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         ...inSty,
         width: 200
       }
-    }, COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select a country\u2026"), COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
       key: c
-    }, c)))), JURIS_REGIONS[settings.bizCountry || 'Canada'] && (() => {
-      const jr = JURIS_REGIONS[settings.bizCountry || 'Canada'];
+    }, c)))), JURIS_REGIONS[settings.bizCountry || ''] && (() => {
+      const jr = JURIS_REGIONS[settings.bizCountry || ''];
       return /*#__PURE__*/React.createElement(Row, {
         title: jr.label,
         desc: `The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`
@@ -9567,7 +9688,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: "var(--cd-brass-text)"
     }), /*#__PURE__*/React.createElement("span", null, "The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held."))), tab === 'compliance' && (() => {
       const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
-      const activeRid = settings.regime || 'FINTRAC';
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
+      const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+      const isOwner = me.role === 'Owner';
+      const recheckDays = +settings.recheckDays || 180;
+      const reverifyDays = +settings.reverifyDays || 365;
+      const escalateHighRisk = settings.escalateHighRisk !== false;
+      const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings && settings.baselineRules || paused ? disclaimer : '');
+      const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
+      const reportLine = window.CDOS.reportingLimit ? window.CDOS.reportingLimit(settings) : null;
+      const reportLabel = reportLine && reportLine.amount != null ? reportLine.label : baseline || pack && pack.packId ? '—' : fmt(+settings.threshold || 10000, base);
+      const baselineReports = regime && regime.reports && regime.reports.length ? regime.reports : [{
+        code: 'CASH-RECORD',
+        name: 'Large cash record'
+      }, {
+        code: 'SUSPICIOUS',
+        name: 'Suspicious transaction'
+      }, {
+        code: 'SANCTIONS-STOP',
+        name: 'Terrorist or sanctioned property'
+      }];
+      /* The standalone build still offers the two browser packs. A desk
+         the ledger has named shows that pack, and nothing else. */
+      const standalone = !paused && !baseline && !(pack && pack.packId);
+      const myCountry = settings.bizCountry || '';
+      const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
+      const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+      const activeRid = settings.regime || '';
       const applyRegime = id => {
         const r = REGIMES[id];
         if (!r) return;
@@ -9581,27 +9731,114 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }));
         log('Jurisdiction pack applied', `${r.authority} · ${r.country}`);
       };
-      const isOwner = me.role === 'Owner';
-      const recheckDays = +settings.recheckDays || 180;
-      const reverifyDays = +settings.reverifyDays || 365;
-      const escalateHighRisk = settings.escalateHighRisk !== false;
-      // jurisdiction follows the operating country set in Localization (same logic).
-      // Canada → FINTRAC only; US → FinCEN only; anything else falls back to all packs.
-      const myCountry = settings.bizCountry || 'Canada';
-      const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
-      const shownRegimes = matched.length ? matched : Object.values(REGIMES);
-      const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
-      return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "compliance-jurisdiction",
+        "data-facts": deskFacts
+      }, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
         title: "Compliance & jurisdiction",
-        sub: "Set your regulator once \u2014 the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
-      }), /*#__PURE__*/React.createElement("div", {
+        sub: baseline ? "These are the international rules. Check they match your country's laws." : "Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
+      }), rulesNotice ? /*#__PURE__*/React.createElement("div", {
+        role: "status",
+        "data-rules-notice": true,
+        className: "mb-4 px-3 py-2 text-[13px]",
+        style: {
+          background: 'var(--cd-brass-soft, #f4efe4)',
+          color: CD.ink,
+          borderRadius: 9
+        }
+      }, rulesNotice) : null, !paused && /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Your jurisdiction"), /*#__PURE__*/React.createElement("div", {
+      }, "Your jurisdiction"), !paused && baseline && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "baseline-pack",
+        className: "text-left p-3 mb-2",
+        style: {
+          background: 'var(--cd-chip)',
+          border: `1.5px solid ${CD.ink}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between mb-1.5"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, "International baseline (FATF)"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "Your country's financial intelligence unit"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.faint
+        }
+      }, "No named regulator")), /*#__PURE__*/React.createElement("span", {
+        className: "text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 999
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "check",
+        s: 10,
+        c: "var(--cd-on-ink)"
+      }), " ACTIVE")), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-2",
+        style: {
+          color: CD.ink
+        }
+      }, baselineReports.map(r => /*#__PURE__*/React.createElement("div", {
+        key: r.code,
+        className: "mt-1"
+      }, r.name, " ", /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: CD.mute,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, r.code))))), !paused && !baseline && pack && pack.packId && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "country-pack",
+        className: "text-left p-3 mb-2",
+        style: {
+          background: 'var(--cd-chip)',
+          border: `1.5px solid ${CD.ink}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between mb-1.5"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, pack.regulator || pack.name), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, pack.name)), /*#__PURE__*/React.createElement("span", {
+        className: "text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 999
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "check",
+        s: 10,
+        c: "var(--cd-on-ink)"
+      }), " ACTIVE")), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, pack.reportName || '')), standalone && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -9660,7 +9897,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.mute
           }
         }, fmt(r.threshold, r.currency), " \xB7 ", r.aggHours, "h rule \xB7 ", r.largeCode, "/", r.wireCode, "/", r.strCode, " \xB7 ", r.watchlists.join('/')));
-      })), !isOwner && /*#__PURE__*/React.createElement("div", {
+      })), !paused && !isOwner && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2",
         style: {
           background: CD.brassSoft,
@@ -9671,7 +9908,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "lock",
         s: 12,
         c: "var(--cd-brass-text)"
-      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), /*#__PURE__*/React.createElement("div", {
+      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !paused && !baseline && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-5 flex items-start gap-1.5",
         style: {
           color: CD.faint
@@ -9708,13 +9945,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), /*#__PURE__*/React.createElement("div", {
+      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), paused ? null : /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-1",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -9732,7 +9969,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), /*#__PURE__*/React.createElement(Row, {
+      }, settings.aggWindowStart || '00:00')), paused ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -9821,7 +10058,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         click: () => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Mandatory check on large deals",
-        desc: `Every deal at or above your reportable threshold (${fmt(+settings.threshold || 10000, base)}) requires this check before committing — even on a verified profile.`
+        desc: `Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`
       }, /*#__PURE__*/React.createElement(Seg, {
         value: settings.largeTxCheck || 'off',
         onPick: v => set('largeTxCheck', v, `large-deal check ${v}`),
@@ -10059,15 +10296,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Spot \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "Spread %"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "We buy"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== 'CAD').map(c => {
+    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
       const spreads = settings.spreads || {};
-      const mid = crossRate(c, 'CAD');
+      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
       const eff = spreadOf(c, settings) * 100;
       const custom = spreads[c] != null && spreads[c] !== '';
       return /*#__PURE__*/React.createElement("tr", {
@@ -10408,11 +10645,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Price shown",
       desc: "How each rate is quoted."
     }, /*#__PURE__*/React.createElement(Seg, {
-      value: tickerCfg.metric,
+      value: quoteHome === 'CAD' ? tickerCfg.metric : 'cadPerUnit',
       onPick: v => setT({
         metric: v
       }, `metric ${v}`),
-      opts: [['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']]
+      opts: quoteHome === 'CAD' ? [['cadPerUnit', 'CAD / unit'], ['perCad', 'Per CAD']] : [['cadPerUnit', quoteHome + ' / unit']]
     })), /*#__PURE__*/React.createElement(Row, {
       title: "Show flags"
     }, /*#__PURE__*/React.createElement(Sw, {
@@ -15206,7 +15443,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Date"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Total (CAD)"), /*#__PURE__*/React.createElement("th", {
+    }, "Total (", homeCcy || 'CAD', ")"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
     }, "Currencies"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
@@ -15620,7 +15857,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   /* Display-only conversion, for totalling a float across currencies in
      the assign modal. It never produces a HOLDING — every quantity on
      this screen came from the ledger. */
-  const cadPer = c => c === 'CAD' ? 1 : crossRate(c, 'CAD') || 0;
+  const cadPer = c => {
+    const home = homeCcy();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    return window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
+  };
   const cadVal = (units, c) => (+units || 0) * cadPer(c);
 
   /* ---- the branch's position, from the book ----
@@ -16470,7 +16712,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2"
     }, "Teller"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Float \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Float \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "Variance"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2"
@@ -17920,7 +18162,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, totalOnHand == null ? '—' : fmt(totalOnHand, position && position.homeCurrency || 'CAD'), " on hand", onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : '', lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
+    }, totalOnHand == null ? '—' : fmt(totalOnHand, position && position.homeCurrency || homeCcy()), " on hand", onLedger ? ' · on the ledger' : serverBacked ? ' · not on the ledger' : '', lowList.length ? ` · ${lowList.length} low` : '', openShifts ? ` · ${openShifts} float${openShifts === 1 ? '' : 's'} out` : '', myB && !myB.main && mainB ? ` · funded from ${mainB.code}` : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2",
       style: {
         position: 'relative'
@@ -18381,10 +18623,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return '';
     }
   };
-  const cadOf = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) * (crossRate(c, 'CAD') || 0);
+  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+  /* Canada: CAD notes count as themselves, everything else at the CAD
+     cross — the same sum this screen has always shown. Any other desk
+     values the home pile at par and the rest from the tape quote. */
+  const cadOf = (a, c) => {
+    const home = homeCcy();
+    if (c === home) return +a || 0;
+    if (home === 'CAD') return (+a || 0) * (crossRate(c, homeCcy()) || 0);
+    const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+    return per ? (+a || 0) * per : 0;
+  };
   const SKEY = 'cdos_stations_v2',
     MKEY = 'cdos_branch_moves_v2';
   const BCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY'];
+  const bookCcys = () => {
+    const home = homeCcy();
+    return BCCYS.indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS);
+  };
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = {
     CAD: 'var(--cd-ink)',
@@ -18526,9 +18782,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }]
     }];
   }
-  const tillCad = t => BCCYS.reduce((s, c) => s + cadOf(t.cash && t.cash[c] || 0, c), 0);
+  const tillCad = t => bookCcys().reduce((s, c) => s + cadOf(t.cash && t.cash[c] || 0, c), 0);
   const vaultUnits = (b, c) => b.vault && b.vault[c] || 0;
-  const vaultCad = b => BCCYS.reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
+  const vaultCad = b => bookCcys().reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
   const tillsCad = b => (b.tills || []).reduce((s, t) => s + tillCad(t), 0);
   const branchUnits = (b, c) => vaultUnits(b, c) + (b.tills || []).reduce((s, t) => s + (t.cash && t.cash[c] || 0), 0);
   const branchCad = b => vaultCad(b) + tillsCad(b);
@@ -18637,7 +18893,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return o && o.id;
     });
     const toB = branches.find(x => x.id === toBId);
-    const [ccy, setCcy] = useState('CAD');
+    const [ccy, setCcy] = useState(homeCcy);
     const [amount, setAmount] = useState('');
     const amt = +amount || 0;
     useEffect(() => {
@@ -18985,7 +19241,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       mono: true,
       value: ccy,
       onChange: setCcy
-    }, BCCYS.map(c => /*#__PURE__*/React.createElement("option", {
+    }, bookCcys().map(c => /*#__PURE__*/React.createElement("option", {
       key: c
     }, c)))), /*#__PURE__*/React.createElement("input", {
       value: amount,
@@ -19051,7 +19307,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: amt > 0 && !short && !sameV ? CD.mute : CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), 'CAD')}` : 'Recorded to History with your name on it'), /*#__PURE__*/React.createElement("div", {
+    }, amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), homeCcy())}` : 'Recorded to History with your name on it'), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
@@ -19099,7 +19355,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return base + '-' + String(n + 1).padStart(2, '0');
     };
     const effCode = (code.trim() || autoCode()).toUpperCase();
-    const mainAvail = mainB ? (mainB.vault || {}).CAD || 0 : 0;
+    const home = homeCcy();
+    const mainAvail = mainB ? (mainB.vault || {})[home] || 0 : 0;
     const amt = +fund || 0;
     const short = amt > mainAvail;
     const valid = !!name.trim() && !short;
@@ -19221,7 +19478,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: e.id,
       value: e.id
     }, e.name, " \xB7 ", e.role)))), /*#__PURE__*/React.createElement(F, {
-      label: "Opening float \xB7 CAD",
+      label: `Opening float · ${home}`,
       hint: `main vault holds ${num(mainAvail)}`
     }, /*#__PURE__*/React.createElement("input", {
       value: fund,
@@ -19241,7 +19498,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.flag,
         borderRadius: 8
       }
-    }, "The main vault only holds ", num(mainAvail), " CAD \u2014 run more cash in first."), amt > 0 && !short && /*#__PURE__*/React.createElement("div", {
+    }, "The main vault only holds ", num(mainAvail), " ", home, " \u2014 run more cash in first."), amt > 0 && !short && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -19262,7 +19519,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         fontFamily: 'Space Mono',
         color: CD.ink
       }
-    }, num(amt), " CAD")), /*#__PURE__*/React.createElement("div", {
+    }, num(amt), " ", home)), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -19430,7 +19687,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     h = 10
   }) {
     const total = branchCad(b) || 1;
-    const segs = BCCYS.map(c => ({
+    const segs = bookCcys().map(c => ({
       c,
       v: cadOf(branchUnits(b, c), c)
     })).filter(s => s.v > 0).sort((a, z) => z.v - a.v);
@@ -19936,7 +20193,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           operator: '',
           status: 'open',
           cash: {
-            CAD: 0
+            [homeCcy()]: 0
           }
         }]
       };
@@ -20012,7 +20269,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.mute
       }
-    }, openN, " of ", branches.length, " branches open \xB7 ", tillsOpen, " tills live \xB7 ", fmt(netCash, 'CAD'), " network cash"))), /*#__PURE__*/React.createElement("div", {
+    }, openN, " of ", branches.length, " branches open \xB7 ", tillsOpen, " tills live \xB7 ", fmt(netCash, homeCcy()), " network cash"))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, canRail && /*#__PURE__*/React.createElement("button", {
       onClick: () => setMoving({}),
@@ -20061,7 +20318,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "flex-1 overflow-auto p-4"
     }, tab === 'network' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-5 gap-2 mb-3"
-    }, [['Network cash · CAD', fmt(netCash, 'CAD')], ['In vaults', fmt(netVault, 'CAD')], ['In tills', fmt(netTills, 'CAD')], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, 'CAD')]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
+    }, [['Network cash · ' + homeCcy(), fmt(netCash, homeCcy())], ['In vaults', fmt(netVault, homeCcy())], ['In tills', fmt(netTills, homeCcy())], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, homeCcy())]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       className: "p-3",
       style: {
@@ -20104,7 +20361,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "units held \xB7 CAD value")), /*#__PURE__*/React.createElement("table", {
+    }, "units held \xB7 ", homeCcy(), " value")), /*#__PURE__*/React.createElement("table", {
       className: "w-full text-sm border-collapse"
     }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
       style: {
@@ -20127,9 +20384,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "Network"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "CAD value"), /*#__PURE__*/React.createElement("th", {
+    }, homeCcy(), " value"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "Mix"))), /*#__PURE__*/React.createElement("tbody", null, BCCYS.map(c => {
+    }, "Mix"))), /*#__PURE__*/React.createElement("tbody", null, bookCcys().map(c => {
       const netUnits = branches.reduce((s, b) => s + branchUnits(b, c), 0);
       const cad = cadOf(netUnits, c);
       const mix = netCash ? cad / netCash * 100 : 0;
@@ -20171,7 +20428,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontVariantNumeric: 'tabular-nums',
           color: CD.mute
         }
-      }, fmt(cad, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, fmt(cad, homeCcy())), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex items-center justify-end gap-2"
@@ -20210,7 +20467,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.ink
       }
-    }, "Total \xB7 CAD"), branches.map(b => /*#__PURE__*/React.createElement("td", {
+    }, "Total \xB7 ", homeCcy()), branches.map(b => /*#__PURE__*/React.createElement("td", {
       key: b.id,
       className: "px-2 py-2 text-right font-semibold",
       style: {
@@ -20227,7 +20484,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: CD.ink
       },
       colSpan: 2
-    }, fmt(netCash, 'CAD')), /*#__PURE__*/React.createElement("td", null))))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(netCash, homeCcy())), /*#__PURE__*/React.createElement("td", null))))), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] font-semibold mb-2",
       style: {
         color: CD.ink
@@ -20237,7 +20494,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, branches.map(b => {
       const cash = branchCad(b);
       const closed = b.status === 'closed';
-      const fx = BCCYS.filter(c => c !== 'CAD').reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0);
+      const fx = bookCcys().filter(c => c !== homeCcy()).reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0);
       return /*#__PURE__*/React.createElement("div", {
         key: b.id,
         className: "p-3.5",
@@ -20273,7 +20530,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           color: CD.mute
         }
-      }, "vault ", fmt(vaultCad(b), 'CAD'), " \xB7 tills ", fmt(tillsCad(b), 'CAD'), " \xB7 ", cash ? Math.round(fx / cash * 100) : 0, "% in FX")), /*#__PURE__*/React.createElement("button", {
+      }, "vault ", fmt(vaultCad(b), homeCcy()), " \xB7 tills ", fmt(tillsCad(b), homeCcy()), " \xB7 ", cash ? Math.round(fx / cash * 100) : 0, "% in FX")), /*#__PURE__*/React.createElement("button", {
         onClick: () => toggleBranch(b.id),
         className: "text-[10px] px-2 py-0.5 font-semibold",
         style: {
@@ -20285,7 +20542,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         b: b
       }), /*#__PURE__*/React.createElement("div", {
         className: "mt-2.5 flex flex-wrap gap-1.5"
-      }, BCCYS.filter(c => branchUnits(b, c) > 0).map(c => /*#__PURE__*/React.createElement("span", {
+      }, bookCcys().filter(c => branchUnits(b, c) > 0).map(c => /*#__PURE__*/React.createElement("span", {
         key: c,
         className: "flex items-center gap-1 text-[10.5px]",
         style: {
@@ -20352,7 +20609,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           color: CD.mute
         }
-      }, b.city, " \xB7 ", fmt(branchCad(b), 'CAD')))), /*#__PURE__*/React.createElement("div", {
+      }, b.city, " \xB7 ", fmt(branchCad(b), homeCcy())))), /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2"
       }, /*#__PURE__*/React.createElement("button", {
         onClick: () => addTill(b.id),
@@ -20395,7 +20652,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const runOut = sumIf(m => m.kind === 'vault' && m.from === vLabel);
         const net = returned + runIn - issued - runOut;
         const recent = vMoves.slice(0, 5);
-        const held = BCCYS.filter(c => vaultUnits(b, c) > 0);
+        const held = bookCcys().filter(c => vaultUnits(b, c) > 0);
         return /*#__PURE__*/React.createElement("div", {
           style: {
             borderBottom: `1px solid ${CD.lineSoft}`,
@@ -20440,7 +20697,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           style: {
             color: CD.mute
           }
-        }, today.length ? `today · issued ${fmt(issued, 'CAD')} · back ${fmt(returned + runIn, 'CAD')} · net ${net >= 0 ? '+' : ''}${fmt(net, 'CAD')}` : b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)), /*#__PURE__*/React.createElement("div", {
+        }, today.length ? `today · issued ${fmt(issued, homeCcy())} · back ${fmt(returned + runIn, homeCcy())} · net ${net >= 0 ? '+' : ''}${fmt(net, homeCcy())}` : b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)), /*#__PURE__*/React.createElement("div", {
           className: "text-right flex-none",
           style: {
             width: 110
@@ -20451,14 +20708,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             color: CD.faint,
             fontFamily: 'Space Mono, monospace'
           }
-        }, "Vault \xB7 CAD"), /*#__PURE__*/React.createElement("div", {
+        }, "Vault \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("div", {
           className: "text-[13.5px] font-bold",
           style: {
             color: CD.ink,
             fontFamily: 'Space Mono',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(vaultCad(b), 'CAD'))), /*#__PURE__*/React.createElement("div", {
+        }, fmt(vaultCad(b), homeCcy()))), /*#__PURE__*/React.createElement("div", {
           className: "flex items-center gap-1.5 flex-none",
           onClick: e => e.stopPropagation()
         }, canRail && /*#__PURE__*/React.createElement("button", {
@@ -20547,7 +20804,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               color: CD.faint,
               width: 90
             }
-          }, fmt(cadOf(u, c), 'CAD')));
+          }, fmt(cadOf(u, c), homeCcy())));
         }) : /*#__PURE__*/React.createElement("div", {
           className: "px-3 py-4 text-center text-[11px]",
           style: {
@@ -20709,14 +20966,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             color: CD.faint,
             fontFamily: 'Space Mono, monospace'
           }
-        }, "Drawer \xB7 CAD"), /*#__PURE__*/React.createElement("div", {
+        }, "Drawer \xB7 ", homeCcy()), /*#__PURE__*/React.createElement("div", {
           className: "text-[13.5px] font-bold",
           style: {
             color: CD.ink,
             fontFamily: 'Space Mono',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, fmt(tillCad(t), 'CAD'))), /*#__PURE__*/React.createElement("div", {
+        }, fmt(tillCad(t), homeCcy()))), /*#__PURE__*/React.createElement("div", {
           className: "flex items-center gap-1.5 flex-none"
         }, tillCad(t) === 0 && !isActive && !t.operator && (b.tills || []).length > 1 ? /*#__PURE__*/React.createElement("button", {
           onClick: () => setConfirmDel({
@@ -20801,7 +21058,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: {
           maxWidth: 720
         }
-      }, [['Ordered in · today', fmt(ordered, 'CAD'), CD.green], ['Issued to tills · today', fmt(issued, 'CAD'), CD.mute], ['Back to vaults · today', fmt(returned, 'CAD'), CD.green], ['Between branches · today', fmt(runs, 'CAD'), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
+      }, [['Ordered in · today', fmt(ordered, homeCcy()), CD.green], ['Issued to tills · today', fmt(issued, homeCcy()), CD.mute], ['Back to vaults · today', fmt(returned, homeCcy()), CD.green], ['Between branches · today', fmt(runs, homeCcy()), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => /*#__PURE__*/React.createElement("div", {
         key: l,
         className: "px-3 py-2",
         style: {
@@ -20870,7 +21127,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         className: "px-3 py-2 text-right"
       }, "Amount"), /*#__PURE__*/React.createElement("th", {
         className: "px-3 py-2 text-right"
-      }, "CAD"), /*#__PURE__*/React.createElement("th", {
+      }, homeCcy()), /*#__PURE__*/React.createElement("th", {
         className: "px-3 py-2"
       }, "By"))), /*#__PURE__*/React.createElement("tbody", null, scoped.map(m => {
         const KB = {
@@ -20958,7 +21215,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             fontVariantNumeric: 'tabular-nums',
             color: CD.mute
           }
-        }, fmt(m.cadVal, 'CAD')), /*#__PURE__*/React.createElement("td", {
+        }, fmt(m.cadVal, homeCcy())), /*#__PURE__*/React.createElement("td", {
           className: "px-3 py-2 text-[11.5px]",
           style: {
             color: CD.mute
@@ -21060,7 +21317,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(0, 'CAD'), " \u2014 empty \u2713")), /*#__PURE__*/React.createElement("p", {
+      }, fmt(0, homeCcy()), " \u2014 empty \u2713")), /*#__PURE__*/React.createElement("p", {
         className: "text-[12px] m-0",
         style: {
           color: CD.mute,
@@ -26526,7 +26783,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const structuring = !single && customer && limit.amount != null && recentTotal >= limit.amount;
     const rec = clients[customer];
     const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : !rec || !rec.idType || !rec.idNum ? 'missing ID' : rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok';
-    const idRequired = single || inCadEquiv >= 3000; // FINTRAC: ID at $3k, LCTR at $10k
+    const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idRequired = single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
     const idBlocked = idRequired && kyc !== 'ok';
     const canSave = amtN > 0 && (isCheque ? maker.trim() && chequeNumber.trim() : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || marginAck && marginReason.trim()) && (!single || cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim()));
     const pickClient = n => {
@@ -27108,7 +27368,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       s: 11,
       c: CD.amber
     }), lockClock))), /*#__PURE__*/React.createElement(Field, {
-      label: "Fee (CAD)"
+      label: `Fee (${homeCcy() || 'CAD'})`
     }, /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
@@ -27349,7 +27609,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'LCTR')), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable \u2014 capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -28164,7 +28424,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }, "Fee (", homeCcy() || 'CAD', ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -29292,7 +29552,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, d.n, " posted transactions \xB7 CAD-equivalent"))), /*#__PURE__*/React.createElement("button", {
+    }, d.n, " posted transactions \xB7 ", homeCcy() || 'CAD', "-equivalent"))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "p-1.5",
       style: {
@@ -31210,6 +31470,37 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     sellUnitCad,
     CommitBtn
   } = window.CDOS;
+  const deskHome = () => {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    return pack && pack.homeCurrency || 'CAD';
+  };
+  /* The published board's home-per-unit mid — the same number the server
+     multiplies the cash by (`input × fromMid`). A missing row is null,
+     never zero: zero is how a real pile of foreign notes looks like
+     nothing and walks past the identification line. */
+  function boardHomePerUnit(ccy) {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      const row = cfg && cfg.rows && cfg.rows[String(ccy || '').toUpperCase()];
+      if (!row || row.show === false) return null;
+      const mid = typeof row.mid === 'number' ? row.mid : Number(row.mid);
+      if (mid > 0 && isFinite(mid)) return mid;
+    } catch (e) {}
+    return null;
+  }
+  /* Home value of cash handed over. Canada keeps the CAD cross this
+     form has always used. Any other desk uses the board mid above.
+     Nothing handed over is 0. A positive foreign amount with no mid
+     is null — identification required, not "no ID needed". */
+  function cashInHome(amount, ccy, home) {
+    const n = +amount || 0;
+    if (!ccy || ccy === home) return n;
+    if (home === 'CAD') return n / (crossRate('CAD', ccy) || 1);
+    if (!(n > 0)) return 0;
+    const per = boardHomePerUnit(ccy);
+    return per == null ? null : n * per;
+  }
+  const shownRate = r => r > 0 && isFinite(r) ? num(r) : 'Rate unavailable';
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2',
@@ -31312,6 +31603,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
   function boardOrderedCCY() {
+    const home = deskHome();
+    const base = home && CCY.indexOf(home) < 0 ? [home].concat(CCY) : CCY;
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
@@ -31319,10 +31612,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         order.forEach((c, i) => {
           rank[c] = i;
         });
-        return [...CCY].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return CCY;
+    return base;
   }
   // remittance destinations → payout currency
   const DEST = [{
@@ -32018,19 +32311,28 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   }) {
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
-      const cadOf = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
+      const home = deskHome();
       const winDays = settings && settings.structuringDays || 30;
       const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
       let total = 0,
-        windowCad = 0;
+        windowCad = 0,
+        unknown = false;
       const cc = {};
       h.forEach(r => {
-        const cad = cadOf(r.inAmt, r.inCcy);
-        total += cad;
-        if (r.date >= cutoff) windowCad += cad;
-        const c = r.outCcy && r.outCcy !== 'CAD' ? r.outCcy : r.inCcy !== 'CAD' ? r.inCcy : null;
+        const cad = cashInHome(r.inAmt, r.inCcy, home);
+        if (cad == null) {
+          unknown = true;
+        } else {
+          total += cad;
+          if (r.date >= cutoff) windowCad += cad;
+        }
+        const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) cc[c] = (cc[c] || 0) + 1;
       });
+      if (unknown) {
+        total = null;
+        windowCad = null;
+      }
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return {
@@ -32078,8 +32380,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
-    const over = line != null && s.windowCad >= line;
-    const near = line != null && !over && s.windowCad >= line * 0.7;
+    const over = line != null && s.windowCad != null && s.windowCad >= line;
+    const near = line != null && s.windowCad != null && !over && s.windowCad >= line * 0.7;
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return /*#__PURE__*/React.createElement("div", {
       className: "mt-2 overflow-hidden",
@@ -32153,14 +32455,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
-      value: fmt(s.windowCad, 'CAD'),
-      sub: over ? 'over the line' : near ? 'nearing line' : 'within range',
+      value: s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome()),
+      sub: s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range',
       tone: over ? CD.flag : near ? CD.amber : CD.ink,
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
       value: s.top || '—',
-      sub: s.count > 0 ? `${fmt(s.total, 'CAD')} lifetime` : 'new',
+      sub: s.count > 0 ? s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
       divider: true
     })));
@@ -32394,6 +32696,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     serverBacked,
     onServerPosted
   }) {
+    const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients));
@@ -32428,7 +32731,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
 
     // exchange
-    const [inCcy, setInCcy] = useState('CAD');
+    const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false);
@@ -32510,7 +32813,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       lockedRate: lockLive && !override ? lockLive.rate : null,
       overrideRate: override && manualRate !== '' ? manualRate : null
     } : isSend ? {
-      inCcy: 'CAD',
+      inCcy: home,
       outCcy: payoutCcy,
       inAmt: amtN,
       settings,
@@ -32554,18 +32857,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ccy: payoutCcy
     } : isCheque ? {
       amt: +(amtN - chequeFee).toFixed(2),
-      ccy: 'CAD'
+      ccy: home
     } : isReceive ? {
       amt: amtN,
       ccy: outCcy
     } : {
       amt: amtN,
-      ccy: 'CAD'
+      ccy: home
     }; // MO / Bill: face value out
 
-    // CAD-equivalent of the cash the customer hands over (threshold basis)
-    const collectCad = isExchange ? inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are in CAD or treated as CAD-equiv
-    const inCadEquiv = isExchange ? inCcy === 'CAD' ? amtN : amtN / (crossRate('CAD', inCcy) || 1) : amtN;
+    // Home value of the cash the customer hands over (threshold basis).
+    const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
+    const collectCad = isExchange ? toHome(amtN, inCcy) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are already in the desk's currency
+    const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
     // margin (exchange + send carry FX spread; others are fee-only)
     const spreadCadLive = isExchange || isSend ? pricing.marginCad || 0 : 0;
@@ -32587,24 +32891,43 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : {
       largeCode: limit.code,
       threshold: limit.amount,
-      idAt: 3000
+      idAt: null
     };
     const TH = limit.amount;
-    const idFloor = regime.idAt || 3000;
+    const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+    const idFloor = paused ? null : regime.idAt == null ? null : regime.idAt;
     const rec = clients[customer];
     const kyc = !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
-    const single = TH != null && inCadEquiv >= TH;
-    const idRequired = single || inCadEquiv >= idFloor || isSend; // remittance always needs sender ID
+    const unpriced = inCadEquiv == null;
+    const single = TH != null && !unpriced && inCadEquiv >= TH;
+    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
-    const recentTotal = useMemo(() => {
-      if (!customer) return 0;
-      return live.filter(o => o.customer === customer).reduce((s, o) => s + (o.inCcy === 'CAD' ? +o.inAmt || 0 : (+o.inAmt || 0) / (crossRate('CAD', o.inCcy) || 1)), 0) + inCadEquiv;
-    }, [customer, live, inCadEquiv]);
-    const structuring = TH != null && !single && customer && recentTotal >= TH;
+    const recent = useMemo(() => {
+      if (!customer) return {
+        sum: 0,
+        unknown: false
+      };
+      let sum = 0,
+        unknown = false;
+      live.forEach(o => {
+        if (o.customer !== customer) return;
+        const v = toHome(o.inAmt, o.inCcy);
+        if (v == null) unknown = true;else sum += v;
+      });
+      return {
+        sum,
+        unknown
+      };
+    }, [customer, live, inCcy, home]);
+    const recentTotal = recent.unknown || unpriced ? null : recent.sum + inCadEquiv;
+    /* A prior deal we cannot value is not a zero. Leaving it out would
+       let the window sit under the line. The deal in front of us is
+       already identification-required when it itself has no rate. */
+    const structuring = TH != null && !single && !!customer && (recent.unknown || recentTotal != null && recentTotal >= TH || unpriced && recent.sum >= TH);
 
     // ---- per-type requirement checklist (the "make it green" list) ----
     const reqs = [];
@@ -32674,7 +32997,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: !!customer && idOk,
       warn: !!customer && !idOk,
       label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -32777,7 +33100,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         return;
       }
       const held = (r.status === 'held' || r.status === 'verified') && r.rate > 0 && r.total > 0;
-      setInCcy('CAD');
+      setInCcy(home);
       setOutCcy(r.ccy);
       if (held) {
         setInAmt(String(r.total));
@@ -32855,7 +33178,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           to: outCcy,
           inputAmount: window.CDOS.Backend.asMoney(amtN),
           feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === 'CAD' ? 'customer_buy_foreign' : 'customer_sell_foreign'
+          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign'
         });
         if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
@@ -33002,7 +33325,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         draweeBank: draweeBank.trim() || undefined,
         chequeType: chequeType.id,
         typeLabel: chequeType.label,
-        currency: 'CAD',
+        currency: home,
         faceAmount: window.CDOS.Backend.asMoney(amtN),
         feeAmount: window.CDOS.Backend.asMoney(chequeFee),
         holdDays: chequeType.holdDays || 0,
@@ -33113,7 +33436,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: `${benName.trim()} · ${dest.country}`,
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: rateN,
           outCcy: payoutCcy,
@@ -33141,10 +33464,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       } else if (isCheque) {
         tx = newTx({
           ...base,
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: +(amtN - chequeFee).toFixed(2),
           fee: chequeFee,
           profitCad: chequeFee,
@@ -33154,10 +33477,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: payee.trim(),
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: amtN,
           fee: feeN,
           profitCad: feeN,
@@ -33168,10 +33491,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           beneficiary: biller.trim(),
-          inCcy: 'CAD',
+          inCcy: home,
           inAmt: amtN,
           rate: 1,
-          outCcy: 'CAD',
+          outCcy: home,
           outAmt: amtN,
           fee: feeN,
           profitCad: feeN,
@@ -33186,7 +33509,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx.serverObligationId = posted.obligationId;
       }
       // house auto-tag rules (Settings → Tagged) — applied once, as the deal posts
-      const _atOver = +(settings || {}).autoTagOver > 0 && collectCad >= +settings.autoTagOver;
+      const _atOver = +(settings || {}).autoTagOver > 0 && collectCad != null && collectCad >= +settings.autoTagOver;
       const _atRiskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /enhanced|high/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
       const _atRisk = !!(settings || {}).autoTagRisk && rec && (_atRiskLvl === 'Medium' || _atRiskLvl === 'High');
       const _atNew = !!(settings || {}).autoTagNew && customer && !live.some(o => o.customer === customer);
@@ -33195,7 +33518,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx.tagInfo = {
           by: 'Auto-rule',
           at: stamp(),
-          note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, 'CAD')}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client'
+          note: _atOver ? `Auto-tagged: at/over ${fmt(+settings.autoTagOver, home)}` : _atRisk ? `Auto-tagged: ${rec.risk || 'risk'} risk client` : 'Auto-tagged: first deal for a new client'
         };
       }
       setRows(r => [tx, ...r]);
@@ -33217,7 +33540,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           customer: customer || 'Walk-in (no client)',
           typeId: chequeType.id,
           typeLabel: chequeType.label,
-          ccy: 'CAD',
+          ccy: home,
           amount: amtN,
           feeCad: chequeFee,
           netCad: net,
@@ -33240,7 +33563,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           createdBy: me.name
         }, ...(listv || [])]);
       }
-      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : 'CAD'}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
+      log('Transaction recorded', `${ref} · ${meta.short} · ${customer || 'walk-in'} · ${num(amtN)} ${isExchange ? inCcy : home}${single ? ' · REPORTABLE' : ''}${needOverride ? ' · below-floor' : ''}`);
       if (tq && isExchange) {
         tgRedeem(tq.ref, ref);
         log('Text quote redeemed', tq.ref + ' → ' + ref + ' · ' + tq.phone);
@@ -33263,21 +33586,21 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       title: 'Send money',
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
-      give: `${num(amtN)} CAD`,
-      rateLine: `1 CAD = ${num(rateN)} ${payoutCcy}`,
+      give: `${num(amtN)} ${home}`,
+      rateLine: `1 ${home} = ${shownRate(rateN)} ${payoutCcy}`,
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} fee` : 'No service fee'
+      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${num(rateN)} ${outCcy}`,
+      rateLine: `1 ${inCcy} = ${shownRate(rateN)} ${outCcy}`,
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, 'CAD')} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
+      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
     /* ---------------- render ---------------- */
@@ -33457,7 +33780,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", rateN ? num(rateN) : '—', " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       className: "p-1",
@@ -33490,10 +33813,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : num(rateN),
+      value: override ? manualRate : shownRate(rateN),
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(num(pricing.deskRate));
+          setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : '');
           setOverride(true);
         }
       },
@@ -33520,7 +33843,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "lock",
       s: 11,
       c: CD.amber
-    }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -33754,10 +34077,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays (CAD)"), /*#__PURE__*/React.createElement(Money, {
+    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays (", home, ")"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
     }), /*#__PURE__*/React.createElement("div", {
@@ -33770,7 +34093,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " 1 CAD = ", num(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " 1 ", home, " = ", shownRate(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -33778,7 +34101,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-3 grid grid-cols-2 gap-2"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -33829,7 +34152,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onCcy: setOutCcy,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -33847,7 +34170,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
-      hint: `${chequeType.feePct}% · min ${fmt(chequeType.feeMin, 'CAD')} · ${chequeType.holdDays}d hold`
+      hint: `${chequeType.feePct}% · min ${fmt(chequeType.feeMin, home)} · ${chequeType.holdDays}d hold`
     }, "Cheque type"), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, chequeSched.map(t => {
@@ -33866,7 +34189,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Cheque amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", {
@@ -33935,7 +34258,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: 'var(--cd-brass-text)'
       }
-    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmt(out.amt, 'CAD')), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmt(chequeFee, 'CAD')), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(TODAY, chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'))), isMO && /*#__PURE__*/React.createElement("div", {
+    }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", null, fmt(out.amt, home)), " \xB7 keep ", /*#__PURE__*/React.createElement("b", null, fmt(chequeFee, home)), (chequeType.holdDays || 0) > 0 && _K ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 holds to ", _K.addDays(TODAY, chequeType.holdDays)) : ' · no hold') : 'Enter the cheque amount'))), isMO && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-3",
       style: {
         background: 'var(--cd-panel)',
@@ -33951,10 +34274,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Face amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -33975,11 +34298,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, fmt(amtN + feeN, 'CAD')), " for a ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(amtN + feeN, home)), " for a ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, fmt(amtN, 'CAD')), " money order.")), isBill && /*#__PURE__*/React.createElement("div", {
+    }, fmt(amtN, home)), " money order.")), isBill && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-3",
       style: {
         background: 'var(--cd-panel)',
@@ -34003,10 +34326,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Amount"), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
-      ccy: "CAD",
+      ccy: home,
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (CAD)"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
@@ -34027,7 +34350,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, fmt(amtN + feeN, 'CAD')), " \u2014 ", fmt(amtN, 'CAD'), " to biller, ", fmt(feeN, 'CAD'), " fee.")), single && /*#__PURE__*/React.createElement("div", {
+    }, fmt(amtN + feeN, home)), " \u2014 ", fmt(amtN, home), " to biller, ", fmt(feeN, home), " fee.")), single && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
@@ -34253,7 +34576,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 15,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? inCcy : isReceive ? out.ccy : 'CAD'))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? inCcy : isReceive ? out.ccy : home))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 py-1",
       style: {
         color: 'var(--cd-on-ink-faint)'
@@ -34305,7 +34628,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : 'CAD'} = ${num(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, 'CAD')}` : feeN > 0 ? `fee ${fmt(feeN, 'CAD')}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -34328,7 +34651,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(profitCad, 'CAD'), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
+    }, fmt(profitCad, home), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         background: 'var(--cd-panel)',
@@ -34368,7 +34691,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "shield",
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
-    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, 'CAD')}.`))), /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
       className: "flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -34523,6 +34846,87 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }
   };
   const cadOf = (amt, c) => c === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', c) || 1);
+  /* Money as integer cents. The server adds the same figures with
+     decimal.js; a binary float will not land on 799.99. */
+  function centsOf(value) {
+    if (value == null || value === '') return null;
+    const text = String(value).trim();
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(text);
+    if (!match) return null;
+    const frac = (match[2] || '').slice(0, 2);
+    return BigInt(match[1]) * 100n + BigInt((frac + '00').slice(0, 2));
+  }
+  function centsText(cents) {
+    const whole = cents / 100n;
+    const frac = (cents % 100n).toString().padStart(2, '0');
+    return whole.toString() + '.' + frac;
+  }
+  function lowerCents(left, right) {
+    if (left == null) return right;
+    if (right == null) return left;
+    return left <= right ? left : right;
+  }
+  /* What the server will judge this transfer against.
+      A send is the amount typed plus the fee. A receive is the payout.
+     Both are already the desk's home currency — the box is not Canadian
+     dollars, and nothing here converts it. On the baseline the binding
+     line is the lower of the remittance line and the desk's own line.
+     No remittance line (no rate, or a stale one) means identification
+     is required. A country pack, Canada included, uses its own
+     identification line and does not substitute the baseline's. */
+  function transferRuling({
+    direction,
+    principal,
+    fee,
+    payout,
+    baseline,
+    remittanceLine,
+    deskLine,
+    idLine,
+    reportLine
+  }) {
+    const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
+    if (blank) return {
+      homeAmount: null,
+      reportable: null,
+      idRequired: false
+    };
+    const cash = direction === 'receive' ? centsOf(payout) : (() => {
+      const base = centsOf(principal);
+      const extra = centsOf(fee == null || String(fee).trim() === '' ? '0' : fee);
+      if (base == null || extra == null) return null;
+      return base + extra;
+    })();
+    if (cash == null) return {
+      homeAmount: null,
+      reportable: null,
+      idRequired: false
+    };
+    const homeAmount = centsText(cash);
+    const report = centsOf(reportLine);
+    let line = null;
+    if (baseline) {
+      const remittance = centsOf(remittanceLine);
+      if (remittance == null) return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: true
+      };
+      line = lowerCents(remittance, centsOf(deskLine));
+    } else {
+      line = centsOf(idLine);
+      if (line == null) return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: true
+      };
+    }
+    return {
+      homeAmount,
+      reportable: report == null ? null : cash >= report,
+      idRequired: cash >= line
+    };
+  }
 
   /* ---- the lifecycle. Same keys for send & receive; labels adapt. ---- */
   const FLOW = ['created', 'sent', 'transit', 'paid'];
@@ -35304,32 +35708,45 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (!partners.find(p => p.name === partner)) setPartner(partners[0] ? partners[0].name : '');
     }, [corridorId, method]);
     const amtN = parseFloat(payAmt) || 0;
-    // SEND: customer pays CAD, beneficiary gets foreign. RECEIVE: foreign in, customer gets CAD.
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const limit = reportingLimit(settings);
+    const thresholds = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = packNow && packNow.homeCurrency || thresholds && thresholds.currency || limit.currency || 'CAD';
+    const baseline = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline') || settings && settings.baselineRules && !(packNow && packNow.packId));
+    // SEND: customer pays home currency, beneficiary gets foreign.
+    // RECEIVE: foreign in, customer gets home currency.
     const pricing = useMemo(() => direction === 'send' ? priceDeal({
-      inCcy: 'CAD',
+      inCcy: home,
       outCcy: recvCcy,
       inAmt: amtN,
       settings
     }) : priceDeal({
       inCcy: recvCcy,
-      outCcy: 'CAD',
+      outCcy: home,
       inAmt: amtN,
       settings
-    }), [direction, recvCcy, amtN, settings]);
+    }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
-    const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    /* The desk's own reporting line, from the jurisdiction pack. Null-safe:
-       with no threshold to compare against the honest answer is "cannot
-       say", and treating that as "not reportable" clears a deal nobody
-       checked. */
-    const limit = reportingLimit(settings);
-    const reportable = limit.amount != null && cadEquiv >= limit.amount;
     const kyc = (() => {
       const c = clients[senderName];
       return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
     })();
-    const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
+    const ruling = transferRuling({
+      direction,
+      principal: payAmt,
+      fee,
+      payout: direction === 'receive' && recvAmt ? recvAmt.toFixed(2) : '',
+      baseline,
+      remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
+      deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
+      idLine: idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
+      reportLine: limit.amount
+    });
+    const homeAmount = ruling.homeAmount;
+    const reportable = ruling.reportable;
+    const idRequired = ruling.idRequired;
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
     const pickSender = n => {
@@ -35375,8 +35792,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const pin = Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899);
       const seqL = rows.filter(r => r.date === TODAY && r.status !== 'void').length + 1;
       const lref = mkRef(TODAY, seqL);
-      const lin = direction === 'send' ? 'CAD' : recvCcy,
-        lout = direction === 'send' ? recvCcy : 'CAD';
+      const lin = direction === 'send' ? home : recvCcy,
+        lout = direction === 'send' ? recvCcy : home;
       const feeN = parseFloat(fee) || 0;
       const B = serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
       let posted = null;
@@ -35508,7 +35925,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         createdBy: me.name
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? home + ' → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' ' + home} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
       if (posted && onServerPosted) {
         try {
           await onServerPosted();
@@ -35753,7 +36170,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement(Field, {
-      label: direction === 'send' ? 'Customer pays in (CAD)' : `Amount received (${recvCcy})`
+      label: direction === 'send' ? `Customer pays in (${home})` : `Amount received (${recvCcy})`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex",
       style: {
@@ -35767,7 +36184,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-chip)',
         borderRight: `1px solid ${CD.line}`
       }
-    }, direction === 'send' ? 'CAD' : recvCcy), /*#__PURE__*/React.createElement("input", {
+    }, direction === 'send' ? home : recvCcy), /*#__PURE__*/React.createElement("input", {
       value: payAmt,
       onChange: e => setPayAmt(e.target.value),
       inputMode: "decimal",
@@ -35793,8 +36210,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", direction === 'send' ? 'CAD' : recvCcy, " = ", pricing.rate ? num(pricing.rate) : '—', " ", direction === 'send' ? recvCcy : 'CAD')), /*#__PURE__*/React.createElement(Field, {
-      label: direction === 'send' ? `Beneficiary receives (${recvCcy})` : 'Customer receives (CAD)'
+    }, "1 ", direction === 'send' ? home : recvCcy, " = ", pricing.rate ? num(pricing.rate) : '—', " ", direction === 'send' ? recvCcy : home)), /*#__PURE__*/React.createElement(Field, {
+      label: direction === 'send' ? `Beneficiary receives (${recvCcy})` : `Customer receives (${home})`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex",
       style: {
@@ -35808,7 +36225,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-chip)',
         borderRight: `1px solid ${CD.line}`
       }
-    }, direction === 'send' ? recvCcy : 'CAD'), /*#__PURE__*/React.createElement("div", {
+    }, direction === 'send' ? recvCcy : home), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 px-3 py-2.5 text-xl font-semibold text-right",
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -35817,7 +36234,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, recvAmt ? num(recvAmt) : '—'))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2 mt-2"
     }, /*#__PURE__*/React.createElement(Field, {
-      label: "Transfer fee (CAD)"
+      label: `Transfer fee (${home})`
     }, /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
@@ -35856,7 +36273,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.green
       }
-    }, fmt(parseFloat(fee) || 0, 'CAD')), " fee \xB7 ", /*#__PURE__*/React.createElement("span", {
+    }, fmt(fee || '0', home)), " fee \xB7 ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -35864,16 +36281,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.green
       }
-    }, fmt(pricing.marginCad, 'CAD')), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement("span", {
+    }, fmt(pricing.marginCad, home)), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
-    }, " \xB7 +", fmt(fee, 'CAD'), " fee"))), direction === 'send' && /*#__PURE__*/React.createElement("span", {
+    }, " \xB7 +", fmt(fee, home), " fee"))), direction === 'send' && homeAmount && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] font-medium",
       style: {
         color: CD.ink
       }
-    }, "Collect ", fmt(payCad, 'CAD'))), serverError && /*#__PURE__*/React.createElement("div", {
+    }, "Collect ", fmt(homeAmount, home))), serverError && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 px-3 py-2 text-[12px]",
       style: {
         background: CD.flagSoft,
@@ -35901,7 +36318,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(cadEquiv, 'CAD'), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -35968,6 +36385,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = packNow && packNow.homeCurrency || 'CAD';
     const idx = FLOW.indexOf(t.status);
     const nextKey = idx >= 0 && idx < FLOW.length - 1 ? FLOW[idx + 1] : null;
     const terminal = t.status === 'paid' || t.status === 'cancelled';
@@ -36086,19 +36505,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? 'CAD' : t.ccy}`,
+      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
-      v: `${num(t.rate)} ${dir === 'send' ? t.ccy : 'CAD'}/${dir === 'send' ? 'CAD' : t.ccy}`,
+      v: `${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`,
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee",
-      v: fmt(t.fee, 'CAD'),
+      v: fmt(t.fee, home),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Beneficiary gets' : 'Customer gets',
-      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : 'CAD'}`,
+      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`,
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
@@ -36267,6 +36686,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       StatusPill,
       flagOf,
       cadOf,
+      transferRuling,
       BeneficiaryModal,
       TransferModal,
       TransferDetail
@@ -36313,6 +36733,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const c = homeCcy();
     return c ? fmt(v, c) : num(v);
   };
+  /* Home per 1 unit of a payout currency. Canada still reads the CAD
+     cross. Any other desk uses the tape quote, which is already in
+     home currency — a missing quote is not filled in with a CAD figure. */
+  const homePerUnit = code => {
+    const home = homeCcy() || 'CAD';
+    if (!code || code === home) return 1;
+    if (home === 'CAD') return crossRate(code, 'CAD');
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const row = tape && tape.priced && tape.quotes && tape.quotes.find(q => q.code === code);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 ? mid : null;
+  };
+  const homeLeg = t => t.direction === 'send' ? +t.payAmt || 0 : +t.recvAmt || 0;
   const authority = () => {
     const p = deskPack();
     return p && p.regulator || null;
@@ -36406,7 +36839,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       });
       return c;
     }, [transfers]);
-    const reportableOpen = transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
+    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && homeLeg(t) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -36476,8 +36909,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, list.map(t => {
       const cor = corOf(t.corridor);
       const dir = t.direction;
-      const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD');
-      const rpt = cadAmt >= threshold;
+      const cadAmt = homeLeg(t);
+      const rpt = threshold != null && cadAmt >= threshold;
       return /*#__PURE__*/React.createElement("button", {
         key: t.id,
         onClick: () => onOpen(t.id),
@@ -36722,7 +37155,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const vol = useMemo(() => {
       const m = {};
       transfers.forEach(t => {
-        if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'));
+        if (t.status !== 'cancelled') m[t.corridor] = (m[t.corridor] || 0) + homeLeg(t);
       });
       return m;
     }, [transfers]);
@@ -36833,10 +37266,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const corOf = id => corridors.find(c => c.id === id) || {};
     const threshold = reportingLimit(settings).amount;
-    const eft = useMemo(() => transfers.filter(t => t.status !== 'cancelled').map(t => ({
+    const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({
       t,
-      cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')
-    })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers]);
+      cad: homeLeg(t)
+    })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
     const print = () => {
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
@@ -37086,7 +37519,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // from posted records — committed payouts (transfers routed through them) drawn
   // down by float we've settled (wired) to them. If payouts > settled we owe them;
   // if settled > payouts we hold float on deposit. The corridor margin (customer
-  // CAD collected − partner CAD cost) shows whether the wholesale FX nets out.
+  // home collected − partner home cost) shows whether the wholesale FX nets out.
   function Settlement({
     transfers,
     corridors,
@@ -37132,7 +37565,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         const settled = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.amount || 0), 0);
         const settledCad = (settlements || []).filter(s => s.partner === p.partner && s.corridor === p.corridor).reduce((a, s) => a + (+s.cadCost || 0), 0);
         const net = settled - p.payouts; // >0 float on deposit, <0 we owe
-        const margin = p.custCad - settledCad; // customer CAD in − partner CAD out (settled portion)
+        const margin = p.custCad - settledCad; // customer home in − partner home out (settled portion)
         return {
           ...p,
           settled,
@@ -37147,7 +37580,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const doSettle = (p, amount, fxRate, note) => {
       const amt = +amount || 0;
       if (!amt) return;
-      const cadCost = +(amt * (fxRate || crossRate(p.ccy, 'CAD') || 0)).toFixed(2);
+      const spot = homePerUnit(p.ccy);
+      const cadCost = +(amt * (fxRate || spot || 0)).toFixed(2);
       /* A settlement reference is minted from the TRADING DAY, not the wall
          clock. `TODAY` is a snapshot taken when the page loaded, so a desk
          left open overnight minted this morning's references under
@@ -37161,7 +37595,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         corridor: p.corridor,
         ccy: p.ccy,
         amount: amt,
-        fxRate: +(+fxRate || crossRate(p.ccy, 'CAD')).toFixed(6),
+        fxRate: +(+fxRate || spot || 0).toFixed(6),
         cadCost,
         date: businessDate(),
         by: me.name,
@@ -37335,12 +37769,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }) {
     const owe = p.net < 0;
     const [amount, setAmount] = useState(owe ? String(Math.round(-p.net)) : '');
-    const mid = crossRate(p.ccy, 'CAD');
-    const [fxRate, setFxRate] = useState(String(mid.toFixed(6)));
+    const home = homeCcy() || 'CAD';
+    const mid = homePerUnit(p.ccy);
+    const [fxRate, setFxRate] = useState(mid ? String(mid.toFixed(6)) : '');
     const [note, setNote] = useState('');
     const amt = +amount || 0,
-      rate = +fxRate || mid;
-    const cadCost = +(amt * rate).toFixed(2);
+      rate = +fxRate || mid || 0;
+    const rateMissing = !(rate > 0);
+    const cadCost = rateMissing ? null : +(amt * rate).toFixed(2);
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -37428,8 +37864,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono'
       }
     })), /*#__PURE__*/React.createElement(Field, {
-      label: "FX rate (CAD per unit)",
-      hint: `spot ${mid.toFixed(6)}`
+      label: `FX rate (${home} per unit)`,
+      hint: mid ? `spot ${mid.toFixed(6)}` : 'spot unavailable'
     }, /*#__PURE__*/React.createElement("input", {
       value: fxRate,
       onChange: e => setFxRate(e.target.value),
@@ -37457,7 +37893,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono',
         color: CD.ink
       }
-    }, fmtHome(cadCost))), /*#__PURE__*/React.createElement(Field, {
+    }, rateMissing ? 'Rate unavailable' : fmtHome(cadCost))), /*#__PURE__*/React.createElement(Field, {
       label: "Reference / note"
     }, /*#__PURE__*/React.createElement("input", {
       value: note,
@@ -37480,13 +37916,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         borderRadius: 8
       }
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => amt > 0 && onSettle(p, amt, rate, note),
-      disabled: !(amt > 0),
+      onClick: () => amt > 0 && !rateMissing && onSettle(p, amt, rate, note),
+      disabled: !(amt > 0 && !rateMissing),
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
-        background: amt > 0 ? CD.ink : 'var(--cd-disabled)',
+        background: amt > 0 && !rateMissing ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: amt > 0 ? 'pointer' : 'not-allowed'
+        cursor: amt > 0 && !rateMissing ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
@@ -37578,9 +38014,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           set: 0
         }).set += +s.amount || 0;
       });
+      const home = homeCcy() || 'CAD';
       return Object.values(m).reduce((a, p) => {
         const net = p.set - p.pay;
-        return a + (net < 0 ? p.ccy === 'CAD' ? -net : -net / (crossRate('CAD', p.ccy) || 1) : 0);
+        if (net >= 0) return a;
+        if (p.ccy === home) return a + -net;
+        if (home === 'CAD') return a + -net / (crossRate('CAD', p.ccy) || 1);
+        const per = homePerUnit(p.ccy);
+        return per ? a + -net * per : a;
       }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
@@ -37788,6 +38229,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     newTx,
     mkRef
   } = window.CDOS;
+  const homeCcy = () => {
+    const p = window.CDOS.deskPack && window.CDOS.deskPack();
+    return p && p.homeCurrency || 'CAD';
+  };
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
@@ -38268,7 +38713,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
              offers and the only thing the server will take. A cheque in
              anything else is an exchange as well as a cheque and belongs
              on the quote path; the server refuses it by name. */
-          currency: 'CAD',
+          currency: homeCcy(),
           faceAmount: book.asMoney(amtN),
           feeAmount: book.asMoney(fee),
           holdDays: holdDays,
@@ -38292,7 +38737,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), 'CAD')} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -38372,7 +38817,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       value: n
     })))), /*#__PURE__*/React.createElement(Field, {
       label: "Cheque type",
-      hint: `${type.feePct}% · min ${fmt(type.feeMin, 'CAD')} · ${type.holdDays}d hold`
+      hint: `${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, schedule.map(t => {
@@ -38549,7 +38994,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "fee ", fmt(fee, 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, "fee ", fmt(fee, homeCcy()))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -38563,7 +39008,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(net, 'CAD'))), /*#__PURE__*/React.createElement(Ic, {
+    }, fmt(net, homeCcy()))), /*#__PURE__*/React.createElement(Ic, {
       n: "arrowright",
       s: 16,
       c: CD.faint
@@ -38623,11 +39068,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.ink
       }
-    }, fmt(net, 'CAD')), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(net, homeCcy())), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.green
       }
-    }, fmt(fee, 'CAD'))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
+    }, fmt(fee, homeCcy()))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
       onClick: save,
       disabled: !canSave || busy,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
@@ -38694,12 +39139,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       idempotencyKey: key,
       reason: 'NSF — insufficient funds',
       nsf: true
-    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
+    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
     const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
       reason: 'Fraud — suspect cheque',
       fraud: true
-    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -38782,7 +39227,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: overdue ? CD.flag : 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(c.netCad, 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(c.netCad, homeCcy()))), /*#__PURE__*/React.createElement("div", {
       className: "text-right"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -38810,7 +39255,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, "Returned \u2014 ", fmt(c.netCad, 'CAD'), " loss"), /*#__PURE__*/React.createElement("div", {
+    }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: '#8a3b30'
@@ -38843,16 +39288,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       accent: c.endorsed ? CD.green : CD.flag
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Face value",
-      v: fmt(c.amount, 'CAD'),
+      v: fmt(c.amount, homeCcy()),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee kept",
-      v: fmt(c.feeCad, 'CAD'),
+      v: fmt(c.feeCad, homeCcy()),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Cash fronted",
-      v: fmt(c.netCad, 'CAD'),
+      v: fmt(c.netCad, homeCcy()),
       mono: true
     }), c.image && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
@@ -39009,6 +39454,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     num,
     TODAY
   } = window.CDOS;
+  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
   const K = window.CDOS._cheques;
   const {
     defaultSchedule,
@@ -39112,7 +39558,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.exposure, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmt(stats.exposure, homeCcy())), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -39164,7 +39610,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: stats.lossN ? CD.flag : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.losses, 'CAD')), /*#__PURE__*/React.createElement("div", {
+    }, fmt(stats.losses, homeCcy())), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -39254,7 +39700,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(c.amount, 'CAD')), /*#__PURE__*/React.createElement("div", {
+      }, fmt(c.amount, homeCcy())), /*#__PURE__*/React.createElement("div", {
         className: "text-[10.5px] mt-0.5",
         style: {
           color: overdue ? CD.flag : CD.mute
@@ -39403,7 +39849,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, 'CAD')));
+      }, fmt(eg, homeCcy())));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
@@ -39505,7 +39951,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, fmt(exposure, 'CAD'), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, fmt(exposure, homeCcy()), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setModal(true),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
@@ -39670,7 +40116,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const money = !!opts.money;
     const show = v => v == null ? '—' : money ? fmt(+v, opts.currency) : `${v}${opts.unit || ''}`;
     const standing = line.posture || 'unknown';
-    const note = standing === 'stricter' ? `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? `Following ${opts.authority} (${show(line.packValue)}).` : `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+    const note = standing === 'stricter' ? opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? opts.looser || `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? opts.following || `Following ${opts.authority} (${show(line.packValue)}).` : opts.unknown || `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
     return {
       field: opts.field,
       label: opts.label,
@@ -39689,9 +40135,67 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
   /* Every line, judged. Reads the ledger's answer when there is one and
      falls back to the browser's regime table when there is not. */
+  function loadedPack() {
+    return window.CDOS && window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+  }
+  function isBaselinePack(pack) {
+    return !!(pack && (pack.baseline === true || pack.kind === 'baseline'));
+  }
+  /* A baseline desk, or one whose setup already said so and whose pack
+     has not arrived yet. Either way Canada's names are not an answer. */
+  function baselineDesk(settings) {
+    const pack = loadedPack();
+    if (isBaselinePack(pack)) return true;
+    return !!(settings && settings.baselineRules && !pack);
+  }
+  /* The converted home amount, with the USD figure it came from. A missing
+     rate has no home amount: identification is required on every deal.
+      `effective` is the line this desk operates at. `packValue` is the
+     baseline after the server converted it into home currency — the same
+     number on a following or matching desk, and a different one when the
+     owner chose a stricter or looser line. The US-dollar source belongs
+     on that converted baseline. Putting it next to the owner's lower
+     figure would say a £5,000 line is 10,000 USD. */
+  function baselineMoneyCopy(key, line) {
+    const pack = loadedPack();
+    if (!isBaselinePack(pack)) return null;
+    const homeAmount = line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+    if (homeAmount == null) {
+      return {
+        unknown: key === 'idThreshold' ? 'Identification is required on every deal.' : 'Purpose and source of funds are required on every deal.'
+      };
+    }
+    const raw = key === 'idThreshold' ? pack.idThreshold : pack.reportThreshold;
+    const usd = Number(String(raw == null ? '' : raw).replace(/,/g, ''));
+    const src = String(pack.reportCurrency || 'USD').trim().toUpperCase() || 'USD';
+    const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = desk && desk.currency || pack.homeCurrency;
+    const yours = fmt(homeAmount, home);
+    const packAmount = line && line.packValue != null && +line.packValue > 0 ? +line.packValue : null;
+    const baseline = packAmount == null ? null : fmt(packAmount, home);
+    const source = baseline && Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase() ? `, which is ${usd.toLocaleString('en-CA', {
+      maximumFractionDigits: 2
+    })} ${src} at today's market rate` : '';
+    const baselineClause = baseline ? `${baseline}${source}` : yours;
+    return {
+      following: `Following the international baseline: ${baselineClause}.`,
+      matching: `The international baseline figure, set by hand: ${baselineClause}.`,
+      stricter: baseline ? `Stricter than the international baseline. Your line is ${yours}. The baseline is ${baselineClause}.` : `Stricter than the international baseline. Your line is ${yours}.`,
+      /* The mandate here is packValue, already converted into home
+         currency. The raw 10,000 USD must not stand in for it. */
+      looser: baseline ? `${yours} — the international baseline requires no more than ${baseline}.` : `${yours} — the international baseline has no converted figure for this line.`
+    };
+  }
   function jurisdictionPosture(settings) {
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) return [];
     const server = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
-    const REG = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
+    const pack = loadedPack();
+    /* No server answer yet. A loaded pack, and a baseline desk, wait.
+       Inventing FINTRAC for them is how a Belgrade desk was told it
+       files an LCTR. The two-country table is only for the standalone
+       build, which has no ledger to ask. */
+    if (!server && (pack || baselineDesk(settings))) return [];
+    const REG = settings && settings.regime && REGIMES[settings.regime] || REGIMES.FINTRAC;
     /* No server answer yet. Build the same shape out of what the browser
        holds so the screens have one code path — and mark every line
        "following", because a desk we have not asked about is not a desk
@@ -39716,9 +40220,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       };
     };
+    const baseline = isBaselinePack(pack);
     const source = server ? {
       currency: server.currency,
-      authority: server.regulator,
+      authority: baseline ? 'the international baseline' : server.regulator || pack && pack.regulator || '',
       lines: server
     } : local();
     if (!source || !source.lines) return [];
@@ -39727,14 +40232,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       currency: source.currency,
       authority: source.authority
     };
+    const reportCopy = baselineMoneyCopy('reportThreshold', L.reportThreshold);
+    const idCopy = baselineMoneyCopy('idThreshold', L.idThreshold);
     return [postureOf(L.reportThreshold, {
       ...common,
+      ...reportCopy,
       field: 'threshold',
       label: 'Reporting threshold',
       money: true,
       direction: 'atMost'
     }), postureOf(L.idThreshold, {
       ...common,
+      ...idCopy,
       field: 'idRequiredOver',
       label: 'Identification threshold',
       money: true,
@@ -39820,21 +40329,103 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      on its own, because it teaches the teller the warning is wrong.
       Below that, the owner's saved settings, which is all the standalone
      build has. */
-  function getRegime(settings) {
-    const base = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
-    const r = Object.assign({}, base);
-    if (settings && +settings.threshold) r.threshold = +settings.threshold; // owner override
-    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours; // custom window
+  function lineAmount(line) {
+    return line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+  }
+  /* The reports a baseline desk actually has. Plain names, not Canada's. */
+  const BASELINE_REPORTS = [{
+    code: 'CASH-RECORD',
+    name: 'Large cash record'
+  }, {
+    code: 'SUSPICIOUS',
+    name: 'Suspicious transaction'
+  }, {
+    code: 'SANCTIONS-STOP',
+    name: 'Terrorist or sanctioned property'
+  }];
+  function regimeFromPack(pack, settings) {
     const desk = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
-    if (desk) {
-      const at = line => line && line.effective != null && +line.effective > 0 ? +line.effective : null;
-      if (at(desk.reportThreshold) != null) r.threshold = at(desk.reportThreshold);
-      if (at(desk.idThreshold) != null) r.idAt = at(desk.idThreshold);
-      if (at(desk.aggregationHours) != null) r.aggHours = at(desk.aggregationHours);
-      if (at(desk.retentionYears) != null) r.retentionYears = at(desk.retentionYears);
-      if (desk.currency) r.currency = desk.currency;
+    const reports = window.CDOS && window.CDOS.deskReports ? window.CDOS.deskReports() || [] : [];
+    const baseline = isBaselinePack(pack);
+    const listed = reports.length ? reports : baseline ? BASELINE_REPORTS : [];
+    const byCode = code => listed.find(r => r && r.code === code) || null;
+    const large = listed.find(r => r && (r.kind === 'large_cash' || r.code === (pack.reportName || 'CASH-RECORD'))) || byCode('CASH-RECORD');
+    const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
+    const sanctions = byCode('SANCTIONS-STOP');
+    const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
+    return {
+      id: pack.packId || null,
+      authority: baseline ? "Your country's financial intelligence unit" : pack.regulator || '',
+      country: baseline ? 'International baseline' : pack.name || '',
+      flag: baseline ? '🌐' : '',
+      currency: desk && desk.currency || pack.homeCurrency || settings && settings.baseCurrency || null,
+      threshold: desk && desk.reportThreshold ? lineAmount(desk.reportThreshold) : null,
+      idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
+      aggHours: desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
+      largeCode: large && large.code || pack.reportName || '',
+      largeLabel: large && large.name || (baseline ? 'Large cash record' : ''),
+      wireCode: wire ? wire.code : '',
+      wireLabel: wire ? wire.name || '' : '',
+      strCode: suspicious ? suspicious.code : '',
+      strLabel: suspicious ? suspicious.name || '' : '',
+      sanctionsCode: sanctions ? sanctions.code : baseline ? 'SANCTIONS-STOP' : '',
+      sanctionsLabel: sanctions ? sanctions.name || '' : baseline ? 'Terrorist or sanctioned property' : '',
+      fileFormat: null,
+      watchlists: [],
+      baseline,
+      reports: listed
+    };
+  }
+  function getRegime(settings) {
+    const pack = loadedPack();
+    /* No pack for this country. Do not fill the gap with Canada's rules. */
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) {
+      return {
+        id: null,
+        authority: null,
+        country: null,
+        currency: pack && pack.homeCurrency || settings && settings.baseCurrency || null,
+        threshold: null,
+        aggHours: null,
+        idAt: null,
+        retentionYears: null,
+        largeCode: '',
+        largeLabel: '',
+        wireCode: '',
+        wireLabel: '',
+        strCode: '',
+        strLabel: '',
+        fileFormat: null,
+        watchlists: [],
+        baseline: false,
+        reports: []
+      };
     }
+    if (pack && pack.packId) return regimeFromPack(pack, settings);
+    if (settings && settings.baselineRules) {
+      return regimeFromPack({
+        packId: 'pack-intl-v1',
+        baseline: true,
+        kind: 'baseline',
+        name: 'International baseline',
+        regulator: '',
+        reportName: 'CASH-RECORD',
+        homeCurrency: settings && settings.baseCurrency || 'USD',
+        reportCurrency: 'USD',
+        reportThreshold: '10000',
+        idThreshold: '3000'
+      }, settings);
+    }
+    /* Standalone build, no ledger. The two-country table is all it has. */
+    const base = settings && settings.regime && REGIMES[settings.regime] || REGIMES.FINTRAC;
+    const r = Object.assign({
+      baseline: false,
+      reports: []
+    }, base);
+    if (settings && +settings.threshold) r.threshold = +settings.threshold;
+    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
+    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -40056,6 +40647,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   function aggregateEvents(events, regime, settings, kind) {
     const TH = regime.threshold,
       H = regime.aggHours || 24;
+    /* No threshold means no aggregate. A missing number is not zero, and
+       it is not Canada's 10,000. */
+    if (!(TH > 0)) return [];
     const startMins = parseHHMM(settings && settings.aggWindowStart || '00:00');
     const buckets = {};
     (events || []).forEach(e => {
@@ -40486,7 +41080,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const completeInstances = []; // Section 4 (completing action + beneficiary)
     txns.forEach((r, i) => {
       const cad = cadIn(r);
-      const above = cad >= TH;
+      const above = TH != null && cad >= TH;
       const method = r.type === 'Cheque Cashing' ? 'Cheque' : 'Cash';
       const cap = r.capture || null; // point-of-sale capture pre-fills the prompts
       txInstances.push({
@@ -41808,7 +42402,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     // single international transfers at/over threshold
     transfers.filter(t => t.status !== 'cancelled').forEach(t => {
       const cad = t.direction === 'send' ? t.payAmt : t.recvAmt / xr(t.ccy);
-      if (cad >= regime.threshold) out.push({
+      if (regime.threshold != null && cad >= regime.threshold) out.push({
         id: 'E-' + t.ref,
         groupId: 'E-' + t.ref,
         kind: regime.wireCode,
@@ -42504,7 +43098,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), "."))));
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -42874,7 +43468,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), "."))));
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== SUBMISSIONS (worksheet → sealed filing) ===================== */
@@ -43692,7 +44286,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold")))), /*#__PURE__*/React.createElement("div", {
+    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
     }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
@@ -46699,12 +47293,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     let rates = '';
     try {
       const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
-      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== 'CAD').slice(0, 8);
+      const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+      const list = (typeof CUR !== 'undefined' ? CUR : []).filter(c => c.code !== home).slice(0, 8);
       rates = list.map(c => {
         const r = cfg && cfg.rows && cfg.rows[c.code];
-        const mid = r && r.mid > 0 ? r.mid : 1 / c.perCadDefault;
-        return `${c.code}=${mid.toFixed(4)} CAD`;
-      }).join(', ');
+        const mid = r && r.mid > 0 ? r.mid : home === 'CAD' ? 1 / c.perCadDefault : null;
+        return mid ? `${c.code}=${Number(mid).toFixed(4)} ${home}` : null;
+      }).filter(Boolean).join(', ');
     } catch (e) {}
     const locked = (() => {
       try {
@@ -46713,7 +47308,8 @@ ${(filing.map || []).map(blockHTML).join('')}
         return false;
       }
     })();
-    return [`Records: ${live.length}. Pay-in volume: ${fmt(vol, 'CAD')}. Fees: ${fmt(fees, 'CAD')}. Est. FX margin: ${fmt(margin, 'CAD')}.`, `Top pay-in currencies: ${topCcy || 'none yet'}.`, `Open compliance items — reportable (LCTR ≥ $10k): ${alerts.rpt}, possible structuring: ${alerts.str}, KYC/ID gaps: ${alerts.id}.`, `Mid rates (CAD per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`, `Clients on file: ${Object.keys(clients || {}).length}.`].join('\n');
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    return [`Records: ${live.length}. Pay-in volume: ${fmt(vol, home)}. Fees: ${fmt(fees, home)}. Est. FX margin: ${fmt(margin, home)}.`, `Top pay-in currencies: ${topCcy || 'none yet'}.`, `Open compliance items — reportable (LCTR ≥ $10k): ${alerts.rpt}, possible structuring: ${alerts.str}, KYC/ID gaps: ${alerts.id}.`, `Mid rates (${home} per unit): ${rates || 'using defaults'}. Rate board is currently ${locked ? 'LOCKED' : 'LIVE'}.`, `Clients on file: ${Object.keys(clients || {}).length}.`].join('\n');
   }
   const SYSTEM = snap => `You are the assistant inside CurrencyDesk OS — back-office software for a Canadian currency exchange house (a registered MSB). You help the teller/owner with their day: reading the ledger, explaining compliance (LCTR/large cash transaction reports at the CAD $10,000 threshold, 24h aggregation, structuring, KYC/ID requirements under FINTRAC), reasoning about FX margin and rates, and drafting short notes. Be concise, practical and plain-spoken — a few sentences or a tight list. Use CAD and real figures from the snapshot when relevant. You are not a lawyer; for edge cases say so briefly. Never invent transactions that aren't in the snapshot.
 
@@ -46938,9 +47534,10 @@ ${snap}`;
       };
     }, [amount, rate, years, ppy]);
     const freqLabel = (FREQ.find(f => f[0] === ppy) || ['', ''])[1].toLowerCase();
+    const loanCcy = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
     const money = v => v.toLocaleString('en-CA', {
       style: 'currency',
-      currency: 'CAD',
+      currency: loanCcy,
       maximumFractionDigits: 2
     });
     return /*#__PURE__*/React.createElement("div", {
@@ -46953,7 +47550,7 @@ ${snap}`;
       className: "ln-title"
     }, "Loan terms"), /*#__PURE__*/React.createElement(LField, {
       label: "Loan amount",
-      suffix: "CAD"
+      suffix: loanCcy
     }, /*#__PURE__*/React.createElement("input", {
       type: "number",
       value: amount,
@@ -50831,7 +51428,6 @@ ${snap}`;
     MXN: 'Mexican Peso',
     AED: 'UAE Dirham'
   };
-  const FOREIGN = (CCY || []).filter(c => c !== 'CAD');
   const PROVIDERS = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
   const card = {
     background: 'var(--cd-panel)',
@@ -50897,6 +51493,8 @@ ${snap}`;
     me,
     log
   }) {
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+    const FOREIGN = (CCY || []).filter(c => c !== home);
     const set = (k, v, note) => {
       setSettings(s => ({
         ...s,
@@ -50926,7 +51524,7 @@ ${snap}`;
     // deliberate deviation the owner owns. ----
     const ov = settings.spotOverride || {};
     const isPinned = c => ov[c] != null && ov[c] !== '';
-    const spotOf = c => c === 'CAD' ? 1 : isPinned(c) ? +ov[c] : crossRate(c, 'CAD') || 0;
+    const spotOf = c => c === home ? 1 : isPinned(c) ? +ov[c] : home === 'CAD' ? crossRate(c, 'CAD') || 0 : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
     const setSpot = (c, v) => setSettings(s => ({
       ...s,
       spotOverride: {
@@ -51025,23 +51623,26 @@ ${snap}`;
     const pinnedCount = FOREIGN.filter(c => isPinned(c)).length;
 
     // live deal simulator
-    const [sim, setSim] = useState({
-      inCcy: 'CAD',
-      outCcy: 'USD',
-      inAmt: '1000'
+    const [sim, setSim] = useState(() => {
+      const h = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+      return {
+        inCcy: h,
+        outCcy: h === 'USD' ? 'EUR' : 'USD',
+        inAmt: '1000'
+      };
     });
     const simP = useMemo(() => {
       const inC = sim.inCcy,
         outC = sim.outCcy,
         amt = parseFloat(sim.inAmt) || 0;
-      const sprdOf = c => c === 'CAD' ? 0 : spreadOf(c, settings);
-      const inUnit = inC === 'CAD' ? 1 : spotOf(inC) * (1 - sprdOf(inC));
-      const outUnit = outC === 'CAD' ? 1 : spotOf(outC) * (1 + sprdOf(outC));
+      const sprdOf = c => c === home ? 0 : spreadOf(c, settings);
+      const inUnit = inC === home ? 1 : spotOf(inC) * (1 - sprdOf(inC));
+      const outUnit = outC === home ? 1 : spotOf(outC) * (1 + sprdOf(outC));
       const rate = outUnit ? inUnit / outUnit : 0;
       const outAmt = roundPayout(amt * rate, settings);
-      const midIn = amt * (inC === 'CAD' ? 1 : spotOf(inC));
-      const midOut = outAmt * (outC === 'CAD' ? 1 : spotOf(outC));
-      const midRate = (outC === 'CAD' ? 1 : spotOf(outC)) ? (inC === 'CAD' ? 1 : spotOf(inC)) / (outC === 'CAD' ? 1 : spotOf(outC)) : 0;
+      const midIn = amt * (inC === home ? 1 : spotOf(inC));
+      const midOut = outAmt * (outC === home ? 1 : spotOf(outC));
+      const midRate = (outC === home ? 1 : spotOf(outC)) ? (inC === home ? 1 : spotOf(inC)) / (outC === home ? 1 : spotOf(outC)) : 0;
       return {
         rate: +rate.toFixed(6),
         outAmt,
@@ -51421,7 +52022,7 @@ ${snap}`;
         padding: '8px 10px',
         textAlign: 'right'
       }
-    }, "Spot \xB7 CAD"), /*#__PURE__*/React.createElement("th", {
+    }, "Spot \xB7 ", home), /*#__PURE__*/React.createElement("th", {
       style: {
         padding: '8px 10px',
         textAlign: 'center'
@@ -51446,7 +52047,7 @@ ${snap}`;
       const custom = sp[c] != null && sp[c] !== '';
       const pinned = isPinned(c);
       const spot = spotOf(c);
-      const liveMid = crossRate(c, 'CAD') || 0;
+      const liveMid = (home === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0) || 0;
       const sprd = spreadOf(c, settings);
       const buy = spot * (1 - sprd),
         sell = spot * (1 + sprd);
@@ -51595,7 +52196,7 @@ ${snap}`;
           color: CD.ink,
           fontWeight: 600
         }
-      }, '$' + perUnit.toFixed(3)));
+      }, (home === 'CAD' ? '$' : '') + perUnit.toFixed(3)));
     }))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-4 text-[11px]",
       style: {
@@ -51612,7 +52213,7 @@ ${snap}`;
         borderRadius: 2,
         background: CD.flag
       }
-    }), " We buy \u2014 CAD we pay per unit acquired"), /*#__PURE__*/React.createElement("span", {
+    }), " We buy \u2014 ", home, " we pay per unit acquired"), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -51621,7 +52222,7 @@ ${snap}`;
         borderRadius: 2,
         background: CD.green
       }
-    }), " We sell \u2014 CAD we charge per unit released"), /*#__PURE__*/React.createElement("span", {
+    }), " We sell \u2014 ", home, " we charge per unit released"), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -51701,11 +52302,11 @@ ${snap}`;
         fontFamily: 'Space Mono, monospace',
         color: CD.ink
       }
-    }, "$1,234.567 ", /*#__PURE__*/React.createElement("span", {
+    }, home === 'CAD' ? '$' : '', "1,234.567 ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
-    }, "\u2192"), " ", /*#__PURE__*/React.createElement("b", null, fmt(roundEx, 'CAD')))), /*#__PURE__*/React.createElement("div", {
+    }, "\u2192"), " ", /*#__PURE__*/React.createElement("b", null, fmt(roundEx, home)))), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] mt-2",
       style: {
         color: CD.faint
@@ -51867,7 +52468,7 @@ ${snap}`;
         color: simZone,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(simP.marginCad, 'CAD'), " \xB7 ", simPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement("div", {
+    }, fmt(simP.marginCad, home), " \xB7 ", simPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px] mt-2",
       style: {
         color: CD.faint
@@ -51906,16 +52507,20 @@ ${snap}`;
   const ICFG_KEY = 'cdos_import_cfg_v1';
   const DEF_CFG = {
     dateFormat: 'auto',
-    defaultInCcy: 'CAD',
     defaultType: 'Currency Exchange',
     autoCreateClients: true,
     skipDuplicateRefs: true
   };
   const loadCfg = () => {
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
     try {
-      return Object.assign({}, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {});
+      return Object.assign({
+        defaultInCcy: home
+      }, DEF_CFG, JSON.parse(localStorage.getItem(ICFG_KEY) || '{}') || {});
     } catch (e) {
-      return Object.assign({}, DEF_CFG);
+      return Object.assign({
+        defaultInCcy: home
+      }, DEF_CFG);
     }
   };
   const saveCfgPatch = patch => {
@@ -52270,9 +52875,10 @@ ${snap}`;
     if (!customer) errors.push('customer');
     const inAmt = toNum(g('inAmt'));
     if (inAmt == null || inAmt <= 0) errors.push('amount');
-    let inCcy = (g('inCcy') || cfg.defaultInCcy || 'CAD').toUpperCase().slice(0, 3);
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    let inCcy = (g('inCcy') || cfg.defaultInCcy || home).toUpperCase().slice(0, 3);
     if (!/^[A-Z]{3}$/.test(inCcy)) {
-      inCcy = cfg.defaultInCcy || 'CAD';
+      inCcy = cfg.defaultInCcy || home;
       warns.push('pay-in ccy');
     } else if (!CCY.includes(inCcy)) warns.push('ccy ' + inCcy);
     let type = matchType(g('type'));
@@ -52282,7 +52888,7 @@ ${snap}`;
     }
     const flat = type === 'Cheque Cashing' || type === 'Money Order' || type === 'Bill Payment';
     let outCcy = (g('outCcy') || '').toUpperCase().slice(0, 3);
-    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : inCcy === 'CAD' ? 'USD' : 'CAD';
+    if (!/^[A-Z]{3}$/.test(outCcy)) outCcy = flat ? inCcy : inCcy === home ? 'USD' : home;
     let rate = toNum(g('rate'));
     let outAmt = toNum(g('outAmt'));
     if (inAmt != null) {
@@ -52895,7 +53501,7 @@ ${snap}`;
           color: CD.mute,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, t.fee === '' ? '—' : fmt(t.fee, 'CAD')), /*#__PURE__*/React.createElement("td", {
+      }, t.fee === '' ? '—' : fmt(t.fee, window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD')), /*#__PURE__*/React.createElement("td", {
         className: "px-2.5 py-1.5",
         style: {
           color: CD.faint,
@@ -61513,8 +62119,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
 
   /* ====================== LIVE RATE TICKER ====================== */
-  // Reads the staff-published rate board (localStorage) so the ticker always
-  // shows the owner's current mid rates (CAD per unit), and reflows when they republish.
+  // A Canada desk reads the published board as CAD per unit. Any other
+  // home currency is quoted by /api/rates/ticker, which has already
+  // crossed the market snapshot into that currency. The home currency
+  // itself is not a row.
+  function deskHome() {
+    const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+    const code = pack && pack.homeCurrency;
+    return code ? String(code).toUpperCase() : null;
+  }
+  function curOf(code) {
+    return typeof BY !== 'undefined' && BY[code] || (typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null) || {};
+  }
   function readBoard() {
     let cfg = null;
     try {
@@ -61535,6 +62151,40 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         chg: c.chg
       };
     }).filter(x => x.show);
+  }
+  /* No fresh rate for the home currency: the published board is already
+     in that currency. Catalog fallbacks are CAD per unit, so they stay off. */
+  function boardTape(home) {
+    let cfg = null;
+    try {
+      cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+    } catch (e) {}
+    const rows = cfg && cfg.rows || {};
+    return Object.keys(rows).filter(code => code !== home && rows[code] && typeof rows[code].mid === 'number' && rows[code].mid > 0 && rows[code].show !== false).map(code => {
+      const c = curOf(code);
+      return {
+        code,
+        name: c.name || code,
+        flag: c.flag || '',
+        mid: rows[code].mid,
+        show: true,
+        chg: null
+      };
+    });
+  }
+  function quoteTape(quotes, home) {
+    return (quotes || []).filter(q => q && q.code && q.code !== home && q.mid != null).map(q => {
+      const c = curOf(q.code);
+      const chg = q.chg == null || q.chg === '' ? null : Number(q.chg);
+      return {
+        code: q.code,
+        name: c.name || q.code,
+        flag: c.flag || '',
+        mid: Number(q.mid),
+        show: true,
+        chg: Number.isFinite(chg) ? chg : null
+      };
+    });
   }
   function tkMid(v) {
     const dp = v >= 100 ? 2 : v >= 1 ? 4 : 5;
@@ -61573,10 +62223,42 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hidden: []
     };
     const hidden = c0.hidden || [];
-    const frozen = locked && book;
+    const [home, setHome] = useState(deskHome);
+    const [tape, setTape] = useState(null);
+    useEffect(() => {
+      const sync = () => setHome(deskHome());
+      window.addEventListener('cdos-jurisdiction', sync);
+      sync();
+      return () => window.removeEventListener('cdos-jurisdiction', sync);
+    }, []);
+    const foreign = !!(home && home !== 'CAD');
+    useEffect(() => {
+      if (!foreign) return undefined;
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates/ticker', {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (stop || !d) return;
+          setTape(d);
+          if (window.CDOS) window.CDOS._tickerQuotes = d;
+        }).catch(() => {});
+      };
+      pull();
+      const t = setInterval(pull, 15000);
+      return () => {
+        stop = true;
+        clearInterval(t);
+      };
+    }, [foreign, home]);
+    const frozen = locked && book && !foreign;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
+      if (foreign) {
+        setItems(tape && tape.priced ? quoteTape(tape.quotes, home) : boardTape(home));
+        return;
+      }
       if (frozen) {
         setItems(readFrozen(book));
         return;
@@ -61593,8 +62275,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, 4000);
       return () => clearInterval(t);
-    }, [frozen, frozenSig]);
-    const shown = items.filter(it => !hidden.includes(it.code));
+    }, [foreign, frozen, frozenSig, tape, home]);
+    const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return /*#__PURE__*/React.createElement("div", {
       className: "mb-ticker-wrap"
     });
@@ -61604,7 +62286,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       fast: 2.0
     };
     const dur = Math.max(20, shown.length * (SPEED[c0.speed] || 3.4));
-    const price = it => c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const price = it => !foreign && c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const showChg = foreign ? !!(tape && tape.priced && c0.showChange) : c0.showChange;
     const cell = (it, i, k) => /*#__PURE__*/React.createElement("span", {
       className: "tk-item",
       key: k + it.code + i
@@ -61614,7 +62297,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "tk-code"
     }, it.code), /*#__PURE__*/React.createElement("span", {
       className: "tk-price"
-    }, price(it)), c0.showChange && /*#__PURE__*/React.createElement("span", {
+    }, price(it)), showChg && it.chg != null && /*#__PURE__*/React.createElement("span", {
       className: 'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')
     }, it.chg >= 0 ? '▲' : '▼', Math.abs(it.chg).toFixed(2), "%"));
     return /*#__PURE__*/React.createElement("div", {
@@ -63906,7 +64589,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         region: setup.region || '',
         postal: setup.postal || ''
       };
-      const homeCcy = setup.homeCurrency || 'CAD';
+      const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
+      const namedCountry = String(setup.country || '').trim();
+      const namedCanada = /^(ca|canada)$/i.test(namedCountry);
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -63919,8 +64604,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           The one real constraint between them is that the desk may ask for ID
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => typeof v === 'number' && v > 0 ? v : fallback;
-      const reportOver = num(setup.reportThreshold, 10000);
-      const idOver = Math.min(num(setup.idThreshold, reportOver), reportOver);
+      /* A baseline desk's 10,000 is US dollars. Do not store it as the
+         home-currency line. The ledger converts it, and the screen reads that. */
+      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
+      /* A blank identification field is not the report line. The pack's
+         own identification line is what provision stored when it had one.
+         A baseline desk follows the pack, so a blank box stays blank. */
+      const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
+      const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
+      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = legacyPause ? null : reportOver;
       const owner = {
         id: 'e_owner',
         name: ownerName,
@@ -63946,9 +64639,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         bizCity: addr.city || '',
         bizRegion: addr.region || '',
         bizPostal: addr.postal || '',
+        bizCountry: namedCanada ? 'Canada' : setup.baselineRules ? '' : namedCountry || '',
+        regime: setup.baselineRules ? '' : setup.regulator || '',
         baseCurrency: homeCcy,
-        threshold: reportOver,
+        threshold: reportLine,
         idRequiredOver: idOver,
+        rulesUnavailable: !!legacyPause,
+        baselineRules: !!setup.baselineRules,
         receiptHeader: bizName,
         fintracContactName: ownerName,
         reportingEntityNumber: '',
@@ -64064,9 +64761,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         sessionStorage.setItem('yorkfx_staff_user', user || 'staff');
       } catch (e) {}
       setStage('desktop');
-      setTimeout(() => {
-        openApp(planAllows('ledger') ? 'ledger' : 'rates');
-      }, 60);
+      /* With the desktop, not a moment later. A deferred open used to land
+         on top of whatever had just been clicked: the Ledger arrived about
+         60ms after sign-in and covered it. */
+      openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
     function logout() {
       try {
@@ -64840,7 +65538,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "bell-row-name"
     }, it.customer), /*#__PURE__*/React.createElement("span", {
       className: "bell-row-sub"
-    }, it.count, " just-under deal", it.count === 1 ? '' : 's', " \xB7 ", fmt(it.agg, 'CAD'), " over ", settings.structuringDays, "d")), /*#__PURE__*/React.createElement("button", {
+    }, it.count, " just-under deal", it.count === 1 ? '' : 's', " \xB7 ", fmt(it.agg, deskHome() || 'CAD'), " over ", settings.structuringDays, "d")), /*#__PURE__*/React.createElement("button", {
       className: "bell-act ghost lg",
       title: "Mark this watch reviewed \u2014 the menu stays open so you can clear several in a row",
       onClick: e => {
@@ -65083,7 +65781,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 16
     }), " ", /*#__PURE__*/React.createElement("span", {
       className: "mb-menu-lbl"
-    }, "Sign out"))))))), /*#__PURE__*/React.createElement("div", {
+    }, "Sign out"))))))), (() => {
+      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.baselineRules || settings.rulesUnavailable ? disclaimer : '');
+      if (!notice) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        role: "status",
+        "data-rules-notice": true,
+        style: {
+          padding: '8px 16px',
+          background: 'var(--cd-brass-soft, #f4efe4)',
+          color: 'var(--cd-ink)',
+          fontSize: 13,
+          borderBottom: '1px solid var(--cd-line)'
+        }
+      }, notice);
+    })(), /*#__PURE__*/React.createElement("div", {
       id: "tenantbar",
       className: chromeCollapsed ? 'collapsed' : ''
     }, /*#__PURE__*/React.createElement("div", {

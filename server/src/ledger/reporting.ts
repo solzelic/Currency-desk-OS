@@ -33,7 +33,12 @@
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
-import { resolvePack } from "./jurisdiction.js";
+import {
+  BASELINE_NOTICE,
+  RULES_UNAVAILABLE_NOTICE,
+  resolvePack,
+  type IdDealKind,
+} from "./jurisdiction.js";
 import {
   LEDGER_SCALE,
   minorUnits,
@@ -53,6 +58,127 @@ const tillScope = (actor: LedgerActor) => [
 const money = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
 const COST_PLACES = 12;
+
+/* An identification amount, including zero. Zero means every deal.
+   Null means this kind of deal has no line. money() is the wrong
+   helper here: it is for figures, and a later reader that treated
+   zero as "missing" would hide the "every deal" case. */
+export function idLineAmount(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  try {
+    const parsed = new Decimal(String(value));
+    if (!parsed.isFinite() || parsed.isNegative()) return null;
+    return parsed.toDecimalPlaces(2).toFixed(2);
+  } catch {
+    return null;
+  }
+}
+
+export type ReportRuleFields = {
+  deadlineValue: number | null;
+  deadlineUnit:
+    | "immediately"
+    | "hours"
+    | "before_execution"
+    | "monthly_day"
+    | "calendar_days"
+    | "business_days"
+    | null;
+  windowKind: "fixed_24h" | "calendar_month" | "rolling_days" | "banking_day" | "none";
+  /* Set only when windowKind is rolling_days. */
+  windowDays: number | null;
+  comparator: "gte" | "gt";
+  direction: "in" | "out" | "both" | null;
+  /* Currency the threshold is written in. When this is not the pack's
+     home currency, the amount is converted to home currency at the rate
+     on the deal. Seeded packs state the threshold in home currency, so
+     the copy is the same amount and nothing is converted. */
+  thresholdCurrency: string | null;
+  /* True when the report counts cash only. Seeded rows are false. */
+  cashOnly: boolean;
+};
+
+const DEADLINE_UNITS = [
+  "immediately",
+  "hours",
+  "before_execution",
+  "monthly_day",
+  "calendar_days",
+  "business_days",
+] as const;
+
+const BARE_DEADLINES = new Set<string>(["immediately", "before_execution"]);
+
+const asUnit = (value: unknown): ReportRuleFields["deadlineUnit"] =>
+  DEADLINE_UNITS.includes(value as (typeof DEADLINE_UNITS)[number])
+    ? (value as ReportRuleFields["deadlineUnit"])
+    : null;
+
+const asWindow = (value: unknown): ReportRuleFields["windowKind"] =>
+  value === "fixed_24h" ||
+  value === "calendar_month" ||
+  value === "rolling_days" ||
+  value === "banking_day" ||
+  value === "none"
+    ? value
+    : "none";
+
+const asComparator = (value: unknown): ReportRuleFields["comparator"] =>
+  value === "gt" ? "gt" : "gte";
+
+const asDirection = (value: unknown): ReportRuleFields["direction"] =>
+  value === "in" || value === "out" || value === "both" ? value : null;
+
+export function reportRuleFields(row: Record<string, unknown>): ReportRuleFields {
+  const deadlineUnit = asUnit(row.deadline_unit);
+  const raw =
+    row.deadline_value == null ? null : Number(row.deadline_value);
+  const valueOk =
+    raw != null &&
+    Number.isFinite(raw) &&
+    raw > 0 &&
+    (deadlineUnit !== "monthly_day" || (raw >= 1 && raw <= 31));
+  const bare = deadlineUnit != null && BARE_DEADLINES.has(deadlineUnit);
+  const stated = bare || (deadlineUnit != null && valueOk);
+  const windowKind = asWindow(row.window_kind);
+  const days = row.window_days == null ? null : Number(row.window_days);
+  return {
+    deadlineValue: stated && !bare ? raw : null,
+    deadlineUnit: stated ? deadlineUnit : null,
+    windowKind,
+    windowDays:
+      windowKind === "rolling_days" && days != null && Number.isFinite(days) && days > 0
+        ? days
+        : null,
+    comparator: asComparator(row.comparator),
+    direction: asDirection(row.direction),
+    thresholdCurrency:
+      row.threshold_currency == null
+        ? null
+        : String(row.threshold_currency).trim().toUpperCase() || null,
+    cashOnly: row.cash_only === true,
+  };
+}
+
+export function idLineFromRow(row: Record<string, unknown>): {
+  dealKind: IdDealKind | string;
+  threshold: string | null;
+  currency: string | null;
+  comparator: "gte" | "gt";
+  diligence: "identify" | "cdd" | "edd";
+  cashOnly: boolean;
+} {
+  return {
+    dealKind: String(row.deal_kind),
+    threshold: idLineAmount(row.threshold),
+    currency:
+      row.currency == null ? null : String(row.currency).trim().toUpperCase() || null,
+    comparator: row.comparator === "gt" ? "gt" : "gte",
+    diligence:
+      row.diligence === "cdd" || row.diligence === "edd" ? row.diligence : "identify",
+    cashOnly: row.cash_only === true,
+  };
+}
 
 export type SummaryWindow = { from?: string; to?: string };
 
@@ -550,6 +676,29 @@ export class LedgerReportingService {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
       const pack = await resolvePack(client, actor.legalEntityId);
+      /* No pack: do not look up Canada's forms under an empty id. */
+      const reports = pack.available
+        ? await client.query(
+            `SELECT DISTINCT ON (code)
+                    code, name, kind, trigger_threshold, trigger_currency,
+                    aggregation_hours, filing_format, fields, format_rules, version,
+                    deadline_value, deadline_unit, window_kind, window_days,
+                    comparator, direction, threshold_currency, cash_only
+               FROM jurisdiction_reports
+              WHERE pack_id=$1
+              ORDER BY code, version DESC`,
+            [pack.packId],
+          )
+        : { rows: [] as Record<string, unknown>[] };
+      const idLines = pack.available
+        ? await client.query(
+            `SELECT deal_kind, threshold, currency, comparator, diligence, cash_only
+               FROM jurisdiction_id_thresholds
+              WHERE pack_id=$1
+              ORDER BY deal_kind`,
+            [pack.packId],
+          )
+        : { rows: [] as Record<string, unknown>[] };
       /* THE FORMS THIS DESK HAS TO FILE, AND WHERE THEY GO.
          `jurisdiction_reports` has carried this since migration 012 and
          nothing served it, so the filing worksheet went on printing "FWR"
@@ -562,15 +711,6 @@ export class LedgerReportingService {
          country's is how this went wrong. Highest version of each code
          wins, for the same reason report-filings.ts resolves that way: a
          revised form is a new version, not a restatement. */
-      const reports = await client.query(
-        `SELECT DISTINCT ON (code)
-                code, name, kind, trigger_threshold, trigger_currency,
-                aggregation_hours, filing_format, fields, format_rules, version
-           FROM jurisdiction_reports
-          WHERE pack_id=$1
-          ORDER BY code, version DESC`,
-        [pack.packId],
-      );
       /* What this desk may hold, and how many decimal places each of
          those has. The browser had its own copy of this — a literal
          `LEDGER_CCYS = ['CAD','USD','EUR','GBP']` in os-src/cdos-os.jsx
@@ -603,6 +743,17 @@ export class LedgerReportingService {
               .filter(([, places]) => places !== LEDGER_SCALE),
           ),
         },
+        /* The disclaimer when this desk is on the international baseline.
+           Null when a country pack is installed. The unavailable sentence
+           only when even the baseline row is missing. */
+        notice: pack.baseline
+          ? BASELINE_NOTICE
+          : pack.available
+            ? null
+            : RULES_UNAVAILABLE_NOTICE,
+        idThresholds: idLines.rows.map((row) =>
+          idLineFromRow(row as Record<string, unknown>),
+        ),
         reports: reports.rows.map((row) => ({
           code: String(row.code),
           name: String(row.name),
@@ -616,6 +767,7 @@ export class LedgerReportingService {
           aggregationHours:
             row.aggregation_hours == null ? null : Number(row.aggregation_hours),
           filingFormat: row.filing_format == null ? null : String(row.filing_format),
+          ...reportRuleFields(row as Record<string, unknown>),
           /* Seeded EMPTY on purpose for every pack — migration 012 says
              why, and it is worth restating where a client can see it: a
              transcribed form is somebody else's paperwork and a guessed

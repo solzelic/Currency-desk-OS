@@ -107,6 +107,80 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
 
+- **Country rules packs can hold the rule as written.** A pack stores
+  an identification line for each of foreign exchange, remittance,
+  electronic funds transfer, and virtual currency. Null on that line
+  means the kind of deal has no line; zero means every deal of that
+  kind. Each line also stores whether the amount is "at or above" or
+  "more than", a due-diligence level (identify, customer due diligence,
+  or enhanced), and whether it applies to cash only. A report row stores
+  a filing deadline (immediately, a count of hours, before the deal is
+  carried out, by a day of the next month, or a count of calendar or
+  business days), how deals are added together (a fixed 24-hour window,
+  a calendar month, a rolling number of days, one banking day, or not
+  at all), whether the threshold is "at or above" or "more than", which
+  direction of cash it covers, whether it counts cash only, and the
+  currency the threshold is written in. A baseline threshold written
+  in US dollars is converted at the newest market snapshot. The six
+  country packs still state their thresholds in home currency, with
+  the new fields at their defaults, and they keep the numbers they
+  had. A country
+  with no pack is not given Canada's, and it is not paused. It
+  operates under `pack-intl-v1`, an international baseline that is not
+  a country. A signup that names Canada and leaves home currency blank
+  still opens on the Canada pack and a CAD rate board, so the first
+  quote can be priced. A baseline desk that names a home currency keeps
+  it. One that names none keeps its books in USD and opens a USD rate
+  board. The baseline identifies a cash foreign exchange at 3,000 USD
+  or more, and a remittance, electronic transfer, or virtual-currency
+  deal at 1,000 USD or more. Full due diligence and the large-cash
+  record are 10,000 USD or more in a fixed 24-hour window. That record
+  is internal; the desk checks whether its own authority wants a
+  report. A suspicious transaction has no amount and is due
+  immediately, to the country's financial intelligence unit. Terrorist
+  or sanctioned property stops the deal and is reported immediately.
+  No sanctions list ships with the pack. Records are kept five years.
+  The regulator field is empty. USD lines convert to the desk's home
+  currency at the newest market snapshot (CAD per 1 unit, the same
+  source the rate sync stores), rounded down to the cent, and that
+  rate and its timestamp are written on the deal.   The same conversion
+  is what the till reads for the identification line and the large-cash
+  line, and what the transfer form reads for the remittance line
+  (1,000 USD). The shop's board mid is not used. A missing snapshot, one
+  older than 24 hours, or a missing mid leaves those lines
+  unset, so identification and the purpose and source of funds are
+  required on every deal. When the line is already in the home
+  currency, no snapshot is required. The till and Settings say "We
+  don't have rules for your country yet. These are the international
+  anti-money-laundering rules. Please check they match your country's
+  laws." Compliance names the pack International baseline (FATF),
+  names no regulator (the country's financial intelligence unit), and
+  lists Large cash record (CASH-RECORD), Suspicious transaction
+  (SUSPICIOUS), and Terrorist or sanctioned property
+  (SANCTIONS-STOP). Each money line is a plain sentence. A desk
+  following the baseline reads the converted home amount and the
+  US-dollar figure it came from. A stricter line names the desk's
+  own figure and the converted baseline separately; the US-dollar
+  source sits on that converted pack value, not on the owner's
+  lower number. A looser line names the same converted baseline.
+  A missing or stale rate says identification is required on every
+  deal. The screen does not fill a baseline desk in with Canada,
+  FINTRAC, or the unconverted 3,000 and 10,000. The new-transfer
+  form treats the typed amount as the desk's home currency. A send
+  is that amount plus the fee; a receive is the payout. The binding
+  line is the lower of the remittance line and the desk's own
+  identification line. No line, or no fresh rate, means identification
+  is required. A Canada desk still identifies at its own line, in
+  Canadian dollars.
+  The threshold editors stay available. A void, a cheque
+  clearance or return, and an obligation settlement or write-off still
+  post, and they keep the pack the original deal was stamped with.
+  Vault and till cash movements still post. Migration 028 points a
+  CAD, empty, or null home currency at the Canada pack and stores CAD
+  where it was blank. Every other home currency is pointed at the
+  baseline and keeps its currency. The known-wrong country packs are
+  not assigned by that backfill.
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -186,7 +260,53 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-05**, first-run tour. The tour does not open or raise a window.
+**2026-10-06**, international baseline. A country with no pack is not
+given Canada's and is not paused. It operates under `pack-intl-v1`.
+Cash foreign exchange is identified at 3,000 USD or more; remittance,
+electronic transfer, and virtual currency at 1,000 USD or more; the
+large-cash record is 10,000 USD in a fixed 24-hour window. Those USD
+lines convert at the newest market snapshot, rounded down to the
+cent, and the rate and its timestamp are stored on the deal. The
+till reads those converted lines. A missing or stale snapshot (older
+than 24 hours) leaves them unset, so identification and the purpose
+and source of funds are required on every deal. Settings says that
+in those words when the rate is missing. A baseline desk
+that names no home currency books in USD. Compliance names
+International baseline (FATF), no regulator, and the three generic
+reports in plain words. A following line reads the converted home
+amount and the US-dollar source in one sentence. A stricter line
+names the desk's own figure and the converted baseline separately.
+It does not fall back to Canada or FINTRAC. The new-transfer form
+treats the typed amount as home currency. A send adds the fee; a
+receive uses the payout. That figure is compared with the remittance
+line and the desk's own identification line, and the lower one binds.
+A missing or stale rate requires identification. A Canada desk still
+uses its own line, in Canadian dollars. The rate tape quotes every
+market mid in the desk's home currency (`home per unit = CAD per unit
+÷ CAD per home`). The change is that home cross now against the
+snapshot about 24 hours earlier. No earlier snapshot, or a current
+snapshot older than 24 hours, shows no change percent. An unknown
+home currency returns an empty tape, not a Canadian one. The home
+currency is not a row on its own tape. When the home rate is missing
+the tape shows the published board and no change. A Canada desk's
+tape stays Canadian dollars per unit. Foreign cash on any other desk
+is valued for identification at the published board's home-per-unit
+mid, the same mid the server uses; no mid requires identification.
+Deal prices still come from that board. A missing rate is shown as
+unavailable. Pipeline, settlement,
+and the other desk screens label money in the home currency; a
+Canada desk still reads CAD. CurrencyDesk's own subscription prices
+stay in Canadian dollars.
+The till and Settings show
+the international-rules disclaimer, and the threshold editors stay
+available. The regulator field is empty. Migration 028 points CAD,
+empty, or null home currency at the Canada pack, and every other home
+currency at the baseline. The known-wrong country packs are not
+assigned. Country packs still use their own single identification
+column. A blank identification answer at setup is not filled with the
+report line.
+
+Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until
 then the card offers Open the till or Open the dashboard, and only that
 click opens it. The card sits in a gap, clear of the shop figures, the

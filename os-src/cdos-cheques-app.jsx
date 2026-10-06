@@ -6,6 +6,7 @@
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
+  const homeCcy = () => (window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD');
   const K = window.CDOS._cheques;
   const { defaultSchedule, defaultCheques, KKEY, SKEY, load, STATUS, RISK_TONE, feeFor, daysBetween, StatusPill, CaptureModal, ChequeDetail } = K;
 
@@ -34,7 +35,7 @@
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="p-3" style={{ background: stats.exposure > 0 ? CD.amberSoft : CD.panel, border: `1px solid ${stats.exposure > 0 ? CD.amber : CD.line}`, borderRadius: 11 }}>
           <div className="text-[10px] uppercase tracking-widest flex items-center gap-1" style={{ color: 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}><Ic n="shield" s={11} c={CD.amber} /> Cash at risk</div>
-          <div className="text-xl font-bold" style={{ color: 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.exposure, 'CAD')}</div>
+          <div className="text-xl font-bold" style={{ color: 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.exposure, homeCcy())}</div>
           <div className="text-[10.5px]" style={{ color: CD.mute }}>{stats.held} on hold{stats.overdue ? ` · ${stats.overdue} overdue` : ''}</div>
         </div>
         <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
@@ -44,7 +45,7 @@
         </div>
         <div className="p-3" style={{ background: CD.panel, border: `1px solid ${stats.lossN ? CD.flag : CD.line}`, borderRadius: 11 }}>
           <div className="text-[10px] uppercase tracking-widest flex items-center gap-1" style={{ color: stats.lossN ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{stats.lossN > 0 && <Ic n="alert" s={11} c={CD.flag} />} Returned losses</div>
-          <div className="text-xl font-bold" style={{ color: stats.lossN ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.losses, 'CAD')}</div>
+          <div className="text-xl font-bold" style={{ color: stats.lossN ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.losses, homeCcy())}</div>
           <div className="text-[10.5px]" style={{ color: CD.mute }}>{stats.lossN} NSF / fraud</div>
         </div>
       </div>
@@ -64,7 +65,7 @@
               <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{c.ref} · {c.typeLabel} · {c.draweeBank} · for {c.customer}</div>
             </div>
             <div className="text-right flex-none">
-              <div className="text-[13px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(c.amount, 'CAD')}</div>
+              <div className="text-[13px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(c.amount, homeCcy())}</div>
               <div className="text-[10.5px] mt-0.5" style={{ color: overdue ? CD.flag : CD.mute }}>{c.status === 'held' ? (overdue ? `overdue ${c.holdUntil}` : `holds to ${c.holdUntil}`) : (STATUS[c.status] || STATUS.held).label}</div>
             </div>
           </button>); })}
@@ -90,7 +91,7 @@
               <td className="px-3 py-2 text-right"><input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
               <td className="px-3 py-2 text-right"><input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
               <td className="px-3 py-2 text-right"><input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
-              <td className="px-3 py-2 text-right font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, 'CAD')}</td>
+              <td className="px-3 py-2 text-right font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
             </tr>); })}</tbody>
         </table>
       </div>
@@ -125,7 +126,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="cheque" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cheques</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(exposure, 'CAD')} at risk{overdue ? ` · ${overdue} overdue` : ''}</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cheques</div><div className="text-[11px]" style={{ color: CD.mute }}>{fmt(exposure, homeCcy())} at risk{overdue ? ` · ${overdue} overdue` : ''}</div></div>
           </div>
           <button onClick={() => setModal(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Cash a cheque</button>
         </div>

@@ -20,6 +20,7 @@ import {
   pairAllowed,
   resolvePack,
 } from "../src/ledger/jurisdiction.js";
+import { readDeskThresholds } from "../src/ledger/thresholds.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -28,6 +29,7 @@ let handle: DbHandle;
 
 async function entity(id: string, country: string) {
   const pack = packForCountry(country);
+  if (!pack) throw new Error(`This test expected a pack for ${country}.`);
   await pool.query(
     "INSERT INTO tenants (id,name) VALUES ($1,$1) ON CONFLICT DO NOTHING",
     [`tnt-${id}`],
@@ -136,5 +138,21 @@ postgres("jurisdiction packs against real PostgreSQL", () => {
     );
     const pack = await withClient((c) => resolvePack(c, "le-jur-old"));
     expect(pack.homeCurrency).toBe("EUR");
+    /* No country pack. The baseline applies, and it is not Canada's.
+       The regulator stays blank. FINTRAC would be a claim. */
+    expect(pack.available).toBe(true);
+    expect(pack.baseline).toBe(true);
+    expect(pack.packId).toBe("pack-intl-v1");
+    expect(pack.packId).not.toBe("pack-ca-v1");
+    expect(pack.regulator).toBe("");
+    expect(pack.regulator).not.toBe("FINTRAC");
+    expect(pack.reportName).toBe("CASH-RECORD");
+    const desk = await withClient((c) => readDeskThresholds(c, "le-jur-old"));
+    expect(desk.regulator).toBe("");
+    expect(desk.regulator).not.toBe("FINTRAC");
+    expect(desk.reportName).toBe("CASH-RECORD");
+    expect(desk.currency).toBe("EUR");
+    expect(desk.aggregationHours.effective).toBe(24);
+    expect(desk.retentionYears.effective).toBe(5);
   });
 });

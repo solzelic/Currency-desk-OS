@@ -11,7 +11,7 @@
    contract, no drift.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, lte } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { jsonMargin } from "../sites/storefront-hold.js";
+import { quoteHomeMarket } from "../rates/ticker-quotes.js";
 
 const DEMO_BRANCH = "br-yorkville";
 
@@ -54,6 +55,48 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
 }
 
 export function registerRatesRoutes(app: FastifyInstance, db: Db) {
+  /* The desk's tape, in its own currency. The public snapshot below stays
+     Canadian dollars per unit — the storefront and the rate sync read it
+     that way. This one is the signed-in desk, so the cross is applied
+     before anything is shown. */
+  app.get("/api/rates/ticker", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const entity = await db
+      .select({ homeCurrency: schema.legalEntities.homeCurrency })
+      .from(schema.legalEntities)
+      .where(eq(schema.legalEntities.id, who.legalEntityId))
+      .limit(1);
+    /* An entity with no home currency is not a Canada desk. Substituting
+       CAD here quoted a dinar shop in Canadian dollars. */
+    const home = (entity[0]?.homeCurrency ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(home)) return { home: null, priced: false, quotes: [] };
+    const rows = await db
+      .select()
+      .from(schema.marketRates)
+      .orderBy(desc(schema.marketRates.fetchedAt))
+      .limit(1);
+    const snap = rows[0];
+    /* Same 24-hour line the compliance gate uses
+       (`fetched_at >= now() - interval '24 hours'`). A snapshot older
+       than that, or no snapshot from about a day earlier, is not a
+       change — the prices may still show, the percent does not. */
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const fresh = !!snap && Date.now() - snap.fetchedAt.getTime() <= DAY_MS;
+    let prior: Record<string, unknown> | null = null;
+    if (snap && fresh) {
+      const earlier = await db
+        .select()
+        .from(schema.marketRates)
+        .where(lte(schema.marketRates.fetchedAt, new Date(snap.fetchedAt.getTime() - DAY_MS)))
+        .orderBy(desc(schema.marketRates.fetchedAt))
+        .limit(1);
+      prior = (earlier[0]?.mids as Record<string, unknown> | undefined) ?? null;
+    }
+    const quoted = quoteHomeMarket(home, (snap?.mids as Record<string, unknown> | undefined) ?? null, prior);
+    return { home, priced: quoted.priced, quotes: quoted.quotes };
+  });
+
   // latest raw market snapshot (mid-market is public information)
   app.get("/api/rates/market", async () => {
     const rows = await db

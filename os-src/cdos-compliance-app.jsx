@@ -176,7 +176,7 @@
     // LCTR 24h aggregates (cash)
     aggClusters(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     // single international transfers at/over threshold
-    transfers.filter(t => t.status !== 'cancelled').forEach(t => { const cad = t.direction === 'send' ? t.payAmt : (t.recvAmt / xr(t.ccy)); if (cad >= regime.threshold) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] }); });
+    transfers.filter(t => t.status !== 'cancelled').forEach(t => { const cad = t.direction === 'send' ? t.payAmt : (t.recvAmt / xr(t.ccy)); if (regime.threshold != null && cad >= regime.threshold) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] }); });
     // EFTR 24h aggregates (wires) — same engine, different trigger
     aggClustersEFT(transfers, beneficiaries, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-transfer ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     return out.map(r => annotateCoverage({ ...r, reportRef: reportRefFor(r.kind, r.id) }, subs));
@@ -348,7 +348,7 @@
                 two new ones in a six-deal cluster are visible at a glance */}
             <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-0.5" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}</button>; })}</div>
           </div>); })}
-        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</div></div>}
+        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -456,7 +456,7 @@
               </>); })()}
             </div>
           </div>))}
-        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</div></div>}
+        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -718,7 +718,7 @@
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="complianceshield" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
           </div>
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}

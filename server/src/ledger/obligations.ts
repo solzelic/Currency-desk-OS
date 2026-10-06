@@ -65,11 +65,12 @@ import Decimal from "decimal.js";
 import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
-import { resolvePack } from "./jurisdiction.js";
+import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import {
   LedgerError,
   requireIdentification,
+  requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
@@ -535,6 +536,7 @@ export class ObligationService {
       await authorizeLedgerActor(client, actor, "transaction:post");
       await requireOpenTill(client, actor);
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const spec = build(home);
       if (
@@ -601,12 +603,13 @@ export class ObligationService {
          engine can apply its own rule — see the columns migration 018
          adds — and the gate here does not pretend to be that engine. */
       const amountHome = spec.cash.amount;
-      await requireIdentification(
+      const compliance = await requireIdentification(
         client,
         actor,
         pack,
         amountHome,
         customer.rows[0].id_status,
+        { kind: spec.dealKind, cash: true },
       );
       if (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim()) {
         const reporting = await resolveReportThreshold(
@@ -675,6 +678,9 @@ export class ObligationService {
         transactionRef,
         now,
         customerId: spec.customerId,
+        packId: pack.packId,
+        packVersion: pack.version,
+        homeCurrency: home,
         dealKind: spec.dealKind,
         receivedInstrument: spec.receivedInstrument,
         disbursedInstrument: spec.disbursedInstrument,
@@ -689,6 +695,8 @@ export class ObligationService {
         fee: spec.fee,
         capture: spec.capture,
         journal,
+        complianceRate: compliance.rate,
+        complianceRateAt: compliance.rateAt,
       });
 
       const delta =
@@ -949,11 +957,28 @@ export class ObligationService {
       const transactionId = `tx_${randomUUID()}`;
       const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
       const settling = ending === "settled";
+      /* No pack: new deals paused; voids and settling existing deals
+         still work. Paying out or writing off an obligation already on
+         the book is not a new deal. The row keeps the pack the opening
+         deal was stamped with, when that deal has one. Otherwise NULL —
+         never an empty string. The home currency is the one on the
+         obligation, which is the book the money was taken in. */
+      const original = await client.query(
+        `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+           FROM ledger_transactions
+          WHERE transaction_id = $1`,
+        [obligation.transaction_id],
+      );
+      const carried = carriedPackStamp(original.rows[0]);
+      const bookedIn = String(home ?? "").trim();
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
         now,
         customerId: obligation.customer_id,
+        packId: carried.packId,
+        packVersion: carried.packVersion,
+        homeCurrency: bookedIn || null,
         dealKind: settling ? "obligation_settlement" : "obligation_write_off",
         /* No cash and no counter. Money moves between the desk and its
            bank on a settlement, and on a write-off nothing moves at
@@ -1275,6 +1300,9 @@ export class ObligationService {
       crossBorder: boolean;
       cashInHome: Decimal;
       cashOutHome: Decimal;
+      packId: string | null;
+      packVersion: number | null;
+      homeCurrency: string | null;
       from: string;
       to: string;
       inputAmount: Decimal;
@@ -1283,6 +1311,8 @@ export class ObligationService {
       fee: Decimal;
       capture: ComplianceCapture;
       journal: JournalLine[];
+      complianceRate?: string | null;
+      complianceRateAt?: Date | null;
     },
   ) {
     /* The check the whole file exists to pass, and it is not routed
@@ -1303,8 +1333,10 @@ export class ObligationService {
           customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,
           fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,
           compliance_captured_by,compliance_captured_at,posted_at,
-          deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28)`,
+          deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home,
+          jurisdiction_pack_id,jurisdiction_pack_version,home_currency,
+          compliance_threshold_rate,compliance_threshold_rate_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1335,6 +1367,11 @@ export class ObligationService {
         row.crossBorder,
         fixed(row.cashInHome),
         fixed(row.cashOutHome),
+        row.packId,
+        row.packVersion,
+        row.homeCurrency,
+        row.complianceRate ?? null,
+        row.complianceRateAt ?? null,
       ],
     );
     for (const [account, side, value] of row.journal) {

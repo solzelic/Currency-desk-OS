@@ -36,7 +36,7 @@ var CUR = [
 var BY = {};
 CUR.forEach(function (c) { BY[c.code] = c; });
 // remember the factory mid for every currency before any staff override is applied
-CUR.forEach(function (c) { c.perCadDefault = c.perCad; });
+CUR.forEach(function (c) { c.perCadDefault = c.perCad; c.chgCatalog = c.chg; });
 
 /* ---------- apply the staff-saved board ORDER (localStorage) ----------
    Written by the Rate Editor when staff drag-reorder the board. Shape:
@@ -156,8 +156,17 @@ var RATE_CONFIG = null;      // last published config, if any
       if (!mid || mid <= 0 || BY[code]) {
         // known currency: refresh the live change % against the current mid
         if (BY[code] && mid > 0 && BY[code].perCad) {
-          var oldMid = 1 / BY[code].perCad;
-          BY[code].chg = oldMid > 0 ? ((mid - oldMid) / oldMid) * 100 : 0;
+          /* A non-CAD board stores home per unit, so 1/perCad is not a
+             CAD mid. Comparing it with this snapshot produced a −98%
+             "move". The tape quotes that desk from /api/rates/ticker;
+             the catalog percent stays the factory one. */
+          var homeCcy = (typeof window.__cdosHome === 'string') ? window.__cdosHome : '';
+          if (homeCcy && homeCcy !== 'CAD') {
+            if (BY[code].chgCatalog != null) BY[code].chg = BY[code].chgCatalog;
+          } else {
+            var oldMid = 1 / BY[code].perCad;
+            BY[code].chg = oldMid > 0 ? ((mid - oldMid) / oldMid) * 100 : 0;
+          }
         }
         return;
       }

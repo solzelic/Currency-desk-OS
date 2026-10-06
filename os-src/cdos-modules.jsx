@@ -73,8 +73,10 @@
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
-      const idFloor = +settings.idRequiredOver || 3000;
-      const idNeeded = single || cadIn(row) >= idFloor;
+      const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
+      const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
+      const idFloor = governed ? idAt : ((window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) ? null : (+settings.idRequiredOver || 3000));
+      const idNeeded = (governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor)));
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
     });
     return map;
@@ -258,21 +260,22 @@
   /* ---- CALCULATOR — Apple-style keypad + FX convert + margin % ---- */
   function Calc({ settings }) {
     const { useEffect } = React;
-    const FXC = (typeof CUR !== 'undefined') ? CUR.filter(c => c.code !== 'CAD').map(c => c.code) : CCY.filter(c => c !== 'CAD');
+    const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
+    const FXC = (typeof CUR !== 'undefined') ? CUR.filter(c => c.code !== home).map(c => c.code) : CCY.filter(c => c !== home);
     let _s = {}; try { _s = JSON.parse(localStorage.getItem('cdos_calc_v1')) || {}; } catch (e) {}
     const [mode, setMode] = useState(_s.mode || 'calc');
     const [disp, setDisp] = useState(_s.disp || '0');
     const [acc, setAcc] = useState(_s.acc != null ? _s.acc : null);
     const [op, setOp] = useState(_s.op || null);
     const [waiting, setWaiting] = useState(_s.waiting != null ? _s.waiting : true);
-    const [amt, setAmt] = useState(_s.amt || '100'); const [from, setFrom] = useState(_s.from || 'USD'); const [to, setTo] = useState(_s.to || 'CAD');
-    const [mIn, setMIn] = useState(_s.mIn || ''); const [mOut, setMOut] = useState(_s.mOut || ''); const [mCcy, setMCcy] = useState(_s.mCcy || 'CAD'); const [mTgt, setMTgt] = useState(_s.mTgt || '');
+    const [amt, setAmt] = useState(_s.amt || '100'); const [from, setFrom] = useState(_s.from || 'USD'); const [to, setTo] = useState(_s.to || home);
+    const [mIn, setMIn] = useState(_s.mIn || ''); const [mOut, setMOut] = useState(_s.mOut || ''); const [mCcy, setMCcy] = useState(_s.mCcy || home); const [mTgt, setMTgt] = useState(_s.mTgt || '');
     const [hist, setHist] = useState(Array.isArray(_s.hist) ? _s.hist : []);
     useEffect(() => { try { localStorage.setItem('cdos_calc_v1', JSON.stringify({ mode, disp, acc, op, waiting, amt, from, to, mIn, mOut, mCcy, mTgt, hist })); } catch (e) {} }, [mode, disp, acc, op, waiting, amt, from, to, mIn, mOut, mCcy, mTgt, hist]);
 
     const r = crossRate(from, to); const out = (parseFloat(amt) || 0) * r;
     const flagOf = (c) => (typeof BY !== 'undefined' && BY[c] && BY[c].flag) ? BY[c].flag : '';
-    const foreign = from !== 'CAD' ? from : (to !== 'CAD' ? to : 'USD');
+    const foreign = from !== home ? from : (to !== home ? to : 'USD');
     const fBuy = window.CDOS.buyUnitCad ? window.CDOS.buyUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const fSell = window.CDOS.sellUnitCad ? window.CDOS.sellUnitCad(foreign, settings) : crossRate(foreign, 'CAD');
     const inv = r ? 1 / r : 0;
@@ -330,15 +333,15 @@
 
       {mode === 'fx' && (<div className="p-4 flex-1 flex flex-col gap-2">
         <div className="text-[11px] uppercase tracking-wider" style={{ color: CD.mute }}>Amount</div>
-        <div className="flex" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, overflow: 'hidden' }}><input value={amt} onChange={e => setAmt(e.target.value)} inputMode="decimal" className="flex-1 min-w-0 px-3 py-2.5 text-xl font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /><select value={from} onChange={e => setFrom(e.target.value)} className="px-2 outline-none font-semibold text-sm" style={{ borderLeft: `1px solid ${CD.ink}`, background: 'var(--cd-chip)' }}>{[...FXC, 'CAD'].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
+        <div className="flex" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, overflow: 'hidden' }}><input value={amt} onChange={e => setAmt(e.target.value)} inputMode="decimal" className="flex-1 min-w-0 px-3 py-2.5 text-xl font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /><select value={from} onChange={e => setFrom(e.target.value)} className="px-2 outline-none font-semibold text-sm" style={{ borderLeft: `1px solid ${CD.ink}`, background: 'var(--cd-chip)' }}>{[...FXC, home].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
         <div className="flex items-center justify-center gap-2 py-1"><span style={{ color: CD.faint }}>=</span><button onClick={() => { setFrom(to); setTo(from); }} className="text-[10px] uppercase tracking-wider px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: CD.mute }}>swap</button></div>
-        <div className="flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}><div className="flex-1 px-3 py-2.5 text-xl font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green }}>{num(out)}</div><select value={to} onChange={e => setTo(e.target.value)} className="px-2 outline-none font-semibold text-sm" style={{ borderLeft: `1px solid ${CD.line}`, background: 'var(--cd-chip)' }}>{['CAD', ...FXC].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
+        <div className="flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}><div className="flex-1 px-3 py-2.5 text-xl font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green }}>{num(out)}</div><select value={to} onChange={e => setTo(e.target.value)} className="px-2 outline-none font-semibold text-sm" style={{ borderLeft: `1px solid ${CD.line}`, background: 'var(--cd-chip)' }}>{[home, ...FXC].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
         <div className="flex gap-1.5 mt-1">{[100, 500, 1000, 5000].map(v => <button key={v} onClick={() => setAmt(String(v))} className="flex-1 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)', color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v >= 1000 ? (v / 1000) + 'k' : v}</button>)}</div>
         <div className="mt-2 p-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
           <div className="flex items-center justify-between text-[12.5px]"><span style={{ color: CD.mute }}>1 {flagOf(from)} {from}</span><b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(r)} {to}</b></div>
           <div className="flex items-center justify-between text-[12.5px] mt-1"><span style={{ color: CD.mute }}>1 {flagOf(to)} {to}</span><b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(inv)} {from}</b></div>
           <div className="my-2" style={{ borderTop: `1px solid ${CD.lineSoft}` }}></div>
-          <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Our desk · {flagOf(foreign)} {foreign} (CAD)</div>
+          <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Our desk · {flagOf(foreign)} {foreign} ({home})</div>
           <div className="flex items-center justify-between text-[12.5px]"><span style={{ color: CD.flag }}>We buy</span><b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fBuy.toFixed(4)}</b></div>
           <div className="flex items-center justify-between text-[12.5px]"><span style={{ color: CD.green }}>We sell</span><b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fSell.toFixed(4)}</b></div>
         </div>
@@ -346,7 +349,7 @@
       </div>)}
 
       {mode === 'margin' && (<div className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between"><span className="text-[11px] uppercase tracking-wider" style={{ color: CD.mute }}>Quick margin check</span><select value={mCcy} onChange={e => setMCcy(e.target.value)} className="text-[12px] font-semibold px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-chip)' }}>{['CAD', ...FXC].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
+        <div className="flex items-center justify-between"><span className="text-[11px] uppercase tracking-wider" style={{ color: CD.mute }}>Quick margin check</span><select value={mCcy} onChange={e => setMCcy(e.target.value)} className="text-[12px] font-semibold px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-chip)' }}>{[home, ...FXC].map(c => <option key={c} value={c}>{(flagOf(c) ? flagOf(c) + ' ' : '') + c}</option>)}</select></div>
         <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>We take in ({mCcy})</div><input value={mIn} onChange={e => setMIn(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full px-3 py-2.5 text-lg font-semibold text-right outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontVariantNumeric: 'tabular-nums' }} /></label>
         <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>We pay out / cost ({mCcy})</div><input value={mOut} onChange={e => setMOut(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full px-3 py-2.5 text-lg font-semibold text-right outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, fontVariantNumeric: 'tabular-nums' }} /></label>
         <div className="p-3 mt-1" style={{ background: 'var(--cd-panel)', border: `1px solid ${mZone}`, borderRadius: 10 }}>

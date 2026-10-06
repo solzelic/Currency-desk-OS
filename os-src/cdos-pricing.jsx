@@ -11,7 +11,6 @@
   const { CD, Ic, CCY, crossRate, fmt, num, priceDeal, spreadOf, buyUnitCad, sellUnitCad, roundPayout } = window.CDOS;
 
   const NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
-  const FOREIGN = (CCY || []).filter(c => c !== 'CAD');
   const PROVIDERS = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
 
   const card = { background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 13 };
@@ -30,6 +29,8 @@
   }
 
   function Pricing({ settings, setSettings, me, log }) {
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+    const FOREIGN = (CCY || []).filter(c => c !== home);
     const set = (k, v, note) => { setSettings(s => ({ ...s, [k]: v })); if (note && log) log('Pricing updated', note); };
     const setSpread = (code, v) => setSettings(s => ({ ...s, spreads: { ...(s.spreads || {}), [code]: v } }));
     const clearSpread = (code) => setSettings(s => { const sp = { ...(s.spreads || {}) }; delete sp[code]; return { ...s, spreads: sp }; });
@@ -38,7 +39,7 @@
     // deliberate deviation the owner owns. ----
     const ov = settings.spotOverride || {};
     const isPinned = (c) => ov[c] != null && ov[c] !== '';
-    const spotOf = (c) => c === 'CAD' ? 1 : (isPinned(c) ? +ov[c] : (crossRate(c, 'CAD') || 0));
+    const spotOf = (c) => c === home ? 1 : (isPinned(c) ? +ov[c] : (home === 'CAD' ? (crossRate(c, 'CAD') || 0) : ((window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0)));
     const setSpot = (c, v) => setSettings(s => ({ ...s, spotOverride: { ...(s.spotOverride || {}), [c]: v } }));
     const resetSpot = (c) => setSettings(s => { const o = { ...(s.spotOverride || {}) }; delete o[c]; return { ...s, spotOverride: o }; });
 
@@ -86,17 +87,17 @@
     const pinnedCount = FOREIGN.filter(c => isPinned(c)).length;
 
     // live deal simulator
-    const [sim, setSim] = useState({ inCcy: 'CAD', outCcy: 'USD', inAmt: '1000' });
+    const [sim, setSim] = useState(() => { const h = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD'; return { inCcy: h, outCcy: h === 'USD' ? 'EUR' : 'USD', inAmt: '1000' }; });
     const simP = useMemo(() => {
       const inC = sim.inCcy, outC = sim.outCcy, amt = parseFloat(sim.inAmt) || 0;
-      const sprdOf = (c) => c === 'CAD' ? 0 : spreadOf(c, settings);
-      const inUnit = inC === 'CAD' ? 1 : spotOf(inC) * (1 - sprdOf(inC));
-      const outUnit = outC === 'CAD' ? 1 : spotOf(outC) * (1 + sprdOf(outC));
+      const sprdOf = (c) => c === home ? 0 : spreadOf(c, settings);
+      const inUnit = inC === home ? 1 : spotOf(inC) * (1 - sprdOf(inC));
+      const outUnit = outC === home ? 1 : spotOf(outC) * (1 + sprdOf(outC));
       const rate = outUnit ? inUnit / outUnit : 0;
       const outAmt = roundPayout(amt * rate, settings);
-      const midIn = amt * (inC === 'CAD' ? 1 : spotOf(inC));
-      const midOut = outAmt * (outC === 'CAD' ? 1 : spotOf(outC));
-      const midRate = (outC === 'CAD' ? 1 : spotOf(outC)) ? (inC === 'CAD' ? 1 : spotOf(inC)) / (outC === 'CAD' ? 1 : spotOf(outC)) : 0;
+      const midIn = amt * (inC === home ? 1 : spotOf(inC));
+      const midOut = outAmt * (outC === home ? 1 : spotOf(outC));
+      const midRate = (outC === home ? 1 : spotOf(outC)) ? (inC === home ? 1 : spotOf(inC)) / (outC === home ? 1 : spotOf(outC)) : 0;
       return { rate: +rate.toFixed(6), outAmt, midRate: +midRate.toFixed(6), marginCad: +(midIn - midOut).toFixed(2), midCadIn: midIn };
     }, [sim, settings, tick]);
     const simBasis = simP.midCadIn || 0;
@@ -201,7 +202,7 @@
             <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10px] uppercase tracking-wide text-left">
                 <th style={{ padding: '8px 16px' }}>Currency</th>
-                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Spot · CAD</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Spot · {home}</th>
                 <th style={{ padding: '8px 10px', textAlign: 'center' }}>Spread</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>We buy</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>We sell</th>
@@ -212,7 +213,7 @@
                 const custom = sp[c] != null && sp[c] !== '';
                 const pinned = isPinned(c);
                 const spot = spotOf(c);
-                const liveMid = crossRate(c, 'CAD') || 0;
+                const liveMid = (home === 'CAD' ? crossRate(c, 'CAD') : ((window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0)) || 0;
                 const sprd = spreadOf(c, settings);
                 const buy = spot * (1 - sprd), sell = spot * (1 + sprd);
                 const perUnit = spot * sprd;   // captured each side vs spot
@@ -244,12 +245,12 @@
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.flag }}>{buy.toFixed(4)}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.green }}>{sell.toFixed(4)}</td>
-                  <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink, fontWeight: 600 }}>{'$' + perUnit.toFixed(3)}</td>
+                  <td style={{ padding: '8px 16px', textAlign: 'right', fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.ink, fontWeight: 600 }}>{(home === 'CAD' ? '$' : '') + perUnit.toFixed(3)}</td>
                 </tr>); })}</tbody>
             </table>
             <div className="flex items-center gap-4 text-[11px]" style={{ padding: '10px 16px', borderTop: `1px solid ${CD.lineSoft}`, color: CD.faint }}>
-              <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.flag }}></span> We buy — CAD we pay per unit acquired</span>
-              <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.green }}></span> We sell — CAD we charge per unit released</span>
+              <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.flag }}></span> We buy — {home} we pay per unit acquired</span>
+              <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.green }}></span> We sell — {home} we charge per unit released</span>
               <span className="flex items-center gap-1.5"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.amber }}></span> Amber spot = manual (feed paused)</span>
               <span style={{ marginLeft: 'auto' }}>Margin / unit = captured each side vs. spot</span>
             </div>
@@ -271,7 +272,7 @@
               </div>
               <div className="flex items-center justify-between px-3 py-2.5" style={{ background: 'var(--cd-paper-soft)', border: `1px solid ${CD.lineSoft}`, borderRadius: 9 }}>
                 <span className="text-[12px]" style={{ color: CD.mute }}>Example</span>
-                <span className="text-[12.5px]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>$1,234.567 <span style={{ color: CD.faint }}>→</span> <b>{fmt(roundEx, 'CAD')}</b></span>
+                <span className="text-[12.5px]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{home === 'CAD' ? '$' : ''}1,234.567 <span style={{ color: CD.faint }}>→</span> <b>{fmt(roundEx, home)}</b></span>
               </div>
               <div className="text-[10.5px] mt-2" style={{ color: CD.faint }}>{roundMode === 'down' ? 'Down favours the desk.' : roundMode === 'up' ? 'Up favours the customer.' : 'Nearest is neutral.'} Applied to the amount the customer receives.</div>
             </div>
@@ -299,7 +300,7 @@
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <div className="px-2.5 py-2" style={{ background: 'var(--cd-paper-soft)', borderRadius: 8 }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Rate</div><div className="text-[13px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(simP.rate)}</div></div>
                 <div className="px-2.5 py-2" style={{ background: 'var(--cd-paper-soft)', borderRadius: 8 }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>vs spot</div><div className="text-[13px] font-semibold" style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>{num(simP.midRate)}</div></div>
-                <div className="px-2.5 py-2" style={{ background: simZone === CD.green ? CD.greenSoft : simZone === CD.amber ? CD.amberSoft : CD.flagSoft, borderRadius: 8 }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Margin</div><div className="text-[13px] font-semibold" style={{ color: simZone, fontVariantNumeric: 'tabular-nums' }}>{fmt(simP.marginCad, 'CAD')} · {simPct.toFixed(2)}%</div></div>
+                <div className="px-2.5 py-2" style={{ background: simZone === CD.green ? CD.greenSoft : simZone === CD.amber ? CD.amberSoft : CD.flagSoft, borderRadius: 8 }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Margin</div><div className="text-[13px] font-semibold" style={{ color: simZone, fontVariantNumeric: 'tabular-nums' }}>{fmt(simP.marginCad, home)} · {simPct.toFixed(2)}%</div></div>
               </div>
               <div className="text-[10.5px] mt-2" style={{ color: CD.faint }}>Priced exactly as the Ledger would, with your spreads &amp; rounding above. Edit a spread and watch it move.</div>
             </div>

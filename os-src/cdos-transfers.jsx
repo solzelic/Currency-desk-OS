@@ -22,6 +22,64 @@
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) / (crossRate('CAD', c) || 1);
+  /* Money as integer cents. The server adds the same figures with
+     decimal.js; a binary float will not land on 799.99. */
+  function centsOf(value) {
+    if (value == null || value === '') return null;
+    const text = String(value).trim();
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(text);
+    if (!match) return null;
+    const frac = (match[2] || '').slice(0, 2);
+    return BigInt(match[1]) * 100n + BigInt((frac + '00').slice(0, 2));
+  }
+  function centsText(cents) {
+    const whole = cents / 100n;
+    const frac = (cents % 100n).toString().padStart(2, '0');
+    return whole.toString() + '.' + frac;
+  }
+  function lowerCents(left, right) {
+    if (left == null) return right;
+    if (right == null) return left;
+    return left <= right ? left : right;
+  }
+  /* What the server will judge this transfer against.
+
+     A send is the amount typed plus the fee. A receive is the payout.
+     Both are already the desk's home currency — the box is not Canadian
+     dollars, and nothing here converts it. On the baseline the binding
+     line is the lower of the remittance line and the desk's own line.
+     No remittance line (no rate, or a stale one) means identification
+     is required. A country pack, Canada included, uses its own
+     identification line and does not substitute the baseline's. */
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine }) {
+    const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
+    if (blank) return { homeAmount: null, reportable: null, idRequired: false };
+    const cash = direction === 'receive'
+      ? centsOf(payout)
+      : (() => {
+          const base = centsOf(principal);
+          const extra = centsOf(fee == null || String(fee).trim() === '' ? '0' : fee);
+          if (base == null || extra == null) return null;
+          return base + extra;
+        })();
+    if (cash == null) return { homeAmount: null, reportable: null, idRequired: false };
+    const homeAmount = centsText(cash);
+    const report = centsOf(reportLine);
+    let line = null;
+    if (baseline) {
+      const remittance = centsOf(remittanceLine);
+      if (remittance == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+      line = lowerCents(remittance, centsOf(deskLine));
+    } else {
+      line = centsOf(idLine);
+      if (line == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+    }
+    return {
+      homeAmount,
+      reportable: report == null ? null : cash >= report,
+      idRequired: cash >= line,
+    };
+  }
 
   /* ---- the lifecycle. Same keys for send & receive; labels adapt. ---- */
   const FLOW = ['created', 'sent', 'transit', 'paid'];
@@ -202,22 +260,34 @@
     useEffect(() => { if (!partners.find(p => p.name === partner)) setPartner(partners[0] ? partners[0].name : ''); }, [corridorId, method]);
 
     const amtN = parseFloat(payAmt) || 0;
-    // SEND: customer pays CAD, beneficiary gets foreign. RECEIVE: foreign in, customer gets CAD.
-    const pricing = useMemo(() => direction === 'send'
-      ? priceDeal({ inCcy: 'CAD', outCcy: recvCcy, inAmt: amtN, settings })
-      : priceDeal({ inCcy: recvCcy, outCcy: 'CAD', inAmt: amtN, settings }), [direction, recvCcy, amtN, settings]);
-    const recvAmt = pricing.outAmt;
-    const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
-
-    const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    /* The desk's own reporting line, from the jurisdiction pack. Null-safe:
-       with no threshold to compare against the honest answer is "cannot
-       say", and treating that as "not reportable" clears a deal nobody
-       checked. */
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const limit = reportingLimit(settings);
-    const reportable = limit.amount != null && cadEquiv >= limit.amount;
+    const thresholds = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = (packNow && packNow.homeCurrency) || (thresholds && thresholds.currency) || limit.currency || 'CAD';
+    const baseline = !!((packNow && (packNow.baseline === true || packNow.kind === 'baseline')) || (settings && settings.baselineRules && !(packNow && packNow.packId)));
+    // SEND: customer pays home currency, beneficiary gets foreign.
+    // RECEIVE: foreign in, customer gets home currency.
+    const pricing = useMemo(() => direction === 'send'
+      ? priceDeal({ inCcy: home, outCcy: recvCcy, inAmt: amtN, settings })
+      : priceDeal({ inCcy: recvCcy, outCcy: home, inAmt: amtN, settings }), [direction, recvCcy, amtN, settings, home]);
+    const recvAmt = pricing.outAmt;
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
-    const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
+    const ruling = transferRuling({
+      direction,
+      principal: payAmt,
+      fee,
+      payout: direction === 'receive' && recvAmt ? recvAmt.toFixed(2) : '',
+      baseline,
+      remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
+      deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
+      idLine: idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null),
+      reportLine: limit.amount,
+    });
+    const homeAmount = ruling.homeAmount;
+    const reportable = ruling.reportable;
+    const idRequired = ruling.idRequired;
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
 
@@ -251,7 +321,7 @@
       const pin = (Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899));
       const seqL = rows.filter(r => r.date === TODAY && r.status !== 'void').length + 1;
       const lref = mkRef(TODAY, seqL);
-      const lin = direction === 'send' ? 'CAD' : recvCcy, lout = direction === 'send' ? recvCcy : 'CAD';
+      const lin = direction === 'send' ? home : recvCcy, lout = direction === 'send' ? recvCcy : home;
       const feeN = parseFloat(fee) || 0;
       const B = serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
 
@@ -349,7 +419,7 @@
         timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? home + ' → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' ' + home} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
       if (posted && onServerPosted) {
         try { await onServerPosted(); }
         catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }
@@ -433,24 +503,24 @@
 
           {/* amount + FX */}
           <div className="p-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-            <Field label={direction === 'send' ? 'Customer pays in (CAD)' : `Amount received (${recvCcy})`}>
+            <Field label={direction === 'send' ? `Customer pays in (${home})` : `Amount received (${recvCcy})`}>
               <div className="flex" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, overflow: 'hidden' }}>
-                <span className="px-3 grid place-items-center font-semibold text-sm" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>{direction === 'send' ? 'CAD' : recvCcy}</span>
+                <span className="px-3 grid place-items-center font-semibold text-sm" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>{direction === 'send' ? home : recvCcy}</span>
                 <input value={payAmt} onChange={e => setPayAmt(e.target.value)} inputMode="decimal" autoFocus placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 text-xl font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} />
               </div>
             </Field>
             <div className="flex items-center justify-center gap-2 py-2">
               <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: CD.greenSoft, color: CD.green, fontFamily: 'Space Mono, monospace' }}>{cor.flag} {cor.country}</span>
-              <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {direction === 'send' ? 'CAD' : recvCcy} = {pricing.rate ? num(pricing.rate) : '—'} {direction === 'send' ? recvCcy : 'CAD'}</span>
+              <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {direction === 'send' ? home : recvCcy} = {pricing.rate ? num(pricing.rate) : '—'} {direction === 'send' ? recvCcy : home}</span>
             </div>
-            <Field label={direction === 'send' ? `Beneficiary receives (${recvCcy})` : 'Customer receives (CAD)'}>
+            <Field label={direction === 'send' ? `Beneficiary receives (${recvCcy})` : `Customer receives (${home})`}>
               <div className="flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
-                <span className="px-3 grid place-items-center font-semibold text-sm" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>{direction === 'send' ? recvCcy : 'CAD'}</span>
+                <span className="px-3 grid place-items-center font-semibold text-sm" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>{direction === 'send' ? recvCcy : home}</span>
                 <div className="flex-1 px-3 py-2.5 text-xl font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green }}>{recvAmt ? num(recvAmt) : '—'}</div>
               </div>
             </Field>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <Field label="Transfer fee (CAD)"><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, fontVariantNumeric: 'tabular-nums' }} /></Field>
+              <Field label={`Transfer fee (${home})`}><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, fontVariantNumeric: 'tabular-nums' }} /></Field>
               <Field label={requirePurpose ? 'Purpose (required)' : 'Purpose'}><select value={purpose} onChange={e => setPurpose(e.target.value)} className={inputCls} style={{ ...inputSty, borderColor: (requirePurpose && !purpose) ? CD.flag : undefined }}>{requirePurpose && <option value="">Select a purpose…</option>}{PURPOSES.map(p => <option key={p}>{p}</option>)}</select></Field>
             </div>
             {amtN > 0 && (<div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -465,10 +535,10 @@
                   recognized on the Settlement tab, against a real price. */}
               <span className="text-[11px]" style={{ color: CD.mute }}>
                 {serverBacked
-                  ? <>Booked now: <b style={{ color: CD.green }}>{fmt(parseFloat(fee) || 0, 'CAD')}</b> fee · <span style={{ color: CD.faint }}>rate margin at settlement</span></>
-                  : <>Spread captured <b style={{ color: CD.green }}>{fmt(pricing.marginCad, 'CAD')}</b>{(parseFloat(fee) || 0) > 0 && <span style={{ color: CD.faint }}> · +{fmt(fee, 'CAD')} fee</span>}</>}
+                  ? <>Booked now: <b style={{ color: CD.green }}>{fmt(fee || '0', home)}</b> fee · <span style={{ color: CD.faint }}>rate margin at settlement</span></>
+                  : <>Spread captured <b style={{ color: CD.green }}>{fmt(pricing.marginCad, home)}</b>{(parseFloat(fee) || 0) > 0 && <span style={{ color: CD.faint }}> · +{fmt(fee, home)} fee</span>}</>}
               </span>
-              {direction === 'send' && <span className="text-[11px] font-medium" style={{ color: CD.ink }}>Collect {fmt(payCad, 'CAD')}</span>}
+              {direction === 'send' && homeAmount && <span className="text-[11px] font-medium" style={{ color: CD.ink }}>Collect {fmt(homeAmount, home)}</span>}
             </div>)}
             {serverError && (
               <div className="mt-2 px-3 py-2 text-[12px]" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 9, color: CD.flag }}>
@@ -481,7 +551,7 @@
           {(reportable || idRequired) && (
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
-              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(cadEquiv, 'CAD')} (≥ {limit.label}). An international EFT report will be required.</div>}
+              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>
@@ -502,6 +572,8 @@
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = (packNow && packNow.homeCurrency) || 'CAD';
     const idx = FLOW.indexOf(t.status);
     const nextKey = idx >= 0 && idx < FLOW.length - 1 ? FLOW[idx + 1] : null;
     const terminal = t.status === 'paid' || t.status === 'cancelled';
@@ -535,10 +607,10 @@
             {ben && ben.method === 'bank' && <DRow k="Account" v={`${ben.bank} · ${ben.account}`} mono />}
             {ben && ben.method === 'cash' && <DRow k="Pickup" v={ben.pickupCity} />}
             {ben && ben.method === 'wallet' && <DRow k="Wallet" v={ben.walletId} mono />}
-            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={`${num(t.payAmt)} ${dir === 'send' ? 'CAD' : t.ccy}`} mono />
-            <DRow k="Rate" v={`${num(t.rate)} ${dir === 'send' ? t.ccy : 'CAD'}/${dir === 'send' ? 'CAD' : t.ccy}`} mono />
-            <DRow k="Fee" v={fmt(t.fee, 'CAD')} mono />
-            <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={`${num(t.recvAmt)} ${dir === 'send' ? t.ccy : 'CAD'}`} mono accent={CD.green} />
+            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={`${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`} mono />
+            <DRow k="Rate" v={`${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`} mono />
+            <DRow k="Fee" v={fmt(t.fee, home)} mono />
+            <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={`${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`} mono accent={CD.green} />
             <DRow k="Purpose" v={t.purpose} />
           </div>
 
@@ -581,6 +653,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

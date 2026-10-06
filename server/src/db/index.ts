@@ -301,6 +301,13 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   home_currency char(3),
   jurisdiction_pack_id text,
   jurisdiction_pack_version integer,
+  -- Per-deal identification lines and the extra columns on a report
+  -- (deadline, window, comparator, direction, threshold currency) are
+  -- migration 028, on jurisdiction_id_thresholds and jurisdiction_reports.
+  -- Those tables are not created here. PGlite does not run the SQL
+  -- migrations, and a foreign key to jurisdiction_packs would fail
+  -- because that table is created by migration 011, which runs after
+  -- this script on Postgres. Same split as the pack tables themselves.
   -- how this desk costs its inventory: 'weighted_average' or 'fifo'. NULL
   -- means "follow the jurisdiction pack's suggestion". Migration 014 adds it
   -- to existing databases; it is here because the test database is built from

@@ -38,6 +38,7 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { marketHomePerUnit, roundDownCents } from "./compliance-gate.js";
 import { resolvePack, type JurisdictionPack } from "./jurisdiction.js";
 
 /** Where a desk's own number stands against what its regulator requires. */
@@ -76,6 +77,12 @@ export type DeskThresholds = {
   reportThreshold: ThresholdSetting<string>;
   /** the line at or above which the customer must be identified */
   idThreshold: ThresholdSetting<string>;
+  /** The remittance identification line, in home currency.
+      On the baseline this is 1,000 USD converted at the market snapshot,
+      rounded down to the cent, and null when that rate is stale or missing.
+      A country pack already states it in home currency. The desk's own
+      identification line is `idThreshold`, not this one. */
+  remittanceIdThreshold: ThresholdSetting<string>;
   /** the window several small deals by one person are summed over */
   aggregationHours: ThresholdSetting<number>;
   /** how long filed reports and their records are kept */
@@ -159,6 +166,47 @@ const asCountSetting = (
   ),
 });
 
+/* The pack's remittance identification line, in the desk's home currency.
+   Same conversion as the cash-exchange line: a USD figure times the newest
+   market snapshot, rounded down to the cent. No fresh rate, no line.
+   A line already in home currency does not need a snapshot. */
+async function remittanceLine(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  market: { rate: Decimal } | null,
+): Promise<ThresholdSetting<string>> {
+  const unset: ThresholdSetting<string> = {
+    effective: null,
+    deskChoice: null,
+    packValue: null,
+    posture: "unknown",
+  };
+  if (!pack.available || !pack.packId) return unset;
+  let row: { threshold?: unknown; currency?: unknown } | undefined;
+  try {
+    const found = await client.query(
+      `SELECT threshold, currency
+         FROM jurisdiction_id_thresholds
+        WHERE pack_id = $1 AND deal_kind = 'remittance'`,
+      [pack.packId],
+    );
+    row = found.rows[0];
+  } catch (error) {
+    if ((error as { code?: string }).code === "42P01") return unset;
+    throw error;
+  }
+  const amount = money(row?.threshold);
+  if (!amount) return unset;
+  const currency = String(row?.currency ?? "").trim().toUpperCase();
+  const home = pack.homeCurrency.trim().toUpperCase();
+  let converted: Decimal | null = null;
+  if (currency && currency === home) converted = amount;
+  else if (currency === "USD" && market) converted = roundDownCents(amount.mul(market.rate));
+  if (!converted) return unset;
+  const value = converted.toFixed(2);
+  return { effective: value, deskChoice: null, packValue: value, posture: "following" };
+}
+
 /**
  * Every threshold this desk operates under, resolved, inside the caller's
  * transaction.
@@ -188,6 +236,30 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
+  /* A baseline pack states its dollar lines in the desk's currency, at
+     the same market rate the posting gate uses, rounded down to the cent.
+     No fresh rate: the lines are unset, and identification is required. */
+  const baselineForeign =
+    pack.baseline && pack.homeCurrency.trim().toUpperCase() !== "USD";
+  const market = baselineForeign
+    ? await marketHomePerUnit(client, "USD", pack.homeCurrency)
+    : { rate: new Decimal(1), rateAt: null };
+  const packMoney = (raw: unknown): Decimal | null => {
+    const amount = money(raw);
+    if (!baselineForeign) return amount;
+    if (!market || !amount) return null;
+    return roundDownCents(amount.mul(market.rate));
+  };
+  const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
+    baselineForeign && !market
+      ? {
+          effective: null,
+          deskChoice: money(deskRaw)?.toFixed(2) ?? null,
+          packValue: null,
+          posture: "unknown" as const,
+        }
+      : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
+  const remittanceIdThreshold = await remittanceLine(client, pack, market);
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,
@@ -195,27 +267,19 @@ export async function readDeskThresholds(
     jurisdiction: pack.jurisdiction,
     regulator: pack.regulator,
     reportName: pack.reportName,
-    reportThreshold: asMoneySetting(
-      money(row.report_threshold),
-      money(pack.reportThreshold),
-      "lower_is_stricter",
-    ),
-    idThreshold: asMoneySetting(
-      money(row.id_threshold),
-      money(pack.idThreshold),
-      "lower_is_stricter",
-    ),
+    reportThreshold: moneyLine(row.report_threshold, pack.reportThreshold),
+    idThreshold: moneyLine(row.id_threshold, pack.idThreshold),
+    remittanceIdThreshold,
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
-      /* The pack's own column when the entity actually points at a pack,
-         and the pilot's 24 when `resolvePack` had to fall back — an entity
-         with no pack row has no pack column to read. */
-      count(row.pack_aggregation_hours) ?? 24,
+      /* No pack: do not invent a 24-hour window. That number is Canada's,
+         and a desk with no pack is not a Canadian desk. */
+      pack.available ? (count(row.pack_aggregation_hours) ?? 24) : null,
       "higher_is_stricter",
     ),
     retentionYears: asCountSetting(
       count(row.retention_years),
-      count(row.pack_retention_years) ?? 5,
+      pack.available ? (count(row.pack_retention_years) ?? 5) : null,
       "higher_is_stricter",
     ),
   };

@@ -58,6 +58,23 @@ async function reset(authorized: string[] = [DEMO.branchId]) {
   await pool.query(
     "TRUNCATE ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,ledger_vault_movements,ledger_vault_balances,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_rates,ledger_principals CASCADE",
   );
+  /* The book this file posts into is the Canadian demo. The pack has to
+     be named here. A missing pack used to be read as Canada, and the
+     board-rate fallback below only applies when the home currency is CAD. */
+  await pool.query(
+    "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
+    [DEMO.tenantId],
+  );
+  await pool.query(
+    `INSERT INTO legal_entities
+       (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
+     VALUES ($1,$2,'York Currency Exchange Inc.','CAD','pack-ca-v1',1)
+     ON CONFLICT (id) DO UPDATE
+       SET home_currency='CAD',
+           jurisdiction_pack_id='pack-ca-v1',
+           jurisdiction_pack_version=1`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
   await pool.query(
     `INSERT INTO ledger_principals
       (user_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,role,authorized_branch_ids)

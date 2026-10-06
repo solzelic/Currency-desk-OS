@@ -71,7 +71,12 @@ sitting at the old figure unwritable — and would fail the very UPDATE
 trying to fix them. The relationship between the two numbers is a **posture
 the desk is told about**, not a constraint that stops a row existing. Only
 the arithmetic is guarded: a negative or zero threshold is not a strict
-desk, it is a broken one.
+desk, it is a broken one. That zero is the desk's override column and
+the pack's single `id_threshold` column. It is not the per-deal line in
+`jurisdiction_id_thresholds`, where null means "this kind of deal has
+no line" and zero means "every deal". A country pack's posting gate
+still resolves the single column, and `money()` still treats zero
+there as "cannot say". The baseline gate reads the per-deal rows.
 
 ## What the ledger does with it
 
@@ -79,6 +84,71 @@ The identification line is not advice. `LedgerService.requireIdentification`
 refuses to post a deal at or above it for a customer nobody has identified,
 on both posting paths, **in the currency the pack states the book is kept
 in**.
+
+A desk with no country pack is not paused and is not given Canada's
+line. It trades under the international baseline (`pack-intl-v1`).
+The same new deals post under that pack:
+
+- a quote
+- an exchange
+- a frozen quote
+- a remittance being sent
+- a remittance being received
+- a bill payment
+- a money order
+- a cheque being cashed
+- an owner writing a threshold override
+
+The baseline states those identification lines in US dollars. A cash
+foreign exchange is identified at 3,000 USD or more. A remittance, an
+electronic transfer, and a virtual-currency deal are identified at
+1,000 USD or more. Full due diligence, the purpose and source of
+funds, is the large-cash line: 10,000 USD or more. The posting gate
+and the numbers the till reads (`readDeskThresholds`) convert those
+figures into the desk's home currency at the newest market snapshot
+(CAD per 1 unit), not at a mid the shop set on its board, and round
+down to the cent. The remittance identification line (1,000 USD) is
+converted the same way and returned as `remittanceIdThreshold`. The
+gate stores the rate and the snapshot time on the deal. If the
+snapshot is missing, older than 24 hours, or has no mid for the home
+currency, those lines come back unset: an unverified customer is
+identified on every deal, and purpose and source of funds are
+required on every deal. A line already written in the home currency
+does not need a snapshot. A USD book does not either. The threshold editors stay available. The
+till and Settings show: "We don't have rules for your country yet.
+These are the international anti-money-laundering rules. Please check
+they match your country's laws." Compliance names that pack
+International baseline (FATF), names no regulator, and lists Large
+cash record (CASH-RECORD), Suspicious transaction (SUSPICIOUS), and
+Terrorist or sanctioned property (SANCTIONS-STOP). Each money line is a plain sentence. A desk following the
+baseline reads "Following the international baseline: £8,000.00,
+which is 10,000 USD at today's market rate." A stricter line names
+the desk's own figure and the converted baseline separately: the
+US-dollar source sits on that converted pack value, not on the
+owner's lower number. A looser line names the same converted
+baseline, not the raw 10,000. A missing or stale rate says
+identification is required on every deal. A baseline desk is not
+shown Canada, FINTRAC, or the unconverted 3,000 and 10,000. The
+new-transfer form treats the typed amount as the desk's home
+currency. A send adds the fee; a receive uses the payout. That cash
+is compared with the remittance line and the desk's own
+identification line, and the lower one binds. A Canada desk still
+uses its own line, in Canadian dollars. No line, or no fresh rate,
+means identification is required.
+
+These still post, because they are not a new deal:
+
+- voiding an exchange already on the book
+- voiding a cheque cashing
+- voiding an open obligation
+- clearing or returning a cheque the desk already holds
+- settling or writing off an obligation already open
+- a vault movement
+- a till cash movement
+
+A settlement row is stamped with the pack the original deal was
+stamped with. A deal that was never stamped stays NULL. The Settings
+editors stay available on a baseline desk.
 
 It used to be this, in a code path documented as jurisdiction-neutral:
 
@@ -102,6 +172,9 @@ Null is not zero and it is not infinity. Both blanket answers are wrong: a
 gate that never fires clears deals nobody checked, and a gate that always
 fires stops a working shop trading. So the gate does not give a blanket
 answer:
+
+This is a pack that is installed and states no line. A desk with no
+country pack does not land here: it trades under the baseline, as above.
 
 - **A verified customer trades.** They satisfy every possible value of a
   line nobody can state. There is nothing to be unsure about, and a

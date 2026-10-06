@@ -82,7 +82,12 @@ export async function publishStartingBoard(
     .limit(1);
   if (existing.length) return { published: false, currencies: [] };
 
-  const home = (args.homeCurrency ?? "CAD").toUpperCase();
+  /* The board is priced in the currency the desk actually keeps its
+     book in. A desk that has not named one does not get a Canadian
+     board: publishing CAD prices for a shop that has no home currency
+     is the same leak as handing it the Canada pack. */
+  const home = String(args.homeCurrency ?? "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(home)) return { published: false, currencies: [] };
   const snapshot = await db
     .select({ mids: schema.marketRates.mids })
     .from(schema.marketRates)
@@ -97,10 +102,23 @@ export async function publishStartingBoard(
      opens with the majors rather than an empty one they cannot quote from. */
   const codes = wanted.length ? wanted : ["USD", "EUR", "GBP"];
 
+  /* Live mids and the indicative table are Canadian dollars per one
+     unit. A Canadian book stores them as they are. Any other book
+     restates them in its own currency. If this table cannot price
+     that currency, there is no honest board to publish. */
+  const cadPerHome = home === "CAD" ? 1 : cadPerUnit(home, live);
+  if (!cadPerHome) return { published: false, currencies: [] };
+
   const rows: Record<string, { mid: number; show: boolean }> = {};
   for (const code of codes) {
-    const mid = live[code] ?? midFromIndicative(code);
-    if (mid) rows[code] = { mid, show: true };
+    if (home === "CAD") {
+      const mid = live[code] ?? midFromIndicative(code);
+      if (mid) rows[code] = { mid, show: true };
+      continue;
+    }
+    const cadPerCode = cadPerUnit(code, live);
+    if (!cadPerCode) continue;
+    rows[code] = { mid: Number((cadPerCode / cadPerHome).toFixed(6)), show: true };
   }
   if (!Object.keys(rows).length) return { published: false, currencies: [] };
 
@@ -121,6 +139,13 @@ export async function publishStartingBoard(
 function midFromIndicative(code: string): number | null {
   const perCad = INDICATIVE_PER_CAD[code];
   return perCad ? Number((1 / perCad).toFixed(6)) : null;
+}
+
+/** Canadian dollars per one unit, from the live snapshot or the indicative table. */
+function cadPerUnit(code: string, live: Record<string, number>): number | null {
+  const fromLive = live[code];
+  if (typeof fromLive === "number" && Number.isFinite(fromLive) && fromLive > 0) return fromLive;
+  return midFromIndicative(code);
 }
 
 /**

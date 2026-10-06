@@ -18,7 +18,11 @@
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
-import { packForCountry } from "../ledger/jurisdiction.js";
+import {
+  packForCountry,
+  packIdThreshold,
+  SETUP_ID_DEAL,
+} from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
@@ -87,6 +91,16 @@ export interface DeskSpec {
 const str = (r: Record<string, Resolved>, id: string): string =>
   typeof r[id]?.value === "string" ? (r[id]!.value as string).trim() : "";
 
+/* A number the owner typed on the identification screen. Blank, zero,
+   and anything that is not a number are not a choice. Zero on the pack's
+   own table means "every deal"; zero in this field means the box was empty. */
+export function typedIdentificationLine(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
 /* Build the spec from resolved answers. Resolved, not raw, so that the
    regulator and home currency that follow from the country come along
    without anybody having typed them. */
@@ -94,8 +108,11 @@ export function specFromAnswers(
   resolved: Record<string, Resolved>,
   application?: { details?: Record<string, unknown> | null } | null,
 ): DeskSpec {
-  const country = str(resolved, "country") || "CA";
-  const j = JURISDICTION[country] ?? JURISDICTION.CA!;
+  /* A blank country, or one this list does not know ("RS", "Somewhere
+     else"), is not Canada. It does not get FINTRAC, and it does not get
+     CAD, unless the setup actually named a home currency. */
+  const country = str(resolved, "country");
+  const j = country ? JURISDICTION[country] : undefined;
   const businessName = str(resolved, "operatingName");
   const legalName = str(resolved, "bizName") || businessName;
 
@@ -124,6 +141,10 @@ export function specFromAnswers(
 
   const val = (id: string): unknown => resolved[id]?.value ?? null;
 
+  /* A blank identification field used to copy the report threshold.
+     10,000 is what Canada reports at. It is not what Canada identifies
+     at. Blank stays blank here; provisionDesk fills it from the pack's
+     identification line for foreign exchange, once it can read the pack. */
   return {
     businessName,
     legalName,
@@ -132,7 +153,7 @@ export function specFromAnswers(
     slug,
     plan: PLAN_TIER[planId] ?? "premium",
     msbNumber: str(resolved, "msbNumber") || null,
-    regulator: str(resolved, "regulator") || j.regulator,
+    regulator: str(resolved, "regulator") || j?.regulator || "",
     team,
     /* The whole picture, in the design's own words. A desk that cannot say
        what spread it opened on, or who its compliance officer is, has
@@ -146,11 +167,11 @@ export function specFromAnswers(
       promo: val("promo") ?? "",
 
       country,
-      regulator: str(resolved, "regulator") || j.regulator,
-      homeCurrency: str(resolved, "homeCurrency") || j.currency,
-      reportThreshold: val("reportThreshold") ?? j.reportThreshold,
-      reportName: val("reportName") ?? j.report,
-      idThreshold: Number(val("idOver")) || j.reportThreshold,
+      regulator: str(resolved, "regulator") || j?.regulator || "",
+      homeCurrency: str(resolved, "homeCurrency") || j?.currency || "",
+      reportThreshold: val("reportThreshold") ?? j?.reportThreshold ?? null,
+      reportName: val("reportName") ?? j?.report ?? "",
+      idThreshold: typedIdentificationLine(val("idOver")),
 
       operatingName: businessName,
       bizName: legalName,
@@ -158,7 +179,7 @@ export function specFromAnswers(
       address: {
         street: str(resolved, "street"), city: str(resolved, "city"),
         region: str(resolved, "region"), postal: str(resolved, "postal"),
-        country: str(resolved, "country_addr") || j.country,
+        country: str(resolved, "country_addr") || j?.country || country,
       },
 
       phone: str(resolved, "phone"),
@@ -261,13 +282,38 @@ export async function provisionDesk(
   const branchId = "br-" + slug + "-main";
   const workspaceId = "ws-" + slug + "-till-01";
 
-  await db.insert(schema.tenants).values({
-    id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup: spec.setup,
-  }).onConflictDoNothing();
   /* The country they picked installs the jurisdiction: its regulator, its
      reporting thresholds, and the currency this desk keeps its books in.
-     Nothing downstream asks "is this Canada" — it asks the pack. */
-  const pack = packForCountry((spec.setup as Record<string, unknown>)?.country as string);
+     A country with no pack still gets a desk. It does not get Canada's.
+     Done before the tenant row is written, because the identification
+     line filled in below is part of the setup that row stores. */
+  const setup = spec.setup;
+  const pack = packForCountry(
+    typeof setup.country === "string" ? setup.country : null,
+  );
+  /* A country with no pack is not paused. It trades under the
+     international baseline, in the home currency it named, or USD
+     when it named none. Canada's pack is not applied. */
+  const statedHome =
+    typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim().toUpperCase() : "";
+  const bookHome = pack ? pack.homeCurrency : statedHome || "USD";
+  if (!pack) {
+    setup.baselineRules = true;
+    setup.rulesUnavailable = false;
+    setup.homeCurrency = bookHome;
+  }
+  if (pack && typedIdentificationLine(setup.idThreshold) == null) {
+    const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
+    /* A positive amount fills the blank box. Zero means every deal on
+       the pack's own table, and it is not written back into this field,
+       because zero here means the box was left empty. */
+    if (line.status === "amount") {
+      setup.idThreshold = Number(line.amount.toDecimalPlaces(2).toFixed(2));
+    }
+  }
+  await db.insert(schema.tenants).values({
+    id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
+  }).onConflictDoNothing();
   /* "When should the desk ask for ID?" — screen four of onboarding, and the
      answer used to land in `tenants.setup` and stop there. The browser read
      it once into its own saved state on first run; the ledger, which is
@@ -288,12 +334,16 @@ export async function provisionDesk(
      on the day it opened, on the strength of a question it thought it was
      answering about something else. NULL means "follow the pack", and for
      every answer except a real tightening that is the truthful state. */
-  const chosenIdLine = await idThresholdFromSetup(spec.setup, pack.packId, db);
+  const chosenIdLine = await idThresholdFromSetup(
+    setup,
+    pack?.packId ?? "pack-intl-v1",
+    db,
+  );
   await db.insert(schema.legalEntities).values({
     id: legalEntityId, tenantId, name: spec.legalName, msbNumber: spec.msbNumber, jurisdiction: spec.regulator,
-    homeCurrency: pack.homeCurrency,
-    jurisdictionPackId: pack.packId,
-    jurisdictionPackVersion: pack.version,
+    homeCurrency: bookHome,
+    jurisdictionPackId: pack?.packId ?? "pack-intl-v1",
+    jurisdictionPackVersion: pack?.version ?? 1,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
@@ -312,11 +362,12 @@ export async function provisionDesk(
      safe, and inventing a figure for somebody's cash is exactly what the
      cash-ownership invariants forbid. The Vault screen asks them to count
      it in. */
-  const setup = (spec.setup ?? {}) as Record<string, unknown>;
   const board = await publishStartingBoard(db, {
     tenantId, legalEntityId, branchId,
     currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
-    homeCurrency: typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined,
+    /* Canada with no home currency in the body is still a CAD book.
+       A baseline desk is priced in the currency it named, or USD. */
+    homeCurrency: bookHome,
     // the margin they set, shown back to them, and previewed on screen 12
     spreadAll: setup.spreadAll,
   });

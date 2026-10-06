@@ -41,6 +41,7 @@
 (function () {
   const { useState, useMemo, useEffect } = React;
   const { CD, Ic, fmt, num, TODAY, crossRate, newTx, mkRef } = window.CDOS;
+  const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const addDays = (date, n) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); };
@@ -225,7 +226,7 @@
              offers and the only thing the server will take. A cheque in
              anything else is an exchange as well as a cheque and belongs
              on the quote path; the server refuses it by name. */
-          currency: 'CAD',
+          currency: homeCcy(),
           faceAmount: book.asMoney(amtN),
           feeAmount: book.asMoney(fee),
           holdDays: holdDays,
@@ -247,7 +248,7 @@
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, 'CAD')} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), 'CAD')} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -270,7 +271,7 @@
           </Field>
 
           {/* cheque type → fee schedule */}
-          <Field label="Cheque type" hint={`${type.feePct}% · min ${fmt(type.feeMin, 'CAD')} · ${type.holdDays}d hold`}>
+          <Field label="Cheque type" hint={`${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`}>
             <div className="flex flex-wrap gap-1.5">
               {schedule.map(t => { const on = typeId === t.id; const r = RISK_TONE[t.risk]; return (
                 <button key={t.id} onClick={() => { setTypeId(t.id); setHoldOverride(null); }} className="px-2.5 py-1.5 text-[12px] font-medium flex items-center gap-1.5" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.text }}>
@@ -307,10 +308,10 @@
           <div className="p-3" style={{ background: rt.bg, borderRadius: 10, border: `1px solid ${rt.c}` }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: rt.c }}><Ic n="shield" s={13} c={rt.c} /> Fronting cash · {rt.t.toLowerCase()} risk</span>
-              <span className="text-[11px]" style={{ color: CD.mute }}>fee {fmt(fee, 'CAD')}</span>
+              <span className="text-[11px]" style={{ color: CD.mute }}>fee {fmt(fee, homeCcy())}</span>
             </div>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(net, 'CAD')}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(net, homeCcy())}</div></div>
               <Ic n="arrowright" s={16} c={CD.faint} />
               <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : holdUntil}</div></div>
             </div>
@@ -327,7 +328,7 @@
             needs identifying, the cheque is in the wrong currency. */}
         {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
         <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, 'CAD')}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, 'CAD')}</b></> : 'Enter the cheque amount'}</div>
+          <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
           <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
         </div>
       </div>
@@ -372,10 +373,10 @@
       'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf',
       (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF — insufficient funds', nsf: true }),
-      'Cheque returned NSF', `loss ${fmt(c.netCad, 'CAD')}`);
+      'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
     const returnFraud = () => act('fraud',
       (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud — suspect cheque', fraud: true }),
-      'Cheque flagged fraud', `loss ${fmt(c.netCad, 'CAD')}`);
+      'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -402,11 +403,11 @@
           {/* exposure banner */}
           {c.status === 'held' && <div className="p-3" style={{ background: overdue ? CD.flagSoft : CD.amberSoft, borderRadius: 11 }}>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.netCad, 'CAD')}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.netCad, homeCcy())}</div></div>
               <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{c.holdUntil}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
             </div>
           </div>}
-          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {fmt(c.netCad, 'CAD')} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
+          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {fmt(c.netCad, homeCcy())} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
 
           {/* cheque capture */}
           <div>
@@ -417,9 +418,9 @@
             <DRow k="Type" v={c.typeLabel} />
             <DRow k="Customer" v={c.customer} />
             <DRow k="Endorsed" v={c.endorsed ? 'Yes — signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
-            <DRow k="Face value" v={fmt(c.amount, 'CAD')} mono />
-            <DRow k="Fee kept" v={fmt(c.feeCad, 'CAD')} mono accent={CD.green} />
-            <DRow k="Cash fronted" v={fmt(c.netCad, 'CAD')} mono />
+            <DRow k="Face value" v={fmt(c.amount, homeCcy())} mono />
+            <DRow k="Fee kept" v={fmt(c.feeCad, homeCcy())} mono accent={CD.green} />
+            <DRow k="Cash fronted" v={fmt(c.netCad, homeCcy())} mono />
             {c.image && <div className="mt-2"><img src={c.image} alt="cheque" style={{ maxWidth: '100%', border: `1px solid ${CD.line}`, borderRadius: 8 }} /></div>}
           </div>
 

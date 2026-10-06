@@ -117,7 +117,10 @@ export async function landOnDesktop(page: Page): Promise<void> {
     chooser.waitFor({ state: "visible", timeout: 45_000 }),
     desktop.waitFor({ state: "visible", timeout: 45_000 }),
   ]);
-  if (!(await chooser.isVisible())) return;
+  if (!(await chooser.isVisible())) {
+    await frontWindow(page);
+    return;
+  }
 
   for (let attempt = 0; attempt < 3; attempt++) {
     /* A free drawer by preference: the chooser labels each till with who is
@@ -131,9 +134,20 @@ export async function landOnDesktop(page: Page): Promise<void> {
        it, and confirming is what a person does. */
     const takeOver = page.getByRole("button", { name: /^Take over till$/ });
     if (await takeOver.isVisible({ timeout: 3_000 }).catch(() => false)) await takeOver.click();
-    if (await desktop.isVisible({ timeout: 15_000 }).catch(() => false)) return;
+    if (await desktop.isVisible({ timeout: 15_000 }).catch(() => false)) {
+      await frontWindow(page);
+      return;
+    }
   }
   await desktop.waitFor({ state: "visible", timeout: 45_000 });
+  await frontWindow(page);
+}
+
+/* The desk opens the Ledger (or the Rate Board, on a basic plan) as the
+   desktop appears. Waiting for the dock is not enough: a window that is
+   still arriving sits on top of the next click. */
+async function frontWindow(page: Page): Promise<void> {
+  await page.locator(".win.show.active").first().waitFor({ state: "visible", timeout: 15_000 });
 }
 
 /** Sign in at the desk and land on the OS, whoever they are. */

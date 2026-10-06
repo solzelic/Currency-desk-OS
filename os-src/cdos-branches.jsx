@@ -21,9 +21,20 @@
   const { CD, Ic, fmt, num, TODAY, crossRate, STAFF, ROLE_SCOPE } = window.CDOS;
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
-  const cadOf = (a, c) => c === 'CAD' ? (+a || 0) : (+a || 0) * (crossRate(c, 'CAD') || 0);
+  const homeCcy = () => (window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD');
+  /* Canada: CAD notes count as themselves, everything else at the CAD
+     cross — the same sum this screen has always shown. Any other desk
+     values the home pile at par and the rest from the tape quote. */
+  const cadOf = (a, c) => {
+    const home = homeCcy();
+    if (c === home) return +a || 0;
+    if (home === 'CAD') return (+a || 0) * (crossRate(c, homeCcy()) || 0);
+    const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(c) : 0;
+    return per ? (+a || 0) * per : 0;
+  };
   const SKEY = 'cdos_stations_v2', MKEY = 'cdos_branch_moves_v2';
   const BCCYS = ['CAD', 'USD', 'EUR', 'GBP', 'INR', 'PHP', 'CNY'];
+  const bookCcys = () => { const home = homeCcy(); return BCCYS.indexOf(home) >= 0 ? BCCYS : [home].concat(BCCYS); };
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = { CAD: 'var(--cd-ink)', USD: '#3c3b38', EUR: '#615f58', GBP: '#86837b', INR: '#a8a59b', PHP: '#c6c2b8', CNY: CD.brass };
 
@@ -57,9 +68,9 @@
       ] },
     ];
   }
-  const tillCad = (t) => BCCYS.reduce((s, c) => s + cadOf((t.cash && t.cash[c]) || 0, c), 0);
+  const tillCad = (t) => bookCcys().reduce((s, c) => s + cadOf((t.cash && t.cash[c]) || 0, c), 0);
   const vaultUnits = (b, c) => (b.vault && b.vault[c]) || 0;
-  const vaultCad = (b) => BCCYS.reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
+  const vaultCad = (b) => bookCcys().reduce((s, c) => s + cadOf(vaultUnits(b, c), c), 0);
   const tillsCad = (b) => (b.tills || []).reduce((s, t) => s + tillCad(t), 0);
   const branchUnits = (b, c) => vaultUnits(b, c) + (b.tills || []).reduce((s, t) => s + ((t.cash && t.cash[c]) || 0), 0);
   const branchCad = (b) => vaultCad(b) + tillsCad(b);
@@ -106,7 +117,7 @@
     const till = tills.find(t => t.id === tId) || tills[0];
     const [toBId, setToBId] = useState(() => { const o = branches.find(x => x.id !== (p.bId || (station && station.branchId) || (mainB && mainB.id))); return o && o.id; });
     const toB = branches.find(x => x.id === toBId);
-    const [ccy, setCcy] = useState('CAD');
+    const [ccy, setCcy] = useState(homeCcy);
     const [amount, setAmount] = useState('');
     const amt = +amount || 0;
     useEffect(() => { if (till && !tills.some(t => t.id === tId)) setTId(tills[0] && tills[0].id); }, [bId]);
@@ -186,7 +197,7 @@
           </div>
           {/* how much */}
           <div className="flex items-center gap-2">
-            <div style={{ width: 86 }}><Sel mono value={ccy} onChange={setCcy}>{BCCYS.map(c => <option key={c}>{c}</option>)}</Sel></div>
+            <div style={{ width: 86 }}><Sel mono value={ccy} onChange={setCcy}>{bookCcys().map(c => <option key={c}>{c}</option>)}</Sel></div>
             <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" placeholder="0" className="flex-1 px-3 py-2 outline-none text-right" style={{ ...inputSty, borderColor: short ? CD.flag : CD.line, fontFamily: 'Space Mono', fontSize: 19, fontWeight: 700, color: CD.ink }} />
             {[['¼', 0.25], ['½', 0.5], ['Max', 1]].map(([l, f]) => (
               <button key={l} onClick={() => setAmount(String(Math.floor(avail * f)))} disabled={!avail} className="text-[11px] px-2.5 py-2 font-semibold flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: avail ? CD.mute : CD.faint, background: 'var(--cd-panel)', cursor: avail ? 'pointer' : 'not-allowed' }}>{l}</button>))}
@@ -196,7 +207,7 @@
           {moveErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{moveErr} <b>Nothing moved.</b></span></div>}
         </div>
         <div className="flex items-center justify-between gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <span className="text-[11px] min-w-0 truncate" style={{ color: amt > 0 && !short && !sameV ? CD.mute : CD.faint, fontFamily: 'Space Mono, monospace' }}>{amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), 'CAD')}` : 'Recorded to History with your name on it'}</span>
+          <span className="text-[11px] min-w-0 truncate" style={{ color: amt > 0 && !short && !sameV ? CD.mute : CD.faint, fontFamily: 'Space Mono, monospace' }}>{amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), homeCcy())}` : 'Recorded to History with your name on it'}</span>
           <div className="flex items-center gap-2 flex-none">
             <button onClick={onClose} className="px-3.5 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Cancel</button>
             <button onClick={submit} disabled={!valid || posting} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: valid ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: !valid ? 'not-allowed' : posting ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {posting ? 'Recording…' : kind === 'issue' ? 'Issue float' : kind === 'return' ? 'Return to vault' : 'Run cash'}</button>
@@ -220,7 +231,8 @@
     const [fund, setFund] = useState('');
     const autoCode = () => { const base = (name.trim().split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2) || 'BR').toUpperCase(); return base + '-' + String(n + 1).padStart(2, '0'); };
     const effCode = (code.trim() || autoCode()).toUpperCase();
-    const mainAvail = mainB ? (((mainB.vault || {}).CAD) || 0) : 0;
+    const home = homeCcy();
+    const mainAvail = mainB ? (((mainB.vault || {})[home]) || 0) : 0;
     const amt = +fund || 0;
     const short = amt > mainAvail;
     const valid = !!name.trim() && !short;
@@ -241,10 +253,10 @@
           <F label="Address / area"><input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Toronto — Kennedy Rd" className="w-full text-sm px-2.5 py-2 outline-none" style={inputSty} /></F>
           <div className="grid grid-cols-2 gap-3">
             <F label="Branch manager" hint="optional"><select value={managerId} onChange={e => setManagerId(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inputSty}><option value="">Assign later — Team board</option>{mgrs.map(e => <option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}</select></F>
-            <F label="Opening float · CAD" hint={`main vault holds ${num(mainAvail)}`}><input value={fund} onChange={e => setFund(e.target.value)} inputMode="decimal" placeholder="0 — fund later" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, borderColor: short ? CD.flag : CD.line, fontFamily: 'Space Mono' }} /></F>
+            <F label={`Opening float · ${home}`} hint={`main vault holds ${num(mainAvail)}`}><input value={fund} onChange={e => setFund(e.target.value)} inputMode="decimal" placeholder="0 — fund later" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, borderColor: short ? CD.flag : CD.line, fontFamily: 'Space Mono' }} /></F>
           </div>
-          {short && <div className="text-[11px] px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>The main vault only holds {num(mainAvail)} CAD — run more cash in first.</div>}
-          {amt > 0 && !short && <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{mainB ? mainB.code : 'Main'} · Vault → {effCode} · Vault <span style={{ color: CD.faint }}>· vault run, day one</span></span><span className="text-[13px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{num(amt)} CAD</span></div>}
+          {short && <div className="text-[11px] px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>The main vault only holds {num(mainAvail)} {home} — run more cash in first.</div>}
+          {amt > 0 && !short && <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8 }}><span className="text-[11.5px]" style={{ color: CD.mute }}>{mainB ? mainB.code : 'Main'} · Vault → {effCode} · Vault <span style={{ color: CD.faint }}>· vault run, day one</span></span><span className="text-[13px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.ink }}>{num(amt)} {home}</span></div>}
           <div className="px-3.5 py-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Plan · Enterprise</span>
@@ -289,7 +301,7 @@
   /* ===================== FX-MIX STACK ===================== */
   function MixBar({ b, h = 10 }) {
     const total = branchCad(b) || 1;
-    const segs = BCCYS.map(c => ({ c, v: cadOf(branchUnits(b, c), c) })).filter(s => s.v > 0).sort((a, z) => z.v - a.v);
+    const segs = bookCcys().map(c => ({ c, v: cadOf(branchUnits(b, c), c) })).filter(s => s.v > 0).sort((a, z) => z.v - a.v);
     return (<div className="flex w-full overflow-hidden" style={{ height: h, borderRadius: 999, background: CD.lineSoft }}>
       {segs.map(s => <div key={s.c} title={`${s.c} · ${Math.round(s.v / total * 100)}%`} style={{ width: (s.v / total * 100) + '%', background: TONE[s.c] || CD.faint }}></div>)}
     </div>);
@@ -459,7 +471,7 @@
       if (b.id !== bId) return b;
       if ((b.tills || []).length >= TILL_CAP) return b;   // every location caps at 10 tills
       const n = (b.tills || []).length + 1;
-      return { ...b, tills: [...b.tills, { id: b.id + 't' + Date.now(), name: 'Till ' + n, teller: '', operator: '', status: 'open', cash: { CAD: 0 } }] };
+      return { ...b, tills: [...b.tills, { id: b.id + 't' + Date.now(), name: 'Till ' + n, teller: '', operator: '', status: 'open', cash: { [homeCcy()]: 0 } }] };
     }));
     /* Adding a location now lives in Settings → Locations (enterprise modal,
        exported below as AddBranchModal) — the network app only operates it. */
@@ -488,7 +500,7 @@
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="branchnet" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Branch Network</div><div className="text-[11px]" style={{ color: CD.mute }}>{openN} of {branches.length} branches open · {tillsOpen} tills live · {fmt(netCash, 'CAD')} network cash</div></div></div>
+          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="branchnet" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Branch Network</div><div className="text-[11px]" style={{ color: CD.mute }}>{openN} of {branches.length} branches open · {tillsOpen} tills live · {fmt(netCash, homeCcy())} network cash</div></div></div>
           <div className="flex items-center gap-2">
             {canRail && <button onClick={() => setMoving({})} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="swap" s={15} c="var(--cd-on-ink)" /> Move cash</button>}
           </div>
@@ -502,22 +514,22 @@
         {/* ===================== NETWORK — consolidated cash position & FX mix ===================== */}
         {tab === 'network' && (<div>
           <div className="grid grid-cols-5 gap-2 mb-3">
-            {[['Network cash · CAD', fmt(netCash, 'CAD')], ['In vaults', fmt(netVault, 'CAD')], ['In tills', fmt(netTills, 'CAD')], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, 'CAD')]].map(([l, v]) => (
+            {[['Network cash · ' + homeCcy(), fmt(netCash, homeCcy())], ['In vaults', fmt(netVault, homeCcy())], ['In tills', fmt(netTills, homeCcy())], ['Branches open', `${openN} / ${branches.length}`], ['Volume today', fmt(netVol, homeCcy())]].map(([l, v]) => (
               <div key={l} className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
           </div>
 
           {/* consolidated cash position: currency × branch matrix */}
           <div className="overflow-hidden mb-4" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
-            <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${CD.line}` }}><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Consolidated cash position</span><span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>units held · CAD value</span></div>
+            <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${CD.line}` }}><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Consolidated cash position</span><span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>units held · {homeCcy()} value</span></div>
             <table className="w-full text-sm border-collapse">
               <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
                 <th className="px-3 py-2">Currency</th>
                 {branches.map(b => <th key={b.id} className="px-2 py-2 text-right" style={{ color: b.id === (station && station.branchId) ? CD.ink : CD.mute }}>{b.code}</th>)}
                 <th className="px-3 py-2 text-right" style={{ color: CD.ink }}>Network</th>
-                <th className="px-3 py-2 text-right">CAD value</th>
+                <th className="px-3 py-2 text-right">{homeCcy()} value</th>
                 <th className="px-3 py-2 text-right">Mix</th>
               </tr></thead>
-              <tbody>{BCCYS.map(c => {
+              <tbody>{bookCcys().map(c => {
                 const netUnits = branches.reduce((s, b) => s + branchUnits(b, c), 0);
                 const cad = cadOf(netUnits, c);
                 const mix = netCash ? cad / netCash * 100 : 0;
@@ -526,14 +538,14 @@
                   <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span> {c}</td>
                   {branches.map(b => <td key={b.id} className="px-2 py-2 text-right" style={{ fontFamily: 'Space Mono', fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: branchUnits(b, c) ? CD.mute : CD.faint }}>{branchUnits(b, c) ? num(branchUnits(b, c)) : '—'}</td>)}
                   <td className="px-3 py-2 text-right font-semibold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(netUnits)}</td>
-                  <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmt(cad, 'CAD')}</td>
+                  <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmt(cad, homeCcy())}</td>
                   <td className="px-3 py-2 text-right"><div className="flex items-center justify-end gap-2"><span className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono', width: 32, textAlign: 'right' }}>{mix.toFixed(0)}%</span><span style={{ width: 44, height: 7, borderRadius: 999, background: CD.lineSoft, overflow: 'hidden', display: 'inline-block' }}><span style={{ display: 'block', height: '100%', width: mix + '%', background: TONE[c] || CD.faint }}></span></span></div></td>
                 </tr>); })}
               </tbody>
               <tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}>
-                <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · CAD</td>
+                <td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total · {homeCcy()}</td>
                 {branches.map(b => <td key={b.id} className="px-2 py-2 text-right font-semibold" style={{ fontFamily: 'Space Mono', fontSize: 11, fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{Math.round(branchCad(b) / 1000)}k</td>)}
-                <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }} colSpan={2}>{fmt(netCash, 'CAD')}</td>
+                <td className="px-3 py-2 text-right font-bold" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }} colSpan={2}>{fmt(netCash, homeCcy())}</td>
                 <td></td>
               </tr></tfoot>
             </table>
@@ -542,14 +554,14 @@
           {/* FX mix by branch */}
           <div className="text-[12px] font-semibold mb-2" style={{ color: CD.ink }}>FX mix by branch</div>
           <div className="grid sm:grid-cols-2 gap-2.5 mb-2">
-            {branches.map(b => { const cash = branchCad(b); const closed = b.status === 'closed'; const fx = BCCYS.filter(c => c !== 'CAD').reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0); return (
+            {branches.map(b => { const cash = branchCad(b); const closed = b.status === 'closed'; const fx = bookCcys().filter(c => c !== homeCcy()).reduce((s, c) => s + cadOf(branchUnits(b, c), c), 0); return (
               <div key={b.id} className="p-3.5" style={{ background: CD.panel, border: `1px solid ${b.id === (station && station.branchId) ? CD.ink : CD.line}`, borderRadius: 12, opacity: closed ? 0.72 : 1 }}>
                 <div className="flex items-start justify-between mb-2.5">
-                  <div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{b.name} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {b.code}</span>{b.main && <span className="text-[8.5px] px-1.5 py-0.5 ml-1.5 font-bold align-middle" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 4, letterSpacing: '0.06em' }}>MAIN</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>vault {fmt(vaultCad(b), 'CAD')} · tills {fmt(tillsCad(b), 'CAD')} · {cash ? Math.round(fx / cash * 100) : 0}% in FX</div></div>
+                  <div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{b.name} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {b.code}</span>{b.main && <span className="text-[8.5px] px-1.5 py-0.5 ml-1.5 font-bold align-middle" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 4, letterSpacing: '0.06em' }}>MAIN</span>}</div><div className="text-[11px]" style={{ color: CD.mute }}>vault {fmt(vaultCad(b), homeCcy())} · tills {fmt(tillsCad(b), homeCcy())} · {cash ? Math.round(fx / cash * 100) : 0}% in FX</div></div>
                   <button onClick={() => toggleBranch(b.id)} className="text-[10px] px-2 py-0.5 font-semibold" style={{ background: closed ? CD.lineSoft : CD.greenSoft, color: closed ? CD.mute : CD.green, borderRadius: 999 }}>{closed ? 'CLOSED' : 'OPEN'}</button>
                 </div>
                 <MixBar b={b} />
-                <div className="mt-2.5 flex flex-wrap gap-1.5">{BCCYS.filter(c => branchUnits(b, c) > 0).map(c => <span key={c} className="flex items-center gap-1 text-[10.5px]" style={{ color: CD.mute }}><span style={{ width: 8, height: 8, borderRadius: 2, background: TONE[c] || CD.faint, display: 'inline-block' }}></span>{c}</span>)}</div>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">{bookCcys().filter(c => branchUnits(b, c) > 0).map(c => <span key={c} className="flex items-center gap-1 text-[10.5px]" style={{ color: CD.mute }}><span style={{ width: 8, height: 8, borderRadius: 2, background: TONE[c] || CD.faint, display: 'inline-block' }}></span>{c}</span>)}</div>
               </div>); })}
           </div>
           <p className="mt-1 text-[11px]" style={{ color: CD.faint }}>Cash rests in each branch's <b>vault</b>; tills only borrow from it. The main vault at {mainB ? mainB.code : 'the main branch'} funds every sub-vault — a branch is vault + tills, the network the sum of its branches. This rollup is what head-office reconciles against.</p>
@@ -562,7 +574,7 @@
               <div className="flex items-center justify-between px-3.5 py-3" style={{ borderBottom: `1px solid ${CD.lineSoft}` }}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.ink }}><Ic n="building" s={17} c="var(--cd-on-ink)" /></span>
-                  <div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{b.name} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {b.code}</span></div><div className="text-[11px]" style={{ color: CD.mute }}>{b.city} · {fmt(branchCad(b), 'CAD')}</div></div>
+                  <div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{b.name} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>· {b.code}</span></div><div className="text-[11px]" style={{ color: CD.mute }}>{b.city} · {fmt(branchCad(b), homeCcy())}</div></div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => addTill(b.id)} disabled={(b.tills || []).length >= TILL_CAP} title={(b.tills || []).length >= TILL_CAP ? `Every location runs up to ${TILL_CAP} tills` : 'Add a till at this location'} className="flex items-center gap-1 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: (b.tills || []).length >= TILL_CAP ? CD.faint : CD.mute, cursor: (b.tills || []).length >= TILL_CAP ? 'not-allowed' : 'pointer' }}><Ic n="plus" s={12} c={CD.mute} /> Add till <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9.5, color: CD.faint }}>{(b.tills || []).length}/{TILL_CAP}</span></button>
@@ -583,15 +595,15 @@
                 const runOut = sumIf(m => m.kind === 'vault' && m.from === vLabel);
                 const net = returned + runIn - issued - runOut;
                 const recent = vMoves.slice(0, 5);
-                const held = BCCYS.filter(c => vaultUnits(b, c) > 0);
+                const held = bookCcys().filter(c => vaultUnits(b, c) > 0);
                 return (<div style={{ borderBottom: `1px solid ${CD.lineSoft}`, background: 'var(--cd-chip)' }}>
                   <div onClick={() => setVaultOpen(open ? null : b.id)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left" style={{ cursor: 'pointer' }} title={open ? 'Collapse vault' : 'Open vault — holdings & today’s movements'}>
                     <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: CD.brass }}><Ic n="vaultsafe" s={15} c="var(--cd-on-ink)" /></span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Vault<span className="text-[8.5px] px-1.5 py-0.5 font-bold" style={{ background: b.main ? CD.ink : CD.brassSoft, color: b.main ? 'var(--cd-on-ink)' : 'var(--cd-brass-text, ' + CD.brass + ')', borderRadius: 4, letterSpacing: '0.06em' }}>{b.main ? 'MAIN VAULT' : 'SUB-VAULT'}</span></div>
-                      <div className="text-[10.5px]" style={{ color: CD.mute }}>{today.length ? `today · issued ${fmt(issued, 'CAD')} · back ${fmt(returned + runIn, 'CAD')} · net ${net >= 0 ? '+' : ''}${fmt(net, 'CAD')}` : (b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)}</div>
+                      <div className="text-[10.5px]" style={{ color: CD.mute }}>{today.length ? `today · issued ${fmt(issued, homeCcy())} · back ${fmt(returned + runIn, homeCcy())} · net ${net >= 0 ? '+' : ''}${fmt(net, homeCcy())}` : (b.main ? 'The network’s cash root — funds every sub-vault · no movements today' : `Funded from ${mainB ? mainB.code : 'the main vault'} · no movements today`)}</div>
                     </div>
-                    <div className="text-right flex-none" style={{ width: 110 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Vault · CAD</div><div className="text-[13.5px] font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }}>{fmt(vaultCad(b), 'CAD')}</div></div>
+                    <div className="text-right flex-none" style={{ width: 110 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Vault · {homeCcy()}</div><div className="text-[13.5px] font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }}>{fmt(vaultCad(b), homeCcy())}</div></div>
                     <div className="flex items-center gap-1.5 flex-none" onClick={e => e.stopPropagation()}>
                       {canRail && <button onClick={() => setMoving({ kind: 'issue', bId: b.id })} title="Float a till from this vault" className="text-[11px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-panel)' }}>Issue float</button>}
                       {canRail && <button onClick={() => setMoving({ kind: 'return', bId: b.id })} title="Return till cash to this vault" className="text-[11px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-panel)' }}>Return</button>}
@@ -605,7 +617,7 @@
                         <div key={c} className="flex items-center gap-2 px-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                           <span className="text-[12px] font-medium flex-none" style={{ color: CD.ink, width: 52 }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span> {c}</span>
                           <span className="flex-1 text-right text-[12px]" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(u)}</span>
-                          <span className="flex-none text-right text-[10.5px]" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.faint, width: 90 }}>{fmt(cadOf(u, c), 'CAD')}</span>
+                          <span className="flex-none text-right text-[10.5px]" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.faint, width: 90 }}>{fmt(cadOf(u, c), homeCcy())}</span>
                         </div>); }) : <div className="px-3 py-4 text-center text-[11px]" style={{ color: CD.faint }}>Empty — fund it with a vault run.</div>}
                     </div>
                     <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.lineSoft}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -634,7 +646,7 @@
                         {t.teller && t.teller !== t.operator && <span style={{ color: CD.faint }}>· posted to {t.teller}</span>}
                       </div>
                     </div>
-                    <div className="text-right flex-none" style={{ width: 110 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Drawer · CAD</div><div className="text-[13.5px] font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }}>{fmt(tillCad(t), 'CAD')}</div></div>
+                    <div className="text-right flex-none" style={{ width: 110 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Drawer · {homeCcy()}</div><div className="text-[13.5px] font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }}>{fmt(tillCad(t), homeCcy())}</div></div>
                     <div className="flex items-center gap-1.5 flex-none">
                       {tillCad(t) === 0 && !isActive && !t.operator && (b.tills || []).length > 1 ? (
                         <button onClick={() => setConfirmDel({ bId: b.id, tId: t.id })} title="Empty drawer — delete this till" className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 7, border: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}><Ic n="trash" s={13} c={CD.mute} /></button>
@@ -671,7 +683,7 @@
           return (<div>
             <div className="flex items-center justify-between mb-3">
               <div className="grid grid-cols-4 gap-2 flex-1" style={{ maxWidth: 720 }}>
-                {[['Ordered in · today', fmt(ordered, 'CAD'), CD.green], ['Issued to tills · today', fmt(issued, 'CAD'), CD.mute], ['Back to vaults · today', fmt(returned, 'CAD'), CD.green], ['Between branches · today', fmt(runs, 'CAD'), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => (
+                {[['Ordered in · today', fmt(ordered, homeCcy()), CD.green], ['Issued to tills · today', fmt(issued, homeCcy()), CD.mute], ['Back to vaults · today', fmt(returned, homeCcy()), CD.green], ['Between branches · today', fmt(runs, homeCcy()), 'var(--cd-brass-text, ' + CD.brass + ')']].map(([l, v, c]) => (
                   <div key={l} className="px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[15px] font-bold" style={{ color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
               </div>
               <select value={histScope} onChange={e => setHistScope(e.target.value)} className="text-[12px] px-2.5 py-2 outline-none ml-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)', color: CD.ink }}>
@@ -681,7 +693,7 @@
             </div>
             <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
             <table className="w-full text-sm border-collapse">
-              <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">{scopeB && <th className="px-3 py-2" style={{ width: 44 }}>In/Out</th>}<th className="px-3 py-2">Ref</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">From</th><th className="px-3 py-2">To</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">CAD</th><th className="px-3 py-2">By</th></tr></thead>
+              <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">{scopeB && <th className="px-3 py-2" style={{ width: 44 }}>In/Out</th>}<th className="px-3 py-2">Ref</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">From</th><th className="px-3 py-2">To</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">{homeCcy()}</th><th className="px-3 py-2">By</th></tr></thead>
               <tbody>{scoped.map(m => { const KB = { issue: ['ISSUE', CD.greenSoft, CD.green], return: ['RETURN', 'var(--cd-chip)', CD.mute], order: ['ORDER IN', CD.greenSoft, CD.green], vault: ['VAULT RUN', CD.brassSoft, 'var(--cd-brass-text, ' + CD.brass + ')'], till: ['TILL', CD.lineSoft, CD.mute], branch: ['VAULT RUN', CD.brassSoft, 'var(--cd-brass-text, ' + CD.brass + ')'] }[m.kind] || ['MOVE', CD.lineSoft, CD.mute]; const d = dirOf(m); return (<tr key={m.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 {scopeB && <td className="px-3 py-2">{d === 'int' ? <span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>⇄</span> : <span className="grid place-items-center" style={{ width: 18, height: 18, borderRadius: 5, background: d === 'in' ? CD.greenSoft : CD.lineSoft, display: 'inline-grid' }}><Ic n={d === 'in' ? 'arrowdown' : 'arrowup'} s={11} c={d === 'in' ? CD.green : CD.mute} /></span>}</td>}
                 <td className="px-3 py-2" style={{ fontFamily: 'Space Mono', fontSize: 11.5, color: CD.mute }}>{m.ref}</td>
@@ -690,7 +702,7 @@
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}>{m.from}</td>
                 <td className="px-3 py-2" style={{ color: CD.ink }}><Ic n="arrowright" s={11} c={CD.faint} /> {m.to}</td>
                 <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(m.amount)} {m.ccy}</td>
-                <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmt(m.cadVal, 'CAD')}</td>
+                <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmt(m.cadVal, homeCcy())}</td>
                 <td className="px-3 py-2 text-[11.5px]" style={{ color: CD.mute }}>{m.by}</td>
               </tr>); })}
               {!scoped.length && <tr><td colSpan={scopeB ? 9 : 8} className="px-3 py-10 text-center text-[12px]" style={{ color: CD.faint }}>{scopeB ? `Nothing on the rail at ${scopeB.code} yet.` : (<span>No movements yet. <b>Issue float</b> to a till at open, <b>Return</b> its cash at close, or run a <b>vault run</b> between branches.</span>)}</td></tr>}
@@ -715,7 +727,7 @@
             <div className="px-5 py-4">
               <div className="flex items-center justify-between px-3 py-2.5 mb-3" style={{ background: 'var(--cd-chip)', borderRadius: 9 }}>
                 <span className="text-[11.5px]" style={{ color: CD.mute }}>Drawer balance</span>
-                <span className="text-[13px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(0, 'CAD')} — empty ✓</span>
+                <span className="text-[13px] font-bold" style={{ fontFamily: 'Space Mono', color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(0, homeCcy())} — empty ✓</span>
               </div>
               <p className="text-[12px] m-0" style={{ color: CD.mute, lineHeight: 1.55 }}>The till is removed from {cb.code} and its slot is freed ({(cb.tills || []).length - 1} of {10} after this). Its past movements stay in History forever — deleting a till never deletes its record.</p>
             </div>

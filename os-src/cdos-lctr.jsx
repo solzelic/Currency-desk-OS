@@ -221,7 +221,7 @@
     const completeInstances = [];// Section 4 (completing action + beneficiary)
     txns.forEach((r, i) => {
       const cad = cadIn(r);
-      const above = cad >= TH;
+      const above = TH != null && cad >= TH;
       const method = r.type === 'Cheque Cashing' ? 'Cheque' : 'Cash';
       const cap = r.capture || null;   // point-of-sale capture pre-fills the prompts
       txInstances.push({

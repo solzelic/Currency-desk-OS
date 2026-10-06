@@ -55,8 +55,16 @@ async function reset() {
     "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
     [s[0]],
   );
+  /* This desk is the Canadian demo. It has to name that pack. A missing
+     pack is not filled in with Canada's rules. */
   await pool.query(
-    "INSERT INTO legal_entities (id,tenant_id,name) VALUES ($1,$2,'York FX Canada') ON CONFLICT DO NOTHING",
+    `INSERT INTO legal_entities
+       (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
+     VALUES ($1,$2,'York FX Canada','CAD','pack-ca-v1',1)
+     ON CONFLICT (id) DO UPDATE
+       SET home_currency='CAD',
+           jurisdiction_pack_id='pack-ca-v1',
+           jurisdiction_pack_version=1`,
     [s[1], s[0]],
   );
   await pool.query(
@@ -385,7 +393,7 @@ postgres("quote service against real PostgreSQL", () => {
     expect(first.statusCode).toBe(201);
     expect(second.json().transactionId).toBe(first.json().transactionId);
     const tx = await pool.query(
-      "SELECT output_amount,rate,fee_cad,spread_cad,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at FROM ledger_transactions WHERE transaction_id=$1",
+      "SELECT output_amount,rate,fee_cad,spread_cad,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,jurisdiction_pack_id,jurisdiction_pack_version,home_currency FROM ledger_transactions WHERE transaction_id=$1",
       [first.json().transactionId],
     );
     expect(tx.rowCount).toBe(1);
@@ -405,6 +413,9 @@ postgres("quote service against real PostgreSQL", () => {
       third_party: true,
       third_party_name: "Jane Beneficial Owner",
       compliance_captured_by: `${DEMO.tenantId}:m.costa`,
+      jurisdiction_pack_id: "pack-ca-v1",
+      jurisdiction_pack_version: 1,
+      home_currency: "CAD",
     });
     expect(tx.rows[0].compliance_captured_at).toBeInstanceOf(Date);
     expect(

@@ -389,6 +389,19 @@
      number nobody chose is how this went wrong the first time. */
   let _pack = null;
   const deskPack = () => _pack;
+  /* The sentence a baseline desk shows. The server sends the same words.
+     A country pack clears it. */
+  let _rulesNotice = null;
+  const BASELINE_NOTICE = "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+  const RULES_NOTICE = BASELINE_NOTICE;
+  const rulesNotice = () => _rulesNotice;
+  const baselineNotice = () => BASELINE_NOTICE;
+  function rulesMissing() {
+    const pack = _pack;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
+    if (pack && pack.available === false) return true;
+    return false;
+  }
   /* The forms this jurisdiction files, alongside the pack that defines
      them — the filing portal, the aggregation window, the trigger amount.
      They arrive in the same answer as the pack and were being dropped on
@@ -437,11 +450,14 @@
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
 
-  const setDeskPack = (pack, reports, currencies) => {
+  const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
+    const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    _rulesNotice = baseline || (_pack && _pack.available === false) ? (notice || BASELINE_NOTICE) : null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
-    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies } })); } catch (e) {}
+    try { window.__cdosHome = (_pack && _pack.homeCurrency) ? String(_pack.homeCurrency).toUpperCase() : ''; } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies, notice: _rulesNotice } })); } catch (e) {}
     return _pack;
   };
   async function refreshJurisdiction() {
@@ -449,7 +465,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies);
+      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
@@ -480,14 +496,29 @@
      already the desk's choice where it made one and the pack's where it
      did not — the precedence was decided on the server, once, so that the
      number the screen prints and the number the gate enforces cannot
-     drift apart. */
+     drift apart. A loaded answer whose effective is null is still an
+     answer: do not fall through to the pack's raw USD figure. */
   const _serverLine = (key) => {
     const line = _thresholds && _thresholds[key];
     return line && _positive(line.effective) ? +line.effective : null;
   };
+  const _serverAnswered = (key) => {
+    const line = _thresholds && _thresholds[key];
+    return !!(line && Object.prototype.hasOwnProperty.call(line, 'effective'));
+  };
   function reportingLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
+      return { amount: null, currency, code: null, label: RULES_NOTICE };
+    }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold')
+    /* A baseline pack's 10,000 is US dollars. It is not this desk's
+       reporting line. The server converts it; until that answer arrives
+       the screen shows nothing, rather than those dollars labelled as
+       dinars or pounds. */
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold')
+      : baselineBook ? null
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
       : _positive(settings && settings.threshold) ? +settings.threshold
       : (regime && _positive(regime.threshold)) ? +regime.threshold
@@ -524,8 +555,14 @@
      number from the one the server will enforce is how a teller ends up
      arguing with a refusal they were told would not come. */
   function identificationLimit(settings) {
+    if (rulesMissing(settings)) {
+      const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
+      return { amount: null, currency, label: RULES_NOTICE };
+    }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold')
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold')
+      : baselineBook ? null
       : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
       : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver
       : (regime && _positive(regime.idAt)) ? +regime.idAt
@@ -584,6 +621,32 @@
     }
     return +(PER_CAD[outC] / PER_CAD[inC]).toFixed(4);
   }
+  /* The currency this desk keeps its book in. Before the pack arrives,
+     and on every Canada desk, that is CAD — the identity the rate
+     functions below were written for. */
+  function deskHomeCcy() {
+    try {
+      const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+      const code = pack && pack.homeCurrency;
+      if (code && /^[A-Za-z]{3}$/.test(String(code))) return String(code).toUpperCase();
+    } catch (e) {}
+    return 'CAD';
+  }
+  /* Home-currency units per 1 unit of `code`. Canada reads the CAD
+     cross, which is what every total on a Canada desk already used.
+     Any other desk reads the tape quote (/api/rates/ticker), already
+     crossed. A missing quote is 0: a CAD mid is not a stand-in. */
+  function homePerUnit(code) {
+    const home = deskHomeCcy();
+    const c = String(code || '').toUpperCase();
+    if (!c || c === home) return 1;
+    if (home === 'CAD') return crossRate(c, 'CAD') || 0;
+    const tape = window.CDOS && window.CDOS._tickerQuotes;
+    const quotes = tape && tape.priced && tape.home === home && tape.quotes;
+    const row = quotes && quotes.find(q => q.code === c);
+    const mid = row ? Number(row.mid) : 0;
+    return mid > 0 && isFinite(mid) ? mid : 0;
+  }
   function perCadLive(code) {
     if (typeof BY !== 'undefined' && BY[code]) return +BY[code].perCad.toFixed(code === 'CAD' ? 0 : 4);
     return PER_CAD[code];
@@ -621,7 +684,7 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => isNaN(n) || n === '' ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
+  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
 
@@ -1170,7 +1233,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
@@ -1178,6 +1241,7 @@
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
+    rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */
     deskThresholds, setDeskThresholds, refreshDeskThresholds,

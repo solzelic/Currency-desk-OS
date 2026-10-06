@@ -72,14 +72,14 @@
     const standing = line.posture || 'unknown';
     const note =
       standing === 'stricter'
-        ? `Stricter than ${opts.authority} requires (${show(line.packValue)}).`
+        ? (opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).`)
         : standing === 'looser'
-          ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.`
+          ? (opts.looser || `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.`)
           : standing === 'matching'
             ? `The ${opts.authority} figure, set by hand.`
             : standing === 'following'
-              ? `Following ${opts.authority} (${show(line.packValue)}).`
-              : `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+              ? (opts.following || `Following ${opts.authority} (${show(line.packValue)}).`)
+              : (opts.unknown || `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`);
     return {
       field: opts.field,
       label: opts.label,
@@ -98,9 +98,75 @@
 
   /* Every line, judged. Reads the ledger's answer when there is one and
      falls back to the browser's regime table when there is not. */
+  function loadedPack() {
+    return (window.CDOS && window.CDOS.deskPack) ? window.CDOS.deskPack() : null;
+  }
+  function isBaselinePack(pack) {
+    return !!(pack && (pack.baseline === true || pack.kind === 'baseline'));
+  }
+  /* A baseline desk, or one whose setup already said so and whose pack
+     has not arrived yet. Either way Canada's names are not an answer. */
+  function baselineDesk(settings) {
+    const pack = loadedPack();
+    if (isBaselinePack(pack)) return true;
+    return !!(settings && settings.baselineRules && !pack);
+  }
+  /* The converted home amount, with the USD figure it came from. A missing
+     rate has no home amount: identification is required on every deal.
+
+     `effective` is the line this desk operates at. `packValue` is the
+     baseline after the server converted it into home currency — the same
+     number on a following or matching desk, and a different one when the
+     owner chose a stricter or looser line. The US-dollar source belongs
+     on that converted baseline. Putting it next to the owner's lower
+     figure would say a £5,000 line is 10,000 USD. */
+  function baselineMoneyCopy(key, line) {
+    const pack = loadedPack();
+    if (!isBaselinePack(pack)) return null;
+    const homeAmount = line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+    if (homeAmount == null) {
+      return {
+        unknown: key === 'idThreshold'
+          ? 'Identification is required on every deal.'
+          : 'Purpose and source of funds are required on every deal.',
+      };
+    }
+    const raw = key === 'idThreshold' ? pack.idThreshold : pack.reportThreshold;
+    const usd = Number(String(raw == null ? '' : raw).replace(/,/g, ''));
+    const src = String(pack.reportCurrency || 'USD').trim().toUpperCase() || 'USD';
+    const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = (desk && desk.currency) || pack.homeCurrency;
+    const yours = fmt(homeAmount, home);
+    const packAmount = line && line.packValue != null && +line.packValue > 0 ? +line.packValue : null;
+    const baseline = packAmount == null ? null : fmt(packAmount, home);
+    const source = baseline && Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase()
+      ? `, which is ${usd.toLocaleString('en-CA', { maximumFractionDigits: 2 })} ${src} at today's market rate`
+      : '';
+    const baselineClause = baseline ? `${baseline}${source}` : yours;
+    return {
+      following: `Following the international baseline: ${baselineClause}.`,
+      matching: `The international baseline figure, set by hand: ${baselineClause}.`,
+      stricter: baseline
+        ? `Stricter than the international baseline. Your line is ${yours}. The baseline is ${baselineClause}.`
+        : `Stricter than the international baseline. Your line is ${yours}.`,
+      /* The mandate here is packValue, already converted into home
+         currency. The raw 10,000 USD must not stand in for it. */
+      looser: baseline
+        ? `${yours} — the international baseline requires no more than ${baseline}.`
+        : `${yours} — the international baseline has no converted figure for this line.`,
+    };
+  }
+
   function jurisdictionPosture(settings) {
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) return [];
     const server = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
-    const REG = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
+    const pack = loadedPack();
+    /* No server answer yet. A loaded pack, and a baseline desk, wait.
+       Inventing FINTRAC for them is how a Belgrade desk was told it
+       files an LCTR. The two-country table is only for the standalone
+       build, which has no ledger to ask. */
+    if (!server && (pack || baselineDesk(settings))) return [];
+    const REG = (settings && settings.regime && REGIMES[settings.regime]) || REGIMES.FINTRAC;
     /* No server answer yet. Build the same shape out of what the browser
        holds so the screens have one code path — and mark every line
        "following", because a desk we have not asked about is not a desk
@@ -119,15 +185,22 @@
         retentionYears: line(+((settings && settings.retentionYears)) || REG.retentionYears || 5, REG.retentionYears || 5),
       } };
     };
+    const baseline = isBaselinePack(pack);
     const source = server
-      ? { currency: server.currency, authority: server.regulator, lines: server }
+      ? {
+          currency: server.currency,
+          authority: baseline ? 'the international baseline' : (server.regulator || (pack && pack.regulator) || ''),
+          lines: server,
+        }
       : local();
     if (!source || !source.lines) return [];
     const L = source.lines;
     const common = { currency: source.currency, authority: source.authority };
+    const reportCopy = baselineMoneyCopy('reportThreshold', L.reportThreshold);
+    const idCopy = baselineMoneyCopy('idThreshold', L.idThreshold);
     return [
-      postureOf(L.reportThreshold, { ...common, field: 'threshold', label: 'Reporting threshold', money: true, direction: 'atMost' }),
-      postureOf(L.idThreshold, { ...common, field: 'idRequiredOver', label: 'Identification threshold', money: true, direction: 'atMost' }),
+      postureOf(L.reportThreshold, { ...common, ...reportCopy, field: 'threshold', label: 'Reporting threshold', money: true, direction: 'atMost' }),
+      postureOf(L.idThreshold, { ...common, ...idCopy, field: 'idRequiredOver', label: 'Identification threshold', money: true, direction: 'atMost' }),
       postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' }),
       postureOf(L.retentionYears, { ...common, field: 'retentionYears', label: 'Record retention', unit: ' years', direction: 'atLeast' }),
     ].filter(Boolean);
@@ -178,21 +251,77 @@
 
      Below that, the owner's saved settings, which is all the standalone
      build has. */
-  function getRegime(settings) {
-    const base = REGIMES[(settings && settings.regime) || 'FINTRAC'] || REGIMES.FINTRAC;
-    const r = Object.assign({}, base);
-    if (settings && +settings.threshold) r.threshold = +settings.threshold;     // owner override
-    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;          // custom window
+  function lineAmount(line) {
+    return (line && line.effective != null && +line.effective > 0) ? +line.effective : null;
+  }
+  /* The reports a baseline desk actually has. Plain names, not Canada's. */
+  const BASELINE_REPORTS = [
+    { code: 'CASH-RECORD', name: 'Large cash record' },
+    { code: 'SUSPICIOUS', name: 'Suspicious transaction' },
+    { code: 'SANCTIONS-STOP', name: 'Terrorist or sanctioned property' },
+  ];
+  function regimeFromPack(pack, settings) {
     const desk = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
-    if (desk) {
-      const at = (line) => (line && line.effective != null && +line.effective > 0) ? +line.effective : null;
-      if (at(desk.reportThreshold) != null) r.threshold = at(desk.reportThreshold);
-      if (at(desk.idThreshold) != null) r.idAt = at(desk.idThreshold);
-      if (at(desk.aggregationHours) != null) r.aggHours = at(desk.aggregationHours);
-      if (at(desk.retentionYears) != null) r.retentionYears = at(desk.retentionYears);
-      if (desk.currency) r.currency = desk.currency;
+    const reports = (window.CDOS && window.CDOS.deskReports) ? (window.CDOS.deskReports() || []) : [];
+    const baseline = isBaselinePack(pack);
+    const listed = reports.length ? reports : (baseline ? BASELINE_REPORTS : []);
+    const byCode = (code) => listed.find(r => r && r.code === code) || null;
+    const large = listed.find(r => r && (r.kind === 'large_cash' || r.code === (pack.reportName || 'CASH-RECORD'))) || byCode('CASH-RECORD');
+    const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
+    const sanctions = byCode('SANCTIONS-STOP');
+    const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
+    return {
+      id: pack.packId || null,
+      authority: baseline ? "Your country's financial intelligence unit" : (pack.regulator || ''),
+      country: baseline ? 'International baseline' : (pack.name || ''),
+      flag: baseline ? '🌐' : '',
+      currency: (desk && desk.currency) || pack.homeCurrency || (settings && settings.baseCurrency) || null,
+      threshold: desk && desk.reportThreshold ? lineAmount(desk.reportThreshold) : null,
+      idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
+      aggHours: desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
+      largeCode: (large && large.code) || pack.reportName || '',
+      largeLabel: (large && large.name) || (baseline ? 'Large cash record' : ''),
+      wireCode: wire ? wire.code : '',
+      wireLabel: wire ? (wire.name || '') : '',
+      strCode: suspicious ? suspicious.code : '',
+      strLabel: suspicious ? (suspicious.name || '') : '',
+      sanctionsCode: sanctions ? sanctions.code : (baseline ? 'SANCTIONS-STOP' : ''),
+      sanctionsLabel: sanctions ? (sanctions.name || '') : (baseline ? 'Terrorist or sanctioned property' : ''),
+      fileFormat: null,
+      watchlists: [],
+      baseline,
+      reports: listed,
+    };
+  }
+
+  function getRegime(settings) {
+    const pack = loadedPack();
+    /* No pack for this country. Do not fill the gap with Canada's rules. */
+    if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) {
+      return {
+        id: null, authority: null, country: null,
+        currency: (pack && pack.homeCurrency) || (settings && settings.baseCurrency) || null,
+        threshold: null, aggHours: null, idAt: null, retentionYears: null,
+        largeCode: '', largeLabel: '', wireCode: '', wireLabel: '',
+        strCode: '', strLabel: '', fileFormat: null, watchlists: [], baseline: false, reports: [],
+      };
     }
+    if (pack && pack.packId) return regimeFromPack(pack, settings);
+    if (settings && settings.baselineRules) {
+      return regimeFromPack({
+        packId: 'pack-intl-v1', baseline: true, kind: 'baseline',
+        name: 'International baseline', regulator: '', reportName: 'CASH-RECORD',
+        homeCurrency: (settings && settings.baseCurrency) || 'USD', reportCurrency: 'USD',
+        reportThreshold: '10000', idThreshold: '3000',
+      }, settings);
+    }
+    /* Standalone build, no ledger. The two-country table is all it has. */
+    const base = (settings && settings.regime && REGIMES[settings.regime]) || REGIMES.FINTRAC;
+    const r = Object.assign({ baseline: false, reports: [] }, base);
+    if (settings && +settings.threshold) r.threshold = +settings.threshold;
+    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
+    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -291,6 +420,9 @@
   // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
   function aggregateEvents(events, regime, settings, kind) {
     const TH = regime.threshold, H = regime.aggHours || 24;
+    /* No threshold means no aggregate. A missing number is not zero, and
+       it is not Canada's 10,000. */
+    if (!(TH > 0)) return [];
     const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
     const buckets = {};
     (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });

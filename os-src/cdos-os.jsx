@@ -624,8 +624,18 @@
   }
 
   /* ====================== LIVE RATE TICKER ====================== */
-  // Reads the staff-published rate board (localStorage) so the ticker always
-  // shows the owner's current mid rates (CAD per unit), and reflows when they republish.
+  // A Canada desk reads the published board as CAD per unit. Any other
+  // home currency is quoted by /api/rates/ticker, which has already
+  // crossed the market snapshot into that currency. The home currency
+  // itself is not a row.
+  function deskHome() {
+    const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+    const code = pack && pack.homeCurrency;
+    return code ? String(code).toUpperCase() : null;
+  }
+  function curOf(code) {
+    return (typeof BY !== 'undefined' && BY[code]) || (typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null) || {};
+  }
   function readBoard() {
     let cfg = null;
     try { const raw = localStorage.getItem('yorkfx_rates_v1'); cfg = raw ? JSON.parse(raw) : null; } catch (e) {}
@@ -636,6 +646,24 @@
       const show = r ? r.show !== false : true;
       return { code: c.code, name: c.name, flag: c.flag, mid, show, chg: c.chg };
     }).filter(x => x.show);
+  }
+  /* No fresh rate for the home currency: the published board is already
+     in that currency. Catalog fallbacks are CAD per unit, so they stay off. */
+  function boardTape(home) {
+    let cfg = null;
+    try { cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null'); } catch (e) {}
+    const rows = (cfg && cfg.rows) || {};
+    return Object.keys(rows).filter(code => code !== home && rows[code] && typeof rows[code].mid === 'number' && rows[code].mid > 0 && rows[code].show !== false).map(code => {
+      const c = curOf(code);
+      return { code, name: c.name || code, flag: c.flag || '', mid: rows[code].mid, show: true, chg: null };
+    });
+  }
+  function quoteTape(quotes, home) {
+    return (quotes || []).filter(q => q && q.code && q.code !== home && q.mid != null).map(q => {
+      const c = curOf(q.code);
+      const chg = q.chg == null || q.chg === '' ? null : Number(q.chg);
+      return { code: q.code, name: c.name || q.code, flag: c.flag || '', mid: Number(q.mid), show: true, chg: Number.isFinite(chg) ? chg : null };
+    });
   }
   function tkMid(v) { const dp = v >= 100 ? 2 : v >= 1 ? 4 : 5; return v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
   function boardSig(items) { return items.map(i => i.code + ':' + i.mid).join('|'); }
@@ -648,27 +676,58 @@
   function Ticker({ locked, cfg, book }) {
     const c0 = cfg || { speed: 'medium', direction: 'left', metric: 'cadPerUnit', showFlags: true, showChange: true, hidden: [] };
     const hidden = c0.hidden || [];
-    const frozen = locked && book;
+    const [home, setHome] = useState(deskHome);
+    const [tape, setTape] = useState(null);
+    useEffect(() => {
+      const sync = () => setHome(deskHome());
+      window.addEventListener('cdos-jurisdiction', sync);
+      sync();
+      return () => window.removeEventListener('cdos-jurisdiction', sync);
+    }, []);
+    const foreign = !!(home && home !== 'CAD');
+    useEffect(() => {
+      if (!foreign) return undefined;
+      let stop = false;
+      const pull = () => {
+        fetch('/api/rates/ticker', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (stop || !d) return;
+            setTape(d);
+            if (window.CDOS) window.CDOS._tickerQuotes = d;
+          })
+          .catch(() => {});
+      };
+      pull();
+      const t = setInterval(pull, 15000);
+      return () => { stop = true; clearInterval(t); };
+    }, [foreign, home]);
+    const frozen = locked && book && !foreign;
     const frozenSig = frozen ? bookSig(book) : '';
     const [items, setItems] = useState(() => frozen ? readFrozen(book) : readBoard());
     useEffect(() => {
+      if (foreign) {
+        setItems((tape && tape.priced) ? quoteTape(tape.quotes, home) : boardTape(home));
+        return;
+      }
       if (frozen) { setItems(readFrozen(book)); return; }   // held at last pull — no polling
       let next0 = readBoard(); setItems(next0);
       let last = boardSig(next0);
       const t = setInterval(() => { const next = readBoard(); const s = boardSig(next); if (s !== last) { last = s; setItems(next); } }, 4000);
       return () => clearInterval(t);
-    }, [frozen, frozenSig]);
-    const shown = items.filter(it => !hidden.includes(it.code));
+    }, [foreign, frozen, frozenSig, tape, home]);
+    const shown = items.filter(it => !hidden.includes(it.code) && it.code !== home);
     if (!shown.length) return <div className="mb-ticker-wrap" />;
     const SPEED = { slow: 5.2, medium: 3.4, fast: 2.0 };
     const dur = Math.max(20, shown.length * (SPEED[c0.speed] || 3.4));
-    const price = (it) => c0.metric === 'perCad' ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const price = (it) => (!foreign && c0.metric === 'perCad') ? tkMid(1 / it.mid) : tkMid(it.mid);
+    const showChg = foreign ? !!(tape && tape.priced && c0.showChange) : c0.showChange;
     const cell = (it, i, k) => (
       <span className="tk-item" key={k + it.code + i}>
         {c0.showFlags && <span className="tk-flag">{it.flag}</span>}
         <span className="tk-code">{it.code}</span>
         <span className="tk-price">{price(it)}</span>
-        {c0.showChange && <span className={'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')}>{it.chg >= 0 ? '▲' : '▼'}{Math.abs(it.chg).toFixed(2)}%</span>}
+        {showChg && it.chg != null && <span className={'tk-chg ' + (it.chg >= 0 ? 'up' : 'down')}>{it.chg >= 0 ? '▲' : '▼'}{Math.abs(it.chg).toFixed(2)}%</span>}
       </span>
     );
     return (
@@ -1916,7 +1975,9 @@
       const a0 = setup.address;
       const addr = (a0 && typeof a0 === 'object') ? a0
         : { street: typeof a0 === 'string' ? a0 : '', city: setup.city || '', region: setup.region || '', postal: setup.postal || '' };
-      const homeCcy = setup.homeCurrency || 'CAD';
+      const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
+      const namedCountry = String(setup.country || '').trim();
+      const namedCanada = /^(ca|canada)$/i.test(namedCountry);
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -1931,13 +1992,25 @@
          The one real constraint between them is that the desk may ask for ID
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => (typeof v === 'number' && v > 0 ? v : fallback);
-      const reportOver = num(setup.reportThreshold, 10000);
-      const idOver = Math.min(num(setup.idThreshold, reportOver), reportOver);
+      /* A baseline desk's 10,000 is US dollars. Do not store it as the
+         home-currency line. The ledger converts it, and the screen reads that. */
+      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
+      /* A blank identification field is not the report line. The pack's
+         own identification line is what provision stored when it had one.
+         A baseline desk follows the pack, so a blank box stays blank. */
+      const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
+      const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
+      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const reportLine = legacyPause ? null : reportOver;
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
-        baseCurrency: homeCcy, threshold: reportOver, idRequiredOver: idOver,
+        bizCountry: namedCanada ? 'Canada' : (setup.baselineRules ? '' : (namedCountry || '')),
+        regime: setup.baselineRules ? '' : (setup.regulator || ''),
+        baseCurrency: homeCcy, threshold: reportLine, idRequiredOver: idOver,
+        rulesUnavailable: !!legacyPause,
+        baselineRules: !!setup.baselineRules,
         receiptHeader: bizName, fintracContactName: ownerName, reportingEntityNumber: '', locationNumber: '',
         employees: [owner] };
       // a fresh desk holds NO cash — zero every vault/till balance and clear the
@@ -2002,7 +2075,10 @@
       await hydrateTenant();
       try { sessionStorage.setItem(AUTH_KEY, '1'); sessionStorage.setItem('yorkfx_staff_user', user || 'staff'); } catch (e) {}
       setStage('desktop');
-      setTimeout(() => { openApp(planAllows('ledger') ? 'ledger' : 'rates'); }, 60);
+      /* With the desktop, not a moment later. A deferred open used to land
+         on top of whatever had just been clicked: the Ledger arrived about
+         60ms after sign-in and covered it. */
+      openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
@@ -2216,7 +2292,7 @@
                             <div key={it.customer} className="bell-row tall" onClick={() => { setBellMenu(false); openApp('compliance'); }}>
                               <div className="bell-row-main">
                                 <span className="bell-row-name">{it.customer}</span>
-                                <span className="bell-row-sub">{it.count} just-under deal{it.count === 1 ? '' : 's'} · {fmt(it.agg, 'CAD')} over {settings.structuringDays}d</span>
+                                <span className="bell-row-sub">{it.count} just-under deal{it.count === 1 ? '' : 's'} · {fmt(it.agg, deskHome() || 'CAD')} over {settings.structuringDays}d</span>
                               </div>
                               <button className="bell-act ghost lg" title="Mark this watch reviewed — the menu stays open so you can clear several in a row" onClick={(e) => { e.stopPropagation(); ackStructuringFor(it.customer); }}>Acknowledge</button>
                             </div>
@@ -2294,6 +2370,16 @@
           </div>
         </div>
       </div>
+
+      {/* A baseline desk. Sign-in is not blocked. Canada's rules are not applied. */}
+      {(() => {
+        const disclaimer = (window.CDOS.baselineNotice && window.CDOS.baselineNotice())
+          || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+        const notice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
+          || (settings.baselineRules || settings.rulesUnavailable ? disclaimer : '');
+        if (!notice) return null;
+        return <div role="status" data-rules-notice style={{ padding: '8px 16px', background: 'var(--cd-brass-soft, #f4efe4)', color: 'var(--cd-ink)', fontSize: 13, borderBottom: '1px solid var(--cd-line)' }}>{notice}</div>;
+      })()}
 
       {/* TENANT BAR — the exchange house using the software */}
       <div id="tenantbar" className={chromeCollapsed ? 'collapsed' : ''}>

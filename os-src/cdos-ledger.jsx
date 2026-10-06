@@ -351,7 +351,10 @@
     const kyc = newClient
       ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
       : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok'));
-    const idRequired = single || inCadEquiv >= 3000;     // FINTRAC: ID at $3k, LCTR at $10k
+    const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idRequired = single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000);
     const idBlocked = idRequired && kyc !== 'ok';
 
     const canSave = amtN > 0 && (isCheque ? (maker.trim() && chequeNumber.trim()) : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || (marginAck && marginReason.trim())) && (!single || (cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim())));
@@ -542,7 +545,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                     {lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}
                   </div>
                 </Field>
-                <Field label="Fee (CAD)">
+                <Field label={`Fee (${homeCcy() || 'CAD'})`}>
                   <input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inputSty, fontVariantNumeric: 'tabular-nums' }} />
                 </Field>
               </div>
@@ -611,7 +614,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {/* reportable — capture the FINTRAC info at the counter, pre-fills the filing */}
             {single && (
               <div className="p-3 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 10 }}>
-                <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {(window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'LCTR')}</span></div>
+                <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {(window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')}</span></div>
                 <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture these now, while the customer is here — it pre-fills the filing in Compliance so nothing is chased down later.</div>
                 <Field label="Purpose of transaction"><input value={cap.purpose} onChange={e => setCap(s => ({ ...s, purpose: e.target.value }))} placeholder="e.g. vacation funds, invoice settlement, family support" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.purpose.trim() ? CD.line : CD.flag }} /></Field>
                 <Field label="Source of funds"><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, business revenue, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></Field>
@@ -904,7 +907,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                       <input value={sameCcy ? '1' : rate} onChange={e => setRate(e.target.value)} disabled={sameCcy} inputMode="decimal" className="w-full px-2.5 py-2 text-sm text-right outline-none" style={{ ...fieldWrap('rate'), fontVariantNumeric: 'tabular-nums', opacity: sameCcy ? 0.5 : 1 }} />
                     </div>
                     <div>
-                      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Fee (CAD)</div>
+                      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Fee ({homeCcy() || 'CAD'})</div>
                       <input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full px-2.5 py-2 text-sm text-right outline-none" style={{ ...fieldWrap('fee'), fontVariantNumeric: 'tabular-nums' }} />
                     </div>
                     <div className="col-span-2">
@@ -1249,7 +1252,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
             <div className="flex items-center gap-2.5">
               <span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="bars" s={16} c="var(--cd-on-ink)" /></span>
-              <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Volume & earnings{client ? ` · ${client}` : ''}</div><div className="text-[11px]" style={{ color: CD.mute }}>{d.n} posted transactions · CAD-equivalent</div></div>
+              <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Volume & earnings{client ? ` · ${client}` : ''}</div><div className="text-[11px]" style={{ color: CD.mute }}>{d.n} posted transactions · {homeCcy() || 'CAD'}-equivalent</div></div>
             </div>
             <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
