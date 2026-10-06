@@ -44,24 +44,13 @@
    loudly rather than shipping a page that has quietly stopped saving,
    stopped verifying, or stopped creating desks.
    ============================================================ */
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "design/onboarding/currencydesk-onboarding.html");
 const OUT = path.join(ROOT, "web", "onboarding.html");
-/* The public start. Not a patch of the 17-screen wizard: a new shop
-   accepts the terms and creates an account here, and the wizard stays
-   the continuation for a reference that already exists. */
-const START_SRC = path.join(ROOT, "design/onboarding/account-start.html");
-const START_OUT = path.join(ROOT, "web", "onboarding-start.html");
-
-if (!existsSync(START_SRC)) {
-  throw new Error("onboarding: design/onboarding/account-start.html is missing — that is the page /onboarding serves");
-}
-copyFileSync(START_SRC, START_OUT);
-console.log("built web/onboarding-start.html from design/onboarding/account-start.html");
 
 /* The design's own storage key. Kept in one place here so that if a re-export
    renames it, the assert below is what tells us — not a customer whose
@@ -236,7 +225,8 @@ const BRIDGE = `<script>
 
     /* The end of it. Creates the tenant and the owner, signs them in and
        closes the application. Everything before this is answers; this is
-       the desk. */
+       the desk. Launch refuses unless the terms for this reference are
+       already on the row. */
     launch: function (d) {
       if (!CD.code) return Promise.resolve({ ok: true, simulated: true });
       CD.err = "";
@@ -250,16 +240,44 @@ const BRIDGE = `<script>
       });
     },
 
+    /* The terms screen. The version is the date on the legal page.
+       The server records the time and who accepted (the application's
+       email). A different version is refused and nothing is stored.
+       The checkbox in the browser is not the record. */
+    acceptTerms: function () {
+      if (!CD.code) return Promise.resolve(false);
+      CD.err = "";
+      return api("/terms", { termsAccepted: true, termsVersion: "2026-07-26" }).then(function (r) {
+        if (r.status === 200 && r.body.ok) { CD.termsAccepted = true; return true; }
+        CD.err = (r.body && r.body.detail) || "We couldn\\u2019t record that acceptance.";
+        return false;
+      }).catch(function () {
+        CD.err = "We couldn\\u2019t record that acceptance.";
+        return false;
+      });
+    },
+
     /* Debounced, and never blocks a keystroke. A failure stays quiet on
        purpose: the answers are still in localStorage, and telling somebody
-       mid-sentence that the network blinked helps nobody. */
+       mid-sentence that the network blinked helps nobody.
+
+       termsChecked is the box on the terms screen. It does not travel:
+       acceptance is the row written by acceptTerms. */
     save: function (i, data) {
       if (!CD.code) return;
       clearTimeout(CD._t);
+      var clean = {};
+      if (data) {
+        for (var k in data) {
+          if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+          if (k === "termsChecked" || String(k).indexOf("__") === 0) continue;
+          clean[k] = data[k];
+        }
+      }
       CD._t = setTimeout(function () {
         fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/state", {
           method: "PUT", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ at: i, data: data }),
+          body: JSON.stringify({ at: i, data: clean }),
         }).catch(function () {});
       }, 700);
     },
@@ -656,6 +674,171 @@ patch(
   "code:'000001'",
   "code:''",
   2,
+);
+
+/* --- 5b. The link's first two views, still on screen 0 -------------
+   Screen 0 used to ask them to type the ID. The ID is already in the
+   link. Show it, then the terms, then leave screens 1–16 alone.
+   Inserting a screen would move verify (14) and done (16), and the
+   patches below are pinned to those numbers. */
+patch(
+  "screen 0 — the ID from the link, then the terms, then the existing wizard",
+  "  meta(i, d, j, home, selCcy) {",
+  `  /* The invite link's first two views, both still on screen 0.
+
+     'id'    — show the reference that is already in the link.
+     'terms' — accept the 26 July 2026 terms. Continue stays off
+               until the box is checked. The server records it.
+     'typed' — the design tool, which has no link and still asks
+               for an ID. The served page always has window.__cdOnb.
+
+     Screens 1–16 are the setup wizard, untouched. */
+  preface() {
+    if (!window.__cdOnb) return 'typed';
+    return this._preface || 'id';
+  }
+
+  prefaceFace(M) {
+    const g = this.preface();
+    if (g === 'id') return {
+      eyebrow: 'Your invite',
+      title: 'This is your ID',
+      paras: ['This reference came with your invite. The desk keeps it, and it does not issue another.'],
+      note: 'Next, the terms. Then the setup you were invited to finish.',
+      cta: 'Continue',
+    };
+    if (g === 'terms') return {
+      eyebrow: '26 July 2026',
+      title: 'Terms of Service',
+      paras: ['Continue stays off until you accept these terms. The desk records the version, the time, and who accepted.'],
+      note: 'Any other version is refused.',
+      cta: 'Continue',
+    };
+    return { eyebrow: '', title: M.title || '', paras: M.paras || [], note: M.note || '', cta: M.ctaLabel || 'Continue' };
+  }
+
+  heroReady(d) {
+    if (!window.__cdOnb) return this.cdIdValid(d.cdId);
+    const g = this.preface();
+    if (g === 'id') return !!window.__cdOnb.refValid(window.__cdOnb.code);
+    if (g === 'terms') return !!d.termsChecked && !this._termsBusy;
+    return this.cdIdValid(d.cdId);
+  }
+
+  issuedHint() {
+    if (!window.__cdOnb || !window.__cdOnb.code) return 'Open the link from your invite email. That link is this ID.';
+    const s = window.__cdOnb.refState(window.__cdOnb.code);
+    if (s === 'ok') return 'Same reference as the link. Nothing else to type.';
+    if (s === 'no') return "We don't have this reference. Use the link from the email we sent when you were approved.";
+    if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and open the link again.';
+    return 'Checking this reference…';
+  }
+
+  onPrefaceCta() {
+    if (!window.__cdOnb || this.state.i > 0 || this.preface() === 'typed') { this.next(); return; }
+    if (this.preface() === 'id') {
+      if (!window.__cdOnb.refValid(window.__cdOnb.code)) return;
+      this._preface = 'terms';
+      this.forceUpdate();
+      return;
+    }
+    if (this.preface() === 'terms') {
+      if (!this.state.data.termsChecked || this._termsBusy) return;
+      this._termsBusy = true;
+      const self = this;
+      this.forceUpdate();
+      window.__cdOnb.acceptTerms().then(function (ok) {
+        self._termsBusy = false;
+        if (!ok) { self.forceUpdate(); return; }
+        self._preface = 'setup';
+        self.next();
+      });
+      return;
+    }
+    this.next();
+  }
+
+  meta(i, d, j, home, selCcy) {`,
+);
+patch(
+  "screen 0's Continue — it used to require a typed ID",
+  "valid: this.cdIdValid(d.cdId) };",
+  "valid: this.heroReady(d) };",
+);
+patch(
+  "the hero's words and button — the link shows the ID, then the terms",
+  "eyebrow: M.eyebrow || '', q: M.q || '', help: M.help || '',\n" +
+  "      heroTitle: M.title || '', heroParas: M.paras || [], heroNote: M.note || '',\n" +
+  "      onCta: () => this.next(), ctaLabel: M.ctaLabel || 'Continue',\n" +
+  "      ctaDisabled: M.valid === false,",
+  "eyebrow: this.prefaceFace(M).eyebrow || M.eyebrow || '', q: M.q || '', help: M.help || '',\n" +
+  "      heroTitle: this.prefaceFace(M).title, heroParas: this.prefaceFace(M).paras, heroNote: this.prefaceFace(M).note,\n" +
+  "      onCta: () => this.onPrefaceCta(), ctaLabel: this.prefaceFace(M).cta,\n" +
+  "      ctaDisabled: M.valid === false,\n" +
+  "      showIssuedId: this.preface() === 'id',\n" +
+  "      showTerms: this.preface() === 'terms',\n" +
+  "      showTypedId: this.preface() === 'typed',\n" +
+  "      linkId: (window.__cdOnb && window.__cdOnb.code) || '',\n" +
+  "      issuedHint: this.issuedHint(),\n" +
+  "      onToggleTerms: () => this.set('termsChecked', !this.state.data.termsChecked),\n" +
+  "      termsPressed: this.state.data.termsChecked ? 'true' : 'false',\n" +
+  "      termsMark: this.state.data.termsChecked ? '\\u2713' : '',\n" +
+  "      termsBoxStyle: 'flex:none;width:18px;height:18px;margin-top:1px;border-radius:4px;border:1.5px solid var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:' + (this.state.data.termsChecked ? 'var(--primary)' : 'transparent'),\n" +
+  "      termsToggleStyle: 'display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-family:inherit;font-size:14px;line-height:1.45;color:var(--ink);cursor:pointer;',\n" +
+  "      termsToggleLabel: this.state.data.termsChecked ? 'Accepted \\u2014 Terms of Service, 26 July 2026' : 'I accept the Terms of Service (26 July 2026)',\n" +
+  "      termsErr: (window.__cdOnb && this.preface() === 'terms' && window.__cdOnb.err) || '',",
+);
+patch(
+  "back — from the first setup screen to the terms, and from the terms to the ID",
+  "back() { this.setState(s => ({ i: Math.max(0, s.i - 1), adding: false, paid: false })); }",
+  "back() {\n" +
+  "    /* Screen 0 is two views. Back from the first setup screen returns\n" +
+  "       to the terms; back from the terms returns to the ID. Later\n" +
+  "       screens still step back one. */\n" +
+  "    if (window.__cdOnb && this.state.i === 0 && this.preface() === 'terms') {\n" +
+  "      this._preface = 'id';\n" +
+  "      this.forceUpdate();\n" +
+  "      return;\n" +
+  "    }\n" +
+  "    if (window.__cdOnb && this.state.i === 1) {\n" +
+  "      this._preface = 'terms';\n" +
+  "      this.setState({ i: 0, adding: false, paid: false });\n" +
+  "      return;\n" +
+  "    }\n" +
+  "    this.setState(s => ({ i: Math.max(0, s.i - 1), adding: false, paid: false }));\n" +
+  "  }",
+);
+patch(
+  "start over — back to the ID on the link, not a half-finished view",
+  "reset() { try { localStorage.removeItem(this.KEY); }",
+  "reset() { this._preface = 'id'; try { localStorage.removeItem(this.KEY); }",
+);
+patch(
+  "the typed-ID field — hidden once the page has a link",
+  '<sc-if value="{{ hero }}" hint-placeholder-val="{{ false }}">\n                  <div style="width: 100%; max-width: 340px; margin-top: 24px; text-align: left;">',
+  '<sc-if value="{{ showTypedId }}" hint-placeholder-val="{{ false }}">\n                  <div style="width: 100%; max-width: 340px; margin-top: 24px; text-align: left;">',
+);
+patch(
+  "the ID and the terms, in place of the typed field",
+  '{{ cdIdHint }}</div>\n                  </div>\n                </sc-if>\n                <p style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
+  '{{ cdIdHint }}</div>\n                  </div>\n                </sc-if>\n' +
+  '                <sc-if value="{{ showIssuedId }}" hint-placeholder-val="{{ false }}">\n' +
+  '                  <div data-screen="issued-id" style="width: 100%; max-width: 340px; margin-top: 22px; text-align: center;">\n' +
+  '                    <div data-issued-id="{{ linkId }}" style="font-family: var(--m); font-size: 28px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink);">{{ linkId }}</div>\n' +
+  '                    <div style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ issuedHint }}</div>\n' +
+  '                  </div>\n' +
+  '                </sc-if>\n' +
+  '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
+  '                  <div data-screen="terms" style="width: 100%; max-width: 380px; margin-top: 18px; text-align: left;">\n' +
+  '                    <button type="button" data-terms-toggle="1" aria-pressed="{{ termsPressed }}" sc-camel-on-click="{{ onToggleTerms }}" style="{{ termsToggleStyle }}">\n' +
+  '                      <span aria-hidden="true" style="{{ termsBoxStyle }}">{{ termsMark }}</span>\n' +
+  '                      <span>{{ termsToggleLabel }}</span>\n' +
+  '                    </button>\n' +
+  '                    <div style="margin-top: 10px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Read the Terms of Service</a></div>\n' +
+  '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 8px; min-height: 1.2em;">{{ termsErr }}</div>\n' +
+  '                  </div>\n' +
+  '                </sc-if>\n' +
+  '                <p style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;">{{ heroNote }}</p>',
 );
 
 /* --- 6. Verify by email, in the channel's own words ---------------- */

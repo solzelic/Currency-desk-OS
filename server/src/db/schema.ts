@@ -37,15 +37,8 @@ export const tenants = pgTable("tenants", {
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
   suspended: boolean("suspended").notNull().default(false),
-  /* The account's public identifier: CD- and six characters. Issued when
-     the account is created on the public setup page. Null on desks that
-     were opened before that door existed. Not an input the browser may
-     choose. See migration 027. */
-  reference: text("reference"),
-  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
-  termsVersion: text("terms_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [uniqueIndex("tenants_reference_idx").on(t.reference)]);
+});
 
 /* Per-tenant OS working state — one JSON snapshot per desk. The buildless
    OS keeps its live state (rate board, ledger rows, clients, till counts,
@@ -224,6 +217,15 @@ export const onboarding = pgTable("onboarding", {
   // steps with nothing to type: paperwork sighted, payment cleared
   marks: jsonb("marks").$type<Record<string, unknown>>().notNull().default({}),
   tenantId: text("tenant_id"),
+  /* Terms accepted on the invite link, before setup. The version is the
+     date on the legal page (26 July 2026). All three stay null until
+     they accept. The database check (migration 027, and the same check
+     in the bootstrap DDL) allows only that version, and only together
+     with a time and a person. The person is the application's email,
+     written by the server. */
+  termsVersion: text("terms_version"),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsAcceptedBy: text("terms_accepted_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

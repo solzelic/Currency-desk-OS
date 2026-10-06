@@ -1,14 +1,13 @@
 /* ============================================================
    The applicant's own door into onboarding.
 
-     GET   /api/onboarding/:ref     → their flow, with what they told us
-     PATCH /api/onboarding/:ref     → save answers as they go
-     POST  /api/onboarding/:ref/submit → hand it to signup
-
-   They get an email with their code and a link. They type the code and
-   walk through it. Same record the platform team works from the panel,
-   so whatever we filled in at their counter is already there, and
-   whatever they do here is waiting for us.
+   They get an email with their code and a link, /onboarding/CD-XXXXXX.
+   The first screen shows that code. It is the application reference
+   already in the link — the desk keeps it and does not issue a second
+   one. The next screen is the Terms of Service dated 26 July 2026.
+   Setup does not save, and the desk is not created, until that
+   acceptance is on this row: the version, the time, and the
+   application's email.
 
    The code IS the key — that is the design, and it is the same trust
    model as any emailed link: holding it proves the email reached them.
@@ -96,12 +95,54 @@ function flowAnswers(row: { answers?: Record<string, unknown> | null }): Record<
    confirmed. */
 function stripSecrets(data: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const secret = new Set(["cardNum", "cardCvc", "cardExp", "card2Num", "card2Cvc", "card2Exp", "ownerPass", "backup"]);
+  /* termsChecked is the box on the terms screen. It is not acceptance.
+     Acceptance is the three columns on the row, written only by
+     POST /terms. Keeping the box out of `answers` means a browser
+     cannot mark itself as having accepted. */
+  const secret = new Set([
+    "cardNum", "cardCvc", "cardExp", "card2Num", "card2Cvc", "card2Exp", "ownerPass", "backup",
+    "termsChecked",
+  ]);
   for (const [k, v] of Object.entries(data)) {
     if (k.startsWith("__") || secret.has(k)) continue;
     out[k] = v;
   }
   return out;
+}
+
+/* The legal page dated 26 July 2026. The only version this door records.
+   The database check repeats the same date, so a write that got past
+   this constant still cannot store another one. */
+export const ONBOARDING_TERMS_VERSION = "2026-07-26";
+export const ONBOARDING_TERMS_UPDATED = "26 July 2026";
+
+const termsBody = z.object({
+  termsAccepted: z.literal(true),
+  termsVersion: z.literal(ONBOARDING_TERMS_VERSION),
+}).strict();
+
+type TermsRow = {
+  termsVersion?: string | null;
+  termsAcceptedAt?: Date | null;
+  termsAcceptedBy?: string | null;
+};
+
+function termsAreAccepted(row: TermsRow): boolean {
+  return row.termsVersion === ONBOARDING_TERMS_VERSION
+    && row.termsAcceptedAt instanceof Date
+    && typeof row.termsAcceptedBy === "string"
+    && row.termsAcceptedBy.trim().length > 0;
+}
+
+function termsOffer(row: TermsRow) {
+  const accepted = termsAreAccepted(row);
+  return {
+    version: ONBOARDING_TERMS_VERSION,
+    updated: ONBOARDING_TERMS_UPDATED,
+    href: "/legal#terms",
+    accepted,
+    acceptedAt: accepted ? row.termsAcceptedAt!.toISOString() : null,
+  };
 }
 
 const sentToFor = (data: Record<string, unknown>, a: { email: string }): string =>
@@ -383,7 +424,47 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
          thing that actually sends. The page renders whatever it is told. */
       verify: { channel: VERIFY_CHANNEL, sentTo: sentToFor(seeded, a) },
       createdDesk: row.tenantId,
+      /* What the terms screen is offering, and whether this reference
+         has already accepted it. The page shows the reference from the
+         link; this is the same reference, not a second id. */
+      terms: termsOffer(row),
     };
+  });
+
+  /* Accept the terms for this reference.
+
+     The body may only say "I accept" and name the 26 July 2026 version.
+     Who accepted is the application's email, taken from the row — a
+     client field for that is rejected, and any other version is
+     rejected with nothing written. Accepting again keeps the original
+     time and person. */
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/terms", async (req, reply) => {
+    const a = await gateFor(req.params.ref, req.ip, reply);
+    if (!a) return;
+    const parsed = termsBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: "invalid_terms",
+        detail: "Accept the Terms of Service dated 26 July 2026. No other version is recorded.",
+      });
+    }
+    const who = a.email.trim();
+    if (!who) {
+      return reply.code(409).send({
+        error: "no_email",
+        detail: "This application has no email to record the acceptance against.",
+      });
+    }
+    const row = await loadOrCreate(a.id);
+    if (termsAreAccepted(row)) return { ok: true, already: true };
+    const acceptedAt = new Date();
+    await db.update(schema.onboarding).set({
+      termsVersion: ONBOARDING_TERMS_VERSION,
+      termsAcceptedAt: acceptedAt,
+      termsAcceptedBy: who,
+      updatedAt: acceptedAt,
+    }).where(eq(schema.onboarding.enquiryId, a.id));
+    return { ok: true };
   });
 
   app.put<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
@@ -393,6 +474,12 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const row = await loadOrCreate(a.id);
     if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "Your desk is already open — sign in instead." });
+    if (!termsAreAccepted(row)) {
+      return reply.code(403).send({
+        error: "terms_required",
+        detail: "Accept the Terms of Service before setting up the desk.",
+      });
+    }
 
     const incoming = stripSecrets(parsed.data.data);
     const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...incoming };
@@ -490,6 +577,12 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     const row = await loadOrCreate(a.id);
     if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "Your desk is already open — sign in instead." });
+    if (!termsAreAccepted(row)) {
+      return reply.code(403).send({
+        error: "terms_required",
+        detail: "Accept the Terms of Service before setting up the desk.",
+      });
+    }
 
     // whatever the page has now wins over whatever it last saved
     const merged = { ...flowAnswers(row), ...stripSecrets(parsed.data.data ?? {}) };
@@ -565,6 +658,12 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     const row = await loadOrCreate(a.id);
     if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "Your desk is already open — sign in instead.", tenantId: row.tenantId });
+    if (!termsAreAccepted(row)) {
+      return reply.code(403).send({
+        error: "terms_required",
+        detail: "Accept the Terms of Service before opening the desk.",
+      });
+    }
 
     const supplied = parsed.data.data ?? {};
     const merged = { ...flowAnswers(row), ...stripSecrets(supplied) };

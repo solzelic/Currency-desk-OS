@@ -87,7 +87,7 @@
   });
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
-  function SignIn({ employees, onSignup, onComplete, onMustChange }) {
+  function SignIn({ employees, onComplete, onMustChange }) {
     const [step, setStep] = useState('id');            // id | password | code
     const [idInput, setIdInput] = useState('');
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
@@ -360,9 +360,9 @@
           style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
           Can't get in?</button>
       </div>
-      {onSignup && <div style={{ textAlign: 'center', fontSize: 12, marginTop: 10 }}>
-        New to CurrencyDesk? <button type="button" onClick={onSignup} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button>
-      </div>}
+      <div style={{ textAlign: 'center', fontSize: 12, marginTop: 10 }}>
+        New to CurrencyDesk? <a href="/signup" style={{ color: 'var(--si-primary)', fontWeight: 700, textDecoration: 'underline' }}>Create your desk →</a>
+      </div>
     </form>));
 
     // ---- A2 · Password -------------------------------------------------

@@ -66,20 +66,26 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Production/build surfaces
 
 `marketing site` (`/`) · `OS` (`/app`, `/login`) · `admin` (`/admin`) ·
-`onboarding` (`/onboarding` to open an account; `/onboarding/:code` to continue one that already has a reference) · `customer storefront` (`/sites/yorkfx`)
+`onboarding` (`/onboarding` redirects to `/signup`; `/onboarding/:code` is the invite: the reference, the 26 July 2026 terms, then setup) · `customer storefront` (`/sites/yorkfx`)
 · `server/API` (`/api/*`).
 
 ## Current active work
 
-- **Public account opening** — a new shop at `/onboarding` accepts the
-  Terms of Service (the legal page dated 26 July 2026), then creates
-  the account. The server issues the CurrencyDesk ID (`CD-` and six
-  characters) in that request and stores it on `tenants.reference`.
-  The page shows it. The ID is not an input, and a request that sends
-  one is refused. Shop-record upload is not on this path: no drop
-  zone, nothing is treated as read, nothing is marked verified.
-  `/onboarding/CD-XXXXXX` is still the wizard for an application that
-  already has a reference. Desk `/login` and platform MFA are unchanged.
+- **Invite, then terms, then the existing setup** — "Get early access"
+  still applies at `/signup`. "Approve & invite" still emails
+  `CD-XXXXXX` and `/onboarding/CD-XXXXXX`. That link shows the reference
+  it already carries ("This is your ID"), then the Terms of Service
+  dated 26 July 2026. Continue stays off until the box is checked. The
+  server records the version, the time, and the application's email,
+  and refuses any other version. The database check on `onboarding`
+  allows only `2026-07-26` together with a time and a person (migration
+  027). Setup and launch refuse until that acceptance is on the
+  reference. The wizard after that is the one that already shipped.
+  A bare `/onboarding` redirects to `/signup`. `/login` "Create your
+  desk" goes to `/signup`. `OnboardWizard` and `POST /api/signup` are
+  still in the tree, unlinked; removing them is follow-up. The admin
+  enquiry list, the approval email, auth, MFA, and migrations 025 and
+  026 are unchanged.
 
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
@@ -175,10 +181,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-30**, public account opening. `/onboarding` is terms, then
-the account, then the issued CurrencyDesk ID. The invite-ID gate is
-no longer the start. Shop-record upload is unfinished on purpose.
-Migration 027 stores the reference and the terms acceptance.
+**2026-10-06**, invite then terms. `/onboarding/CD-XXXXXX` shows the
+reference from the link, then the 26 July 2026 terms, then the existing
+setup wizard. Launch refuses without that acceptance. Bare `/onboarding`
+and the login "Create your desk" link go to `/signup`. Migration 027
+records the acceptance on the onboarding row and checks the version.
+
+Prior stamp **2026-09-30**, public account opening. That draft put a
+second signup at `/onboarding` and issued another id. It is not the
+path. The invite chain above is.
 
 Prior stamp **2026-09-30**, operator file folder. Supporting papers (proof of address,
 source of funds, corporate filings) are `supporting_file` rows on

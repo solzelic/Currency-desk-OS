@@ -40,13 +40,6 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
--- The public setup page issues these when the account is created.
--- PGlite applies DDL and not the SQL migrations, so the columns have to
--- exist here as well as in migration 027. Null on every older desk.
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reference text;
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS terms_version text;
-CREATE UNIQUE INDEX IF NOT EXISTS tenants_reference_idx ON tenants (reference);
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -284,6 +277,27 @@ CREATE TABLE IF NOT EXISTS onboarding (
   tenant_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Terms accepted on the invite link, before setup. PGlite applies this
+-- DDL and not the SQL migrations, so the columns and the check live
+-- here as well as in migration 027. Untouched rows keep all three null.
+-- Anything else has to be the 26 July 2026 terms, with a time and a person.
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS terms_version text;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS terms_accepted_by text;
+ALTER TABLE onboarding DROP CONSTRAINT IF EXISTS onboarding_terms_recorded;
+ALTER TABLE onboarding ADD CONSTRAINT onboarding_terms_recorded CHECK (
+  (
+    terms_version IS NULL
+    AND terms_accepted_at IS NULL
+    AND terms_accepted_by IS NULL
+  )
+  OR (
+    terms_version = '2026-07-26'
+    AND terms_accepted_at IS NOT NULL
+    AND terms_accepted_by IS NOT NULL
+    AND length(btrim(terms_accepted_by)) > 0
+  )
 );
 DROP TABLE IF EXISTS desk_onboarding;
 CREATE TABLE IF NOT EXISTS tenant_state (

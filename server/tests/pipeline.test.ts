@@ -12,6 +12,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { canMove, STAGES, type Stage } from "../src/onboarding/pipeline.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -251,6 +252,7 @@ describe("an application closing when its desk opens", () => {
     const row = (list.enquiries as { id: string; reference: string; email: string }[]).find((e) => e.email === applied)!;
     await move(row.id, "invited");
     const ref = row.reference;
+    await acceptOnboardingTerms(app, ref);
     await app.inject({ method: "PUT", url: `/api/onboarding/${ref}/state`,
       payload: { at: 3, data: { ownerEmail: finishedAs, operatingName: "Different FX", bizName: "Different FX Inc.", plan: "full" } } as Record<string, unknown> });
     await app.inject({ method: "POST", url: `/api/onboarding/${ref}/verify/send`, payload: { data: {} } as Record<string, unknown> });

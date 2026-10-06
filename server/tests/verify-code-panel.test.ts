@@ -24,6 +24,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { forget as forgetCooldown } from "../src/cooldown.js";
+import { acceptOnboardingTerms } from "./accept-onboarding-terms.js";
 
 let handle: DbHandle; let app: FastifyInstance; let admin: Record<string, string> = {};
 const ADMIN = "j.masri";
@@ -71,6 +72,7 @@ describe("before they are approved", () => {
 describe("once they are invited", () => {
   beforeAll(async () => {
     await app.inject({ method: "PATCH", url: `/api/admin/enquiries/${id}`, cookies: admin, payload: { status: "invited" } as Record<string, unknown> });
+    await acceptOnboardingTerms(app, reference);
     // their setup, far enough along to have an owner address on it
     await app.inject({
       method: "PUT", url: `/api/onboarding/${reference}/state`,
