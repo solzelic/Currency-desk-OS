@@ -34727,11 +34727,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
      snapshot. Comparing the Canadian number with a dinar line does not
      ask for ID when the rules need it, because 5,000 is a much smaller
      number than 300,000.
-      `homePerCad` is units of the home currency per 1 CAD, from the rate
-     board. No home currency, or no positive rate, means this amount
-     cannot be valued. The caller then requires identification and does
-     not mark the deal reportable — the same closed answer the ledger
-     gives when it cannot price a deal in the desk's own money. */
+      `homePerCad` is units of the home currency per 1 CAD. It comes from
+     the market snapshot (CAD per 1 unit), the same table the ledger
+     uses — never the shop board. A board kept in dinars stores mids in
+     dinars, and reading that as Canadian dollars prices 3,000 CAD as
+     3,000 dinars. No home currency, a snapshot older than 24 hours, or
+     no positive mid means this amount cannot be valued. The caller then
+     requires identification and does not mark the deal reportable. */
+  function marketHomePerCad(home) {
+    if (!home) return null;
+    if (home === 'CAD') return 1;
+    const market = window.MARKET;
+    const fetched = market && +market.fetchedAt;
+    if (!isFinite(fetched) || Date.now() - fetched > 24 * 60 * 60 * 1000) return null;
+    const mids = market.mids || {};
+    const cadPerHome = +mids[home];
+    if (!isFinite(cadPerHome) || cadPerHome <= 0) return null;
+    return 1 / cadPerHome;
+  }
   function toHome(cadAmount, home, homePerCad) {
     const cad = +cadAmount;
     if (!home || !isFinite(cad)) return null;
@@ -35563,7 +35576,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const limit = reportingLimit(settings);
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const home = packNow && packNow.homeCurrency || limit.currency || null;
-    const homePerCad = !home || home === 'CAD' ? 1 : crossRate('CAD', home);
+    const homePerCad = marketHomePerCad(home);
     const kyc = (() => {
       const c = clients[senderName];
       return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
@@ -36521,6 +36534,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       flagOf,
       cadOf,
       toHome,
+      marketHomePerCad,
       transferRuling,
       BeneficiaryModal,
       TransferModal,

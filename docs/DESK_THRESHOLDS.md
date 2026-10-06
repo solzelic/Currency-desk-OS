@@ -129,7 +129,8 @@ identification is required on every deal. A baseline desk is not
 shown Canada, FINTRAC, or the unconverted 3,000 and 10,000. The
 new-transfer form still prices a send in Canadian dollars. It
 compares that figure with these lines only after converting it into
-the desk's home currency. Where that conversion cannot be made,
+the desk's home currency at the same market snapshot. The shop
+board is not used. Where that conversion cannot be made,
 identification is required and the deal is not marked reportable.
 
 These still post, because they are not a new deal:

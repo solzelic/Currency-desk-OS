@@ -163,12 +163,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   source sits on that converted pack value, not on the owner's
   lower number. A looser line names the same converted baseline.
   A missing or stale rate says identification is required on every
-  deal. The screen does not fill a baseline desk in with Canada,
+  deal.   The screen does not fill a baseline desk in with Canada,
   FINTRAC, or the unconverted 3,000 and 10,000. The new-transfer
   form still prices a send in Canadian dollars, and it compares
   that figure with these lines only after converting it into the
-  desk's home currency. Where that conversion cannot be made,
-  identification is required and the deal is not marked reportable.
+  desk's home currency at that same market snapshot. The shop
+  board is not used for the comparison. A snapshot older than 24
+  hours, or one with no mid, cannot price the send: identification
+  is required and the deal is not marked reportable.
   The threshold editors stay available. A void, a cheque
   clearance or return, and an obligation settlement or write-off still
   post, and they keep the pack the original deal was stamped with.
@@ -274,8 +276,9 @@ reports in plain words. A following line reads the converted home
 amount and the US-dollar source in one sentence. A stricter line
 names the desk's own figure and the converted baseline separately.
 It does not fall back to Canada or FINTRAC. The new-transfer form
-compares its Canadian figure with those lines in home currency, and
-requires identification when the figure cannot be converted.
+compares its Canadian figure with those lines in home currency,
+using the market snapshot and not the shop board, and requires
+identification when the figure cannot be converted.
 The till and Settings show
 the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,
