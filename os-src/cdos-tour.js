@@ -67,9 +67,10 @@
 
   /* Anchors are `data-tour` attributes on the real screens. `app`
      is the dock id; if it is not in the list the shell passes, the
-     step is not offered. `needsClient` steps open a real customer
-     record first. The shell does not draw the card until that
-     anchor is on a window that has actually opened. */
+     step is not offered. `needsClient` steps are the customer file.
+     The shell does not open the window. It runs the step only once
+     that window is already open and in front; until then the card
+     is a button that opens it. */
   var OWNER_STEPS = [
     {
       id: 'shop',

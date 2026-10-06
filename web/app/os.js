@@ -58607,9 +58607,10 @@ window.CDOS_PERSIST = (function () {
 
   /* Anchors are `data-tour` attributes on the real screens. `app`
      is the dock id; if it is not in the list the shell passes, the
-     step is not offered. `needsClient` steps open a real customer
-     record first. The shell does not draw the card until that
-     anchor is on a window that has actually opened. */
+     step is not offered. `needsClient` steps are the customer file.
+     The shell does not open the window. It runs the step only once
+     that window is already open and in front; until then the card
+     is a button that opens it. */
   var OWNER_STEPS = [
     {
       id: 'shop',
@@ -58806,9 +58807,14 @@ window.CDOS_PERSIST = (function () {
 
    The decisions (who, which steps, whether they have already
    skipped or finished) live in cdos-tour.js so they can be tested
-   without a browser. This file only puts that answer on screen:
-   it opens the real app, finds the real anchor, and draws a card
-   beside it.
+   without a browser. This file only puts that answer on screen.
+
+   It does not open or raise a window. A step runs when its window
+   is already open and is the one in front. Until then the card
+   shows a plain button — "Open the till", "Open the dashboard" —
+   and that click is the only call to openApp. A timer that opened
+   the till on its own raised it over whatever the person (or a
+   seam test) had just opened, and the click landed on the till.
 
    The card uses the desk's own type and colours. It is not a
    scrim and it does not add a dock icon. Skip is on every step.
@@ -58960,13 +58966,43 @@ window.CDOS_PERSIST = (function () {
     };
   }
 
+  /* The window in front. `active` is the topmost window, the one
+     that receives the click. Open underneath is not in front. */
+  function frontWin() {
+    var win = document.querySelector('.win.show.active');
+    if (!win || win.classList.contains('min')) return null;
+    return win;
+  }
+  function frontIs(app) {
+    var win = frontWin();
+    if (!win) return false;
+    if (app === 'dashboard') return !!win.querySelector('[data-tour="shop"]');
+    if (app === 'till') return !!win.querySelector('[data-tour="till"]');
+    if (app === 'clients') return !!win.querySelector('[data-tour="clients"]');
+    return false;
+  }
+
+  /* The words on the button. Till and dashboard are named the way a
+     person at the desk says them; the clients window uses the same
+     shape. The button is the only way this file opens anything. */
+  function openLabel(app) {
+    if (app === 'till') return 'Open the till';
+    if (app === 'dashboard') return 'Open the dashboard';
+    if (app === 'clients') return 'Open the clients';
+    return 'Open it';
+  }
+
   /* A window starts at opacity 0 and only then gains `.show`. An
      anchor inside a window that has not appeared yet is not a screen
-     a person can see, so the card waits. */
+     a person can see. It also has to be the window in front — a
+     window left open underneath still has `.show`, and pointing at
+     it would mean raising it, which is the thing this file must
+     not do. A customer sheet is not a window; the clients window
+     has to be the one in front as well. */
   function visibleBox(el) {
     if (!el || !el.getBoundingClientRect) return null;
     var win = el.closest ? el.closest('.win') : null;
-    if (win && (!win.classList.contains('show') || win.classList.contains('min'))) return null;
+    if (win && (!win.classList.contains('show') || !win.classList.contains('active') || win.classList.contains('min'))) return null;
     var rect = el.getBoundingClientRect();
     if (rect.width < 8 || rect.height < 8) return null;
     var host = win ? win.getBoundingClientRect() : null;
@@ -59065,94 +59101,110 @@ window.CDOS_PERSIST = (function () {
       });
     }, [staffId, role, appsKey, clientReady]);
     const step = run && run.steps ? run.steps[run.index] : null;
+
+    /* The anchor, but only when its window is the one in front.
+       A customer sheet has no window of its own, so the clients
+       window has to be that front window. */
+    function readyBox(current) {
+      if (!current) return null;
+      var el = document.querySelector('[data-tour="' + current.anchor + '"]');
+      if (!el) return null;
+      var win = el.closest ? el.closest('.win') : null;
+      if (!win && !frontIs(current.app)) return null;
+      return visibleBox(el);
+    }
+
+    /* The window for this step is in front, and the anchor is still
+       not on it. That is a screen the product does not draw (search
+       with no papers, identification with no standing) — drop it.
+       A window that is not in front is not this case. The person has
+       not opened it, and this file will not open it for them. */
+    function absentWhileFront(current) {
+      if (!current || !frontIs(current.app)) return false;
+      if (document.querySelector('[data-tour="' + current.anchor + '"]')) return false;
+      if (!current.needsClient) return true;
+      /* The file is a sheet on a customer. Until that sheet is open
+         the anchor is supposed to be missing. */
+      return !!document.querySelector('.fixed [data-tour="file-folder"], .fixed [data-tour="identification"]');
+    }
+
+    /* Watch the desk. Read only — this effect must not call openApp
+       or openClient. Pause is not a dependency: locking the desk and
+       unlocking it must not start the watch over, and must not open
+       anything. The click handler below is the only open. */
     useEffect(() => {
-      if (!run || !step || paused) return undefined;
+      if (!run || !step) return undefined;
       var cancelled = false;
       var tries = 0;
       var timer = 0;
-      var placed = false;
-      function openSurface() {
-        try {
-          if (step.needsClient) {
-            var name = tour.clientForTour(clientsRef.current);
-            if (name && openClientRef.current) openClientRef.current(name);else if (step.app && openAppRef.current) openAppRef.current(step.app);
-          } else if (step.app && openAppRef.current) {
-            openAppRef.current(step.app);
-          }
-        } catch (e) {}
+      var scrolled = false;
+      function dropStep() {
+        setRun(function (cur) {
+          if (!cur || !cur.steps) return cur;
+          var next = tour.dropUnplaced(cur.steps, [step.anchor]);
+          if (next.length === cur.steps.length) return cur;
+          if (!next.length) return false;
+          /* Past the last step that still exists: the walk is over.
+             `complete` asks the effect below to record finished, and
+             only if a step was actually shown. */
+          if (cur.index >= next.length) return {
+            steps: next,
+            index: next.length,
+            complete: true
+          };
+          return {
+            steps: next,
+            index: cur.index
+          };
+        });
       }
       function look() {
         if (cancelled || !tour) return;
-        tries += 1;
-        /* Keep asking until the window is actually up. The desk opens
-           the ledger on its own a moment after sign-in; one call, made
-           too early, loses that race and the card is left on an empty
-           desktop. There is no tab to click here — the close panel is
-           not a step, and clicking it is how a close error gets on screen. */
-        if (!placed) openSurface();
-        var el = document.querySelector('[data-tour="' + step.anchor + '"]');
-        var boxNow = visibleBox(el);
+        var boxNow = readyBox(step);
         if (boxNow) {
-          try {
-            el.scrollIntoView({
-              block: 'nearest',
-              inline: 'nearest'
-            });
-          } catch (e) {}
-          boxNow = visibleBox(el) || boxNow;
-          placed = true;
+          tries = 0;
+          var el = document.querySelector('[data-tour="' + step.anchor + '"]');
+          if (el && !scrolled) {
+            scrolled = true;
+            try {
+              el.scrollIntoView({
+                block: 'nearest',
+                inline: 'nearest'
+              });
+            } catch (e) {}
+            boxNow = readyBox(step) || boxNow;
+          }
           sawRef.current = true;
-          setBox(boxNow);
-          return;
-        }
-        /* Twelve looks is about a second and a half. Past that the
-           screen is not going to draw this anchor — drop the step. */
-        if (tries >= 12) {
-          setRun(function (cur) {
-            if (!cur || !cur.steps) return cur;
-            var next = tour.dropUnplaced(cur.steps, [step.anchor]);
-            if (next.length === cur.steps.length) return cur;
-            /* The missing step was the current one. The step now at
-               this index is the one that followed it. If nothing
-               follows, leave the tour up only when earlier steps
-               remain — the card still has Skip. An empty list hides
-               it without recording, so a desk whose screens were
-               slow rather than absent can try again next sign-in. */
-            if (!next.length) return false;
-            /* Past the last step that still exists: the walk is over.
-               `complete` asks the effect below to record finished,
-               and only if a step was actually shown. */
-            if (cur.index >= next.length) return {
-              steps: next,
-              index: next.length,
-              complete: true
-            };
-            return {
-              steps: next,
-              index: cur.index
-            };
+          setBox(function (cur) {
+            if (cur && cur.top === boxNow.top && cur.left === boxNow.left && cur.width === boxNow.width && cur.height === boxNow.height) return cur;
+            return boxNow;
           });
+          timer = window.setTimeout(look, 400);
           return;
         }
-        timer = window.setTimeout(look, 120);
+        setBox(function (cur) {
+          return cur ? null : cur;
+        });
+        /* Twelve looks is about two seconds of the right window
+           being in front with no anchor. Past that the screen is
+           not going to draw it. */
+        if (absentWhileFront(step)) {
+          tries += 1;
+          if (tries >= 12) {
+            dropStep();
+            return;
+          }
+        } else {
+          tries = 0;
+        }
+        timer = window.setTimeout(look, 200);
       }
       timer = window.setTimeout(look, 180);
-      function follow() {
-        if (!placed) return;
-        var el = document.querySelector('[data-tour="' + step.anchor + '"]');
-        var boxNow = visibleBox(el);
-        if (!boxNow) return;
-        setBox(boxNow);
-      }
-      window.addEventListener('resize', follow);
-      window.addEventListener('scroll', follow, true);
       return function () {
         cancelled = true;
         window.clearTimeout(timer);
-        window.removeEventListener('resize', follow);
-        window.removeEventListener('scroll', follow, true);
       };
-    }, [run && run.index, step && step.id, staffId, paused]);
+    }, [run && run.index, step && step.id, staffId]);
     useEffect(() => {
       if (!run || !run.complete || !sawRef.current) return;
       if (!tour) return;
@@ -59191,6 +59243,25 @@ window.CDOS_PERSIST = (function () {
       });
     }
 
+    /* The only open in this file. The look timer does not call it,
+       and pause turning on or off does not call it either. A customer
+       step opens that customer's record — openClient is what raises
+       the clients window and the file together — and every other step
+       opens its own app. */
+    function askOpen() {
+      if (!step) return;
+      try {
+        if (step.needsClient && tour && openClientRef.current) {
+          var name = tour.clientForTour(clientsRef.current);
+          if (name) {
+            openClientRef.current(name);
+            return;
+          }
+        }
+        if (step.app && openAppRef.current) openAppRef.current(step.app);
+      } catch (e) {}
+    }
+
     /* Rebound when the step or the person changes, so Escape skips
        the tour that is actually on screen. No dependency array would
        rebind on every render for the same result. */
@@ -59211,7 +59282,7 @@ window.CDOS_PERSIST = (function () {
        first; the first one that misses the shop figures, the drawer,
        the count, the file list, and New transaction wins. */
     useLayoutEffect(() => {
-      if (!run || !step || paused || !box) {
+      if (!run || !step || paused) {
         setFrame(null);
         return;
       }
@@ -59233,9 +59304,11 @@ window.CDOS_PERSIST = (function () {
       });
     }, [box && box.top, box && box.left, box && box.width, box && box.height, step && step.id, run && run.index, paused]);
 
-    /* No card until the screen it describes is open. A card in the
-       corner of an empty desktop is the bug this guard exists for. */
-    if (!run || !step || paused || !box) return null;
+    /* The card is up either way. Without a front window it asks the
+       person to open one. The ring and Next wait until that window
+       is the one in front — drawing them sooner is how the tour used
+       to raise a window on its own. */
+    if (!run || !step || paused) return null;
     var last = run.index >= run.steps.length - 1;
     var cardStyle = frame ? {
       left: frame.left,
@@ -59278,11 +59351,15 @@ window.CDOS_PERSIST = (function () {
       type: "button",
       className: "cdos-tour-skip",
       onClick: skip
-    }, "Skip"), /*#__PURE__*/React.createElement("button", {
+    }, "Skip"), box ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "cdos-tour-next",
       onClick: next
-    }, last ? 'Done' : 'Next')))), document.body);
+    }, last ? 'Done' : 'Next') : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "cdos-tour-next",
+      onClick: askOpen
+    }, openLabel(step.app))))), document.body);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     FirstRun: FirstRun

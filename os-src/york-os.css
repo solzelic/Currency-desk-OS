@@ -1379,8 +1379,11 @@ html[data-cdtheme="dark"] .till-step:hover { background: rgba(255,255,255,0.07);
   border-radius: 12px;
   box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.06);
 }
+/* The card is a note, not a layer. Only Skip, Next, and Open take
+   a click. The rest of the rectangle lets the desk underneath
+   receive it, so the note cannot sit on a control and swallow it. */
 .cdos-tour-card {
-  position: fixed; pointer-events: auto;
+  position: fixed; pointer-events: none;
   background: var(--bar, #fff);
   color: var(--ink, #111);
   border: 1px solid var(--edge, #111);
@@ -1409,12 +1412,14 @@ html[data-cdtheme="dark"] .till-step:hover { background: rgba(255,255,255,0.07);
 .cdos-tour-skip {
   background: transparent; border: 0; padding: 6px 2px;
   font-size: 13px; font-weight: 500; color: var(--mute); cursor: pointer;
+  pointer-events: auto;
 }
 .cdos-tour-skip:hover { color: var(--ink, #111); }
 .cdos-tour-next {
   background: var(--ink, #111); color: var(--on-ink, #fff);
   border: 0; border-radius: 9px; padding: 8px 16px;
   font-size: 13px; font-weight: 600; cursor: pointer;
+  pointer-events: auto;
 }
 html[data-cdtheme="dark"] .cdos-tour-ring { box-shadow: 0 0 0 4px rgba(236, 234, 227, 0.08); }
 html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }

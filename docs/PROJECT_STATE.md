@@ -108,10 +108,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   research review, hours.
 
 - **First-run tour** — the first time someone reaches the desk, a
-  skippable walk-through opens the real screens. The card is not drawn
-  until that window is open, and it sits in a gap beside the open
-  windows so the shop figures, the drawer, the count, and the file list
-  stay readable. Skip stays on the card. An owner is shown the shop,
+  skippable walk-through points at the real screens. The tour does not
+  open or raise a window. A step runs only when that window is already
+  open and in front; until then the card offers a button (Open the till,
+  Open the dashboard) and only that click opens it. The card sits in a
+  gap so the shop figures, the drawer, the count, and the file list stay
+  readable. Skip stays on the card. An owner is shown the shop,
   then clients, then the file folder on a customer record (identification
   standing, the papers filed there, and search). Anyone else is shown the
   cash drawer: the till, then the count — and only if that app is on their
@@ -182,12 +184,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-09-30**, first-run tour. The card waits until the real window is
-open: the shop for an owner, the cash drawer for everyone else. It then
-sits in a gap, clear of the shop figures, the drawer, the count, and the
-file list, with Skip on the card. Reconcile and close is not a step —
-that panel is the close, and the tour does not count or close cash to
-make it presentable. Skip or finish is a per-person preference in the
+**2026-10-05**, first-run tour. The tour does not open or raise a window.
+A step runs only when that window is already open and in front. Until
+then the card offers Open the till or Open the dashboard, and only that
+click opens it. The card sits in a gap, clear of the shop figures, the
+drawer, the count, and the file list, with Skip on the card. Reconcile
+and close is not a step. That panel is the close, and the tour does not
+count or close cash to make it presentable. Skip or finish is a per-person preference in the
 desk document, so a refresh does not bring the tour back. Papers and
 identification standing are unchanged.
 The KYC badge and identification standing were already separate reads
