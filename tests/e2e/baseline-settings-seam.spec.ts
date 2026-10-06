@@ -162,33 +162,59 @@ test("a baseline desk's Settings names the international rules and the converted
       }).then((r) => r.status),
     ))).toBe(200);
 
-    /* The transfer form prices a send in CAD. The lines are in home
-       currency. 5,000 CAD is under a 300,000 dinar line as a raw number
-       and over it once converted. No rate: ID is required, and the deal
-       is not called reportable. */
+    /* The typed amount is already home currency. The fee counts.
+       790.00 + 9.99 = 799.99, under the £800 remittance line.
+       790.01 + 9.99 = 800.00, on it. A missing line requires ID.
+       Canada still uses its own 3,000 line, not the baseline's 1,000. */
     const ruling = await page.evaluate(() => {
       const rule = window.CDOS._transfers.transferRuling;
+      const gbp = { direction: "send", baseline: true, remittanceLine: "800.00", deskLine: null, idLine: "2400.00", reportLine: "8000.00" };
+      const rsd = { direction: "send", baseline: true, remittanceLine: "100000.00", deskLine: null, idLine: "300000.00", reportLine: "1000000.00" };
       return {
-        over: rule({ cadAmount: 5000, home: "RSD", homePerCad: 100, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
-        under: rule({ cadAmount: 100, home: "RSD", homePerCad: 100, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
-        unvalued: rule({ cadAmount: 5000, home: "RSD", homePerCad: null, idAt: 300000, limitAmount: 1000000, governed: true, fallback: 3000 }),
-        cad: rule({ cadAmount: 5000, home: "CAD", homePerCad: 1, idAt: 3000, limitAmount: 10000, governed: true, fallback: 3000 }),
+        gbpUnder: rule({ ...gbp, principal: "790.00", fee: "9.99" }),
+        gbpAt: rule({ ...gbp, principal: "790.01", fee: "9.99" }),
+        gbpTyped: rule({ ...gbp, principal: "3000", fee: "0.00" }),
+        tighter: rule({ ...gbp, principal: "500.00", fee: "0.00", deskLine: "500.00" }),
+        tighterUnder: rule({ ...gbp, principal: "499.99", fee: "0.00", deskLine: "500.00" }),
+        looser: rule({ ...gbp, principal: "800.00", fee: "0.00", deskLine: "5000.00" }),
+        rsdUnder: rule({ ...rsd, principal: "99990.00", fee: "9.99" }),
+        rsdAt: rule({ ...rsd, principal: "99990.01", fee: "9.99" }),
+        stale: rule({ ...gbp, principal: "1.00", fee: "0.00", remittanceLine: null, reportLine: null }),
+        cadUnder: rule({ direction: "send", principal: "2990.00", fee: "9.99", baseline: false, idLine: "3000.00", reportLine: "10000.00" }),
+        cadAt: rule({ direction: "send", principal: "2990.01", fee: "9.99", baseline: false, idLine: "3000.00", reportLine: "10000.00" }),
+        receiveUnder: rule({ direction: "receive", payout: "799.99", baseline: true, remittanceLine: "800.00", deskLine: null, reportLine: "8000.00" }),
+        receiveAt: rule({ direction: "receive", payout: "800.00", baseline: true, remittanceLine: "800.00", deskLine: null, reportLine: "8000.00" }),
       };
     });
-    expect(ruling.over).toMatchObject({ homeAmount: 500000, idRequired: true, reportable: false });
-    expect(ruling.under).toMatchObject({ homeAmount: 10000, idRequired: false, reportable: false });
-    expect(ruling.unvalued).toMatchObject({ homeAmount: null, idRequired: true, reportable: null });
-    expect(ruling.cad).toMatchObject({ homeAmount: 5000, idRequired: true, reportable: false });
+    expect(ruling.gbpUnder).toMatchObject({ homeAmount: "799.99", idRequired: false, reportable: false });
+    expect(ruling.gbpAt).toMatchObject({ homeAmount: "800.00", idRequired: true, reportable: false });
+    expect(ruling.gbpTyped).toMatchObject({ homeAmount: "3000.00", idRequired: true, reportable: false });
+    expect(ruling.tighter).toMatchObject({ homeAmount: "500.00", idRequired: true });
+    expect(ruling.tighterUnder).toMatchObject({ homeAmount: "499.99", idRequired: false });
+    expect(ruling.looser).toMatchObject({ homeAmount: "800.00", idRequired: true });
+    expect(ruling.rsdUnder).toMatchObject({ homeAmount: "99999.99", idRequired: false, reportable: false });
+    expect(ruling.rsdAt).toMatchObject({ homeAmount: "100000.00", idRequired: true, reportable: false });
+    expect(ruling.stale).toMatchObject({ homeAmount: "1.00", idRequired: true, reportable: null });
+    expect(ruling.cadUnder).toMatchObject({ homeAmount: "2999.99", idRequired: false, reportable: false });
+    expect(ruling.cadAt).toMatchObject({ homeAmount: "3000.00", idRequired: true, reportable: false });
+    expect(ruling.receiveUnder).toMatchObject({ homeAmount: "799.99", idRequired: false });
+    expect(ruling.receiveAt).toMatchObject({ homeAmount: "800.00", idRequired: true });
 
-    /* On this GBP desk, 3,000 CAD is about £1,700, under the £2,400 line.
-       Compared as a raw 3,000 it would ask for ID. */
+    /* 3,000 pounds is over the £800 remittance line. The cash-exchange
+       line is £2,400, and that is the wrong line for this form. */
     await page.getByText(/^Transfers$/).first().click();
     const newTransfer = page.getByRole("button", { name: /New transfer/i }).first();
     await expect(newTransfer).toBeVisible({ timeout: 30_000 });
     await newTransfer.click();
     const form = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("button", { name: /Create transfer/i }) });
+    await expect(form.getByText("Customer pays in (GBP)")).toBeVisible();
+    await form.getByLabel(/Transfer fee/i).fill("9.99");
     await form.getByPlaceholder("0.00").first().fill("3000");
+    await expect(form.getByText(/ID required/i)).toBeVisible();
+    await form.getByPlaceholder("0.00").first().fill("790.00");
     await expect(form.getByText(/ID required/i)).toHaveCount(0);
+    await form.getByPlaceholder("0.00").first().fill("790.01");
+    await expect(form.getByText(/ID required/i)).toBeVisible();
 
     /* Age every snapshot, including the one this test added. The newest
        row wins, so leaving an older fresh row in place would still
@@ -205,6 +231,16 @@ test("a baseline desk's Settings names the international rules and the converted
     expect(staleWords).not.toMatch(/\bFINTRAC\b/);
     expect(staleWords).not.toMatch(/\bCanada\b/);
     expect(staleWords).not.toMatch(/at today's market rate/);
+
+    /* A stale rate leaves the remittance line unset, so a small send
+       still asks for identification. */
+    await page.getByText(/^Transfers$/).first().click();
+    const staleTransfer = page.getByRole("button", { name: /New transfer/i }).first();
+    await expect(staleTransfer).toBeVisible({ timeout: 30_000 });
+    await staleTransfer.click();
+    const staleForm = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("button", { name: /Create transfer/i }) });
+    await staleForm.getByPlaceholder("0.00").first().fill("1.00");
+    await expect(staleForm.getByText(/ID required/i)).toBeVisible();
   } finally {
     await pool.query(`DELETE FROM market_rates WHERE id = $1`, [SNAP]);
     for (const row of prior.rows) {

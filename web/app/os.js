@@ -34720,58 +34720,85 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }
   };
   const cadOf = (amt, c) => c === 'CAD' ? +amt || 0 : (+amt || 0) / (crossRate('CAD', c) || 1);
-  /* A CAD figure, restated in the desk's home currency.
-      The new-transfer form still prices a send as Canadian dollars in.
-     The identification line and the reporting line are home-currency
-     amounts: on a baseline desk, US dollars converted at the market
-     snapshot. Comparing the Canadian number with a dinar line does not
-     ask for ID when the rules need it, because 5,000 is a much smaller
-     number than 300,000.
-      `homePerCad` is units of the home currency per 1 CAD. It comes from
-     the market snapshot (CAD per 1 unit), the same table the ledger
-     uses — never the shop board. A board kept in dinars stores mids in
-     dinars, and reading that as Canadian dollars prices 3,000 CAD as
-     3,000 dinars. No home currency, a snapshot older than 24 hours, or
-     no positive mid means this amount cannot be valued. The caller then
-     requires identification and does not mark the deal reportable. */
-  function marketHomePerCad(home) {
-    if (!home) return null;
-    if (home === 'CAD') return 1;
-    const market = window.MARKET;
-    const fetched = market && +market.fetchedAt;
-    if (!isFinite(fetched) || Date.now() - fetched > 24 * 60 * 60 * 1000) return null;
-    const mids = market.mids || {};
-    const cadPerHome = +mids[home];
-    if (!isFinite(cadPerHome) || cadPerHome <= 0) return null;
-    return 1 / cadPerHome;
+  /* Money as integer cents. The server adds the same figures with
+     decimal.js; a binary float will not land on 799.99. */
+  function centsOf(value) {
+    if (value == null || value === '') return null;
+    const text = String(value).trim();
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(text);
+    if (!match) return null;
+    const frac = (match[2] || '').slice(0, 2);
+    return BigInt(match[1]) * 100n + BigInt((frac + '00').slice(0, 2));
   }
-  function toHome(cadAmount, home, homePerCad) {
-    const cad = +cadAmount;
-    if (!home || !isFinite(cad)) return null;
-    if (home === 'CAD') return cad;
-    const rate = +homePerCad;
-    if (!isFinite(rate) || rate <= 0) return null;
-    return cad * rate;
+  function centsText(cents) {
+    const whole = cents / 100n;
+    const frac = (cents % 100n).toString().padStart(2, '0');
+    return whole.toString() + '.' + frac;
   }
+  function lowerCents(left, right) {
+    if (left == null) return right;
+    if (right == null) return left;
+    return left <= right ? left : right;
+  }
+  /* What the server will judge this transfer against.
+      A send is the amount typed plus the fee. A receive is the payout.
+     Both are already the desk's home currency — the box is not Canadian
+     dollars, and nothing here converts it. On the baseline the binding
+     line is the lower of the remittance line and the desk's own line.
+     No remittance line (no rate, or a stale one) means identification
+     is required. A country pack, Canada included, uses its own
+     identification line and does not substitute the baseline's. */
   function transferRuling({
-    cadAmount,
-    home,
-    homePerCad,
-    idAt,
-    limitAmount,
-    governed,
-    fallback
+    direction,
+    principal,
+    fee,
+    payout,
+    baseline,
+    remittanceLine,
+    deskLine,
+    idLine,
+    reportLine
   }) {
-    const homeAmount = toHome(cadAmount, home, homePerCad);
-    const unvalued = homeAmount == null;
-    const line = idAt != null && +idAt > 0 ? +idAt : null;
-    const floor = +fallback > 0 ? +fallback : 3000;
+    const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
+    if (blank) return {
+      homeAmount: null,
+      reportable: null,
+      idRequired: false
+    };
+    const cash = direction === 'receive' ? centsOf(payout) : (() => {
+      const base = centsOf(principal);
+      const extra = centsOf(fee == null || String(fee).trim() === '' ? '0' : fee);
+      if (base == null || extra == null) return null;
+      return base + extra;
+    })();
+    if (cash == null) return {
+      homeAmount: null,
+      reportable: null,
+      idRequired: false
+    };
+    const homeAmount = centsText(cash);
+    const report = centsOf(reportLine);
+    let line = null;
+    if (baseline) {
+      const remittance = centsOf(remittanceLine);
+      if (remittance == null) return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: true
+      };
+      line = lowerCents(remittance, centsOf(deskLine));
+    } else {
+      line = centsOf(idLine);
+      if (line == null) return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: true
+      };
+    }
     return {
       homeAmount,
-      /* Null is "cannot say", not "under the line". A missing conversion
-         must not clear a deal nobody could price. */
-      reportable: unvalued ? null : limitAmount != null && homeAmount >= +limitAmount,
-      idRequired: unvalued || (governed ? line == null || homeAmount >= line : homeAmount >= floor)
+      reportable: report == null ? null : cash >= report,
+      idRequired: cash >= line
     };
   }
 
@@ -35555,43 +35582,41 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (!partners.find(p => p.name === partner)) setPartner(partners[0] ? partners[0].name : '');
     }, [corridorId, method]);
     const amtN = parseFloat(payAmt) || 0;
-    // SEND: customer pays CAD, beneficiary gets foreign. RECEIVE: foreign in, customer gets CAD.
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const limit = reportingLimit(settings);
+    const thresholds = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = packNow && packNow.homeCurrency || thresholds && thresholds.currency || limit.currency || 'CAD';
+    const baseline = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline') || settings && settings.baselineRules && !(packNow && packNow.packId));
+    // SEND: customer pays home currency, beneficiary gets foreign.
+    // RECEIVE: foreign in, customer gets home currency.
     const pricing = useMemo(() => direction === 'send' ? priceDeal({
-      inCcy: 'CAD',
+      inCcy: home,
       outCcy: recvCcy,
       inAmt: amtN,
       settings
     }) : priceDeal({
       inCcy: recvCcy,
-      outCcy: 'CAD',
+      outCcy: home,
       inAmt: amtN,
       settings
-    }), [direction, recvCcy, amtN, settings]);
+    }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const payCad = direction === 'send' ? amtN + (parseFloat(fee) || 0) : 0;
-    const cadEquiv = direction === 'send' ? amtN : cadOf(amtN, recvCcy);
-    /* The desk's own reporting line, from the jurisdiction pack. Both
-       lines are in home currency. The figure above is still CAD, because
-       this form prices a send that way. The comparison is not. */
-    const limit = reportingLimit(settings);
-    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
-    const home = packNow && packNow.homeCurrency || limit.currency || null;
-    const homePerCad = marketHomePerCad(home);
     const kyc = (() => {
       const c = clients[senderName];
       return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
     })();
-    const governed = !!(packNow && packNow.packId || settings && settings.baselineRules);
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const ruling = transferRuling({
-      cadAmount: cadEquiv,
-      home,
-      homePerCad,
-      idAt,
-      limitAmount: limit.amount,
-      governed,
-      fallback: settings && settings.idRequiredOver
+      direction,
+      principal: payAmt,
+      fee,
+      payout: direction === 'receive' && recvAmt ? recvAmt.toFixed(2) : '',
+      baseline,
+      remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
+      deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
+      idLine: idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
+      reportLine: limit.amount
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -35641,8 +35666,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const pin = Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899);
       const seqL = rows.filter(r => r.date === TODAY && r.status !== 'void').length + 1;
       const lref = mkRef(TODAY, seqL);
-      const lin = direction === 'send' ? 'CAD' : recvCcy,
-        lout = direction === 'send' ? recvCcy : 'CAD';
+      const lin = direction === 'send' ? home : recvCcy,
+        lout = direction === 'send' ? recvCcy : home;
       const feeN = parseFloat(fee) || 0;
       const B = serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
       let posted = null;
@@ -35774,7 +35799,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         createdBy: me.name
       };
       setTransfers(t => [transfer, ...t]);
-      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? 'CAD → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' CAD'} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
+      log && log('Transfer created', `${oref} · ${num(amtN)} ${direction === 'send' ? home + ' → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' ' + home} · ${cor.country}${posted ? ' · server ledger' : ''}${reportable ? ' · EFT REPORTABLE' : ''}`);
       if (posted && onServerPosted) {
         try {
           await onServerPosted();
@@ -36019,7 +36044,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement(Field, {
-      label: direction === 'send' ? 'Customer pays in (CAD)' : `Amount received (${recvCcy})`
+      label: direction === 'send' ? `Customer pays in (${home})` : `Amount received (${recvCcy})`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex",
       style: {
@@ -36033,7 +36058,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-chip)',
         borderRight: `1px solid ${CD.line}`
       }
-    }, direction === 'send' ? 'CAD' : recvCcy), /*#__PURE__*/React.createElement("input", {
+    }, direction === 'send' ? home : recvCcy), /*#__PURE__*/React.createElement("input", {
       value: payAmt,
       onChange: e => setPayAmt(e.target.value),
       inputMode: "decimal",
@@ -36059,8 +36084,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", direction === 'send' ? 'CAD' : recvCcy, " = ", pricing.rate ? num(pricing.rate) : '—', " ", direction === 'send' ? recvCcy : 'CAD')), /*#__PURE__*/React.createElement(Field, {
-      label: direction === 'send' ? `Beneficiary receives (${recvCcy})` : 'Customer receives (CAD)'
+    }, "1 ", direction === 'send' ? home : recvCcy, " = ", pricing.rate ? num(pricing.rate) : '—', " ", direction === 'send' ? recvCcy : home)), /*#__PURE__*/React.createElement(Field, {
+      label: direction === 'send' ? `Beneficiary receives (${recvCcy})` : `Customer receives (${home})`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex",
       style: {
@@ -36074,7 +36099,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-chip)',
         borderRight: `1px solid ${CD.line}`
       }
-    }, direction === 'send' ? recvCcy : 'CAD'), /*#__PURE__*/React.createElement("div", {
+    }, direction === 'send' ? recvCcy : home), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 px-3 py-2.5 text-xl font-semibold text-right",
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -36083,7 +36108,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, recvAmt ? num(recvAmt) : '—'))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2 mt-2"
     }, /*#__PURE__*/React.createElement(Field, {
-      label: "Transfer fee (CAD)"
+      label: `Transfer fee (${home})`
     }, /*#__PURE__*/React.createElement("input", {
       value: fee,
       onChange: e => setFee(e.target.value),
@@ -36122,7 +36147,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.green
       }
-    }, fmt(parseFloat(fee) || 0, 'CAD')), " fee \xB7 ", /*#__PURE__*/React.createElement("span", {
+    }, fmt(fee || '0', home)), " fee \xB7 ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -36130,16 +36155,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.green
       }
-    }, fmt(pricing.marginCad, 'CAD')), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement("span", {
+    }, fmt(pricing.marginCad, home)), (parseFloat(fee) || 0) > 0 && /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
-    }, " \xB7 +", fmt(fee, 'CAD'), " fee"))), direction === 'send' && /*#__PURE__*/React.createElement("span", {
+    }, " \xB7 +", fmt(fee, home), " fee"))), direction === 'send' && homeAmount && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] font-medium",
       style: {
         color: CD.ink
       }
-    }, "Collect ", fmt(payCad, 'CAD'))), serverError && /*#__PURE__*/React.createElement("div", {
+    }, "Collect ", fmt(homeAmount, home))), serverError && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 px-3 py-2 text-[12px]",
       style: {
         background: CD.flagSoft,
@@ -36167,7 +36192,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(homeAmount, home || limit.currency || 'CAD'), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -36234,6 +36259,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = packNow && packNow.homeCurrency || 'CAD';
     const idx = FLOW.indexOf(t.status);
     const nextKey = idx >= 0 && idx < FLOW.length - 1 ? FLOW[idx + 1] : null;
     const terminal = t.status === 'paid' || t.status === 'cancelled';
@@ -36352,19 +36379,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? 'CAD' : t.ccy}`,
+      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
-      v: `${num(t.rate)} ${dir === 'send' ? t.ccy : 'CAD'}/${dir === 'send' ? 'CAD' : t.ccy}`,
+      v: `${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`,
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee",
-      v: fmt(t.fee, 'CAD'),
+      v: fmt(t.fee, home),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Beneficiary gets' : 'Customer gets',
-      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : 'CAD'}`,
+      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`,
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
@@ -36533,8 +36560,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       StatusPill,
       flagOf,
       cadOf,
-      toHome,
-      marketHomePerCad,
       transferRuling,
       BeneficiaryModal,
       TransferModal,

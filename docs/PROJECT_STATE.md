@@ -143,10 +143,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   The regulator field is empty. USD lines convert to the desk's home
   currency at the newest market snapshot (CAD per 1 unit, the same
   source the rate sync stores), rounded down to the cent, and that
-  rate and its timestamp are written on the deal. The same conversion
+  rate and its timestamp are written on the deal.   The same conversion
   is what the till reads for the identification line and the large-cash
-  line. The shop's board mid is not used. A missing snapshot, one
-  older than 24 hours, or a missing mid leaves both of those lines
+  line, and what the transfer form reads for the remittance line
+  (1,000 USD). The shop's board mid is not used. A missing snapshot, one
+  older than 24 hours, or a missing mid leaves those lines
   unset, so identification and the purpose and source of funds are
   required on every deal. When the line is already in the home
   currency, no snapshot is required. The till and Settings say "We
@@ -163,14 +164,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   source sits on that converted pack value, not on the owner's
   lower number. A looser line names the same converted baseline.
   A missing or stale rate says identification is required on every
-  deal.   The screen does not fill a baseline desk in with Canada,
+  deal. The screen does not fill a baseline desk in with Canada,
   FINTRAC, or the unconverted 3,000 and 10,000. The new-transfer
-  form still prices a send in Canadian dollars, and it compares
-  that figure with these lines only after converting it into the
-  desk's home currency at that same market snapshot. The shop
-  board is not used for the comparison. A snapshot older than 24
-  hours, or one with no mid, cannot price the send: identification
-  is required and the deal is not marked reportable.
+  form treats the typed amount as the desk's home currency. A send
+  is that amount plus the fee; a receive is the payout. The binding
+  line is the lower of the remittance line and the desk's own
+  identification line. No line, or no fresh rate, means identification
+  is required. A Canada desk still identifies at its own line, in
+  Canadian dollars.
   The threshold editors stay available. A void, a cheque
   clearance or return, and an obligation settlement or write-off still
   post, and they keep the pack the original deal was stamped with.
@@ -276,9 +277,11 @@ reports in plain words. A following line reads the converted home
 amount and the US-dollar source in one sentence. A stricter line
 names the desk's own figure and the converted baseline separately.
 It does not fall back to Canada or FINTRAC. The new-transfer form
-compares its Canadian figure with those lines in home currency,
-using the market snapshot and not the shop board, and requires
-identification when the figure cannot be converted.
+treats the typed amount as home currency. A send adds the fee; a
+receive uses the payout. That figure is compared with the remittance
+line and the desk's own identification line, and the lower one binds.
+A missing or stale rate requires identification. A Canada desk still
+uses its own line, in Canadian dollars.
 The till and Settings show
 the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,

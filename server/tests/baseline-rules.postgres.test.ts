@@ -1,6 +1,7 @@
 /* The international baseline: a desk with no country pack can quote and
    post, USD lines convert at the market snapshot, and a missing or stale
    snapshot means identification on every deal. */
+import Decimal from "decimal.js";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -96,6 +97,7 @@ async function removeDesk(slug: string, email: string) {
 postgres("the international baseline", () => {
   const usd = { slug: "intl-usd", email: "owner@intl-usd.example", cookie: "", customerId: "" };
   const gbp = { slug: "intl-gbp", email: "owner@intl-gbp.example", cookie: "", customerId: "" };
+  const rsd = { slug: "intl-rsd", email: "owner@intl-rsd.example", cookie: "", customerId: "" };
 
   beforeAll(async () => {
     earlyAccess = process.env.EARLY_ACCESS_OPEN;
@@ -110,9 +112,11 @@ postgres("the international baseline", () => {
     app = await buildApp(handle.db);
     await removeDesk(usd.slug, usd.email);
     await removeDesk(gbp.slug, gbp.email);
+    await removeDesk(rsd.slug, rsd.email);
     usd.cookie = await signup(usd.slug, usd.email, { country: "XX" });
     gbp.cookie = await signup(gbp.slug, gbp.email, { country: "XX", homeCurrency: "GBP" });
-    for (const desk of [usd, gbp]) {
+    rsd.cookie = await signup(rsd.slug, rsd.email, { country: "XX", homeCurrency: "RSD" });
+    for (const desk of [usd, gbp, rsd]) {
       const opened = await app.inject({
         method: "POST",
         url: "/api/ledger/till-sessions/open",
@@ -133,7 +137,7 @@ postgres("the international baseline", () => {
       });
       expect(counter.statusCode, counter.body).toBe(200);
       desk.customerId = counter.json().customerId;
-      const home = desk === usd ? "USD" : "GBP";
+      const home = desk === usd ? "USD" : desk === gbp ? "GBP" : "RSD";
       await pool.query(
         `INSERT INTO ledger_till_balances
            (tenant_id, legal_entity_id, branch_id, workspace_id, till_id, currency, available_amount)
@@ -146,6 +150,7 @@ postgres("the international baseline", () => {
   afterAll(async () => {
     await removeDesk(usd.slug, usd.email);
     await removeDesk(gbp.slug, gbp.email);
+    await removeDesk(rsd.slug, rsd.email);
     await app.close();
     await handle.close();
     await pool.end();
@@ -184,6 +189,7 @@ postgres("the international baseline", () => {
       purpose: "Family support",
       sourceOfFunds: "Salary",
     },
+    fee = "0.00",
   ) {
     return app.inject({
       method: "POST",
@@ -194,7 +200,7 @@ postgres("the international baseline", () => {
         customerId: desk.customerId,
         reference: key,
         principalAmount: amount,
-        feeAmount: "0.00",
+        feeAmount: fee,
         payoutCurrency: "EUR",
         payoutAmount: "1.00",
         corridor: "DE",
@@ -299,6 +305,18 @@ postgres("the international baseline", () => {
     expect(underSend.statusCode, underSend.body).toBe(201);
     const atSend = await send(gbp, "800.00", "gbp-rm-at");
     expect(atSend.statusCode, atSend.body).toBe(422);
+    /* The fee is part of the cash. 790.00 + 9.99 = 799.99. 790.01 + 9.99 = 800.00. */
+    const underFee = await send(gbp, "790.00", "gbp-rm-fee-under", {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    }, "9.99");
+    expect(underFee.statusCode, underFee.body).toBe(201);
+    const atFee = await send(gbp, "790.01", "gbp-rm-fee-at", {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    }, "9.99");
+    expect(atFee.statusCode, atFee.body).toBe(422);
+    expect(atFee.json().code).toBe("COMPLIANCE_BLOCKED");
 
     const stamp = (
       await pool.query(
@@ -315,6 +333,43 @@ postgres("the international baseline", () => {
     );
   });
 
+  it("converts the RSD remittance line and counts the fee toward it", async () => {
+    await pool.query(
+      `INSERT INTO market_rates (id, provider, mids, fetched_at)
+       VALUES ('snap-intl-rsd','test','{"USD":1.36,"RSD":0.0136}', now())`,
+    );
+    const line = new Decimal(1000)
+      .mul(new Decimal("1.36").div("0.0136"))
+      .toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    expect(line.toFixed(2)).toBe("100000.00");
+    const lines = await app.inject({
+      method: "GET",
+      url: "/api/ledger/desk-thresholds",
+      cookies: { cdos_session: rsd.cookie },
+    });
+    expect(lines.statusCode, lines.body).toBe(200);
+    expect(lines.json().currency).toBe("RSD");
+    expect(lines.json().remittanceIdThreshold.effective).toBe(line.toFixed(2));
+    expect(lines.json().idThreshold.effective).toBe("300000.00");
+
+    const fee = "9.99";
+    const underPrincipal = line.minus(fee).minus("0.01").toFixed(2);
+    const atPrincipal = line.minus(fee).toFixed(2);
+    expect(underPrincipal).toBe("99990.00");
+    expect(atPrincipal).toBe("99990.01");
+    const under = await send(rsd, underPrincipal, "rsd-rm-under", {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    }, fee);
+    expect(under.statusCode, under.body).toBe(201);
+    const at = await send(rsd, atPrincipal, "rsd-rm-at", {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    }, fee);
+    expect(at.statusCode, at.body).toBe(422);
+    expect(at.json().code).toBe("COMPLIANCE_BLOCKED");
+  });
+
   it("requires identification on every deal when the market rate is stale or missing", async () => {
     await pool.query(
       "UPDATE market_rates SET fetched_at = now() - interval '25 hours'",
@@ -322,6 +377,9 @@ postgres("the international baseline", () => {
     const stale = await cheque(gbp, "1.00", "gbp-stale");
     expect(stale.statusCode, stale.body).toBe(422);
     expect(stale.json().code).toBe("COMPLIANCE_BLOCKED");
+    const staleSend = await send(gbp, "1.00", "gbp-stale-rm");
+    expect(staleSend.statusCode, staleSend.body).toBe(422);
+    expect(staleSend.json().code).toBe("COMPLIANCE_BLOCKED");
 
     await pool.query(
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
@@ -377,6 +435,12 @@ postgres("the international baseline", () => {
       deskChoice: null,
       posture: "following",
     });
+    expect(lines.json().remittanceIdThreshold).toMatchObject({
+      effective: "800.00",
+      packValue: "800.00",
+      deskChoice: null,
+      posture: "following",
+    });
 
     const usdLines = await app.inject({
       method: "GET",
@@ -385,6 +449,7 @@ postgres("the international baseline", () => {
     });
     expect(usdLines.json().reportThreshold.effective).toBe("10000.00");
     expect(usdLines.json().idThreshold.effective).toBe("3000.00");
+    expect(usdLines.json().remittanceIdThreshold.effective).toBe("1000.00");
 
     const underId = await cheque(gbp, "2399.99", "gbp-id-under-2");
     expect(underId.statusCode, underId.body).toBe(201);
@@ -424,6 +489,8 @@ postgres("the international baseline", () => {
     });
     expect(staleLines.json().reportThreshold.effective).toBeNull();
     expect(staleLines.json().idThreshold.effective).toBeNull();
+    expect(staleLines.json().remittanceIdThreshold.effective).toBeNull();
+    expect(staleLines.json().remittanceIdThreshold.packValue).toBeNull();
     const staleReport = await send(gbp, "1.00", "gbp-stale-purpose", {
       purpose: "",
       sourceOfFunds: "",

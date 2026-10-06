@@ -55,10 +55,11 @@ converted home amount, then the US-dollar figure it came from. A
 stricter line names the desk's own figure and that converted
 baseline separately. The US-dollar source is not attached to the
 owner's lower number. A missing rate says identification is
-required on every deal. The new-transfer form compares its Canadian
-figure with these lines in the desk's home currency at the same
-market snapshot, not the shop board, and requires identification
-when that figure cannot be converted.
+required on every deal. The new-transfer form treats the typed amount as the desk's home
+currency. A send adds the fee; a receive uses the payout. The
+binding line is the lower of the converted remittance line and the
+desk's own identification line. A missing or stale rate requires
+identification. A Canada desk still uses its own line.
 
 A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
