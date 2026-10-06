@@ -125,8 +125,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   on the deal. Nothing converts yet, and every seeded pack already
   states its threshold in home currency, with the new fields at their
   defaults. The six seeded packs keep the numbers they had. A country
-  with no pack is not given Canada's. Sign-in still works, and the desk
-  can be looked at and set up. No pack: new deals paused; voids and
+  with no pack is not given Canada's. A signup that names Canada and
+  leaves home currency blank still opens on that pack and a CAD rate
+  board, so the first quote can be priced. A desk that names neither a
+  pack nor a home currency still opens with no board. Sign-in still
+  works, and the desk can be looked at and set up. No pack: new deals
+  paused; voids and
   settling existing deals still work. A new quote, exchange, frozen
   quote, remittance send, remittance receive, bill payment, money
   order, or cheque cashing is refused until a pack is installed, and

@@ -356,7 +356,13 @@ export async function provisionDesk(
   const board = await publishStartingBoard(db, {
     tenantId, legalEntityId, branchId,
     currencies: Array.isArray(setup.currencies) ? (setup.currencies as string[]) : [],
-    homeCurrency: typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined,
+    /* The pack already named the currency this book is in. A Canada
+       signup can send only the country; the board still has to be CAD
+       or the first quote has nothing to price. No pack and no home
+       currency still publishes nothing. */
+    homeCurrency:
+      pack?.homeCurrency ??
+      (typeof setup.homeCurrency === "string" ? setup.homeCurrency : undefined),
     // the margin they set, shown back to them, and previewed on screen 12
     spreadAll: setup.spreadAll,
   });
