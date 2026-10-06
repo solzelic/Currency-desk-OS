@@ -75,7 +75,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   still applies at `/signup`. "Approve & invite" still emails
   `CD-XXXXXX` and `/onboarding/CD-XXXXXX`. That link shows the reference
   it already carries ("This is your ID"), then the Terms of Service
-  dated 26 July 2026. Continue stays off until the box is checked. The
+  dated 26 July 2026. Continue stays off, and looks off, until the box
+  is checked. The words on those two screens are for the customer. The
   server records the version, the time, and the application's email,
   and refuses any other version. The database check on `onboarding`
   allows only `2026-07-26` together with a time and a person (migration

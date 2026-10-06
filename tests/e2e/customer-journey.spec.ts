@@ -47,7 +47,7 @@ test("an application arrives from the public site", async ({ page, request }) =>
       email: APPLICANT.email,
       name: APPLICANT.name,
       details: {
-        jurisdiction: "CA", workspace: `${APPLICANT.slug}.currencydeskos.com`,
+        jurisdiction: "CA", shopName: APPLICANT.shop, workspace: `${APPLICANT.slug}.currencydeskos.com`,
         monthlyVolume: "$500K – $2M", phone: "+1 4165550148", bestTime: "Afternoons",
       },
     },
@@ -104,9 +104,22 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
      the link. The desk keeps that reference. It does not issue another. */
   await page.goto(`/onboarding/${reference}`);
   await rendered(page, /This is your ID/i);
+  await page.locator("[data-screen='issued-id']").evaluate(async (el) => {
+    /* The fade is on the card, which is an ancestor. subtree only sees
+       descendants, so waiting on the screen alone returns while the card
+       is still transparent. */
+    const nodes: Element[] = [];
+    for (let n: Element | null = el; n; n = n.parentElement) nodes.push(n);
+    const animations = nodes.flatMap((n) => n.getAnimations());
+    await Promise.all(animations.map((a) => a.finished.catch(() => undefined)));
+  });
   await expect(page.locator("[data-issued-id]")).toHaveText(reference);
+  await expect(page.getByText(APPLICANT.shop).first()).toBeVisible();
   const opened = await page.locator("body").innerText();
   expect(opened).toContain(reference);
+  expect(opened).toContain("This is the reference from your invite email.");
+  expect(opened).toContain("Next, accept the terms. Then set up your desk.");
+  expect(opened).not.toMatch(/Same reference as the link/i);
   expect(opened).not.toMatch(/Confirm your email/i);
 
   /* Setup and launch both refuse until the 26 July 2026 terms are on
@@ -131,13 +144,26 @@ test("they set the desk up, and land inside their own desk signed in", async ({ 
   expect(wrongVersion.status()).toBe(400);
 
   const continueBtn = page.getByRole("button", { name: "Continue" });
+  const continuePaint = () => continueBtn.evaluate((el) => getComputedStyle(el).backgroundColor);
   await expect(continueBtn).toBeEnabled();
+  await expect.poll(continuePaint).toBe("rgb(29, 107, 69)");
   await continueBtn.click();
   await rendered(page, /^Terms of Service$/);
+  /* Disabled is both the control and the paint. A green button that
+     ignores clicks, or a grey one that still continues, is the bug. */
   await expect(continueBtn).toBeDisabled();
-  await page.locator("[data-terms-toggle]").click();
-  await expect(page.locator("[data-terms-toggle]")).toContainText(/Accepted/);
+  await expect.poll(continuePaint).toBe("rgba(23, 20, 15, 0.09)");
+  await continueBtn.evaluate((el) => (el as HTMLButtonElement).click());
+  await expect(page.getByText(/^Terms of Service$/)).toBeVisible();
+
+  const termsBox = page.getByRole("checkbox", { name: "I accept the Terms of Service (26 July 2026)" });
+  await expect(termsBox).not.toBeChecked();
+  await termsBox.focus();
+  await page.keyboard.press("Space");
+  await expect(termsBox).toBeChecked();
+  await expect(page.getByText("I accept the Terms of Service (26 July 2026)")).toBeVisible();
   await expect(continueBtn).toBeEnabled();
+  await expect.poll(continuePaint).toBe("rgb(29, 107, 69)");
   await continueBtn.click();
   await rendered(page, /Which country are you licensed in/i);
 

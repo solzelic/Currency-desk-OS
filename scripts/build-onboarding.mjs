@@ -462,6 +462,9 @@ const BRIDGE = `<script>
       'button[style*="--cd-cta"]:hover{transform:translateY(-1px);box-shadow:0 12px 26px -8px rgba(29,107,69,0.55)}' +
       'button[style*="--cd-cta"]:active{transform:translateY(1px) scale(0.995);box-shadow:0 4px 12px -6px rgba(29,107,69,0.5)}' +
       'button[style*="--cd-cta"]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}' +
+      /* The terms checkbox's own rules are in the design stylesheet.
+         This script runs on the loading page, and the unpacker replaces
+         that document, so a style added here never reaches the box. */
       '@media (prefers-reduced-motion: reduce){button[style*="--cd-cta"]{transition:none}' +
       'button[style*="--cd-cta"]:hover,button[style*="--cd-cta"]:active{transform:none}}';
     document.head.appendChild(css);
@@ -687,8 +690,10 @@ patch(
   `  /* The invite link's first two views, both still on screen 0.
 
      'id'    — show the reference that is already in the link.
-     'terms' — accept the 26 July 2026 terms. Continue stays off
-               until the box is checked. The server records it.
+     'terms' — the customer accepts the 26 July 2026 terms.
+               Continue stays off until the box is checked.
+               The server still records the version, the time, and
+               who accepted. The screen does not talk about that.
      'typed' — the design tool, which has no link and still asks
                for an ID. The served page always has window.__cdOnb.
 
@@ -703,15 +708,15 @@ patch(
     if (g === 'id') return {
       eyebrow: 'Your invite',
       title: 'This is your ID',
-      paras: ['This reference came with your invite. The desk keeps it, and it does not issue another.'],
-      note: 'Next, the terms. Then the setup you were invited to finish.',
+      paras: ['This is the reference from your invite email. It stays with your desk, so keep it handy.'],
+      note: '',
       cta: 'Continue',
     };
     if (g === 'terms') return {
       eyebrow: '26 July 2026',
       title: 'Terms of Service',
-      paras: ['Continue stays off until you accept these terms. The desk records the version, the time, and who accepted.'],
-      note: 'Any other version is refused.',
+      paras: ['Please read and accept our Terms of Service to set up your desk.'],
+      note: '',
       cta: 'Continue',
     };
     return { eyebrow: '', title: M.title || '', paras: M.paras || [], note: M.note || '', cta: M.ctaLabel || 'Continue' };
@@ -725,23 +730,45 @@ patch(
     return this.cdIdValid(d.cdId);
   }
 
+  /* The shop name they typed on the application, if they typed one.
+     Nothing is invented from the workspace address. No new column:
+     it is already on the enquiry details, which GET /state returns
+     as application.told. */
+  shopLabel() {
+    const told = window.__cdOnb && window.__cdOnb.application && window.__cdOnb.application.told;
+    if (!told) return '';
+    return String(told.shopName || told.businessName || '').trim();
+  }
+
+  idNext() {
+    if (this.preface() !== 'id' || !window.__cdOnb) return '';
+    if (!window.__cdOnb.refValid(window.__cdOnb.code)) return '';
+    return 'Next, accept the terms. Then set up your desk.';
+  }
+
   issuedHint() {
     if (!window.__cdOnb || !window.__cdOnb.code) return 'Open the link from your invite email. That link is this ID.';
     const s = window.__cdOnb.refState(window.__cdOnb.code);
-    if (s === 'ok') return 'Same reference as the link. Nothing else to type.';
+    if (s === 'ok') return '';
     if (s === 'no') return "We don't have this reference. Use the link from the email we sent when you were approved.";
     if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and open the link again.';
     return 'Checking this reference…';
   }
 
   onPrefaceCta(e) {
-    /* The terms box reuses the hero button's click, because a brand-new
-       handler name in this runtime never fires. The box is marked
-       data-terms-toggle; every other click is Continue. */
-    const el = e && (e.currentTarget || e.target);
+    /* The checkbox reuses this handler. A brand-new name in this
+       runtime never fires, so the input is wired to onCta and marked
+       data-terms-toggle.
+
+       It listens for change, not click. Click runs before the browser
+       has toggled the box, and preventDefault on that click makes React
+       paint the box empty while termsChecked is already true. change
+       runs after the toggle, so the tick on screen is the box itself. */
+    const el = e && (e.target || e.currentTarget);
     const toggle = el && el.closest && el.closest("[data-terms-toggle]");
     if (toggle) {
-      this.set('termsChecked', !this.state.data.termsChecked);
+      const input = toggle.tagName === "INPUT" ? toggle : toggle.querySelector("input");
+      this.set('termsChecked', !!(input && input.checked));
       return;
     }
     if (!window.__cdOnb || this.state.i > 0 || this.preface() === 'typed') { this.next(); return; }
@@ -770,6 +797,21 @@ patch(
   meta(i, d, j, home, selCcy) {`,
 );
 patch(
+  "the terms checkbox — size, colour, and a keyboard focus ring",
+  "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }",
+  "@keyframes cdScreenIn { from { opacity: 0; transform: translateY(12px) scale(0.99); } to { opacity: 1; transform: none; } }\n" +
+  "    /* The terms box. Native checkbox: the tick is the browser's, not a\n" +
+  "       character, and the ring is on the input because tabbing focuses\n" +
+  "       the input, not the label. */\n" +
+  "    input[data-terms-check]{width:18px;height:18px;margin:2px 0 0;flex:none;accent-color:#1D6B45;cursor:pointer}\n" +
+  "    input[data-terms-check]:focus-visible{outline:2px solid #1D6B45;outline-offset:3px}",
+);
+patch(
+  "Continue's colour follows the disabled state immediately",
+  "transition:transform .1s ease,background .2s ease,color .2s ease;' + (M.valid === false",
+  "transition:transform .1s ease;' + (M.valid === false",
+);
+patch(
   "screen 0's Continue — it used to require a typed ID",
   "valid: this.cdIdValid(d.cdId) };",
   "valid: this.heroReady(d) };",
@@ -788,10 +830,13 @@ patch(
   "      showTerms: this.preface() === 'terms',\n" +
   "      showTypedId: this.preface() === 'typed',\n" +
   "      linkId: (window.__cdOnb && window.__cdOnb.code) || '',\n" +
+  "      shopLabel: this.shopLabel(),\n" +
+  "      showShop: !!this.shopLabel(),\n" +
+  "      idNext: this.idNext(),\n" +
+  "      showIdNext: !!this.idNext(),\n" +
   "      issuedHint: this.issuedHint(),\n" +
-  "      termsPressed: this.state.data.termsChecked ? 'true' : 'false',\n" +
-  "      termsToggleStyle: 'display:block;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;font-family:inherit;font-size:14px;line-height:1.45;color:var(--ink);cursor:pointer;',\n" +
-  "      termsToggleLabel: this.state.data.termsChecked ? '\\u2713  Accepted \\u2014 Terms of Service, 26 July 2026' : '\\u2610  I accept the Terms of Service (26 July 2026)',\n" +
+  "      showIssuedHint: !!this.issuedHint(),\n" +
+  "      termsOn: !!this.state.data.termsChecked,\n" +
   "      termsErr: (window.__cdOnb && this.preface() === 'terms' && window.__cdOnb.err) || '',",
 );
 patch(
@@ -830,13 +875,24 @@ patch(
   '{{ cdIdHint }}</div>\n                  </div>\n                </sc-if>\n' +
   '                <sc-if value="{{ showIssuedId }}" hint-placeholder-val="{{ false }}">\n' +
   '                  <div data-screen="issued-id" style="width: 100%; max-width: 340px; margin-top: 22px; text-align: center;">\n' +
+  '                    <sc-if value="{{ showShop }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div data-shop-name="{{ shopLabel }}" style="font-size: 13px; line-height: 1.4; color: var(--mute); margin-bottom: 8px;">{{ shopLabel }}</div>\n' +
+  '                    </sc-if>\n' +
   '                    <div data-issued-id="{{ linkId }}" style="font-family: var(--m); font-size: 28px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink);">{{ linkId }}</div>\n' +
-  '                    <div style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ issuedHint }}</div>\n' +
+  '                    <sc-if value="{{ showIdNext }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div data-id-next="1" style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ idNext }}</div>\n' +
+  '                    </sc-if>\n' +
+  '                    <sc-if value="{{ showIssuedHint }}" hint-placeholder-val="{{ false }}">\n' +
+  '                      <div style="font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 10px;">{{ issuedHint }}</div>\n' +
+  '                    </sc-if>\n' +
   '                  </div>\n' +
   '                </sc-if>\n' +
   '                <sc-if value="{{ showTerms }}" hint-placeholder-val="{{ false }}">\n' +
   '                  <div data-screen="terms" style="width: 100%; max-width: 380px; margin-top: 18px; text-align: left;">\n' +
-  '                    <button type="button" data-terms-toggle="1" aria-pressed="{{ termsPressed }}" sc-camel-on-click="{{ onCta }}" style="{{ termsToggleStyle }}">{{ termsToggleLabel }}</button>\n' +
+  '                    <label for="cd-accept-terms" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid rgba(23,20,15,.16);background:#fff;cursor:pointer;font-size:14px;line-height:1.45;color:var(--ink);">\n' +
+  '                      <input id="cd-accept-terms" type="checkbox" data-terms-check="1" data-terms-toggle="1" checked="{{ termsOn }}" sc-camel-on-change="{{ onCta }}" />\n' +
+  '                      <span>I accept the Terms of Service (26 July 2026)</span>\n' +
+  '                    </label>\n' +
   '                    <div style="margin-top: 10px; font-size: 13px;"><a href="/legal#terms" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 700;">Read the Terms of Service</a></div>\n' +
   '                    <div data-terms-error="1" style="font-size: 12.5px; color: #b3261e; margin-top: 8px; min-height: 1.2em;">{{ termsErr }}</div>\n' +
   '                  </div>\n' +

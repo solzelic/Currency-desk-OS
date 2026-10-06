@@ -78,9 +78,14 @@ describe("the ID on the invite link", () => {
       "utf8",
     );
     expect(page).toContain("This is your ID");
+    expect(page).toContain("This is the reference from your invite email. It stays with your desk, so keep it handy.");
+    expect(page).toContain("Please read and accept our Terms of Service to set up your desk.");
+    expect(page).toContain('type="checkbox"');
     expect(page).toContain("data-issued-id");
     expect(page).toContain('termsVersion: "2026-07-26"');
     expect(page).not.toContain("/api/onboarding/account");
+    expect(page).not.toContain("Same reference as the link");
+    expect(page).not.toContain("Any other version is refused");
   });
 });
 

@@ -11,8 +11,8 @@ The existing invite chain is the path. There is not a second signup.
 
 1. Home "Get early access" leads to `/signup`, the early-access application. That form is unchanged.
 2. Admin "Approve & invite" sends the existing email. It carries their code (`CD-XXXXXX`) and the link `/onboarding/CD-XXXXXX`. That email is unchanged.
-3. The link opens on the reference already in it: "This is your ID: CD-XXXXXX". The desk keeps that id. It does not issue a second one.
-4. The next screen is the Terms of Service dated 26 July 2026. Continue stays off until the box is checked. The server records the version, the time, and who accepted (the application's email). Any other version is refused, and nothing is stored.
+3. The link opens on the reference already in it: "This is your ID: CD-XXXXXX". The desk keeps that id. It does not issue a second one. If the application has a shop name, it is shown above the code. The words on this screen are for the customer.
+4. The next screen is the Terms of Service dated 26 July 2026. Continue stays off, and looks off, until the box is checked. The server records the version, the time, and who accepted (the application's email). Any other version is refused, and nothing is stored. That refusal is not printed on the screen.
 5. Then the existing setup wizard runs: business, money, rules, launch. The account opens at the end, the way it does today. Launch refuses unless those terms are on that reference.
 
 A bare `/onboarding` (no code) redirects to `/signup`. The `/login` "Create your desk" link goes to `/signup`.
