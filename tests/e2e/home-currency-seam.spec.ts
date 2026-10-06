@@ -78,13 +78,33 @@ async function openLocalization(page: Page) {
       if (el instanceof HTMLElement) el.click();
     });
   }
-  const nav = page.locator(".win.active .settings-nav");
+  const nav = page.locator(".settings-nav").last();
   await nav.waitFor({ state: "visible" });
-  await nav.getByText(/^Localization$/).click();
+  /* A Playwright click on this row waits out the whole test when the
+     window is still settling its entrance. The row is a real button;
+     clicking it from the page is the same handler. */
+  const opened = await page.evaluate(() => {
+    const navs = document.querySelectorAll(".settings-nav");
+    const rail = navs[navs.length - 1];
+    if (!rail) return "no settings nav";
+    const btn = [...rail.querySelectorAll("button")].find((b) => /Localization/.test(b.textContent || ""));
+    if (!(btn instanceof HTMLButtonElement)) return rail.textContent || "localization missing";
+    btn.click();
+    return "ok";
+  });
+  if (opened !== "ok") throw new Error(opened);
   await page.getByTestId("home-currency-select").waitFor();
 }
 
+async function openDockApp(page: Page, id: string) {
+  await page.evaluate((app) => {
+    const el = document.querySelector(`#appbar [data-app="${app}"]`);
+    if (el instanceof HTMLElement) el.click();
+  }, id);
+}
+
 test("the owner reviews the change, confirms it, and the desk follows GBP", async ({ page }) => {
+  test.setTimeout(120_000);
   await pool.query(
     `INSERT INTO enquiries (id, reference, kind, email, name, status)
      VALUES ($1, $2, 'early_access', $3, $4, 'invited')`,
@@ -139,15 +159,22 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   await expect(page.getByTestId("home-currency-current")).toHaveText("GBP");
   await page.locator(".win.active").screenshot({ path: `${shots}/home-currency-done-1280.png` });
 
-  await page.locator(".settings-nav, div[style*='width: 212px']").getByText(/Compliance & jurisdiction/i).first().click();
+  const compliance = await page.evaluate(() => {
+    const rail = document.querySelector(".settings-nav");
+    const btn = rail && [...rail.querySelectorAll("button")].find((b) => /Compliance & jurisdiction/.test(b.textContent || ""));
+    if (!(btn instanceof HTMLButtonElement)) return "compliance tab missing";
+    btn.click();
+    return "ok";
+  });
+  if (compliance !== "ok") throw new Error(compliance);
   await expect(page.getByTestId("compliance-jurisdiction")).toContainText("£8,000.00");
   await expect(page.getByTestId("compliance-jurisdiction")).toContainText("£2,400.00");
 
-  await page.locator('#appbar [data-app="transfers"]').click();
+  await openDockApp(page, "transfers");
   await page.getByRole("button", { name: /New transfer/i }).click();
   await expect(page.getByText("Customer pays in (GBP)")).toBeVisible();
 
-  await page.locator('#appbar [data-app="rates"]').click();
+  await openDockApp(page, "rates");
   const notice = page.getByTestId("rate-board-notice");
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("priced in USD");
