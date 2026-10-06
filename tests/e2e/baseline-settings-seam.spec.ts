@@ -149,7 +149,9 @@ test("a baseline desk's Settings names the international rules and the converted
     if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
     await openComplianceSettings(page);
     const looserPanel = page.getByTestId("compliance-jurisdiction");
-    await expect(looserPanel.getByText("£12,000.00 — the international baseline requires no more than £8,000.00.")).toBeVisible();
+    /* The same sentence is the posture note and the "not compliant" banner.
+       Exact match is the banner; the note prefixes "Not compliant." */
+    await expect(looserPanel.getByText("£12,000.00 — the international baseline requires no more than £8,000.00.", { exact: true })).toBeVisible();
     expect(await looserPanel.innerText()).not.toMatch(/no more than £10,000/);
 
     expect((await page.evaluate(() =>
