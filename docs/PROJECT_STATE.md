@@ -152,7 +152,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   currency, no snapshot is required. The till and Settings say "We
   don't have rules for your country yet. These are the international
   anti-money-laundering rules. Please check they match your country's
-  laws." The threshold editors stay available. A void, a cheque
+  laws." Compliance names the pack International baseline (FATF),
+  names no regulator (the country's financial intelligence unit), and
+  lists Large cash record (CASH-RECORD), Suspicious transaction
+  (SUSPICIOUS), and Terrorist or sanctioned property
+  (SANCTIONS-STOP). The threshold lines show the converted
+  home-currency amount and the US-dollar figure it came from. A
+  missing or stale rate says identification is required on every
+  deal. The screen does not fill a baseline desk in with Canada,
+  FINTRAC, or the unconverted 3,000 and 10,000. The threshold
+  editors stay available. A void, a cheque
   clearance or return, and an obligation settlement or write-off still
   post, and they keep the pack the original deal was stamped with.
   Vault and till cash movements still post. Migration 028 points a
@@ -249,8 +258,13 @@ lines convert at the newest market snapshot, rounded down to the
 cent, and the rate and its timestamp are stored on the deal. The
 till reads those converted lines. A missing or stale snapshot (older
 than 24 hours) leaves them unset, so identification and the purpose
-and source of funds are required on every deal. A baseline desk
-that names no home currency books in USD. The till and Settings show
+and source of funds are required on every deal. Settings says that
+in those words when the rate is missing. A baseline desk
+that names no home currency books in USD. Compliance names
+International baseline (FATF), no regulator, and the three generic
+reports in plain words, and it shows the converted home amount with
+the US-dollar source. It does not fall back to Canada or FINTRAC.
+The till and Settings show
 the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,
 empty, or null home currency at the Canada pack, and every other home

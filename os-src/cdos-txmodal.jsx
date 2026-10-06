@@ -447,7 +447,7 @@
     // so this screen never drifts from the Ledger/Compliance desk when the owner
     // tunes them in Settings → Compliance & jurisdiction.
     const limit = reportingLimit(settings);
-    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: limit.code, threshold: limit.amount, idAt: 3000 };
+    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: limit.code, threshold: limit.amount, idAt: null };
     const TH = limit.amount;
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);

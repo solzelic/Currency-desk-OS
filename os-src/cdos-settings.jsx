@@ -26,6 +26,18 @@
 
   const inSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
 
+  /* FINTRAC is Canada's regulator. A baseline desk, and any desk whose
+     pack names somebody else, does not get those labels. The York desk
+     still does: its pack says FINTRAC, and the standalone build has no
+     pack to ask. */
+  function showsFintracIdentity(settings) {
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
+    if (settings && settings.baselineRules && !(pack && pack.packId)) return false;
+    if (pack && pack.packId) return /fintrac/i.test(String(pack.regulator || ''));
+    return !(settings && settings.baselineRules);
+  }
+
   /* ---------- shared controls (module scope) ----------
      These MUST live at module scope, not inside SettingsView. Defined inline
      they were rebuilt on every render, so React unmounted and remounted each
@@ -254,8 +266,12 @@
     const posture = window.CDOS.jurisdictionPosture ? window.CDOS.jurisdictionPosture(settings) : [];
     const standingOf = (settingsField) => posture.find(p => p.field === settingsField) || null;
     const line = (field) => (desk && desk[field]) || null;
-    const currency = (desk && desk.currency) || settings.baseCurrency || 'CAD';
-    const authority = (desk && desk.regulator) || 'your regulator';
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
+    const currency = (desk && desk.currency) || settings.baseCurrency || '';
+    const authority = baselineNow
+      ? 'the international baseline'
+      : ((desk && desk.regulator) || (packNow && packNow.regulator) || 'your regulator');
     const disabled = status !== 'ready' || !!busy;
 
     /* Hand a line back to the pack. Offered only where the desk has taken
@@ -284,7 +300,9 @@
         { k: 'Stricter', v: 'your own, lower line. A decision, not a fault — nothing here treats it as one' },
         { k: 'Looser', v: 'above the mandate. A compliance failure, flagged until it is back inside' },
       ]}
-      example="A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
+      example={baselineNow
+        ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one"
+        : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"}
     />);
 
     return (<div>
@@ -591,6 +609,9 @@
   }
 
   function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
+    /* Re-render when the ledger's pack and lines arrive. Without this the
+       compliance tab paints Canada's names and never replaces them. */
+    const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [addingLoc, setAddingLoc] = useState(false);   // enterprise Add-location modal (shared with Branch Network's rail)
@@ -779,14 +800,21 @@
     // jurisdiction follows Localization: when the operating country resolves to exactly
     // one regulator pack, apply it automatically so the picker, threshold and codes agree.
     useEffect(() => {
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings.baselineRules && !pack);
+      /* A desk the ledger has already named does not get Canada's pack
+         written over it because the country field was blank. */
+      if (pack && pack.packId) return;
+      if (baseline) return;
       const REG = ((window.CDOS._compliance || {}).REGIMES) || {};
-      const mc = settings.bizCountry || 'Canada';
+      const mc = settings.bizCountry || '';
+      if (!mc) return;
       const match = Object.values(REG).filter(r => r.country === mc);
       if (match.length === 1 && settings.regime !== match[0].id) {
         const r = match[0];
         setSettings(s => ({ ...s, regime: r.id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours }));
       }
-    }, [settings.bizCountry]);
+    }, [settings.bizCountry, settings.baselineRules, deskFacts]);
     // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
     const cadOfX = (a, c) => c === 'CAD' ? (+a || 0) : (+a || 0) / (crossRate('CAD', c) || 1);
     const expList = (() => { const list = rows || []; const today = new Date().toISOString().slice(0, 10); const ym = today.slice(0, 7), yy = today.slice(0, 4); let l = expOpts.range === 'month' ? list.filter(r => String(r.date || '').slice(0, 7) === ym) : expOpts.range === 'year' ? list.filter(r => String(r.date || '').slice(0, 4) === yy) : list.slice(); if (!expOpts.includeVoid) l = l.filter(r => r.status !== 'void'); return l; })();
@@ -1238,7 +1266,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         {tab === 'transfers' && (<div>
           <SectionTitle icon="globe" title="Transfers" sub="Cross-border money movement — the reporting line and desk defaults for the Transfers app." />
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Regulatory reporting</div>
-          <Row title="Cross-border reporting threshold" desc={`International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${settings.regime || 'FINTRAC'}).`}><Money k="threshold" /></Row>
+          <Row title="Cross-border reporting threshold" desc={`International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${(window.CDOS.getRegime ? window.CDOS.getRegime(settings).authority : '') || 'your regulator'}).`}><Money k="threshold" /></Row>
           <div className="flex items-start gap-2 mt-3 px-3 py-2.5" style={{ background: 'var(--cd-chip)', borderRadius: 10 }}>
             <Ic n="shield" s={14} c={CD.mute} /><span className="text-[11px]" style={{ color: CD.mute }}>One threshold drives both the pipeline flag and the qualifying list in Settlement → EFT report. Change the jurisdiction it follows under <b>Compliance & jurisdiction</b>.</span>
           </div>
@@ -1488,7 +1516,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="grid grid-cols-2 gap-3">
             <Field label="Legal business name"><Inp k="bizName" placeholder="York Foreign Exchange Inc." /></Field>
             <Field label="Operating / trade name"><Inp k="operatingName" placeholder="York Currency Exchange" /></Field>
-            <Field label="FINTRAC MSB registration #" desc="Your money-services-business registration number."><Inp k="msbNumber" placeholder="M21-0000000" /></Field>
+            <Field label={showsFintracIdentity(settings) ? "FINTRAC MSB registration #" : "MSB registration #"} desc="Your money-services-business registration number."><Inp k="msbNumber" placeholder="M21-0000000" /></Field>
             <Field label="Desk name" desc="The desk shown under your branch in the header — e.g. Desk 1."><Inp k="deskName" placeholder="Desk 1" /></Field>
             <Field label="Phone"><Inp k="bizPhone" placeholder="(416) 555-0100" /></Field>
             <Field label="Email"><Inp k="bizEmail" placeholder="desk@business.com" /></Field>
@@ -1498,7 +1526,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <Field label="Region"><Inp k="bizRegion" placeholder="ON" /></Field>
               <Field label="Postal / ZIP"><Inp k="bizPostal" placeholder="M5H 1T1" /></Field>
             </div>
-            <Field label="Country"><select value={settings.bizCountry || 'Canada'} onChange={e => set('bizCountry', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
+            <Field label="Country"><select value={settings.bizCountry || ''} onChange={e => set('bizCountry', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
           </div>
 
           <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
@@ -1549,7 +1577,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </div>
             );
           })()}
-          <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
+          {showsFintracIdentity(settings) ? (<div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>FINTRAC reporting identity</div>
             <div className="text-[11px] mb-3" style={{ color: CD.mute }}>Set once per business when you enrol in the FINTRAC Web Reporting System (FWR). These pre-fill Section 1 of every LCTR / EFTR — the desk never asks for them again.</div>
             <div className="grid grid-cols-2 gap-3">
@@ -1558,7 +1586,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <Field label="Activity sector"><select value={settings.activitySector || 'Money services business'} onChange={e => set('activitySector', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{['Money services business', 'Foreign exchange dealer', 'Remittance / funds transfer', 'Dealer in precious metals'].map(c => <option key={c}>{c}</option>)}</select></Field>
               <Field label="FINTRAC contact name" desc="Compliance contact; must match FWR."><Inp k="fintracContactName" placeholder="Compliance officer name" /></Field>
             </div>
-          </div>
+          </div>) : null}
         </div>)}
 
         {tab === 'locations' && (<div>
@@ -1622,8 +1650,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <SectionTitle icon="globe" title="Localization" sub="Make the desk work for your region — not just Canada." />
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Region</div>
           <Row title="Base currency" desc="Thresholds, drawer totals and reports are expressed in this currency. Changing it converts your thresholds at the live rate."><select value={base} onChange={e => { const nb = e.target.value; const ob = base; if (nb === ob) return; const conv = (v) => { const n = +v || 0; if (!n) return v; const cad = ob === 'CAD' ? n : n / (crossRate('CAD', ob) || 1); const out = nb === 'CAD' ? cad : cad * (crossRate('CAD', nb) || 1); return Math.round(out); }; setSettings(s => ({ ...s, baseCurrency: nb, threshold: conv(s.threshold), idRequiredOver: conv(s.idRequiredOver) })); log('Base currency changed', `${ob} → ${nb} · thresholds converted`); }} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[...new Set(['CAD', 'USD', 'EUR', 'GBP', 'AUD', ...CURX])].map(c => <option key={c}>{c}</option>)}</select></Row>
-          <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || 'Canada'} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
-          {JURIS_REGIONS[settings.bizCountry || 'Canada'] && (() => { const jr = JURIS_REGIONS[settings.bizCountry || 'Canada']; return (
+          <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || ''} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
+          {JURIS_REGIONS[settings.bizCountry || ''] && (() => { const jr = JURIS_REGIONS[settings.bizCountry || '']; return (
             <Row title={jr.label} desc={`The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`}><select value={settings.bizRegion || ''} onChange={e => set('bizRegion', e.target.value, `${jr.label} ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 240 }}><option value="">Select {jr.label.toLowerCase()}…</option>{jr.opts.map(o => <option key={o}>{o}</option>)}</select></Row>); })()}
           <Row title="Timezone"><select value={settings.timezone || 'America/Toronto'} onChange={e => set('timezone', e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 220 }}>{TIMEZONES.map(t => <option key={t}>{t}</option>)}</select></Row>
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Formats</div>
@@ -1634,31 +1662,71 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
         {tab === 'compliance' && (() => {
           const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
-          const activeRid = settings.regime || 'FINTRAC';
-          const applyRegime = (id) => { const r = REGIMES[id]; if (!r) return; setSettings(s => ({ ...s, regime: id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours })); log('Jurisdiction pack applied', `${r.authority} · ${r.country}`); };
+          const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+          const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
+          const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
           const isOwner = me.role === 'Owner';
           const recheckDays = +settings.recheckDays || 180;
           const reverifyDays = +settings.reverifyDays || 365;
           const escalateHighRisk = settings.escalateHighRisk !== false;
-          // jurisdiction follows the operating country set in Localization (same logic).
-          // Canada → FINTRAC only; US → FinCEN only; anything else falls back to all packs.
-          const myCountry = settings.bizCountry || 'Canada';
-          const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
-          const shownRegimes = matched.length ? matched : Object.values(REGIMES);
           const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
           const disclaimer = (window.CDOS.baselineNotice && window.CDOS.baselineNotice())
             || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
           const rulesNotice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
             || ((settings && settings.baselineRules) || paused ? disclaimer : '');
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
-          return (<div>
-          <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
+          const reportLine = window.CDOS.reportingLimit ? window.CDOS.reportingLimit(settings) : null;
+          const reportLabel = reportLine && reportLine.amount != null ? reportLine.label : (baseline || (pack && pack.packId) ? '—' : fmt(+settings.threshold || 10000, base));
+          const baselineReports = (regime && regime.reports && regime.reports.length) ? regime.reports : [
+            { code: 'CASH-RECORD', name: 'Large cash record' },
+            { code: 'SUSPICIOUS', name: 'Suspicious transaction' },
+            { code: 'SANCTIONS-STOP', name: 'Terrorist or sanctioned property' },
+          ];
+          /* The standalone build still offers the two browser packs. A desk
+             the ledger has named shows that pack, and nothing else. */
+          const standalone = !paused && !baseline && !(pack && pack.packId);
+          const myCountry = settings.bizCountry || '';
+          const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
+          const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+          const activeRid = settings.regime || '';
+          const applyRegime = (id) => { const r = REGIMES[id]; if (!r) return; setSettings(s => ({ ...s, regime: id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours })); log('Jurisdiction pack applied', `${r.authority} · ${r.country}`); };
+          return (<div data-testid="compliance-jurisdiction" data-facts={deskFacts}>
+          <SectionTitle icon="shield" title="Compliance & jurisdiction" sub={baseline ? "These are the international rules. Check they match your country's laws." : "Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."} />
 
           {/* one-click jurisdiction packs. Hidden when this country has no pack,
               so the desk is not offered Canada's rules to apply instead. */}
           {rulesNotice ? <div role="status" data-rules-notice className="mb-4 px-3 py-2 text-[13px]" style={{ background: 'var(--cd-brass-soft, #f4efe4)', color: CD.ink, borderRadius: 9 }}>{rulesNotice}</div> : null}
           {!paused && <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Your jurisdiction</div>}
-          {!paused && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
+          {!paused && baseline && (
+            <div data-testid="baseline-pack" className="text-left p-3 mb-2" style={{ background: 'var(--cd-chip)', border: `1.5px solid ${CD.ink}`, borderRadius: 12 }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div>
+                  <div className="text-[14px] font-semibold" style={{ color: CD.ink }}>International baseline (FATF)</div>
+                  <div className="text-[11px]" style={{ color: CD.mute }}>Your country's financial intelligence unit</div>
+                  <div className="text-[11px]" style={{ color: CD.faint }}>No named regulator</div>
+                </div>
+                <span className="text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> ACTIVE</span>
+              </div>
+              <div className="text-[12px] mt-2" style={{ color: CD.ink }}>
+                {baselineReports.map(r => (
+                  <div key={r.code} className="mt-1">{r.name} <span style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{r.code}</span></div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!paused && !baseline && pack && pack.packId && (
+            <div data-testid="country-pack" className="text-left p-3 mb-2" style={{ background: 'var(--cd-chip)', border: `1.5px solid ${CD.ink}`, borderRadius: 12 }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div>
+                  <div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{pack.regulator || pack.name}</div>
+                  <div className="text-[11px]" style={{ color: CD.mute }}>{pack.name}</div>
+                </div>
+                <span className="text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> ACTIVE</span>
+              </div>
+              <div className="text-[11px]" style={{ color: CD.mute }}>{pack.reportName || ''}</div>
+            </div>
+          )}
+          {standalone && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
             {shownRegimes.map(r => { const on = activeRid === r.id; return (
               <button key={r.id} onClick={() => isOwner && applyRegime(r.id)} className="text-left p-3" style={{ background: on ? 'var(--cd-chip)' : CD.panel, border: `1.5px solid ${on ? CD.ink : CD.line}`, borderRadius: 12, cursor: isOwner ? 'pointer' : 'default' }}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1669,7 +1737,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----
@@ -1696,7 +1764,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Row title="Suggest a quick re-screen after" desc="A dismissible Quick-check nudge appears once this many days have passed since the last screening."><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Require full re-verification after" desc="Past this many days — or sooner if the ID on file expires — the nudge becomes a hard stop until a full Verified check runs."><select value={reverifyDays} onChange={e => set('reverifyDays', +e.target.value, `re-verify required ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[180, 365, 545, 730].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Escalate high-risk clients to Verified Plus" desc="When a client is flagged high-risk, upgrade any recommended check to the deepest tier automatically."><Sw on={escalateHighRisk} click={() => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')} /></Row>
-            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${fmt(+settings.threshold || 10000, base)}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>
+            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>
             <Row title="Require ID photo on file" desc="Contacts without a stored ID scan are flagged — in Clients · KYC and here."><Sw on={settings.requireIdPhoto} click={() => toggleSet('requireIdPhoto', 'Require ID photo')} /></Row>
 
             <details style={{ margin: '10px 0 0' }}>

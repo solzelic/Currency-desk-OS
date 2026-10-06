@@ -634,7 +634,12 @@
       };
     }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold') : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
+    /* A baseline pack's 10,000 is US dollars. It is not this desk's
+       reporting line. The server converts it; until that answer arrives
+       the screen shows nothing, rather than those dollars labelled as
+       dinars or pounds. */
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold') : baselineBook ? null : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
     const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -673,7 +678,8 @@
       };
     }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold') : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold') : baselineBook ? null : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
     const currency = _thresholds && _thresholds.currency || _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -3003,8 +3009,10 @@
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
-      const idFloor = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
-      const idNeeded = idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
+      const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+      const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
+      const idFloor = governed ? idAt : window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
+      const idNeeded = governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
       map[row.id] = {
         single,
         str,
@@ -4575,6 +4583,18 @@
     borderRadius: 8
   };
 
+  /* FINTRAC is Canada's regulator. A baseline desk, and any desk whose
+     pack names somebody else, does not get those labels. The York desk
+     still does: its pack says FINTRAC, and the standalone build has no
+     pack to ask. */
+  function showsFintracIdentity(settings) {
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (pack && (pack.baseline === true || pack.kind === 'baseline')) return false;
+    if (settings && settings.baselineRules && !(pack && pack.packId)) return false;
+    if (pack && pack.packId) return /fintrac/i.test(String(pack.regulator || ''));
+    return !(settings && settings.baselineRules);
+  }
+
   /* ---------- shared controls (module scope) ----------
      These MUST live at module scope, not inside SettingsView. Defined inline
      they were rebuilt on every render, so React unmounted and remounted each
@@ -5059,8 +5079,10 @@
     const posture = window.CDOS.jurisdictionPosture ? window.CDOS.jurisdictionPosture(settings) : [];
     const standingOf = settingsField => posture.find(p => p.field === settingsField) || null;
     const line = field => desk && desk[field] || null;
-    const currency = desk && desk.currency || settings.baseCurrency || 'CAD';
-    const authority = desk && desk.regulator || 'your regulator';
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
+    const currency = desk && desk.currency || settings.baseCurrency || '';
+    const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
     const disabled = status !== 'ready' || !!busy;
 
     /* Hand a line back to the pack. Offered only where the desk has taken
@@ -5104,7 +5126,7 @@
         k: 'Looser',
         v: 'above the mandate. A compliance failure, flagged until it is back inside'
       }],
-      example: "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 \u2014 never 12,000"
+      example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
       title: /*#__PURE__*/React.createElement("span", {
@@ -5750,6 +5772,9 @@
     reqPin,
     pinOf
   }) {
+    /* Re-render when the ledger's pack and lines arrive. Without this the
+       compliance tab paints Canada's names and never replaces them. */
+    const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
@@ -6123,8 +6148,15 @@
     // jurisdiction follows Localization: when the operating country resolves to exactly
     // one regulator pack, apply it automatically so the picker, threshold and codes agree.
     useEffect(() => {
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings.baselineRules && !pack);
+      /* A desk the ledger has already named does not get Canada's pack
+         written over it because the country field was blank. */
+      if (pack && pack.packId) return;
+      if (baseline) return;
       const REG = (window.CDOS._compliance || {}).REGIMES || {};
-      const mc = settings.bizCountry || 'Canada';
+      const mc = settings.bizCountry || '';
+      if (!mc) return;
       const match = Object.values(REG).filter(r => r.country === mc);
       if (match.length === 1 && settings.regime !== match[0].id) {
         const r = match[0];
@@ -6137,7 +6169,7 @@
           aggHours: r.aggHours
         }));
       }
-    }, [settings.bizCountry]);
+    }, [settings.bizCountry, settings.baselineRules, deskFacts]);
     // ---- ledger export (moved out of the Ledger toolbar; full-book download with options) ----
     const cadOfX = (a, c) => c === 'CAD' ? +a || 0 : (+a || 0) / (crossRate('CAD', c) || 1);
     const expList = (() => {
@@ -7862,7 +7894,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Regulatory reporting"), /*#__PURE__*/React.createElement(Row, {
       title: "Cross-border reporting threshold",
-      desc: `International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${settings.regime || 'FINTRAC'}).`
+      desc: `International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${(window.CDOS.getRegime ? window.CDOS.getRegime(settings).authority : '') || 'your regulator'}).`
     }, /*#__PURE__*/React.createElement(Money, {
       k: "threshold"
     })), /*#__PURE__*/React.createElement("div", {
@@ -8936,7 +8968,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       k: "operatingName",
       placeholder: "York Currency Exchange"
     })), /*#__PURE__*/React.createElement(Field, {
-      label: "FINTRAC MSB registration #",
+      label: showsFintracIdentity(settings) ? "FINTRAC MSB registration #" : "MSB registration #",
       desc: "Your money-services-business registration number."
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "msbNumber",
@@ -8982,11 +9014,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }))), /*#__PURE__*/React.createElement(Field, {
       label: "Country"
     }, /*#__PURE__*/React.createElement("select", {
-      value: settings.bizCountry || 'Canada',
+      value: settings.bizCountry || '',
       onChange: e => set('bizCountry', e.target.value),
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
-    }, COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select a country\u2026"), COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
       key: c
     }, c))))), /*#__PURE__*/React.createElement("div", {
       className: "mt-5 pt-4",
@@ -9198,7 +9232,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag
         }
       }, siteMsg));
-    })(), /*#__PURE__*/React.createElement("div", {
+    })(), showsFintracIdentity(settings) ? /*#__PURE__*/React.createElement("div", {
       className: "mt-5 pt-4",
       style: {
         borderTop: `1px solid ${CD.line}`
@@ -9243,7 +9277,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "fintracContactName",
       placeholder: "Compliance officer name"
-    }))))), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })))) : null), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "wallet",
       title: "Locations, tills & people",
       sub: "Set up each branch, add its tills, then assign a staff member to each till. The header station switcher, the Till and the Branch Network all read this one list."
@@ -9533,7 +9567,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Operating country / jurisdiction",
       desc: "Where this desk operates \u2014 pick the country, then the state or province when one applies."
     }, /*#__PURE__*/React.createElement("select", {
-      value: settings.bizCountry || 'Canada',
+      value: settings.bizCountry || '',
       onChange: e => setSettings(s => ({
         ...s,
         bizCountry: e.target.value,
@@ -9544,10 +9578,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         ...inSty,
         width: 200
       }
-    }, COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select a country\u2026"), COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
       key: c
-    }, c)))), JURIS_REGIONS[settings.bizCountry || 'Canada'] && (() => {
-      const jr = JURIS_REGIONS[settings.bizCountry || 'Canada'];
+    }, c)))), JURIS_REGIONS[settings.bizCountry || ''] && (() => {
+      const jr = JURIS_REGIONS[settings.bizCountry || ''];
       return /*#__PURE__*/React.createElement(Row, {
         title: jr.label,
         desc: `The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`
@@ -9608,7 +9644,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: "var(--cd-brass-text)"
     }), /*#__PURE__*/React.createElement("span", null, "The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held."))), tab === 'compliance' && (() => {
       const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
-      const activeRid = settings.regime || 'FINTRAC';
+      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
+      const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+      const isOwner = me.role === 'Owner';
+      const recheckDays = +settings.recheckDays || 180;
+      const reverifyDays = +settings.reverifyDays || 365;
+      const escalateHighRisk = settings.escalateHighRisk !== false;
+      const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
+      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings && settings.baselineRules || paused ? disclaimer : '');
+      const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
+      const reportLine = window.CDOS.reportingLimit ? window.CDOS.reportingLimit(settings) : null;
+      const reportLabel = reportLine && reportLine.amount != null ? reportLine.label : baseline || pack && pack.packId ? '—' : fmt(+settings.threshold || 10000, base);
+      const baselineReports = regime && regime.reports && regime.reports.length ? regime.reports : [{
+        code: 'CASH-RECORD',
+        name: 'Large cash record'
+      }, {
+        code: 'SUSPICIOUS',
+        name: 'Suspicious transaction'
+      }, {
+        code: 'SANCTIONS-STOP',
+        name: 'Terrorist or sanctioned property'
+      }];
+      /* The standalone build still offers the two browser packs. A desk
+         the ledger has named shows that pack, and nothing else. */
+      const standalone = !paused && !baseline && !(pack && pack.packId);
+      const myCountry = settings.bizCountry || '';
+      const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
+      const shownRegimes = matched.length ? matched : Object.values(REGIMES);
+      const activeRid = settings.regime || '';
       const applyRegime = id => {
         const r = REGIMES[id];
         if (!r) return;
@@ -9622,23 +9687,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }));
         log('Jurisdiction pack applied', `${r.authority} · ${r.country}`);
       };
-      const isOwner = me.role === 'Owner';
-      const recheckDays = +settings.recheckDays || 180;
-      const reverifyDays = +settings.reverifyDays || 365;
-      const escalateHighRisk = settings.escalateHighRisk !== false;
-      // jurisdiction follows the operating country set in Localization (same logic).
-      // Canada → FINTRAC only; US → FinCEN only; anything else falls back to all packs.
-      const myCountry = settings.bizCountry || 'Canada';
-      const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
-      const shownRegimes = matched.length ? matched : Object.values(REGIMES);
-      const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
-      const disclaimer = window.CDOS.baselineNotice && window.CDOS.baselineNotice() || "We don't have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country's laws.";
-      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings && settings.baselineRules || paused ? disclaimer : '');
-      const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
-      return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "compliance-jurisdiction",
+        "data-facts": deskFacts
+      }, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
         title: "Compliance & jurisdiction",
-        sub: "Set your regulator once \u2014 the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
+        sub: baseline ? "These are the international rules. Check they match your country's laws." : "Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
       }), rulesNotice ? /*#__PURE__*/React.createElement("div", {
         role: "status",
         "data-rules-notice": true,
@@ -9654,7 +9709,92 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Your jurisdiction"), !paused && /*#__PURE__*/React.createElement("div", {
+      }, "Your jurisdiction"), !paused && baseline && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "baseline-pack",
+        className: "text-left p-3 mb-2",
+        style: {
+          background: 'var(--cd-chip)',
+          border: `1.5px solid ${CD.ink}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between mb-1.5"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, "International baseline (FATF)"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "Your country's financial intelligence unit"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.faint
+        }
+      }, "No named regulator")), /*#__PURE__*/React.createElement("span", {
+        className: "text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 999
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "check",
+        s: 10,
+        c: "var(--cd-on-ink)"
+      }), " ACTIVE")), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-2",
+        style: {
+          color: CD.ink
+        }
+      }, baselineReports.map(r => /*#__PURE__*/React.createElement("div", {
+        key: r.code,
+        className: "mt-1"
+      }, r.name, " ", /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: CD.mute,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, r.code))))), !paused && !baseline && pack && pack.packId && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "country-pack",
+        className: "text-left p-3 mb-2",
+        style: {
+          background: 'var(--cd-chip)',
+          border: `1.5px solid ${CD.ink}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between mb-1.5"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, pack.regulator || pack.name), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, pack.name)), /*#__PURE__*/React.createElement("span", {
+        className: "text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 999
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "check",
+        s: 10,
+        c: "var(--cd-on-ink)"
+      }), " ACTIVE")), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, pack.reportName || '')), standalone && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -9724,7 +9864,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "lock",
         s: 12,
         c: "var(--cd-brass-text)"
-      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !paused && /*#__PURE__*/React.createElement("div", {
+      }), " Only the owner can change the jurisdiction pack \u2014 you can view it here."), !paused && !baseline && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-5 flex items-start gap-1.5",
         style: {
           color: CD.faint
@@ -9874,7 +10014,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         click: () => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Mandatory check on large deals",
-        desc: `Every deal at or above your reportable threshold (${fmt(+settings.threshold || 10000, base)}) requires this check before committing — even on a verified profile.`
+        desc: `Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`
       }, /*#__PURE__*/React.createElement(Seg, {
         value: settings.largeTxCheck || 'off',
         onPick: v => set('largeTxCheck', v, `large-deal check ${v}`),
@@ -26579,7 +26719,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const structuring = !single && customer && limit.amount != null && recentTotal >= limit.amount;
     const rec = clients[customer];
     const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : !rec || !rec.idType || !rec.idNum ? 'missing ID' : rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok';
-    const idRequired = single || inCadEquiv >= 3000; // FINTRAC: ID at $3k, LCTR at $10k
+    const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idRequired = single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
     const idBlocked = idRequired && kyc !== 'ok';
     const canSave = amtN > 0 && (isCheque ? maker.trim() && chequeNumber.trim() : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || marginAck && marginReason.trim()) && (!single || cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim()));
     const pickClient = n => {
@@ -27402,7 +27545,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'LCTR')), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable \u2014 capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -32640,7 +32783,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : {
       largeCode: limit.code,
       threshold: limit.amount,
-      idAt: 3000
+      idAt: null
     };
     const TH = limit.amount;
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
@@ -35383,7 +35526,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const c = clients[senderName];
       return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
     })();
-    const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
+    const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idRequired = governed ? idAt == null || cadEquiv >= idAt : cadEquiv >= (settings.idRequiredOver || 3000);
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
     const pickSender = n => {
@@ -39724,7 +39870,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const money = !!opts.money;
     const show = v => v == null ? '—' : money ? fmt(+v, opts.currency) : `${v}${opts.unit || ''}`;
     const standing = line.posture || 'unknown';
-    const note = standing === 'stricter' ? `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? `Following ${opts.authority} (${show(line.packValue)}).` : `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
+    const note = standing === 'stricter' ? opts.stricter || `Stricter than ${opts.authority} requires (${show(line.packValue)}).` : standing === 'looser' ? `${show(line.effective)} — ${opts.authority} requires ${opts.direction === 'atMost' ? 'no more than' : 'at least'} ${show(line.packValue)}.` : standing === 'matching' ? `The ${opts.authority} figure, set by hand.` : standing === 'following' ? opts.following || `Following ${opts.authority} (${show(line.packValue)}).` : opts.unknown || `No ${opts.authority} figure is installed for this, so nothing can say where you stand.`;
     return {
       field: opts.field,
       label: opts.label,
@@ -39743,10 +39889,56 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
   /* Every line, judged. Reads the ledger's answer when there is one and
      falls back to the browser's regime table when there is not. */
+  function loadedPack() {
+    return window.CDOS && window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+  }
+  function isBaselinePack(pack) {
+    return !!(pack && (pack.baseline === true || pack.kind === 'baseline'));
+  }
+  /* A baseline desk, or one whose setup already said so and whose pack
+     has not arrived yet. Either way Canada's names are not an answer. */
+  function baselineDesk(settings) {
+    const pack = loadedPack();
+    if (isBaselinePack(pack)) return true;
+    return !!(settings && settings.baselineRules && !pack);
+  }
+  /* The converted home amount, with the USD figure it came from. A missing
+     rate has no home amount: identification is required on every deal. */
+  function baselineMoneyCopy(key, line) {
+    const pack = loadedPack();
+    if (!isBaselinePack(pack)) return null;
+    const homeAmount = line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+    if (homeAmount == null) {
+      return {
+        unknown: key === 'idThreshold' ? 'Identification is required on every deal.' : 'Purpose and source of funds are required on every deal.'
+      };
+    }
+    const raw = key === 'idThreshold' ? pack.idThreshold : pack.reportThreshold;
+    const usd = Number(String(raw == null ? '' : raw).replace(/,/g, ''));
+    const src = String(pack.reportCurrency || 'USD').trim().toUpperCase() || 'USD';
+    const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = desk && desk.currency || pack.homeCurrency;
+    const shown = fmt(homeAmount, home);
+    const source = Number.isFinite(usd) && usd > 0 && src !== String(home || '').toUpperCase() ? ` (${usd.toLocaleString('en-CA', {
+      maximumFractionDigits: 2
+    })} ${src} at today's market rate)` : '';
+    const sentence = `${shown}${source}`;
+    return {
+      following: `Following the international baseline (${sentence}).`,
+      matching: `The international baseline figure, set by hand (${sentence}).`,
+      stricter: `Stricter than the international baseline (${sentence}).`
+    };
+  }
   function jurisdictionPosture(settings) {
     if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) return [];
     const server = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
-    const REG = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
+    const pack = loadedPack();
+    /* No server answer yet. A loaded pack, and a baseline desk, wait.
+       Inventing FINTRAC for them is how a Belgrade desk was told it
+       files an LCTR. The two-country table is only for the standalone
+       build, which has no ledger to ask. */
+    if (!server && (pack || baselineDesk(settings))) return [];
+    const REG = settings && settings.regime && REGIMES[settings.regime] || REGIMES.FINTRAC;
     /* No server answer yet. Build the same shape out of what the browser
        holds so the screens have one code path — and mark every line
        "following", because a desk we have not asked about is not a desk
@@ -39771,9 +39963,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       };
     };
+    const baseline = isBaselinePack(pack);
     const source = server ? {
       currency: server.currency,
-      authority: server.regulator,
+      authority: baseline ? 'the international baseline' : server.regulator || pack && pack.regulator || '',
       lines: server
     } : local();
     if (!source || !source.lines) return [];
@@ -39782,14 +39975,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       currency: source.currency,
       authority: source.authority
     };
+    const reportCopy = baselineMoneyCopy('reportThreshold', L.reportThreshold);
+    const idCopy = baselineMoneyCopy('idThreshold', L.idThreshold);
     return [postureOf(L.reportThreshold, {
       ...common,
+      ...reportCopy,
       field: 'threshold',
       label: 'Reporting threshold',
       money: true,
       direction: 'atMost'
     }), postureOf(L.idThreshold, {
       ...common,
+      ...idCopy,
       field: 'idRequiredOver',
       label: 'Identification threshold',
       money: true,
@@ -39875,10 +40072,58 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      on its own, because it teaches the teller the warning is wrong.
       Below that, the owner's saved settings, which is all the standalone
      build has. */
+  function lineAmount(line) {
+    return line && line.effective != null && +line.effective > 0 ? +line.effective : null;
+  }
+  /* The reports a baseline desk actually has. Plain names, not Canada's. */
+  const BASELINE_REPORTS = [{
+    code: 'CASH-RECORD',
+    name: 'Large cash record'
+  }, {
+    code: 'SUSPICIOUS',
+    name: 'Suspicious transaction'
+  }, {
+    code: 'SANCTIONS-STOP',
+    name: 'Terrorist or sanctioned property'
+  }];
+  function regimeFromPack(pack, settings) {
+    const desk = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const reports = window.CDOS && window.CDOS.deskReports ? window.CDOS.deskReports() || [] : [];
+    const baseline = isBaselinePack(pack);
+    const listed = reports.length ? reports : baseline ? BASELINE_REPORTS : [];
+    const byCode = code => listed.find(r => r && r.code === code) || null;
+    const large = listed.find(r => r && (r.kind === 'large_cash' || r.code === (pack.reportName || 'CASH-RECORD'))) || byCode('CASH-RECORD');
+    const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
+    const sanctions = byCode('SANCTIONS-STOP');
+    const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
+    return {
+      id: pack.packId || null,
+      authority: baseline ? "Your country's financial intelligence unit" : pack.regulator || '',
+      country: baseline ? 'International baseline' : pack.name || '',
+      flag: baseline ? '🌐' : '',
+      currency: desk && desk.currency || pack.homeCurrency || settings && settings.baseCurrency || null,
+      threshold: desk && desk.reportThreshold ? lineAmount(desk.reportThreshold) : null,
+      idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
+      aggHours: desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
+      largeCode: large && large.code || pack.reportName || '',
+      largeLabel: large && large.name || (baseline ? 'Large cash record' : ''),
+      wireCode: wire ? wire.code : '',
+      wireLabel: wire ? wire.name || '' : '',
+      strCode: suspicious ? suspicious.code : '',
+      strLabel: suspicious ? suspicious.name || '' : '',
+      sanctionsCode: sanctions ? sanctions.code : baseline ? 'SANCTIONS-STOP' : '',
+      sanctionsLabel: sanctions ? sanctions.name || '' : baseline ? 'Terrorist or sanctioned property' : '',
+      fileFormat: null,
+      watchlists: [],
+      baseline,
+      reports: listed
+    };
+  }
   function getRegime(settings) {
+    const pack = loadedPack();
     /* No pack for this country. Do not fill the gap with Canada's rules. */
     if (window.CDOS && window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) {
-      const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
       return {
         id: null,
         authority: null,
@@ -39895,25 +40140,35 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         strCode: '',
         strLabel: '',
         fileFormat: null,
-        watchlists: []
+        watchlists: [],
+        baseline: false,
+        reports: []
       };
     }
-    const base = REGIMES[settings && settings.regime || 'FINTRAC'] || REGIMES.FINTRAC;
-    const r = Object.assign({}, base);
-    if (settings && +settings.threshold) r.threshold = +settings.threshold; // owner override
-    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours; // custom window
-    const desk = window.CDOS && window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
-    if (desk) {
-      /* A null effective is an answer: the ledger could not price the
-         line, so Canada's 3,000 must not stay in its place. */
-      const at = line => line && line.effective != null && +line.effective > 0 ? +line.effective : null;
-      if (desk.reportThreshold) r.threshold = at(desk.reportThreshold);
-      if (desk.idThreshold) r.idAt = at(desk.idThreshold);
-      if (desk.aggregationHours) r.aggHours = at(desk.aggregationHours);
-      if (desk.retentionYears) r.retentionYears = at(desk.retentionYears);
-      if (desk.currency) r.currency = desk.currency;
+    if (pack && pack.packId) return regimeFromPack(pack, settings);
+    if (settings && settings.baselineRules) {
+      return regimeFromPack({
+        packId: 'pack-intl-v1',
+        baseline: true,
+        kind: 'baseline',
+        name: 'International baseline',
+        regulator: '',
+        reportName: 'CASH-RECORD',
+        homeCurrency: settings && settings.baseCurrency || 'USD',
+        reportCurrency: 'USD',
+        reportThreshold: '10000',
+        idThreshold: '3000'
+      }, settings);
     }
+    /* Standalone build, no ledger. The two-country table is all it has. */
+    const base = settings && settings.regime && REGIMES[settings.regime] || REGIMES.FINTRAC;
+    const r = Object.assign({
+      baseline: false,
+      reports: []
+    }, base);
+    if (settings && +settings.threshold) r.threshold = +settings.threshold;
+    if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
+    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -63989,6 +64244,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         postal: setup.postal || ''
       };
       const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
+      const namedCountry = String(setup.country || '').trim();
+      const namedCanada = /^(ca|canada)$/i.test(namedCountry);
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -64001,7 +64258,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           The one real constraint between them is that the desk may ask for ID
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => typeof v === 'number' && v > 0 ? v : fallback;
-      const reportOver = num(setup.reportThreshold, 10000);
+      /* A baseline desk's 10,000 is US dollars. Do not store it as the
+         home-currency line. The ledger converts it, and the screen reads that. */
+      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
@@ -64034,6 +64293,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         bizCity: addr.city || '',
         bizRegion: addr.region || '',
         bizPostal: addr.postal || '',
+        bizCountry: namedCanada ? 'Canada' : setup.baselineRules ? '' : namedCountry || '',
+        regime: setup.baselineRules ? '' : setup.regulator || '',
         baseCurrency: homeCcy,
         threshold: reportLine,
         idRequiredOver: idOver,

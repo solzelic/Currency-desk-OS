@@ -73,8 +73,10 @@
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
-      const idFloor = (window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) ? null : (+settings.idRequiredOver || 3000);
-      const idNeeded = idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor));
+      const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
+      const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
+      const idFloor = governed ? idAt : ((window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) ? null : (+settings.idRequiredOver || 3000));
+      const idNeeded = (governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor)));
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
     });
     return map;

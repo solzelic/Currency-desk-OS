@@ -217,7 +217,10 @@
     const limit = reportingLimit(settings);
     const reportable = limit.amount != null && cadEquiv >= limit.amount;
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
-    const idRequired = cadEquiv >= (settings.idRequiredOver || 3000);
+    const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
+    const idRequired = governed ? (idAt == null || cadEquiv >= idAt) : cadEquiv >= (settings.idRequiredOver || 3000);
     const needBen = direction === 'send';
     const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
 

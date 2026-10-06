@@ -511,7 +511,13 @@
       return { amount: null, currency, code: null, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
+    /* A baseline pack's 10,000 is US dollars. It is not this desk's
+       reporting line. The server converts it; until that answer arrives
+       the screen shows nothing, rather than those dollars labelled as
+       dinars or pounds. */
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
     const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold')
+      : baselineBook ? null
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
       : _positive(settings && settings.threshold) ? +settings.threshold
       : (regime && _positive(regime.threshold)) ? +regime.threshold
@@ -553,7 +559,9 @@
       return { amount: null, currency, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
+    const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
     const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold')
+      : baselineBook ? null
       : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
       : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver
       : (regime && _positive(regime.idAt)) ? +regime.idAt

@@ -1917,6 +1917,8 @@
       const addr = (a0 && typeof a0 === 'object') ? a0
         : { street: typeof a0 === 'string' ? a0 : '', city: setup.city || '', region: setup.region || '', postal: setup.postal || '' };
       const homeCcy = setup.homeCurrency || (setup.baselineRules ? 'USD' : 'CAD');
+      const namedCountry = String(setup.country || '').trim();
+      const namedCanada = /^(ca|canada)$/i.test(namedCountry);
       /* Two different numbers, and they were being crossed.
          `reportThreshold` is the REGULATOR'S line — onboarding shows it as
          derived, "not ours to move". `idThreshold` is the shop's own, tighter,
@@ -1931,7 +1933,9 @@
          The one real constraint between them is that the desk may ask for ID
          sooner than the regulator requires a report, never later. */
       const num = (v, fallback) => (typeof v === 'number' && v > 0 ? v : fallback);
-      const reportOver = num(setup.reportThreshold, 10000);
+      /* A baseline desk's 10,000 is US dollars. Do not store it as the
+         home-currency line. The ledger converts it, and the screen reads that. */
+      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
@@ -1943,6 +1947,8 @@
       const nextSettings = { ...settings,
         bizName: bizName, operatingName: bizName, msbNumber: setup.msbNumber || '',
         bizPhone: '', bizEmail: ownerId, bizAddress: addr.street || '', bizCity: addr.city || '', bizRegion: addr.region || '', bizPostal: addr.postal || '',
+        bizCountry: namedCanada ? 'Canada' : (setup.baselineRules ? '' : (namedCountry || '')),
+        regime: setup.baselineRules ? '' : (setup.regulator || ''),
         baseCurrency: homeCcy, threshold: reportLine, idRequiredOver: idOver,
         rulesUnavailable: !!legacyPause,
         baselineRules: !!setup.baselineRules,

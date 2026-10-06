@@ -49,6 +49,10 @@ large-cash line the till reads are converted the same way. A missing
 or stale snapshot leaves both unset, so identification and the
 purpose and source of funds are required on every deal. A baseline desk that names no home currency books in USD. The
 till and Settings show the international-rules disclaimer.
+Compliance names International baseline (FATF), no regulator, and
+the three generic reports, and it prints the converted home amount
+beside the US-dollar source. A missing rate says identification is
+required on every deal.
 
 A new exchange, transfer, or cheque cashing stamps
 `jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`

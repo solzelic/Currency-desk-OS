@@ -115,7 +115,14 @@ are required on every deal. A line already written in the home
 currency does not need a snapshot. A USD book does not either. The threshold editors stay available. The
 till and Settings show: "We don't have rules for your country yet.
 These are the international anti-money-laundering rules. Please check
-they match your country's laws."
+they match your country's laws." Compliance names that pack
+International baseline (FATF), names no regulator, and lists Large
+cash record (CASH-RECORD), Suspicious transaction (SUSPICIOUS), and
+Terrorist or sanctioned property (SANCTIONS-STOP). Each money line
+shows the converted home-currency amount and the US-dollar figure it
+came from. A missing or stale rate says identification is required
+on every deal. A baseline desk is not shown Canada, FINTRAC, or the
+unconverted 3,000 and 10,000.
 
 These still post, because they are not a new deal:
 
