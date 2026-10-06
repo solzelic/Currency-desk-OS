@@ -171,7 +171,8 @@ test("the owner reviews the change, confirms it, and the desk follows GBP", asyn
   await expect(page.getByTestId("compliance-jurisdiction")).toContainText("£2,400.00");
 
   await openDockApp(page, "transfers");
-  await page.getByRole("button", { name: /New transfer/i }).click();
+  /* The pipeline and the header each have this button. Either opens the form. */
+  await page.locator(".win.active").getByRole("button", { name: /^New transfer$/ }).first().click();
   await expect(page.getByText("Customer pays in (GBP)")).toBeVisible();
 
   await openDockApp(page, "rates");
