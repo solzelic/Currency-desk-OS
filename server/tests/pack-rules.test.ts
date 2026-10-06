@@ -5,7 +5,8 @@
    seeded packs actually hold are in pack-rules.postgres.test.ts. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { homePerUnit } from "../src/ledger/compliance-gate.js";
+import Decimal from "decimal.js";
+import { homePerUnit, roundDownCents } from "../src/ledger/compliance-gate.js";
 import {
   BASELINE_NOTICE,
   packForCountry,
@@ -166,6 +167,8 @@ describe("migration 028 does not restamp history", () => {
     expect(rate?.toFixed(1)).toBe("0.8");
     expect(homePerUnit({ USD: "1.36" }, "USD", "CAD")?.toFixed(2)).toBe("1.36");
     expect(homePerUnit({ USD: "1.36" }, "USD", "RSD")).toBeNull();
+    const uneven = homePerUnit({ USD: "1.37", GBP: "1.70" }, "USD", "GBP");
+    expect(roundDownCents(new Decimal(10000).mul(uneven!)).toFixed(2)).toBe("8058.82");
   });
 
   it("copies only a positive identification line and refuses to mislabel a window", () => {

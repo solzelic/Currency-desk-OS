@@ -450,7 +450,7 @@
     const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: limit.code, threshold: limit.amount, idAt: 3000 };
     const TH = limit.amount;
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
-    const idFloor = paused ? null : (regime.idAt || 3000);
+    const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);
     const rec = clients[customer];
     const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
     /* Null-safe: with no threshold the honest answer is "cannot say", and
@@ -458,7 +458,7 @@
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const single = TH != null && inCadEquiv >= TH;
-    const idRequired = !paused && (single || (idFloor != null && inCadEquiv >= idFloor) || isSend);   // remittance always needs sender ID
+    const idRequired = !paused && (single || idFloor == null || inCadEquiv >= idFloor || isSend);   // remittance always needs sender ID; a null floor means every deal
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
@@ -479,7 +479,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, 'CAD')} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {

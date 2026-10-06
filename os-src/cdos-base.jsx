@@ -495,10 +495,15 @@
      already the desk's choice where it made one and the pack's where it
      did not — the precedence was decided on the server, once, so that the
      number the screen prints and the number the gate enforces cannot
-     drift apart. */
+     drift apart. A loaded answer whose effective is null is still an
+     answer: do not fall through to the pack's raw USD figure. */
   const _serverLine = (key) => {
     const line = _thresholds && _thresholds[key];
     return line && _positive(line.effective) ? +line.effective : null;
+  };
+  const _serverAnswered = (key) => {
+    const line = _thresholds && _thresholds[key];
+    return !!(line && Object.prototype.hasOwnProperty.call(line, 'effective'));
   };
   function reportingLimit(settings) {
     if (rulesMissing(settings)) {
@@ -506,7 +511,7 @@
       return { amount: null, currency, code: null, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold')
+    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold')
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
       : _positive(settings && settings.threshold) ? +settings.threshold
       : (regime && _positive(regime.threshold)) ? +regime.threshold
@@ -548,7 +553,7 @@
       return { amount: null, currency, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
-    const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold')
+    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold')
       : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
       : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver
       : (regime && _positive(regime.idAt)) ? +regime.idAt

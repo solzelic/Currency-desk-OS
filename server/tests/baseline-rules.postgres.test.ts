@@ -176,7 +176,15 @@ postgres("the international baseline", () => {
     });
   }
 
-  async function send(desk: typeof usd, amount: string, key: string) {
+  async function send(
+    desk: typeof usd,
+    amount: string,
+    key: string,
+    facts: { purpose: string; sourceOfFunds: string } = {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    },
+  ) {
     return app.inject({
       method: "POST",
       url: "/api/ledger/remittances/send",
@@ -192,8 +200,8 @@ postgres("the international baseline", () => {
         corridor: "DE",
         partner: "Corridor partner",
         beneficiaryName: "Ann Beneficiary",
-        purpose: "Family support",
-        sourceOfFunds: "Salary",
+        purpose: facts.purpose,
+        sourceOfFunds: facts.sourceOfFunds,
       },
     });
   }
@@ -337,5 +345,98 @@ postgres("the international baseline", () => {
     const missing = await cheque(gbp, "1.00", "gbp-missing");
     expect(missing.statusCode, missing.body).toBe(422);
     expect(missing.json().code).toBe("COMPLIANCE_BLOCKED");
+  });
+
+  it("converts the 10,000 USD line and the ID line into GBP, and fails closed when the rate is stale", async () => {
+    await pool.query("DELETE FROM market_rates");
+    await pool.query(
+      `INSERT INTO market_rates (id, provider, mids, fetched_at)
+       VALUES ('snap-intl-lines','test','{"USD":1.36,"GBP":1.70}', now())`,
+    );
+    await pool.query(
+      "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
+      [gbp.customerId],
+    );
+
+    const lines = await app.inject({
+      method: "GET",
+      url: "/api/ledger/desk-thresholds",
+      cookies: { cdos_session: gbp.cookie },
+    });
+    expect(lines.statusCode, lines.body).toBe(200);
+    expect(lines.json().currency).toBe("GBP");
+    expect(lines.json().reportThreshold).toMatchObject({
+      effective: "8000.00",
+      packValue: "8000.00",
+      deskChoice: null,
+      posture: "following",
+    });
+    expect(lines.json().idThreshold).toMatchObject({
+      effective: "2400.00",
+      packValue: "2400.00",
+      deskChoice: null,
+      posture: "following",
+    });
+
+    const usdLines = await app.inject({
+      method: "GET",
+      url: "/api/ledger/desk-thresholds",
+      cookies: { cdos_session: usd.cookie },
+    });
+    expect(usdLines.json().reportThreshold.effective).toBe("10000.00");
+    expect(usdLines.json().idThreshold.effective).toBe("3000.00");
+
+    const underId = await cheque(gbp, "2399.99", "gbp-id-under-2");
+    expect(underId.statusCode, underId.body).toBe(201);
+    const atId = await cheque(gbp, "2400.00", "gbp-id-at-2");
+    expect(atId.statusCode, atId.body).toBe(422);
+    expect(atId.json().code).toBe("COMPLIANCE_BLOCKED");
+
+    await pool.query(
+      "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
+      [gbp.customerId],
+    );
+    const underReport = await send(gbp, "7999.99", "gbp-rpt-under", {
+      purpose: "",
+      sourceOfFunds: "",
+    });
+    expect(underReport.statusCode, underReport.body).toBe(201);
+    const atReport = await send(gbp, "8000.00", "gbp-rpt-at", {
+      purpose: "",
+      sourceOfFunds: "",
+    });
+    expect(atReport.statusCode, atReport.body).toBe(422);
+    expect(atReport.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(atReport.json().message).toMatch(/compliance policy blocked/i);
+    const atReportNamed = await send(gbp, "8000.00", "gbp-rpt-at-named", {
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    });
+    expect(atReportNamed.statusCode, atReportNamed.body).toBe(201);
+
+    await pool.query(
+      "UPDATE market_rates SET fetched_at = now() - interval '25 hours'",
+    );
+    const staleLines = await app.inject({
+      method: "GET",
+      url: "/api/ledger/desk-thresholds",
+      cookies: { cdos_session: gbp.cookie },
+    });
+    expect(staleLines.json().reportThreshold.effective).toBeNull();
+    expect(staleLines.json().idThreshold.effective).toBeNull();
+    const staleReport = await send(gbp, "1.00", "gbp-stale-purpose", {
+      purpose: "",
+      sourceOfFunds: "",
+    });
+    expect(staleReport.statusCode, staleReport.body).toBe(422);
+    expect(staleReport.json().message).toMatch(/no reporting threshold/i);
+
+    await pool.query(
+      "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
+      [gbp.customerId],
+    );
+    const staleId = await cheque(gbp, "1.00", "gbp-stale-id-2");
+    expect(staleId.statusCode, staleId.body).toBe(422);
+    expect(staleId.json().code).toBe("COMPLIANCE_BLOCKED");
   });
 });

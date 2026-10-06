@@ -142,10 +142,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   No sanctions list ships with the pack. Records are kept five years.
   The regulator field is empty. USD lines convert to the desk's home
   currency at the newest market snapshot (CAD per 1 unit, the same
-  source the rate sync stores), and that rate and its timestamp are
-  written on the deal. The shop's board mid is not used. A missing
-  snapshot, one older than 24 hours, or a missing mid requires
-  identification on every deal. When the line is already in the home
+  source the rate sync stores), rounded down to the cent, and that
+  rate and its timestamp are written on the deal. The same conversion
+  is what the till reads for the identification line and the large-cash
+  line. The shop's board mid is not used. A missing snapshot, one
+  older than 24 hours, or a missing mid leaves both of those lines
+  unset, so identification and the purpose and source of funds are
+  required on every deal. When the line is already in the home
   currency, no snapshot is required. The till and Settings say "We
   don't have rules for your country yet. These are the international
   anti-money-laundering rules. Please check they match your country's
@@ -242,9 +245,11 @@ given Canada's and is not paused. It operates under `pack-intl-v1`.
 Cash foreign exchange is identified at 3,000 USD or more; remittance,
 electronic transfer, and virtual currency at 1,000 USD or more; the
 large-cash record is 10,000 USD in a fixed 24-hour window. Those USD
-lines convert at the newest market snapshot, and the rate and its
-timestamp are stored on the deal. A missing or stale snapshot (older
-than 24 hours) requires identification on every deal. A baseline desk
+lines convert at the newest market snapshot, rounded down to the
+cent, and the rate and its timestamp are stored on the deal. The
+till reads those converted lines. A missing or stale snapshot (older
+than 24 hours) leaves them unset, so identification and the purpose
+and source of funds are required on every deal. A baseline desk
 that names no home currency books in USD. The till and Settings show
 the international-rules disclaimer, and the threshold editors stay
 available. The regulator field is empty. Migration 028 points CAD,

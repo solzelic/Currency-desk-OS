@@ -67,6 +67,43 @@ function missingTable(error: unknown): boolean {
   return (error as { code?: string }).code === "42P01";
 }
 
+/** The home-currency line, rounded down to the cent. A fraction of a cent
+    still requires identification: the till and the gate share this cut. */
+export function roundDownCents(amount: Decimal): Decimal {
+  return amount.toDecimalPlaces(2, Decimal.ROUND_DOWN);
+}
+
+/** Home per 1 unit of `unit` from the newest market snapshot.
+    Same currency is 1 and does not read the table. Missing, stale, or
+    short a mid comes back null — the caller fails closed. */
+export async function marketHomePerUnit(
+  client: pg.PoolClient,
+  unit: string,
+  home: string,
+): Promise<{ rate: Decimal; rateAt: Date | null } | null> {
+  const unitCode = unit.trim().toUpperCase();
+  const homeCode = home.trim().toUpperCase();
+  if (unitCode && unitCode === homeCode) return { rate: new Decimal(1), rateAt: null };
+  let latest: { mids: Record<string, unknown>; fetched_at: Date; fresh: boolean } | undefined;
+  try {
+    const snap = await client.query(
+      `SELECT mids, fetched_at,
+              (fetched_at >= now() - interval '24 hours') AS fresh
+         FROM market_rates
+        ORDER BY fetched_at DESC
+        LIMIT 1`,
+    );
+    latest = snap.rows[0];
+  } catch (error) {
+    if (!missingTable(error)) throw error;
+    return null;
+  }
+  if (!latest || latest.fresh !== true) return null;
+  const rate = homePerUnit(latest.mids ?? {}, unitCode, homeCode);
+  if (!rate) return null;
+  return { rate, rateAt: new Date(latest.fetched_at) };
+}
+
 /**
  * Whether this baseline deal needs identification, and the market rate
  * that decision used.
@@ -96,7 +133,9 @@ export async function baselineIdentification(
     row = found.rows[0];
   } catch (error) {
     if (!missingTable(error)) throw error;
-    return { block: false, ...IDENTITY };
+    /* No identification table at all. Fail closed: an unverified
+       customer is identified on every deal, and no rate is invented. */
+    return { block: true, ...UNPRICED };
   }
   if (!row) return { block: true, ...UNPRICED };
   if (row.cash_only === true && !cash) return { block: false, ...IDENTITY };
@@ -120,22 +159,11 @@ export async function baselineIdentification(
     return { block: hits(amountHome, threshold, comparator), ...IDENTITY };
   }
 
-  const snap = await client.query(
-    `SELECT mids, fetched_at,
-            (fetched_at >= now() - interval '24 hours') AS fresh
-       FROM market_rates
-      ORDER BY fetched_at DESC
-      LIMIT 1`,
-  );
-  const latest = snap.rows[0] as
-    | { mids: Record<string, unknown>; fetched_at: Date; fresh: boolean }
-    | undefined;
-  if (!latest || latest.fresh !== true) return { block: true, ...UNPRICED };
-  const rate = homePerUnit(latest.mids ?? {}, currency, pack.homeCurrency);
-  if (!rate) return { block: true, ...UNPRICED };
+  const market = await marketHomePerUnit(client, currency, pack.homeCurrency);
+  if (!market) return { block: true, ...UNPRICED };
   return {
-    block: hits(amountHome, threshold.mul(rate), comparator),
-    rate: rate.toDecimalPlaces(12).toFixed(12),
-    rateAt: new Date(latest.fetched_at),
+    block: hits(amountHome, roundDownCents(threshold.mul(market.rate)), comparator),
+    rate: market.rate.toDecimalPlaces(12).toFixed(12),
+    rateAt: market.rateAt,
   };
 }

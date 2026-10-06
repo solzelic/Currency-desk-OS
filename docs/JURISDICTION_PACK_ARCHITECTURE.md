@@ -43,9 +43,11 @@ dollars: 3,000 for a cash foreign exchange, 1,000 for a remittance, an
 electronic transfer, or virtual currency. The large-cash record is
 10,000 USD in a fixed 24-hour window. The regulator field is empty.
 A USD line is converted to the desk's home currency at the newest
-market snapshot, and the rate and its timestamp are stored on the
-deal. A missing or stale snapshot requires identification on every
-deal. A baseline desk that names no home currency books in USD. The
+market snapshot, rounded down to the cent, and the rate and its
+timestamp are stored on the deal. The identification line and the
+large-cash line the till reads are converted the same way. A missing
+or stale snapshot leaves both unset, so identification and the
+purpose and source of funds are required on every deal. A baseline desk that names no home currency books in USD. The
 till and Settings show the international-rules disclaimer.
 
 A new exchange, transfer, or cheque cashing stamps

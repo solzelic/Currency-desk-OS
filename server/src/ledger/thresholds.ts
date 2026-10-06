@@ -38,6 +38,7 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { marketHomePerUnit, roundDownCents } from "./compliance-gate.js";
 import { resolvePack, type JurisdictionPack } from "./jurisdiction.js";
 
 /** Where a desk's own number stands against what its regulator requires. */
@@ -188,6 +189,33 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
+  /* A baseline pack states 10,000 and 3,000 in US dollars. A desk whose
+     book is not USD must see those lines in its own currency, at the
+     same market rate the posting gate uses, or the till will ask for ID
+     at 3,000 pounds while the server refuses near 2,400. Rounded down
+     to the cent, so a fraction still counts. No fresh rate: both lines
+     are unset, and every path requires identification and the purpose
+     and source the large-cash record is made of. */
+  const baselineForeign =
+    pack.baseline && pack.homeCurrency.trim().toUpperCase() !== "USD";
+  const market = baselineForeign
+    ? await marketHomePerUnit(client, "USD", pack.homeCurrency)
+    : { rate: new Decimal(1), rateAt: null };
+  const packMoney = (raw: unknown): Decimal | null => {
+    const amount = money(raw);
+    if (!baselineForeign) return amount;
+    if (!market || !amount) return null;
+    return roundDownCents(amount.mul(market.rate));
+  };
+  const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
+    baselineForeign && !market
+      ? {
+          effective: null,
+          deskChoice: money(deskRaw)?.toFixed(2) ?? null,
+          packValue: null,
+          posture: "unknown" as const,
+        }
+      : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,
@@ -195,16 +223,8 @@ export async function readDeskThresholds(
     jurisdiction: pack.jurisdiction,
     regulator: pack.regulator,
     reportName: pack.reportName,
-    reportThreshold: asMoneySetting(
-      money(row.report_threshold),
-      money(pack.reportThreshold),
-      "lower_is_stricter",
-    ),
-    idThreshold: asMoneySetting(
-      money(row.id_threshold),
-      money(pack.idThreshold),
-      "lower_is_stricter",
-    ),
+    reportThreshold: moneyLine(row.report_threshold, pack.reportThreshold),
+    idThreshold: moneyLine(row.id_threshold, pack.idThreshold),
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
       /* No pack: do not invent a 24-hour window. That number is Canada's,

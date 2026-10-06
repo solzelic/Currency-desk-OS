@@ -338,7 +338,7 @@ DECLARE
 BEGIN
   UPDATE legal_entities
      SET jurisdiction_pack_id = 'pack-ca-v1',
-         jurisdiction_pack_version = COALESCE(jurisdiction_pack_version, 1),
+         jurisdiction_pack_version = 1,
          home_currency = 'CAD'
    WHERE jurisdiction_pack_id IS NULL
      AND (
@@ -350,7 +350,7 @@ BEGIN
 
   UPDATE legal_entities
      SET jurisdiction_pack_id = 'pack-intl-v1',
-         jurisdiction_pack_version = COALESCE(jurisdiction_pack_version, 1)
+         jurisdiction_pack_version = 1
    WHERE jurisdiction_pack_id IS NULL;
   GET DIAGNOSTICS baseline = ROW_COUNT;
 

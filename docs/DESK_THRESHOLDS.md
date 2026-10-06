@@ -102,13 +102,17 @@ The same new deals post under that pack:
 The baseline states those identification lines in US dollars. A cash
 foreign exchange is identified at 3,000 USD or more. A remittance, an
 electronic transfer, and a virtual-currency deal are identified at
-1,000 USD or more. The posting gate converts that figure into the
-desk's home currency at the newest market snapshot (CAD per 1 unit),
-not at a mid the shop set on its board, and stores the rate and the
-snapshot time on the deal. If the snapshot is missing, older than 24
-hours, or has no mid for the home currency, an unverified customer is
-identified on every deal. A line already written in the home currency
-does not need a snapshot. The threshold editors stay available. The
+1,000 USD or more. Full due diligence, the purpose and source of
+funds, is the large-cash line: 10,000 USD or more. The posting gate
+and the numbers the till reads (`readDeskThresholds`) convert those
+figures into the desk's home currency at the newest market snapshot
+(CAD per 1 unit), not at a mid the shop set on its board, and round
+down to the cent. The gate stores the rate and the snapshot time on
+the deal. If the snapshot is missing, older than 24 hours, or has no
+mid for the home currency, both lines come back unset: an unverified
+customer is identified on every deal, and purpose and source of funds
+are required on every deal. A line already written in the home
+currency does not need a snapshot. A USD book does not either. The threshold editors stay available. The
 till and Settings show: "We don't have rules for your country yet.
 These are the international anti-money-laundering rules. Please check
 they match your country's laws."

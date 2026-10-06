@@ -198,11 +198,13 @@
     if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;          // custom window
     const desk = (window.CDOS && window.CDOS.deskThresholds) ? window.CDOS.deskThresholds() : null;
     if (desk) {
+      /* A null effective is an answer: the ledger could not price the
+         line, so Canada's 3,000 must not stay in its place. */
       const at = (line) => (line && line.effective != null && +line.effective > 0) ? +line.effective : null;
-      if (at(desk.reportThreshold) != null) r.threshold = at(desk.reportThreshold);
-      if (at(desk.idThreshold) != null) r.idAt = at(desk.idThreshold);
-      if (at(desk.aggregationHours) != null) r.aggHours = at(desk.aggregationHours);
-      if (at(desk.retentionYears) != null) r.retentionYears = at(desk.retentionYears);
+      if (desk.reportThreshold) r.threshold = at(desk.reportThreshold);
+      if (desk.idThreshold) r.idAt = at(desk.idThreshold);
+      if (desk.aggregationHours) r.aggHours = at(desk.aggregationHours);
+      if (desk.retentionYears) r.retentionYears = at(desk.retentionYears);
       if (desk.currency) r.currency = desk.currency;
     }
     return r;
