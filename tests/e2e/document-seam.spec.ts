@@ -283,12 +283,12 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
 
   await generate(page, /End-of-Day Sign-Off/);
   /* The document fetches for itself, so "the node is visible" and "the
-     answers have landed" are different moments. Poll for the trading day's
-     own date, which is the first thing the sheet can only get from the
-     session. */
+     answers have landed" are different moments. The footer date is also
+     the wall clock when the session has not arrived yet, so wait for the
+     session number, which only that fetch can print. */
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
-    .toContain(`trading day ${till.session.businessDate}`);
+    .toContain(`Session #${till.session.sessionNumber}`);
   const doc = await sheet(page);
 
   // ---- the date and the day ----

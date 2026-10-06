@@ -2016,7 +2016,10 @@
       await hydrateTenant();
       try { sessionStorage.setItem(AUTH_KEY, '1'); sessionStorage.setItem('yorkfx_staff_user', user || 'staff'); } catch (e) {}
       setStage('desktop');
-      setTimeout(() => { openApp(planAllows('ledger') ? 'ledger' : 'rates'); }, 60);
+      /* With the desktop, not a moment later. A deferred open used to land
+         on top of whatever had just been clicked: the Ledger arrived about
+         60ms after sign-in and covered it. */
+      openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
