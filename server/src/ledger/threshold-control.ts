@@ -17,8 +17,9 @@
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
-import { LedgerError, type LedgerActor } from "./service.js";
+import { LedgerError, requireInstalledPack, type LedgerActor } from "./service.js";
 import { readDeskThresholds, type DeskThresholds } from "./thresholds.js";
 
 /* What a caller may change, and what it maps to on the row. The desk's
@@ -107,6 +108,11 @@ export class ThresholdService {
     try {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "compliance:thresholds");
+      /* No pack means there is no line to tighten. Writing one here would
+         open a hole: the desk could name a huge identification line and
+         then post under it. The editors on the screen are hidden for the
+         same reason. */
+      requireInstalledPack(await resolvePack(client, actor.legalEntityId));
       const before = await readDeskThresholds(client, actor.legalEntityId);
       const assignments = entries.map(
         ([field], index) => `${FIELDS[field]}=$${index + 2}`,

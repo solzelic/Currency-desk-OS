@@ -71,6 +71,14 @@ postgres("real PostgreSQL ledger posting", () => {
 
   it("persists an atomic transaction, balanced journal, separate CAD fee and audit", async () => {
     const posted = await service.post(teller, request);
+    const stamped = await pool.query(
+      `SELECT jurisdiction_pack_id, jurisdiction_pack_version, home_currency
+         FROM ledger_transactions WHERE transaction_id=$1`,
+      [posted.transactionId],
+    );
+    expect(stamped.rows[0].jurisdiction_pack_id).toBe("pack-nocross-v1");
+    expect(Number(stamped.rows[0].jurisdiction_pack_version)).toBe(1);
+    expect(String(stamped.rows[0].home_currency).trim()).toBe("CAD");
     expect((await pool.query("SELECT * FROM ledger_transactions")).rowCount).toBe(1);
     expect((await pool.query("SELECT * FROM ledger_journal_entries WHERE transaction_id=$1", [posted.transactionId])).rowCount).toBe(5);
     expect((await pool.query("SELECT * FROM ledger_till_movements WHERE transaction_id=$1", [posted.transactionId])).rowCount).toBe(3);

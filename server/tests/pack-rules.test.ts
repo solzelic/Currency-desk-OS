@@ -7,13 +7,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   packForCountry,
+  packIdThreshold,
   RULES_UNAVAILABLE_NOTICE,
 } from "../src/ledger/jurisdiction.js";
 import {
   idLineAmount,
   reportRuleFields,
 } from "../src/ledger/reporting.js";
-import { typedIdentificationLine } from "../src/onboarding/provision.js";
+import { specFromAnswers, typedIdentificationLine } from "../src/onboarding/provision.js";
+import { resolve } from "../src/onboarding/flow.js";
 
 describe("which country gets a pack", () => {
   it("gives the countries that already have one the pack they had", () => {
@@ -73,10 +75,57 @@ describe("what a report row can now say", () => {
       deadlineValue: 15,
       deadlineUnit: "calendar_days",
       windowKind: "calendar_month",
+      windowDays: null,
       comparator: "gt",
       direction: "both",
       thresholdCurrency: "EUR",
+      cashOnly: false,
     });
+  });
+
+  it("reads the deadline and window shapes the next packs need", () => {
+    expect(
+      reportRuleFields({
+        deadline_unit: "immediately",
+        window_kind: "banking_day",
+        comparator: "gte",
+      }),
+    ).toMatchObject({
+      deadlineValue: null,
+      deadlineUnit: "immediately",
+      windowKind: "banking_day",
+      windowDays: null,
+    });
+    expect(
+      reportRuleFields({
+        deadline_value: 24,
+        deadline_unit: "hours",
+        window_kind: "rolling_days",
+        window_days: 30,
+        comparator: "gt",
+        cash_only: true,
+      }),
+    ).toMatchObject({
+      deadlineValue: 24,
+      deadlineUnit: "hours",
+      windowKind: "rolling_days",
+      windowDays: 30,
+      comparator: "gt",
+      cashOnly: true,
+    });
+    expect(
+      reportRuleFields({
+        deadline_value: 15,
+        deadline_unit: "monthly_day",
+        window_kind: "none",
+      }).deadlineUnit,
+    ).toBe("monthly_day");
+    expect(
+      reportRuleFields({
+        deadline_unit: "before_execution",
+        window_kind: "none",
+      }).deadlineUnit,
+    ).toBe("before_execution");
   });
 
   it("leaves a deadline unstated when only half of it is present", () => {
@@ -107,7 +156,103 @@ describe("migration 028 does not restamp history", () => {
 
   it("uses the sentence the desk shows when a country has no pack", () => {
     expect(RULES_UNAVAILABLE_NOTICE).toBe(
-      "Rules for your country are not available yet",
+      "Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.",
     );
+  });
+
+  it("copies only a positive identification line and refuses to mislabel a window", () => {
+    expect(sql).toMatch(/WHERE p\.id_threshold > 0/);
+    expect(sql).toMatch(/aggregation_hours <> 24/);
+    expect(sql).toMatch(/RAISE EXCEPTION/);
+    expect(sql).toMatch(/RAISE NOTICE/);
+    expect(sql).toMatch(/pack-ca-v1/);
+    expect(sql).toMatch(/'rolling_days'/);
+    expect(sql).toMatch(/'monthly_day'/);
+    expect(sql).toMatch(/'before_execution'/);
+  });
+});
+
+describe("an identification line, tagged", () => {
+  const boom = (code: string) => {
+    const error = new Error("db") as Error & { code?: string };
+    error.code = code;
+    return error;
+  };
+
+  it("treats only a missing table as unavailable", async () => {
+    const missing = {
+      execute: async () => {
+        throw boom("42P01");
+      },
+    };
+    await expect(packIdThreshold(missing, "pack-ca-v1", "fx")).resolves.toEqual({
+      status: "unavailable",
+    });
+  });
+
+  it("lets any other database error through", async () => {
+    const broken = {
+      execute: async () => {
+        throw boom("42703");
+      },
+    };
+    await expect(packIdThreshold(broken, "pack-ca-v1", "fx")).rejects.toThrow(/db/);
+  });
+
+  it("returns a Decimal for a positive line and does not treat zero as a float", async () => {
+    const db = {
+      execute: async () => [{ threshold: "1000.10" }],
+    };
+    const line = await packIdThreshold(db, "pack-ca-v1", "fx");
+    expect(line.status).toBe("amount");
+    if (line.status === "amount") expect(line.amount.toFixed(2)).toBe("1000.10");
+  });
+
+  it("reads zero as every deal and null as not applicable", async () => {
+    await expect(
+      packIdThreshold({ execute: async () => [{ threshold: "0" }] }, "p", "fx"),
+    ).resolves.toEqual({ status: "every_deal" });
+    await expect(
+      packIdThreshold({ execute: async () => [{ threshold: null }] }, "p", "fx"),
+    ).resolves.toEqual({ status: "not_applicable" });
+  });
+});
+
+describe("a country the list does not know", () => {
+  it("does not invent Canada, FINTRAC, or CAD", () => {
+    for (const country of ["", "RS", "Somewhere else"]) {
+      const spec = specFromAnswers(
+        resolve(
+          { operatingName: "Shop", bizName: "Shop Inc.", ownerName: "A", ownerEmail: "a@example.test", country },
+          {},
+        ),
+        {},
+      );
+      const setup = spec.setup as Record<string, unknown>;
+      expect(spec.regulator, country).not.toBe("FINTRAC");
+      expect(spec.regulator, country).toBe("");
+      expect(setup.homeCurrency, country).not.toBe("CAD");
+      expect(setup.homeCurrency, country).toBe("");
+      expect(setup.reportName, country).toBe("");
+      expect(setup.country, country).toBe(country);
+    }
+  });
+
+  it("keeps a home currency the setup actually named", () => {
+    const spec = specFromAnswers(
+      resolve(
+        {
+          operatingName: "Shop",
+          country: "RS",
+          homeCurrency: "RSD",
+          regulator: "APR",
+        },
+        {},
+      ),
+      {},
+    );
+    const setup = spec.setup as Record<string, unknown>;
+    expect(setup.homeCurrency).toBe("RSD");
+    expect(spec.regulator).toBe("APR");
   });
 });

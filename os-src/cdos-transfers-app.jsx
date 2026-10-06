@@ -46,7 +46,7 @@
       transfers.forEach(t => { if (t.status === 'hold') c.hold++; else if (t.status === 'paid') c.paid++; else if (t.status !== 'cancelled') c.active++; });
       return c;
     }, [transfers]);
-    const reportableOpen = transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
+    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -68,7 +68,7 @@
       </div>
 
       <div className="space-y-2">
-        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'); const rpt = cadAmt >= threshold; return (
+        {list.map(t => { const cor = corOf(t.corridor); const dir = t.direction; const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD'); const rpt = threshold != null && cadAmt >= threshold; return (
           <button key={t.id} onClick={() => onOpen(t.id)} className="w-full text-left p-3 flex items-center gap-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
             <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, borderRadius: '50%', background: CD.lineSoft, fontSize: 18 }}>{cor.flag || '🌐'}</span>
             <div className="flex-1 min-w-0">
@@ -163,7 +163,7 @@
     const benName = (id) => { const b = beneficiaries.find(x => x.id === id); return b ? b.name : '—'; };
     const corOf = (id) => corridors.find(c => c.id === id) || {};
     const threshold = reportingLimit(settings).amount;
-    const eft = useMemo(() => transfers.filter(t => t.status !== 'cancelled').map(t => ({ t, cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD') })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers]);
+    const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({ t, cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD') })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
 
     const print = () => {

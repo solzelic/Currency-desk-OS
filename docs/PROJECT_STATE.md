@@ -111,21 +111,36 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   an identification line for each of foreign exchange, remittance,
   electronic funds transfer, and virtual currency. Null on that line
   means the kind of deal has no line; zero means every deal of that
-  kind. A report row stores a filing deadline (a count of calendar or
+  kind. Each line also stores whether the amount is "at or above" or
+  "more than", a due-diligence level (identify, customer due diligence,
+  or enhanced), and whether it applies to cash only. A report row stores
+  a filing deadline (immediately, a count of hours, before the deal is
+  carried out, by a day of the next month, or a count of calendar or
   business days), how deals are added together (a fixed 24-hour window,
-  a calendar month, or not at all), whether the threshold is "at or
-  above" or "more than", which direction of cash it covers, and the
+  a calendar month, a rolling number of days, one banking day, or not
+  at all), whether the threshold is "at or above" or "more than", which
+  direction of cash it covers, whether it counts cash only, and the
   currency the threshold is written in. A threshold written in a
   currency other than the pack's home currency is converted at the rate
   on the deal. Nothing converts yet, and every seeded pack already
-  states its threshold in home currency. The six seeded packs keep the
-  numbers they had. A country with no pack is not given Canada's. The
-  desk says "Rules for your country are not available yet" and sign-in
-  still works. A blank identification answer at setup uses the pack's
-  foreign-exchange identification line, not the report line. A posted
-  deal keeps the pack snapshot it was posted under. The posting gate
-  still reads the pack's single identification column, so the lines the
-  gate enforces have not moved.
+  states its threshold in home currency, with the new fields at their
+  defaults. The six seeded packs keep the numbers they had. A country
+  with no pack is not given Canada's. Sign-in still works, and the desk
+  can be looked at and set up, but no deal can be posted — not a quote,
+  an exchange, a transfer, or a frozen quote — until a pack is installed.
+  The till says "Rules for your country are not available yet, so deals
+  are paused. We will let you know when they are ready." Threshold
+  overrides are refused, and those editors are hidden. A blank
+  identification answer at setup uses the pack's foreign-exchange
+  identification line, not the report line. A new posting stamps the
+  pack id, version, and home currency it was posted under. Older rows
+  are not restamped. The posting gate still reads the pack's single
+  identification column, so the lines the gate enforces have not moved.
+  Migration 028 also points an existing desk with no pack at the seeded
+  pack its home currency already implies, where that is unambiguous:
+  CAD or a blank home currency to Canada, GBP to the UK, AUD to
+  Australia, AED to the UAE, EUR to the EU. Any other currency, including
+  USD, is left without a pack.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
@@ -207,12 +222,16 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-06**, country-pack schema. Packs can store a per-deal
-identification line and the extra facts a report row was missing
-(deadline, window, comparator, direction, threshold currency). Seeded
-thresholds are unchanged. A country with no pack is not given Canada's,
-and a blank identification answer at setup is not filled with the
-report line. The posting gate still reads the single identification
-column.
+identification line (including comparator, due-diligence level, and
+cash-only) and the extra facts a report row was missing (deadline,
+window, comparator, direction, threshold currency, cash-only). Seeded
+thresholds are unchanged. A country with no pack is not given Canada's.
+That desk can sign in, and it cannot post a deal or change a threshold
+until a pack is installed. A new posting stamps the pack it was posted
+under. Migration 028 backfills a missing pack from home currency where
+the match is unambiguous. A blank identification answer at setup is not
+filled with the report line. The posting gate still reads the single
+identification column.
 
 Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.
 A step runs only when that window is already open and in front. Until

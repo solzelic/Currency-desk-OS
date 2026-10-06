@@ -2304,7 +2304,7 @@
       {/* A country with no pack. Sign-in is not blocked. Canada's rules are not applied. */}
       {(() => {
         const notice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
-          || (settings.rulesUnavailable ? 'Rules for your country are not available yet' : '');
+          || (settings.rulesUnavailable ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
         if (!notice) return null;
         return <div role="status" data-rules-notice style={{ padding: '8px 16px', background: 'var(--cd-brass-soft, #f4efe4)', color: 'var(--cd-ink)', fontSize: 13, borderBottom: '1px solid var(--cd-line)' }}>{notice}</div>;
       })()}

@@ -11,6 +11,7 @@ import { withSerializationRetry } from "../ledger/retry.js";
 import {
   LedgerError,
   LedgerService,
+  requireInstalledPack,
   type FrozenQuote,
   type LedgerActor,
 } from "../ledger/service.js";
@@ -195,6 +196,7 @@ export class QuoteService {
          which quoted a London desk in the wrong currency and refused a
          cross-currency deal that its jurisdiction actually permits. */
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const permitted = pairAllowed(pack, request.from, request.to);
       if (!permitted.ok)

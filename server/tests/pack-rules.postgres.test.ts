@@ -5,6 +5,7 @@
    still says so, and one which did not still does not. A blank
    identification answer at setup is filled from the pack's foreign
    exchange line, not from the report line. */
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
@@ -97,9 +98,11 @@ postgres("pack rule fields against real PostgreSQL", () => {
         deadlineValue: null,
         deadlineUnit: null,
         windowKind: "fixed_24h",
+        windowDays: null,
         comparator: "gte",
         direction: "in",
         thresholdCurrency: currency,
+        cashOnly: false,
       });
     };
     largeCash("pack-ca-v1", "LCTR", "10000.00", "CAD");
@@ -132,16 +135,19 @@ postgres("pack rule fields against real PostgreSQL", () => {
         deadlineValue: null,
         deadlineUnit: null,
         windowKind: "none",
+        windowDays: null,
         comparator: "gte",
         direction: null,
         thresholdCurrency: null,
+        cashOnly: false,
       });
     }
   });
 
   it("copies each pack's identification line onto every deal kind", async () => {
     const lines = await pool.query(
-      `SELECT t.pack_id, t.deal_kind, t.threshold, t.currency, p.id_threshold
+      `SELECT t.pack_id, t.deal_kind, t.threshold, t.currency, t.comparator,
+              t.diligence, t.cash_only, p.id_threshold
          FROM jurisdiction_id_thresholds t
          JOIN jurisdiction_packs p ON p.pack_id = t.pack_id
         WHERE t.pack_id LIKE 'pack-%-v1'
@@ -170,6 +176,9 @@ postgres("pack rule fields against real PostgreSQL", () => {
     );
     expect(canadaFx.threshold).toBe("3000.00");
     expect(text(canadaFx.currency)).toBe("CAD");
+    expect(canadaFx.comparator).toBe("gte");
+    expect(canadaFx.diligence).toBe("identify");
+    expect(canadaFx.cash_only).toBe(false);
   });
 
   it("round-trips a deadline, a calendar month, a strict comparator and a zero line", async () => {
@@ -209,9 +218,11 @@ postgres("pack rule fields against real PostgreSQL", () => {
       deadlineValue: 15,
       deadlineUnit: "calendar_days",
       windowKind: "calendar_month",
+      windowDays: null,
       comparator: "gt",
       direction: "out",
       thresholdCurrency: "EUR",
+      cashOnly: false,
     });
     expect(report.trigger_threshold).toBe("1000.00");
 
@@ -229,6 +240,72 @@ postgres("pack rule fields against real PostgreSQL", () => {
     expect(line("remittance").currency).toBeNull();
     expect(idLineAmount(line("eft").threshold)).toBe("500.00");
     expect(idLineAmount(line("virtual_currency").threshold)).toBe("0.00");
+
+    await pool.query(
+      `INSERT INTO jurisdiction_reports
+         (report_id, pack_id, code, name, kind, deadline_value, deadline_unit,
+          window_kind, window_days, comparator, cash_only)
+       VALUES
+         ('rpt-imm','pack-probe-v1','IMM','Immediate','suspicious',
+          NULL,'immediately','banking_day',NULL,'gte',false),
+         ('rpt-hrs','pack-probe-v1','HRS','Hours','suspicious',
+          24,'hours','rolling_days',30,'gt',true),
+         ('rpt-nth','pack-probe-v1','NTH','Monthly','suspicious',
+          15,'monthly_day','none',NULL,'gte',false),
+         ('rpt-before','pack-probe-v1','BEF','Before','suspicious',
+          NULL,'before_execution','none',NULL,'gte',true)`,
+    );
+    const shaped = async (id: string) =>
+      reportRuleFields(
+        (
+          await pool.query(
+            `SELECT deadline_value, deadline_unit, window_kind, window_days,
+                    comparator, direction, threshold_currency, cash_only
+               FROM jurisdiction_reports WHERE report_id=$1`,
+            [id],
+          )
+        ).rows[0],
+      );
+    expect(await shaped("rpt-imm")).toMatchObject({
+      deadlineUnit: "immediately",
+      deadlineValue: null,
+      windowKind: "banking_day",
+      windowDays: null,
+    });
+    expect(await shaped("rpt-hrs")).toMatchObject({
+      deadlineUnit: "hours",
+      deadlineValue: 24,
+      windowKind: "rolling_days",
+      windowDays: 30,
+      comparator: "gt",
+      cashOnly: true,
+    });
+    expect(await shaped("rpt-nth")).toMatchObject({
+      deadlineUnit: "monthly_day",
+      deadlineValue: 15,
+    });
+    expect(await shaped("rpt-before")).toMatchObject({
+      deadlineUnit: "before_execution",
+      deadlineValue: null,
+      cashOnly: true,
+    });
+
+    await pool.query(
+      `UPDATE jurisdiction_id_thresholds
+          SET comparator='gt', diligence='edd', cash_only=true
+        WHERE pack_id='pack-probe-v1' AND deal_kind='fx'`,
+    );
+    const fx = (
+      await pool.query(
+        `SELECT threshold, comparator, diligence, cash_only
+           FROM jurisdiction_id_thresholds
+          WHERE pack_id='pack-probe-v1' AND deal_kind='fx'`,
+      )
+    ).rows[0];
+    expect(fx.comparator).toBe("gt");
+    expect(fx.diligence).toBe("edd");
+    expect(fx.cash_only).toBe(true);
+    expect(idLineAmount(fx.threshold)).toBe("0.00");
 
     /* Taken back out. `jurisdiction` plus version is unique, and another
        suite in this same database inserts its own pack under ZZ. Leaving
@@ -357,29 +434,159 @@ postgres("pack rule fields against real PostgreSQL", () => {
     }
   });
 
-  it("leaves a posted deal pointing at the pack it was posted under", async () => {
-    await pool.query(
-      `INSERT INTO ledger_transactions
-         (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
-          workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
-          input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
-          source_of_funds, posted_at, deal_kind, received_instrument,
-          disbursed_instrument, jurisdiction_pack_id, jurisdiction_pack_version,
-          home_currency)
-       VALUES ('tx-pack-snap','ref-pack-snap','tnt-snap','le-snap','br-snap',
-               'ws-snap','till-snap','cust-snap','actor-snap','USD','CAD',
-               100,130,1.3,0,0,'travel','salary',now(),'exchange','cash','cash',
-               'pack-ca-v1',1,'CAD')
-       ON CONFLICT (transaction_id) DO NOTHING`,
-    );
-    const row = (
-      await pool.query(
-        `SELECT jurisdiction_pack_id, jurisdiction_pack_version, home_currency
-           FROM ledger_transactions WHERE transaction_id='tx-pack-snap'`,
-      )
-    ).rows[0];
-    expect(row.jurisdiction_pack_id).toBe("pack-ca-v1");
-    expect(Number(row.jurisdiction_pack_version)).toBe(1);
-    expect(text(row.home_currency)).toBe("CAD");
+  it("gives a blank country and an unknown country no pack, no FINTRAC and no CAD", async () => {
+    for (const [slug, country] of [
+      ["pack-blank-country", ""],
+      ["pack-rs", "RS"],
+    ] as const) {
+      await clearDesk(slug);
+      const setup: Record<string, unknown> = { country };
+      await provisionDesk(
+        handle.db,
+        {
+          businessName: "Unknown Desk",
+          legalName: "Unknown Desk Inc.",
+          ownerName: "Owner",
+          email: `${slug}@example.test`,
+          slug,
+          plan: "pro",
+          setup,
+          msbNumber: null,
+          regulator: "",
+          team: [],
+        },
+        "hash",
+        "test",
+      );
+      expect(setup.rulesUnavailable).toBe(true);
+      expect(setup.homeCurrency ?? "").not.toBe("CAD");
+      const entity = (
+        await pool.query(
+          `SELECT jurisdiction, jurisdiction_pack_id, home_currency
+             FROM legal_entities WHERE id=$1`,
+          [`le-${slug}`],
+        )
+      ).rows[0];
+      expect(entity.jurisdiction).not.toBe("FINTRAC");
+      expect(entity.jurisdiction_pack_id).toBeNull();
+      expect(entity.home_currency).toBeNull();
+    }
+  });
+
+const migrationSql = readFileSync(
+  new URL("../src/db/migrations/028_pack_rule_fields.sql", import.meta.url),
+  "utf8",
+);
+const migrationSlice = (name: string) => {
+  const start = migrationSql.indexOf(`-- ${name}:start`);
+  const end = migrationSql.indexOf(`-- ${name}:end`);
+  if (start < 0 || end < start) throw new Error(`missing ${name} slice`);
+  return migrationSql.slice(start, end);
+};
+
+  it("assigns a pack from home currency, and only once", async () => {
+    const client = await pool.connect();
+    const notices: string[] = [];
+    const onNotice = (message: { message?: string }) => {
+      notices.push(message.message ?? "");
+    };
+    client.on("notice", onNotice);
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO tenants (id, name) VALUES ('tnt-backfill', 'Backfill')`,
+      );
+      await client.query(
+        `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id)
+         VALUES
+           ('le-bf-cad','tnt-backfill','CAD desk','x','CAD',NULL),
+           ('le-bf-empty','tnt-backfill','Empty desk','x',NULL,NULL),
+           ('le-bf-gbp','tnt-backfill','GBP desk','x','GBP',NULL),
+           ('le-bf-aud','tnt-backfill','AUD desk','x','AUD',NULL),
+           ('le-bf-aed','tnt-backfill','AED desk','x','AED',NULL),
+           ('le-bf-eur','tnt-backfill','EUR desk','x','EUR',NULL),
+           ('le-bf-usd','tnt-backfill','USD desk','x','USD',NULL),
+           ('le-bf-rsd','tnt-backfill','RSD desk','x','RSD',NULL),
+           ('le-bf-kept','tnt-backfill','Already packed','x','CAD','pack-us-v1')`,
+      );
+      await client.query(
+        `INSERT INTO ledger_principals
+           (user_id, tenant_id, legal_entity_id, branch_id, workspace_id, till_id, role, authorized_branch_ids)
+         VALUES ('user-orphan','tnt-backfill','le-does-not-exist','br','ws','till','teller','[]')`,
+      );
+      await client.query(migrationSlice("pack-backfill"));
+      const packOf = async (id: string) =>
+        (
+          await client.query(
+            `SELECT jurisdiction_pack_id, jurisdiction_pack_version
+               FROM legal_entities WHERE id=$1`,
+            [id],
+          )
+        ).rows[0];
+      expect((await packOf("le-bf-cad")).jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(Number((await packOf("le-bf-cad")).jurisdiction_pack_version)).toBe(1);
+      expect((await packOf("le-bf-empty")).jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect((await packOf("le-bf-gbp")).jurisdiction_pack_id).toBe("pack-gb-v1");
+      expect((await packOf("le-bf-aud")).jurisdiction_pack_id).toBe("pack-au-v1");
+      expect((await packOf("le-bf-aed")).jurisdiction_pack_id).toBe("pack-ae-v1");
+      expect((await packOf("le-bf-eur")).jurisdiction_pack_id).toBe("pack-eu-v1");
+      expect((await packOf("le-bf-usd")).jurisdiction_pack_id).toBeNull();
+      expect((await packOf("le-bf-rsd")).jurisdiction_pack_id).toBeNull();
+      expect((await packOf("le-bf-kept")).jurisdiction_pack_id).toBe("pack-us-v1");
+      const stillMissing = await client.query(
+        `SELECT 1 FROM legal_entities WHERE id='le-does-not-exist'`,
+      );
+      expect(stillMissing.rowCount).toBe(0);
+      expect(notices.some((line) => line.includes("pack backfill:"))).toBe(true);
+
+      notices.length = 0;
+      await client.query(migrationSlice("pack-backfill"));
+      expect((await packOf("le-bf-cad")).jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect((await packOf("le-bf-usd")).jurisdiction_pack_id).toBeNull();
+      expect(notices.some((line) => /pack backfill: 0 legal_entities/.test(line))).toBe(true);
+      await client.query("ROLLBACK");
+    } finally {
+      client.removeListener("notice", onNotice);
+      client.release();
+    }
+  });
+
+  it("refuses to label an aggregation window that is not 24 hours", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE jurisdiction_reports
+            SET aggregation_hours = 48
+          WHERE pack_id = 'pack-ca-v1' AND code = 'LCTR'`,
+      );
+      await expect(client.query(migrationSlice("aggregation-guard"))).rejects.toThrow(
+        /not 24/,
+      );
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("does not copy a zero identification line into the per-deal table", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO jurisdiction_packs
+           (pack_id, jurisdiction, version, name, home_currency, regulator,
+            report_name, report_threshold, id_threshold, report_currency)
+         VALUES ('pack-zero-v1','QZ',1,'Zero','CAD','Z','NIL',10000,0,'CAD')`,
+      );
+      await client.query(migrationSlice("id-copy"));
+      const copied = await client.query(
+        `SELECT 1 FROM jurisdiction_id_thresholds WHERE pack_id='pack-zero-v1'`,
+      );
+      expect(copied.rowCount).toBe(0);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
   });
 });

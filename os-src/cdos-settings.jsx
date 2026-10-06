@@ -1647,7 +1647,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const shownRegimes = matched.length ? matched : Object.values(REGIMES);
           const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
           const rulesNotice = (window.CDOS.rulesNotice && window.CDOS.rulesNotice())
-            || (rulesMissing ? 'Rules for your country are not available yet' : '');
+            || (rulesMissing ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
           return (<div>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub="Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it." />
@@ -1670,18 +1670,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {!rulesNotice && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
-          {/* ---- reporting & thresholds ---- */}
-          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>
-          {/* The four lines the regulator sets and the desk may tighten.
-              They live on the ledger, they are enforced there, and each
-              one says where it stands against the pack — see
-              DeskThresholdRows at the top of this file. */}
-          <DeskThresholdRows />
+          {/* ---- reporting & thresholds ----
+              Hidden while this country has no pack. An override written
+              now would be a number with no rule behind it, and the server
+              refuses that write. */}
+          {rulesNotice ? null : <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>}
+          {rulesNotice ? null : <DeskThresholdRows />}
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>
-          <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
+          {rulesNotice ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {rulesNotice ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}

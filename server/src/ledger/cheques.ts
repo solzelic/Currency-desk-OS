@@ -57,6 +57,7 @@ import { withSerializationRetry } from "./retry.js";
 import {
   LedgerError,
   requireIdentification,
+  requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
@@ -317,6 +318,7 @@ export class ChequeService {
       }
 
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const currency = String(input.currency ?? "").trim().toUpperCase();
       /* IN SCOPE: a cheque written in the currency the desk's book is kept
@@ -678,6 +680,7 @@ export class ChequeService {
       );
 
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,

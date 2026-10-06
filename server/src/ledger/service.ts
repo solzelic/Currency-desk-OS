@@ -16,6 +16,7 @@ import {
 import {
   pairAllowed,
   resolvePack,
+  RULES_UNAVAILABLE_NOTICE,
   type JurisdictionPack,
 } from "./jurisdiction.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
@@ -172,6 +173,15 @@ export async function requireOpenTill(
    alternative is a silent hole in the desk's file. The browser follows
    the same rule for the reporting line — see `overReportingLimit` in
    os-src/cdos-base.jsx, which answers null rather than false. */
+/* A desk with no pack can be opened and looked at. It cannot post.
+   Verified or not, a quote or an exchange or a transfer: there is no
+   rule to post under, and guessing Canada's would be the bug this
+   exists to stop. */
+export function requireInstalledPack(pack: JurisdictionPack): void {
+  if (pack.available) return;
+  throw new LedgerError("no_jurisdiction_pack", RULES_UNAVAILABLE_NOTICE);
+}
+
 export async function requireIdentification(
   client: pg.PoolClient,
   actor: LedgerActor,
@@ -179,6 +189,7 @@ export async function requireIdentification(
   amountHome: Decimal,
   idStatus: unknown,
 ) {
+  requireInstalledPack(pack);
   if (idStatus === "verified") return;
   const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
   if (line === null)
@@ -276,6 +287,7 @@ export class LedgerService {
          the pilot's limitation written down as a rule — a customer with
          dollars who wants euros is ordinary business for a currency desk. */
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const permitted = pairAllowed(pack, row.from_currency, row.to_currency);
       if (!permitted.ok)
@@ -587,7 +599,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)",
         [
           transactionId,
           transactionRef,
@@ -625,6 +637,9 @@ export class LedgerService {
           "exchange",
           "cash",
           "cash",
+          pack.packId,
+          pack.version,
+          home,
         ],
       );
       for (const [account, side, value] of journal)
@@ -751,6 +766,7 @@ export class LedgerService {
          limitation and not a rule anywhere. It has to be asked inside the
          transaction because the pack is read through the same client. */
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const permitted = pairAllowed(pack, request.from, request.to);
       if (!permitted.ok)
         throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
@@ -920,7 +936,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)",
         [
           transactionId,
           transactionRef,
@@ -945,6 +961,9 @@ export class LedgerService {
           "exchange",
           "cash",
           "cash",
+          pack.packId,
+          pack.version,
+          pack.homeCurrency,
         ],
       );
       for (const [account, side, value] of journal)

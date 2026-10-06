@@ -12,21 +12,31 @@ backfilled alongside the CAD-named ones — nothing is renamed or retired yet.
 A pack can also name an identification line per kind of deal
 (`jurisdiction_id_thresholds`: foreign exchange, remittance, electronic
 funds transfer, virtual currency). Null means that kind has no line.
-Zero means every deal of that kind. The single `id_threshold` column
-on the pack is still what the posting gate reads. Seeded packs copy
-that column onto all four kinds, so the two agree. A report row can
-name a filing deadline, an aggregation window (`fixed_24h`,
-`calendar_month`, or `none`), a comparator (`gte` or `gt`), a cash
-direction, and the currency the threshold is written in. A threshold
-written in another currency is converted to home currency at the rate
-on the deal; the product does not convert yet. Seeded report rows were
-mapped onto those columns without changing a trigger amount.
-`aggregation_hours` is unchanged. A country with no installed pack
-resolves to no pack. It is not given the Canada pack.
+Zero means every deal of that kind. A line can say `gte` or `gt`, a
+due-diligence level (`identify`, `cdd`, `edd`), and whether it is
+cash-only. The single `id_threshold` column on the pack is still what
+the posting gate reads. Seeded packs copy a positive value of that
+column onto all four kinds, so the two agree. Zero on the old column
+is not copied. A report row can name a filing deadline (`immediately`,
+`hours`, `before_execution`, `monthly_day`, `calendar_days`,
+`business_days`), an aggregation window (`fixed_24h`, `calendar_month`,
+`rolling_days`, `banking_day`, or `none`), a comparator (`gte` or `gt`),
+a cash direction, whether it counts cash only, and the currency the
+threshold is written in. A threshold written in another currency is
+converted to home currency at the rate on the deal; the product does
+not convert yet. Seeded report rows were mapped onto those columns
+without changing a trigger amount. Only `aggregation_hours = 24` is
+labelled `fixed_24h`. A country with no installed pack resolves to no
+pack. It is not given the Canada pack, and it cannot post.
 
-Still to do: dual-write the generalized values on new postings (step 4),
-make them authoritative (step 5), and retire the CAD-specific columns
-(step 6). Compliance policy versioning is not started.
+A new exchange, transfer, or cheque movement stamps
+`jurisdiction_pack_id`, `jurisdiction_pack_version`, and `home_currency`
+on the transaction row. Rows written before that are not rewritten.
+
+Still to do: dual-write the generalized fee and spread amounts on every
+posting (step 4; cheques already do this), make them authoritative
+(step 5), and retire the CAD-specific columns (step 6). Compliance
+policy versioning is not started.
 
 ## Target Configuration
 

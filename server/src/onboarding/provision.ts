@@ -108,8 +108,11 @@ export function specFromAnswers(
   resolved: Record<string, Resolved>,
   application?: { details?: Record<string, unknown> | null } | null,
 ): DeskSpec {
-  const country = str(resolved, "country") || "CA";
-  const j = JURISDICTION[country] ?? JURISDICTION.CA!;
+  /* A blank country, or one this list does not know ("RS", "Somewhere
+     else"), is not Canada. It does not get FINTRAC, and it does not get
+     CAD, unless the setup actually named a home currency. */
+  const country = str(resolved, "country");
+  const j = country ? JURISDICTION[country] : undefined;
   const businessName = str(resolved, "operatingName");
   const legalName = str(resolved, "bizName") || businessName;
 
@@ -150,7 +153,7 @@ export function specFromAnswers(
     slug,
     plan: PLAN_TIER[planId] ?? "premium",
     msbNumber: str(resolved, "msbNumber") || null,
-    regulator: str(resolved, "regulator") || j.regulator,
+    regulator: str(resolved, "regulator") || j?.regulator || "",
     team,
     /* The whole picture, in the design's own words. A desk that cannot say
        what spread it opened on, or who its compliance officer is, has
@@ -164,10 +167,10 @@ export function specFromAnswers(
       promo: val("promo") ?? "",
 
       country,
-      regulator: str(resolved, "regulator") || j.regulator,
-      homeCurrency: str(resolved, "homeCurrency") || j.currency,
-      reportThreshold: val("reportThreshold") ?? j.reportThreshold,
-      reportName: val("reportName") ?? j.report,
+      regulator: str(resolved, "regulator") || j?.regulator || "",
+      homeCurrency: str(resolved, "homeCurrency") || j?.currency || "",
+      reportThreshold: val("reportThreshold") ?? j?.reportThreshold ?? null,
+      reportName: val("reportName") ?? j?.report ?? "",
       idThreshold: typedIdentificationLine(val("idOver")),
 
       operatingName: businessName,
@@ -176,7 +179,7 @@ export function specFromAnswers(
       address: {
         street: str(resolved, "street"), city: str(resolved, "city"),
         region: str(resolved, "region"), postal: str(resolved, "postal"),
-        country: str(resolved, "country_addr") || j.country,
+        country: str(resolved, "country_addr") || j?.country || country,
       },
 
       phone: str(resolved, "phone"),
@@ -291,7 +294,12 @@ export async function provisionDesk(
   if (!pack) setup.rulesUnavailable = true;
   if (pack && typedIdentificationLine(setup.idThreshold) == null) {
     const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
-    if (line != null && line > 0) setup.idThreshold = line;
+    /* A positive amount fills the blank box. Zero means every deal on
+       the pack's own table, and it is not written back into this field,
+       because zero here means the box was left empty. */
+    if (line.status === "amount") {
+      setup.idThreshold = Number(line.amount.toDecimalPlaces(2).toFixed(2));
+    }
   }
   const statedHome =
     typeof setup.homeCurrency === "string" ? setup.homeCurrency.trim().toUpperCase() : "";

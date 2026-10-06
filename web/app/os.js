@@ -501,7 +501,7 @@
      the server's. The fallback is the same words, for a desk whose setup
      already recorded that before the jurisdiction call returned. */
   let _rulesNotice = null;
-  const RULES_NOTICE = 'Rules for your country are not available yet';
+  const RULES_NOTICE = 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.';
   const rulesNotice = () => _rulesNotice;
   function rulesMissing(settings) {
     const pack = _pack;
@@ -623,7 +623,7 @@
         amount: null,
         currency,
         code: null,
-        label: '—'
+        label: RULES_NOTICE
       };
     }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
@@ -662,7 +662,7 @@
       return {
         amount: null,
         currency,
-        label: '—'
+        label: RULES_NOTICE
       };
     }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
@@ -839,7 +839,7 @@
     if (!book) return '';
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
-  const fmt = (n, c) => isNaN(n) || n === '' ? '' : new Intl.NumberFormat('en-CA', {
+  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency: c || 'CAD',
     maximumFractionDigits: 2
@@ -2995,8 +2995,8 @@
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
-      const idFloor = +settings.idRequiredOver || 3000;
-      const idNeeded = single || cadIn(row) >= idFloor;
+      const idFloor = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
+      const idNeeded = idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
       map[row.id] = {
         single,
         str,
@@ -9624,7 +9624,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const matched = Object.values(REGIMES).filter(r => r.country === myCountry);
       const shownRegimes = matched.length ? matched : Object.values(REGIMES);
       const rulesMissing = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
-      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (rulesMissing ? 'Rules for your country are not available yet' : '');
+      const rulesNotice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (rulesMissing ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
       const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
         icon: "shield",
@@ -9752,13 +9752,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), /*#__PURE__*/React.createElement("div", {
+      }, "This stays flagged in the notification bell at the top of the app until every value is back within ", jv[0].authority, " limits."))), rulesNotice ? null : /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-1",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), rulesNotice ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), rulesNotice ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -9776,7 +9776,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), /*#__PURE__*/React.createElement(Row, {
+      }, settings.aggWindowStart || '00:00')), rulesNotice ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -32634,7 +32634,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       idAt: 3000
     };
     const TH = limit.amount;
-    const idFloor = regime.idAt || 3000;
+    const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+    const idFloor = paused ? null : regime.idAt || 3000;
     const rec = clients[customer];
     const kyc = !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
@@ -32642,7 +32643,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const single = TH != null && inCadEquiv >= TH;
-    const idRequired = single || inCadEquiv >= idFloor || isSend; // remittance always needs sender ID
+    const idRequired = !paused && (single || idFloor != null && inCadEquiv >= idFloor || isSend); // remittance always needs sender ID
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
@@ -36450,7 +36451,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       });
       return c;
     }, [transfers]);
-    const reportableOpen = transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
+    const reportableOpen = threshold == null ? 0 : transfers.filter(t => t.status !== 'cancelled' && t.status !== 'paid' && (t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')) >= threshold).length;
     const list = useMemo(() => transfers.filter(t => {
       if (filter === 'all') return true;
       if (filter === 'hold') return t.status === 'hold';
@@ -36521,7 +36522,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const cor = corOf(t.corridor);
       const dir = t.direction;
       const cadAmt = dir === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD');
-      const rpt = cadAmt >= threshold;
+      const rpt = threshold != null && cadAmt >= threshold;
       return /*#__PURE__*/React.createElement("button", {
         key: t.id,
         onClick: () => onOpen(t.id),
@@ -36877,10 +36878,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const corOf = id => corridors.find(c => c.id === id) || {};
     const threshold = reportingLimit(settings).amount;
-    const eft = useMemo(() => transfers.filter(t => t.status !== 'cancelled').map(t => ({
+    const eft = useMemo(() => threshold == null ? [] : transfers.filter(t => t.status !== 'cancelled').map(t => ({
       t,
       cad: t.direction === 'send' ? t.payAmt : cadOf(t.recvAmt, 'CAD')
-    })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers]);
+    })).filter(x => x.cad >= threshold).sort((a, b) => b.cad - a.cad), [transfers, threshold]);
     const total = eft.reduce((s, x) => s + x.cad, 0);
     const print = () => {
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
@@ -40556,7 +40557,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const completeInstances = []; // Section 4 (completing action + beneficiary)
     txns.forEach((r, i) => {
       const cad = cadIn(r);
-      const above = cad >= TH;
+      const above = TH != null && cad >= TH;
       const method = r.type === 'Cheque Cashing' ? 'Cheque' : 'Cash';
       const cap = r.capture || null; // point-of-sale capture pre-fills the prompts
       txInstances.push({
@@ -41878,7 +41879,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     // single international transfers at/over threshold
     transfers.filter(t => t.status !== 'cancelled').forEach(t => {
       const cad = t.direction === 'send' ? t.payAmt : t.recvAmt / xr(t.ccy);
-      if (cad >= regime.threshold) out.push({
+      if (regime.threshold != null && cad >= regime.threshold) out.push({
         id: 'E-' + t.ref,
         groupId: 'E-' + t.ref,
         kind: regime.wireCode,
@@ -42574,7 +42575,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), "."))));
+    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -42944,7 +42945,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), "."))));
+    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== SUBMISSIONS (worksheet → sealed filing) ===================== */
@@ -43762,7 +43763,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold")))), /*#__PURE__*/React.createElement("div", {
+    }, regime.threshold == null ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
     }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
@@ -65160,7 +65161,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }), " ", /*#__PURE__*/React.createElement("span", {
       className: "mb-menu-lbl"
     }, "Sign out"))))))), (() => {
-      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.rulesUnavailable ? 'Rules for your country are not available yet' : '');
+      const notice = window.CDOS.rulesNotice && window.CDOS.rulesNotice() || (settings.rulesUnavailable ? 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.' : '');
       if (!notice) return null;
       return /*#__PURE__*/React.createElement("div", {
         role: "status",

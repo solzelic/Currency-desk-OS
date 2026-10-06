@@ -70,6 +70,7 @@ import { resolveReportThreshold } from "./thresholds.js";
 import {
   LedgerError,
   requireIdentification,
+  requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
@@ -535,6 +536,7 @@ export class ObligationService {
       await authorizeLedgerActor(client, actor, "transaction:post");
       await requireOpenTill(client, actor);
       const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       const home = pack.homeCurrency;
       const spec = build(home);
       if (
@@ -675,6 +677,9 @@ export class ObligationService {
         transactionRef,
         now,
         customerId: spec.customerId,
+        packId: pack.packId,
+        packVersion: pack.version,
+        homeCurrency: home,
         dealKind: spec.dealKind,
         receivedInstrument: spec.receivedInstrument,
         disbursedInstrument: spec.disbursedInstrument,
@@ -949,11 +954,16 @@ export class ObligationService {
       const transactionId = `tx_${randomUUID()}`;
       const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
       const settling = ending === "settled";
+      const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
         now,
         customerId: obligation.customer_id,
+        packId: pack.packId,
+        packVersion: pack.version,
+        homeCurrency: pack.homeCurrency,
         dealKind: settling ? "obligation_settlement" : "obligation_write_off",
         /* No cash and no counter. Money moves between the desk and its
            bank on a settlement, and on a write-off nothing moves at
@@ -1275,6 +1285,9 @@ export class ObligationService {
       crossBorder: boolean;
       cashInHome: Decimal;
       cashOutHome: Decimal;
+      packId: string;
+      packVersion: number;
+      homeCurrency: string;
       from: string;
       to: string;
       inputAmount: Decimal;
@@ -1303,8 +1316,9 @@ export class ObligationService {
           customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,
           fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,
           compliance_captured_by,compliance_captured_at,posted_at,
-          deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28)`,
+          deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home,
+          jurisdiction_pack_id,jurisdiction_pack_version,home_currency)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1335,6 +1349,9 @@ export class ObligationService {
         row.crossBorder,
         fixed(row.cashInHome),
         fixed(row.cashOutHome),
+        row.packId,
+        row.packVersion,
+        row.homeCurrency,
       ],
     );
     for (const [account, side, value] of row.journal) {

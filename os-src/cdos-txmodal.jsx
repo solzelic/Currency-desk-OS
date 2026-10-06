@@ -449,7 +449,8 @@
     const limit = reportingLimit(settings);
     const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : { largeCode: limit.code, threshold: limit.amount, idAt: 3000 };
     const TH = limit.amount;
-    const idFloor = regime.idAt || 3000;
+    const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
+    const idFloor = paused ? null : (regime.idAt || 3000);
     const rec = clients[customer];
     const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
     /* Null-safe: with no threshold the honest answer is "cannot say", and
@@ -457,7 +458,7 @@
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const single = TH != null && inCadEquiv >= TH;
-    const idRequired = single || inCadEquiv >= idFloor || isSend;   // remittance always needs sender ID
+    const idRequired = !paused && (single || (idFloor != null && inCadEquiv >= idFloor) || isSend);   // remittance always needs sender ID
     const idOk = kyc === 'ok';
     const recentTotal = useMemo(() => {
       if (!customer) return 0;

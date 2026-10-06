@@ -393,7 +393,7 @@
      the server's. The fallback is the same words, for a desk whose setup
      already recorded that before the jurisdiction call returned. */
   let _rulesNotice = null;
-  const RULES_NOTICE = 'Rules for your country are not available yet';
+  const RULES_NOTICE = 'Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.';
   const rulesNotice = () => _rulesNotice;
   function rulesMissing(settings) {
     const pack = _pack;
@@ -501,7 +501,7 @@
   function reportingLimit(settings) {
     if (rulesMissing(settings)) {
       const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
-      return { amount: null, currency, code: null, label: '—' };
+      return { amount: null, currency, code: null, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('reportThreshold') != null ? _serverLine('reportThreshold')
@@ -543,7 +543,7 @@
   function identificationLimit(settings) {
     if (rulesMissing(settings)) {
       const currency = (_pack && _pack.homeCurrency) || (settings && settings.baseCurrency) || null;
-      return { amount: null, currency, label: '—' };
+      return { amount: null, currency, label: RULES_NOTICE };
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const amount = _serverLine('idThreshold') != null ? _serverLine('idThreshold')
@@ -642,7 +642,7 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => isNaN(n) || n === '' ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
+  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
 

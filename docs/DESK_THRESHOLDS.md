@@ -85,6 +85,12 @@ refuses to post a deal at or above it for a customer nobody has identified,
 on both posting paths, **in the currency the pack states the book is kept
 in**.
 
+A desk with no pack is not given a line to move. Quote, exchange,
+transfer, and frozen-quote posting all refuse with `no_jurisdiction_pack`,
+including a verified customer and including an owner writing a threshold
+override. The Settings editors for those lines are hidden, and the till
+says deals are paused.
+
 It used to be this, in a code path documented as jurisdiction-neutral:
 
 ```ts

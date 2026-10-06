@@ -10,10 +10,12 @@
    the books are kept in, who the regulator is, what has to be reported
    and over what, and whether foreign-to-foreign deals are permitted.
 
-   Everything a desk posts snapshots the pack and version it was posted
-   under, so installing a new pack — or correcting a threshold — can never
-   change what already happened.
+   A new posting stamps the pack id and version it was posted under, so
+   installing a new pack — or correcting a threshold — does not change
+   what already happened. Rows written before that stamp was added are
+   left as they are.
    ============================================================ */
+import Decimal from "decimal.js";
 import { sql } from "drizzle-orm";
 import type pg from "pg";
 
@@ -54,7 +56,7 @@ export type IdDealKind = (typeof ID_DEAL_KINDS)[number];
 export const SETUP_ID_DEAL: IdDealKind = "fx";
 
 export const RULES_UNAVAILABLE_NOTICE =
-  "Rules for your country are not available yet";
+  "Rules for your country are not available yet, so deals are paused. We will let you know when they are ready.";
 
 export type InstalledPack = {
   packId: string;
@@ -229,27 +231,62 @@ export function requirePackForCountry(country: string): InstalledPack {
   return pack;
 }
 
+/* One identification line, as a tagged result. No floats.
+   not_applicable — this kind of deal has no line
+   every_deal     — zero, so every deal of this kind
+   amount         — a positive amount, as a Decimal
+   unavailable    — the pack tables are not on this database */
+export type PackIdLine =
+  | { status: "not_applicable" }
+  | { status: "every_deal" }
+  | { status: "amount"; amount: Decimal }
+  | { status: "unavailable" };
+
+/* Only a missing table. Any other database error is a real failure
+   and has to reach the caller. Drizzle sometimes wraps the driver
+   error, so the code is read on the error and on its cause. */
+function undefinedTable(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if ((current as { code?: string }).code === "42P01") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /* Read one identification line off the pack.
-   Null means that kind of deal has no line. Zero means every deal.
    A database without the pack tables — the embedded one, which does
    not run these migrations — falls back to the pack's single
-   id_threshold. It never falls back to the report threshold. */
+   id_threshold. Zero on that old column means the number was never
+   stated, so it is not_applicable. It never falls back to the report
+   threshold. */
 export async function packIdThreshold(
   db: { execute: (query: ReturnType<typeof sql>) => Promise<unknown> },
   packId: string,
   dealKind: IdDealKind,
-): Promise<number | null> {
+): Promise<PackIdLine> {
   const first = (found: unknown): Record<string, unknown> | undefined => {
     const rows =
       (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     return rows[0] as Record<string, unknown> | undefined;
   };
-  const asNumber = (value: unknown, allowZero: boolean): number | null => {
-    if (value === null || value === undefined || value === "") return null;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) return null;
-    if (parsed === 0 && !allowZero) return null;
-    return parsed;
+  const classify = (value: unknown, allowZero: boolean): PackIdLine => {
+    if (value === null || value === undefined || value === "") {
+      return { status: "not_applicable" };
+    }
+    let parsed: Decimal;
+    try {
+      parsed = new Decimal(String(value));
+    } catch {
+      return { status: "not_applicable" };
+    }
+    if (!parsed.isFinite() || parsed.isNegative()) return { status: "not_applicable" };
+    if (parsed.isZero()) {
+      return allowZero ? { status: "every_deal" } : { status: "not_applicable" };
+    }
+    return { status: "amount", amount: parsed };
   };
   try {
     const row = first(
@@ -257,9 +294,9 @@ export async function packIdThreshold(
         sql`SELECT threshold FROM jurisdiction_id_thresholds WHERE pack_id = ${packId} AND deal_kind = ${dealKind}`,
       ),
     );
-    if (row && "threshold" in row) return asNumber(row.threshold, true);
-  } catch {
-    /* The per-deal table is not on this database. Try the single column. */
+    if (row && "threshold" in row) return classify(row.threshold, true);
+  } catch (error) {
+    if (!undefinedTable(error)) throw error;
   }
   try {
     const row = first(
@@ -267,8 +304,10 @@ export async function packIdThreshold(
         sql`SELECT id_threshold FROM jurisdiction_packs WHERE pack_id = ${packId}`,
       ),
     );
-    return asNumber(row?.id_threshold, false);
-  } catch {
-    return null;
+    if (!row) return { status: "unavailable" };
+    return classify(row.id_threshold, false);
+  } catch (error) {
+    if (!undefinedTable(error)) throw error;
+    return { status: "unavailable" };
   }
 }
