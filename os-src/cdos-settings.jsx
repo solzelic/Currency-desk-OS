@@ -267,6 +267,7 @@
     const standingOf = (settingsField) => posture.find(p => p.field === settingsField) || null;
     const line = (field) => (desk && desk[field]) || null;
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const euAmlr = (desk && desk.packId === 'pack-eu-v2') || (packNow && packNow.packId === 'pack-eu-v2');
     const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
     const currency = (desk && desk.currency) || settings.baseCurrency || '';
     const authority = baselineNow
@@ -306,6 +307,13 @@
     />);
 
     return (<div>
+      {euAmlr ? (
+        <Row
+          title="Large cash report"
+          desc="Regulation 2024/1624 does not set a European Union large-cash report. Suspicious activity is reported to your national financial intelligence unit at any amount, including an attempt.">
+          <span className="text-[12px]" style={{ color: CD.mute }} data-testid="eu-no-large-cash">Not required</span>
+        </Row>
+      ) : (<>
       <Row
         title={<span className="flex items-center gap-1.5">Large cash / reportable threshold {reportTip}</span>}
         desc={`Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`}>
@@ -317,10 +325,13 @@
       </Row>
       <PostureNote p={standingOf('threshold')} />
       <Release field="reportThreshold" label="Reporting threshold" />
+      </>)}
 
       <Row
         title="Require ID over"
-        desc="The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report.">
+        desc={euAmlr
+          ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here."
+          : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."}>
         {status === 'ready'
           ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}
               currency={currency} disabled={disabled}
@@ -332,19 +343,24 @@
 
       <Row
         title="Aggregation window"
-        desc="Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one.">
-        {status === 'ready'
-          ? <Seg value={String((line('aggregationHours') || {}).effective || 24)}
-              onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
-              opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />
-          : unavailable}
+        desc={euAmlr && (line('aggregationHours') || {}).effective == null
+          ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
+          : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."}>
+        {status !== 'ready' ? unavailable
+          : euAmlr && (line('aggregationHours') || {}).effective == null
+            ? <span className="text-[12px]" style={{ color: CD.mute }} data-testid="eu-no-aggregation">Not stated</span>
+            : <Seg value={String((line('aggregationHours') || {}).effective || 24)}
+                onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
+                opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
       </Row>
       <PostureNote p={standingOf('aggHours')} />
       <Release field="aggregationHours" label="Aggregation window" />
 
       <Row
         title="Record retention"
-        desc="How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call.">
+        desc={euAmlr
+          ? "Records are kept for 5 years after the relationship ends, or after the occasional transaction. A competent authority may require a further period, case by case."
+          : "How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call."}>
         {status === 'ready'
           ? <select value={(line('retentionYears') || {}).effective || 5}
               disabled={disabled}
@@ -1670,6 +1686,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         </div>)}
 
         {tab === 'compliance' && (() => {
+          const describeEuLine = (line) => {
+            if (!line) return '';
+            const how = line.comparator === 'gt' ? 'more than' : 'at or above';
+            const amount = line.threshold == null ? 'every deal' : `${how} ${line.threshold} ${line.currency || ''}`.trim();
+            if (line.lineId === 'cash_identify') return `Cash identification ${amount}`;
+            if (line.lineId === 'occasional_cdd') return `Full customer due diligence ${amount}`;
+            if (line.lineId === 'transfer_cdd') return `Transfer customer due diligence ${amount} (${line.dealKind === 'eft' ? 'electronic transfer' : 'remittance'})`;
+            return `${line.diligence || 'identify'} ${amount}`;
+          };
           const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
           const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
           const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
@@ -1732,7 +1757,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 </div>
                 <span className="text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> ACTIVE</span>
               </div>
-              <div className="text-[11px]" style={{ color: CD.mute }}>{pack.reportName || ''}</div>
+              {pack.reportName ? <div className="text-[11px]" style={{ color: CD.mute }}>{pack.reportName}</div> : null}
+              {pack.packId === 'pack-eu-v2' && (
+                <div className="text-[12px] mt-2" style={{ color: CD.ink }} data-testid="eu-amlr-lines">
+                  {(pack.idThresholds || []).map(line => (
+                    <div key={(line.lineId || '') + (line.dealKind || '')} className="mt-1">{describeEuLine(line)}</div>
+                  ))}
+                  <div className="mt-1">Suspicious Transaction Report to your national financial intelligence unit, at any amount. No large-cash report.</div>
+                </div>
+              )}
+              {pack.packId === 'pack-eu-v1' && isOwner && (
+                <button type="button" data-testid="eu-amlr-opt-in" className="mt-3 text-[12px] font-semibold px-3 py-1.5"
+                  style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, border: 'none', cursor: 'pointer' }}
+                  onClick={async () => {
+                    const api = window.CDOS && window.CDOS.Backend;
+                    if (!api || !api.optInEuAmlr) return;
+                    await api.optInEuAmlr();
+                    if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+                    if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+                    setSettings(s => ({ ...s }));
+                  }}>Use the 2027 EU rules</button>
+              )}
             </div>
           )}
           {standalone && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
@@ -1753,11 +1798,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               Hidden only when even the baseline pack is missing. A
               baseline desk keeps these editors: it is operating. */}
           {paused ? null : <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>}
-          {paused ? null : <DeskThresholdRows />}
+          {paused ? null : <DeskThresholdRows key={(pack && pack.packId) || 'thresholds'} />}
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          {paused ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {paused || (pack && pack.packId === 'pack-eu-v2') ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
           {paused ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
           <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
 
@@ -1785,7 +1830,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             </details>
           </div>
 
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</span></div>
+          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : <>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</>}</span></div>
         </div>); })()}
 
         {tab === 'rates' && (<div>

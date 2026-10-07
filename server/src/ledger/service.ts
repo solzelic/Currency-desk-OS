@@ -18,7 +18,9 @@ import {
   type IdentificationDeal,
 } from "./canada-rules.js";
 import { baselineIdentification, type ComplianceStamp } from "./compliance-gate.js";
+import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
+  EU_AMLR_PACK_ID,
   pairAllowed,
   resolvePack,
   RULES_UNAVAILABLE_NOTICE,
@@ -213,6 +215,35 @@ export async function requireIdentification(
   deal: IdentificationDeal,
 ): Promise<ComplianceStamp> {
   requireInstalledPack(pack);
+  /* The 2027 EU pack has three lines, not the single identification
+     number every other country pack still uses. A missing line fails
+     closed. Customer due diligence also asks for the purpose and the
+     source of funds, including when the customer is already verified. */
+  if (pack.packId === EU_AMLR_PACK_ID) {
+    const duty = euAmlrDuty({
+      lines: await loadEuAmlrLines(client, pack.packId),
+      amountHome,
+      dealKind: deal.kind,
+      cash: deal.cash,
+      deskCashIdentify: await deskIdLine(client, actor.legalEntityId),
+    });
+    const stamp: ComplianceStamp = { rate: "1.000000000000", rateAt: null };
+    if (duty.failClosed || (idStatus !== "verified" && duty.identify)) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        duty.failClosed
+          ? "This desk's European Union rules are incomplete, so it cannot tell whether this customer needs to be identified."
+          : "Authoritative compliance policy blocked posting.",
+      );
+    }
+    if (duty.cdd && (!(deal.purpose ?? "").trim() || !(deal.sourceOfFunds ?? "").trim())) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "This deal needs customer due diligence, so it cannot be posted without its purpose and source of funds.",
+      );
+    }
+    return stamp;
+  }
   const priced = pack.baseline
     ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
     : { block: false, rate: "1.000000000000", rateAt: null };
@@ -463,6 +494,8 @@ export class LedgerService {
           cashIn: true,
           customerId: quote.customerId,
           onBehalfOf: quote.thirdParty ? quote.thirdPartyName : null,
+          purpose: quote.purpose,
+          sourceOfFunds: quote.sourceOfFunds,
         },
       );
       const destination = await client.query(
@@ -932,6 +965,8 @@ export class LedgerService {
           cashIn: true,
           customerId: request.customerId,
           onBehalfOf: request.thirdParty ? request.thirdPartyName : null,
+          purpose: request.purpose,
+          sourceOfFunds: request.sourceOfFunds,
         },
       );
       /* Purpose and source of funds, over the desk's REPORTING line — the
@@ -939,7 +974,10 @@ export class LedgerService {
          hardcoded 10,000 in a book that might be kept in dirhams, where
          the figure is 55,000. Resolved from the same place, and a capture
          that is present clears it whatever the line turns out to be. */
-      if (!request.purpose.trim() || !request.sourceOfFunds.trim()) {
+      /* The 2027 EU pack has no large-cash report, so an empty reporting
+         line is not "purpose on every deal". Due diligence asks for it
+         inside requireIdentification, and only when that line is hit. */
+      if (pack.packId !== EU_AMLR_PACK_ID && (!request.purpose.trim() || !request.sourceOfFunds.trim())) {
         const reporting = await resolveReportThreshold(
           client,
           actor.legalEntityId,

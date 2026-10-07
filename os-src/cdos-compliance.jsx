@@ -266,7 +266,10 @@
     const baseline = isBaselinePack(pack);
     const listed = reports.length ? reports : (baseline ? BASELINE_REPORTS : []);
     const byCode = (code) => listed.find(r => r && r.code === code) || null;
-    const large = listed.find(r => r && (r.kind === 'large_cash' || r.code === (pack.reportName || 'CASH-RECORD'))) || byCode('CASH-RECORD');
+    /* A suspicious report is not a large-cash report, even when its code
+       is the only name the pack printed. Match the kind. */
+    const large = listed.find(r => r && r.kind === 'large_cash')
+      || (baseline ? byCode('CASH-RECORD') : null);
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));

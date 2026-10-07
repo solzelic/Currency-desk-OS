@@ -116,7 +116,12 @@ No destructive rename occurs in the initial migration.
 
 - Canada: `homeCurrency=CAD`; CAD/USD allowed.
 - United States: `homeCurrency=USD`; USD/EUR allowed.
-- Eurozone: `homeCurrency=EUR`; EUR/GBP allowed.
+- Eurozone: `homeCurrency=EUR`; EUR/GBP allowed. New desks open on
+  `pack-eu-v2` (EU AMLR 2027, Regulation (EU) 2024/1624, applies
+  10 July 2027). `pack-eu-v1` stays installed and is not edited.
+  Existing desks stay on it until they opt in. Non-euro member
+  states need a later local layer; this pack's thresholds are in EUR.
+  See `docs/EU_AMLR_PACK.md`.
 
 **Amended:** this document originally specified that a deal without the home
 currency on one side is rejected — "USD/EUR rejected" for Canada. That was

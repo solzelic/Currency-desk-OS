@@ -65,7 +65,7 @@ import Decimal from "decimal.js";
 import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
-import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
+import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import {
@@ -635,6 +635,8 @@ export class ObligationService {
           customerId: spec.customerId,
           onBehalfOf: spec.capture.thirdPartyName,
           beneficiaryName: spec.beneficiaryName,
+          purpose: spec.capture.purpose,
+          sourceOfFunds: spec.capture.sourceOfFunds,
         },
       );
       if (
@@ -650,7 +652,9 @@ export class ObligationService {
         );
         if (gap) throw new LedgerError("BENEFICIARY_RECORD", gap);
       }
-      if (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim()) {
+      /* Same as an exchange: the 2027 EU pack has no amount report, so
+         a missing reporting line must not demand purpose on every transfer. */
+      if (pack.packId !== EU_AMLR_PACK_ID && (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim())) {
         const reporting = await resolveReportThreshold(
           client,
           actor.legalEntityId,

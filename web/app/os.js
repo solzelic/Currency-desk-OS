@@ -556,7 +556,10 @@
   const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
     const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
-    _rulesNotice = baseline || _pack && _pack.available === false ? notice || BASELINE_NOTICE : null;
+    /* A country pack can carry a notice of its own. The 2027 EU pack
+       does, until the date those rules apply. A baseline desk with no
+       sentence from the server still gets the international one. */
+    if (notice) _rulesNotice = notice;else if (baseline || _pack && _pack.available === false) _rulesNotice = BASELINE_NOTICE;else _rulesNotice = null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try {
@@ -579,7 +582,10 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      if (answer && answer.pack) {
+        answer.pack.idThresholds = Array.isArray(answer.idThresholds) ? answer.idThresholds : [];
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      }
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
@@ -2396,6 +2402,14 @@
         return request("/api/ledger/desk-thresholds", {
           method: "PUT",
           body: JSON.stringify(changes),
+        });
+      },
+      /* One-way. A desk on the published EU pack moves to the 2027 rules.
+         Posted deals keep the pack they were stamped with. */
+      optInEuAmlr: function () {
+        return request("/api/ledger/jurisdiction-pack/eu-amlr", {
+          method: "POST",
+          body: "{}",
         });
       },
 
@@ -5121,6 +5135,7 @@
     const standingOf = settingsField => posture.find(p => p.field === settingsField) || null;
     const line = field => desk && desk[field] || null;
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const euAmlr = desk && desk.packId === 'pack-eu-v2' || packNow && packNow.packId === 'pack-eu-v2';
     const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
     const currency = desk && desk.currency || settings.baseCurrency || '';
     const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
@@ -5169,7 +5184,16 @@
       }],
       example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
+    return /*#__PURE__*/React.createElement("div", null, euAmlr ? /*#__PURE__*/React.createElement(Row, {
+      title: "Large cash report",
+      desc: "Regulation 2024/1624 does not set a European Union large-cash report. Suspicious activity is reported to your national financial intelligence unit at any amount, including an attempt."
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      },
+      "data-testid": "eu-no-large-cash"
+    }, "Not required")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Row, {
       title: /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5"
       }, "Large cash / reportable threshold ", reportTip),
@@ -5184,9 +5208,9 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "reportThreshold",
       label: "Reporting threshold"
-    }), /*#__PURE__*/React.createElement(Row, {
+    })), /*#__PURE__*/React.createElement(Row, {
       title: "Require ID over",
-      desc: "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
+      desc: euAmlr ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here." : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('idThreshold') && line('idThreshold').effective,
       currency: currency,
@@ -5199,19 +5223,25 @@
       label: "Identification threshold"
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
-      desc: "Same person, cash-in within this window is summed against the reporting threshold \u2014 automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
-    }, status === 'ready' ? /*#__PURE__*/React.createElement(Seg, {
+      desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
+    }, status !== 'ready' ? unavailable : euAmlr && (line('aggregationHours') || {}).effective == null ? /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      },
+      "data-testid": "eu-no-aggregation"
+    }, "Not stated") : /*#__PURE__*/React.createElement(Seg, {
       value: String((line('aggregationHours') || {}).effective || 24),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+    })), /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
     }), /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Record retention",
-      desc: "How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call."
+      desc: euAmlr ? "Records are kept for 5 years after the relationship ends, or after the occasional transaction. A competent authority may require a further period, case by case." : "How long a filed report and the records behind it are kept. Your pack states the minimum your regulator requires; keeping them longer is your own call."
     }, status === 'ready' ? /*#__PURE__*/React.createElement("select", {
       value: (line('retentionYears') || {}).effective || 5,
       disabled: disabled,
@@ -9696,6 +9726,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 13,
       c: "var(--cd-brass-text)"
     }), /*#__PURE__*/React.createElement("span", null, "The live rate engine settles cash in CAD. Switching the base currency converts and relabels your thresholds and reported totals at the current mid-rate; live drawer counts stay in the currency held."))), tab === 'compliance' && (() => {
+      const describeEuLine = line => {
+        if (!line) return '';
+        const how = line.comparator === 'gt' ? 'more than' : 'at or above';
+        const amount = line.threshold == null ? 'every deal' : `${how} ${line.threshold} ${line.currency || ''}`.trim();
+        if (line.lineId === 'cash_identify') return `Cash identification ${amount}`;
+        if (line.lineId === 'occasional_cdd') return `Full customer due diligence ${amount}`;
+        if (line.lineId === 'transfer_cdd') return `Transfer customer due diligence ${amount} (${line.dealKind === 'eft' ? 'electronic transfer' : 'remittance'})`;
+        return `${line.diligence || 'identify'} ${amount}`;
+      };
       const REGIMES = (window.CDOS._compliance || {}).REGIMES || {};
       const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
       const baseline = !!(pack && (pack.baseline === true || pack.kind === 'baseline')) || !!(settings && settings.baselineRules && !(pack && pack.packId));
@@ -9842,12 +9881,44 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "check",
         s: 10,
         c: "var(--cd-on-ink)"
-      }), " ACTIVE")), /*#__PURE__*/React.createElement("div", {
+      }), " ACTIVE")), pack.reportName ? /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
         style: {
           color: CD.mute
         }
-      }, pack.reportName || '')), standalone && /*#__PURE__*/React.createElement("div", {
+      }, pack.reportName) : null, pack.packId === 'pack-eu-v2' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-2",
+        style: {
+          color: CD.ink
+        },
+        "data-testid": "eu-amlr-lines"
+      }, (pack.idThresholds || []).map(line => /*#__PURE__*/React.createElement("div", {
+        key: (line.lineId || '') + (line.dealKind || ''),
+        className: "mt-1"
+      }, describeEuLine(line))), /*#__PURE__*/React.createElement("div", {
+        className: "mt-1"
+      }, "Suspicious Transaction Report to your national financial intelligence unit, at any amount. No large-cash report.")), pack.packId === 'pack-eu-v1' && isOwner && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "data-testid": "eu-amlr-opt-in",
+        className: "mt-3 text-[12px] font-semibold px-3 py-1.5",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 8,
+          border: 'none',
+          cursor: 'pointer'
+        },
+        onClick: async () => {
+          const api = window.CDOS && window.CDOS.Backend;
+          if (!api || !api.optInEuAmlr) return;
+          await api.optInEuAmlr();
+          if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+          if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+          setSettings(s => ({
+            ...s
+          }));
+        }
+      }, "Use the 2027 EU rules")), standalone && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -9960,7 +10031,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
+        key: pack && pack.packId || 'thresholds'
+      }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -10135,11 +10208,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
-      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack.")));
+      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack."))));
     })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "coins",
       title: "Rates & fees",
@@ -34892,7 +34965,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     remittanceLine,
     deskLine,
     idLine,
-    reportLine
+    reportLine,
+    euLines
   }) {
     const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
     if (blank) return {
@@ -34912,6 +34986,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       idRequired: false
     };
     const homeAmount = centsText(cash);
+    if (Array.isArray(euLines)) {
+      const eu = euTransferRuling({
+        cash,
+        lines: euLines,
+        deskLine
+      });
+      return {
+        homeAmount,
+        reportable: false,
+        idRequired: eu.idRequired
+      };
+    }
     const report = centsOf(reportLine);
     let line = null;
     if (baseline) {
@@ -34934,6 +35020,37 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       homeAmount,
       reportable: report == null ? null : cash >= report,
       idRequired: cash >= line
+    };
+  }
+
+  /* The 2027 EU pack. Three lines, no amount report. The desk's own
+     number replaces only cash identification. A transfer is judged
+     against the transfer line, the occasional line, and the cash line. */
+  function euTransferRuling({
+    cash,
+    lines,
+    deskLine
+  }) {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return {
+        idRequired: true
+      };
+    }
+    let idRequired = false;
+    for (const line of lines) {
+      if (!line) continue;
+      const kind = line.dealKind;
+      if (kind !== 'any' && kind !== 'remittance') continue;
+      const raw = line.lineId === 'cash_identify' && deskLine != null && String(deskLine).trim() !== '' ? deskLine : line.threshold;
+      const at = centsOf(raw);
+      if (at == null) return {
+        idRequired: true
+      };
+      const hit = line.comparator === 'gt' ? cash > at : cash >= at;
+      if (hit) idRequired = true;
+    }
+    return {
+      idRequired
     };
   }
 
@@ -35762,7 +35879,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
       idLine: idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
-      reportLine: limit.amount
+      reportLine: limit.amount,
+      euLines: packNow && packNow.packId === 'pack-eu-v2' ? packNow.idThresholds || [] : null
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -40407,7 +40525,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const baseline = isBaselinePack(pack);
     const listed = reports.length ? reports : baseline ? BASELINE_REPORTS : [];
     const byCode = code => listed.find(r => r && r.code === code) || null;
-    const large = listed.find(r => r && (r.kind === 'large_cash' || r.code === (pack.reportName || 'CASH-RECORD'))) || byCode('CASH-RECORD');
+    /* A suspicious report is not a large-cash report, even when its code
+       is the only name the pack printed. Match the kind. */
+    const large = listed.find(r => r && r.kind === 'large_cash') || (baseline ? byCode('CASH-RECORD') : null);
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
@@ -42974,6 +43094,18 @@ ${(filing.map || []).map(blockHTML).join('')}
     }));
   }
 
+  /* A country pack with no large-cash figure is not the international
+     baseline. The baseline sentence stays for a desk that has no pack. */
+  function noLargeCashPack(regime) {
+    return !!(regime && regime.threshold == null && regime.id && regime.baseline !== true);
+  }
+  function noLargeCashCopy(regime) {
+    if (noLargeCashPack(regime)) {
+      return 'This pack has no large-cash report. Suspicious activity is reported to your national financial intelligence unit at any amount.';
+    }
+    return 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.';
+  }
+
   /* ===================== AGGREGATION (24h rule) ===================== */
   function Aggregation({
     rows,
@@ -43026,6 +43158,22 @@ ${(filing.map || []).map(blockHTML).join('')}
         fontFamily: 'Space Mono, monospace'
       }
     }, k);
+    if (noLargeCashPack(regime)) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "p-4",
+        "data-testid": "no-large-cash-report"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-sm font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, "No large-cash report"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] mt-2",
+        style: {
+          color: CD.mute
+        }
+      }, noLargeCashCopy(regime), " Deals are not added together to reach one."));
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -43286,7 +43434,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -43656,7 +43804,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, "No structuring patterns detected \u2014 no one is sitting just under ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== SUBMISSIONS (worksheet → sealed filing) ===================== */
@@ -44534,7 +44682,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', `${regime.aggHours}h aggregation`, 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -44573,7 +44721,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
+    }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
     }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
@@ -61649,7 +61797,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         marginBottom: 14
       }
-    }, "This sets your regulator, home currency and reporting thresholds \u2014 so the desk fits your rules."), REG.map(r => optRow(d.country === r.c, r.c, r.reg + ' · home currency ' + r.cur, () => set('country', r.c), r.flag))), step === 1 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "This sets your regulator, home currency and reporting thresholds \u2014 so the desk fits your rules."), REG.map(r => optRow(d.country === r.c, r.c, r.reg + ' · home currency ' + r.cur, () => setD(s => ({
+      ...s,
+      country: r.c,
+      idThreshold: r.c === 'European Union' ? s.country === 'European Union' ? s.idThreshold : 3000 : s.country === 'European Union' ? 10000 : s.idThreshold
+    })), r.flag))), step === 1 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: 'var(--f-mono)',
         fontSize: 10,
@@ -61723,7 +61875,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         marginBottom: 14
       }
-    }, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later."), THRESH.map(x => optRow(d.idThreshold === x.v, x.t + ' ' + (reg.cur || 'CAD'), x.d, () => set('idThreshold', x.v)))), step === 5 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, d.country === 'European Union' ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.' : /*#__PURE__*/React.createElement(React.Fragment, null, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later.")), (d.country === 'European Union' ? [{
+      v: 3000,
+      t: 'Only at 3,000',
+      d: 'Cash identification. The 2027 minimum.'
+    }, {
+      v: 1500,
+      t: 'At 1,500',
+      d: 'Ask sooner than the cash line.'
+    }, {
+      v: 1000,
+      t: 'At 1,000',
+      d: 'The same amount as a transfer of funds.'
+    }] : THRESH).map(x => optRow(d.idThreshold === x.v, x.t + ' ' + (reg.cur || 'CAD'), x.d, () => set('idThreshold', x.v)))), step === 5 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: 'var(--f-mono)',
         fontSize: 10,
@@ -64893,13 +65057,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const num = (v, fallback) => typeof v === 'number' && v > 0 ? v : fallback;
       /* A baseline desk's 10,000 is US dollars. Do not store it as the
          home-currency line. The ledger converts it, and the screen reads that. */
-      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
+      /* An explicit null is "this pack has no amount report". A missing
+         field on an older setup still falls back to 10,000. */
+      const reportOver = setup.baselineRules || setup.reportThreshold === null ? null : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const idOver = legacyPause || typedId == null ? null : reportOver == null ? typedId : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;
       const owner = {
         id: 'e_owner',

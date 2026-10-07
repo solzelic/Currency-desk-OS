@@ -453,7 +453,12 @@
   const setDeskPack = (pack, reports, currencies, notice) => {
     _pack = pack || null;
     const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
-    _rulesNotice = baseline || (_pack && _pack.available === false) ? (notice || BASELINE_NOTICE) : null;
+    /* A country pack can carry a notice of its own. The 2027 EU pack
+       does, until the date those rules apply. A baseline desk with no
+       sentence from the server still gets the international one. */
+    if (notice) _rulesNotice = notice;
+    else if (baseline || (_pack && _pack.available === false)) _rulesNotice = BASELINE_NOTICE;
+    else _rulesNotice = null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try { window.__cdosHome = (_pack && _pack.homeCurrency) ? String(_pack.homeCurrency).toUpperCase() : ''; } catch (e) {}
@@ -465,7 +470,10 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      if (answer && answer.pack) {
+        answer.pack.idThresholds = Array.isArray(answer.idThresholds) ? answer.idThresholds : [];
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      }
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }

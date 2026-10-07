@@ -51,7 +51,7 @@
      No remittance line (no rate, or a stale one) means identification
      is required. A country pack, Canada included, uses its own
      identification line and does not substitute the baseline's. */
-  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine }) {
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines }) {
     const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
     if (blank) return { homeAmount: null, reportable: null, idRequired: false };
     const cash = direction === 'receive'
@@ -64,6 +64,10 @@
         })();
     if (cash == null) return { homeAmount: null, reportable: null, idRequired: false };
     const homeAmount = centsText(cash);
+    if (Array.isArray(euLines)) {
+      const eu = euTransferRuling({ cash, lines: euLines, deskLine });
+      return { homeAmount, reportable: false, idRequired: eu.idRequired };
+    }
     const report = centsOf(reportLine);
     let line = null;
     if (baseline) {
@@ -79,6 +83,29 @@
       reportable: report == null ? null : cash >= report,
       idRequired: cash >= line,
     };
+  }
+
+  /* The 2027 EU pack. Three lines, no amount report. The desk's own
+     number replaces only cash identification. A transfer is judged
+     against the transfer line, the occasional line, and the cash line. */
+  function euTransferRuling({ cash, lines, deskLine }) {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return { idRequired: true };
+    }
+    let idRequired = false;
+    for (const line of lines) {
+      if (!line) continue;
+      const kind = line.dealKind;
+      if (kind !== 'any' && kind !== 'remittance') continue;
+      const raw = line.lineId === 'cash_identify' && deskLine != null && String(deskLine).trim() !== ''
+        ? deskLine
+        : line.threshold;
+      const at = centsOf(raw);
+      if (at == null) return { idRequired: true };
+      const hit = line.comparator === 'gt' ? cash > at : cash >= at;
+      if (hit) idRequired = true;
+    }
+    return { idRequired };
   }
 
   /* ---- the lifecycle. Same keys for send & receive; labels adapt. ---- */
@@ -287,6 +314,7 @@
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
       idLine: idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null),
       reportLine: limit.amount,
+      euLines: packNow && packNow.packId === 'pack-eu-v2' ? (packNow.idThresholds || []) : null,
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;

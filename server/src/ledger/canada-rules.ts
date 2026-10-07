@@ -42,6 +42,11 @@ export type IdentificationDeal = {
   onBehalfOf?: string | null;
   /** The person a remittance is for, when this deal names one. */
   beneficiaryName?: string | null;
+  /** Why the customer is doing the deal. The 2027 EU pack asks for
+      this when customer due diligence applies. */
+  purpose?: string | null;
+  /** Where the money came from. Same EU due diligence line. */
+  sourceOfFunds?: string | null;
 };
 
 export type GateRefusal = {

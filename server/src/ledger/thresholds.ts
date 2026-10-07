@@ -207,6 +207,27 @@ async function remittanceLine(
   return { effective: value, deskChoice: null, packValue: value, posture: "following" };
 }
 
+/* The pack's aggregation window.
+   A stored null is an answer: this pack does not state a window. Do
+   not fill that in with 24. A pack that stored 24 still reads as 24.
+   An entity with no pack id of its own is resolved onto the baseline,
+   and the join above misses that row. Read the resolved pack instead
+   of inventing a number, and invent nothing when that row is missing. */
+async function packAggregationHours(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  row: { joined_pack_id?: unknown; pack_aggregation_hours?: unknown },
+): Promise<number | null> {
+  if (!pack.available) return null;
+  if (row.joined_pack_id != null) return count(row.pack_aggregation_hours);
+  if (!pack.packId) return null;
+  const found = await client.query(
+    `SELECT aggregation_hours FROM jurisdiction_packs WHERE pack_id = $1`,
+    [pack.packId],
+  );
+  return count(found.rows[0]?.aggregation_hours);
+}
+
 /**
  * Every threshold this desk operates under, resolved, inside the caller's
  * transaction.
@@ -228,7 +249,8 @@ export async function readDeskThresholds(
   const pack = resolved ?? (await resolvePack(client, legalEntityId));
   const found = await client.query(
     `SELECT e.report_threshold, e.id_threshold, e.aggregation_hours,
-            e.retention_years, p.aggregation_hours AS pack_aggregation_hours,
+            e.retention_years, p.pack_id AS joined_pack_id,
+            p.aggregation_hours AS pack_aggregation_hours,
             p.retention_years AS pack_retention_years
        FROM legal_entities e
        LEFT JOIN jurisdiction_packs p ON p.pack_id = e.jurisdiction_pack_id
@@ -272,9 +294,7 @@ export async function readDeskThresholds(
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
-      /* No pack: do not invent a 24-hour window. That number is Canada's,
-         and a desk with no pack is not a Canadian desk. */
-      pack.available ? (count(row.pack_aggregation_hours) ?? 24) : null,
+      await packAggregationHours(client, pack, row),
       "higher_is_stricter",
     ),
     retentionYears: asCountSetting(

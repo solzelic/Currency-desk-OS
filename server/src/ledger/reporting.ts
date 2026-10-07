@@ -33,8 +33,10 @@
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+import { euAmlrNotice, loadEuAppliesFrom } from "./eu-amlr.js";
 import {
   BASELINE_NOTICE,
+  EU_AMLR_PACK_ID,
   RULES_UNAVAILABLE_NOTICE,
   resolvePack,
   type IdDealKind,
@@ -183,7 +185,45 @@ function axesOf(
   return axes.length ? axes : null;
 }
 
+/** Identification lines for the desk's pack.
+    The 2027 EU pack stores several lines in jurisdiction_rule_lines.
+    Every other pack still uses jurisdiction_id_thresholds, one row per
+    deal kind. A database that has not applied the new migration has no
+    rule-line table (Postgres 42P01). That is not an error for those
+    packs: read the older table. A missing older table still throws. */
+async function loadIdLines(
+  client: pg.PoolClient,
+  packId: string,
+): Promise<{ rows: Record<string, unknown>[] }> {
+  /* jurisdiction() is already inside a transaction. A missing table
+     aborts that transaction unless the failed read sits on a savepoint. */
+  await client.query("SAVEPOINT id_lines_rule");
+  try {
+    const ruled = await client.query(
+      `SELECT line_id, deal_kind, threshold, currency, comparator, diligence, cash_only
+         FROM jurisdiction_rule_lines
+        WHERE pack_id=$1
+        ORDER BY deal_kind, line_id`,
+      [packId],
+    );
+    await client.query("RELEASE SAVEPOINT id_lines_rule");
+    if (ruled.rows.length) return ruled;
+  } catch (error) {
+    await client.query("ROLLBACK TO SAVEPOINT id_lines_rule");
+    const code = (error as { code?: string }).code;
+    if (code !== "42P01" && code !== "42703") throw error;
+  }
+  return client.query(
+    `SELECT deal_kind, threshold, currency, comparator, diligence, cash_only
+       FROM jurisdiction_id_thresholds
+      WHERE pack_id=$1
+      ORDER BY deal_kind`,
+    [packId],
+  );
+}
+
 export function idLineFromRow(row: Record<string, unknown>): {
+  lineId: string;
   dealKind: IdDealKind | string;
   threshold: string | null;
   currency: string | null;
@@ -192,6 +232,7 @@ export function idLineFromRow(row: Record<string, unknown>): {
   cashOnly: boolean;
 } {
   return {
+    lineId: row.line_id == null || row.line_id === "" ? "primary" : String(row.line_id),
     dealKind: String(row.deal_kind),
     threshold: idLineAmount(row.threshold),
     currency:
@@ -715,13 +756,7 @@ export class LedgerReportingService {
           )
         : { rows: [] as Record<string, unknown>[] };
       const idLines = pack.available
-        ? await client.query(
-            `SELECT deal_kind, threshold, currency, comparator, diligence, cash_only
-               FROM jurisdiction_id_thresholds
-              WHERE pack_id=$1
-              ORDER BY deal_kind`,
-            [pack.packId],
-          )
+        ? await loadIdLines(client, pack.packId)
         : { rows: [] as Record<string, unknown>[] };
       /* THE FORMS THIS DESK HAS TO FILE, AND WHERE THEY GO.
          `jurisdiction_reports` has carried this since migration 012 and
@@ -767,13 +802,15 @@ export class LedgerReportingService {
               .filter(([, places]) => places !== LEDGER_SCALE),
           ),
         },
-        /* The disclaimer when this desk is on the international baseline.
-           Null when a country pack is installed. The unavailable sentence
-           only when even the baseline row is missing. */
+        /* A country pack is usually silent. The 2027 EU pack says so
+           until the date the regulation applies. The baseline and the
+           missing-pack sentences are unchanged. */
         notice: pack.baseline
           ? BASELINE_NOTICE
           : pack.available
-            ? null
+            ? pack.packId === EU_AMLR_PACK_ID
+              ? euAmlrNotice(await loadEuAppliesFrom(client, pack.packId))
+              : null
             : RULES_UNAVAILABLE_NOTICE,
         idThresholds: idLines.rows.map((row) =>
           idLineFromRow(row as Record<string, unknown>),

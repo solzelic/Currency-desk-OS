@@ -304,6 +304,18 @@
     </div>);
   }
 
+  /* A country pack with no large-cash figure is not the international
+     baseline. The baseline sentence stays for a desk that has no pack. */
+  function noLargeCashPack(regime) {
+    return !!(regime && regime.threshold == null && regime.id && regime.baseline !== true);
+  }
+  function noLargeCashCopy(regime) {
+    if (noLargeCashPack(regime)) {
+      return 'This pack has no large-cash report. Suspicious activity is reported to your national financial intelligence unit at any amount.';
+    }
+    return 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.';
+  }
+
   /* ===================== AGGREGATION (24h rule) ===================== */
   function Aggregation({ rows, settings, subs, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
     const regime = getRegime(settings);
@@ -318,6 +330,9 @@
         ? <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: '#f3e8ff', color: '#6d28d9', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>ON BEHALF OF</span>
         : <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.ink, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>BY CONDUCTOR</span>;
     const kindPill = (k) => <span className="text-[9.5px] px-1.5 py-0.5 font-semibold" style={{ background: k === regime.wireCode ? '#e7e0f7' : '#f1e3df', color: k === regime.wireCode ? '#6d28d9' : CD.flag, borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{k}</span>;
+    if (noLargeCashPack(regime)) {
+      return (<div className="p-4" data-testid="no-large-cash-report"><div className="text-sm font-semibold" style={{ color: CD.ink }}>No large-cash report</div><div className="text-[13px] mt-2" style={{ color: CD.mute }}>{noLargeCashCopy(regime)} Deals are not added together to reach one.</div></div>);
+    }
     return (<div className="p-4">
       <div className="mb-3"><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>The 24-hour rule, handled for you <window.CDOS.InfoTip title="The 24-hour rule" body={largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.'} lines={largePolicy(regime) ? [{k:'By conductor',v:'totals what one person brings in'},{k:'On behalf of',v:'totals what was done for the same third party'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}] : [{k:'By conductor',v:'totals what one person brings in'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{largePolicy(regime) ? <>Cash received is added across one static window of {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>. Every amount counts, including one already at <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b>. Two or more that reach that line are one <b style={{ color: CD.ink }}>{regime.largeCode}</b>. We keep three separate totals: who conducted the deal, who it was on behalf of, and who it was for. Those totals are not mixed. Wires follow their own rule.</> : <>Someone can stay under the <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b> reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>). A single deal already at the line is filed on its own. The moment the smaller ones reach {fmt(regime.threshold, regime.currency)}, they have to be reported: an <b style={{ color: CD.ink }}>{regime.largeCode}</b> for cash, an <b style={{ color: CD.ink }}>{regime.wireCode}</b> for wires.</>}</div></div>
       <div className="grid grid-cols-3 gap-2 mb-3">
@@ -356,7 +371,7 @@
                 two new ones in a six-deal cluster are visible at a glance */}
             <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-0.5" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}</button>; })}</div>
           </div>); })}
-        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
+        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? noLargeCashCopy(regime) : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -464,7 +479,7 @@
               </>); })()}
             </div>
           </div>))}
-        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
+        {!cases.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? noLargeCashCopy(regime) : <>No structuring patterns detected — no one is sitting just under {fmt(regime.threshold, regime.currency)}.</>}</div></div>}
       </div>
     </div>);
   }
@@ -788,14 +803,14 @@
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
 
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', `${regime.aggHours}h aggregation`, 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="complianceshield" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? noLargeCashCopy(regime) : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
           </div>
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}

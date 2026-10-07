@@ -507,6 +507,14 @@
           body: JSON.stringify(changes),
         });
       },
+      /* One-way. A desk on the published EU pack moves to the 2027 rules.
+         Posted deals keep the pack they were stamped with. */
+      optInEuAmlr: function () {
+        return request("/api/ledger/jurisdiction-pack/eu-amlr", {
+          method: "POST",
+          body: "{}",
+        });
+      },
 
       /* ---- the currencies this desk deals in ----
 

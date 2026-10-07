@@ -741,6 +741,17 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* One-way move from the published EU pack onto the 2027 rules.
+     The owner permission is the same one that moves a threshold. */
+  app.post("/api/ledger/jurisdiction-pack/eu-amlr", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.optInEuAmlr(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   app.put("/api/ledger/desk-thresholds", async (req, reply) => {
     const parsed = deskThresholdsBody.safeParse(req.body);
     if (!parsed.success) {

@@ -89,14 +89,16 @@ export const PHASES = [
    the design defaults to the regulator's number and lets them tighten. */
 export const JURISDICTION: Record<
   string,
-  { country: string; regulator: string; regLabel: string; currency: string; reportThreshold: number; reportCurrency: string; report: string }
+  { country: string; regulator: string; regLabel: string; currency: string; reportThreshold: number | null; reportCurrency: string; report: string; idDefault?: number }
 > = {
   CA: { country: "Canada", regulator: "FINTRAC", regLabel: "FINTRAC registration number", currency: "CAD", reportThreshold: 10000, reportCurrency: "CAD", report: "Large Cash Transaction Report" },
   US: { country: "United States", regulator: "FinCEN", regLabel: "FinCEN MSB registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "Currency Transaction Report" },
   GB: { country: "United Kingdom", regulator: "HMRC", regLabel: "HMRC money-service business number", currency: "GBP", reportThreshold: 10000, reportCurrency: "GBP", report: "Suspicious Activity Report" },
   AU: { country: "Australia", regulator: "AUSTRAC", regLabel: "AUSTRAC enrolment number", currency: "AUD", reportThreshold: 10000, reportCurrency: "AUD", report: "Threshold Transaction Report" },
   AE: { country: "United Arab Emirates", regulator: "CBUAE", regLabel: "Exchange-house licence number", currency: "AED", reportThreshold: 55000, reportCurrency: "AED", report: "Suspicious Transaction Report" },
-  EU: { country: "European Union", regulator: "National FIU", regLabel: "AML registration number", currency: "EUR", reportThreshold: 10000, reportCurrency: "EUR", report: "Suspicious Transaction Report" },
+  /* No amount report. idDefault is the cash identification line, which
+     is what the "when do you take ID?" box is about. */
+  EU: { country: "European Union", regulator: "National FIU", regLabel: "AML registration number", currency: "EUR", reportThreshold: null, idDefault: 3000, reportCurrency: "EUR", report: "Suspicious Transaction Report" },
   XX: { country: "Somewhere else", regulator: "your regulator", regLabel: "Business / AML registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "large-transaction report" },
 };
 
