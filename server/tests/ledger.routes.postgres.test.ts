@@ -1,6 +1,7 @@
 import pg from "pg";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as countLine from "../src/ledger/count-line.js";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
@@ -305,6 +306,61 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         })
       ).statusCode,
     ).toBe(409);
+  });
+
+  it("prices a denomination line in minor units and does not post a count", async () => {
+    const teller = await cookie();
+    const before = await pool.query("SELECT count(*) FROM ledger_till_count_batches");
+    const priced = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      cookies: teller,
+      payload: { lines: [{ currency: "CAD", faceMinor: 5, quantity: 3 }] },
+    });
+    expect(priced.statusCode).toBe(200);
+    expect(priced.json().lines).toEqual([
+      { currency: "CAD", faceMinor: 5, quantity: 3, minor: 15 },
+    ]);
+    expect(priced.json().currencies).toEqual(expect.arrayContaining([
+      { currency: "CAD", counted: "0.15", expected: "25000.00", variance: "-24999.85" },
+      { currency: "USD", counted: null, expected: "12000.00", variance: null },
+      { currency: "EUR", counted: null, expected: "7000.00", variance: null },
+      { currency: "GBP", counted: null, expected: "3500.00", variance: null },
+    ]));
+    const fraction = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      cookies: teller,
+      payload: { lines: [{ currency: "CAD", faceMinor: 0.05, quantity: 3 }] },
+    });
+    expect(fraction.statusCode).toBe(400);
+    const anon = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      payload: { lines: [{ currency: "CAD", faceMinor: 5, quantity: 3 }] },
+    });
+    expect(anon.statusCode).toBe(401);
+    const after = await pool.query("SELECT count(*) FROM ledger_till_count_batches");
+    expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
+  it("returns 500 when pricing the sheet fails unexpectedly", async () => {
+    const spy = vi.spyOn(countLine, "buildCountSheet").mockImplementation(() => {
+      throw new Error("unexpected fault");
+    });
+    try {
+      const teller = await cookie();
+      const fault = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-count-lines",
+        cookies: teller,
+        payload: { lines: [] },
+      });
+      expect(fault.statusCode).toBe(500);
+      expect(fault.json()).toMatchObject({ code: "INTERNAL_ERROR" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("records idempotent counts, moves cash, closes the till, and blocks posting", async () => {

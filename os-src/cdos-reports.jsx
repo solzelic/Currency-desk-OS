@@ -161,8 +161,9 @@
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
       <style>
         *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:38px 44px;color:#0a0a0a;}
+        body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:28px 32px;color:#0a0a0a;}
         table{border-collapse:collapse;width:100%;}
+        th,td{font-size:12px !important;padding:4px 6px !important;vertical-align:top;}
         @page{margin:14mm;}
       </style></head><body>${node.outerHTML}</body></html>`);
     w.document.close();
@@ -1133,6 +1134,7 @@
           {RangePicker}
           <button onClick={() => downloadCsv(`${active}-${range}.csv`, csvFor(active))} className="flex items-center gap-1.5 px-3 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="download" s={15} /> CSV</button>
           <button onClick={() => printReport(titleOf(meta))} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="printer" s={15} /> Print / PDF</button>
+          {active === 'endofday' && <span className="text-[11px]" style={{ color: CD.faint, maxWidth: 160 }}>Print dialog. Save as PDF is in that dialog.</span>}
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '22px' }}>

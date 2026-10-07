@@ -27,6 +27,39 @@
     MXN: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [20, 'coin'], [10, 'coin'], [5, 'coin'], [2, 'coin'], [1, 'coin'], [0.5, 'coin']],
     AED: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'coin'], [0.5, 'coin'], [0.25, 'coin']],
   };
+  /* The same pieces, as integer minor units, in the same order as DEN.
+     A five-cent coin is 5. A hundred-dollar bill is 10000. The print
+     sends these numbers to the server. It does not turn a decimal face
+     into cents. */
+  const FACE_MINOR = {
+    CAD: [10000, 5000, 2000, 1000, 500, 200, 100, 25, 10, 5],
+    USD: [10000, 5000, 2000, 1000, 500, 100, 25, 10, 5, 1],
+    EUR: [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1],
+    GBP: [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5],
+    INR: [200000, 50000, 20000, 10000, 5000, 2000, 1000, 1000, 500, 200, 100],
+    PHP: [100000, 50000, 20000, 10000, 5000, 2000, 2000, 1000, 500, 100, 25],
+    CNY: [10000, 5000, 2000, 1000, 500, 100, 100, 50, 10],
+    MXN: [100000, 50000, 20000, 10000, 5000, 2000, 2000, 1000, 500, 200, 100, 50],
+    AED: [100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 100, 50, 25],
+  };
+  /* Render an integer number of minor units. 15 is "0.15". This splits
+     digits. It does not divide. */
+  /* A printed piece name from the integer face. 5 is "5¢". 10000 is
+     "100". The count screen still uses denLabel. */
+  const faceLabel = (faceMinor) => {
+    if (typeof faceMinor !== 'number' || !Number.isInteger(faceMinor) || faceMinor < 0) return '—';
+    if (faceMinor < 100) return faceMinor + '¢';
+    const digits = String(faceMinor);
+    const major = digits.slice(0, -2).replace(/^0+/, '') || '0';
+    const cents = digits.slice(-2);
+    return cents === '00' ? major : major + '.' + cents;
+  };
+  const minorText = (minor) => {
+    if (typeof minor !== 'number' || !Number.isInteger(minor)) return '—';
+    const negative = minor < 0;
+    const digits = String(Math.abs(minor)).padStart(3, '0');
+    return (negative ? '-' : '') + digits.slice(0, -2) + '.' + digits.slice(-2);
+  };
   const CCYS = Object.keys(DEN);
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const denLabel = (v) => v >= 1 ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : (Math.round(v * 100) + '¢');
@@ -45,6 +78,10 @@
   // reading their own close-out should see the person, not the scoping
   const personOf = (id) => String(id || '').split(':').pop() || '—';
   const clockOf = (ms) => ms ? new Date(ms).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+  /* Text that is written into a print window. A count sheet is HTML, so a
+     desk name with a < in it must not become markup. */
+  const htmlEscape = (value) => String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
 
@@ -765,6 +802,151 @@
     const closedEarnedWhy = dayBook.error || (day.summary && day.summary.earnedWhy) || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
+    /* A page the owner can print or save as a PDF from the browser dialog.
+       It does not post money. Every cash amount on it is a string the
+       server returned: line totals, the counted amount, the ledger
+       balance, the difference, and earned today. The live count on
+       this screen is a separate figure and is not copied here. The
+       signed close-out stays the End-of-Day Sign-Off. */
+    const printCloseSummary = async () => {
+      const desk = (settings && (settings.operatingName || settings.bizName)) || 'This desk';
+      const where = [stationName, (serverBacked && ledgerTill && ledgerTill.tillId) || stationTill || tillNm].filter(Boolean).join(', ');
+      const sheetDate = (serverSession && serverSession.businessDate) || window.CDOS.businessDate();
+      const status = bookClosed
+        ? 'This till is closed.'
+        : 'This till is still open. This page is a snapshot of the count sent to the server, not a close-out.';
+      const absent = '—';
+      const asked = [];
+      const typed = [];
+      let mismatch = '';
+      CCYS.forEach(c => {
+        if (!isCounted(c)) return;
+        if (ccyMode(c) === 'total') {
+          const amount = String(quick[c] == null ? '' : quick[c]).trim();
+          if (amount) typed.push({ currency: c, amount });
+          return;
+        }
+        const faces = FACE_MINOR[c] || [];
+        const pieces = DEN[c] || [];
+        if (faces.length !== pieces.length) { mismatch = c; return; }
+        faces.forEach((faceMinor, i) => {
+          const qty = parseInt((counts[c] || {})[i], 10) || 0;
+          if (!qty) return;
+          asked.push({ currency: c, faceMinor, quantity: qty, kind: pieces[i][1], label: faceLabel(faceMinor) });
+        });
+      });
+      if (mismatch) {
+        setSessionErr('This desk has no priced denominations for ' + mismatch + '.');
+        return;
+      }
+      const api = window.CDOS.Backend;
+      if (!api || !api.priceCountLines) {
+        setSessionErr('The desk could not total the count.');
+        return;
+      }
+      let sheet;
+      try {
+        sheet = await api.priceCountLines({
+          lines: asked.map(({ currency, faceMinor, quantity }) => ({ currency, faceMinor, quantity })),
+          typed,
+        });
+      } catch (error) {
+        setSessionErr((error && error.message) || 'The desk could not total the count.');
+        return;
+      }
+      const returned = (sheet && sheet.lines) || [];
+      const currencies = (sheet && sheet.currencies) || [];
+      if (returned.length !== asked.length || returned.some((line, i) => line.minor == null || line.currency !== asked[i].currency || line.quantity !== asked[i].quantity)) {
+        setSessionErr('The desk did not return every count line.');
+        return;
+      }
+      const currencyRow = (code) => currencies.find(row => row && row.currency === code) || null;
+      for (const row of typed) {
+        const priced = currencyRow(row.currency);
+        if (!priced || priced.counted == null) {
+          setSessionErr('The desk did not return a total for ' + row.currency + '.');
+          return;
+        }
+      }
+      const moneyText = (value) => value == null || value === '' ? absent : String(value);
+      const reconRows = currencies.map(row => {
+        return `<tr><td>${htmlEscape(row.currency)}</td><td class="num">${htmlEscape(moneyText(row.expected))}</td><td class="num">${htmlEscape(moneyText(row.counted))}</td><td class="num">${htmlEscape(moneyText(row.variance))}</td></tr>`;
+      }).join('');
+      const denomLines = [];
+      typed.forEach(row => {
+        const priced = currencyRow(row.currency);
+        denomLines.push(`<tr><td>${htmlEscape(row.currency)}</td><td>Entered as one total</td><td class="num"></td><td class="num">${htmlEscape(moneyText(priced.counted))}</td></tr>`);
+      });
+      returned.forEach((line, i) => {
+        const piece = asked[i];
+        denomLines.push(`<tr><td>${htmlEscape(line.currency)}</td><td>${htmlEscape(piece.label + ' ' + piece.kind)}</td><td class="num">${line.quantity}</td><td class="num">${htmlEscape(minorText(line.minor))}</td></tr>`);
+      });
+      const countedBits = currencies.filter(row => row.counted != null).map(row => row.currency + ' ' + row.counted);
+      const countedKpi = countedBits.length ? countedBits.join(', ') : absent;
+      const earnedRaw = closedBook && closedBook.earningsHome != null ? String(closedBook.earningsHome) : null;
+      const earnedCcy = (closedBook && closedBook.homeCurrency) || '';
+      const earned = earnedRaw == null ? absent : (earnedCcy ? earnedRaw + ' ' + earnedCcy : earnedRaw);
+      const txns = closedTxns == null ? absent : String(closedTxns);
+      const who = me ? `${me.name} (${me.role})` : 'not signed in';
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Till count and day summary</title>
+        <style>
+          *{box-sizing:border-box;}
+          body{font-family:system-ui,sans-serif;margin:0;padding:28px 32px;color:#111;}
+          h1{font-size:20px;margin:0 0 4px;}
+          h2{font-size:13px;margin:18px 0 6px;}
+          .sub{font-size:13px;color:#333;margin:0 0 12px;}
+          .note{font-size:12px;background:#f3f3f3;padding:8px 10px;margin:0 0 14px;}
+          .kpis{display:flex;gap:10px;}
+          .kpi{flex:1;border:1px solid #ddd;padding:8px 10px;}
+          .kpi span{display:block;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#555;}
+          .kpi b{display:block;font-size:16px;margin-top:2px;}
+          table{border-collapse:collapse;width:100%;}
+          th,td{font-size:12px;padding:5px 6px;border-bottom:1px solid #e4e4e4;text-align:left;}
+          th{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#555;}
+          .num{text-align:right;font-variant-numeric:tabular-nums;}
+          .sign{display:flex;gap:28px;margin-top:28px;}
+          .sign div{flex:1;}
+          .line{border-bottom:1px solid #111;height:32px;}
+          .cap{font-size:11px;color:#444;margin-top:4px;}
+          .foot{font-size:11px;color:#444;margin-top:18px;}
+          @page{margin:14mm;}
+          @media (max-width:430px){body{padding:16px;} .kpis{flex-direction:column;}}
+        </style></head><body>
+        <h1>Till count and day summary</h1>
+        <p class="sub">${htmlEscape(desk)}${where ? ', ' + htmlEscape(where) : ''}, trading day ${htmlEscape(sheetDate)}</p>
+        <p class="note">${htmlEscape(status)} Use the browser print dialog to print this page or save it as a PDF.</p>
+        <div class="kpis">
+          <div class="kpi"><span>Transactions</span><b>${htmlEscape(txns)}</b></div>
+          <div class="kpi"><span>Earned today</span><b>${htmlEscape(earned)}</b></div>
+          <div class="kpi"><span>Counted on screen</span><b>${htmlEscape(countedKpi)}</b></div>
+        </div>
+        <h2>Drawer against the ledger</h2>
+        ${currencies.length ? `<table><thead><tr><th>Currency</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Difference</th></tr></thead><tbody>${reconRows}</tbody></table>`
+          : '<p class="foot">The ledger returned no currencies for this till.</p>'}
+        <h2>Count lines</h2>
+        ${denomLines.length ? `<table><thead><tr><th>Currency</th><th>Piece</th><th class="num">Quantity</th><th class="num">Line</th></tr></thead><tbody>${denomLines.join('')}</tbody></table>`
+          : '<p class="foot">No denomination lines are typed. A currency entered as one total is listed above as the server counted it.</p>'}
+        <div class="sign">
+          <div><div class="line">${htmlEscape(me ? me.name : '')}</div><div class="cap">Teller on duty<span style="float:right">Date</span></div></div>
+          <div><div class="line"></div><div class="cap">Owner<span style="float:right">Date</span></div></div>
+        </div>
+        <p class="foot">Prepared by ${htmlEscape(who)}. Trading day ${htmlEscape(sheetDate)}. Expected cash is the ledger balance for this till. Counted and the difference are the server's figures for what was sent on this page, including a count that has not been saved. This page does not add currencies into one total. Earned today is the ledger figure for this trading day. Each denomination line is the server total of that face and quantity, in minor units. The count still showing on the drawer is the screen's own figure. The signed close-out is the End-of-Day Sign-Off. A dash means this page has no figure. It is never a zero.</p>
+        </body></html>`;
+      const w = window.open('', '_blank', 'width=900,height=1100');
+      if (!w) {
+        setSessionErr('The browser blocked the print window. Allow pop-ups for this desk, then try Print summary again.');
+        return;
+      }
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => {
+        try { w.focus(); w.print(); }
+        catch (error) {
+          setSessionErr((error && error.message) || 'The print window did not open.');
+        }
+      }, 300);
+    };
+
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
@@ -978,7 +1160,10 @@
               <div className="text-right flex-none">
                 <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''}>{fmtHome(grandHome)}</div>
-                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+                <div className="mt-2 flex items-center justify-end gap-2">
+                  <button type="button" data-testid="print-till-summary" onClick={printCloseSummary} title="Opens the browser print dialog. Save as PDF is in that dialog." className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold" style={{ background: 'transparent', color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}><Ic n="printer" s={15} /> Print summary</button>
+                  <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+                </div>
               </div>
             </div>
             <div className="text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
@@ -1031,6 +1216,8 @@
               <span className="flex items-center gap-1.5 flex-none px-3 py-2 text-[12.5px] font-semibold" style={{ background: 'var(--cd-on-ink-faint)', color: 'var(--cd-on-ink)', borderRadius: 9 }}>Open <Ic n="arrowright" s={15} c="var(--cd-on-ink)" /></span>
             </button>
           )}
+          <button type="button" data-testid="print-till-summary" onClick={printCloseSummary} className="flex items-center gap-2 mt-3 text-[13px] font-semibold px-3.5 py-2 self-start" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, color: CD.ink, background: CD.panel }}><Ic n="printer" s={15} /> Print count and day summary</button>
+          <p className="text-[11px] mt-1.5" style={{ color: CD.faint }}>Opens the browser print dialog. Save as PDF is in that dialog. This prints the count on screen and the day's ledger figures. The signed sheet is the button above.</p>
           {/* spacer pushes the open-next-day control to the bottom, out of accidental reach */}
           <div style={{ flex: 1, minHeight: 28 }}></div>
           <div className="flex items-center justify-between gap-3 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
@@ -1056,6 +1243,7 @@
               </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot></table>
           </div>
           <div className="flex items-center gap-3 mt-3">
+            <button type="button" data-testid="print-till-summary" onClick={printCloseSummary} title="Opens the browser print dialog. Save as PDF is in that dialog." className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink, background: CD.panel }}><Ic n="printer" s={15} /> Print summary</button>
             {canCloseDay
               ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}

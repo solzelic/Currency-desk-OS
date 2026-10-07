@@ -154,6 +154,27 @@ explicit demo-tenant flag on the server, generated from that tenant's own
 ledger — never compiled into the browser, where the only thing separating it
 from a real record is a key in `localStorage`.
 
+## The till print is not the sign-off
+
+The Cash Drawer button "Print summary" opens a page whose cash amounts
+all come from the server. A denomination line is sent to
+`POST /api/ledger/till-count-lines` as a whole number of minor units
+and a whole number of pieces. A currency typed as one total is sent
+as that decimal string. The server returns the line total as integer
+minor units, and for each currency the counted amount, the ledger
+balance, and the difference, as decimal strings. Earned today is the
+ledger summary string. The page prints those strings. A coin name on the page comes from
+the integer face. It does not multiply, and it does not add
+currencies into one total. The difference is two decimal places,
+matching `numeric(24,2)`. JPY and KWD are a known gap. A refused
+count is a 400. Any other failure is the normal server error. The
+live count still on the drawer is the screen's own figure, and
+this page does not copy it. The browser print dialog prints the
+page or saves it as a PDF. It does not post money.
+
+The signed record remains the End-of-Day Sign-Off. That sheet reads the
+ledger on its own. It does not copy the till print.
+
 ## Testing it
 
 A document is generated in a popup window, which is exactly where a browser

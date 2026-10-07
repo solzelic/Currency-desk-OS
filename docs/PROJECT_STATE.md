@@ -403,6 +403,27 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, till count print. The Cash Drawer prints the count typed
+on screen and the day's ledger figures (expected cash, transactions,
+earned today). The browser print dialog saves that page as a PDF.
+A denomination line total is `POST /api/ledger/till-count-lines`:
+face and quantity go up as whole numbers, and the line comes back
+as integer minor units. The same response returns each currency's
+counted amount, the ledger balance, and the difference, as decimal
+strings. The page prints those strings. It does not multiply, and
+it does not add currencies into one total. A currency typed as one
+total is sent as the typed decimal string and printed as the
+server's amount. A printed coin name comes from that integer face
+(5 is "5¢"). Earned today is the ledger summary string. A refused
+count is a 400. Any other failure on that route is the normal
+server error. The difference uses two decimal places because till
+balances are `numeric(24,2)`. A currency with no minor unit (JPY)
+or three (KWD) is a known gap. The live count on the drawer is
+still the screen's own figure. That is a known gap for a later
+slice. The page does not post money. The signed close-out is
+still the End-of-Day Sign-Off, which reads the ledger on its own.
+See `docs/GENERATED_DOCUMENTS.md`.
+
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
 and remittance require customer due diligence above 5,000 PHP. A bill,

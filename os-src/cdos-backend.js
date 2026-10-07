@@ -286,6 +286,14 @@
           body: "{}",
         });
       },
+      /* Totals for the print. The server multiplies face by quantity
+         and returns integer minor units. This call does not post a count. */
+      priceCountLines: function (payload) {
+        return request("/api/ledger/till-count-lines", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
       saveTillCount: function (payload) {
         return request("/api/ledger/till-counts", {
           method: "POST",
