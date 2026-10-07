@@ -80,8 +80,16 @@ postgres("India pack against real PostgreSQL", () => {
         WHERE pack_id <> 'pack-in-v1' ORDER BY pack_id`,
     );
     expect(others.rows.length).toBeGreaterThan(0);
+    /* Serbia and the 2027 EU pack store NULL on purpose. NULL is not a
+       missing 24. Every other pack still stores 24. India must not have
+       cleared those. */
+    const nullWindow = new Set(["pack-eu-v2", "pack-rs-v1"]);
     for (const row of others.rows) {
-      expect(row.aggregation_hours, row.pack_id).toBe(24);
+      if (nullWindow.has(row.pack_id)) {
+        expect(row.aggregation_hours, row.pack_id).toBeNull();
+      } else {
+        expect(row.aggregation_hours, row.pack_id).toBe(24);
+      }
     }
     const canada = await pool.query(
       `SELECT report_threshold, id_threshold FROM jurisdiction_packs WHERE pack_id = 'pack-ca-v1'`,
