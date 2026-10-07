@@ -86,6 +86,11 @@ commit the generated output — CI diffs `web/` against a fresh build.
   `none`). Open drafts already occupy 027 and 029 through
   031. A rebase renumbers 033 in the filename and in `migrations.ts`
   together. The rule text is `docs/SERBIA_PACK.md`.
+- Receipt setup is `tenants.receipt_settings` (migration `035_receipt_settings`).
+  The owner API is `server/src/routes/receipt-settings.ts`. HTML, PDF, and
+  email rendering live in `server/src/receipts/`. The browser ESC/POS encoder
+  is `os-src/cdos-escpos.js`. A paired printer is remembered only on that
+  device (`local_printer_v1`), outside the tenant-state sync.
 
 ## Test commands
 

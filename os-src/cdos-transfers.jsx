@@ -482,6 +482,7 @@
         catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }
       }
       onDone && onDone(transfer.id);
+      try { window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, tx, posted && posted.inputAmount != null ? { ledgerAmounts: { inputAmount: String(posted.inputAmount), outputAmount: String(posted.outputAmount), rate: String(posted.rate), feeCad: String(posted.feeCad), from: posted.from, to: posted.to } } : {}), settings); } catch (printError) {}
     };
 
     const saveBen = (b) => { setBeneficiaries(list => { const ex = list.find(x => x.id === b.id); return ex ? list.map(x => x.id === b.id ? b : x) : [b, ...list]; }); setBenId(b.id); setAddBen(false); log && log('Beneficiary saved', `${b.name} · ${b.partner}`); };

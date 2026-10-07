@@ -399,10 +399,13 @@
     </div>);
   }
 
-  /* ---- RECEIPT ---- */
+  /* ---- RECEIPT ----
+     The closing line lives in receiptClosing() (os-src/cdos-receipt.js),
+     which is this same sentence. DealReceipt draws the posted receipt. */
   function ReceiptModal({ row, onClose, settings }) {
+    if (window.CDOS.DealReceipt) return <window.CDOS.DealReceipt row={row} settings={settings} onClose={onClose} />;
     const s = settings || {};
-    const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const head = window.CDOS.receiptHeading ? window.CDOS.receiptHeading(s) : (s.receiptHeader || 'CurrencyDesk — Exchange Receipt');
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="overflow-hidden cd-paper-island" style={{ width: 340, background: CD.panel, border: `1px solid ${CD.ink}` }}>
         <div id="rcpt" className="p-5" style={{ fontFamily: 'Space Mono, ui-monospace, monospace' }}>
@@ -420,7 +423,7 @@
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <div className="text-center text-[11px]" style={{ color: CD.mute }}>{s.receiptFooter || 'Thank you — keep for your records'}</div>
+          <div className="text-center text-[11px]" style={{ color: CD.mute }}>{window.CDOS.receiptClosing ? window.CDOS.receiptClosing(s) : (s.receiptFooter || 'Thank you — keep for your records')}</div>
           {s.receiptDisclaimer && <div className="text-center text-[9px] mt-2" style={{ color: CD.faint }}>{s.receiptDisclaimer}</div>}
         </div>
         <div className="flex gap-2 p-3" style={{ borderTop: `1px solid ${CD.line}` }}>

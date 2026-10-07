@@ -37,6 +37,9 @@ export const tenants = pgTable("tenants", {
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
   suspended: boolean("suspended").notNull().default(false),
+  /* Owner receipt options (paper, which lines print, logo). Not the
+     tenant state blob: any teller can write that blob. */
+  receiptSettings: jsonb("receipt_settings").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -808,7 +808,7 @@
       setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
       setTimeout(() => setPwForm(null), 1600);
     };
-    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
+    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo paper email', printer: 'usb bluetooth serial airprint epson star bixolon drawer escpos', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
     /* "Reset demo data" IS GONE, and it is worth saying why rather than
        leaving a gap somebody fills back in.
@@ -952,6 +952,7 @@
         ['cheques', 'Cheques', 'receipt'],
         ['rates', 'Rates & fees', 'percent'],
         ['receipts', 'Receipts', 'receipt'],
+        ['printer', 'Printer setup', 'printer'],
         ['tagged', 'Tagged', 'bookmark'],
         ['ticker', 'Ticker tape', 'bars'],
       ]],
@@ -960,9 +961,9 @@
       ]],
     ] : [];
 
-    return (<SettingsCtx.Provider value={ctxVal}><div className="flex" style={{ height: '100%' }}>
+    return (<SettingsCtx.Provider value={ctxVal}><div className="flex cd-settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
-      <div className="flex-none p-3 overflow-auto" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
+      <div className="flex-none p-3 overflow-auto cd-settings-nav" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
         <button onClick={() => setTab('account')} className="w-full flex items-center gap-2.5 p-2 mb-3" style={{ borderRadius: 11, background: tab === 'account' ? CD.ink : CD.panel, border: `1px solid ${tab === 'account' ? CD.ink : CD.line}`, textAlign: 'left' }}>
           <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: tab === 'account' ? 'var(--cd-panel)' : CD.ink, color: tab === 'account' ? CD.ink : 'var(--cd-on-ink)', fontSize: 12, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(me.name)}</span>
           <span className="min-w-0">
@@ -1932,18 +1933,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="coins" s={13} c={CD.mute} /><span>These prices drive every new deal in the Ledger — the spread booked at the counter is the spread that lands in <b style={{ color: CD.ink }}>Revenue &amp; Earnings</b>. Mid rates come from the <b style={{ color: CD.ink }}>Rate Board</b>.</span></div>
         </div>)}
 
-        {tab === 'receipts' && (<div>
-          <SectionTitle icon="receipt" title="Receipts" sub="What prints on the customer's exchange receipt." />
-          <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Content</div>
-          <div className="grid grid-cols-1 gap-3 mb-4">
-            <Field label="Receipt header"><Inp k="receiptHeader" placeholder="York Currency Exchange" /></Field>
-            <Field label="Footer line"><Inp k="receiptFooter" placeholder="Thank you — keep for your records" /></Field>
-            <Field label="Disclaimer" desc="Small print at the bottom of every receipt."><textarea value={settings.receiptDisclaimer || ''} onChange={e => set('receiptDisclaimer', e.target.value)} rows={2} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, resize: 'vertical' }} placeholder="All sales final. Rates as quoted at time of transaction." /></Field>
-          </div>
-          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Print</div>
-          <Row title="Show logo on receipt"><Sw on={settings.showLogoOnReceipt} click={() => toggleSet('showLogoOnReceipt', 'Receipt logo')} /></Row>
-          <Row title="Show MSB registration #"><Sw on={settings.showMsbOnReceipt} click={() => toggleSet('showMsbOnReceipt', 'Receipt MSB #')} /></Row>
-        </div>)}
+        {tab === 'receipts' && window.CDOS.ReceiptSettings && <window.CDOS.ReceiptSettings settings={settings} set={set} me={me} />}
+        {tab === 'printer' && window.CDOS.PrinterSetup && <window.CDOS.PrinterSetup settings={settings} me={me} />}
 
         {tab === 'permissions' && (() => {
           const PRESETS = {

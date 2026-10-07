@@ -71,6 +71,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- Receipts print from the posted deal. Owner options (paper size, which lines, logo, header and footer) live on `tenants.receipt_settings` (migration 035), not in the tenant state blob, because any teller can write that blob. Browser print is the default. The printer screen lists four short steps and the paths this desk is built for: Epson TM-T20III and TM-m30 by USB or the print dialog, Star TSP100 in ESC/POS mode, the print dialog for a printer already installed, and AirPrint on iPhone and iPad. Direct classic Bluetooth and TCP 9100 are not offered. It does not claim every printer. Chrome and Edge can also send ESC/POS over USB, serial, or Bluetooth Low Energy; the paired printer stays on the device (`local_printer_v1`) and is not synced. Safari uses AirPrint.  Email uses the existing Resend sender when `RESEND_API_KEY` and `EMAIL_FROM` are set, and the button stays hidden when they are not. The closing line is the existing receipt footer (`receiptClosing` in `os-src/cdos-receipt.js`). There is no per-currency greeting in the product.
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).

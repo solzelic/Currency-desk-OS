@@ -40,6 +40,7 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS receipt_settings jsonb;
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
