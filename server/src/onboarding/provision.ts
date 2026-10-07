@@ -31,6 +31,11 @@ import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
+import {
+  blockedDeskCountry,
+  SanctionedCountryError,
+  signupRefusal,
+} from "../compliance/sanctioned-jurisdictions.js";
 
 /* The design sells three plans; the server gates on three tiers. They are
    not the same axis — "AI Bundle" is Full System plus an assistant, not a
@@ -172,6 +177,10 @@ export function specFromAnswers(
       promo: val("promo") ?? "",
 
       country,
+      /* Kept on the setup so the sanctions check in provisionDesk sees
+         the free-text country, not only the picker code. "XX" is not a
+         country. elseCountry is the country they typed. */
+      elseCountry: str(resolved, "elseCountry"),
       regulator: str(resolved, "regulator") || j?.regulator || "",
       homeCurrency: str(resolved, "homeCurrency") || j?.currency || "",
       reportThreshold: val("reportThreshold") ?? j?.reportThreshold ?? null,
@@ -303,6 +312,14 @@ export async function provisionDesk(
   passwordHash: string,
   via: string,
 ): Promise<Provisioned> {
+  /* A listed jurisdiction never becomes a desk. Checked on the country
+     they named and on the free-text country used when the picker says
+     "somewhere else", before any tenant row is written. Both signup
+     doors call this function, so a route that forgets still cannot
+     open the desk. */
+  const blocked = blockedDeskCountry(spec.setup);
+  if (blocked) throw new SanctionedCountryError(signupRefusal(blocked).detail);
+
   const slug = spec.slug;
   const tenantId = "tnt-" + slug;
   const legalEntityId = "le-" + slug;

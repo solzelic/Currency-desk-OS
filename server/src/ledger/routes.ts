@@ -8,6 +8,7 @@ import { schema } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
+import { auditLogger } from "../compliance/sanctioned-jurisdictions.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
@@ -309,7 +310,8 @@ type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unaut
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
-  const service = new LedgerService(pool);
+  const log = auditLogger(app.log);
+  const service = new LedgerService(pool, log);
   const provisioning = new LedgerProvisioningService(pool);
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
@@ -318,7 +320,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
-  const cheques = new ChequeService(pool);
+  const cheques = new ChequeService(pool, log);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
@@ -1271,7 +1273,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
      not got. Those are not four implementations of those rules; they
      are one, in ObligationService.
      ============================================================ */
-  const obligations = new ObligationService(pool);
+  const obligations = new ObligationService(pool, log);
   const idempotencyKey = z.string().trim().min(1).max(200);
   const reference = z.string().trim().min(1).max(200);
   const counterparty = z.string().trim().min(1).max(200);

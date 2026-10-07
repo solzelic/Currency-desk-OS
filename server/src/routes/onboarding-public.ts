@@ -32,6 +32,12 @@ import {
   type Answers,
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
+import {
+  blockedDeskCountry,
+  countryChangeRefusal,
+  SanctionedCountryError,
+  signupRefusal,
+} from "../compliance/sanctioned-jurisdictions.js";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
@@ -307,6 +313,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       if (v === null || v === "") delete answers[k];
       else answers[k] = v;
     }
+    /* Same rule as saving the whole flow. A listed country is refused
+       and not written, including when only one step is patched. */
+    const blockedCountry = blockedDeskCountry(answers);
+    if (blockedCountry) return reply.code(403).send(countryChangeRefusal(blockedCountry));
     // "customer" is the honest value here — this is them, at their own screen
     const touched = { ...((row.touched ?? {}) as Record<string, string>), [step.id]: "customer" };
     await db.update(schema.onboarding).set({ answers, touched, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, a.id));
@@ -407,6 +417,11 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...incoming };
     delete answers.__flow; // the old shape, retired on first write
     answers.__at = parsed.data.at;
+
+    /* Setting the desk's country is the same rule as opening it.
+       The save is refused whole: a listed country is not written. */
+    const blockedCountry = blockedDeskCountry(answers);
+    if (blockedCountry) return reply.code(403).send(countryChangeRefusal(blockedCountry));
 
     /* Where each answer came from. An operator looking at this record needs to
        know which of it arrived through the customer's own screens — that is
@@ -577,6 +592,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     const supplied = parsed.data.data ?? {};
     const merged = { ...flowAnswers(row), ...stripSecrets(supplied) };
+    /* Before the password check, so the sanctions sentence is the one
+       they see. Launch is how a desk is opened; the wording matches signup. */
+    const blockedCountry = blockedDeskCountry(merged);
+    if (blockedCountry) return reply.code(403).send(signupRefusal(blockedCountry));
     const resolved = resolve(merged, fromApplication(a));
 
     /* The password never touches the stored answers, so it has to come off
@@ -618,7 +637,15 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     spec.slug = await freeSlug(db, spec.slug, spec.email);
 
     forgetClaimedCount();
-    const made = await provisionDesk(db, spec, await hashPassword(password), "onboarding");
+    let made: Awaited<ReturnType<typeof provisionDesk>>;
+    try {
+      made = await provisionDesk(db, spec, await hashPassword(password), "onboarding");
+    } catch (error) {
+      if (error instanceof SanctionedCountryError) {
+        return reply.code(403).send({ error: error.error, detail: error.detail });
+      }
+      throw error;
+    }
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, spec.email));
     await db
       .update(schema.onboarding)

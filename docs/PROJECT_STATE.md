@@ -71,6 +71,21 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Sanctioned jurisdictions.** A sourced, dated list
+  (`2026-10-07.1`) has two tiers. Blocked countries and the four
+  occupied Ukrainian oblasts stop a desk from opening or setting its
+  country there, stop a transfer either way (corridor and payout or
+  sent currency), and stop a deal with a client there. The stop code
+  is always `SANCTIONS-STOP`, including in Canada. Myanmar is
+  enhanced due diligence: the deal posts only with full
+  identification and a short reason and source of funds. A client
+  with any blocked field is a stop, even when another field is only
+  due diligence. A blocked stop is written to `audit_events` after
+  the deal rolls back. If that write fails, it is logged on the
+  app logger and the request fails. Exchanging IRR, KPW, or CUP
+  notes at the counter is not stopped. The list is
+  `server/src/compliance/sanctioned-jurisdictions.ts`. How to refresh
+  it is `docs/SANCTIONED_JURISDICTIONS.md`.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -87,6 +102,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   same day, and file an STR. The owner does this outside the desk.
   The website stays Not live. Canada is the only Live country.
   Write-up: `docs/PHILIPPINES_PACK.md`.
+
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).
@@ -188,7 +204,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   report. A suspicious transaction has no amount and is due
   immediately, to the country's financial intelligence unit. Terrorist
   or sanctioned property stops the deal and is reported immediately.
-  No sanctions list ships with the pack. Records are kept five years.
+  The list of places is versioned data, checked 2026-10-06, not a
+  number on the pack. A listed country blocks signup and a later
+  change of the desk's country, and it blocks a transfer in either
+  direction. A deal with a client in a listed country or region
+  stops and names this pack's `SANCTIONS-STOP` report. Occupied
+  regions of Ukraine are regions, not a block on Ukraine. Records
+  are kept five years.
   The regulator field is empty. USD lines convert to the desk's home
   currency at the newest market snapshot (CAD per 1 unit, the same
   source the rate sync stores), rounded down to the cent, and that
@@ -481,6 +503,20 @@ is unchanged. An owner on version 1 can opt in. The desk's own
 identification number moves only the cash line. Linked transactions
 and the Article 80 cash payment limit are not enforced.
 `docs/EU_AMLR_PACK.md`.
+
+**2026-10-06**, sanctioned jurisdictions, list `2026-10-07.1`. A desk
+cannot be opened in, or later set to, a blocked country. A transfer
+cannot be sent to or received from one, and a payout or sent
+currency on the blocked list stops it too. A deal with a client
+whose country, region, or incorporation jurisdiction is blocked
+stops under `SANCTIONS-STOP` on every pack. Country, region, and
+incorporation are all read, and any blocked field wins over
+enhanced due diligence on another field. Myanmar is enhanced due
+diligence, not a block. Each stop is written to `audit_events`
+after the deal rolls back. If that write fails, it is logged on
+the app logger and the request fails, and the deal stays unposted.
+Exchanging IRR, KPW, or CUP notes at the counter is not stopped.
+See `docs/SANCTIONED_JURISDICTIONS.md`.
 
 **2026-10-06**, international baseline. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.

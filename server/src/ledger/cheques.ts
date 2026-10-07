@@ -63,12 +63,14 @@ import {
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
+  applyDealScreen,
   LedgerError,
   requireIdentification,
   requireInstalledPack,
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
+import { recordSanctionsStop, screenDeal, type AuditLogger } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -192,7 +194,7 @@ const chequeJson = (row: Record<string, any>) => ({
 });
 
 export class ChequeService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly log?: AuditLogger) {}
 
   /* Every entry point below is retried on a serialization failure, for
      the reason written down in retry.ts: these transactions take the
@@ -368,6 +370,18 @@ export class ChequeService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          { customerId: input.customerId, dealKind: "cheque_cashing" },
+        ),
+        {
+          idStatus: customer.rows[0].id_status,
+          purpose: input.purpose,
+          sourceOfFunds: input.sourceOfFunds,
+        },
+      );
       /* The desk's identification line does not become optional because
          the customer handed over paper instead of notes. The deal's size
          is the FACE amount — that is what is being presented and what the
@@ -620,6 +634,7 @@ export class ChequeService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();

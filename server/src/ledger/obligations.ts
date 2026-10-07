@@ -78,6 +78,7 @@ import {
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
 import {
+  applyDealScreen,
   assertIndiaPurpose,
   LedgerError,
   requireIdentification,
@@ -86,6 +87,7 @@ import {
   requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
+import { recordSanctionsStop, screenDeal, type AuditLogger } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -320,7 +322,7 @@ type DealSpec = {
 };
 
 export class ObligationService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly log?: AuditLogger) {}
 
   /* ---- the four counter deals ---- */
 
@@ -637,6 +639,40 @@ export class ObligationService {
           "Customer is not in the active workspace.",
         );
 
+      /* Every send and receive names a corridor, so a walk-in with
+         no client country can still be checked. A blocked corridor
+         is decided before the client, then the payout or sent
+         currency, then the client's country. The stop code for a
+         client is SANCTIONS-STOP on every pack. */
+      const transfer = spec.dealKind === "remittance_send"
+        ? "send" as const
+        : spec.dealKind === "remittance_receive"
+          ? "receive" as const
+          : null;
+      const screenedCurrency = transfer === "send"
+        ? spec.to
+        : transfer === "receive"
+          ? spec.from
+          : null;
+      applyDealScreen(
+        await screenDeal(
+          client,
+          { tenantId: actor.tenantId, legalEntityId: actor.legalEntityId },
+          {
+            customerId: spec.customerId,
+            dealKind: spec.dealKind,
+            corridor: spec.obligation.corridor,
+            currency: screenedCurrency,
+            transfer,
+          },
+        ),
+        {
+          idStatus: customer.rows[0].id_status,
+          purpose: spec.capture.purpose,
+          sourceOfFunds: spec.capture.sourceOfFunds,
+        },
+      );
+
       /* ---- the two compliance gates, on the CASH ----
 
          The figure both are judged against is the cash that crossed the
@@ -917,6 +953,7 @@ export class ObligationService {
       return response;
     } catch (error) {
       if (!committed) await client.query("ROLLBACK");
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();

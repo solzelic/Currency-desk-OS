@@ -98,11 +98,33 @@
     if (parts.length === 1) return { surname: parts[0], given: 'XXX', other: '' };
     return { surname: parts[parts.length - 1], given: parts[0], other: parts.slice(1, -1).join(' ') };
   }
-  /* The country is omitted from an address only when it IS the desk's own
-     country — which the pack states. It used to be omitted whenever it was
-     Canada, so a Canadian client's address filed by a London desk lost its
-     country line. */
-  const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, (rec.country && rec.country !== homeCountry()) ? rec.country : ''].filter(Boolean).join(', ');
+  /* The client file may hold an ISO code or an older free-text name.
+     countryName lives with the picker, and this worksheet refuses to
+     print a country until that function is there. A missing helper
+     would otherwise file "CA" on one report and "Canada" on the next. */
+  const storedCountryName = (value) => {
+    const named = window.CDOS.countryName;
+    if (typeof named !== 'function') {
+      throw new Error('countryName is not loaded. The client file has to load before a filing worksheet can print a country.');
+    }
+    return named(value);
+  };
+  /* Omit the country from an address only when its English name is the
+     desk's own country. The pack states that as a name ("Canada"), not
+     a code, so the comparison is against the name. */
+  const fullAddr = (rec) => {
+    const name = storedCountryName(rec && rec.country);
+    const country = name && name !== homeCountry() ? name : '';
+    return [rec.address, rec.city, rec.province, rec.postal, country].filter(Boolean).join(', ');
+  };
+  /* Identifier jurisdiction is the province and the English country
+     name. A blank country with a province still falls back to the
+     desk's own country. A blank country with no province stays blank. */
+  const idJurisdiction = (rec) => {
+    const name = storedCountryName(rec && rec.country);
+    if (rec && rec.province) return `${rec.province}, ${name || homeCountry()}`;
+    return name;
+  };
 
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
@@ -140,7 +162,7 @@
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : (subj.country || '');
+      const subjJur = idJurisdiction(subj);
       const win = (settings && +settings.structuringDays) || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [
@@ -239,7 +261,7 @@
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : (cond.country || '');
+      const idJur = idJurisdiction(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [
@@ -655,5 +677,5 @@ ${(filing.map || []).map(blockHTML).join('')}
     w.document.close();
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { LCTR: { buildMap, companions, Worksheet, sealedHTML, openSealed, fmtDateTime, promptKeys, requiredPromptKeys, fillKeys, requiredFillKeys, kindLabelOf } });
+  window.CDOS = Object.assign(window.CDOS || {}, { LCTR: { buildMap, companions, Worksheet, sealedHTML, openSealed, fmtDateTime, promptKeys, requiredPromptKeys, fillKeys, requiredFillKeys, kindLabelOf, fullAddr, idJurisdiction } });
 })();

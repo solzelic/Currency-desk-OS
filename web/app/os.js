@@ -22535,9 +22535,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
-  const COUNTRIES = ['Canada', 'United States', 'Other'];
-  // join an address, including the country only when it isn't the default (Canada)
-  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== 'Canada' ? rec.country : ''].filter(Boolean).join(', ');
+  /* ISO 3166-1 alpha-2. The stored value is the code. The teller sees
+     the English name. A record saved before this list, with a free-text
+     country such as "Canada" or "Iran", still opens: that value is kept
+     as its own option until somebody picks a code. */
+  const ISO_COUNTRIES = [['AF', 'Afghanistan'], ['AL', 'Albania'], ['DZ', 'Algeria'], ['AS', 'American Samoa'], ['AD', 'Andorra'], ['AO', 'Angola'], ['AI', 'Anguilla'], ['AQ', 'Antarctica'], ['AG', 'Antigua and Barbuda'], ['AR', 'Argentina'], ['AM', 'Armenia'], ['AW', 'Aruba'], ['AU', 'Australia'], ['AT', 'Austria'], ['AZ', 'Azerbaijan'], ['BS', 'Bahamas'], ['BH', 'Bahrain'], ['BD', 'Bangladesh'], ['BB', 'Barbados'], ['BY', 'Belarus'], ['BE', 'Belgium'], ['BZ', 'Belize'], ['BJ', 'Benin'], ['BM', 'Bermuda'], ['BT', 'Bhutan'], ['BO', 'Bolivia'], ['BQ', 'Bonaire, Sint Eustatius and Saba'], ['BA', 'Bosnia and Herzegovina'], ['BW', 'Botswana'], ['BV', 'Bouvet Island'], ['BR', 'Brazil'], ['IO', 'British Indian Ocean Territory'], ['BN', 'Brunei Darussalam'], ['BG', 'Bulgaria'], ['BF', 'Burkina Faso'], ['BI', 'Burundi'], ['CV', 'Cabo Verde'], ['KH', 'Cambodia'], ['CM', 'Cameroon'], ['CA', 'Canada'], ['KY', 'Cayman Islands'], ['CF', 'Central African Republic'], ['TD', 'Chad'], ['CL', 'Chile'], ['CN', 'China'], ['CX', 'Christmas Island'], ['CC', 'Cocos (Keeling) Islands'], ['CO', 'Colombia'], ['KM', 'Comoros'], ['CG', 'Congo'], ['CD', 'Congo, Democratic Republic of the'], ['CK', 'Cook Islands'], ['CR', 'Costa Rica'], ['CI', "Cote d'Ivoire"], ['HR', 'Croatia'], ['CU', 'Cuba'], ['CW', 'Curacao'], ['CY', 'Cyprus'], ['CZ', 'Czechia'], ['DK', 'Denmark'], ['DJ', 'Djibouti'], ['DM', 'Dominica'], ['DO', 'Dominican Republic'], ['EC', 'Ecuador'], ['EG', 'Egypt'], ['SV', 'El Salvador'], ['GQ', 'Equatorial Guinea'], ['ER', 'Eritrea'], ['EE', 'Estonia'], ['SZ', 'Eswatini'], ['ET', 'Ethiopia'], ['FK', 'Falkland Islands'], ['FO', 'Faroe Islands'], ['FJ', 'Fiji'], ['FI', 'Finland'], ['FR', 'France'], ['GF', 'French Guiana'], ['PF', 'French Polynesia'], ['TF', 'French Southern Territories'], ['GA', 'Gabon'], ['GM', 'Gambia'], ['GE', 'Georgia'], ['DE', 'Germany'], ['GH', 'Ghana'], ['GI', 'Gibraltar'], ['GR', 'Greece'], ['GL', 'Greenland'], ['GD', 'Grenada'], ['GP', 'Guadeloupe'], ['GU', 'Guam'], ['GT', 'Guatemala'], ['GG', 'Guernsey'], ['GN', 'Guinea'], ['GW', 'Guinea-Bissau'], ['GY', 'Guyana'], ['HT', 'Haiti'], ['HM', 'Heard Island and McDonald Islands'], ['VA', 'Holy See'], ['HN', 'Honduras'], ['HK', 'Hong Kong'], ['HU', 'Hungary'], ['IS', 'Iceland'], ['IN', 'India'], ['ID', 'Indonesia'], ['IR', 'Iran'], ['IQ', 'Iraq'], ['IE', 'Ireland'], ['IM', 'Isle of Man'], ['IL', 'Israel'], ['IT', 'Italy'], ['JM', 'Jamaica'], ['JP', 'Japan'], ['JE', 'Jersey'], ['JO', 'Jordan'], ['KZ', 'Kazakhstan'], ['KE', 'Kenya'], ['KI', 'Kiribati'], ['KP', 'North Korea'], ['KR', 'South Korea'], ['KW', 'Kuwait'], ['KG', 'Kyrgyzstan'], ['LA', "Lao People's Democratic Republic"], ['LV', 'Latvia'], ['LB', 'Lebanon'], ['LS', 'Lesotho'], ['LR', 'Liberia'], ['LY', 'Libya'], ['LI', 'Liechtenstein'], ['LT', 'Lithuania'], ['LU', 'Luxembourg'], ['MO', 'Macao'], ['MG', 'Madagascar'], ['MW', 'Malawi'], ['MY', 'Malaysia'], ['MV', 'Maldives'], ['ML', 'Mali'], ['MT', 'Malta'], ['MH', 'Marshall Islands'], ['MQ', 'Martinique'], ['MR', 'Mauritania'], ['MU', 'Mauritius'], ['YT', 'Mayotte'], ['MX', 'Mexico'], ['FM', 'Micronesia'], ['MD', 'Moldova'], ['MC', 'Monaco'], ['MN', 'Mongolia'], ['ME', 'Montenegro'], ['MS', 'Montserrat'], ['MA', 'Morocco'], ['MZ', 'Mozambique'], ['MM', 'Myanmar'], ['NA', 'Namibia'], ['NR', 'Nauru'], ['NP', 'Nepal'], ['NL', 'Netherlands'], ['NC', 'New Caledonia'], ['NZ', 'New Zealand'], ['NI', 'Nicaragua'], ['NE', 'Niger'], ['NG', 'Nigeria'], ['NU', 'Niue'], ['NF', 'Norfolk Island'], ['MK', 'North Macedonia'], ['MP', 'Northern Mariana Islands'], ['NO', 'Norway'], ['OM', 'Oman'], ['PK', 'Pakistan'], ['PW', 'Palau'], ['PS', 'Palestine'], ['PA', 'Panama'], ['PG', 'Papua New Guinea'], ['PY', 'Paraguay'], ['PE', 'Peru'], ['PH', 'Philippines'], ['PN', 'Pitcairn'], ['PL', 'Poland'], ['PT', 'Portugal'], ['PR', 'Puerto Rico'], ['QA', 'Qatar'], ['RE', 'Reunion'], ['RO', 'Romania'], ['RU', 'Russia'], ['RW', 'Rwanda'], ['BL', 'Saint Barthelemy'], ['SH', 'Saint Helena, Ascension and Tristan da Cunha'], ['KN', 'Saint Kitts and Nevis'], ['LC', 'Saint Lucia'], ['MF', 'Saint Martin'], ['PM', 'Saint Pierre and Miquelon'], ['VC', 'Saint Vincent and the Grenadines'], ['WS', 'Samoa'], ['SM', 'San Marino'], ['ST', 'Sao Tome and Principe'], ['SA', 'Saudi Arabia'], ['SN', 'Senegal'], ['RS', 'Serbia'], ['SC', 'Seychelles'], ['SL', 'Sierra Leone'], ['SG', 'Singapore'], ['SX', 'Sint Maarten'], ['SK', 'Slovakia'], ['SI', 'Slovenia'], ['SB', 'Solomon Islands'], ['SO', 'Somalia'], ['ZA', 'South Africa'], ['GS', 'South Georgia and the South Sandwich Islands'], ['SS', 'South Sudan'], ['ES', 'Spain'], ['LK', 'Sri Lanka'], ['SD', 'Sudan'], ['SR', 'Suriname'], ['SJ', 'Svalbard and Jan Mayen'], ['SE', 'Sweden'], ['CH', 'Switzerland'], ['SY', 'Syria'], ['TW', 'Taiwan'], ['TJ', 'Tajikistan'], ['TZ', 'Tanzania'], ['TH', 'Thailand'], ['TL', 'Timor-Leste'], ['TG', 'Togo'], ['TK', 'Tokelau'], ['TO', 'Tonga'], ['TT', 'Trinidad and Tobago'], ['TN', 'Tunisia'], ['TR', 'Turkey'], ['TM', 'Turkmenistan'], ['TC', 'Turks and Caicos Islands'], ['TV', 'Tuvalu'], ['UG', 'Uganda'], ['UA', 'Ukraine'], ['AE', 'United Arab Emirates'], ['GB', 'United Kingdom'], ['US', 'United States'], ['UM', 'United States Minor Outlying Islands'], ['UY', 'Uruguay'], ['UZ', 'Uzbekistan'], ['VU', 'Vanuatu'], ['VE', 'Venezuela'], ['VN', 'Viet Nam'], ['VG', 'Virgin Islands (British)'], ['VI', 'Virgin Islands (U.S.)'], ['WF', 'Wallis and Futuna'], ['EH', 'Western Sahara'], ['YE', 'Yemen'], ['ZM', 'Zambia'], ['ZW', 'Zimbabwe'], ['AX', 'Aland Islands']];
+  const COUNTRY_NAME = {};
+  ISO_COUNTRIES.forEach(([code, name]) => {
+    COUNTRY_NAME[code] = name;
+  });
+  const isCanada = value => value === 'CA' || value === 'Canada';
+  const isUnitedStates = value => value === 'US' || value === 'United States' || value === 'USA';
+  /* English name for a stored country. The picker saves an ISO code.
+     A file from before that change still holds the free-text name.
+     Reports call this same function, so both shapes print as one name. */
+  const countryName = value => {
+    if (value == null) return '';
+    const stored = String(value).trim();
+    if (!stored) return '';
+    return COUNTRY_NAME[stored] || stored;
+  };
+  /* This screen's address leaves Canada off. A filing worksheet does
+     not: it compares the name from countryName with the desk's pack. */
+  const countryLabel = value => {
+    const name = countryName(value);
+    if (!name || isCanada(name)) return '';
+    return name;
+  };
+  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, countryLabel(rec.country)].filter(Boolean).join(', ');
   const RISK = window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = window.CDOS.normalizeRisk,
     riskTone = window.CDOS.riskTone;
@@ -22773,11 +22798,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     kind
   }) {
     const corp = kind === 'corporate';
-    const country = rec.country || 'Canada';
-    const isCA = country === 'Canada',
-      isUS = country === 'United States';
+    const country = rec.country || 'CA';
+    const isCA = isCanada(country),
+      isUS = isUnitedStates(country);
     const regionLabel = isUS ? 'State' : isCA ? 'Province' : 'State / Region';
     const postalLabel = isUS ? 'ZIP code' : 'Postal code';
+    const knownCountry = ISO_COUNTRIES.some(([code]) => code === country);
+    const countryOptions = knownCountry ? ISO_COUNTRIES : [[country, country]].concat(ISO_COUNTRIES);
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -22860,9 +22887,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onChange: e => set('country', e.target.value),
       className: inCls,
       style: inSty
-    }, COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
-      key: c
-    }, c)))), /*#__PURE__*/React.createElement(EditField, {
+    }, countryOptions.map(([code, name]) => /*#__PURE__*/React.createElement("option", {
+      key: code,
+      value: code
+    }, name)))), /*#__PURE__*/React.createElement(EditField, {
       label: "Street address",
       full: true
     }, /*#__PURE__*/React.createElement("input", {
@@ -25815,7 +25843,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     Clients,
     ClientIdViewer,
     ClientRecords,
-    IdScan
+    IdScan,
+    countryName
   });
 })();
 
@@ -41724,11 +41753,33 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       other: parts.slice(1, -1).join(' ')
     };
   }
-  /* The country is omitted from an address only when it IS the desk's own
-     country — which the pack states. It used to be omitted whenever it was
-     Canada, so a Canadian client's address filed by a London desk lost its
-     country line. */
-  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
+  /* The client file may hold an ISO code or an older free-text name.
+     countryName lives with the picker, and this worksheet refuses to
+     print a country until that function is there. A missing helper
+     would otherwise file "CA" on one report and "Canada" on the next. */
+  const storedCountryName = value => {
+    const named = window.CDOS.countryName;
+    if (typeof named !== 'function') {
+      throw new Error('countryName is not loaded. The client file has to load before a filing worksheet can print a country.');
+    }
+    return named(value);
+  };
+  /* Omit the country from an address only when its English name is the
+     desk's own country. The pack states that as a name ("Canada"), not
+     a code, so the comparison is against the name. */
+  const fullAddr = rec => {
+    const name = storedCountryName(rec && rec.country);
+    const country = name && name !== homeCountry() ? name : '';
+    return [rec.address, rec.city, rec.province, rec.postal, country].filter(Boolean).join(', ');
+  };
+  /* Identifier jurisdiction is the province and the English country
+     name. A blank country with a province still falls back to the
+     desk's own country. A blank country with no province stays blank. */
+  const idJurisdiction = rec => {
+    const name = storedCountryName(rec && rec.country);
+    if (rec && rec.province) return `${rec.province}, ${name || homeCountry()}`;
+    return name;
+  };
 
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
@@ -41778,7 +41829,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
+      const subjJur = idJurisdiction(subj);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -41903,7 +41954,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
+      const idJur = idJurisdiction(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -42940,7 +42991,9 @@ ${(filing.map || []).map(blockHTML).join('')}
       requiredPromptKeys,
       fillKeys,
       requiredFillKeys,
-      kindLabelOf
+      kindLabelOf,
+      fullAddr,
+      idJurisdiction
     }
   });
 })();
