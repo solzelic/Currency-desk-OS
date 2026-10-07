@@ -6,8 +6,10 @@
    foreign cash at 0 on any other desk, so 5,000 euros handed over
    a Belgrade counter read as "No ID needed". Neither showed up in
    the seam suite, because nothing opened that window or took
-   foreign notes on a dinar desk that has no country pack. Serbia now
-   has its own pack, so this desk is a Philippine shop keeping dinars.
+   foreign notes on a dinar desk that has no country pack. Serbia and
+   the Philippines now have their own packs, so this desk is a Mexican
+   shop keeping dinars. Mexico has no pack. The stated home currency
+   and the international baseline stay.
    ============================================================ */
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -92,7 +94,7 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
         email: EMAIL,
         password: "foreign-desk-2026",
         slug: SLUG,
-        onboarding: { country: "Philippines", homeCurrency: "RSD", city: "Manila", plan: "full" },
+        onboarding: { country: "Mexico", homeCurrency: "RSD", city: "Mexico City", plan: "full" },
       },
     });
     expect(started.status(), await started.text()).toBe(201);

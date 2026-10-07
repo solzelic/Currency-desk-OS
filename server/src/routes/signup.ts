@@ -121,7 +121,10 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const b = parsed.data;
     if (RESERVED_SLUGS.has(b.slug)) return reply.code(409).send({ error: "slug_reserved", detail: "That desk address is reserved — pick another." });
-    if (!allow("signup-ip:" + req.ip, 8) || !allow("signup-email:" + b.email, 4)) {
+    /* The seam suite opens one desk per country from a single address,
+       and a retry counts again. Sixteen still stops a script. One
+       email stays at four. */
+    if (!allow("signup-ip:" + req.ip, 16) || !allow("signup-email:" + b.email, 4)) {
       return reply.code(429).send({ error: "slow_down", detail: "Too many attempts — try again in a bit." });
     }
     if (await slugTaken(db, b.slug, b.email)) return reply.code(409).send({ error: "slug_taken", detail: "That desk address is taken — pick another." });
