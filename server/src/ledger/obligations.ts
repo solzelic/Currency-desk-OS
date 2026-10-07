@@ -66,7 +66,6 @@ import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
-import { resolveReportThreshold } from "./thresholds.js";
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
 import {
@@ -74,6 +73,7 @@ import {
   requireIdentification,
   requireInstalledPack,
   requireOpenTill,
+  requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
 
@@ -677,19 +677,15 @@ export class ObligationService {
       }
       /* Same as an exchange: the 2027 EU pack has no amount report, so
          a missing reporting line must not demand purpose on every transfer. */
-      if (pack.packId !== EU_AMLR_PACK_ID && (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim())) {
-        const reporting = await resolveReportThreshold(
+      if (pack.packId !== EU_AMLR_PACK_ID) {
+        await requirePurposeAndSource(
           client,
           actor.legalEntityId,
           pack,
+          amountHome,
+          spec.capture.purpose,
+          spec.capture.sourceOfFunds,
         );
-        if (reporting === null || amountHome.gte(reporting))
-          throw new LedgerError(
-            "COMPLIANCE_BLOCKED",
-            reporting === null
-              ? "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed."
-              : "Authoritative compliance policy blocked posting.",
-          );
       }
 
       /* Cash the desk does not have cannot be paid out, and the refusal

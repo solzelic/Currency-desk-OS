@@ -422,14 +422,15 @@ class Component extends DCLogic {
     { id:'hmrc', tag:'HMRC', country:'United Kingdom', regulator:'His Majesty\u2019s Revenue & Customs', status:'Coming soon', kind:'soon', color:'#A9791C', soft:'rgba(169,121,28,0.13)', official:'https://www.gov.uk/government/organisations/hm-revenue-customs', updated:'11 Jul 2026', retention:'5 years',
       supervisor:'HMRC for MSB supervision, the NCA for SARs and OFSI for sanctions',
       deadline:'SAR as soon as practicable after suspicion',
-      whatWeDo:'On the roadmap for UK money services businesses: HMRC registration kept current, MLR 2017 controls documented, and suspicious activity routed to the NCA with the deal record attached.',
-      how:[{n:'1',t:'Your HMRC registration and fit-and-proper checks are tracked.'},{n:'2',t:'Risk assessment and controls live next to the deals they govern.'},{n:'3',t:'SARs are drafted for the NCA and records retained five years.'}],
+      whatWeDo:'On the roadmap for UK money services businesses. The bureau rulebook is the Money Laundering Regulations 2017: customer due diligence on an occasional transaction of £12,000 or more, and on a transfer of funds of more than £800. There is no large-cash report. A suspicious activity report goes to the NCA. Records are kept for five years.',
+      how:[{n:'1',t:'Your HMRC registration and fit-and-proper checks are tracked.'},{n:'2',t:'Occasional transactions of £12,000 or more, and transfers of funds of more than £800, ask for customer due diligence.'},{n:'3',t:'SARs are drafted for the NCA and records retained five years. There is no large-cash report.'}],
       rules:[
         {name:'MSB registration', spec:'HMRC supervision, kept current.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'MLR 2017 controls', spec:'Risk assessment and written policies.', tag:'Planned', cat:'screening', when:'Ongoing'},
-        {name:'SAR to the NCA', spec:'Assisted drafting and submission route.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'OFSI sanctions screening', spec:'UK consolidated list on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'5-year record retention', spec:'Client files kept after the relationship ends.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'Occasional transaction', spec:'Customer due diligence at £12,000 or more.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Transfer of funds', spec:'Customer due diligence on more than £800.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'No large-cash report', spec:'UK law does not require one for a bureau.', tag:'Planned', cat:'records', when:'At the till'},
+        {name:'SAR to the NCA', spec:'UKFIU, as soon as is practicable. No amount.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'5-year record retention', spec:'MLR regulation 40, from the end of the transaction or the relationship.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'amla', tag:'AMLR', country:'European Union', regulator:'National financial intelligence unit', status:'From 10 July 2027', kind:'soon', color:'#33578F', soft:'rgba(51,87,143,0.11)', official:'https://eur-lex.europa.eu/eli/reg/2024/1624/oj', updated:'07 Oct 2026', retention:'5 years',
       supervisor:'Your national supervisor and your national financial intelligence unit',

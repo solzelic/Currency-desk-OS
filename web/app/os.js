@@ -2426,6 +2426,14 @@
           body: "{}",
         });
       },
+      /* pack-gb-v1 to pack-gb-v2. The server refuses every other pack.
+         Posted deals are not rewritten. */
+      adoptUkPack: function () {
+        return request("/api/ledger/jurisdiction-pack/gb-v2", {
+          method: "POST",
+          body: "{}",
+        });
+      },
 
       /* ---- the currencies this desk deals in ----
 
@@ -5180,6 +5188,7 @@
     const line = field => desk && desk[field] || null;
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const euAmlr = desk && desk.packId === 'pack-eu-v2' || packNow && packNow.packId === 'pack-eu-v2';
+    const ukV2 = desk && desk.packId === 'pack-gb-v2' || packNow && packNow.packId === 'pack-gb-v2';
     const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
     const currency = desk && desk.currency || settings.baseCurrency || '';
     const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
@@ -5212,7 +5221,19 @@
         fontFamily: 'Space Mono, monospace'
       }
     }, status === 'loading' ? 'reading…' : 'unavailable');
-    const reportTip = /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+    const reportTip = ukV2 ? /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+      w: 320,
+      title: "No UK large-cash report",
+      body: "UK law does not require a bureau to file a large-cash report. Leave the box blank. A number you type is your own policy, and the desk will ask for purpose and source of funds at or above it. It is not a report the NCA requires.",
+      lines: [{
+        k: 'Following',
+        v: 'blank. There is no amount, and that is the statute'
+      }, {
+        k: 'Your policy',
+        v: 'a number you typed. The law does not require it'
+      }],
+      example: "A transfer of funds of more than \xA3800 still needs customer due diligence. That line is not this box."
+    }) : /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       w: 320,
       title: "Where your reporting line sits",
       body: "Your jurisdiction sets the amount a cash deal has to be reported at, and that figure arrives with your country's pack. You may move the line DOWN \u2014 some banks and auditors want to see a desk reporting sooner than the law requires, and a desk is free to do that. You may not move it up: a line above what your regulator requires means deals you are legally obliged to report going unreported, and the desk is told so here and in the notification bell until it is fixed.",
@@ -5228,7 +5249,13 @@
       }],
       example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
-    return /*#__PURE__*/React.createElement("div", null, euAmlr ? /*#__PURE__*/React.createElement(Row, {
+    return /*#__PURE__*/React.createElement("div", null, ukV2 && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "uk-pack-rules",
+      className: "text-[12px] mb-3 leading-relaxed",
+      style: {
+        color: CD.ink
+      }
+    }, "There is no large-cash report in UK law for a bureau. Customer due diligence applies to an occasional transaction of \xA312,000 or more, and to a transfer of funds of more than \xA3800. A suspicious activity report goes to the NCA (UKFIU), as soon as is practicable. Records are kept for 5 years. Deals are not added together. The 24 hour figure is stored because the column cannot be empty. It is not the rule."), euAmlr ? /*#__PURE__*/React.createElement(Row, {
       title: "Large cash report",
       desc: "Regulation 2024/1624 does not set a European Union large-cash report. Suspicious activity is reported to your national financial intelligence unit at any amount, including an attempt."
     }, /*#__PURE__*/React.createElement("span", {
@@ -5240,8 +5267,8 @@
     }, "Not required")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Row, {
       title: /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5"
-      }, "Large cash / reportable threshold ", reportTip),
-      desc: `Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`
+      }, ukV2 ? 'Your own reporting line' : 'Large cash / reportable threshold', " ", reportTip),
+      desc: ukV2 ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('reportThreshold') && line('reportThreshold').effective,
       currency: currency,
@@ -5254,7 +5281,7 @@
       label: "Reporting threshold"
     })), /*#__PURE__*/React.createElement(Row, {
       title: "Require ID over",
-      desc: euAmlr ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here." : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
+      desc: euAmlr ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here." : ukV2 ? 'Foreign exchange and virtual currency: £12,000 or more, unless you set a different number. A number below £12,000 tightens the exchange. A number above £12,000 loosens only the exchange, and the desk says so. A transfer of funds stays at more than £800 unless your number is below £800.' : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('idThreshold') && line('idThreshold').effective,
       currency: currency,
@@ -5267,7 +5294,7 @@
       label: "Identification threshold"
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
-      desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
+      desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
@@ -5897,6 +5924,7 @@
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
+    const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
     const [importing, setImporting] = useState(false);
     const [expOpts, setExpOpts] = useState({
@@ -10000,7 +10028,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             ...s
           }));
         }
-      }, "Use the 2027 EU rules")), !paused && pack && pack.packId === 'pack-rs-v1' && /*#__PURE__*/React.createElement("div", {
+      }, "Use the 2027 EU rules"), pack.packId === 'pack-gb-v2' && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "uk-pack-v2",
+        className: "text-[12px] mt-2 leading-relaxed",
+        style: {
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("div", null, "No large-cash report. UK law does not require one for a bureau."), /*#__PURE__*/React.createElement("div", {
+        className: "mt-1"
+      }, "Customer due diligence: an occasional transaction of \xA312,000 or more, and a transfer of funds of more than \xA3800."), /*#__PURE__*/React.createElement("div", {
+        className: "mt-1"
+      }, "Suspicious Activity Report (SAR) to the NCA (UKFIU), as soon as is practicable. This till does not file it."), /*#__PURE__*/React.createElement("div", {
+        className: "mt-1"
+      }, "Records kept for 5 years. HMRC supervises the business."))), !paused && pack && pack.packId === 'pack-rs-v1' && /*#__PURE__*/React.createElement("div", {
         "data-testid": "serbia-airside",
         className: "mb-3 p-3",
         style: {
@@ -10022,7 +10062,31 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, airsideMsg) : null), standalone && /*#__PURE__*/React.createElement("div", {
+      }, airsideMsg) : null), isOwner && pack && pack.packId === 'pack-gb-v1' && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "data-testid": "adopt-uk-pack",
+        className: "mb-3 text-left px-3 py-2 text-[12.5px] font-semibold",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 9,
+          border: 'none',
+          cursor: 'pointer'
+        },
+        onClick: async () => {
+          try {
+            const api = window.CDOS && window.CDOS.Backend;
+            if (!api || !api.adoptUkPack) return;
+            await api.adoptUkPack();
+            if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+            if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+            log('United Kingdom pack', 'Moved to pack-gb-v2. Posted deals keep the pack they were stamped with.');
+            setPackRev(n => n + 1);
+          } catch (e) {
+            log('United Kingdom pack', e && e.message || 'Could not move this desk.');
+          }
+        }
+      }, "Move this desk to the current United Kingdom pack"), standalone && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -10136,7 +10200,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontFamily: 'Space Mono, monospace'
         }
       }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
-        key: pack && pack.packId || 'thresholds'
+        key: `${pack && pack.packId || 'pack'}-${packRev}`
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
@@ -27764,7 +27828,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 pay-in \u2248 ", fmtHome(inCadEquiv), " (\u2265 ", limit.label, "). ", deskPack() && deskPack().reportName ? `A ${deskPack().reportName} will be required.` : 'A large-cash report will be required.'), structuring && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable, pay-in approx ", fmtHome(inCadEquiv), " (at or above ", limit.label, "). ", window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode || '' ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'), structuring && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.ink
@@ -33094,7 +33158,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        real reportable transaction walks past somebody. */
     const unpriced = inCadEquiv == null;
     const single = TH != null && !unpriced && inCadEquiv >= TH;
-    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+    /* A remittance used to require identification at every amount.
+       pack-gb-v2 does not: a transfer of funds needs it only above
+       the statutory line, which the server has already resolved
+       (including a desk number that tightens it). Cents, not a float. */
+    const ukTransfer = (window.CDOS.deskThresholds && window.CDOS.deskThresholds() || {}).transferDueDiligence || null;
+    const transferKind = isSend || isReceive || isMO || isBill;
+    let ukIdRequired = null;
+    if (ukTransfer && transferKind && window.CDOS._transfers && window.CDOS._transfers.transferRuling) {
+      const cashText = n => Number.isFinite(n) ? n.toFixed(2) : '';
+      const ruling = window.CDOS._transfers.transferRuling({
+        direction: isReceive ? 'receive' : 'send',
+        principal: isReceive ? '' : cashText(isSend ? amtN : amtN + feeN),
+        fee: isReceive || !isSend ? '0' : cashText(feeN),
+        payout: isReceive ? cashText(amtN) : '',
+        baseline: false,
+        ukTransfer,
+        reportLine: TH
+      });
+      ukIdRequired = !!ruling.idRequired || unpriced;
+    }
+    const idRequired = !paused && (ukIdRequired != null ? ukIdRequired : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return {
@@ -33205,7 +33289,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         sub: !capOk ? 'Purpose, source of funds & third-party — fill below' : 'Pre-fills the filing in Compliance'
       });
     }
-    if (serverBacked && isExchange && !single) {
+    /* A United Kingdom desk following the pack has no cash report, so
+       a small exchange does not need purpose and source of funds.
+       A reporting number the desk typed still does, and so does every
+       other pack. */
+    const noStatutoryCashReport = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-gb-v2' && !(TH > 0));
+    if (serverBacked && isExchange && !single && !noStatutoryCashReport) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({
         key: 'server-facts',
@@ -35145,7 +35234,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     deskLine,
     idLine,
     reportLine,
-    euLines
+    euLines,
+    ukTransfer
   }) {
     const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
     if (blank) return {
@@ -35178,6 +35268,26 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
     }
     const report = centsOf(reportLine);
+    /* pack-gb-v2. The transfer line is "more than", and it is not the
+       foreign-exchange line. The server has already applied a desk
+       number that tightens it. Compare in cents so 800.00 and 800.01
+       do not depend on a binary float. */
+    if (ukTransfer) {
+      const line = centsOf(ukTransfer.amount);
+      if (line == null) {
+        return {
+          homeAmount,
+          reportable: report == null ? null : cash >= report,
+          idRequired: true
+        };
+      }
+      const over = ukTransfer.comparator === 'gt' ? cash > line : cash >= line;
+      return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: over
+      };
+    }
     let line = null;
     if (baseline) {
       const remittance = centsOf(remittanceLine);
@@ -36064,7 +36174,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
       idLine: idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
       reportLine: limit.amount,
-      euLines: packNow && packNow.packId === 'pack-eu-v2' ? packNow.idThresholds || [] : null
+      euLines: packNow && packNow.packId === 'pack-eu-v2' ? packNow.idThresholds || [] : null,
+      ukTransfer: thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -40752,7 +40863,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
       retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
-      largeCode: large && large.code || pack.reportName || '',
+      largeCode: large && large.code || (baseline ? pack.reportName || '' : ''),
       largeLabel: large && large.name || (baseline ? 'Large cash record' : ''),
       wireCode: wire ? wire.code : '',
       wireLabel: wire ? wire.name || '' : '',
@@ -48741,8 +48852,11 @@ ${snap}`;
          requires is not a sentence to fill in with a default. */
       authority: pack && pack.regulator || regime.authority || null,
       country: pack && pack.name || regime.country || null,
-      largeCode: pack && pack.reportName || regime.largeCode || null,
-      largeLabel: regime.largeLabel || (pack && pack.reportName ? pack.reportName + ' report' : null),
+      /* The pack's report name is the suspicious-activity code in the
+         United Kingdom. It is not a large-cash report. Use the large-cash
+         row when there is one, and do not invent one from the name. */
+      largeCode: regime.largeCode || (pack && pack.reportName && pack.reportName !== regime.strCode ? pack.reportName : null),
+      largeLabel: regime.largeLabel || (regime.largeCode && pack && pack.reportName ? pack.reportName + ' report' : null),
       aggHours: regime.aggHours || null
     };
   }
@@ -65457,9 +65571,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       /* An explicit null is "this pack has no amount report". A missing
          field on an older setup still falls back to 10,000. A line
          written in another currency, such as Serbia's euros on a dinar
-         book, is not stored as the home-currency line. */
+         book, is not stored as the home-currency line. A United Kingdom
+         desk has no large-cash report. Do not fill the blank with 10,000. */
       const foreignRules = setup.reportCurrency && homeCcy && String(setup.reportCurrency).toUpperCase() !== String(homeCcy).toUpperCase();
-      const reportOver = setup.baselineRules || foreignRules || setup.reportThreshold === null ? null : num(setup.reportThreshold, 10000);
+      const noCashReport = setup.noCashReport === true;
+      const reportOver = setup.baselineRules || foreignRules || noCashReport || setup.reportThreshold === null ? null : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */

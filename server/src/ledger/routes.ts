@@ -385,7 +385,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                    settled, written off or reversed. */
                 error.code === "OBLIGATION_NOT_OPEN" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ||
-                error.code === "PACK_OPT_IN_REFUSED" ? 409
+                error.code === "PACK_OPT_IN_REFUSED" ||
+                error.code === "JURISDICTION_PACK_CONFLICT" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
   }
@@ -811,6 +812,21 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor ? reply.send(await branchLocation.set(actor, parsed.data.airsideOrCasino)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* A desk that opened on pack-gb-v1 can move to pack-gb-v2. The
+     first pack is not edited. Posted deals keep the pack they were
+     stamped with. The same permission as moving a threshold: this
+     changes what the next deal is judged against. */
+  app.post("/api/ledger/jurisdiction-pack/gb-v2", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await thresholds.adoptUnitedKingdomV2(actor))
+        : undefined;
     } catch (error) {
       return failure(reply, error);
     }

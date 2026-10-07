@@ -269,9 +269,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   that name and number on every cash buy and sell. Records are kept
   five years (Article 95). The pack does not delete them and does not
   add the extra five years an authority can order. Migration 033.
-  029 and 031 are already on main. 027 and 030 are still open drafts,
-  so 033 stays the next free number. Sources, the article table, and
-  the gaps: `docs/SERBIA_PACK.md`.
+  029, 031, and 034 are already on main. 027 and 030 are still open
+  drafts. Sources, the article table, and the gaps: `docs/SERBIA_PACK.md`.
+
+- **United Kingdom desks open on pack-gb-v2.** The Money Laundering
+  Regulations 2017, sterling figures in force from 30 June 2026
+  (SI 2026/621): customer due diligence on an occasional transaction
+  of £12,000 or more, and on a transfer of funds of more than £800.
+  There is no large-cash report. A suspicious activity report goes to
+  the NCA (UKFIU), with no amount, as soon as is practicable. HMRC
+  supervises the business. Records are kept five years. `pack-gb-v1`
+  is not edited. A desk already on it stays there until an
+  administrator opts in. Posted deals keep the pack they were stamped
+  with. A number the desk types can still be stricter. The full
+  article table, the sources, and the gaps are `docs/UK_PACK.md`.
+  Migration 035. 029, 031, 033, and 034 are already on main. 027 and
+  030 are still open drafts, so 035 stays.
 
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
@@ -351,6 +364,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, United Kingdom pack v2. New GB and UK desks open on
+`pack-gb-v2`: occasional customer due diligence at £12,000 or more,
+transfers of funds of more than £800, no large-cash report, SAR to
+the NCA, records kept five years. `pack-gb-v1` is unchanged until a
+desk opts in. Posted deals keep their stamp. See `docs/UK_PACK.md`.
 
 **2026-10-07**, Australia pack v2. New Australian desks open on
 `pack-au-v2`. Desks on `pack-au-v1` stay until they opt in, and a

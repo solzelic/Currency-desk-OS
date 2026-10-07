@@ -22,6 +22,7 @@ import { EU_AMLR_PACK_ID, EU_V1_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, requireInstalledPack, type LedgerActor } from "./service.js";
 import { readDeskThresholds, type DeskThresholds } from "./thresholds.js";
+import { UK_PACK_V1, UK_PACK_V2 } from "./uk-mlr.js";
 
 /* What a caller may change, and what it maps to on the row. The desk's
    `home_currency`, its regulator and its report name are all the pack's to
@@ -372,6 +373,57 @@ export class ThresholdService {
           "Australia rules pack-au-v1 to pack-au-v2. Posted deals keep the pack they were stamped with.",
           randomUUID(),
         ],
+      );
+      const after = await readDeskThresholds(client, actor.legalEntityId);
+      await client.query("COMMIT");
+      return after;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Move a desk from pack-gb-v1 to pack-gb-v2.
+   *
+   * One way, and only from that pack. Already being on v2 is a no-op.
+   * Any other pack is refused. The desk's own identification and
+   * reporting numbers are left alone, and nothing already posted is
+   * rewritten: the pack id on a deal is a stamp, not a live pointer.
+   */
+  async adoptUnitedKingdomV2(actor: LedgerActor): Promise<DeskThresholds> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "compliance:thresholds");
+      const found = await client.query(
+        `SELECT jurisdiction_pack_id FROM legal_entities WHERE id=$1 FOR UPDATE`,
+        [actor.legalEntityId],
+      );
+      if (!found.rowCount) {
+        throw new LedgerError("LEGAL_ENTITY_NOT_FOUND", "This desk's legal entity is not on the ledger, so its pack cannot be changed here.");
+      }
+      const current = String(found.rows[0].jurisdiction_pack_id ?? "");
+      if (current === UK_PACK_V2) {
+        const thresholds = await readDeskThresholds(client, actor.legalEntityId);
+        await client.query("COMMIT");
+        return thresholds;
+      }
+      if (current !== UK_PACK_V1) {
+        throw new LedgerError("JURISDICTION_PACK_CONFLICT", "Only a desk on the first United Kingdom pack can move to the current one. This does not change another country, and it does not rewrite a deal already posted.");
+      }
+      const updated = await client.query(
+        `UPDATE legal_entities SET jurisdiction_pack_id=$2, jurisdiction_pack_version=2 WHERE id=$1 AND jurisdiction_pack_id=$3`,
+        [actor.legalEntityId, UK_PACK_V2, UK_PACK_V1],
+      );
+      if (!updated.rowCount) {
+        throw new LedgerError("JURISDICTION_PACK_CONFLICT", "Only a desk on the first United Kingdom pack can move to the current one. This does not change another country, and it does not rewrite a deal already posted.");
+      }
+      await client.query(
+        `INSERT INTO ledger_audit_events (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id, action,target_id,reason,correlation_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,'compliance.jurisdiction_pack.adopt',$7,$8,$9,now())`,
+        [randomUUID(), actor.tenantId, actor.legalEntityId, actor.branchId, actor.workspaceId, actor.userId, actor.legalEntityId, "United Kingdom pack pack-gb-v1 to pack-gb-v2. The desk's own identification and reporting numbers were left as they were. Posted deals keep the pack stamped on them.", randomUUID()],
       );
       const after = await readDeskThresholds(client, actor.legalEntityId);
       await client.query("COMMIT");

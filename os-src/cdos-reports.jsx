@@ -48,8 +48,11 @@
          requires is not a sentence to fill in with a default. */
       authority: (pack && pack.regulator) || regime.authority || null,
       country: (pack && pack.name) || regime.country || null,
-      largeCode: (pack && pack.reportName) || regime.largeCode || null,
-      largeLabel: regime.largeLabel || ((pack && pack.reportName) ? pack.reportName + ' report' : null),
+      /* The pack's report name is the suspicious-activity code in the
+         United Kingdom. It is not a large-cash report. Use the large-cash
+         row when there is one, and do not invent one from the name. */
+      largeCode: (regime.largeCode) || ((pack && pack.reportName && pack.reportName !== regime.strCode) ? pack.reportName : null),
+      largeLabel: regime.largeLabel || ((regime.largeCode && pack && pack.reportName) ? pack.reportName + ' report' : null),
       aggHours: regime.aggHours || null,
     };
   }

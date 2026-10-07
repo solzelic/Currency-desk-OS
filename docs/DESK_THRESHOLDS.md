@@ -76,10 +76,15 @@ the pack's single `id_threshold` column. It is not the per-deal line in
 `jurisdiction_id_thresholds`, where null means "this kind of deal has
 no line" and zero means "every deal". A country pack whose line is
 already in the home currency still resolves the single column, and
-`money()` still treats zero there as "cannot say". The baseline gate
-reads the per-deal rows. Serbia does too, because its lines are in
-euros, converted at the NBS middle rate for the Belgrade day and not
-at the market snapshot: `docs/SERBIA_PACK.md`.
+`money()` still treats zero there as "cannot say", except `pack-gb-v2`.
+That pack's gate reads the per-deal rows: £12,000 or more for an
+occasional transaction, and more than £800 for a transfer of funds. A
+reporting figure of 0 on that pack means there is no large-cash report,
+not that every deal must carry purpose and source of funds. See
+`docs/UK_PACK.md`. The baseline gate reads the per-deal rows. Serbia
+does too, because its lines are in euros, converted at the NBS middle
+rate for the Belgrade day and not at the market snapshot:
+`docs/SERBIA_PACK.md`.
 
 ## What the ledger does with it
 

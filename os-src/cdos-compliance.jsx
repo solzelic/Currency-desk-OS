@@ -312,7 +312,7 @@
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
       retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
-      largeCode: (large && large.code) || pack.reportName || '',
+      largeCode: (large && large.code) || (baseline ? (pack.reportName || '') : ''),
       largeLabel: (large && large.name) || (baseline ? 'Large cash record' : ''),
       wireCode: wire ? wire.code : '',
       wireLabel: wire ? (wire.name || '') : '',

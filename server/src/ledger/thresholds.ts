@@ -42,6 +42,11 @@ import { marketHomePerUnit, roundDownCents } from "./compliance-gate.js";
 import { nbsMiddleHomePerUnit } from "./nbs-middle.js";
 import { SERBIA_PACK_ID } from "./serbia.js";
 import { resolvePack, type JurisdictionPack } from "./jurisdiction.js";
+import {
+  UK_PACK_V2,
+  ukTransferDueDiligence,
+  type TransferDueDiligence,
+} from "./uk-mlr.js";
 
 /** Where a desk's own number stands against what its regulator requires. */
 export type Posture =
@@ -91,6 +96,9 @@ export type DeskThresholds = {
   aggregationHours: ThresholdSetting<number>;
   /** how long filed reports and their records are kept */
   retentionYears: ThresholdSetting<number>;
+  /** The transfer identification line, already resolved, on pack-gb-v2.
+      Null on every other pack, which keeps using `idThreshold`. */
+  transferDueDiligence: TransferDueDiligence | null;
 };
 
 /* Which way "stricter" points, per number.
@@ -331,6 +339,10 @@ export async function readDeskThresholds(
         }
       : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
   const remittanceIdThreshold = await remittanceLine(client, pack, market);
+  const transferDueDiligence =
+    pack.packId === UK_PACK_V2
+      ? await ukTransferDueDiligence(client, legalEntityId, pack)
+      : null;
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,
@@ -355,6 +367,7 @@ export async function readDeskThresholds(
       pack.available ? (count(row.pack_retention_years) ?? 5) : null,
       "higher_is_stricter",
     ),
+    transferDueDiligence,
   };
 }
 

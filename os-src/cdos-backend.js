@@ -520,6 +520,14 @@
           body: "{}",
         });
       },
+      /* pack-gb-v1 to pack-gb-v2. The server refuses every other pack.
+         Posted deals are not rewritten. */
+      adoptUkPack: function () {
+        return request("/api/ledger/jurisdiction-pack/gb-v2", {
+          method: "POST",
+          body: "{}",
+        });
+      },
 
       /* ---- the currencies this desk deals in ----
 
