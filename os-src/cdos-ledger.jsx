@@ -1820,6 +1820,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
      TAGGED — desktop app: every transaction flagged for follow-up
   ===================================================================== */
   function Tagged({ rows, clients, settings, onOpen }) {
+    /* `deskFacts` is the version number from the ledger screen, not a
+       name this function can see. Naming it in the memo below without
+       calling the hook threw "deskFacts is not defined" the moment
+       Tagged opened, so the window never appeared. The hook is the
+       same one the ledger uses: the flags re-derive when the trading
+       day or the pack arrives. */
+    const deskFacts = useDeskFacts();
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     const tagged = useMemo(() => rows.filter(r => r.tagged).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows]);
     return (<div className="p-4">
