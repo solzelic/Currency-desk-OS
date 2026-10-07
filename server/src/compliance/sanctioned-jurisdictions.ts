@@ -460,6 +460,10 @@ function text(value: unknown): string | null {
   return trimmed.length ? trimmed : null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function blockedPlace(value: string | null, field: PlaceField): SanctionedJurisdiction | null {
   const hit = lookupSanctionedJurisdiction(value, field);
   if (!hit || hit.tier !== "blocked") return null;
@@ -472,7 +476,15 @@ function blockedPlace(value: string | null, field: PlaceField): SanctionedJurisd
    code in that box is not a country. */
 const DESK_COUNTRY_FIELDS = ["country", "elseCountry", "country_addr"] as const;
 
-export function blockedDeskCountry(answers: Record<string, unknown> | null | undefined): SanctionedJurisdiction | null {
+type DeskPlace = {
+  country?: unknown;
+  elseCountry?: unknown;
+  country_addr?: unknown;
+  region?: unknown;
+  address?: unknown;
+};
+
+export function blockedDeskCountry(answers: DeskPlace | null | undefined): SanctionedJurisdiction | null {
   if (!answers) return null;
   for (const key of DESK_COUNTRY_FIELDS) {
     const hit = blockedPlace(text(answers[key]), "country");
@@ -480,11 +492,9 @@ export function blockedDeskCountry(answers: Record<string, unknown> | null | und
   }
   const region = blockedPlace(text(answers.region), "region");
   if (region) return region;
-  const address = answers.address;
-  if (address && typeof address === "object" && !Array.isArray(address)) {
-    const place = address as Record<string, unknown>;
-    return blockedPlace(text(place.country), "country")
-      ?? blockedPlace(text(place.region), "region");
+  if (isRecord(answers.address)) {
+    return blockedPlace(text(answers.address.country), "country")
+      ?? blockedPlace(text(answers.address.region), "region");
   }
   return null;
 }
@@ -578,18 +588,47 @@ export type SanctionsStopAudit = {
   blocked: "corridor" | "currency" | "client";
 };
 
+/* Rides on the ledger error as its cause, so the audit write can
+   read the stop with instanceof. This module does not import the
+   ledger error type. */
+export class SanctionsStop extends Error {
+  readonly audit: SanctionsStopAudit;
+  constructor(audit: SanctionsStopAudit) {
+    super(audit.jurisdictionId);
+    this.name = "SanctionsStop";
+    this.audit = audit;
+  }
+}
+
+export function markSanctionsStop(error: Error, audit: SanctionsStopAudit): void {
+  error.cause = new SanctionsStop(audit);
+}
+
+function sanctionsStopOf(error: unknown): SanctionsStop | undefined {
+  if (error instanceof SanctionsStop) return error;
+  if (error instanceof Error && error.cause instanceof SanctionsStop) return error.cause;
+  return undefined;
+}
+
 export type DealScreen =
   | { outcome: "clear" }
   | { outcome: "invalid"; code: "INVALID_REQUEST"; message: string }
   | { outcome: "stop"; code: string; message: string; audit: SanctionsStopAudit }
   | { outcome: "enhanced_due_diligence"; entry: SanctionedJurisdiction };
 
+/* The pool is only asked to run the insert. A test can pass a
+   stand-in with the same query method. */
+export type AuditWriter = {
+  query(sql: string, params?: readonly unknown[]): Promise<unknown>;
+};
+
 /* Written on the pool, after the deal transaction has rolled back.
    The rolled-back transaction cannot hold this row or the stop
-   would vanish with it. A failure here is swallowed: the teller
-   still gets the stop, not a server error. */
+   would vanish with it. If this insert fails, the failure is
+   logged and thrown: a stop that was not recorded must not look
+   like a completed refusal. */
 export async function recordSanctionsStop(
-  pool: pg.Pool,
+  pool: AuditWriter,
   actor: {
     userId: string;
     tenantId: string;
@@ -600,10 +639,9 @@ export async function recordSanctionsStop(
   },
   error: unknown,
 ): Promise<void> {
-  const audit = error && typeof error === "object"
-    ? (error as { sanctionsAudit?: SanctionsStopAudit }).sanctionsAudit
-    : undefined;
-  if (!audit) return;
+  const stop = sanctionsStopOf(error);
+  if (!stop) return;
+  const audit = stop.audit;
   try {
     await pool.query(
       `INSERT INTO audit_events (id, tenant_id, legal_entity_id, branch_id, actor_id, action, detail)
@@ -621,10 +659,21 @@ export async function recordSanctionsStop(
         }),
       ],
     );
-  } catch {
-    /* The deal is already refused. Losing the audit row is worse
-       than the teller seeing it, and turning the refusal into a
-       500 would hide the reason. */
+  } catch (failure) {
+    console.error("[sanctions.stop] audit row was not written", {
+      action: "sanctions.stop",
+      jurisdictionId: audit.jurisdictionId,
+      customerId: audit.customerId,
+      actorId: actor.userId,
+      tenantId: actor.tenantId,
+      legalEntityId: actor.legalEntityId,
+      branchId: actor.branchId,
+      listVersion: audit.listVersion,
+      dealKind: audit.dealKind,
+      blocked: audit.blocked,
+      error: failure instanceof Error ? failure.message : "unknown",
+    });
+    throw failure;
   }
 }
 

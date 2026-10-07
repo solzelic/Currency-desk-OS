@@ -315,7 +315,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     }
     /* Same rule as saving the whole flow. A listed country is refused
        and not written, including when only one step is patched. */
-    const blockedCountry = blockedDeskCountry(answers as Record<string, unknown>);
+    const blockedCountry = blockedDeskCountry(answers);
     if (blockedCountry) return reply.code(403).send(countryChangeRefusal(blockedCountry));
     // "customer" is the honest value here — this is them, at their own screen
     const touched = { ...((row.touched ?? {}) as Record<string, string>), [step.id]: "customer" };

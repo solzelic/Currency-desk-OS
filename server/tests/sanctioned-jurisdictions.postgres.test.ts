@@ -12,7 +12,10 @@ import {
   countryChangeRefusal,
   lookupSanctionedCurrency,
   lookupSanctionedJurisdiction,
+  markSanctionsStop,
   missingCorridorMessage,
+  recordSanctionsStop,
+  type SanctionsStopAudit,
   SANCTIONED_JURISDICTIONS,
   SANCTIONS_LIST_VERSION,
   signupRefusal,
@@ -24,6 +27,19 @@ const postgres = url ? describe : describe.skip;
 
 function plain(text: string) {
   expect(text, text).not.toMatch(/\u2014|\u2013/);
+}
+
+function listed(id: string) {
+  const entry = SANCTIONED_JURISDICTIONS.find((item) => item.id === id);
+  if (!entry) throw new Error(`the sanctions list has no ${id}`);
+  return entry;
+}
+
+function requiredString(body: unknown, field: string): string {
+  if (typeof body !== "object" || body === null) throw new Error(`expected an object with ${field}`);
+  const value = Reflect.get(body, field);
+  if (typeof value !== "string" || value.length === 0) throw new Error(`expected ${field}`);
+  return value;
 }
 
 describe("sanctioned jurisdiction lookup", () => {
@@ -89,10 +105,10 @@ describe("sanctioned jurisdiction lookup", () => {
       }
       expect(entry.sources.every((source) => source.url.startsWith("https://") && source.asOf)).toBe(true);
     }
-    const kherson = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-65")!;
-    const zap = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-23")!;
-    const donetsk = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-14")!;
-    const luhansk = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "UA-09")!;
+    const kherson = listed("UA-65");
+    const zap = listed("UA-23");
+    const donetsk = listed("UA-14");
+    const luhansk = listed("UA-09");
     for (const region of [kherson, zap]) {
       expect(region.sources.some((source) => source.instrument.includes("14065"))).toBe(false);
       expect(region.sources.some((source) => source.authority === "US-OFAC")).toBe(false);
@@ -102,9 +118,51 @@ describe("sanctioned jurisdiction lookup", () => {
     for (const region of [donetsk, luhansk, kherson, zap]) {
       expect(region.sources.every((source) => source.note?.includes("deliberately broader"))).toBe(true);
     }
-    const cuba = SANCTIONED_JURISDICTIONS.find((entry) => entry.id === "CU")!;
+    const cuba = listed("CU");
     expect(cuba.tier).toBe("blocked");
     expect(cuba.sources[0]?.note).toContain("business choice");
+  });
+});
+
+describe("sanctions stop audit write", () => {
+  it("fails when the audit row cannot be written", async () => {
+    const audit: SanctionsStopAudit = {
+      jurisdictionId: "IR",
+      jurisdictionName: "Iran",
+      listVersion: SANCTIONS_LIST_VERSION,
+      dealKind: "send",
+      direction: "send",
+      corridor: "IR",
+      currency: null,
+      customerId: "cus-audit",
+      blocked: "client",
+    };
+    const stopped = new Error("stopped");
+    markSanctionsStop(stopped, audit);
+    const writer = {
+      query: async () => {
+        throw new Error("audit insert refused");
+      },
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(recordSanctionsStop(writer, {
+        userId: "usr-1",
+        tenantId: "tnt-1",
+        legalEntityId: "le-1",
+        branchId: "br-1",
+        workspaceId: "ws-1",
+        tillId: "till-1",
+      }, stopped)).rejects.toThrow("audit insert refused");
+      const text = JSON.stringify(spy.mock.calls);
+      expect(text).toContain("sanctions.stop");
+      expect(text).toContain("IR");
+      expect(text).toContain("cus-audit");
+      expect(text).toContain("usr-1");
+      expect(text).not.toContain("Iran Client");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -117,8 +175,8 @@ let earlyAccess: string | undefined;
 const codeFromLog = (): string => {
   const line = [...logged].reverse().find((entry) => entry.includes("[email simulated]"));
   const match = line?.match(/(\d{6}) is your/) ?? line?.match(/code is (\d{6})/);
-  if (!match) throw new Error("no signup code in log");
-  return match[1]!;
+  if (!match?.[1]) throw new Error("no signup code in log");
+  return match[1];
 };
 
 async function signup(slug: string, email: string, onboarding: Record<string, unknown>) {
@@ -369,7 +427,7 @@ postgres("sanctioned jurisdictions on the book", () => {
       cookies: { cdos_session: cookie },
     });
     expect(counter.statusCode, counter.body).toBe(200);
-    return counter.json().customerId as string;
+    return requiredString(counter.json(), "customerId");
   }
 
   function send(
@@ -428,7 +486,9 @@ postgres("sanctioned jurisdictions on the book", () => {
       "SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1 AND customer_id=$2",
       [`tnt-${slug}`, customerId],
     );
-    return found.rows[0].n as number;
+    const count = found.rows[0]?.n;
+    if (typeof count !== "number") throw new Error("expected a deal count");
+    return count;
   }
 
   it("blocks a transfer to or from a listed country and still posts an ordinary one", async () => {
@@ -770,5 +830,46 @@ postgres("sanctioned jurisdictions on the book", () => {
     const blockedWins = await send(baseline.cookie, iran, "MM", `ir-mm-${stamp}`, "MMK");
     expect(blockedWins.statusCode, blockedWins.body).toBe(422);
     expect(blockedWins.json().code).toBe("SANCTIONS-STOP");
+  });
+
+  it("does not post a stopped deal when the audit row cannot be written", async () => {
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION refuse_sanctions_stop_audit()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.action = 'sanctions.stop' THEN
+          RAISE EXCEPTION 'audit insert refused';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+    `);
+    await pool.query("DROP TRIGGER IF EXISTS refuse_sanctions_stop_audit ON audit_events");
+    await pool.query(`
+      CREATE TRIGGER refuse_sanctions_stop_audit
+      BEFORE INSERT ON audit_events
+      FOR EACH ROW EXECUTE FUNCTION refuse_sanctions_stop_audit()
+    `);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const iran = await makeClient(baseline.cookie, "Iran Unrecorded", { country: "Iran" });
+      const stopped = await send(baseline.cookie, iran, "DE", `deal-unrecorded-${stamp}`);
+      expect(stopped.statusCode, stopped.body).toBe(500);
+      expect(stopped.json().code).toBe("INTERNAL_ERROR");
+      expect(await dealsFor(baseline.slug, iran)).toBe(0);
+      const audit = await pool.query(
+        `SELECT count(*)::int AS n FROM audit_events
+          WHERE tenant_id=$1 AND action='sanctions.stop' AND detail->>'customerId'=$2`,
+        [`tnt-${baseline.slug}`, iran],
+      );
+      expect(audit.rows[0].n).toBe(0);
+      const text = JSON.stringify(spy.mock.calls);
+      expect(text).toContain("sanctions.stop");
+      expect(text).toContain(iran);
+    } finally {
+      spy.mockRestore();
+      await pool.query("DROP TRIGGER IF EXISTS refuse_sanctions_stop_audit ON audit_events");
+      await pool.query("DROP FUNCTION IF EXISTS refuse_sanctions_stop_audit()");
+    }
   });
 });

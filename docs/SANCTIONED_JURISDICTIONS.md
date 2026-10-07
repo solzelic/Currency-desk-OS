@@ -128,7 +128,9 @@ closing the country.
 A stopped deal rolls back, so the ledger row is not kept. The stop
 itself is written to `audit_events` afterwards, on a different
 connection: who, which desk, what was blocked, which jurisdiction,
-and the list version. Action `sanctions.stop`.
+and the list version. Action `sanctions.stop`. If that write fails,
+the failure is logged (identifiers and list version, not the
+client's name) and the request fails. The deal stays unposted.
 
 A walk-in ledger customer with no `desk_clients` row has no country
 to read. The corridor and the payout or sent currency can still stop

@@ -16,12 +16,13 @@ test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
-const { Pool } = requireFromServer("pg") as {
+/* node:module require is untyped. This is pg's Pool, used only to read the ledger after the screen posts. */
+const { Pool }: {
   Pool: new (c: { connectionString: string }) => {
     query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
     end: () => Promise<void>;
   };
-};
+} = requireFromServer("pg");
 
 const stamp = Date.now().toString(36);
 const EMAIL = `owner-${stamp}@sanction-seam.example`;
@@ -32,7 +33,9 @@ let pool: InstanceType<typeof Pool>;
 
 test.beforeAll(async () => {
   if (!hasLedger) return;
-  pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  const url = process.env.SEAM_DATABASE_URL;
+  if (!url) throw new Error("SEAM_DATABASE_URL missing");
+  pool = new Pool({ connectionString: url });
 });
 
 test.afterAll(async () => {
@@ -95,9 +98,12 @@ test("invite, refuse a listed country, launch, and stop the deal", async ({ page
     data: { data: { ownerPass: "sanction-seam-2026" } },
   });
   expect(launched.status(), await launched.text()).toBe(201);
-  const launchBody = await launched.json();
-  expect(launchBody.signedIn).toBe(true);
-  const tenantId = launchBody.tenantId as string;
+  const launchBody: unknown = await launched.json();
+  if (typeof launchBody !== "object" || launchBody === null) throw new Error("launch did not return an object");
+  const signedIn = Reflect.get(launchBody, "signedIn");
+  const tenantId = Reflect.get(launchBody, "tenantId");
+  expect(signedIn).toBe(true);
+  if (typeof tenantId !== "string" || tenantId.length === 0) throw new Error("launch did not name a tenant");
 
   await page.goto("/app");
   await landOnDesktop(page);
@@ -109,10 +115,14 @@ test("invite, refuse a listed country, launch, and stop the deal", async ({ page
     data: { legalName: "Iran Client", country: "IR" },
   });
   expect(client.status(), await client.text()).toBe(201);
-  const clientId = (await client.json()).clientId as string;
+  const clientBody: unknown = await client.json();
+  const clientId = typeof clientBody === "object" && clientBody !== null ? Reflect.get(clientBody, "clientId") : undefined;
+  if (typeof clientId !== "string" || clientId.length === 0) throw new Error("client was not created");
   const counter = await page.request.post(`/api/clients/${clientId}/counter-record`);
   expect(counter.status(), await counter.text()).toBe(200);
-  const customerId = (await counter.json()).customerId as string;
+  const counterBody: unknown = await counter.json();
+  const customerId = typeof counterBody === "object" && counterBody !== null ? Reflect.get(counterBody, "customerId") : undefined;
+  if (typeof customerId !== "string" || customerId.length === 0) throw new Error("counter record was not created");
 
   const opened = await page.request.post("/api/ledger/till-sessions/open", { data: {} });
   expect([201, 409], await opened.text()).toContain(opened.status());

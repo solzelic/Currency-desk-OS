@@ -71,6 +71,7 @@ import {
 import { assertTradeable } from "./currencies.js";
 import {
   enhancedDueDiligenceGap,
+  markSanctionsStop,
   recordSanctionsStop,
   screenDeal,
   type DealScreen,
@@ -173,9 +174,7 @@ export function applyDealScreen(
     return;
   }
   const error = new LedgerError(screen.code, screen.message);
-  if (screen.outcome === "stop") {
-    Object.assign(error, { sanctionsAudit: screen.audit });
-  }
+  if (screen.outcome === "stop") markSanctionsStop(error, screen.audit);
   throw error;
 }
 

@@ -162,7 +162,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
 
     /* Before a code is emailed. A listed country is not a desk we are
        going to create, and the applicant should hear that now. */
-    const blocked = blockedDeskCountry((b.onboarding ?? {}) as Record<string, unknown>);
+    const blocked = blockedDeskCountry(b.onboarding ?? {});
     if (blocked) return reply.code(403).send(signupRefusal(blocked));
 
     const passwordHash = await hashPassword(b.password);
