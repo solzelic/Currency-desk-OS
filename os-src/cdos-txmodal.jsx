@@ -537,7 +537,8 @@
     const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
     const idAmount = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idFloor;
     const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
-    const sgIdRequired = window.CDOS.useSingaporeIdRequired(packIdNow === 'pack-sg-v1', {
+    const sg = packIdNow === 'pack-sg-v1';
+    const sgIdRequired = window.CDOS.useSingaporeIdRequired(sg, {
       type: isCheque ? 'Cheque Cashing' : (isSend || isReceive) ? (isReceive ? 'Remittance — Receive' : 'Remittance — Send') : (isMO ? 'Money Order' : (isBill ? 'Bill Payment' : 'fx')),
       from: (isSend || isCheque || isMO || isBill) ? home : (isReceive ? outCcy : inCcy),
       to: isSend ? payoutCcy : ((isCheque || isMO || isBill) ? home : outCcy),
@@ -549,7 +550,7 @@
       ? true
       : ph
       ? (unpriced || !idRow || idRow.threshold == null || overId)
-      : (packIdNow === 'pack-sg-v1')
+      : sg
       ? sgIdRequired
       : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
     const idOk = kyc === 'ok';
