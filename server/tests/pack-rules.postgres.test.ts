@@ -159,6 +159,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
          JOIN jurisdiction_packs p ON p.pack_id = t.pack_id
         WHERE t.pack_id LIKE 'pack-%-v1'
           AND t.pack_id <> 'pack-intl-v1'
+          AND t.pack_id <> 'pack-rs-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];
@@ -451,7 +452,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
   it("gives a blank country and an unknown country no pack, no FINTRAC and no CAD", async () => {
     for (const [slug, country] of [
       ["pack-blank-country", ""],
-      ["pack-rs", "RS"],
+      ["pack-ke", "KE"],
     ] as const) {
       await clearDesk(slug);
       const setup: Record<string, unknown> = { country };

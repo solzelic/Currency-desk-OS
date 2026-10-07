@@ -265,6 +265,7 @@
       { c: 'Australia', flag: '🇦🇺', reg: 'AUSTRAC', cur: 'AUD', th: 10000 },
       { c: 'United Arab Emirates', flag: '🇦🇪', reg: 'CBUAE', cur: 'AED', th: 0 },
       { c: 'European Union', flag: '🇪🇺', reg: 'National FIU', cur: 'EUR', th: 0 },
+      { c: 'Serbia', flag: '🇷🇸', reg: 'NBS / APML', cur: 'RSD', th: 0, follow: true },
       { c: 'Somewhere else', flag: '🌐', reg: 'your regulator', cur: 'USD', th: 10000 },
     ];
     const PLANS = [
@@ -300,7 +301,7 @@
       if (step === 1) return d.businessName.trim().length > 0;
       if (step === 2) return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email) && d.password.length >= 8 && d.slug.length >= 2 && !!d.ownerName.trim();
       if (step === 3) return !!d.plan;
-      if (step === 4) return d.idThreshold > 0;
+      if (step === 4) return !!reg.follow || d.idThreshold > 0;
       return true;
     };
     const back = () => { setErr(''); step === 0 ? onBack() : setStep(s => s - 1); };
@@ -313,7 +314,7 @@
     const create = async () => {
       setBusy(true); setErr('Creating your desk…');
       const body = { businessName: d.businessName, ownerName: d.ownerName, email: d.email, password: d.password, slug: d.slug,
-        onboarding: { country: d.country, regulator: reg.reg, homeCurrency: reg.cur, msbNumber: d.msbNumber, plan: d.plan, idThreshold: d.idThreshold } };
+        onboarding: { country: d.country, regulator: reg.reg, homeCurrency: reg.cur, msbNumber: d.msbNumber, plan: d.plan, ...(reg.follow ? {} : { idThreshold: d.idThreshold }) } };
       try {
         const res = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
         const j = await res.json().catch(() => null);
@@ -398,8 +399,10 @@
         <h1 style={{ marginBottom: 6 }}>When should the desk ask for ID?</h1>
         <div className="station" style={{ marginBottom: 14 }}>{d.country === 'European Union'
           ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.'
-          : <>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</>}</div>
-        {(d.country === 'European Union' ? [
+          : reg.follow
+            ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. The desk converts euros to dinars. A tighter dinar line is set in Settings.'
+            : <>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</>}</div>
+        {reg.follow ? null : (d.country === 'European Union' ? [
           { v: 3000, t: 'Only at 3,000', d: 'Cash identification. The 2027 minimum.' },
           { v: 1500, t: 'At 1,500', d: 'Ask sooner than the cash line.' },
           { v: 1000, t: 'At 1,000', d: 'The same amount as a transfer of funds.' },
@@ -412,7 +415,7 @@
         <div className="station" style={{ marginBottom: 14 }}>We’ll email a code to <b style={{ color: 'var(--ink)' }}>{d.email}</b> to verify it, then your desk is live.</div>
         <div style={{ ...inSty, padding: '12px 14px', fontSize: 12.5, color: 'var(--mute)', lineHeight: 1.7 }}>
           <div><b style={{ color: 'var(--ink)' }}>{d.country}</b> · {reg.reg} · {reg.cur}</div>
-          <div>{d.plan.charAt(0).toUpperCase() + d.plan.slice(1)} plan · free trial · ID at {Number(d.idThreshold).toLocaleString()} {reg.cur}</div>
+          <div>{d.plan.charAt(0).toUpperCase() + d.plan.slice(1)} plan · free trial · {reg.follow ? 'ID at 5,000 EUR' : ('ID at ' + Number(d.idThreshold).toLocaleString() + ' ' + reg.cur)}</div>
           <div>{(d.slug || 'yourshop')}.currencydesk</div>
         </div>
       </div>)}
@@ -2007,8 +2010,11 @@
       /* A baseline desk's 10,000 is US dollars. Do not store it as the
          home-currency line. The ledger converts it, and the screen reads that. */
       /* An explicit null is "this pack has no amount report". A missing
-         field on an older setup still falls back to 10,000. */
-      const reportOver = setup.baselineRules || setup.reportThreshold === null
+         field on an older setup still falls back to 10,000. A line
+         written in another currency, such as Serbia's euros on a dinar
+         book, is not stored as the home-currency line. */
+      const foreignRules = setup.reportCurrency && homeCcy && String(setup.reportCurrency).toUpperCase() !== String(homeCcy).toUpperCase();
+      const reportOver = setup.baselineRules || foreignRules || setup.reportThreshold === null
         ? null
         : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
@@ -2016,7 +2022,7 @@
          A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || typedId == null ? null
+      const idOver = legacyPause || foreignRules || typedId == null ? null
         : reportOver == null ? typedId
         : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;

@@ -274,6 +274,11 @@ export const branches = pgTable(
     legalEntityId: text("legal_entity_id").notNull().references(() => legalEntities.id),
     name: text("name").notNull(),
     timezone: text("timezone").notNull().default("America/Toronto"),
+    /* Serbia, NBS exchange decision Point 21 notice item 4. Off unless
+       this counter is airside or inside a casino. Other countries ignore
+       it. Migration 033 adds the column on Postgres; the default keeps
+       every existing branch off. */
+    airsideOrCasino: boolean("airside_or_casino").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("branches_entity_idx").on(t.legalEntityId)],

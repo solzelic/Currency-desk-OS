@@ -136,9 +136,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   direction of cash it covers, whether it counts cash only, and the
   currency the threshold is written in. A baseline threshold written
   in US dollars is converted at the newest market snapshot. The six
-  country packs still state their thresholds in home currency, with
-  the new fields at their defaults, and they keep the numbers they
-  had. A country
+  country packs seeded before Serbia still state their thresholds in
+  home currency, with the new fields at their defaults, and they keep
+  the numbers they had. Serbia is a seventh country pack
+  (`pack-rs-v1`): the lines are written in euros and the book is
+  dinars. A country
   with no pack is not given Canada's, and it is not paused. It
   operates under `pack-intl-v1`, an international baseline that is not
   a country. A signup that names Canada and leaves home currency blank
@@ -224,6 +226,33 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Monday to Friday. Statutory holidays are not skipped. Citations,
   the opt-in, and those gaps are in docs/CANADA_PACK.md.
 
+- **Serbia (`pack-rs-v1`).** The first Serbia pack. An authorised
+  exchange office (Article 4(1)(2) of the anti-money-laundering law).
+  The National Bank of Serbia supervises those offices (Article 109).
+  APML is the financial intelligence unit. A new desk that picks
+  Serbia opens on this pack, in dinars, regulator shown as NBS / APML.
+  A desk already open is not moved. Exchange identification is 5,000
+  EUR or more, before the deal (Articles 8(2) and 10). A transfer is
+  more than 1,000 EUR (Article 8(1)(3)). Virtual currency uses the
+  general occasional line, 15,000 EUR or more. Cash of 15,000 EUR or
+  more is reported to APML immediately and at latest within 3 days,
+  and is not added to other deals (Article 47(1)). A suspicion report
+  is due before the deal (Article 47(2)). The till has no suspicion
+  flag and does not send either report. Euro amounts convert at the
+  newest market snapshot, the same CAD-per-unit table the rate sync
+  stores, rounded down to the cent. A missing snapshot, or one older
+  than 24 hours, refuses an unidentified customer. The statute names
+  the NBS official middle rate on the transaction day. The snapshot
+  is not that rate. A sale of 50 or 100 US dollar notes records the
+  customer's name, JMBG or passport number, and the serial number of
+  each note. A counter marked airside or inside a casino requires
+  that name and number on every cash buy and sell. Records are kept
+  five years (Article 95). The pack does not delete them and does not
+  add the extra five years an authority can order. Migration 033.
+  029 and 031 are already on main. 027 and 030 are still open drafts,
+  so 033 stays the next free number. Sources, the article table, and
+  the gaps: `docs/SERBIA_PACK.md`.
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -302,6 +331,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, Serbia pack `pack-rs-v1`. New desks that pick Serbia
+open on it, in dinars. Euro thresholds convert at the market
+snapshot and fail closed when that snapshot is missing or older than
+24 hours. Existing desks are not moved. The public pages list Serbia
+as Available, not Live. Detail is `docs/SERBIA_PACK.md`.
 
 **2026-10-07**, EU AMLR 2027. New European Union desks open on
 `pack-eu-v2`. Cash identification is 3,000 EUR. Full customer due

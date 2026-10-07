@@ -21,6 +21,7 @@ import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.
 import {
   packForCountry,
   packIdThreshold,
+  REPORT_CURRENCY_FOR_PACK,
   SETUP_ID_DEAL,
 } from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
@@ -108,9 +109,10 @@ export function specFromAnswers(
   resolved: Record<string, Resolved>,
   application?: { details?: Record<string, unknown> | null } | null,
 ): DeskSpec {
-  /* A blank country, or one this list does not know ("RS", "Somewhere
+  /* A blank country, or one this list does not know ("KE", "Somewhere
      else"), is not Canada. It does not get FINTRAC, and it does not get
-     CAD, unless the setup actually named a home currency. */
+     CAD, unless the setup actually named a home currency. Serbia is on
+     the list and opens on pack-rs-v1. */
   const country = str(resolved, "country");
   const j = country ? JURISDICTION[country] : undefined;
   const businessName = str(resolved, "operatingName");
@@ -245,11 +247,33 @@ export interface Provisioned {
    development and tests carries no `jurisdiction_packs` — no override is
    recorded, which leaves the desk following its pack. That is the safe
    direction to be wrong in: a desk that follows its regulator. */
+/* True when the foreign-exchange identification line is written in a
+   currency other than the book. A euro figure must not be stored as a
+   dinar override: 2,500 would then mean 2,500 dinars, not 2,500 euro.
+   The desk follows the pack, and a tighter dinar line is set later. */
+async function fxLineIsForeign(db: Db, packId: string, home: string): Promise<boolean> {
+  try {
+    const found = await db.execute(
+      sql`SELECT currency FROM jurisdiction_id_thresholds WHERE pack_id = ${packId} AND deal_kind = 'fx'`,
+    );
+    const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
+    const currency = String((rows[0] as { currency?: unknown } | undefined)?.currency ?? "")
+      .trim()
+      .toUpperCase();
+    if (!currency) return false;
+    return currency !== home.trim().toUpperCase();
+  } catch {
+    return false;
+  }
+}
+
 async function idThresholdFromSetup(
   setup: unknown,
   packId: string,
+  home: string,
   db: Db,
 ): Promise<string | null> {
+  if (await fxLineIsForeign(db, packId, home)) return null;
   const chosen = Number((setup as Record<string, unknown> | null)?.idThreshold);
   if (!Number.isFinite(chosen) || chosen <= 0) return null;
   let mandate: number | null = null;
@@ -302,7 +326,10 @@ export async function provisionDesk(
     setup.rulesUnavailable = false;
     setup.homeCurrency = bookHome;
   }
-  if (pack && typedIdentificationLine(setup.idThreshold) == null) {
+  const reportCurrency = pack ? REPORT_CURRENCY_FOR_PACK[pack.packId] : undefined;
+  if (reportCurrency && reportCurrency !== bookHome) setup.reportCurrency = reportCurrency;
+  const foreignLine = pack ? await fxLineIsForeign(db, pack.packId, bookHome) : false;
+  if (pack && !foreignLine && typedIdentificationLine(setup.idThreshold) == null) {
     const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
     /* A positive amount fills the blank box. Zero means every deal on
        the pack's own table, and it is not written back into this field,
@@ -337,6 +364,7 @@ export async function provisionDesk(
   const chosenIdLine = await idThresholdFromSetup(
     setup,
     pack?.packId ?? "pack-intl-v1",
+    bookHome,
     db,
   );
   await db.insert(schema.legalEntities).values({

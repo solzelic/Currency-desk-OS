@@ -347,9 +347,11 @@
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
           : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."}>
         {status !== 'ready' ? unavailable
-          : euAmlr && (line('aggregationHours') || {}).effective == null
-            ? <span className="text-[12px]" style={{ color: CD.mute }} data-testid="eu-no-aggregation">Not stated</span>
-            : <Seg value={String((line('aggregationHours') || {}).effective || 24)}
+          : (line('aggregationHours') || {}).effective == null
+            ? (euAmlr
+              ? <span className="text-[12px]" style={{ color: CD.mute }} data-testid="eu-no-aggregation">Not stated</span>
+              : <span className="text-[12px]" style={{ color: CD.ink }}>Not added together</span>)
+            : <Seg value={String((line('aggregationHours') || {}).effective)}
                 onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
                 opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
       </Row>
@@ -646,6 +648,32 @@
     const [srvMsg, setSrvMsg] = useState('');
     const [srvBusy, setSrvBusy] = useState(false);
     const [pwForm, setPwForm] = useState(null);           // my own password change {cur,a,b,msg,busy}
+    const [airside, setAirside] = useState(false);
+    const [airsideMsg, setAirsideMsg] = useState('');
+    useEffect(() => {
+      let live = true;
+      fetch('/api/ledger/branch-location', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((body) => { if (live && body) setAirside(!!body.airsideOrCasino); })
+        .catch(() => {});
+      return () => { live = false; };
+    }, []);
+    const saveAirside = async (next) => {
+      setAirside(next);
+      setAirsideMsg('');
+      const res = await fetch('/api/ledger/branch-location', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ airsideOrCasino: next }),
+      });
+      if (!res.ok) {
+        setAirside(!next);
+        setAirsideMsg('Could not save this counter.');
+        return;
+      }
+      setAirsideMsg(next ? 'Every buy and sell at this counter needs ID.' : 'Saved.');
+    };
     const SRV_ROLE = { 'Owner': 'administrator', 'Manager': 'branch_manager', 'Senior teller': 'supervisor', 'Cashier': 'teller', 'Trainee': 'teller' };
     const srvReload = () => {
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') { setSrvState('offline'); return; }
@@ -1778,6 +1806,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     setSettings(s => ({ ...s }));
                   }}>Use the 2027 EU rules</button>
               )}
+            </div>
+          )}
+          {!paused && pack && pack.packId === 'pack-rs-v1' && (
+            <div data-testid="serbia-airside" className="mb-3 p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
+              <label className="flex items-start gap-2 text-[12.5px]" style={{ color: CD.ink }}>
+                <input type="checkbox" checked={airside} onChange={(e) => saveAirside(e.target.checked)} />
+                <span>This counter is airside or inside a casino. Every buy and sell needs the customer's name and their JMBG or passport number.</span>
+              </label>
+              {airsideMsg ? <div className="text-[11px] mt-1" style={{ color: CD.mute }}>{airsideMsg}</div> : null}
             </div>
           )}
           {standalone && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>

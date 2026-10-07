@@ -38,6 +38,9 @@ describe("which country gets a pack", () => {
     expect(packForCountry("European Union")?.packId).toBe("pack-eu-v2");
     expect(packForCountry("Australia")?.packId).toBe("pack-au-v1");
     expect(packForCountry("UAE")?.packId).toBe("pack-ae-v1");
+    expect(packForCountry("RS")?.packId).toBe("pack-rs-v1");
+    expect(packForCountry("Serbia")?.homeCurrency).toBe("RSD");
+    expect(packForCountry("Republic of Serbia")?.packId).toBe("pack-rs-v1");
   });
 
   it("gives an unknown country no pack, and not Canada's", () => {
@@ -261,7 +264,7 @@ describe("an identification line, tagged", () => {
 
 describe("a country the list does not know", () => {
   it("does not invent Canada, FINTRAC, or CAD", () => {
-    for (const country of ["", "RS", "Somewhere else"]) {
+    for (const country of ["", "KE", "Somewhere else"]) {
       const spec = specFromAnswers(
         resolve(
           { operatingName: "Shop", bizName: "Shop Inc.", ownerName: "A", ownerEmail: "a@example.test", country },

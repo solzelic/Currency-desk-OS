@@ -1,8 +1,11 @@
 /* The international baseline states its identification lines in US dollars.
-   A country pack already states them in the currency the book is kept in.
-   This file turns a USD line into that home currency, using the newest
-   market snapshot — the same CAD-per-unit table the rate sync stores —
-   and never a mid the shop typed onto its board. */
+   A country pack usually states them in the currency the book is kept in.
+   Serbia states them in euros on a dinar book. This file turns a foreign
+   line into that home currency, using the newest market snapshot, the
+   same CAD-per-unit table the rate sync stores, and never a mid the shop
+   typed onto its board. The statute that names a central-bank middle
+   rate is not given that rate here. The snapshot is what the desk has,
+   and a missing or stale one fails closed. */
 import Decimal from "decimal.js";
 import type pg from "pg";
 import type { IdDealKind, JurisdictionPack } from "./jurisdiction.js";
@@ -163,6 +166,82 @@ export async function baselineIdentification(
   if (!market) return { block: true, ...UNPRICED };
   return {
     block: hits(amountHome, roundDownCents(threshold.mul(market.rate)), comparator),
+    rate: market.rate.toDecimalPlaces(12).toFixed(12),
+    rateAt: market.rateAt,
+  };
+}
+
+export type ForeignLine = ComplianceStamp & {
+  /** This function decided. False means the line is in home currency,
+      or the table is not on this database, and the caller keeps the
+      single home-currency column. Canada stays on that column. */
+  decided: boolean;
+  /** The line is met, or the rate is missing so an unverified customer
+      is identified. Meaningful only when decided is true. */
+  block: boolean;
+};
+
+const UNDECIDED: ForeignLine = { block: false, decided: false, ...IDENTITY };
+
+/**
+ * A country line written in a currency other than the book.
+ *
+ * Home-currency lines return undecided so Canada keeps the comparison
+ * it already had. A euro line on a dinar book is converted here, with
+ * the comparator stored on the row. No fresh rate means identify.
+ */
+export async function foreignCurrencyIdentification(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  amountHome: Decimal,
+  dealKind: string,
+  cash: boolean,
+): Promise<ForeignLine> {
+  if (!pack.packId || pack.baseline) return UNDECIDED;
+  let row: Record<string, unknown> | undefined;
+  try {
+    const found = await client.query(
+      `SELECT threshold, currency, comparator, cash_only
+         FROM jurisdiction_id_thresholds
+        WHERE pack_id = $1 AND deal_kind = $2`,
+      [pack.packId, idKindForDeal(dealKind)],
+    );
+    row = found.rows[0];
+  } catch (error) {
+    if (!missingTable(error)) throw error;
+    return UNDECIDED;
+  }
+  if (!row) return UNDECIDED;
+  const currency = String(row.currency ?? "").trim().toUpperCase();
+  const home = pack.homeCurrency.trim().toUpperCase();
+  if (!currency || currency === home) return UNDECIDED;
+  if (row.cash_only === true && !cash) {
+    return { block: false, decided: true, ...IDENTITY };
+  }
+  const raw = row.threshold;
+  if (raw == null || raw === "") return { block: true, decided: true, ...UNPRICED };
+  let threshold: Decimal;
+  try {
+    threshold = new Decimal(String(raw));
+  } catch {
+    return { block: true, decided: true, ...UNPRICED };
+  }
+  if (!threshold.isFinite() || threshold.isNegative()) {
+    return { block: true, decided: true, ...UNPRICED };
+  }
+  const comparator = String(row.comparator || "gte");
+  if (threshold.isZero()) {
+    return {
+      block: hits(amountHome, new Decimal(0), comparator),
+      decided: true,
+      ...IDENTITY,
+    };
+  }
+  const market = await marketHomePerUnit(client, currency, home);
+  if (!market) return { block: true, decided: true, ...UNPRICED };
+  return {
+    block: hits(amountHome, roundDownCents(threshold.mul(market.rate)), comparator),
+    decided: true,
     rate: market.rate.toDecimalPlaces(12).toFixed(12),
     rateAt: market.rateAt,
   };

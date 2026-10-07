@@ -201,7 +201,16 @@ async function remittanceLine(
   const home = pack.homeCurrency.trim().toUpperCase();
   let converted: Decimal | null = null;
   if (currency && currency === home) converted = amount;
-  else if (currency === "USD" && market) converted = roundDownCents(amount.mul(market.rate));
+  else if (currency) {
+    /* The report-currency snapshot is the right one when the line is
+       written in that same currency. Any other foreign line is priced
+       on its own, and a missing rate leaves the line unset. */
+    const priced =
+      market && currency === pack.reportCurrency.trim().toUpperCase()
+        ? market
+        : await marketHomePerUnit(client, currency, home);
+    if (priced) converted = roundDownCents(amount.mul(priced.rate));
+  }
   if (!converted) return unset;
   const value = converted.toFixed(2);
   return { effective: value, deskChoice: null, packValue: value, posture: "following" };
@@ -258,22 +267,25 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
-  /* A baseline pack states its dollar lines in the desk's currency, at
-     the same market rate the posting gate uses, rounded down to the cent.
-     No fresh rate: the lines are unset, and identification is required. */
-  const baselineForeign =
-    pack.baseline && pack.homeCurrency.trim().toUpperCase() !== "USD";
-  const market = baselineForeign
-    ? await marketHomePerUnit(client, "USD", pack.homeCurrency)
+  /* A line written in another currency is stated in the desk's currency
+     at the same market rate the posting gate uses, rounded down to the
+     cent. That is the baseline's US dollars, and it is Serbia's euros.
+     No fresh rate: the lines are unset, and identification is required.
+     A line already in the home currency is not converted. */
+  const home = pack.homeCurrency.trim().toUpperCase();
+  const stated = pack.reportCurrency.trim().toUpperCase();
+  const needsConversion = Boolean(stated) && stated !== home;
+  const market = needsConversion
+    ? await marketHomePerUnit(client, stated, home)
     : { rate: new Decimal(1), rateAt: null };
   const packMoney = (raw: unknown): Decimal | null => {
     const amount = money(raw);
-    if (!baselineForeign) return amount;
+    if (!needsConversion) return amount;
     if (!market || !amount) return null;
     return roundDownCents(amount.mul(market.rate));
   };
   const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
-    baselineForeign && !market
+    needsConversion && !market
       ? {
           effective: null,
           deskChoice: money(deskRaw)?.toFixed(2) ?? null,

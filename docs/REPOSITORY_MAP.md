@@ -74,6 +74,15 @@ commit the generated output — CI diffs `web/` against a fresh build.
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `033_serbia_pack` seeds `pack-rs-v1` and does not edit an
+  older pack. It lets `jurisdiction_packs.aggregation_hours` be null
+  (null means the deals are not added together), adds
+  `branches.airside_or_casino` (also in the Drizzle schema and the boot
+  DDL, because PGlite does not run the SQL migrations), and adds
+  `identity_number`, `note_serials`, and `receipt_facts` on
+  `ledger_transactions`. Open drafts already occupy 027 and 029 through
+  031. A rebase renumbers 033 in the filename and in `migrations.ts`
+  together. The rule text is `docs/SERBIA_PACK.md`.
 
 ## Test commands
 

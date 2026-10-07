@@ -74,9 +74,11 @@ the arithmetic is guarded: a negative or zero threshold is not a strict
 desk, it is a broken one. That zero is the desk's override column and
 the pack's single `id_threshold` column. It is not the per-deal line in
 `jurisdiction_id_thresholds`, where null means "this kind of deal has
-no line" and zero means "every deal". A country pack's posting gate
-still resolves the single column, and `money()` still treats zero
-there as "cannot say". The baseline gate reads the per-deal rows.
+no line" and zero means "every deal". A country pack whose line is
+already in the home currency still resolves the single column, and
+`money()` still treats zero there as "cannot say". The baseline gate
+reads the per-deal rows. Serbia does too, because its lines are in
+euros: `docs/SERBIA_PACK.md`.
 
 ## What the ledger does with it
 

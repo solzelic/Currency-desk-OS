@@ -17,7 +17,12 @@ import {
   countryIdentification,
   type IdentificationDeal,
 } from "./canada-rules.js";
-import { baselineIdentification, type ComplianceStamp } from "./compliance-gate.js";
+import {
+  baselineIdentification,
+  foreignCurrencyIdentification,
+  type ComplianceStamp,
+} from "./compliance-gate.js";
+import { serbiaExchangeFacts } from "./serbia.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
   EU_AMLR_PACK_ID,
@@ -58,6 +63,9 @@ export type PostRequest = {
   sourceOfFunds: string;
   thirdParty?: boolean;
   thirdPartyName?: string;
+  identityNumber?: string | null;
+  usdLargeNotes?: boolean | null;
+  usdNoteSerials?: string[] | null;
 };
 export type FrozenQuote = {
   quoteId: string;
@@ -83,6 +91,9 @@ export type FrozenQuote = {
   sourceOfFunds: string;
   thirdParty?: boolean;
   thirdPartyName?: string | null;
+  identityNumber?: string | null;
+  usdLargeNotes?: boolean | null;
+  usdNoteSerials?: string[] | null;
 };
 export class LedgerError extends Error {
   constructor(
@@ -213,7 +224,7 @@ export async function requireIdentification(
   amountHome: Decimal,
   idStatus: unknown,
   deal: IdentificationDeal,
-): Promise<ComplianceStamp> {
+): Promise<ComplianceStamp & { identificationRequired: boolean }> {
   requireInstalledPack(pack);
   /* The 2027 EU pack has three lines, not the single identification
      number every other country pack still uses. A missing line fails
@@ -242,7 +253,34 @@ export async function requireIdentification(
         "This deal needs customer due diligence, so it cannot be posted without its purpose and source of funds.",
       );
     }
-    return stamp;
+    return { ...stamp, identificationRequired: false };
+  }
+  /* A euro line on a dinar book is decided here. A home-currency line,
+     which is every seeded country pack except Serbia, is not. Canada
+     keeps the split-pack gate below. */
+  const foreign = await foreignCurrencyIdentification(
+    client,
+    pack,
+    amountHome,
+    deal.kind,
+    deal.cash,
+  );
+  if (foreign.decided) {
+    const stamp: ComplianceStamp = { rate: foreign.rate, rateAt: foreign.rateAt };
+    /* A missing rate fails closed for someone we have not identified.
+       It does not, by itself, mean the amount crossed a line we could price. */
+    const rateUnknown = foreign.rate == null && foreign.block;
+    const desk = await deskIdLine(client, actor.legalEntityId);
+    const deskHit = desk !== null && amountHome.gte(desk);
+    const packHit = foreign.block;
+    const identificationRequired = rateUnknown ? deskHit : packHit || deskHit;
+    if (idStatus !== "verified" && (packHit || deskHit)) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return { ...stamp, identificationRequired };
   }
   const priced = pack.baseline
     ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
@@ -253,7 +291,7 @@ export async function requireIdentification(
      fields at its line, so that short-circuit cannot sit above the
      country check. The baseline has no such ticket rule. */
   if (pack.baseline) {
-    if (idStatus === "verified") return stamp;
+    if (idStatus === "verified") return { ...stamp, identificationRequired: false };
     /* A missing or stale market rate already sets block. A desk's own
        tighter line, stored in home currency, can only add a refusal. */
     const desk = await deskIdLine(client, actor.legalEntityId);
@@ -263,7 +301,7 @@ export async function requireIdentification(
         "Authoritative compliance policy blocked posting.",
       );
     }
-    return stamp;
+    return { ...stamp, identificationRequired: false };
   }
   const country = await countryIdentification(client, {
     legalEntityId: actor.legalEntityId,
@@ -275,21 +313,28 @@ export async function requireIdentification(
   });
   if (country.split) {
     if (country.refusal) throw new LedgerError(country.refusal.code, country.refusal.message);
-    return stamp;
+    return { ...stamp, identificationRequired: false };
   }
-  if (idStatus === "verified") return stamp;
+  const desk = await deskIdLine(client, actor.legalEntityId);
+  const deskHit = desk !== null && amountHome.gte(desk);
   const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
-  if (line === null)
-    throw new LedgerError(
-      "COMPLIANCE_BLOCKED",
-      "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
-    );
-  if (amountHome.gte(line))
+  if (line === null) {
+    if (idStatus !== "verified") {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
+      );
+    }
+    return { ...stamp, identificationRequired: deskHit };
+  }
+  const packHit = amountHome.gte(line);
+  if (idStatus !== "verified" && (packHit || deskHit)) {
     throw new LedgerError(
       "COMPLIANCE_BLOCKED",
       "Authoritative compliance policy blocked posting.",
     );
-  return stamp;
+  }
+  return { ...stamp, identificationRequired: packHit || deskHit };
 }
 
 export class LedgerService {
@@ -498,6 +543,27 @@ export class LedgerService {
           sourceOfFunds: quote.sourceOfFunds,
         },
       );
+      const serbia = await serbiaExchangeFacts(
+        client,
+        pack,
+        actor,
+        {
+          from: quote.from,
+          to: quote.to,
+          kind: "exchange",
+          cash: true,
+          customerName: String(customer.rows[0].name ?? ""),
+          idStatus: customer.rows[0].id_status,
+          rate: fixed(rate, 12),
+        },
+        compliance.identificationRequired,
+        {
+          identityNumber: quote.identityNumber,
+          usdLargeNotes: quote.usdLargeNotes,
+          usdNoteSerials: quote.usdNoteSerials,
+        },
+      );
+      if (!serbia.ok) throw new LedgerError("COMPLIANCE_BLOCKED", serbia.message);
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
@@ -693,11 +759,16 @@ export class LedgerService {
             `Paid exchange: ${fixed(input)} ${quote.from}`,
             `Fee paid separately: ${home} ${fixed(fee)}`,
             `Received: ${fixed(output)} ${quote.to}`,
+            ...(serbia.receiptFacts?.side
+              ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
+              : []),
+            ...(serbia.identityNumber ? [`JMBG or passport: ${serbia.identityNumber}`] : []),
+            ...(serbia.noteSerials ? [`Note serials: ${serbia.noteSerials.join(", ")}`] : []),
           ],
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43)",
         [
           transactionId,
           transactionRef,
@@ -743,6 +814,9 @@ export class LedgerService {
           /* Home value of what the customer paid, not the fee. Same
              figure the large-cash window will read back. */
           fixed(inputHome),
+          serbia.identityNumber,
+          serbia.noteSerials ? JSON.stringify(serbia.noteSerials) : null,
+          serbia.receiptFacts ? JSON.stringify(serbia.receiptFacts) : null,
         ],
       );
       for (const [account, side, value] of journal)
@@ -969,6 +1043,27 @@ export class LedgerService {
           sourceOfFunds: request.sourceOfFunds,
         },
       );
+      const serbia = await serbiaExchangeFacts(
+        client,
+        pack,
+        actor,
+        {
+          from: request.from,
+          to: request.to,
+          kind: "exchange",
+          cash: true,
+          customerName: String(customer.rows[0].name ?? ""),
+          idStatus: customer.rows[0].id_status,
+          rate: fixed(rate, 12),
+        },
+        compliance.identificationRequired,
+        {
+          identityNumber: request.identityNumber,
+          usdLargeNotes: request.usdLargeNotes,
+          usdNoteSerials: request.usdNoteSerials,
+        },
+      );
+      if (!serbia.ok) throw new LedgerError("COMPLIANCE_BLOCKED", serbia.message);
       /* Purpose and source of funds, over the desk's REPORTING line — the
          details the report itself is made of. Same story as the ID gate: a
          hardcoded 10,000 in a book that might be kept in dirhams, where
@@ -1047,11 +1142,16 @@ export class LedgerService {
             `Paid exchange: ${fixed(input)} ${request.from}`,
             `Fee paid separately: CAD ${fixed(fee)}`,
             `Received: ${fixed(output)} ${request.to}`,
+            ...(serbia.receiptFacts?.side
+              ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
+              : []),
+            ...(serbia.identityNumber ? [`JMBG or passport: ${serbia.identityNumber}`] : []),
+            ...(serbia.noteSerials ? [`Note serials: ${serbia.noteSerials.join(", ")}`] : []),
           ],
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)",
         [
           transactionId,
           transactionRef,
@@ -1085,6 +1185,9 @@ export class LedgerService {
              large-cash window reads this column. The fee is a separate
              cash receipt and is not part of the exchange amount. */
           fixed(inputHome),
+          serbia.identityNumber,
+          serbia.noteSerials ? JSON.stringify(serbia.noteSerials) : null,
+          serbia.receiptFacts ? JSON.stringify(serbia.receiptFacts) : null,
         ],
       );
       for (const [account, side, value] of journal)

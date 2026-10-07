@@ -525,8 +525,10 @@
        the screen shows nothing, rather than those dollars labelled as
        dinars or pounds. */
     const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    /* A euro line is not a dinar line. Wait for the server to convert it. */
+    const foreignBook = !!(_pack && _pack.reportCurrency && _pack.homeCurrency && _pack.reportCurrency !== _pack.homeCurrency);
     const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold')
-      : baselineBook ? null
+      : (baselineBook || foreignBook) ? null
       : (_pack && _positive(_pack.reportThreshold)) ? +_pack.reportThreshold
       : _positive(settings && settings.threshold) ? +settings.threshold
       : (regime && _positive(regime.threshold)) ? +regime.threshold
@@ -569,8 +571,9 @@
     }
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
+    const foreignBook = !!(_pack && _pack.reportCurrency && _pack.homeCurrency && _pack.reportCurrency !== _pack.homeCurrency);
     const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold')
-      : baselineBook ? null
+      : (baselineBook || foreignBook) ? null
       : (_pack && _positive(_pack.idThreshold)) ? +_pack.idThreshold
       : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver
       : (regime && _positive(regime.idAt)) ? +regime.idAt
