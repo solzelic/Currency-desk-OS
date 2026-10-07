@@ -74,6 +74,7 @@ import {
   markSanctionsStop,
   recordSanctionsStop,
   screenDeal,
+  type AuditLogger,
   type DealScreen,
 } from "../compliance/sanctioned-jurisdictions.js";
 
@@ -162,20 +163,31 @@ export function applyDealScreen(
     sourceOfFunds?: string | null;
   },
 ): void {
-  if (screen.outcome === "clear") return;
-  if (screen.outcome === "enhanced_due_diligence") {
-    const gap = enhancedDueDiligenceGap(
-      screen.entry,
-      compliance.idStatus,
-      compliance.purpose,
-      compliance.sourceOfFunds,
-    );
-    if (gap) throw new LedgerError(gap.code, gap.message);
-    return;
+  switch (screen.outcome) {
+    case "clear":
+      return;
+    case "enhanced_due_diligence": {
+      const gap = enhancedDueDiligenceGap(
+        screen.entry,
+        compliance.idStatus,
+        compliance.purpose,
+        compliance.sourceOfFunds,
+      );
+      if (gap) throw new LedgerError(gap.code, gap.message);
+      return;
+    }
+    case "invalid":
+      throw new LedgerError(screen.code, screen.message);
+    case "stop": {
+      const error = new LedgerError(screen.code, screen.message);
+      markSanctionsStop(error, screen.audit);
+      throw error;
+    }
+    default: {
+      const unreachable: never = screen;
+      throw new LedgerError("INTERNAL_ERROR", `Unhandled deal screen: ${JSON.stringify(unreachable)}`);
+    }
   }
-  const error = new LedgerError(screen.code, screen.message);
-  if (screen.outcome === "stop") markSanctionsStop(error, screen.audit);
-  throw error;
 }
 
 
@@ -640,7 +652,7 @@ async function philippinesExchangeGuard(
 }
 
 export class LedgerService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly log?: AuditLogger) {}
 
   private async principal(
     client: pg.PoolClient,
@@ -1282,7 +1294,7 @@ export class LedgerService {
       if ((error as { code?: string }).code === "40001") {
         throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Retry the idempotent request.");
       }
-      await recordSanctionsStop(this.pool, actor, error);
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();
@@ -1667,7 +1679,7 @@ export class LedgerService {
           "Retry the idempotent request.",
         );
       }
-      await recordSanctionsStop(this.pool, actor, error);
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();

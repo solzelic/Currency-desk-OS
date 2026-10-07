@@ -70,7 +70,7 @@ import {
   requireOpenTill,
   type LedgerActor,
 } from "./service.js";
-import { recordSanctionsStop, screenDeal } from "../compliance/sanctioned-jurisdictions.js";
+import { recordSanctionsStop, screenDeal, type AuditLogger } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -194,7 +194,7 @@ const chequeJson = (row: Record<string, any>) => ({
 });
 
 export class ChequeService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly log?: AuditLogger) {}
 
   /* Every entry point below is retried on a serialization failure, for
      the reason written down in retry.ts: these transactions take the
@@ -634,7 +634,7 @@ export class ChequeService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
-      await recordSanctionsStop(this.pool, actor, error);
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();

@@ -622,6 +622,21 @@ export type AuditWriter = {
   query(sql: string, params?: readonly unknown[]): Promise<unknown>;
 };
 
+/* Same shape the Fastify logger uses: context object, then a
+   message. Routes pass app.log through this so a failed audit
+   write is on the app log. */
+export type AuditLogger = {
+  error(context: Record<string, unknown>, message: string): void;
+};
+
+export function auditLogger(log: { error(obj: unknown, msg?: string): void }): AuditLogger {
+  return {
+    error(context, message) {
+      log.error(context, message);
+    },
+  };
+}
+
 /* Written on the pool, after the deal transaction has rolled back.
    The rolled-back transaction cannot hold this row or the stop
    would vanish with it. If this insert fails, the failure is
@@ -638,6 +653,7 @@ export async function recordSanctionsStop(
     tillId: string;
   },
   error: unknown,
+  log?: AuditLogger,
 ): Promise<void> {
   const stop = sanctionsStopOf(error);
   if (!stop) return;
@@ -660,7 +676,7 @@ export async function recordSanctionsStop(
       ],
     );
   } catch (failure) {
-    console.error("[sanctions.stop] audit row was not written", {
+    const context = {
       action: "sanctions.stop",
       jurisdictionId: audit.jurisdictionId,
       customerId: audit.customerId,
@@ -672,7 +688,10 @@ export async function recordSanctionsStop(
       dealKind: audit.dealKind,
       blocked: audit.blocked,
       error: failure instanceof Error ? failure.message : "unknown",
-    });
+    };
+    const message = "[sanctions.stop] audit row was not written";
+    if (log) log.error(context, message);
+    else console.error(message, context);
     throw failure;
   }
 }
@@ -682,12 +701,14 @@ function placeHit(value: unknown, field: PlaceField): SanctionedJurisdiction | n
 }
 
 /* Corridor first, then the payout or sent currency, then the client.
-   A blocked hit wins over enhanced due diligence, so an Iranian
-   client sending to Myanmar is a stop, not a diligence note.
-   A missing corridor is a validation error and is not audited.
-   A walk-in with no client record has no country to read, so the
-   corridor and the currency are what can stop that deal. Returned
-   as data so this module does not import the ledger's error type. */
+   A blocked hit wins over enhanced due diligence, including when
+   the two tiers sit on different fields of the same client. An
+   Iranian client sending to Myanmar is a stop, and a Myanmar
+   client incorporated in North Korea is a stop. A missing corridor
+   is a validation error and is not audited. A walk-in with no
+   client record has no country to read, so the corridor and the
+   currency are what can stop that deal. Returned as data so this
+   module does not import the ledger's error type. */
 export async function screenDeal(
   client: pg.PoolClient,
   scope: { tenantId: string; legalEntityId: string },
@@ -769,14 +790,19 @@ export async function screenDeal(
   );
   const row = found.rows[0];
   if (row) {
-    const clientHit = placeHit(row.country, "country")
-      ?? placeHit(row.region, "region")
-      ?? placeHit(row.incorporation_jurisdiction, "country")
-      ?? placeHit(row.incorporation_jurisdiction, "region");
-    if (clientHit?.tier === "blocked") {
-      return stop(clientHit, SANCTIONS_STOP_CODE, dealMessage(clientHit), "client", currency);
+    /* Every field is read. The first blocked place stops the deal.
+       Enhanced due diligence is kept only when none of them is blocked. */
+    const places = [
+      placeHit(row.country, "country"),
+      placeHit(row.region, "region"),
+      placeHit(row.incorporation_jurisdiction, "country"),
+      placeHit(row.incorporation_jurisdiction, "region"),
+    ];
+    const blocked = places.find((hit) => hit?.tier === "blocked");
+    if (blocked) {
+      return stop(blocked, SANCTIONS_STOP_CODE, dealMessage(blocked), "client", currency);
     }
-    watch(clientHit);
+    for (const hit of places) watch(hit);
   }
 
   if (diligence) return { outcome: "enhanced_due_diligence", entry: diligence };

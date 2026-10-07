@@ -78,9 +78,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   sent currency), and stop a deal with a client there. The stop code
   is always `SANCTIONS-STOP`, including in Canada. Myanmar is
   enhanced due diligence: the deal posts only with full
-  identification and a short reason and source of funds. A blocked
-  stop is written to `audit_events` after the deal rolls back. If
-  that write fails, it is logged and the request fails. The list is
+  identification and a short reason and source of funds. A client
+  with any blocked field is a stop, even when another field is only
+  due diligence. A blocked stop is written to `audit_events` after
+  the deal rolls back. If that write fails, it is logged on the
+  app logger and the request fails. Exchanging IRR, KPW, or CUP
+  notes at the counter is not stopped. The list is
   `server/src/compliance/sanctioned-jurisdictions.ts`. How to refresh
   it is `docs/SANCTIONED_JURISDICTIONS.md`.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
@@ -506,11 +509,14 @@ cannot be opened in, or later set to, a blocked country. A transfer
 cannot be sent to or received from one, and a payout or sent
 currency on the blocked list stops it too. A deal with a client
 whose country, region, or incorporation jurisdiction is blocked
-stops under `SANCTIONS-STOP` on every pack. Myanmar is enhanced due
+stops under `SANCTIONS-STOP` on every pack. Country, region, and
+incorporation are all read, and any blocked field wins over
+enhanced due diligence on another field. Myanmar is enhanced due
 diligence, not a block. Each stop is written to `audit_events`
-after the deal rolls back. If that write fails, it is logged and
-the request fails, and the deal stays unposted. See
-`docs/SANCTIONED_JURISDICTIONS.md`.
+after the deal rolls back. If that write fails, it is logged on
+the app logger and the request fails, and the deal stays unposted.
+Exchanging IRR, KPW, or CUP notes at the counter is not stopped.
+See `docs/SANCTIONED_JURISDICTIONS.md`.
 
 **2026-10-06**, international baseline. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.

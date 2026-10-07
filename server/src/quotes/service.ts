@@ -16,6 +16,7 @@ import {
   type LedgerActor,
 } from "../ledger/service.js";
 import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
+import type { AuditLogger } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -78,10 +79,10 @@ const complianceFact = (value: string, label: string) => {
 };
 
 export class QuoteService {
-  constructor(
-    private readonly pool: pg.Pool,
-    private readonly ledger = new LedgerService(pool),
-  ) {}
+  private readonly ledger: LedgerService;
+  constructor(private readonly pool: pg.Pool, log?: AuditLogger) {
+    this.ledger = new LedgerService(pool, log);
+  }
   private async principal(
     client: pg.PoolClient,
     actor: LedgerActor,

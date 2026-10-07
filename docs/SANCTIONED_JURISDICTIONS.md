@@ -97,6 +97,11 @@ list. A desk can still buy and sell those notes. This file does not
 claim to enforce cash-instrument rules that name a currency without
 closing the country.
 
+Exchanging IRR, KPW, or CUP notes at the counter is not stopped.
+Those currencies are refused only as the payout of a send or the
+sent currency of a receive. A cash exchange of the notes themselves
+can still post.
+
 ## Where it is enforced
 
 1. A desk cannot sign up in a blocked country, and cannot set its
@@ -115,10 +120,13 @@ closing the country.
    regions are not blocked as corridors. A corridor of UA is allowed.
 3. A deal with a client in a blocked country or region is stopped.
    The code is always `SANCTIONS-STOP`, on every pack, including
-   Canada. It is not looked up from `jurisdiction_reports`. A blocked
-   corridor is decided first, then a blocked currency, then the
-   client, so a send to a blocked country stays a transfer block even
-   when the client is blocked too.
+   Canada. It is not looked up from `jurisdiction_reports`. Country,
+   region, and incorporation are all read. Any blocked field stops
+   the deal. Enhanced due diligence applies only when none of them
+   is blocked, so a Myanmar client incorporated in North Korea is
+   a stop. A blocked corridor is decided first, then a blocked
+   currency, then the client, so a send to a blocked country stays
+   a transfer block even when the client is blocked too.
 4. A deal or transfer that touches an enhanced due diligence
    jurisdiction, and is not already blocked, forces full
    identification regardless of amount and requires a short reason

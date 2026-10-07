@@ -87,7 +87,7 @@ import {
   requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
-import { recordSanctionsStop, screenDeal } from "../compliance/sanctioned-jurisdictions.js";
+import { recordSanctionsStop, screenDeal, type AuditLogger } from "../compliance/sanctioned-jurisdictions.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -322,7 +322,7 @@ type DealSpec = {
 };
 
 export class ObligationService {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool, private readonly log?: AuditLogger) {}
 
   /* ---- the four counter deals ---- */
 
@@ -953,7 +953,7 @@ export class ObligationService {
       return response;
     } catch (error) {
       if (!committed) await client.query("ROLLBACK");
-      await recordSanctionsStop(this.pool, actor, error);
+      await recordSanctionsStop(this.pool, actor, error, this.log);
       throw error;
     } finally {
       client.release();
