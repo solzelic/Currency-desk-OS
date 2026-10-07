@@ -92,6 +92,7 @@ test("a Singapore desk shows the Singapore pack and no cash report", async ({ pa
   expect(words).not.toMatch(/24-hour window/);
   expect(words).toMatch(/no cash transaction report/i);
   expect(words).toMatch(/does not file/i);
-  expect(words).toMatch(/No sanctions list ships/i);
+  expect(words).toMatch(/No sanctions list is loaded/i);
+  expect(words).toMatch(/screen every customer against the MAS lists/i);
   expect(words).not.toMatch(/\bLive\b/);
 });

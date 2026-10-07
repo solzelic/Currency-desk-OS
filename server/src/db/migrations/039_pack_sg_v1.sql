@@ -15,11 +15,15 @@
    the file after it has been applied.
 
    The hour window on jurisdiction_packs cannot say "add the day up".
-   MAS Notice PSN01 paragraph 7.4 tells the licensee to aggregate
-   suspected linked deals. This desk does not add them. Storing 24
-   would tell the till the rule is 24 hours. NULL means this pack has
-   no hour window. Migrations 033 and 037 already allow a null hour
-   window, so this file does not change the column.
+   MAS Notice PSN01 paragraph 7.4 is the duty. Where the licensee
+   suspects two or more transactions are related, linked, or split to
+   evade this Notice, they are one transaction and their values are
+   added. Guidelines to the Notice, paragraphs 7-2-2 and 7-10-1, say
+   when to enquire. They do not replace paragraph 7.4. This desk does
+   not add the deals. Storing 24 would tell the till the rule is 24
+   hours. NULL means this pack has no hour window. Migrations 033 and
+   037 already allow a null hour window, so this file does not change
+   the column.
 
    This file is insert-only. It does not alter a published pack row,
    and it does not move a desk that is already open.
