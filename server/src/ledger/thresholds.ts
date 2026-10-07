@@ -228,7 +228,8 @@ export async function readDeskThresholds(
   const pack = resolved ?? (await resolvePack(client, legalEntityId));
   const found = await client.query(
     `SELECT e.report_threshold, e.id_threshold, e.aggregation_hours,
-            e.retention_years, p.aggregation_hours AS pack_aggregation_hours,
+            e.retention_years, p.pack_id AS joined_pack_id,
+            p.aggregation_hours AS pack_aggregation_hours,
             p.retention_years AS pack_retention_years
        FROM legal_entities e
        LEFT JOIN jurisdiction_packs p ON p.pack_id = e.jurisdiction_pack_id
@@ -236,6 +237,20 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
+  /* The entity row can have no pack id while the resolver has already
+     fallen through to the baseline. That is not the same as a pack whose
+     hour window is NULL. Hong Kong stores NULL on purpose: deals that
+     appear to be linked are not summed here, and 24 would be a different
+     rule. A missed join must still read the pack the resolver named,
+     which for the baseline is 24. */
+  let packAggregationHours = row.pack_aggregation_hours;
+  if (pack.available && pack.packId && row.joined_pack_id == null) {
+    const named = await client.query(
+      `SELECT aggregation_hours FROM jurisdiction_packs WHERE pack_id = $1`,
+      [pack.packId],
+    );
+    packAggregationHours = named.rows[0]?.aggregation_hours ?? null;
+  }
   /* A baseline pack states its dollar lines in the desk's currency, at
      the same market rate the posting gate uses, rounded down to the cent.
      No fresh rate: the lines are unset, and identification is required. */
@@ -271,10 +286,16 @@ export async function readDeskThresholds(
     idThreshold: moneyLine(row.id_threshold, pack.idThreshold),
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
-      count(row.aggregation_hours),
-      /* No pack: do not invent a 24-hour window. That number is Canada's,
-         and a desk with no pack is not a Canadian desk. */
-      pack.available ? (count(row.pack_aggregation_hours) ?? 24) : null,
+      /* NULL on the pack is a real answer: this country has no hour
+         window. Do not invent 24, and do not let a desk choice invent
+         one either. Hong Kong keeps no hour window. A pack that still
+         stores 24, which is every pack shipped before this one, still
+         reads 24. A desk with no pack at all does not get a number
+         from the pack side. */
+      pack.available && count(packAggregationHours) == null
+        ? null
+        : count(row.aggregation_hours),
+      pack.available ? count(packAggregationHours) : null,
       "higher_is_stricter",
     ),
     retentionYears: asCountSetting(

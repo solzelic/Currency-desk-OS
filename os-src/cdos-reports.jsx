@@ -837,7 +837,9 @@
             {regime.authority
               ? <>Prepared for {regime.authority} record-keeping{regime.country ? ` (${regime.country})` : ''}.{' '}</>
               : <>Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.{' '}</>}
-            {limit.amount == null
+            {regime.noCashReport
+              ? <>There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This desk does not file it and does not open STREAMS.</>
+              : limit.amount == null
               ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.</>
               : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
             {' '}This pack is a working summary; verify each filing in the official portal.

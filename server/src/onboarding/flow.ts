@@ -97,6 +97,11 @@ export const JURISDICTION: Record<
   AU: { country: "Australia", regulator: "AUSTRAC", regLabel: "AUSTRAC enrolment number", currency: "AUD", reportThreshold: 10000, reportCurrency: "AUD", report: "Threshold Transaction Report" },
   AE: { country: "United Arab Emirates", regulator: "CBUAE", regLabel: "Exchange-house licence number", currency: "AED", reportThreshold: 55000, reportCurrency: "AED", report: "Suspicious Transaction Report" },
   EU: { country: "European Union", regulator: "National FIU", regLabel: "AML registration number", currency: "EUR", reportThreshold: 10000, reportCurrency: "EUR", report: "Suspicious Transaction Report" },
+  /* reportThreshold 0 is "there is no cash transaction report". It is
+     not an identification line. The wizard's own list uses 120000 for
+     the money-changing question. The server drops an idOver of 120000
+     because it is not strictly below the pack. */
+  HK: { country: "Hong Kong", regulator: "C&ED / JFIU", regLabel: "MSO licence number", currency: "HKD", reportThreshold: 0, reportCurrency: "HKD", report: "No cash transaction report" },
   XX: { country: "Somewhere else", regulator: "your regulator", regLabel: "Business / AML registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "large-transaction report" },
 };
 

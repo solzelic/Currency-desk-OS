@@ -227,6 +227,7 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   EU: "pack-eu-v1",
   AU: "pack-au-v1",
   AE: "pack-ae-v1",
+  HK: "pack-hk-v1",
 };
 
 const COUNTRY_CODE: Readonly<Record<string, string>> = {
@@ -246,6 +247,10 @@ const COUNTRY_CODE: Readonly<Record<string, string>> = {
   AE: "AE",
   UAE: "AE",
   "UNITED ARAB EMIRATES": "AE",
+  HK: "HK",
+  "HONG KONG": "HK",
+  "HONG KONG SAR": "HK",
+  HKSAR: "HK",
 };
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
@@ -255,6 +260,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-eu-v1": "EUR",
   "pack-au-v1": "AUD",
   "pack-ae-v1": "AED",
+  "pack-hk-v1": "HKD",
 };
 
 /**

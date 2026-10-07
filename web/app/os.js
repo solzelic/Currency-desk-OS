@@ -517,6 +517,16 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
+  /* Per-deal identification lines. The jurisdiction answer carries them.
+     The pack summary does not. A screen that only reads the single
+     identification column cannot tell money changing at 120000 HKD from
+     a wire, a remittance, or a virtual asset transfer at 8000 HKD. */
+  let _idThresholds = [];
+  const deskIdThresholds = () => _idThresholds;
+  const setDeskIdThresholds = rows => {
+    _idThresholds = Array.isArray(rows) ? rows : [];
+    return _idThresholds;
+  };
 
   /* ============================================================
      WHICH CURRENCIES THIS DESK DEALS IN
@@ -579,7 +589,10 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      if (answer && answer.pack) {
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+        setDeskIdThresholds(answer.idThresholds);
+      }
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
   }
@@ -1864,6 +1877,8 @@
     identificationLimit,
     deskPack,
     deskReports,
+    deskIdThresholds,
+    setDeskIdThresholds,
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
@@ -3018,22 +3033,24 @@
         };
         return;
       }
-      const single = TH != null && cashIn(row) >= TH;
+      const noCash = !!(regime && regime.noCashReport);
+      const single = !noCash && TH != null && cashIn(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashIn(o), 0);
-      const str = TH != null && !single && agg >= TH;
+      const str = !noCash && TH != null && !single && agg >= TH;
       // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
+      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
+      // A pack with no cash report does not use this clock.
       const end = dt(row);
-      const cluster = live.filter(o => o.customer && o.customer === row.customer && (() => {
+      const cluster = noCash ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
         const h = (end - dt(o)) / 3600000;
         return h >= 0 && h <= (regime.aggHours || 24);
       })());
       const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
-      const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const isClusterEnd = !noCash && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
+      const agg24 = !noCash && TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
@@ -3043,7 +3060,8 @@
       const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
       const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
       const idFloor = governed ? idAt : window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
-      const idNeeded = governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
+      const hkNeed = window.CDOS.hongKongIdNeeded;
+      const idNeeded = noCash ? hkNeed ? hkNeed(row.type, cadIn(row)) : true : governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
       map[row.id] = {
         single,
         str,
@@ -5116,6 +5134,8 @@
     const currency = desk && desk.currency || settings.baseCurrency || '';
     const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
     const disabled = status !== 'ready' || !!busy;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const noCash = !!(regimeNow && regimeNow.noCashReport);
 
     /* Hand a line back to the pack. Offered only where the desk has taken
        one, because "follow the regulator" is not a change a desk already
@@ -5160,7 +5180,15 @@
       }],
       example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Row, {
+    return /*#__PURE__*/React.createElement("div", null, noCash ? /*#__PURE__*/React.createElement(Row, {
+      title: "Cash transaction report",
+      desc: "There is no cash transaction report for a money service operator. 120000 HKD is customer due diligence for money changing, not a cash report. A traveller carrying more than 120000 HKD declares it to Customs. That is not this desk."
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] px-2.5 py-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "None")) : /*#__PURE__*/React.createElement(Row, {
       title: /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5"
       }, "Large cash / reportable threshold ", reportTip),
@@ -5170,14 +5198,14 @@
       currency: currency,
       disabled: disabled,
       onCommit: v => save('reportThreshold', v, `reporting threshold ${fmt(+v, currency)}`)
-    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+    }) : unavailable), noCash ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('threshold')
-    }), /*#__PURE__*/React.createElement(Release, {
+    }), noCash ? null : /*#__PURE__*/React.createElement(Release, {
       field: "reportThreshold",
       label: "Reporting threshold"
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Require ID over",
-      desc: "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
+      desc: noCash ? 'Money changing is at or above this figure. A wire transfer, a remittance, and a virtual asset transfer are at or above 8000 HKD, and a higher desk line does not lift that. A bill, a money order, and a cheque use the money-changing line. Linked deals are not summed.' : 'The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report.'
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('idThreshold') && line('idThreshold').effective,
       currency: currency,
@@ -5188,16 +5216,16 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), /*#__PURE__*/React.createElement(Row, {
+    }), noCash ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: "Same person, cash-in within this window is summed against the reporting threshold \u2014 automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status === 'ready' ? /*#__PURE__*/React.createElement(Seg, {
       value: String((line('aggregationHours') || {}).effective || 24),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    }) : unavailable), /*#__PURE__*/React.createElement(PostureNote, {
+    }) : unavailable), noCash ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), /*#__PURE__*/React.createElement(Release, {
+    }), noCash ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -9917,7 +9945,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, "Your jurisdiction follows the operating country set in ", /*#__PURE__*/React.createElement("b", null, "Localization"), " \u2014 switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.")), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.noCashReport ? 'Your jurisdiction follows the operating country set in Localization. Money changing at or above 120000 HKD needs customer due diligence. Exactly 120000 does. A wire transfer, a remittance, and a virtual asset transfer need it at or above 8000 HKD. Exactly 8000 does. There is no cash transaction report. A suspicious transaction report goes to the JFIU. This desk does not file it.' : /*#__PURE__*/React.createElement(React.Fragment, null, "Your jurisdiction follows the operating country set in ", /*#__PURE__*/React.createElement("b", null, "Localization"), " \u2014 switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand."))), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -9951,7 +9979,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, null), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || regime && regime.noCashReport ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -9969,7 +9997,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), paused ? null : /*#__PURE__*/React.createElement(Row, {
+      }, settings.aggWindowStart || '00:00')), paused || regime && regime.noCashReport ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -9983,13 +10011,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, [1, 7, 14, 30].map(d => /*#__PURE__*/React.createElement("option", {
         key: d,
         value: d
-      }, d, " days")))), /*#__PURE__*/React.createElement(Row, {
+      }, d, " days")))), window.CDOS._compliance.sanctionsListShips(pack) ? /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions / watchlist screening",
         desc: "Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue \u2014 most regulators expect it on."
       }, /*#__PURE__*/React.createElement(Sw, {
         on: settings.screenSanctions !== false,
         click: () => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)
-      })), /*#__PURE__*/React.createElement("div", {
+      })) : /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions screening",
+        desc: window.CDOS._compliance.HK_SCREENING_NOTE
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        "data-testid": "hongkong-screening-gap",
+        style: {
+          color: CD.mute
+        }
+      }, "No list loaded")), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -10056,7 +10093,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Sw, {
         on: escalateHighRisk,
         click: () => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')
-      })), /*#__PURE__*/React.createElement(Row, {
+      })), regime && regime.noCashReport ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Mandatory check on large deals",
         desc: `Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`
       }, /*#__PURE__*/React.createElement(Seg, {
@@ -10126,11 +10163,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.noCashReport ? 'Money changing at or above 120000 HKD needs customer due diligence. A wire, a remittance, and a virtual asset transfer need it at or above 8000 HKD. There is no cash report. This desk does not file to the JFIU and does not screen a sanctions list.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
-      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack.")));
+      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack."))));
     })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "coins",
       title: "Rates & fees",
@@ -11547,8 +11584,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
+      const noCash = !!(regime && regime.noCashReport);
+      const packNow = P.deskPack ? P.deskPack() : null;
+      const listShips = comp && comp.sanctionsListShips ? comp.sanctionsListShips(packNow) : true;
       let sanc = 0;
-      if (comp) {
+      if (comp && listShips && !noCash) {
         Object.keys(clients || {}).forEach(n => {
           if (comp.screen(n).status !== 'clear') sanc++;
         });
@@ -11556,10 +11596,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           if (comp.screen(b.name).status !== 'clear') sanc++;
         });
       }
-      const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
+      const agg = noCash ? 0 : comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
         threshold: limit.amount
       } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
+      const eftr = noCash || limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
       return {
         tInProg,
         tHold,
@@ -12285,7 +12325,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.aggHours}h aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, (X.regime && X.regime.noCashReport ? [['Screening', 'Gap', T.steel], ['Cash report', 'None', T.green], ['To file', 'Gap', T.steel]] : [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.aggHours}h aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]]).map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       onClick: () => onOpenApp && onOpenApp('compliance'),
       className: "text-left",
@@ -26786,7 +26826,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
-    const idRequired = single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
+    const hkNeed = window.CDOS.hongKongIdNeeded;
+    const idRequired = regimeNow && regimeNow.noCashReport ? hkNeed ? hkNeed(isCheque ? 'Cheque Cashing' : 'Currency Exchange', inCadEquiv) : true : single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
     const idBlocked = idRequired && kyc !== 'ok';
     const canSave = amtN > 0 && (isCheque ? maker.trim() && chequeNumber.trim() : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || marginAck && marginReason.trim()) && (!single || cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim()));
     const pickClient = n => {
@@ -32903,8 +32944,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const unpriced = inCadEquiv == null;
-    const single = TH != null && !unpriced && inCadEquiv >= TH;
-    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend); // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+    const hk = !!(regime && regime.noCashReport);
+    const single = !hk && TH != null && !unpriced && inCadEquiv >= TH;
+    const hkNeed = window.CDOS.hongKongIdNeeded;
+    const hkType = isCheque ? 'Cheque Cashing' : isSend || isReceive ? 'remittance' : 'fx';
+    /* Canada still identifies every remittance, and an unpriced deal.
+       Hong Kong identifies a wire, a remittance, and a virtual asset
+       transfer at or above 8000 HKD, and money changing at or above
+       120000 HKD. A bill, a money order, and a cheque use the
+       money-changing line. There is no any-amount identification rule. */
+    const idRequired = !paused && (hk ? hkNeed ? hkNeed(hkType, unpriced ? null : inCadEquiv) : true : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return {
@@ -32997,7 +33046,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: !!customer && idOk,
       warn: !!customer && !idOk,
       label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
+      sub: !customer ? `ID required ${hk ? isSend || isReceive ? 'at or above 8000 HKD' : 'at or above the Hong Kong line' : single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : !idOk ? `Their ID is ${kyc}. Fix it on the client file` : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -33015,7 +33064,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         sub: !capOk ? 'Purpose, source of funds & third-party — fill below' : 'Pre-fills the filing in Compliance'
       });
     }
-    if (serverBacked && isExchange && !single) {
+    if (serverBacked && isExchange && !single && !hk) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({
         key: 'server-facts',
@@ -34430,7 +34479,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...inSty,
         borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag
       }
-    })))), serverBacked && isExchange && !single && /*#__PURE__*/React.createElement("div", {
+    })))), serverBacked && isExchange && !single && !hk && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
@@ -34883,7 +34932,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     remittanceLine,
     deskLine,
     idLine,
-    reportLine
+    reportLine,
+    hongKong
   }) {
     const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
     if (blank) return {
@@ -34904,6 +34954,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const homeAmount = centsText(cash);
     const report = centsOf(reportLine);
+    /* A Hong Kong remittance is at or above 8000 HKD. The single
+       identification column is the money-changing line and must not
+       be used here. There is no cash report and no wire report. */
+    if (hongKong) {
+      const need = window.CDOS.hongKongIdNeeded ? window.CDOS.hongKongIdNeeded('remittance', cash) : true;
+      return {
+        homeAmount,
+        reportable: null,
+        idRequired: need
+      };
+    }
     let line = null;
     if (baseline) {
       const remittance = centsOf(remittanceLine);
@@ -35674,9 +35735,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [method, setMethod] = useState('cash');
     const [payAmt, setPayAmt] = useState('');
     const [fee, setFee] = useState(settings && settings.defaultFee ? String(settings.defaultFee) : '9.99');
-    const requirePurpose = !(settings && settings.transferRequirePurpose === false); // Settings › Transfers
-    const [purpose, setPurpose] = useState(requirePurpose ? '' : 'Family support');
-    const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
+    const hkPack = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) === 'pack-hk-v1');
+    const requirePurpose = hkPack ? false : !(settings && settings.transferRequirePurpose === false);
+    const [purpose, setPurpose] = useState(hkPack ? '' : requirePurpose ? '' : 'Family support');
+    const [sourceOfFunds, setSourceOfFunds] = useState(hkPack ? '' : 'Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
     /* The post is a round trip now, so the button has to be able to say
@@ -35742,7 +35804,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
       idLine: idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
-      reportLine: limit.amount
+      reportLine: limit.amount,
+      hongKong: !!(regimeNow && regimeNow.noCashReport)
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -36318,7 +36381,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), regimeNow && regimeNow.noCashReport && idRequired && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, "A remittance at or above 8000 HKD needs customer due diligence. This screen does not file a report."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -40248,7 +40316,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       label: 'Identification threshold',
       money: true,
       direction: 'atMost'
-    }), postureOf(L.aggregationHours, {
+    }),
+    /* Hong Kong has no hour window. A missing figure is not a violation
+       and it is not 24 hours. */
+    window.CDOS.getRegime && (window.CDOS.getRegime(settings) || {}).noCashReport ? null : postureOf(L.aggregationHours, {
       ...common,
       field: 'aggHours',
       label: 'Aggregation window',
@@ -40353,7 +40424,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
-    return {
+    const hongKong = pack.packId === 'pack-hk-v1';
+    const idLines = window.CDOS && window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() || [] : [];
+    const fxLine = idLines.find(r => r && r.dealKind === 'fx');
+    const built = {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : pack.regulator || '',
       country: baseline ? 'International baseline' : pack.name || '',
@@ -40376,6 +40450,53 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       baseline,
       reports: listed
     };
+    /* A money service operator has no cash transaction report. Force
+       the cash line off even if a desk number is later stored, so the
+       browser cannot flag a currency transaction report this country
+       does not have. The 120000 figure stays on idAt as the
+       money-changing line. A wire, a remittance, and a virtual asset
+       transfer do not use it. */
+    if (hongKong) {
+      built.noCashReport = true;
+      built.threshold = null;
+      built.largeCode = '';
+      built.largeLabel = '';
+      built.wireCode = '';
+      built.wireLabel = '';
+      built.aggHours = null;
+      built.windowKind = 'none';
+      built.comparator = 'gte';
+      built.idComparator = fxLine && fxLine.comparator || 'gte';
+      built.sanctionsCode = '';
+      built.sanctionsLabel = '';
+    }
+    return built;
+  }
+
+  /* Whether an unverified customer on a Hong Kong desk needs customer
+     due diligence for this deal. Money changing, a bill, a money order,
+     and a cheque are at or above the fx line. A wire, a remittance, and
+     a virtual asset transfer are at or above their own line. Exactly
+     the line does, when the comparator is gte. A missing line, a zero,
+     or an amount this screen cannot price blocks. It never turns the
+     check off. There is no any-amount identification rule. */
+  function hongKongDealKind(type) {
+    if (type === 'remittance' || typeof type === 'string' && type.indexOf('Remittance') === 0) return 'remittance';
+    if (type === 'eft' || type === 'EFT') return 'eft';
+    if (type === 'virtual_currency' || type === 'Virtual Currency') return 'virtual_currency';
+    return 'fx';
+  }
+  function hongKongIdNeeded(type, amount) {
+    const kind = hongKongDealKind(type);
+    const rows = window.CDOS.deskIdThresholds && window.CDOS.deskIdThresholds() || [];
+    const row = rows.find(r => r && r.dealKind === kind);
+    if (!row) return true;
+    const raw = row.threshold;
+    const line = raw == null || raw === '' ? NaN : +raw;
+    if (!isFinite(line) || !(line > 0)) return true;
+    if (amount == null || !isFinite(+amount)) return true;
+    if (row.comparator !== 'gt' && row.comparator !== 'gte') return true;
+    return row.comparator === 'gt' ? +amount > line : +amount >= line;
   }
   function getRegime(settings) {
     const pack = loadedPack();
@@ -40519,6 +40640,22 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       bg: CD.flagSoft
     }
   };
+
+  /* The names in WATCHLISTS are a fictional sample. They are not the
+     United Nations Sanctions Ordinance list and they are not the
+     UNATMO designated-persons list. A Hong Kong desk must not present
+     those names as a screen. The owner's duty still stands, so the
+     screens that read this flag say the duty instead of hiding it.
+     Every other pack keeps the queue it already shows.
+      One function, not a pack id written on each screen. A column on
+     the pack would be a migration for a fact this file already knows.
+     Draft PR 68 returns false for pack-ph-v1 from this same function.
+     Landing both will conflict here, and both ids have to stay out. */
+  function sanctionsListShips(pack) {
+    const id = pack && (pack.packId || pack.id);
+    return id !== 'pack-hk-v1';
+  }
+  const HK_SCREENING_NOTE = 'No sanctions list is loaded. Hong Kong law requires the owner to screen against designated persons under the United Nations Sanctions Ordinance (Cap. 537) and the United Nations (Anti-Terrorism Measures) Ordinance (Cap. 575). The owner does this outside the desk. This screen does not match names.';
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = s => norm(s).split(' ').filter(Boolean);
   function lev(a, b) {
@@ -40645,6 +40782,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // window, by conductor AND beneficiary. `kind` is the report code stamped on
   // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
   function aggregateEvents(events, regime, settings, kind) {
+    /* Hong Kong has no cash report and does not sum a day. Falling
+       through to 24 hours would tell the teller a rule the ordinance
+       does not use for this desk. */
+    if (regime && regime.noCashReport) return [];
     const TH = regime.threshold,
       H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
@@ -40764,9 +40905,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       cadIn,
       cashIn,
       dt,
-      setFingerprint
+      setFingerprint,
+      sanctionsListShips,
+      HK_SCREENING_NOTE
     },
     getRegime,
+    hongKongIdNeeded,
     jurisdictionViolations,
     jurisdictionPosture
   });
@@ -42546,6 +42690,25 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), [subjects]);
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
+    /* No list loaded. The queue below matches sample names, not designated
+       persons under UNSO or UNATMO, so it stays off this desk. The note
+       is the owner's duty. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (!C.sanctionsListShips(packNow)) return /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "hongkong-screening"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1 text-[12px] max-w-xl",
+      style: {
+        color: CD.mute
+      }
+    }, C.HK_SCREENING_NOTE));
+
     // Settings → Compliance · sanctions screening switch gates the whole queue
     if (settings && settings.screenSanctions === false) return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
@@ -42861,7 +43024,20 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, k);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
+    }, regime.noCashReport ? /*#__PURE__*/React.createElement("div", {
+      className: "mb-3",
+      "data-testid": "hongkong-no-cash-report"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "No cash report, and linked deals are not summed"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "A money service operator has no cash transaction report. The ordinance talks about operations that appear to be linked. This desk does not add them up. The teller has to check. Nothing here is filed.")) : /*#__PURE__*/React.createElement("div", {
       className: "mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold flex items-center gap-1.5",
@@ -43098,7 +43274,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.noCashReport ? 'There is no cash transaction report, so this screen does not total a day.' : regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -43198,6 +43374,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       } : r));
       log && log('Structuring watch reopened', `${cust}`);
     };
+    if (regime.noCashReport) return /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "hongkong-structuring-gap"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "No cash line to structure under"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1 text-[12px] max-w-lg",
+      style: {
+        color: CD.mute
+      }
+    }, "A money service operator has no cash transaction report, so this watch has no line to sit under. Linked deals are not summed on this desk. A suspicious transaction report still goes to the JFIU. This screen does not file it."));
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -43620,7 +43810,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 560
       }
-    }, "Each reportable opens a ", /*#__PURE__*/React.createElement("b", {
+    }, regime.noCashReport ? 'There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This screen does not send it and does not open STREAMS.' : /*#__PURE__*/React.createElement(React.Fragment, null, "Each reportable opens a ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -43628,7 +43818,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "seals into an immutable filed copy"), " welded to the records that triggered it.")), store === 'server' && /*#__PURE__*/React.createElement("div", {
+    }, "seals into an immutable filed copy"), " welded to the records that triggered it."))), store === 'server' && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 mb-3 px-3 py-2 text-[11.5px]",
       style: {
         background: CD.greenSoft,
@@ -44225,7 +44415,10 @@ ${(filing.map || []).map(blockHTML).join('')}
     };
 
     // header counts
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const listShips = C.sanctionsListShips(packNow);
     const screenFlagged = useMemo(() => {
+      if (!listShips) return 0;
       if (settings && settings.screenSanctions === false) return 0;
       let n = 0;
       Object.keys(clients || {}).forEach(name => {
@@ -44235,7 +44428,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         if (screen(b.name).status !== 'clear') n++;
       });
       return n;
-    }, [clients, beneficiaries, settings]);
+    }, [clients, beneficiaries, settings, listShips]);
     const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
     const strN = useMemo(() => {
@@ -44247,7 +44440,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', `${regime.aggHours}h aggregation`, 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.noCashReport ? 'No cash report' : `${regime.aggHours}h aggregation`, 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -44286,10 +44479,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
+    }, regime.noCashReport ? 'C&ED / JFIU. Money changing at or above 120000 HKD. A wire, a remittance, and a virtual asset transfer at or above 8000 HKD. There is no cash report.' : regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
-    }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
-      const bad = v > 0;
+    }, (regime.noCashReport ? [['Cash report', 'None', 'No cash report', 'aggregation', CD.green], ['STR', 'Gap', 'Not filed here', 'submissions', CD.mute], ['Screening', 'Gap', 'No list loaded', 'screening', CD.mute]] : [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]]).map(([l, v, sub, go, warn]) => {
+      const bad = typeof v === 'number' && v > 0;
       const col = bad ? warn : CD.green;
       return /*#__PURE__*/React.createElement("button", {
         key: l,
@@ -49761,7 +49954,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), regime.noCashReport ? /*#__PURE__*/React.createElement(React.Fragment, null, "There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This desk does not file it and does not open STREAMS.") : limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to

@@ -33,6 +33,10 @@ const migrations: readonly Migration[] = [
   ["025_platform_mfa", "src/db/migrations/025_platform_mfa.sql"],
   ["026_client_supporting_files", "src/db/migrations/026_client_supporting_files.sql"],
   ["028_pack_rule_fields", "src/db/migrations/028_pack_rule_fields.sql"],
+  /* 040, not 029. Drafts already own 027 and 029 through 039. If a
+     rebase finds 040 taken, renumber this id, the file name, and the
+     header in the SQL together. */
+  ["040_pack_hk_v1", "src/db/migrations/040_pack_hk_v1.sql"],
 ] as const;
 
 export async function runMigrations(

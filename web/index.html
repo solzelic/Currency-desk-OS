@@ -1127,7 +1127,7 @@ class Component extends DCLogic {
       { q:'How long until my desk is running?', a:'Rates and your public board can be live the same afternoon. A full desk — ledger, clients, compliance, records imported — usually takes about a week, and we do it with you rather than handing you a manual.' },
       { q:'Does it change how a deal is done?', a:'The order stays exactly as it is — quote, count, hand over, record. The desk replaces the writing-down part, and does it while the customer is still at the window.' },
       { q:'What does it cost?', a:'Rates is $299 a month, Full System $599, and the AI Bundle $749. Annual billing saves ten percent, and founding members keep that rate for the life of the account.' },
-      { q:'When will you support my country?', a:'The rulebooks are mapped and dated: United States early 2027, United Kingdom and Australia mid-2027, European Union and India late 2027, UAE and Philippines early 2028, Singapore and Hong Kong through 2028.' }
+      { q:'When will you support my country?', a:'The rulebooks are mapped and dated: United States early 2027, United Kingdom and Australia mid-2027, European Union and India late 2027, UAE and Philippines early 2028, Singapore through 2028. A new Hong Kong desk opens on these rules. Filing to the JFIU is not live.' }
     ];
   }
   startHero(reduce) {
@@ -1179,8 +1179,8 @@ class Component extends DCLogic {
         rules:[{name:'Cash report',spec:'CTR · ₱500,000',tag:'Planned',cat:'threshold'},{name:'Suspicious transactions',spec:'STR to AMLC',tag:'Planned',cat:'suspicious'},{name:'BSP registration',spec:'Money changer / FX',tag:'Planned',cat:'licence'},{name:'5-year records',spec:'AMLA retention',tag:'Planned',cat:'records'}] },
       { tag:'MAS', title:'Singapore', status:'2028', kind:'soon', tz:/Asia\/Singapore/,
         rules:[{name:'Cash threshold',spec:'S$20,000',tag:'Planned',cat:'threshold'},{name:'Suspicious reports',spec:'STR to the STRO',tag:'Planned',cat:'suspicious'},{name:'Payment licence',spec:'PS Act class',tag:'Planned',cat:'licence'},{name:'5-year records',spec:'MAS 626 retention',tag:'Planned',cat:'records'}] },
-      { tag:'C&ED', title:'Hong Kong', status:'2028', kind:'soon', tz:/Asia\/Hong_Kong/,
-        rules:[{name:'Cash threshold',spec:'HK$120,000',tag:'Planned',cat:'threshold'},{name:'Suspicious reports',spec:'STR to the JFIU',tag:'Planned',cat:'suspicious'},{name:'MSO licence',spec:'C&ED licensed',tag:'Planned',cat:'licence'},{name:'6-year records',spec:'AMLO retention',tag:'Planned',cat:'records'}] }
+      { tag:'C&ED', title:'Hong Kong', status:'Not live', kind:'soon', tz:/Asia\/Hong_Kong/,
+        rules:[{name:'Money changing',spec:'At or above HK$120,000',tag:'Listed',cat:'threshold'},{name:'Wire, remittance, virtual asset',spec:'At or above HK$8,000',tag:'Listed',cat:'transfer'},{name:'Suspicious report',spec:'STR to the JFIU, not filed here',tag:'Listed',cat:'suspicious'},{name:'Cash report',spec:'None for an MSO',tag:'Gap',cat:'threshold'},{name:'5-year records',spec:'AMLO, not deleted',tag:'Listed',cat:'records'},{name:'Sanctions list',spec:'None loaded',tag:'Gap',cat:'screening'}] }
     ];
   }
   SPANBY = { 4:[[3,2],[3,2],[3,1],[3,1]], 5:[[3,2],[3,1],[3,1],[3,1],[3,1]], 6:[[2,2],[2,2],[2,1],[2,1],[3,1],[3,1]] };

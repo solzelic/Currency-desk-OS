@@ -21,6 +21,15 @@ import {
   type JurisdictionPack,
 } from "./jurisdiction.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
+import {
+  HK_BOOK_MESSAGE,
+  HK_UNPRICED_MESSAGE,
+  hongKongDealHkd,
+  hongKongIdRow,
+  hongKongPurposeRequired,
+  identificationBlocks,
+  isHongKongPack,
+} from "./hongkong-pack.js";
 import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -213,6 +222,26 @@ export async function requireIdentification(
     ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
     : { block: false, rate: "1.000000000000", rateAt: null };
   const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
+  /* Hong Kong does not use the single identification column with one
+     number for every kind. Money changing is at or above 120000 HKD.
+     A wire, a remittance, and a virtual asset transfer are at or above
+     8000 HKD. A missing row, a blank, or a zero blocks. Other packs
+     keep the gate below. */
+  if (isHongKongPack(pack.packId)) {
+    if (pack.homeCurrency.trim().toUpperCase() !== "HKD") {
+      throw new LedgerError("COMPLIANCE_BLOCKED", HK_BOOK_MESSAGE);
+    }
+    if (idStatus === "verified") return stamp;
+    const desk = await deskIdLine(client, actor.legalEntityId);
+    const row = await hongKongIdRow(client, pack.packId, deal.kind);
+    if (identificationBlocks(amountHome, row, desk)) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return stamp;
+  }
   if (idStatus === "verified") return stamp;
   if (pack.baseline) {
     /* A missing or stale market rate already sets block. A desk's own
@@ -238,6 +267,28 @@ export async function requireIdentification(
       "Authoritative compliance policy blocked posting.",
     );
   return stamp;
+}
+
+/* Hong Kong dollar value of an exchange, for the money-changing line.
+   A verified customer has no amount test, so a missing rate does not
+   refuse them. An unverified cross with no HKD leg and no fresh rate
+   is refused by the caller. Other packs get null and keep their own
+   gate. Returns null when this is not a Hong Kong desk. */
+async function hongKongExchangeValue(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  legs: {
+    from: string;
+    to: string;
+    inputAmount: Decimal;
+    outputAmount: Decimal;
+  },
+): Promise<{ hkd: Decimal; rate: string; rateAt: Date | null } | null> {
+  if (!isHongKongPack(pack.packId)) return null;
+  if (pack.homeCurrency.trim().toUpperCase() !== "HKD") {
+    throw new LedgerError("COMPLIANCE_BLOCKED", HK_BOOK_MESSAGE);
+  }
+  return hongKongDealHkd(client, legs);
 }
 
 export class LedgerService {
@@ -430,14 +481,35 @@ export class LedgerService {
          kept in, taken on each side at that side's own rate. */
       const inputHome = input.mul(fromMid).toDecimalPlaces(2);
       const outputCad = output.mul(toMid).toDecimalPlaces(2);
+      /* Hong Kong limits use an HKD leg, or a market rate. The board
+         mid above is the shop's price. It is not the legal rate. A
+         verified customer has no amount test, so a missing rate does
+         not refuse them. */
+      const hkValue = await hongKongExchangeValue(client, pack, {
+        from: quote.from,
+        to: quote.to,
+        inputAmount: input,
+        outputAmount: output,
+      });
+      if (
+        isHongKongPack(pack.packId) &&
+        customer.rows[0].id_status !== "verified" &&
+        !hkValue
+      ) {
+        throw new LedgerError("COMPLIANCE_BLOCKED", HK_UNPRICED_MESSAGE);
+      }
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        inputHome,
+        hkValue ? hkValue.hkd : inputHome,
         customer.rows[0].id_status,
         { kind: "exchange", cash: true },
       );
+      if (hkValue) {
+        compliance.rate = hkValue.rate;
+        compliance.rateAt = hkValue.rateAt;
+      }
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
@@ -890,20 +962,44 @@ export class LedgerService {
       const output = input.mul(rate).toDecimalPlaces(2);
       const outputCad = output.div(toRate).toDecimalPlaces(2);
       const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
+      const hkValue = await hongKongExchangeValue(client, pack, {
+        from: request.from,
+        to: request.to,
+        inputAmount: input,
+        outputAmount: output,
+      });
+      if (
+        isHongKongPack(pack.packId) &&
+        customer.rows[0].id_status !== "verified" &&
+        !hkValue
+      ) {
+        throw new LedgerError("COMPLIANCE_BLOCKED", HK_UNPRICED_MESSAGE);
+      }
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        inputHome,
+        hkValue ? hkValue.hkd : inputHome,
         customer.rows[0].id_status,
         { kind: "exchange", cash: true },
       );
+      if (hkValue) {
+        compliance.rate = hkValue.rate;
+        compliance.rateAt = hkValue.rateAt;
+      }
       /* Purpose and source of funds, over the desk's REPORTING line — the
          details the report itself is made of. Same story as the ID gate: a
          hardcoded 10,000 in a book that might be kept in dirhams, where
          the figure is 55,000. Resolved from the same place, and a capture
-         that is present clears it whatever the line turns out to be. */
-      if (!request.purpose.trim() || !request.sourceOfFunds.trim()) {
+         that is present clears it whatever the line turns out to be.
+         Hong Kong stores a report threshold of 0, which this reader treats
+         as no line, and that would demand purpose on a 10 HKD exchange.
+         Schedule 2 section 2(1)(c) does not hard require it on an
+         occasional deal. */
+      if (
+        !(isHongKongPack(pack.packId) && !hongKongPurposeRequired()) &&
+        (!request.purpose.trim() || !request.sourceOfFunds.trim())
+      ) {
         const reporting = await resolveReportThreshold(
           client,
           actor.legalEntityId,

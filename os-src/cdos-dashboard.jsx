@@ -292,10 +292,13 @@
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
+      const noCash = !!(regime && regime.noCashReport);
+      const packNow = P.deskPack ? P.deskPack() : null;
+      const listShips = comp && comp.sanctionsListShips ? comp.sanctionsListShips(packNow) : true;
       let sanc = 0;
-      if (comp) { Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
-      const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? { threshold: limit.amount } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
+      if (comp && listShips && !noCash) { Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
+      const agg = noCash ? 0 : (comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? { threshold: limit.amount } : null)).length : 0);
+      const eftr = noCash || limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
       return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, sanc, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
@@ -493,7 +496,7 @@
             </div>
             <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc + X.sanc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc + X.sanc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc + X.sanc) > 0 ? `${D.rptOpen + D.kyc + X.sanc} item(s) need attention` : 'Book is clean — all clear'}</div>
             <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
-              {[['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.aggHours}h aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
+              {(X.regime && X.regime.noCashReport ? [['Screening', 'Gap', T.steel], ['Cash report', 'None', T.green], ['To file', 'Gap', T.steel]] : [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.aggHours}h aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]]).map(([l, v, col]) => (
                 <button key={l} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
                   <div style={{ fontSize: 9.5, color: T.steel }}>{l}</div>

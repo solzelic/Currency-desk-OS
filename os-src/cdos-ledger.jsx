@@ -354,7 +354,10 @@
     const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
-    const idRequired = single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000);
+    const hkNeed = window.CDOS.hongKongIdNeeded;
+    const idRequired = regimeNow && regimeNow.noCashReport
+      ? (hkNeed ? hkNeed(isCheque ? 'Cheque Cashing' : 'Currency Exchange', inCadEquiv) : true)
+      : (single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000));
     const idBlocked = idRequired && kyc !== 'ok';
 
     const canSave = amtN > 0 && (isCheque ? (maker.trim() && chequeNumber.trim()) : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || (marginAck && marginReason.trim())) && (!single || (cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim())));
