@@ -233,16 +233,19 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   GB: "pack-gb-v1",
   UK: "pack-gb-v1",
   EU: EU_AMLR_PACK_ID,
-  AU: "pack-au-v1",
+  /* Version 2. Desks already on pack-au-v1 stay there until they opt in.
+     packForCountry is only the pack a new desk is given. */
+  AU: "pack-au-v2",
   AE: "pack-ae-v1",
   RS: "pack-rs-v1",
 };
 
-/* Canada and the 2027 European Union pack are version 2.
+/* Canada, the 2027 European Union pack, and Australia v2 are version 2.
    Every other pack is still version 1. */
 const PACK_VERSION: Readonly<Record<string, number>> = {
   "pack-ca-v2": 2,
   [EU_AMLR_PACK_ID]: 2,
+  "pack-au-v2": 2,
 };
 
 const COUNTRY_CODE: Readonly<Record<string, string>> = {
@@ -275,6 +278,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-eu-v1": "EUR",
   [EU_AMLR_PACK_ID]: "EUR",
   "pack-au-v1": "AUD",
+  "pack-au-v2": "AUD",
   "pack-ae-v1": "AED",
   "pack-rs-v1": "RSD",
 };

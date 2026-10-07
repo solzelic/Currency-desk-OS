@@ -75,7 +75,12 @@
       if (remittance == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
       line = lowerCents(remittance, centsOf(deskLine));
     } else {
-      line = centsOf(idLine);
+      /* A remittance line of zero means every remittance. It binds even
+         when the foreign-exchange line is higher. A positive remittance
+         line on another country pack is not substituted for that pack's
+         own identification line. */
+      const remittance = centsOf(remittanceLine);
+      line = remittance === 0n ? 0n : centsOf(idLine);
       if (line == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
     }
     return {

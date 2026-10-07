@@ -517,6 +517,10 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
+  /* Identification lines from the pack, one per kind of deal. Zero is
+     a real line (every deal). An empty list means they have not arrived. */
+  let _idLines = [];
+  const deskIdLines = () => _idLines;
 
   /* ============================================================
      WHICH CURRENCIES THIS DESK DEALS IN
@@ -553,7 +557,7 @@
     const set = _currencies && (_currencies.stated || _currencies.suggested);
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
-  const setDeskPack = (pack, reports, currencies, notice) => {
+  const setDeskPack = (pack, reports, currencies, notice, idLines) => {
     _pack = pack || null;
     const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
     /* A country pack can carry a notice of its own. The 2027 EU pack
@@ -561,6 +565,7 @@
        sentence from the server still gets the international one. */
     if (notice) _rulesNotice = notice;else if (baseline || _pack && _pack.available === false) _rulesNotice = BASELINE_NOTICE;else _rulesNotice = null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
+    if (idLines !== undefined) _idLines = Array.isArray(idLines) ? idLines : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try {
       window.__cdosHome = _pack && _pack.homeCurrency ? String(_pack.homeCurrency).toUpperCase() : '';
@@ -584,7 +589,7 @@
       const answer = await B.loadJurisdiction();
       if (answer && answer.pack) {
         answer.pack.idThresholds = Array.isArray(answer.idThresholds) ? answer.idThresholds : [];
-        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice, answer.idThresholds);
       }
     } catch (e) {/* not signed in, or a desk with no pack yet */}
     return _pack;
@@ -1873,6 +1878,7 @@
     identificationLimit,
     deskPack,
     deskReports,
+    deskIdLines,
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
@@ -2377,6 +2383,11 @@
           method: "POST",
           body: "{}",
         });
+      },
+      /* Australia only. A desk on the previous pack takes the current
+         one. Posted deals stay on the pack they were stamped with. */
+      optInAustraliaV2: function () {
+        return request("/api/ledger/jurisdiction-pack/au-v2", { method: "POST", body: "{}" });
       },
 
       /* ---- the desk's own thresholds ----
@@ -2976,7 +2987,8 @@
     fmt,
     num,
     dDiff,
-    counterCashIn
+    counterCashIn,
+    counterCashOut
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -3031,6 +3043,20 @@
       const c = counterCashIn(r);
       return c ? inHome(c.amount, c.ccy) : 0;
     };
+    const cashOut = r => {
+      const c = counterCashOut(r);
+      return c ? inHome(c.amount, c.ccy) : 0;
+    };
+    /* Which cash legs the large-cash report counts. Canada counts cash
+       received. Australia counts cash received or paid, and does not
+       add deals together. A missing direction keeps the old cash-in rule. */
+    const largeDirection = regime.largeDirection || 'in';
+    const cashForReport = r => {
+      if (largeDirection === 'out') return cashOut(r);
+      if (largeDirection === 'both') return Math.max(cashIn(r) || 0, cashOut(r) || 0);
+      return cashIn(r);
+    };
+    const aggregate = regime.aggregate !== false;
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') {
@@ -3044,22 +3070,24 @@
         };
         return;
       }
-      const single = TH != null && cashIn(row) >= TH;
+      const single = TH != null && cashForReport(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashIn(o), 0);
+      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && agg >= TH;
-      // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
+      // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
+      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
+      // A pack whose large-cash window is 'none' does not add deals together.
       const end = dt(row);
-      const cluster = live.filter(o => o.customer && o.customer === row.customer && (() => {
+      const hours = aggregate ? regime.aggHours || 24 : null;
+      const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
         const h = (end - dt(o)) / 3600000;
-        return h >= 0 && h <= (regime.aggHours || 24);
+        return h >= 0 && h <= hours;
       })());
-      const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
+      const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
-      const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
+      const agg24 = hours != null && TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
@@ -3069,7 +3097,20 @@
       const governed = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId || settings && settings.baselineRules);
       const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
       const idFloor = governed ? idAt : window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings) ? null : +settings.idRequiredOver || 3000;
-      const idNeeded = governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
+      let idNeeded = governed && idAt == null || idFloor != null && (single || cadIn(row) != null && cadIn(row) >= idFloor);
+      /* Australia v2. A remittance or electronic transfer is identified
+         on every deal. A currency exchange and a money order use the
+         foreign-exchange line (1,000 AUD unless the desk set its own).
+         Cheque cashing stays on that same single number. The size is
+         the home-currency leg. A deal the book cannot value asks for
+         identification rather than assuming it is under the line. */
+      const auPack = window.CDOS.deskPack && window.CDOS.deskPack();
+      if (auPack && auPack.packId === 'pack-au-v2') {
+        const type = row.type || '';
+        const every = type.indexOf('Remittance') === 0 || type === 'Bill Payment';
+        const size = window.CDOS.dealHome ? window.CDOS.dealHome(row, homeCcy()) : cadIn(row);
+        if (every) idNeeded = true;else if (size == null) idNeeded = true;else idNeeded = idAt == null ? size >= 1000 : size >= idAt;
+      }
       map[row.id] = {
         single,
         str,
@@ -35147,7 +35188,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
       line = lowerCents(remittance, centsOf(deskLine));
     } else {
-      line = centsOf(idLine);
+      /* A remittance line of zero means every remittance. It binds even
+         when the foreign-exchange line is higher. A positive remittance
+         line on another country pack is not substituted for that pack's
+         own identification line. */
+      const remittance = centsOf(remittanceLine);
+      line = remittance === 0n ? 0n : centsOf(idLine);
       if (line == null) return {
         homeAmount,
         reportable: report == null ? null : cash >= report,
@@ -40548,6 +40594,29 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     };
     const reportCopy = baselineMoneyCopy('reportThreshold', L.reportThreshold);
     const idCopy = baselineMoneyCopy('idThreshold', L.idThreshold);
+    const reports = window.CDOS && window.CDOS.deskReports ? window.CDOS.deskReports() || [] : [];
+    const large = reports.find(r => r && r.kind === 'large_cash');
+    /* Australia does not add threshold transactions together. The pack
+       column still holds 24 because that column cannot be empty. The
+       report row is the rule, and the sentence has to say so. */
+    const aggregation = large && large.windowKind === 'none' ? {
+      field: 'aggHours',
+      label: 'Aggregation window',
+      standing: 'following',
+      authority: source.authority,
+      value: null,
+      mandate: null,
+      deskChoice: null,
+      currency: null,
+      note: `Following ${source.authority}. A threshold transaction is one transaction. Deals are not added together.`,
+      detail: `Following ${source.authority}. A threshold transaction is one transaction. Deals are not added together.`
+    } : postureOf(L.aggregationHours, {
+      ...common,
+      field: 'aggHours',
+      label: 'Aggregation window',
+      unit: 'h',
+      direction: 'atLeast'
+    });
     return [postureOf(L.reportThreshold, {
       ...common,
       ...reportCopy,
@@ -40562,13 +40631,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       label: 'Identification threshold',
       money: true,
       direction: 'atMost'
-    }), postureOf(L.aggregationHours, {
-      ...common,
-      field: 'aggHours',
-      label: 'Aggregation window',
-      unit: 'h',
-      direction: 'atLeast'
-    }), postureOf(L.retentionYears, {
+    }), aggregation, postureOf(L.retentionYears, {
       ...common,
       field: 'retentionYears',
       label: 'Record retention',
@@ -40669,15 +40732,25 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
+    const noCashWindow = !!(large && large.windowKind === 'none');
+    const wireEvery = !!(wire && (wire.triggerThreshold == null || wire.triggerThreshold === ''));
     return {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : pack.regulator || '',
       country: baseline ? 'International baseline' : pack.name || '',
-      flag: baseline ? '🌐' : '',
+      flag: baseline ? '🌐' : pack.jurisdiction === 'AU' ? '🇦🇺' : '',
       currency: desk && desk.currency || pack.homeCurrency || settings && settings.baseCurrency || null,
       threshold: desk && desk.reportThreshold ? lineAmount(desk.reportThreshold) : null,
       idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
-      aggHours: desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      /* A 'none' window means do not add deals together. Falling back to
+         24 here is how a country that forbids aggregation was shown a
+         24 hour rule. */
+      aggregate: !noCashWindow,
+      largeDirection: large && large.direction || 'in',
+      aggHours: noCashWindow ? null : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      wireEvery,
+      wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
+      wireAggregate: !(wire && wire.windowKind === 'none'),
       retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
       largeCode: large && large.code || pack.reportName || '',
       largeLabel: large && large.name || (baseline ? 'Large cash record' : ''),
@@ -41088,6 +41161,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function aggClusters(rows, regime, settings) {
+    if (regime && regime.aggregate === false) return [];
     const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
     return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
   }
@@ -41121,8 +41195,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       axes: report.aggregationAxes && report.aggregationAxes.length ? report.aggregationAxes : ['conductor', 'on_behalf_of', 'beneficiary']
     });
   }
-  // EFTR — international electronic transfers. Same $10k / 24h machinery, wires not cash.
+  // EFTR — international electronic transfers. Same machinery, wires not cash.
+  // A wire window of 'none' means each transfer stands on its own.
   function aggClustersEFT(transfers, beneficiaries, regime, settings) {
+    if (regime && regime.wireAggregate === false) return [];
     const benName = id => {
       const b = (beneficiaries || []).find(x => x.id === id);
       return b ? b.name : null;
@@ -42816,10 +42892,27 @@ ${(filing.map || []).map(blockHTML).join('')}
       windowStart: c.windowStart,
       windowEnd: c.windowEnd
     }));
-    // single international transfers at/over threshold
-    transfers.filter(t => t.status !== 'cancelled').forEach(t => {
+    // single international transfers. A wire report with no amount (an
+    // Australian IVTS) is every transfer. A numbered line keeps the old
+    // comparison. No wire code means this pack has no such report.
+    transfers.filter(t => t.status !== 'cancelled' && regime.wireCode).forEach(t => {
+      const homeAmt = t.direction === 'send' ? +t.payAmt || 0 : +t.recvAmt || 0;
+      if (regime.wireEvery) {
+        out.push({
+          id: 'E-' + t.ref,
+          groupId: 'E-' + t.ref,
+          kind: regime.wireCode,
+          subject: t.senderName,
+          amount: homeAmt,
+          detail: `${regime.wireCode} · ${t.corridor} · ${t.partner}`,
+          date: t.date,
+          refs: [t.ref]
+        });
+        return;
+      }
       const cad = t.direction === 'send' ? t.payAmt : t.recvAmt / xr(t.ccy);
-      if (regime.threshold != null && cad >= regime.threshold) out.push({
+      const line = regime.wireTrigger != null ? regime.wireTrigger : regime.threshold;
+      if (line != null && cad >= line) out.push({
         id: 'E-' + t.ref,
         groupId: 'E-' + t.ref,
         kind: regime.wireCode,
@@ -43258,6 +43351,47 @@ ${(filing.map || []).map(blockHTML).join('')}
   }) {
     const regime = getRegime(settings);
     const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), beneficiaries, regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    /* Australia reports each threshold transaction on its own. Saying
+       "the 24-hour rule" here would be the old, wrong rule. */
+    if (regime.aggregate === false) {
+      const listed = regime.reports || [];
+      return /*#__PURE__*/React.createElement("div", {
+        className: "p-4"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "mb-3"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-sm font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, "Threshold transactions are not added together"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1",
+        style: {
+          color: CD.mute,
+          maxWidth: 640
+        }
+      }, "A threshold transaction report is one transaction. Physical currency of ", fmt(regime.threshold, regime.currency), " or more, received or paid, is listed on its own and is due within 10 business days. Smaller deals are not combined into one report. An international value transfer has no amount: every transfer in or out is listed. The till does not file either report to AUSTRAC.")), /*#__PURE__*/React.createElement("div", {
+        className: "space-y-1.5"
+      }, listed.map(r => /*#__PURE__*/React.createElement("div", {
+        key: r.code,
+        className: "px-3 py-2",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, r.code), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, r.name)))));
+    }
     const total = clusters.reduce((s, c) => s + c.total, 0);
     const winStart = settings && settings.aggWindowStart || '00:00';
     const benCount = clusters.filter(c => c.basis === 'beneficiary').length;
@@ -44362,9 +44496,125 @@ ${(filing.map || []).map(blockHTML).join('')}
     const regime = getRegime(settings);
     const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const reports = (regime.reports || []).filter(r => r && r.kind);
+    const [optInState, setOptInState] = useState(null);
     const isOwner = me && me.role === 'Owner';
     const [optError, setOptError] = useState('');
     const [opting, setOpting] = useState(false);
+    const switchAustralia = async () => {
+      const api = window.CDOS.Backend;
+      if (!api || !api.optInAustraliaV2) return;
+      setOptInState('working');
+      try {
+        await api.optInAustraliaV2();
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+        setOptInState('done');
+      } catch (error) {
+        setOptInState(error && error.message ? error.message : 'Could not switch.');
+      }
+    };
+    if (pack && (pack.packId === 'pack-au-v1' || pack.packId === 'pack-au-v2')) {
+      const onAustraliaV1 = pack.packId === 'pack-au-v1';
+      return /*#__PURE__*/React.createElement("div", {
+        className: "p-4"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "mb-3"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-sm font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, regime.authority || 'Jurisdiction', " \xB7 ", regime.country), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1",
+        style: {
+          color: CD.mute,
+          maxWidth: 560
+        }
+      }, pack.packId === 'pack-au-v2' ? 'Customer due diligence before a currency exchange of A$1,000 or more, and before every remittance. A threshold transaction is physical currency of A$10,000 or more received or paid, in one transaction. Records are kept 7 years.' : 'The reports this desk is operating under.')), /*#__PURE__*/React.createElement("div", {
+        className: "space-y-1.5 mb-3"
+      }, reports.map(r => /*#__PURE__*/React.createElement("div", {
+        key: r.code,
+        className: "px-3 py-2",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, r.code, " \xB7 ", r.name), r.kind === 'large_cash' && r.direction === 'both' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "Physical currency received or paid. Not added to other transactions."), r.code === 'IVTS' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "Every international transfer of value, in or out. No amount."), r.code === 'SMR' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "3 business days after the day the suspicion is formed."), r.code === 'SMR-TF' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "24 hours after the time a terrorism financing suspicion is formed."), r.code === 'COMPLIANCE' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, "Annual. The till does not prepare this report."))), !reports.length && /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px]",
+        style: {
+          color: CD.mute
+        }
+      }, "No reports have been loaded for this pack yet.")), onAustraliaV1 && /*#__PURE__*/React.createElement("div", {
+        className: "p-3",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mb-2",
+        style: {
+          color: CD.mute
+        }
+      }, "The current AUSTRAC rules add the international value transfer report and count cash paid out as well as cash received. Deals already posted stay on the rules they were written under. New deals follow the current rules. This cannot be undone."), /*#__PURE__*/React.createElement("button", {
+        onClick: switchAustralia,
+        disabled: optInState === 'working' || optInState === 'done',
+        className: "px-3 py-2 text-[12px] font-semibold",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 8
+        }
+      }, optInState === 'working' ? 'Switching…' : optInState === 'done' ? 'Switched' : 'Switch to the current AUSTRAC rules'), optInState && optInState !== 'working' && optInState !== 'done' && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-2",
+        style: {
+          color: CD.flag
+        }
+      }, optInState)), /*#__PURE__*/React.createElement("button", {
+        onClick: () => onOpenSettings && onOpenSettings(),
+        className: "mt-3 flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold",
+        style: {
+          border: `1px solid ${CD.line}`,
+          borderRadius: 8,
+          color: CD.ink,
+          background: CD.panel
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "gear",
+        s: 14
+      }), " View in Settings"));
+    }
     const onV1 = pack && pack.packId === 'pack-ca-v1';
     const optIn = async () => {
       const B = window.CDOS.Backend;
@@ -44820,7 +45070,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {

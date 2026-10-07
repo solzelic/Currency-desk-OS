@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff, counterCashIn } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff, counterCashIn, counterCashOut } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -49,23 +49,36 @@
        See COUNTER_CASH in cdos-base.jsx, which mirrors the server's
        recorded `cash_in_home`. */
     const cashIn = (r) => { const c = counterCashIn(r); return c ? inHome(c.amount, c.ccy) : 0; };
+    const cashOut = (r) => { const c = counterCashOut(r); return c ? inHome(c.amount, c.ccy) : 0; };
+    /* Which cash legs the large-cash report counts. Canada counts cash
+       received. Australia counts cash received or paid, and does not
+       add deals together. A missing direction keeps the old cash-in rule. */
+    const largeDirection = regime.largeDirection || 'in';
+    const cashForReport = (r) => {
+      if (largeDirection === 'out') return cashOut(r);
+      if (largeDirection === 'both') return Math.max(cashIn(r) || 0, cashOut(r) || 0);
+      return cashIn(r);
+    };
+    const aggregate = regime.aggregate !== false;
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const single = TH != null && cashIn(row) >= TH;
+      const single = TH != null && cashForReport(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
-        .reduce((s, o) => s + cashIn(o), 0);
+        .reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && agg >= TH;
-      // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
+      // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
+      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
+      // A pack whose large-cash window is 'none' does not add deals together.
       const end = dt(row);
-      const cluster = live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= (regime.aggHours || 24); })());
-      const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
+      const hours = aggregate ? (regime.aggHours || 24) : null;
+      const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
+      const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
-      const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
+      const agg24 = hours != null && TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
       else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';
@@ -76,7 +89,22 @@
       const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
       const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
       const idFloor = governed ? idAt : ((window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) ? null : (+settings.idRequiredOver || 3000));
-      const idNeeded = (governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor)));
+      let idNeeded = (governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor)));
+      /* Australia v2. A remittance or electronic transfer is identified
+         on every deal. A currency exchange and a money order use the
+         foreign-exchange line (1,000 AUD unless the desk set its own).
+         Cheque cashing stays on that same single number. The size is
+         the home-currency leg. A deal the book cannot value asks for
+         identification rather than assuming it is under the line. */
+      const auPack = window.CDOS.deskPack && window.CDOS.deskPack();
+      if (auPack && auPack.packId === 'pack-au-v2') {
+        const type = row.type || '';
+        const every = type.indexOf('Remittance') === 0 || type === 'Bill Payment';
+        const size = window.CDOS.dealHome ? window.CDOS.dealHome(row, homeCcy()) : cadIn(row);
+        if (every) idNeeded = true;
+        else if (size == null) idNeeded = true;
+        else idNeeded = idAt == null ? size >= 1000 : size >= idAt;
+      }
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
     });
     return map;

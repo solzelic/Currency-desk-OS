@@ -409,6 +409,10 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
+  /* Identification lines from the pack, one per kind of deal. Zero is
+     a real line (every deal). An empty list means they have not arrived. */
+  let _idLines = [];
+  const deskIdLines = () => _idLines;
 
   /* ============================================================
      WHICH CURRENCIES THIS DESK DEALS IN
@@ -450,7 +454,7 @@
     return Array.isArray(set) && set.length ? set.slice() : CCY.slice();
   };
 
-  const setDeskPack = (pack, reports, currencies, notice) => {
+  const setDeskPack = (pack, reports, currencies, notice, idLines) => {
     _pack = pack || null;
     const baseline = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
     /* A country pack can carry a notice of its own. The 2027 EU pack
@@ -460,6 +464,7 @@
     else if (baseline || (_pack && _pack.available === false)) _rulesNotice = BASELINE_NOTICE;
     else _rulesNotice = null;
     if (reports !== undefined) _reports = Array.isArray(reports) ? reports : [];
+    if (idLines !== undefined) _idLines = Array.isArray(idLines) ? idLines : [];
     if (currencies !== undefined) _currencies = currencies || null;
     try { window.__cdosHome = (_pack && _pack.homeCurrency) ? String(_pack.homeCurrency).toUpperCase() : ''; } catch (e) {}
     try { window.dispatchEvent(new CustomEvent('cdos-jurisdiction', { detail: { pack: _pack, reports: _reports, currencies: _currencies, notice: _rulesNotice } })); } catch (e) {}
@@ -472,7 +477,7 @@
       const answer = await B.loadJurisdiction();
       if (answer && answer.pack) {
         answer.pack.idThresholds = Array.isArray(answer.idThresholds) ? answer.idThresholds : [];
-        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice, answer.idThresholds);
       }
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
@@ -1251,7 +1256,7 @@
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
-    deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskPack, deskReports, deskIdLines, setDeskPack, refreshJurisdiction, useDeskFacts,
     rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */

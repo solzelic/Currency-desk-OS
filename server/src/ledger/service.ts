@@ -13,6 +13,7 @@ import {
   ensureBasis,
   reverseEvent,
 } from "./cost-basis.js";
+import { AU_V2_PACK_ID, australiaIdentification } from "./australia-rules.js";
 import {
   countryIdentification,
   type IdentificationDeal,
@@ -295,7 +296,31 @@ export async function requireIdentification(
   /* A verified customer has already satisfied the identity document.
      A split Canada pack still asks for the foreign-exchange ticket
      fields at its line, so that short-circuit cannot sit above the
-     country check. The baseline has no such ticket rule. */
+     country check. The baseline has no such ticket rule. Australia v2
+     does let a verified customer through: its own gate says the caller
+     has already done that. */
+  if (pack.packId === AU_V2_PACK_ID) {
+    if (idStatus === "verified") return { ...stamp, identificationRequired: false };
+    const judged = await australiaIdentification(
+      client,
+      actor,
+      pack,
+      amountHome,
+      deal,
+    );
+    if (judged.block) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return {
+      rate: judged.rate,
+      rateAt: judged.rateAt,
+      source: judged.source,
+      identificationRequired: false,
+    };
+  }
   if (pack.baseline) {
     if (idStatus === "verified") return { ...stamp, identificationRequired: false };
     /* A missing or stale market rate already sets block. A desk's own

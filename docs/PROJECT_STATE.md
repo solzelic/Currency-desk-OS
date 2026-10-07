@@ -121,6 +121,21 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   version 2, in euros. Non-euro member states are a later local
   layer. Detail, sources, and the gaps: `docs/EU_AMLR_PACK.md`.
 
+- **Australia opens on pack-au-v2.** A new Australian desk is given
+  `pack-au-v2`. A desk already on `pack-au-v1` stays there until an
+  owner opts in (`POST /api/ledger/jurisdiction-pack/au-v2`). Opt-in
+  does not rewrite posted deals and does not clear the desk's own
+  identification number. Currency exchange is customer due diligence
+  at or above A$1,000 (Act s.39E items 9 and 10). Remittance and
+  electronic transfer are every deal. A threshold transaction is
+  physical currency of A$10,000 or more received or paid, one
+  transaction, due in 10 business days. Suspicious matters are 24
+  hours for terrorism financing and 3 business days otherwise. The
+  international value transfer report (IVTS, formerly IFTI) is in the
+  catalogue. Records stay 7 years. The annual compliance report is
+  listed and not prepared by the till. Filing to AUSTRAC is not
+  automated. Detail, sources, and gaps: `docs/AUSTRALIA_PACK.md`.
+
 - **Country rules packs can hold the rule as written.** A pack stores
   an identification line for each of foreign exchange, remittance,
   electronic funds transfer, and virtual currency. Null on that line
@@ -336,6 +351,15 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, Australia pack v2. New Australian desks open on
+`pack-au-v2`. Desks on `pack-au-v1` stay until they opt in, and a
+posted deal keeps its stamp. The foreign-exchange identification line
+stays A$1,000 because Act s.39E items 9 and 10 exempt initial customer
+due diligence below that for a cash bureau. It is not a zero line.
+Remittance is every deal. The threshold transaction report counts cash
+received or paid and does not add transactions together. The website
+names IVTS, not IFTI. `docs/AUSTRALIA_PACK.md`.
 
 **2026-10-07**, Serbia pack `pack-rs-v1`. New desks that pick Serbia
 open on it, in dinars. Euro thresholds convert at the NBS middle rate

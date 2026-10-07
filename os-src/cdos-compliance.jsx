@@ -198,10 +198,29 @@
     const common = { currency: source.currency, authority: source.authority };
     const reportCopy = baselineMoneyCopy('reportThreshold', L.reportThreshold);
     const idCopy = baselineMoneyCopy('idThreshold', L.idThreshold);
+    const reports = (window.CDOS && window.CDOS.deskReports) ? (window.CDOS.deskReports() || []) : [];
+    const large = reports.find(r => r && r.kind === 'large_cash');
+    /* Australia does not add threshold transactions together. The pack
+       column still holds 24 because that column cannot be empty. The
+       report row is the rule, and the sentence has to say so. */
+    const aggregation = large && large.windowKind === 'none'
+      ? {
+          field: 'aggHours',
+          label: 'Aggregation window',
+          standing: 'following',
+          authority: source.authority,
+          value: null,
+          mandate: null,
+          deskChoice: null,
+          currency: null,
+          note: `Following ${source.authority}. A threshold transaction is one transaction. Deals are not added together.`,
+          detail: `Following ${source.authority}. A threshold transaction is one transaction. Deals are not added together.`,
+        }
+      : postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' });
     return [
       postureOf(L.reportThreshold, { ...common, ...reportCopy, field: 'threshold', label: 'Reporting threshold', money: true, direction: 'atMost' }),
       postureOf(L.idThreshold, { ...common, ...idCopy, field: 'idRequiredOver', label: 'Identification threshold', money: true, direction: 'atMost' }),
-      postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' }),
+      aggregation,
       postureOf(L.retentionYears, { ...common, field: 'retentionYears', label: 'Record retention', unit: ' years', direction: 'atLeast' }),
     ].filter(Boolean);
   }
@@ -273,15 +292,25 @@
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
+    const noCashWindow = !!(large && large.windowKind === 'none');
+    const wireEvery = !!(wire && (wire.triggerThreshold == null || wire.triggerThreshold === ''));
     return {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : (pack.regulator || ''),
       country: baseline ? 'International baseline' : (pack.name || ''),
-      flag: baseline ? '🌐' : '',
+      flag: baseline ? '🌐' : (pack.jurisdiction === 'AU' ? '🇦🇺' : ''),
       currency: (desk && desk.currency) || pack.homeCurrency || (settings && settings.baseCurrency) || null,
       threshold: desk && desk.reportThreshold ? lineAmount(desk.reportThreshold) : null,
       idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
-      aggHours: desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      /* A 'none' window means do not add deals together. Falling back to
+         24 here is how a country that forbids aggregation was shown a
+         24 hour rule. */
+      aggregate: !noCashWindow,
+      largeDirection: (large && large.direction) || 'in',
+      aggHours: noCashWindow ? null : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
+      wireEvery,
+      wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
+      wireAggregate: !(wire && wire.windowKind === 'none'),
       retentionYears: desk && desk.retentionYears ? lineAmount(desk.retentionYears) : null,
       largeCode: (large && large.code) || pack.reportName || '',
       largeLabel: (large && large.name) || (baseline ? 'Large cash record' : ''),
@@ -511,6 +540,7 @@
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function aggClusters(rows, regime, settings) {
+    if (regime && regime.aggregate === false) return [];
     const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
     return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
   }
@@ -540,8 +570,10 @@
       axes: (report.aggregationAxes && report.aggregationAxes.length) ? report.aggregationAxes : ['conductor', 'on_behalf_of', 'beneficiary'],
     });
   }
-  // EFTR — international electronic transfers. Same $10k / 24h machinery, wires not cash.
+  // EFTR — international electronic transfers. Same machinery, wires not cash.
+  // A wire window of 'none' means each transfer stands on its own.
   function aggClustersEFT(transfers, beneficiaries, regime, settings) {
+    if (regime && regime.wireAggregate === false) return [];
     const benName = (id) => { const b = (beneficiaries || []).find(x => x.id === id); return b ? b.name : null; };
     const events = (transfers || []).filter(t => t.status !== 'cancelled').map(t => {
       const cad = t.direction === 'send' ? (Number(t.payAmt) || 0) : ((Number(t.recvAmt) || 0) / (crossRate('CAD', t.ccy) || 1));

@@ -384,7 +384,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 /* Same story on an obligation somebody has already
                    settled, written off or reversed. */
                 error.code === "OBLIGATION_NOT_OPEN" ||
-                error.code === "OPENING_BALANCES_ALREADY_SET" ? 409
+                error.code === "OPENING_BALANCES_ALREADY_SET" ||
+                error.code === "PACK_OPT_IN_REFUSED" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
   }
@@ -1048,6 +1049,17 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor ? reply.send(await reporting.jurisdiction(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* An owner on the published Australia pack can take the current one.
+     New desks already open on it. Posted deals are not rewritten. */
+  app.post("/api/ledger/jurisdiction-pack/au-v2", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.optInAustraliaV2(actor)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }
