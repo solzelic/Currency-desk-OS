@@ -339,7 +339,8 @@ postgres("sanctioned jurisdictions on the book", () => {
       "SELECT jurisdiction_pack_id, home_currency FROM legal_entities WHERE id=$1",
       [`le-${canada.slug}`],
     );
-    expect(pack.rows[0].jurisdiction_pack_id).toBe("pack-ca-v1");
+    /* A new Canada desk opens on the current pack. Version 1 stays for desks already on it. */
+    expect(pack.rows[0].jurisdiction_pack_id).toBe("pack-ca-v2");
     expect(pack.rows[0].home_currency).toBe("CAD");
   });
 
