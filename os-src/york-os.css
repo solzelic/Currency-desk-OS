@@ -1423,3 +1423,118 @@ html[data-cdtheme="dark"] .till-step:hover { background: rgba(255,255,255,0.07);
 }
 html[data-cdtheme="dark"] .cdos-tour-ring { box-shadow: 0 0 0 4px rgba(236, 234, 227, 0.08); }
 html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
+
+/* Quick search. Same panel as a menu: Archivo, Space Mono labels,
+   the menu radius and the menu shadow. It sits above windows and the
+   tour so a keypress can close it without the desk moving underneath. */
+.cd-palette-scrim {
+  position: fixed; inset: 0; z-index: 80000;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 14vh 12px 24px;
+  background: rgba(10, 10, 10, 0.28);
+}
+.cd-palette {
+  width: min(560px, calc(100vw - 24px));
+  background: #faf9f6;
+  border: 1px solid var(--hair);
+  border-radius: 13px;
+  box-shadow: 0 1px 2px rgba(10,10,10,0.04), 0 18px 44px -12px rgba(10,10,10,0.30);
+  overflow: hidden;
+  font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  color: var(--ink);
+}
+.cd-palette-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hair);
+}
+.cd-palette-input {
+  flex: 1; min-width: 0;
+  border: 0; outline: none; background: transparent;
+  font-family: inherit; font-size: 16px; font-weight: 500;
+  color: var(--ink);
+}
+.cd-palette-input::placeholder { color: var(--faint, #aaa); font-weight: 400; }
+.cd-palette-kbd {
+  font-family: var(--f-mono, "Space Mono", monospace);
+  font-size: 10px; letter-spacing: 0.04em;
+  color: var(--faint, #aaa);
+  border: 1px solid var(--hair); border-radius: 6px;
+  padding: 3px 6px; flex: none;
+}
+.cd-palette-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; flex: none;
+  border: 0; border-radius: 7px; background: transparent;
+  color: var(--soft); cursor: pointer;
+}
+.cd-palette-clear:hover { background: rgba(10,10,10,0.06); color: var(--ink); }
+.cd-palette-list { max-height: 50vh; overflow: auto; padding: 6px; }
+.cd-palette-empty {
+  padding: 18px 12px; text-align: center;
+  font-size: 13px; color: var(--soft);
+}
+.cd-palette-label {
+  font-family: var(--f-mono, "Space Mono", monospace);
+  font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--faint, #aaa);
+  padding: 8px 8px 4px;
+}
+.cd-palette-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  padding: 8px 8px; margin: 0;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--ink); cursor: pointer;
+  font-family: inherit;
+}
+.cd-palette-row.is-on,
+.cd-palette-row:hover { background: rgba(10,10,10,0.06); }
+.cd-palette-ico {
+  width: 28px; height: 28px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 7px; background: rgba(10,10,10,0.04);
+  color: var(--soft);
+}
+.cd-palette-row.is-on .cd-palette-ico { color: var(--ink); }
+.cd-palette-copy { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.cd-palette-title { font-size: 13.5px; font-weight: 650; }
+.cd-palette-sub {
+  font-family: var(--f-mono, "Space Mono", monospace);
+  font-size: 10.5px; color: var(--soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cd-palette-foot {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  padding: 8px 14px;
+  border-top: 1px solid var(--hair);
+  font-family: var(--f-mono, "Space Mono", monospace);
+  font-size: 10px; letter-spacing: 0.04em;
+  color: var(--faint, #aaa);
+}
+.cd-palette-busy { margin-left: auto; color: var(--soft); }
+html[data-cdtheme="dark"] .cd-palette {
+  background: #201f1b;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 18px 44px -12px rgba(0,0,0,0.65);
+}
+html[data-cdtheme="dark"] .cd-palette-scrim { background: rgba(0,0,0,0.45); }
+html[data-cdtheme="dark"] .cd-palette-row.is-on,
+html[data-cdtheme="dark"] .cd-palette-row:hover { background: rgba(255,255,255,0.07); }
+html[data-cdtheme="dark"] .cd-palette-ico { background: rgba(255,255,255,0.06); }
+html[data-cdtheme="dark"] .cd-palette-clear:hover { background: rgba(255,255,255,0.08); }
+
+/* A phone is already full of the wordmark, the clock, and the name.
+   Those can go. The search button cannot: it is how this width opens
+   the palette, and a right-aligned cluster clips from the left. */
+@media (max-width: 520px) {
+  #menubar { padding: 0 6px; }
+  #menubar .mb-brand span,
+  #menubar .mb-sep,
+  #menubar .mb-active,
+  #menubar .mb-clock,
+  #menubar .mb-op-div,
+  #menubar .mb-acct-id,
+  #menubar .mb-acct > svg { display: none !important; }
+  #menubar .mb-acct { padding: 0 2px; gap: 0; }
+  .mb-ops { gap: 2px; padding: 3px 4px; }
+}

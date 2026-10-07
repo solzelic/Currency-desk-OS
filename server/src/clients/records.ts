@@ -220,8 +220,10 @@ export class ClientRecordService {
     }
   }
 
-  /** Every customer of this legal entity, from any of its counters. */
-  async list(actor: LedgerActor) {
+  /** Every customer of this legal entity, from any of its counters.
+   *  `query` narrows that same list by name, client id, phone, or a
+   *  file label. It does not widen who can be seen. */
+  async list(actor: LedgerActor, query?: string) {
     return this.inTransaction(actor, "customer:view", async (client) => {
       const clients = await client.query(
         `SELECT * FROM desk_clients
@@ -271,20 +273,22 @@ export class ClientRecordService {
         const key = `${row.legal_entity_id}\u0000${row.name_key}`;
         byName.set(key, (byName.get(key) ?? []).concat(row.client_id));
       }
-      return {
-        clients: clients.rows.map((row) =>
-          clientJson(
-            row,
-            documents.rows.filter((d) => d.client_id === row.client_id),
-            aliases.rows.filter((a) => a.client_id === row.client_id),
-            scanCount,
-            photo.get(row.client_id) ?? null,
-            (byName.get(`${row.legal_entity_id}\u0000${row.name_key}`) ?? []).filter(
-              (id) => id !== row.client_id,
-            ),
-            files.get(row.client_id as string) ?? [],
+      const listed = clients.rows.map((row) =>
+        clientJson(
+          row,
+          documents.rows.filter((d) => d.client_id === row.client_id),
+          aliases.rows.filter((a) => a.client_id === row.client_id),
+          scanCount,
+          photo.get(row.client_id) ?? null,
+          (byName.get(`${row.legal_entity_id}\u0000${row.name_key}`) ?? []).filter(
+            (id) => id !== row.client_id,
           ),
+          files.get(row.client_id as string) ?? [],
         ),
+      );
+      const needle = (query ?? "").trim();
+      return {
+        clients: needle ? listed.filter((row) => clientMatches(row, needle)) : listed,
       };
     });
   }
@@ -1277,6 +1281,31 @@ const blank = (value: string | null | undefined) => {
 
 const isoDate = (value: unknown) =>
   value == null ? null : new Date(value as string | Date).toISOString().slice(0, 10);
+
+/* The same fields the quick-search palette matches in the browser
+   (os-src/cdos-palette.js): the name, the id the server minted, the
+   phone, and a file's label or name. A hit here is a customer this
+   desk can already list. */
+function clientMatches(
+  row: {
+    legalName?: unknown;
+    clientId?: unknown;
+    phone?: unknown;
+    aliases?: { alias?: unknown }[];
+    files?: { label?: unknown; fileName?: unknown }[];
+  },
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const has = (value: unknown) => String(value ?? "").toLowerCase().includes(needle);
+  if (has(row.legalName) || has(row.clientId) || has(row.phone)) return true;
+  const digits = needle.replace(/\D/g, "");
+  const phoneDigits = String(row.phone ?? "").replace(/\D/g, "");
+  if (digits.length >= 3 && phoneDigits.includes(digits)) return true;
+  if ((row.aliases ?? []).some((alias) => has(alias.alias))) return true;
+  return (row.files ?? []).some((file) => has(file.label) || has(file.fileName));
+}
 
 function clientJson(
   row: Record<string, unknown>,

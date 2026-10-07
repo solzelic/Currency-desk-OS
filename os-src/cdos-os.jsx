@@ -764,6 +764,7 @@
   /* ====================== ROOT ====================== */
   function App() {
     const [stage, setStage] = useState(ENTRY.signup ? 'signup' : 'lock');
+    const [paletteOpen, setPaletteOpen] = useState(false);
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
@@ -2188,6 +2189,20 @@
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
+    /* The same two gates the dock uses. The palette must not offer a
+       screen openApp would open for someone the dock hides it from. */
+    const canOpenApp = (id) => permsOk(id) && planAllows(id);
+    const openPaletteItem = (item) => {
+      if (!item) return;
+      if (item.kind === 'screen' && item.app) { openApp(item.app); return; }
+      if ((item.kind === 'client' || item.kind === 'file') && item.name) { openClientProfile(item.name); return; }
+      if (item.kind === 'deal') {
+        if (item.row) setRows(rs => (rs.some(r => r.id === item.row.id) ? rs : [item.row].concat(rs)));
+        if (item.rowId != null) openTransaction(item.rowId);
+        else openApp('ledger');
+      }
+    };
+    const searchChord = (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')) ? 'Cmd K' : 'Ctrl K';
     // plan gating: which apps the active subscription unlocks. Locked apps drop
     // off the dock and sit in the Store behind an upgrade paywall — the OS shell
     // is identical regardless of plan. settings/store are always reachable.
@@ -2263,6 +2278,7 @@
         <span className="mb-active">{topWin ? metaFor(topWin).title : 'Desktop'}</span>
         <div className="mb-right" style={{ marginLeft: 'auto' }}>
           <div className="mb-ops">
+            <button type="button" className="mb-op" aria-label="Search" title={'Search (' + searchChord + ')'} onClick={() => setPaletteOpen(true)}><Ic n="search" s={17} /></button>
             <div className="mb-bell-wrap" ref={bellRef}>
               <button className={'mb-op mb-bell' + (alertCount > 0 ? ' has' : '') + (bellMenu ? ' on-bell' : '')} aria-expanded={bellMenu} title={alertCount > 0 ? `${alertCount} compliance item${alertCount === 1 ? '' : 's'} flagged` : 'No open compliance flags'} onClick={() => setBellMenu(o => !o)}>
                 <Ic n="alert" s={17} />
@@ -2473,6 +2489,17 @@
           station picker, so it never talks over a screen the person has
           not reached yet. `paused` hides it under the PIN, the lock, and
           a handover without forgetting the step they were on. */}
+      {window.CDOS.QuickSearch && <window.CDOS.QuickSearch
+        open={paletteOpen}
+        onOpen={() => setPaletteOpen(true)}
+        onClose={() => setPaletteOpen(false)}
+        blocked={!!(deskLocked || handover || pinGate)}
+        clients={clients}
+        rows={rows}
+        canOpen={canOpenApp}
+        serverBacked={!!srvUser}
+        onChoose={openPaletteItem}
+      />}
       {window.CDOS.FirstRun && <window.CDOS.FirstRun
         role={me.role}
         staffId={(srvUser && srvUser.id) || user || (me && me.name)}

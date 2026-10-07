@@ -1,6 +1,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
+import { LedgerProvisioningService } from "../src/ledger/provisioning.js";
 import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -126,5 +127,37 @@ postgres("real PostgreSQL ledger posting", () => {
     expect((await pool.query("SELECT * FROM ledger_till_movements WHERE reversal_id=$1 AND movement_kind='reversal'", [reversed.reversalId])).rowCount).toBe(3);
     expect((await service.reverse(supervisor, posted.transactionId, "reverse-1", "Correction")).reversalId).toBe(reversed.reversalId);
     await expect(service.reverse(supervisor, posted.transactionId, "reverse-2", "Again")).rejects.toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
+  });
+
+  it("narrows the deal list inside this till, and not the next one", async () => {
+    const posted = await service.post(teller, request);
+    const provisioning = new LedgerProvisioningService(pool);
+    const ids = (rows: { transactions: { transactionId: string }[] }) =>
+      rows.transactions.map((row) => row.transactionId);
+
+    const byReceipt = await provisioning.listTransactions(teller, 20, posted.transactionRef.slice(0, 12));
+    expect(ids(byReceipt)).toContain(posted.transactionId);
+    expect(byReceipt.transactions[0]?.customerName).toBe("Customer");
+
+    expect(ids(await provisioning.listTransactions(teller, 20, "Customer"))).toContain(posted.transactionId);
+    expect(ids(await provisioning.listTransactions(teller, 20, "1000"))).toContain(posted.transactionId);
+
+    await pool.query(
+      "INSERT INTO ledger_principals VALUES ('teller-2','tenant-1','le-1','branch-1','workspace-2','till-2','teller','[\"branch-1\"]')",
+    );
+    const otherTill: LedgerActor = { ...teller, userId: "teller-2", workspaceId: "workspace-2", tillId: "till-2" };
+    expect(ids(await provisioning.listTransactions(otherTill, 20, posted.transactionRef))).toEqual([]);
+    expect(ids(await provisioning.listTransactions(teller, 20, "no-such-receipt"))).toEqual([]);
+
+    await pool.query(
+      "INSERT INTO ledger_principals VALUES ('guest-1','tenant-1','le-1','branch-1','workspace-1','till-1','guest','[\"branch-1\"]')",
+    );
+    await expect(
+      provisioning.listTransactions({ ...teller, userId: "guest-1", role: "guest" }, 20, "Customer"),
+    ).rejects.toMatchObject({ code: "AUTHORIZATION_DENIED" });
+
+    const unfiltered = await provisioning.listTransactions(teller, 20);
+    expect(ids(unfiltered)).toContain(posted.transactionId);
+    expect(unfiltered.transactions[0]?.customerName).toBeNull();
   });
 });

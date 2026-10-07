@@ -197,6 +197,14 @@ export const CATALOGUE: readonly KeyShape[] = [
      { status: 'skipped' | 'finished', tour: 'owner' | 'employee' }.
      One key because that is how every other preference is saved.
      See the header of os-src/cdos-tour.js. */
+  /* Newest first, eight deep. A preference because it is this browser's
+     memory of what was opened from the box, not a record of the desk.
+     See os-src/cdos-palette.js. */
+  {
+    key: "cdos_palette_recent_v1",
+    kind: "preference",
+    what: "The last few things opened from quick search, on this browser",
+  },
   {
     key: "cdos_tour_v1",
     kind: "preference",
