@@ -31,6 +31,8 @@ describe("India on the signup list", () => {
   });
 });
 
+/* indiaCtrFindings is not called from posting. These tests keep the
+   arithmetic. They do not mean the desk adds the month up. */
 describe("a cash transaction report, more than 10 lakh", () => {
   const customer = "cust-1";
 

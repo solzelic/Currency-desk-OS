@@ -289,11 +289,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 - **India pack** — a new desk that signs up as India opens on
   `pack-in-v1` (migration 037). Home currency INR. Regulator string
-  `RBI / FIU-IND`. A cash transaction report is cash more than
-  10 lakh rupees, comparator `gt`, summed for one customer across an
-  Asia/Kolkata calendar month and due by the 15th of the next month.
-  Exactly 10 lakh is not a report. Walk-in customer due diligence is
-  50,000 rupees or more. A remittance or electronic transfer is every
+  `RBI / FIU-IND`. A cash transaction report flags a single cash deal
+  more than 10 lakh rupees, comparator `gt`. Exactly 10 lakh is not a
+  report. Connected cash in an Asia/Kolkata calendar month is not
+  summed yet. `indiaCtrFindings` can group one customer across that
+  month, and nothing calls it. The desk must check those deals. The
+  report is due by the 15th of the next month. Walk-in customer due
+  diligence is 50,000 rupees or more. A remittance or electronic transfer is every
   deal. A suspicious report is stored as 7 business days, with no
   holiday calendar. Cross-border wires (more than 5 lakh, monthly) and
   counterfeit notes are catalogue rows. The till cannot mark a

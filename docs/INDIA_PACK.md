@@ -24,7 +24,7 @@ The 2016 KYC Master Direction (id 11566, updated 14 Aug 2025) has the same 50,00
 |---|---|
 | Home currency INR. Regulator RBI for the licence, FIU-IND for the reports | `pack-in-v1`. Regulator string `RBI / FIU-IND` |
 | CTR: cash more than ₹10 lakh. Comparator is `gt`. Exactly ₹10 lakh is not a CTR | Report `rpt-in-ctr`, trigger 1000000 INR, `gt` |
-| Integrally connected cash in a calendar month aggregating to more than ₹10 lakh. At least two deals, each below ₹10 lakh | `window_kind = calendar_month`. `indiaCtrFindings` groups by customer id inside the Asia/Kolkata month. Same customer is an approximation, not "integrally connected" |
+| Integrally connected cash in a calendar month aggregating to more than ₹10 lakh. At least two deals, each below ₹10 lakh | Stored as `window_kind = calendar_month`. `indiaCtrFindings` can group by customer id inside the Asia/Kolkata month, and nothing calls it. The desk does not sum the month. Same customer would be an approximation, not "integrally connected" |
 | CTR due by the 15th of the next month | `deadline_unit = monthly_day`, value 15 |
 | Walk-in CDD at ₹50,000 or more, single transaction | `fx` line 50000, `gte`, diligence `cdd`. The posting gate on this pack reads that line |
 | Any international money transfer | `remittance` and `eft` lines are 0, which means every deal |
@@ -39,14 +39,14 @@ The 2016 KYC Master Direction (id 11566, updated 14 Aug 2025) has the same 50,00
 
 ## What is not done
 
-- "Integrally connected" is not detected. The month sum is the same customer in the Asia/Kolkata calendar month.
+- Connected cash in a calendar month is not summed. `indiaCtrFindings` exists and is tested. Posting and the browser do not call it. The desk must check those deals. Same customer in the Asia/Kolkata month would be an approximation, not "integrally connected".
 - Connected walk-in deals that "appear to be connected" under the KYC directions are not summed. `jurisdiction_id_thresholds` has no window column, and none was added.
 - Several cash drawals for one journey are not summed.
 - Seven working days do not skip Indian public holidays.
 - CCR cannot be flagged from the till.
 - CTR, STR, CBWTR, and CCR are not sent to FINNET.
 - A USD/EUR cross has no rupee leg, so it is not valued for a CTR. The rules allow a foreign-currency equivalent and do not name a rate source. The shop board is not used.
-- The browser does not add up the calendar month. It does not fall back to 24 hours. A single cash amount uses "more than" when the large-cash report says `gt`.
+- The browser does not add up the calendar month. It says so. It does not fall back to 24 hours. A single cash amount uses "more than" when the large-cash report says `gt`.
 - The browser identification nudge still follows the single 50,000 line. A one-rupee remittance is refused by the server and may not be nudged on the screen.
 - A remittance line of 0 means every deal. The thresholds reader treats 0 as unset, so Settings does not show a remittance amount. The posting gate does not use that reader for India.
 - Virtual currency uses the 50,000 walk-in line. The till does not book it. There is no separate virtual-currency regime.

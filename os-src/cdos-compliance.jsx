@@ -483,7 +483,8 @@
   function aggregateEvents(events, regime, settings, kind, policy) {
     /* A calendar-month pack is not this 24-hour engine. A single cash
        amount over the line is flagged on the deal. Connected deals in
-       the month are not summed here. */
+       the month are not summed here. indiaCtrFindings can group them,
+       and nothing calls it yet. */
     if (regime && regime.windowKind === 'calendar_month') return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and

@@ -99,7 +99,13 @@ export type IndiaCtrFinding = {
   amount: Decimal;
 };
 
-/* Two limbs, and the gap between them.
+/* Not wired. Posting, the browser, and report filing do not call this.
+   The tests call it. A single cash deal over 10 lakh is what the desk
+   flags. Connected deals in a calendar month are not summed yet, so
+   the desk has to check them. Do not describe this helper as if the
+   till already adds the month up.
+
+   Two limbs, and the gap between them.
 
    Limb A: one cash amount strictly greater than 10 lakh.
    Limb B: at least two cash amounts, each strictly below 10 lakh, same
