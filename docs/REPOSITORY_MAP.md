@@ -88,6 +88,9 @@ commit the generated output — CI diffs `web/` against a fresh build.
 - Migration `035_pack_gb_v2` inserts the current United Kingdom pack.
   It does not edit `pack-gb-v1`. 029, 031, 033, and 034 are already on
   main, so 035 stays. The rule itself is `docs/UK_PACK.md`.
+- Migration `036_pack_ae_v2` inserts the current United Arab Emirates
+  pack. It does not edit `pack-ae-v1`. 029, 031, 033, 034, and 035 are
+  already on main, so 036 stays. The rule itself is `docs/UAE_PACK.md`.
 
 ## Test commands
 

@@ -15,10 +15,12 @@
    side, the tenant/entity/branch/workspace hierarchy on the other. It is
    the only place that translation happens.
    ============================================================ */
+import Decimal from "decimal.js";
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
 import { UK_PACK_V2 } from "../ledger/uk-mlr.js";
+import { AE_FX_CID, AE_PACK_V2 } from "../ledger/uae-exchange.js";
 import {
   packForCountry,
   packIdThreshold,
@@ -337,6 +339,20 @@ export async function provisionDesk(
     setup.noCashReport = true;
     setup.reportThreshold = null;
     setup.reportName = "Suspicious Activity Report";
+  }
+  /* The wizard used to seed AED 55,000 as a cash report. An exchange
+     house does not file one. Drop that figure so the first screen
+     does not invent a 10,000 either. A typed identification number
+     at or above 3,500 is the statute, not a tighter policy, so the
+     screen shows 3,500 and the column stays "follow the pack". */
+  if (pack?.packId === AE_PACK_V2) {
+    setup.noCashReport = true;
+    setup.reportThreshold = null;
+    setup.reportName = "Suspicious Transaction Report";
+    const typed = typedIdentificationLine(setup.idThreshold);
+    if (typed == null || new Decimal(String(typed)).gte(AE_FX_CID)) {
+      setup.idThreshold = Number(AE_FX_CID.toFixed(2));
+    }
   }
   const foreignLine = pack ? await fxLineIsForeign(db, pack.packId, bookHome) : false;
   if (pack && !foreignLine && typedIdentificationLine(setup.idThreshold) == null) {

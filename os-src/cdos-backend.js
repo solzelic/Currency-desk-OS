@@ -528,6 +528,14 @@
           body: "{}",
         });
       },
+      /* pack-ae-v1 to pack-ae-v2. The server refuses every other pack.
+         Posted deals are not rewritten. */
+      adoptAePack: function () {
+        return request("/api/ledger/jurisdiction-pack/ae-v2", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+      },
 
       /* ---- the currencies this desk deals in ----
 

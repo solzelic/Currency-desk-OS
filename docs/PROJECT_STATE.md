@@ -366,6 +366,20 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, United Arab Emirates pack version 2. A new UAE desk
+opens on `pack-ae-v2`. A desk already on `pack-ae-v1` stays there
+until an administrator opts in (`POST /api/ledger/jurisdiction-pack/ae-v2`).
+Posted deals keep the pack stamped on them. There is no cash threshold
+report at AED 55,000. Foreign exchange identification is AED 3,500 or
+more, and that floor cannot be raised. One foreign exchange of AED
+35,000 or more requires purpose and source of funds. A money transfer
+requires identification, purpose, and source of funds at any amount.
+STR and SAR are goAML catalogue rows. Fund Freeze Report and Partial
+Name Match Report (PMNR) are catalogue rows. Records are kept 5 years.
+The 90 day and 45 day bands are not summed. Detail, sources, and the
+gaps are in `docs/UAE_PACK.md`. Migration 036 stays. 029, 031, 033,
+034, and 035 are already on main. 027 and 030 are still open drafts.
+
 **2026-10-07**, United Kingdom pack v2. New GB and UK desks open on
 `pack-gb-v2`: occasional customer due diligence at £12,000 or more,
 transfers of funds of more than £800, no large-cash report, SAR to
@@ -447,7 +461,10 @@ empty, or null home currency at the Canada pack, and every other home
 currency at the baseline. The known-wrong country packs are not
 assigned. A country pack whose identification lines all equal its
 single column still posts on that column. Canada pack version 2 is
-the exception, and it is described in docs/CANADA_PACK.md. A blank
+the exception, and it is described in docs/CANADA_PACK.md. A new
+UAE desk opens on `pack-ae-v2`, which reads one line per kind of deal.
+A desk already on `pack-ae-v1` stays there until an administrator opts
+in. A blank
 identification answer at setup is not filled with the report line.
 
 Prior stamp **2026-10-05**, first-run tour. The tour does not open or raise a window.

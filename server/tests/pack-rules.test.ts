@@ -47,7 +47,12 @@ describe("which country gets a pack", () => {
       version: 2,
       homeCurrency: "AUD",
     });
-    expect(packForCountry("UAE")?.packId).toBe("pack-ae-v1");
+    expect(packForCountry("UAE")).toEqual({
+      packId: "pack-ae-v2",
+      version: 2,
+      homeCurrency: "AED",
+    });
+    expect(packForCountry("AE")?.packId).toBe("pack-ae-v2");
     expect(packForCountry("RS")?.packId).toBe("pack-rs-v1");
     expect(packForCountry("Serbia")?.homeCurrency).toBe("RSD");
     expect(packForCountry("Republic of Serbia")?.packId).toBe("pack-rs-v1");

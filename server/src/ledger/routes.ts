@@ -832,6 +832,21 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* A desk that opened on pack-ae-v1 can move to pack-ae-v2. The
+     first pack is not edited. Posted deals keep the pack they were
+     stamped with. The same permission as moving a threshold: this
+     changes what the next deal is judged against. */
+  app.post("/api/ledger/jurisdiction-pack/ae-v2", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await thresholds.adoptUnitedArabEmiratesV2(actor))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   /* WHICH CURRENCIES THIS DESK DEALS IN.
 
      Read by anyone who can see the ledger; changed by whoever may move a

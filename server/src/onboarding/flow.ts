@@ -98,7 +98,10 @@ export const JURISDICTION: Record<
      stores "follow the pack", not a stricter override. */
   GB: { country: "United Kingdom", regulator: "HMRC", regLabel: "HMRC money-service business number", currency: "GBP", reportThreshold: null, reportCurrency: "GBP", report: "Suspicious Activity Report", idSeed: 12000, noCashReport: true },
   AU: { country: "Australia", regulator: "AUSTRAC", regLabel: "AUSTRAC enrolment number", currency: "AUD", reportThreshold: 10000, reportCurrency: "AUD", report: "Threshold Transaction Report" },
-  AE: { country: "United Arab Emirates", regulator: "CBUAE", regLabel: "Exchange-house licence number", currency: "AED", reportThreshold: 55000, reportCurrency: "AED", report: "Suspicious Transaction Report" },
+  /* No cash threshold report. idSeed is the foreign-exchange
+     identification line (AED 3,500), not a cash-report figure.
+     Leaving it equal to the pack stores "follow the pack". */
+  AE: { country: "United Arab Emirates", regulator: "CBUAE", regLabel: "Exchange-house licence number", currency: "AED", reportThreshold: null, reportCurrency: "AED", report: "Suspicious Transaction Report", idSeed: 3500, noCashReport: true },
   /* No amount report. idDefault is the cash identification line, which
      is what the "when do you take ID?" box is about. */
   EU: { country: "European Union", regulator: "National FIU", regLabel: "AML registration number", currency: "EUR", reportThreshold: null, idDefault: 3000, reportCurrency: "EUR", report: "Suspicious Transaction Report" },
