@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { resetSignupThrottle, signupIpMax } from "../src/routes/signup.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -170,6 +171,38 @@ describe("signup", () => {
     expect(le.homeCurrency).not.toBe("CAD");
   });
 
+  it("opens a new Philippines desk on the Philippines pack, in pesos", async () => {
+    const su = await app.inject({
+      method: "POST",
+      url: "/api/signup",
+      payload: {
+        businessName: "Manila FX",
+        ownerName: "Liza Cruz",
+        email: "liza@manilafx.ph",
+        password: "a-strong-pass",
+        slug: "manilafx",
+        onboarding: { country: "PH" },
+      },
+    });
+    expect(su.statusCode).toBe(201);
+    const ok = await app.inject({
+      method: "POST",
+      url: "/api/signup/verify",
+      payload: { email: "liza@manilafx.ph", code: codeFromLog() },
+    });
+    expect(ok.statusCode).toBe(201);
+    const le = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-manilafx")))[0]!;
+    expect(le.jurisdictionPackId).toBe("pack-ph-v1");
+    expect(le.homeCurrency).toBe("PHP");
+    /* The signup body did not send a regulator string. The column stays
+       blank rather than being labelled FINTRAC. Settings reads the
+       regulator off the pack, which is BSP / AMLC. */
+    expect(le.jurisdiction).toBe("");
+    expect(le.jurisdiction).not.toBe("FINTRAC");
+    expect(le.jurisdictionPackId).not.toBe("pack-intl-v1");
+    expect(le.homeCurrency).not.toBe("CAD");
+  });
+
   it("rejects a taken slug and a reserved slug", async () => {
     const taken = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Other", ownerName: "X", email: "x@other.ca", password: "a-strong-pass", slug: "yorkfx" } });
     expect(taken.statusCode).toBe(409); // yorkfx is the seeded tenant
@@ -180,6 +213,51 @@ describe("signup", () => {
   it("rejects an email that already owns a desk", async () => {
     const dup = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Dupe", ownerName: "Dana", email: "dana@maplefx.ca", password: "a-strong-pass", slug: "maplefx2" } });
     expect(dup.statusCode).toBe(409);
+  });
+
+  it("allows eight signups from one address an hour when SIGNUP_IP_MAX is unset", async () => {
+    const prior = process.env.SIGNUP_IP_MAX;
+    delete process.env.SIGNUP_IP_MAX;
+    resetSignupThrottle();
+    try {
+      expect(signupIpMax()).toBe(8);
+      process.env.SIGNUP_IP_MAX = " ";
+      expect(signupIpMax()).toBe(8);
+      process.env.SIGNUP_IP_MAX = "16.5";
+      expect(signupIpMax()).toBe(8);
+      delete process.env.SIGNUP_IP_MAX;
+      for (let i = 0; i < 8; i += 1) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/api/signup",
+          payload: {
+            businessName: `Limit ${i}`,
+            ownerName: "Limit Owner",
+            email: `limit-${i}@signup-cap.example`,
+            password: "a-strong-pass",
+            slug: `limitcap${i}`,
+          },
+        });
+        expect(res.statusCode, res.body).not.toBe(429);
+      }
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/signup",
+        payload: {
+          businessName: "Limit 8",
+          ownerName: "Limit Owner",
+          email: "limit-8@signup-cap.example",
+          password: "a-strong-pass",
+          slug: "limitcap8",
+        },
+      });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.json().error).toBe("slow_down");
+    } finally {
+      resetSignupThrottle();
+      if (prior === undefined) delete process.env.SIGNUP_IP_MAX;
+      else process.env.SIGNUP_IP_MAX = prior;
+    }
   });
 
   it("validates the form (bad email, short password, bad slug)", async () => {

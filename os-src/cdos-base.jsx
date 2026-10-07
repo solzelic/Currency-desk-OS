@@ -410,9 +410,16 @@
   let _reports = [];
   const deskReports = () => _reports;
   /* Identification lines from the pack, one per kind of deal. Zero is
-     a real line (every deal). An empty list means they have not arrived. */
+     a real line (every deal). An empty list means they have not arrived.
+     deskIdLines and deskIdThresholds are the same list. Australia and
+     India read the first name. The Philippines reads the second. */
   let _idLines = [];
   const deskIdLines = () => _idLines;
+  const deskIdThresholds = () => _idLines;
+  const setDeskIdThresholds = (rows) => {
+    _idLines = Array.isArray(rows) ? rows : [];
+    return _idLines;
+  };
 
   /* ============================================================
      WHICH CURRENCIES THIS DESK DEALS IN
@@ -478,6 +485,7 @@
       if (answer && answer.pack) {
         answer.pack.idThresholds = Array.isArray(answer.idThresholds) ? answer.idThresholds : [];
         setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice, answer.idThresholds);
+        setDeskIdThresholds(answer.idThresholds);
       }
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
@@ -565,8 +573,8 @@
     if (limit.amount == null) return null;
     const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
     const amount = +homeAmount || 0;
-    /* India cash reports are more than the line. Exactly the line is
-       not a report. Every other pack stays at or above. */
+    /* India and the Philippines flag more than the line. Exactly the
+       line is not a report. Every other pack stays at or above. */
     if (regime && regime.comparator === 'gt') return amount > limit.amount;
     return amount >= limit.amount;
   };
@@ -1262,7 +1270,7 @@
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
-    deskPack, deskReports, deskIdLines, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,
     rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */

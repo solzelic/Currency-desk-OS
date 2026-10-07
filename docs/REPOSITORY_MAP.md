@@ -96,6 +96,12 @@ commit the generated output — CI diffs `web/` against a fresh build.
   calendar month lives on the cash-report row. 029, 031, 033, 034, 035,
   and 036 are already on main, so 037 stays. The rule text is
   `docs/INDIA_PACK.md`.
+- Migration `038_pack_ph_v1` inserts the first Philippines pack. It
+  does not move a desk that is already open. `aggregation_hours` is
+  null. The banking day lives on the covered-transaction row. 029, 031,
+  033, 034, 035, 036, and 037 are already on main, so 038 stays. 027
+  and 030 are still open drafts. The rule text is
+  `docs/PHILIPPINES_PACK.md`.
 
 ## Test commands
 

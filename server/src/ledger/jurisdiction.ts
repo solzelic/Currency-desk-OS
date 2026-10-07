@@ -244,11 +244,13 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   RS: "pack-rs-v1",
   /* First India pack. A desk that is already open is not moved. */
   IN: "pack-in-v1",
+  /* First Philippines pack. A desk that is already open is not moved. */
+  PH: "pack-ph-v1",
 };
 
 /* Canada, the 2027 European Union pack, Australia v2, the United
    Kingdom v2, and the United Arab Emirates v2 are version 2.
-   Every other pack, including India, is still version 1. */
+   Every other pack, including India and the Philippines, is still version 1. */
 const PACK_VERSION: Readonly<Record<string, number>> = {
   "pack-ca-v2": 2,
   [EU_AMLR_PACK_ID]: 2,
@@ -280,6 +282,9 @@ const COUNTRY_CODE: Readonly<Record<string, string>> = {
   IN: "IN",
   INDIA: "IN",
   "REPUBLIC OF INDIA": "IN",
+  PH: "PH",
+  PHILIPPINES: "PH",
+  "REPUBLIC OF THE PHILIPPINES": "PH",
 };
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
@@ -296,6 +301,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-ae-v2": "AED",
   "pack-rs-v1": "RSD",
   "pack-in-v1": "INR",
+  "pack-ph-v1": "PHP",
 };
 
 /* The currency a pack's thresholds are written in, when that is not

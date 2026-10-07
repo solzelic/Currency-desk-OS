@@ -71,6 +71,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
+  opens on this pack, in PHP. Existing desks do not move. Money
+  changing and remittance are identified above 5,000 PHP. Other
+  occasional deals are identified above 100,000 PHP. A single deal
+  over 500,000 PHP is flagged as a covered transaction. Deals in one
+  banking day are not summed. The stricter reading, a banking-day
+  total under RA 11521 section 2, is listed. The till does not add
+  the day. A cash payout over 500,000 PHP, and a
+  sale of foreign currency over 10,000 USD, are refused. The desk
+  does not file to the AMLC. No sanctions list is loaded. The desk
+  says Philippine law requires the owner to screen clients and
+  counterparties against the UNSC Consolidated List and the ATC
+  list, and on a match to freeze without delay, tell the AMLC the
+  same day, and file an STR. The owner does this outside the desk.
+  The website stays Not live. Canada is the only Live country.
+  Write-up: `docs/PHILIPPINES_PACK.md`.
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).
@@ -386,6 +402,32 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, Philippines pack. A new desk in the Philippines opens
+on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
+and remittance require customer due diligence above 5,000 PHP. A bill,
+an electronic transfer, a cheque, and virtual currency require it
+above 100,000 PHP. Exactly those amounts do not. A single deal over
+500,000 PHP is flagged. Deals in one banking day are not added
+together, and the desk does not claim they are. The stricter reading
+is a total within one banking day under RA 11521 section 2. AMLC
+Regulatory Issuance No. 1, Series of 2021 (30 January 2021), states
+one transaction and does not restate the day. That total is listed.
+The open question is whether that issuance narrowed the statute. The
+till does not add the day. Purpose and source of
+funds are required only above 500,000 PHP. A cash payout over 500,000
+PHP, or the foreign-currency equivalent, is refused. A sale of foreign
+currency over 10,000 USD, or the equivalent, is refused. A missing or
+stale rate blocks those conversions. The desk does not file to the
+AMLC. No sanctions list is loaded. The desk says Philippine law
+requires the owner to screen clients and counterparties against the
+UNSC Consolidated List and the ATC list, and on a match to freeze
+without delay, tell the AMLC the same day, and file an STR. The
+owner does this outside the desk. Records are kept five years and
+are not deleted. The public site says Not live. Canada remains the
+only Live country. See `docs/PHILIPPINES_PACK.md`. Migration 038
+stays. 029, 031, 033, 034, 035, 036, and 037 are already on main.
+027 and 030 are still open drafts.
 
 **2026-10-07**, India pack. A new India desk opens on `pack-in-v1`.
 A country with no pack is still not given Canada's. See

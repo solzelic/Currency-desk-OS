@@ -31,7 +31,10 @@ nothing to the one running a narrower one.
 
 `aggregation_hours` NULL on a pack is not a missing 24. It means that
 pack has no hour window. India stores NULL and puts the calendar month
-on the cash-report row. A reader must not fill that NULL in as 24.
+on the cash-report row. The Philippines pack stores NULL and puts the
+banking day on the covered-transaction row. A reader must not fill
+that NULL in as 24. A desk choice must not turn it into 24 hours. The
+till does not add the banking day up.
 
 ## The rule
 

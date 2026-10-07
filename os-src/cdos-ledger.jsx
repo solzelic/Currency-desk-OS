@@ -338,7 +338,9 @@
        clearing the deal. */
     const inCadEquiv = homeOf(amtN, inCcy);
     const limit = limitOf(settings);
-    const single = limit.amount != null && inCadEquiv >= limit.amount;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const reportCmp = regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte';
+    const single = limit.amount != null && inCadEquiv != null && (reportCmp === 'gt' ? inCadEquiv > limit.amount : inCadEquiv >= limit.amount);
     const recentTotal = useMemo(() => {
       if (!customer) return 0;
       return live.filter(o => o.customer === customer).reduce((s, o) => {
@@ -346,15 +348,24 @@
         return s + cad;
       }, 0) + inCadEquiv;
     }, [customer, live, inCadEquiv]);
-    const structuring = !single && customer && limit.amount != null && recentTotal >= limit.amount;
+    const structuring = !single && customer && limit.amount != null && recentTotal != null && (reportCmp === 'gt' ? recentTotal > limit.amount : recentTotal >= limit.amount);
     const rec = clients[customer];
     const kyc = newClient
       ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
       : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok'));
-    const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
-    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const governed = !!((packNow && packNow.packId) || (settings && settings.baselineRules));
+    const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
+    const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
+    const idKind = isCheque ? 'eft' : 'fx';
+    const idRow = ph ? (idRows.find(r => r && r.dealKind === idKind) || null) : null;
     const idAt = regimeNow && regimeNow.idAt != null && +regimeNow.idAt > 0 ? +regimeNow.idAt : null;
-    const idRequired = single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000);
+    const idLine = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idAt;
+    const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
+    const overId = idLine != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idLine : inCadEquiv >= idLine);
+    const idRequired = ph
+      ? (!idRow || idRow.threshold == null || overId)
+      : (single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000));
     const idBlocked = idRequired && kyc !== 'ok';
 
     const canSave = amtN > 0 && (isCheque ? (maker.trim() && chequeNumber.trim()) : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || (marginAck && marginReason.trim())) && (!single || (cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim())));

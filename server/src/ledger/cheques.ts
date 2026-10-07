@@ -52,6 +52,14 @@ import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
+import {
+  PH_BOOK_MESSAGE,
+  PH_CASH_PAYOUT_PHP,
+  PH_PAYOUT_BLOCK_MESSAGE,
+  PH_PURPOSE_MESSAGE,
+  isPhilippinesPack,
+  philippinesPurposeRequired,
+} from "./philippines-pack.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -365,6 +373,25 @@ export class ChequeService {
          is the FACE amount — that is what is being presented and what the
          desk is exposed to — and the line is the desk's own, resolved
          exactly as it is for an exchange. */
+      /* The face is the cheque, an equivalent monetary instrument. The
+         cash leaving the drawer is the net. A payout over 500,000 PHP
+         is refused. Purpose is required when the face itself is a
+         covered transaction. The 5,000 money-changing line is not this
+         deal. */
+      if (isPhilippinesPack(pack.packId)) {
+        if (home.trim().toUpperCase() !== "PHP") {
+          throw new LedgerError("COMPLIANCE_BLOCKED", PH_BOOK_MESSAGE);
+        }
+        if (net.gt(PH_CASH_PAYOUT_PHP)) {
+          throw new LedgerError("COMPLIANCE_BLOCKED", PH_PAYOUT_BLOCK_MESSAGE);
+        }
+        if (
+          philippinesPurposeRequired(face) &&
+          (!(input.purpose ?? "").trim() || !(input.sourceOfFunds ?? "").trim())
+        ) {
+          throw new LedgerError("COMPLIANCE_BLOCKED", PH_PURPOSE_MESSAGE);
+        }
+      }
       const compliance = await requireIdentification(
         client,
         actor,

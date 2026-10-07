@@ -64,6 +64,7 @@
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
       const monthCash = regime && regime.windowKind === 'calendar_month';
+      const bankingDay = regime && regime.windowKind === 'banking_day';
       const above = regime && regime.comparator === 'gt'
         ? (n) => n > TH
         : (n) => n >= TH;
@@ -74,10 +75,11 @@
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
       // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
-      // A pack whose large-cash window is 'none', and a calendar-month pack
-      // (India), do not use this clock. Do not invent 24 for those.
+      // A pack whose large-cash window is 'none', a calendar-month pack
+      // (India), and a banking-day pack (the Philippines) do not use this
+      // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = (monthCash || !aggregate) ? null : (regime.aggHours || 24);
+      const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
@@ -109,6 +111,24 @@
         if (every) idNeeded = true;
         else if (size == null) idNeeded = true;
         else idNeeded = idAt == null ? size >= 1000 : size >= idAt;
+      }
+      /* Philippines. Money changing and remittance are more than their
+         own line. A bill, a cheque, and virtual currency use the
+         occasional line. A missing row identifies every deal. */
+      if (auPack && auPack.packId === 'pack-ph-v1') {
+        const idRows = (window.CDOS.deskIdThresholds && window.CDOS.deskIdThresholds()) || [];
+        const idKind = (row.type === 'Cheque Cashing' || row.type === 'Bill Payment') ? 'eft'
+          : (row.type === 'Remittance — Send' || row.type === 'Remittance — Receive' || row.type === 'Money Order') ? 'remittance'
+          : 'fx';
+        const idRow = idRows.find(r => r && r.dealKind === idKind);
+        const rowLine = idRow && idRow.threshold != null && idRow.threshold !== '' && !isNaN(+idRow.threshold) ? +idRow.threshold : null;
+        const size = cadIn(row);
+        if (!idRow || rowLine == null || size == null) idNeeded = true;
+        else {
+          const idCmp = idRow.comparator === 'gt' ? 'gt' : 'gte';
+          const overId = idCmp === 'gt' ? size > rowLine : size >= rowLine;
+          idNeeded = single || overId;
+        }
       }
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
     });

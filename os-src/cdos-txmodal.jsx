@@ -498,17 +498,21 @@
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const unpriced = inCadEquiv == null;
-    const single = TH != null && !unpriced && inCadEquiv >= TH;
+    const reportCmp = regime && regime.comparator === 'gt' ? 'gt' : 'gte';
+    const single = TH != null && !unpriced && (reportCmp === 'gt' ? inCadEquiv > TH : inCadEquiv >= TH);
     /* A remittance used to require identification at every amount.
        pack-gb-v2 does not: a transfer of funds needs it only above
        the statutory line, which the server has already resolved
        (including a desk number that tightens it). Cents, not a float.
        pack-ae-v2 is the other way: a money transfer, money order, or
        bill needs identification at any amount. The 3,500 line is
-       foreign exchange. */
+       foreign exchange. The Philippines identifies a remittance only
+       above its own line. A missing Philippines line identifies every
+       deal. Canada still identifies every remittance. */
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const packIdNow = packNow && packNow.packId;
     const aeV2 = packIdNow === 'pack-ae-v2';
+    const ph = packIdNow === 'pack-ph-v1';
     const diligence = (window.CDOS.deskThresholds && window.CDOS.deskThresholds() || {}).transferDueDiligence || null;
     const ukTransfer = packIdNow === 'pack-gb-v2' ? diligence : null;
     const transferKind = isSend || isReceive || isMO || isBill;
@@ -527,9 +531,19 @@
       ukIdRequired = !!ruling.idRequired || unpriced;
     }
     const aeTransfer = aeV2 && transferKind;
+    const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
+    const idKind = (isCheque || isBill) ? 'eft' : (isSend || isReceive || isMO) ? 'remittance' : 'fx';
+    const idRow = ph ? (idRows.find(r => r && r.dealKind === idKind) || null) : null;
+    const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
+    const idAmount = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idFloor;
+    const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
     const idRequired = !paused && (ukIdRequired != null
       ? ukIdRequired
-      : (aeTransfer || unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+      : aeTransfer
+      ? true
+      : ph
+      ? (unpriced || !idRow || idRow.threshold == null || overId)
+      : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };

@@ -203,11 +203,13 @@
     /* Australia does not add threshold transactions together. The pack
        column still holds 24 because that column cannot be empty. The
        report row is the rule, and the sentence has to say so.
-       India files a calendar month, not a count of hours. Naming a
+       India files a calendar month, not a count of hours. The
+       Philippines stores a banking day, not a count of hours. Naming a
        missing hour figure "Aggregation window" would tell the desk the
-       rule is 24 hours. The month lives on the cash report instead. */
+       rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
-    const aggregation = monthCash
+    const bankingDay = !!(large && large.windowKind === 'banking_day');
+    const aggregation = (monthCash || bankingDay)
       ? null
       : large && large.windowKind === 'none'
       ? {
@@ -296,6 +298,8 @@
     const large = listed.find(r => r && r.kind === 'large_cash')
       || (baseline ? byCode('CASH-RECORD') : null);
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
+    const idLines = (window.CDOS && window.CDOS.deskIdThresholds) ? (window.CDOS.deskIdThresholds() || []) : [];
+    const fxLine = idLines.find(r => r && r.dealKind === 'fx');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
     const noCashWindow = !!(large && large.windowKind === 'none');
@@ -311,12 +315,15 @@
       /* A 'none' window means do not add deals together. Falling back to
          24 here is how a country that forbids aggregation was shown a
          24 hour rule. A calendar month is not an hour count either.
-         India keeps that month on windowKind and leaves aggHours empty. */
+         India keeps that month on windowKind and leaves aggHours empty.
+         A banking day is not an hour count either. The Philippines
+         keeps that day on windowKind and leaves aggHours empty. */
       aggregate: !noCashWindow,
       largeDirection: (large && large.direction) || 'in',
       windowKind: (large && large.windowKind) || null,
       comparator: (large && large.comparator) || 'gte',
-      aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month'))
+      idComparator: (fxLine && fxLine.comparator) || 'gte',
+      aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month') || (large && large.windowKind === 'banking_day'))
         ? null
         : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
       wireEvery,
@@ -371,6 +378,7 @@
   /* ===================== SANCTIONS / WATCHLISTS ===================== */
   // fictional, illustrative list entries across the three sources. Two are
   // tuned to demonstrate fuzzy matching against the seed book.
+  // These names are not the UN Security Council Consolidated List.
   const WATCHLISTS = [
     { id: 'w1', name: 'Wei Lin', list: 'OFAC', program: 'NPWMD', country: 'CN', type: 'individual', dob: '1979-02-11' },
     { id: 'w2', name: 'Aram Lawson', list: 'OSFI', program: 'Terrorism (Criminal Code)', country: 'CA', type: 'individual', dob: '1984-09-03' },
@@ -384,6 +392,24 @@
     { id: 'w10', name: 'Pyongyang Trading Co.', list: 'OFAC', program: 'DPRK', country: 'KP', type: 'entity' },
   ];
   const LIST_TONE = { OFAC: { c: '#1d4ed8', bg: '#dbe5fb' }, UN: { c: '#0e7490', bg: '#cfeaf0' }, OSFI: { c: CD.flag, bg: CD.flagSoft } };
+
+  /* Does this pack ship a sanctions list the desk can match against?
+
+     The names above are sample entries. True means the desk still
+     shows that sample queue. It does not mean a real list is loaded.
+     A Philippines desk must not present those names as a screen
+     against the UN list. BSP Circular 1182 still requires that
+     owner to screen, so the screens that read this flag say the
+     duty instead of hiding it. Every other pack keeps the queue
+     it already shows.
+
+     One function, not a pack id written on each screen. A column on
+     the pack would be a migration for a fact this file already knows. */
+  function sanctionsListShips(pack) {
+    const id = pack && (pack.packId || pack.id);
+    return id !== 'pack-ph-v1';
+  }
+  const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
 
   const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = (s) => norm(s).split(' ').filter(Boolean);
@@ -484,8 +510,9 @@
     /* A calendar-month pack is not this 24-hour engine. A single cash
        amount over the line is flagged on the deal. Connected deals in
        the month are not summed here. indiaCtrFindings can group them,
-       and nothing calls it yet. */
-    if (regime && regime.windowKind === 'calendar_month') return [];
+       and nothing calls it yet. A banking day is not this engine
+       either. The Philippines flags one deal and does not add the day. */
+    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
@@ -599,7 +626,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, PH_SCREENING_NOTE },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

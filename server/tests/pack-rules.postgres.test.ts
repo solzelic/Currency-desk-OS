@@ -164,6 +164,11 @@ postgres("pack rule fields against real PostgreSQL", () => {
              kind of deal. Remittance is every deal. That split is
              checked in india-pack.postgres.test.ts. */
           AND t.pack_id <> 'pack-in-v1'
+          /* The Philippines does not copy one identification number
+             onto every kind of deal. Money changing is 5,000. The
+             general line is 100,000. That split is checked in
+             philippines-pack.postgres.test.ts. */
+          AND t.pack_id <> 'pack-ph-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];

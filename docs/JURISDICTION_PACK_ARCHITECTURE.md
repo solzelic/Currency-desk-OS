@@ -17,6 +17,16 @@ electronic transfer. India's cash report uses a calendar month, so
 window. It is not 24. See `docs/INDIA_PACK.md`. 029, 031, 033, 034,
 035, and 036 are already on main, so 037 stays.
 
+The Philippines is `pack-ph-v1` (migration 038). It is the first
+Philippines pack. Home currency PHP. Money changing and remittance
+are identified at more than 5,000 PHP. Other occasional deals are
+more than 100,000 PHP. A covered transaction is a single deal more
+than 500,000 PHP. Deals in one banking day are not summed.
+`aggregation_hours` is NULL. NULL means there is no hour window. It
+is not 24. See `docs/PHILIPPINES_PACK.md`. 029, 031, 033, 034, 035,
+036, and 037 are already on main, so 038 stays. 027 and 030 are still
+open drafts.
+
 A pack can also name an identification line per kind of deal
 (`jurisdiction_id_thresholds`: foreign exchange, remittance, electronic
 funds transfer, virtual currency). Null means that kind has no line.
@@ -32,7 +42,8 @@ deal. Money orders are their own line on that pack. Australia v2
 than £800, no large-cash report). See `docs/UK_PACK.md`. `pack-ae-v2`
 reads the per-deal rows: foreign exchange at AED 3,500 or more, and a
 money transfer at any amount. It has no cash report. The 90 day bands
-are not stored. See `docs/UAE_PACK.md`. A country
+are not stored. See `docs/UAE_PACK.md`. `pack-ph-v1` reads the per-deal
+rows and uses "more than". See `docs/PHILIPPINES_PACK.md`. A country
 pack whose identification line is already in the home currency still
 reads the single `id_threshold` column. The baseline gate reads the
 per-deal rows and converts US dollars. Serbia (`pack-rs-v1`) also
