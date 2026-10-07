@@ -41,6 +41,22 @@ import {
   type JurisdictionPack,
 } from "./jurisdiction.js";
 import { idKindForDeal } from "./compliance-gate.js";
+import {
+  PH_BOOK_MESSAGE,
+  PH_PAYOUT_BLOCK_MESSAGE,
+  PH_PAYOUT_UNPRICED_MESSAGE,
+  PH_PURPOSE_MESSAGE,
+  PH_SALE_BLOCK_MESSAGE,
+  PH_SALE_UNPRICED_MESSAGE,
+  PH_UNPRICED_MESSAGE,
+  identificationBlocks,
+  isPhilippinesPack,
+  philippinesCashPayout,
+  philippinesDealPesos,
+  philippinesFxSale,
+  philippinesIdRow,
+  philippinesPurposeRequired,
+} from "./philippines-pack.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
 import {
   purposeDecision,
@@ -356,6 +372,26 @@ export async function requireIdentification(
     }
     return { ...stamp, identificationRequired: false };
   }
+  /* The Philippines does not use the single identification column with
+     "at or above". Money changing and remittance are more than 5,000
+     PHP. A bill, an electronic transfer, or a cheque is more than
+     100,000 PHP. A missing row blocks. Other packs keep the gate below. */
+  if (isPhilippinesPack(pack.packId)) {
+    if (pack.homeCurrency.trim().toUpperCase() !== "PHP") {
+      throw new LedgerError("COMPLIANCE_BLOCKED", PH_BOOK_MESSAGE);
+    }
+    if (idStatus !== "verified") {
+      const desk = await deskIdLine(client, actor.legalEntityId);
+      const row = await philippinesIdRow(client, pack.packId, deal.kind);
+      if (identificationBlocks(amountHome, row, desk)) {
+        throw new LedgerError(
+          "COMPLIANCE_BLOCKED",
+          "Authoritative compliance policy blocked posting.",
+        );
+      }
+    }
+    return { ...stamp, identificationRequired: false };
+  }
   if (pack.baseline) {
     if (idStatus === "verified") return { ...stamp, identificationRequired: false };
     /* A missing or stale market rate already sets block. A desk's own
@@ -529,6 +565,42 @@ function assertIndiaSaleCash(
   ) {
     throw new LedgerError("COMPLIANCE_BLOCKED", INDIA_SALE_CASH_MESSAGE);
   }
+}
+
+/* Covered-transaction value, the cash-payout cap, the foreign-currency
+   sale cap, and purpose once the deal is over 500,000 PHP. A verified
+   customer still hits these. Other packs are untouched. Returns null
+   when this is not a Philippines desk. */
+async function philippinesExchangeGuard(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  legs: {
+    from: string;
+    to: string;
+    inputAmount: Decimal;
+    outputAmount: Decimal;
+    purpose: string;
+    sourceOfFunds: string;
+  },
+): Promise<{ pesos: Decimal; rate: string; rateAt: Date | null } | null> {
+  if (!isPhilippinesPack(pack.packId)) return null;
+  if (pack.homeCurrency.trim().toUpperCase() !== "PHP") {
+    throw new LedgerError("COMPLIANCE_BLOCKED", PH_BOOK_MESSAGE);
+  }
+  const valued = await philippinesDealPesos(client, legs);
+  if (!valued) throw new LedgerError("COMPLIANCE_BLOCKED", PH_UNPRICED_MESSAGE);
+  const sale = await philippinesFxSale(client, legs.from, legs.to, legs.outputAmount);
+  if (sale === "over") throw new LedgerError("COMPLIANCE_BLOCKED", PH_SALE_BLOCK_MESSAGE);
+  if (sale === "unpriced") throw new LedgerError("COMPLIANCE_BLOCKED", PH_SALE_UNPRICED_MESSAGE);
+  const payout = await philippinesCashPayout(client, legs.to, legs.outputAmount);
+  if (payout === "over") throw new LedgerError("COMPLIANCE_BLOCKED", PH_PAYOUT_BLOCK_MESSAGE);
+  if (payout === "unpriced") throw new LedgerError("COMPLIANCE_BLOCKED", PH_PAYOUT_UNPRICED_MESSAGE);
+  if (philippinesPurposeRequired(valued.pesos)) {
+    if (!legs.purpose.trim() || !legs.sourceOfFunds.trim()) {
+      throw new LedgerError("COMPLIANCE_BLOCKED", PH_PURPOSE_MESSAGE);
+    }
+  }
+  return valued;
 }
 
 export class LedgerService {
@@ -744,11 +816,21 @@ export class LedgerService {
       /* Cash for a sale of foreign exchange, India only. The rupee the
          customer pays, not the fee. A purchase is not this check. */
       assertIndiaSaleCash(pack, quote.from, quote.to, input);
+      /* Philippine limits use a peso leg, or a market rate. The board
+         mid above is the shop's price. It is not the legal rate. */
+      const phValue = await philippinesExchangeGuard(client, pack, {
+        from: quote.from,
+        to: quote.to,
+        inputAmount: input,
+        outputAmount: output,
+        purpose: quote.purpose,
+        sourceOfFunds: quote.sourceOfFunds,
+      });
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        inputHome,
+        phValue ? phValue.pesos : inputHome,
         customer.rows[0].id_status,
         {
           kind: "exchange",
@@ -760,6 +842,10 @@ export class LedgerService {
           sourceOfFunds: quote.sourceOfFunds,
         },
       );
+      if (phValue) {
+        compliance.rate = phValue.rate;
+        compliance.rateAt = phValue.rateAt;
+      }
       const serbia = await serbiaExchangeFacts(
         client,
         pack,
@@ -1284,11 +1370,19 @@ export class LedgerService {
       const outputCad = output.div(toRate).toDecimalPlaces(2);
       const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
       assertIndiaSaleCash(pack, request.from, request.to, input);
+      const phValue = await philippinesExchangeGuard(client, pack, {
+        from: request.from,
+        to: request.to,
+        inputAmount: input,
+        outputAmount: output,
+        purpose: request.purpose,
+        sourceOfFunds: request.sourceOfFunds,
+      });
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        inputHome,
+        phValue ? phValue.pesos : inputHome,
         customer.rows[0].id_status,
         {
           kind: "exchange",
@@ -1300,6 +1394,10 @@ export class LedgerService {
           sourceOfFunds: request.sourceOfFunds,
         },
       );
+      if (phValue) {
+        compliance.rate = phValue.rate;
+        compliance.rateAt = phValue.rateAt;
+      }
       const serbia = await serbiaExchangeFacts(
         client,
         pack,
@@ -1327,8 +1425,10 @@ export class LedgerService {
          inside requireIdentification, and only when that line is hit.
          Every other pack, including the United Kingdom, the UAE, and
          India, goes through requirePurposeAndSource. India also asks
-         at its own due-diligence line, above. */
-      if (pack.packId !== EU_AMLR_PACK_ID) {
+         at its own due-diligence line, above. A Philippines desk already
+         applied "more than 500,000 PHP" in philippinesExchangeGuard.
+         The generic test is "at or above", which would catch 500,000. */
+      if (pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
         await requirePurposeAndSource(
           client,
           actor.legalEntityId,

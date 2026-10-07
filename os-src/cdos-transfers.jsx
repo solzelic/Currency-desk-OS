@@ -51,7 +51,7 @@
      No remittance line (no rate, or a stale one) means identification
      is required. A country pack, Canada included, uses its own
      identification line and does not substitute the baseline's. */
-  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines, ukTransfer, aeTransfer }) {
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines, ukTransfer, aeTransfer, reportComparator, idComparator }) {
     const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
     if (blank) return { homeAmount: null, reportable: null, idRequired: false };
     const cash = direction === 'receive'
@@ -86,10 +86,11 @@
     if (aeTransfer && aeTransfer.everyDeal) {
       return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
     }
+    const reportableNow = report == null ? null : (reportComparator === 'gt' ? cash > report : cash >= report);
     let line = null;
     if (baseline) {
       const remittance = centsOf(remittanceLine);
-      if (remittance == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+      if (remittance == null) return { homeAmount, reportable: reportableNow, idRequired: true };
       line = lowerCents(remittance, centsOf(deskLine));
     } else {
       /* A remittance line of zero means every remittance. It binds even
@@ -98,12 +99,13 @@
          own identification line. */
       const remittance = centsOf(remittanceLine);
       line = remittance === 0n ? 0n : centsOf(idLine);
-      if (line == null) return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+      if (line == null) return { homeAmount, reportable: reportableNow, idRequired: true };
     }
+    const idOver = idComparator === 'gt' ? cash > line : cash >= line;
     return {
       homeAmount,
-      reportable: report == null ? null : cash >= report,
-      idRequired: cash >= line,
+      reportable: reportableNow,
+      idRequired: idOver,
     };
   }
 
@@ -326,6 +328,9 @@
     const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
+    const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
+    const remittanceRow = idRows.find(r => r && r.dealKind === 'remittance');
+    const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
     const ruling = transferRuling({
       direction,
       principal: payAmt,
@@ -334,11 +339,15 @@
       baseline,
       remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
-      idLine: idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null),
+      idLine: ph && remittanceRow && remittanceRow.threshold != null
+        ? remittanceRow.threshold
+        : (idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null)),
       reportLine: limit.amount,
       euLines: packNow && packNow.packId === 'pack-eu-v2' ? (packNow.idThresholds || []) : null,
       ukTransfer: packNow && packNow.packId === 'pack-gb-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
       aeTransfer: packNow && packNow.packId === 'pack-ae-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
+      reportComparator: regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte',
+      idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte',
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;

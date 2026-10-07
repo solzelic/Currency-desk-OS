@@ -203,11 +203,13 @@
     /* Australia does not add threshold transactions together. The pack
        column still holds 24 because that column cannot be empty. The
        report row is the rule, and the sentence has to say so.
-       India files a calendar month, not a count of hours. Naming a
+       India files a calendar month, not a count of hours. The
+       Philippines stores a banking day, not a count of hours. Naming a
        missing hour figure "Aggregation window" would tell the desk the
-       rule is 24 hours. The month lives on the cash report instead. */
+       rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
-    const aggregation = monthCash
+    const bankingDay = !!(large && large.windowKind === 'banking_day');
+    const aggregation = (monthCash || bankingDay)
       ? null
       : large && large.windowKind === 'none'
       ? {
@@ -296,6 +298,8 @@
     const large = listed.find(r => r && r.kind === 'large_cash')
       || (baseline ? byCode('CASH-RECORD') : null);
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
+    const idLines = (window.CDOS && window.CDOS.deskIdThresholds) ? (window.CDOS.deskIdThresholds() || []) : [];
+    const fxLine = idLines.find(r => r && r.dealKind === 'fx');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
     const noCashWindow = !!(large && large.windowKind === 'none');
@@ -311,12 +315,15 @@
       /* A 'none' window means do not add deals together. Falling back to
          24 here is how a country that forbids aggregation was shown a
          24 hour rule. A calendar month is not an hour count either.
-         India keeps that month on windowKind and leaves aggHours empty. */
+         India keeps that month on windowKind and leaves aggHours empty.
+         A banking day is not an hour count either. The Philippines
+         keeps that day on windowKind and leaves aggHours empty. */
       aggregate: !noCashWindow,
       largeDirection: (large && large.direction) || 'in',
       windowKind: (large && large.windowKind) || null,
       comparator: (large && large.comparator) || 'gte',
-      aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month'))
+      idComparator: (fxLine && fxLine.comparator) || 'gte',
+      aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month') || (large && large.windowKind === 'banking_day'))
         ? null
         : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
       wireEvery,
@@ -484,8 +491,9 @@
     /* A calendar-month pack is not this 24-hour engine. A single cash
        amount over the line is flagged on the deal. Connected deals in
        the month are not summed here. indiaCtrFindings can group them,
-       and nothing calls it yet. */
-    if (regime && regime.windowKind === 'calendar_month') return [];
+       and nothing calls it yet. A banking day is not this engine
+       either. The Philippines flags one deal and does not add the day. */
+    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */

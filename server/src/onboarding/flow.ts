@@ -109,6 +109,9 @@ export const JURISDICTION: Record<
   /* More than 10 lakh. The comparator on the pack row is gt. This
      seed is the amount the wizard shows. */
   IN: { country: "India", regulator: "RBI / FIU-IND", regLabel: "RBI licence number", currency: "INR", reportThreshold: 1000000, reportCurrency: "INR", report: "Currency Transaction Report" },
+  /* More than 500,000. The comparator on the pack row is gt. This
+     seed is the amount the wizard shows. */
+  PH: { country: "Philippines", regulator: "BSP / AMLC", regLabel: "BSP registration number", currency: "PHP", reportThreshold: 500000, reportCurrency: "PHP", report: "Covered Transaction Report" },
   XX: { country: "Somewhere else", regulator: "your regulator", regLabel: "Business / AML registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "large-transaction report" },
 };
 

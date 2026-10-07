@@ -69,6 +69,15 @@ import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.j
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
 import {
+  PH_BOOK_MESSAGE,
+  PH_PAYOUT_BLOCK_MESSAGE,
+  PH_PAYOUT_UNPRICED_MESSAGE,
+  PH_PURPOSE_MESSAGE,
+  isPhilippinesPack,
+  philippinesCashPayout,
+  philippinesPurposeRequired,
+} from "./philippines-pack.js";
+import {
   assertIndiaPurpose,
   LedgerError,
   requireIdentification,
@@ -646,6 +655,27 @@ export class ObligationService {
          engine can apply its own rule — see the columns migration 018
          adds — and the gate here does not pretend to be that engine. */
       const amountHome = spec.cash.amount;
+      /* A Philippines cash payout is the pesos counted out. A send is
+         cash in, so the payout cap does not apply. Purpose is required
+         only when this cash is itself a covered transaction. */
+      if (isPhilippinesPack(pack.packId)) {
+        if (pack.homeCurrency.trim().toUpperCase() !== "PHP") {
+          throw new LedgerError("COMPLIANCE_BLOCKED", PH_BOOK_MESSAGE);
+        }
+        if (spec.cash.direction === "out") {
+          const payout = await philippinesCashPayout(client, home, spec.cash.amount);
+          if (payout === "over") throw new LedgerError("COMPLIANCE_BLOCKED", PH_PAYOUT_BLOCK_MESSAGE);
+          if (payout === "unpriced") {
+            throw new LedgerError("COMPLIANCE_BLOCKED", PH_PAYOUT_UNPRICED_MESSAGE);
+          }
+        }
+        if (
+          philippinesPurposeRequired(amountHome) &&
+          (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim())
+        ) {
+          throw new LedgerError("COMPLIANCE_BLOCKED", PH_PURPOSE_MESSAGE);
+        }
+      }
       const compliance = await requireIdentification(
         client,
         actor,
@@ -684,8 +714,10 @@ export class ObligationService {
         spec.capture.sourceOfFunds,
       );
       /* Same as an exchange: the 2027 EU pack has no amount report, so
-         a missing reporting line must not demand purpose on every transfer. */
-      if (pack.packId !== EU_AMLR_PACK_ID) {
+         a missing reporting line must not demand purpose on every transfer.
+         A Philippines desk already applied "more than 500,000 PHP".
+         The generic test is "at or above", which would catch 500,000. */
+      if (pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
         await requirePurposeAndSource(
           client,
           actor.legalEntityId,

@@ -472,17 +472,18 @@ class Component extends DCLogic {
         {name:'AML/CFT program', spec:'Maintained to the CBUAE rulebook.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
-    { id:'amlc', tag:'AMLC', country:'Philippines', regulator:'Anti-Money Laundering Council', status:'Coming soon', kind:'soon', color:'#0E7C7B', soft:'rgba(14,124,123,0.1)', official:'https://www.amlc.gov.ph', updated:'06 Jun 2026', retention:'5 years',
-      supervisor:'AMLC, with BSP registration for FX dealers and remittance agents',
-      deadline:'CTR and STR within 5 working days',
-      whatWeDo:'Planned for Philippine money changers and remittance agents: BSP registration tracked, covered transactions detected at the counter, and reports prepared for the AMLC.',
-      how:[{n:'1',t:'Your BSP registration and branch list are kept current.'},{n:'2',t:'Covered and suspicious transactions are flagged as written.'},{n:'3',t:'CTRs and STRs are drafted for the AMLC within five working days.'}],
+    { id:'amlc', tag:'AMLC', country:'Philippines', regulator:'BSP / AMLC', status:'Not live', kind:'soon', color:'#0E7C7B', soft:'rgba(14,124,123,0.1)', official:'https://www.amlc.gov.ph', updated:'7 Oct 2026', retention:'5 years',
+      supervisor:'BSP for the licence. AMLC for the reports.',
+      deadline:'CTR within 5 working days. STR the next working day. The desk does not file them.',
+      whatWeDo:'A new Philippines desk opens on these rules. A single deal over 500,000 PHP is flagged. Deals in one banking day are not summed, so the desk must check them. Nothing is sent to the AMLC. Not live.',
+      how:[{n:'1',t:'Money changing and remittance: customer due diligence above 5,000 PHP. Other occasional deals: above 100,000 PHP.'},{n:'2',t:'A single deal over 500,000 PHP is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not send a CTR.'},{n:'3',t:'An STR is due the next working day after suspicion is established. Filing to the AMLC is not live.'}],
       rules:[
-        {name:'CTR — Covered Transaction Report', spec:'Cash above ₱500,000 in a banking day.', tag:'Planned', cat:'threshold', when:'At the till'},
-        {name:'STR — Suspicious Transaction Report', spec:'Drafted for AMLC submission.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'BSP registration', spec:'Money changer and remittance agent status.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'Sanctions screening', spec:'UNSC and local designations.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'CTR, Covered Transaction Report', spec:'A single deal over 500,000 PHP is flagged. Deals in one banking day are not summed. The desk must check them.', tag:'On the desk', cat:'threshold', when:'Single deal'},
+        {name:'Customer due diligence', spec:'Money changing and remittance above 5,000 PHP. Other occasional deals above 100,000 PHP.', tag:'On the desk', cat:'screening', when:'Before the deal'},
+        {name:'Cash payout and FX sale', spec:'Cash payout above 500,000 PHP is refused. A sale of foreign currency above 10,000 USD is refused.', tag:'On the desk', cat:'threshold', when:'Single deal'},
+        {name:'STR, Suspicious Transaction Report', spec:'Next working day after suspicion is established. The desk does not file it.', tag:'Listed', cat:'suspicious', when:'On review'},
+        {name:'5-year record retention', spec:'AMLA section 9(b). The product does not delete records.', tag:'Listed', cat:'records', when:'After the deal'},
+        {name:'BSP registration and sanctions', spec:'Registration is not tracked. No sanctions list ships with the desk.', tag:'Gap', cat:'licence', when:'Not tracked'}
       ] },
     { id:'mas', tag:'MAS', country:'Singapore', regulator:'Monetary Authority of Singapore', status:'Coming soon', kind:'soon', color:'#8A3F6B', soft:'rgba(138,63,107,0.1)', official:'https://www.mas.gov.sg', updated:'30 May 2026', retention:'5 years',
       supervisor:'MAS, with the STRO receiving suspicious transaction reports',
