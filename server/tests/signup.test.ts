@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { resetSignupThrottle, signupIpMax } from "../src/routes/signup.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -212,6 +213,51 @@ describe("signup", () => {
   it("rejects an email that already owns a desk", async () => {
     const dup = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Dupe", ownerName: "Dana", email: "dana@maplefx.ca", password: "a-strong-pass", slug: "maplefx2" } });
     expect(dup.statusCode).toBe(409);
+  });
+
+  it("allows eight signups from one address an hour when SIGNUP_IP_MAX is unset", async () => {
+    const prior = process.env.SIGNUP_IP_MAX;
+    delete process.env.SIGNUP_IP_MAX;
+    resetSignupThrottle();
+    try {
+      expect(signupIpMax()).toBe(8);
+      process.env.SIGNUP_IP_MAX = " ";
+      expect(signupIpMax()).toBe(8);
+      process.env.SIGNUP_IP_MAX = "16.5";
+      expect(signupIpMax()).toBe(8);
+      delete process.env.SIGNUP_IP_MAX;
+      for (let i = 0; i < 8; i += 1) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/api/signup",
+          payload: {
+            businessName: `Limit ${i}`,
+            ownerName: "Limit Owner",
+            email: `limit-${i}@signup-cap.example`,
+            password: "a-strong-pass",
+            slug: `limitcap${i}`,
+          },
+        });
+        expect(res.statusCode, res.body).not.toBe(429);
+      }
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/signup",
+        payload: {
+          businessName: "Limit 8",
+          ownerName: "Limit Owner",
+          email: "limit-8@signup-cap.example",
+          password: "a-strong-pass",
+          slug: "limitcap8",
+        },
+      });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.json().error).toBe("slow_down");
+    } finally {
+      resetSignupThrottle();
+      if (prior === undefined) delete process.env.SIGNUP_IP_MAX;
+      else process.env.SIGNUP_IP_MAX = prior;
+    }
   });
 
   it("validates the form (bad email, short password, bad slug)", async () => {

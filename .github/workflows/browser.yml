@@ -115,6 +115,9 @@ jobs:
         env:
           SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/seam-report.json
+          # This job opens one desk per country from one address, and a
+          # retry counts again. Production leaves SIGNUP_IP_MAX unset.
+          SIGNUP_IP_MAX: "16"
         run: npx playwright test --reporter=list,html,json
 
       # Green must mean "ran", not "skipped". A spec file that executed zero

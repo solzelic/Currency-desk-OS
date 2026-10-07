@@ -89,6 +89,23 @@ const resendBody = z.object({ email: emailShape });
 
 // simple abuse brakes (in-memory): an email/IP can't spam signup or codes
 const recent = new Map<string, number[]>();
+const SIGNUP_IP_MAX_DEFAULT = 8;
+
+/* Eight signups from one address an hour, unless SIGNUP_IP_MAX says
+   otherwise. The browser-seam job sets that variable. Render does not.
+   Unset, blank, or not a positive whole number stays at eight. */
+export function signupIpMax(): number {
+  const raw = process.env.SIGNUP_IP_MAX;
+  if (raw == null || raw.trim() === "") return SIGNUP_IP_MAX_DEFAULT;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return SIGNUP_IP_MAX_DEFAULT;
+  return parsed;
+}
+
+export function resetSignupThrottle(): void {
+  recent.clear();
+}
+
 const allow = (key: string, max: number, windowMs = 60 * 60 * 1000): boolean => {
   const now = Date.now();
   const hits = (recent.get(key) ?? []).filter((t) => now - t < windowMs);
@@ -121,10 +138,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const b = parsed.data;
     if (RESERVED_SLUGS.has(b.slug)) return reply.code(409).send({ error: "slug_reserved", detail: "That desk address is reserved — pick another." });
-    /* The seam suite opens one desk per country from a single address,
-       and a retry counts again. Sixteen still stops a script. One
-       email stays at four. */
-    if (!allow("signup-ip:" + req.ip, 16) || !allow("signup-email:" + b.email, 4)) {
+    if (!allow("signup-ip:" + req.ip, signupIpMax()) || !allow("signup-email:" + b.email, 4)) {
       return reply.code(429).send({ error: "slow_down", detail: "Too many attempts — try again in a bit." });
     }
     if (await slugTaken(db, b.slug, b.email)) return reply.code(409).send({ error: "slug_taken", detail: "That desk address is taken — pick another." });

@@ -7,8 +7,9 @@ is not moved. The website stays **Not live**. Canada is the only Live
 country. The desk does not file to the AMLC and does not prepare an
 AMLC form.
 
-Read 7 Oct 2026. The statute and the BSP text do not say the same thing
-about a banking day. That doubt is at the bottom.
+Read 7 Oct 2026, and again for the banking-day texts. The stricter
+reading is a total within one banking day. It is Listed. The till does
+not add the day. The open question is stated below.
 
 ## What the till enforces
 
@@ -51,7 +52,7 @@ Records: `retention_years` is 5. Nothing is deleted.
 | --- | --- | --- |
 | Suspicious transaction, next working day from the date suspicion is established | Listed | The clock is stored. The desk does not decide suspicion and does not file. Philippine holidays are not subtracted |
 | Five-year retention | Listed | The number is stored. The product does not delete records, including when a case is in court |
-| Banking-day total over 500,000 PHP | Gap | The statute has the total. The till flags one deal and does not add the day |
+| Banking-day total over 500,000 PHP | Listed | Stricter reading of RA 11521 section 2: a total in excess of 500,000 pesos within one banking day. AMLC Regulatory Issuance No. 1, Series of 2021 (30 January 2021), and MORB section 904(c) (31 December 2023) state one transaction and do not restate the day. The open question is whether those texts narrowed the statute. The till flags one deal and does not add the day |
 | Two or more deals believed to be linked, over 5,000 or over 100,000 | Gap | Not summed |
 | Monthly sale cap of 50,000 USD per customer | Gap | Not summed |
 | BSP exemption to sell more than 10,000 USD | Gap | A shop with an exemption is still refused above 10,000. Fail closed |
@@ -65,7 +66,7 @@ Records: `retention_years` is 5. Nothing is deleted.
 ## Sources
 
 - Republic Act 9160 (AMLA), section 3(b), as amended by RA 11521 section 2. A covered transaction is a transaction in cash or other equivalent monetary instrument involving a total amount in excess of 500,000 pesos within one banking day. Casinos and real estate have higher lines. Those are not this desk. Statute text: Lawphil and the Supreme Court e-library.
-- 2018 Implementing Rules and Regulations, as amended, Rule 3, covered transaction: a transaction in cash or other equivalent monetary instrument exceeding 500,000 pesos. The banking-day total is not restated in the Legaldex consolidation or in the AMLC Anti-Money Laundering and Counter-Terrorism Financing Guidelines text that was read. Rule 22 section 2.1: covered transaction reports within five working days from occurrence, unless the AMLC prescribes a different period not exceeding 15 working days. Rule 18 section 1.2 lets the supervising authority set a threshold other than 100,000 pesos. Rule 18 section 3.2 is the first-time identification sentence that this pack does not enforce.
+- AMLC Regulatory Issuance A, B, and C No. 1, Series of 2021 (30 January 2021, AMLC Resolution No. 27, Series of 2021). It amends Rule 2 section 1(w)(1) of the 2018 IRR: a covered transaction is a transaction in cash or other equivalent monetary instrument exceeding 500,000 pesos. That sentence does not say within one banking day. Rule 22 section 2.1: covered transaction reports within five working days from occurrence, unless the AMLC prescribes a different period not exceeding 15 working days. Rule 18 section 1.2 lets the supervising authority set a threshold other than 100,000 pesos. Rule 18 section 3.2 is the first-time identification sentence that this pack does not enforce.
 - AMLC amendment of the 2018 IRR, effective 1 February 2020 (amlc.gov.ph): a suspicious transaction is filed within the next working day from the date suspicion is established.
 - BSP Manual of Regulations for Banks (MORB), Part IX, updated 31 December 2023. This is the banks manual. Section 903 applies that part to covered persons the Bangko Sentral supervises, and it names foreign-exchange dealers, money changers, and remittance and transfer companies in that list. Section 904(c) defines a covered transaction as one transaction in cash or other equivalent monetary instrument exceeding 500,000 pesos, and it does not restate the banking day. Section 921(d) is the relevant-business-transaction line: a transaction exceeding 100,000 pesos, except money changing or remittance; two or more transactions believed to be linked and aggregating over 100,000 pesos; and, for remittance and money changing, any transaction or two or more believed to be linked, exceeding 5,000 pesos. Section 922 states both covered and suspicious reports within five working days from occurrence, unless the AMLC sets a different period not exceeding fifteen working days. For a suspicious transaction, occurrence is the date of determination. Section 923 (fund and wire transfer) sets originator information at 50,000 pesos. That information rule is not built. Section 924 is five-year record keeping. A separate MORNBFI consolidation of section 921 was not the text read. Circular 942, below, is the non-bank sale and payout rule.
 - BSP Circular 942 (2017), MORNBFI section 4511N.9. Large-value payouts of more than 500,000 pesos, or the foreign-currency equivalent, in any single transaction, only by cheque or direct credit. Sale of foreign currency not exceeding 10,000 USD or its equivalent per transaction, and not exceeding 50,000 USD per month per customer. The month is not summed.
@@ -79,7 +80,11 @@ The market snapshot used for a foreign-currency equivalent is the same CAD-per-u
 
 ## Doubt
 
-RA 9160 section 3(b), as amended by RA 11521 section 2, requires a total in excess of 500,000 pesos within one banking day. The 2018 IRR as amended, and BSP MORB section 904(c) as of 31 December 2023, define a covered transaction as one transaction exceeding 500,000 pesos and do not restate that window. An implementing rule cannot repeal the statute. The AMLC's own definition dropped the window. This pack stores `window_kind = banking_day` and enforces only the single-deal limb, which is a covered transaction under both texts. Exactly 500,000 is in neither reading. What a "banking day" is (a BSP banking day, or a day the shop is open) does not change posting, because the day is not summed.
+RA 11521 section 2 (29 January 2021), amending RA 9160 section 3(b), is the statute. Lawphil and the Supreme Court e-library give the same sentence: a covered transaction is a transaction in cash or other equivalent monetary instrument involving a total amount in excess of 500,000 pesos within one banking day. Casino and real estate lines in that section are single transactions. They are not this desk.
+
+AMLC Regulatory Issuance A, B, and C No. 1, Series of 2021, is dated 30 January 2021, the day after that statute. Its Rule 2 section 1(w)(1) is a transaction in cash or other equivalent monetary instrument exceeding 500,000 pesos, and it does not say within one banking day. BSP MORB Part IX section 904(c), updated 31 December 2023, also defines one transaction exceeding 500,000 pesos and does not restate the banking day.
+
+No later text read for this pack says the statute dropped the banking day, and none says the 30 January 2021 sentence replaced it. The two texts still differ. The stricter reading is the statute: a total in excess of 500,000 pesos within one banking day. That reading is Listed. The open question is whether the 30 January 2021 issuance, or MORB section 904(c), narrowed the statute to a single transaction. The till flags one deal over 500,000 pesos and does not add the day. The desk must check the day. Exactly 500,000 pesos is not a covered transaction under either text. What a banking day is, a BSP banking day or a day the shop is open, is part of that open question. It does not change posting, because the day is not summed.
 
 A second doubt: the STR clock. The AMLC 2020 amendment says the next working day from determination. MORB section 922 (31 December 2023) still says five working days for both reports. The row stores one business day, the AMLC clock. The desk does not file either way.
 

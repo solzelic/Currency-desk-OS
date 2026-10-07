@@ -76,7 +76,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   changing and remittance are identified above 5,000 PHP. Other
   occasional deals are identified above 100,000 PHP. A single deal
   over 500,000 PHP is flagged as a covered transaction. Deals in one
-  banking day are not summed. A cash payout over 500,000 PHP, and a
+  banking day are not summed. The stricter reading, a banking-day
+  total under RA 11521 section 2, is listed. The till does not add
+  the day. A cash payout over 500,000 PHP, and a
   sale of foreign currency over 10,000 USD, are refused. The desk
   does not file to the AMLC. No sanctions list is loaded. The desk
   says Philippine law requires the owner to screen clients and
@@ -407,7 +409,12 @@ and remittance require customer due diligence above 5,000 PHP. A bill,
 an electronic transfer, a cheque, and virtual currency require it
 above 100,000 PHP. Exactly those amounts do not. A single deal over
 500,000 PHP is flagged. Deals in one banking day are not added
-together, and the desk does not claim they are. Purpose and source of
+together, and the desk does not claim they are. The stricter reading
+is a total within one banking day under RA 11521 section 2. AMLC
+Regulatory Issuance No. 1, Series of 2021 (30 January 2021), states
+one transaction and does not restate the day. That total is listed.
+The open question is whether that issuance narrowed the statute. The
+till does not add the day. Purpose and source of
 funds are required only above 500,000 PHP. A cash payout over 500,000
 PHP, or the foreign-currency equivalent, is refused. A sale of foreign
 currency over 10,000 USD, or the equivalent, is refused. A missing or

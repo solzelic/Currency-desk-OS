@@ -18,26 +18,9 @@
    does not say. NULL means this pack has no hour window. The banking
    day lives on the covered-transaction row. Existing packs keep 24.
 
-   The two ALTER statements change the column constraint so NULL is a
-   legal value. They do not update any pack row.
+   033 and 037 already allow a null hour window. This file does not
+   change that column. It only inserts the Philippines rows.
    ============================================================ */
-
-/* NULL already satisfies a CHECK that compares the column, because a
-   comparison with NULL is unknown and a check fails only on false. The
-   NOT NULL is what actually rejects it. The check is restated so a
-   later pack that also allows NULL does not fight this one. */
-ALTER TABLE jurisdiction_packs
-  ALTER COLUMN aggregation_hours DROP NOT NULL;
-
-ALTER TABLE jurisdiction_packs
-  DROP CONSTRAINT IF EXISTS jurisdiction_packs_aggregation_hours_check;
-
-ALTER TABLE jurisdiction_packs
-  ADD CONSTRAINT jurisdiction_packs_aggregation_hours_check
-    CHECK (
-      aggregation_hours IS NULL
-      OR (aggregation_hours > 0 AND aggregation_hours <= 24 * 31)
-    );
 
 INSERT INTO jurisdiction_packs
   (pack_id, jurisdiction, version, name, home_currency, regulator,
@@ -85,11 +68,12 @@ INSERT INTO jurisdiction_reports
 VALUES
   /* RA 11521 section 3(b): in excess of PHP 500,000 within one banking
      day, cash or other equivalent monetary instrument. Not cash only.
-     Exactly 500,000 is not a covered transaction. The 2018 IRR as
-     amended (Rule 3) and MORB section 904(c) (31 Dec 2023) define one
+     Exactly 500,000 is not a covered transaction. AMLC Regulatory
+     Issuance No. 1, Series of 2021 (30 Jan 2021), Rule 2 section
+     1(w)(1), and MORB section 904(c) (31 Dec 2023) define one
      transaction exceeding PHP 500,000 and do not restate the banking
-     day. The window is stored because the statute still has it. The
-     till flags one deal over the line and does not add the day up.
+     day. The stricter reading is the statute. The window is stored.
+     The till flags one deal over the line and does not add the day up.
      IRR Rule 22 section 2.1 and MORB section 922: file within five
      working days, unless the AMLC sets a shorter period. Philippine
      holidays are not subtracted. The desk does not file. */
