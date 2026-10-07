@@ -17,6 +17,7 @@
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { AU_V1_PACK_ID, AU_V2_PACK_ID } from "./australia-rules.js";
 import { EU_AMLR_PACK_ID, EU_V1_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, requireInstalledPack, type LedgerActor } from "./service.js";
@@ -293,4 +294,94 @@ export class ThresholdService {
       client.release();
     }
   }
+
+  /**
+   * Move an Australian desk from pack-au-v1 to pack-au-v2.
+   *
+   * One way. A desk on any other pack is refused. The desk's own
+   * identification number is left where the owner set it. Posted deals
+   * keep the pack id and version they were stamped with. This update
+   * touches the legal entity only.
+   */
+  async optInAustraliaV2(actor: LedgerActor): Promise<DeskThresholds> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "compliance:thresholds");
+      const pack = await client.query(
+        "SELECT pack_id FROM jurisdiction_packs WHERE pack_id=$1",
+        [AU_V2_PACK_ID],
+      );
+      if (!pack.rowCount) {
+        throw new LedgerError(
+          "PACK_NOT_INSTALLED",
+          "The current Australia rules are not installed on this ledger.",
+        );
+      }
+      const entity = await client.query(
+        `SELECT jurisdiction_pack_id
+           FROM legal_entities
+          WHERE id=$1
+          FOR UPDATE`,
+        [actor.legalEntityId],
+      );
+      if (!entity.rowCount) {
+        throw new LedgerError(
+          "LEGAL_ENTITY_NOT_FOUND",
+          "This desk's legal entity is not on the ledger, so its rules cannot be changed here.",
+        );
+      }
+      const current = String(entity.rows[0].jurisdiction_pack_id ?? "");
+      if (current === AU_V2_PACK_ID) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "This desk is already on the current Australia rules.",
+        );
+      }
+      if (current !== AU_V1_PACK_ID) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "Only a desk on the previous Australia rules can switch to the current ones.",
+        );
+      }
+      const updated = await client.query(
+        `UPDATE legal_entities
+            SET jurisdiction_pack_id=$2, jurisdiction_pack_version=2
+          WHERE id=$1 AND jurisdiction_pack_id=$3`,
+        [actor.legalEntityId, AU_V2_PACK_ID, AU_V1_PACK_ID],
+      );
+      if (!updated.rowCount) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "Only a desk on the previous Australia rules can switch to the current ones.",
+        );
+      }
+      await client.query(
+        `INSERT INTO ledger_audit_events
+          (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+           action,target_id,reason,correlation_id,created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,'compliance.pack.opt_in',$7,$8,$9,now())`,
+        [
+          randomUUID(),
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+          actor.workspaceId,
+          actor.userId,
+          actor.legalEntityId,
+          "Australia rules pack-au-v1 to pack-au-v2. Posted deals keep the pack they were stamped with.",
+          randomUUID(),
+        ],
+      );
+      const after = await readDeskThresholds(client, actor.legalEntityId);
+      await client.query("COMMIT");
+      return after;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
 }

@@ -488,15 +488,15 @@ export async function beneficiaryRecordGap(
   name: string | null | undefined,
   address: string | null | undefined,
 ): Promise<string | null> {
-  if (pack.baseline) return null;
+  /* Section 36 is the Canada pack. Australia v2 is also split, in
+     Australian dollars, and its remittance line is zero. Applying this
+     record there would demand a beneficiary on every transfer. A line
+     in another currency is not this record either. */
+  if (pack.baseline || pack.packId !== "pack-ca-v2") return null;
   const rows = await idRows(client, pack.packId);
   if (!isSplit(rows, positive(pack.idThreshold))) return null;
   const remittance = rows.find((row) => row.dealKind === "remittance");
   if (!remittance || remittance.amount === null) return null;
-  /* A line written in another currency is not this Canadian record.
-     Serbia's remittance line is euros on a dinar book, and the NBS
-     gate already decided identification. Comparing dinars with the
-     euro figure would demand a beneficiary under the line. */
   const home = pack.homeCurrency.trim().toUpperCase();
   if (remittance.currency && remittance.currency !== home) return null;
   if (!hits(amountHome, remittance.amount, remittance.comparator)) return null;

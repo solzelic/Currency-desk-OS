@@ -138,6 +138,18 @@ function money(value: unknown): Decimal | null {
   }
 }
 
+/* Like money(), but zero is kept. Used only where the column's own
+   contract says zero means every deal. */
+function statedAmount(value: unknown): Decimal | null {
+  if (value === null || value === undefined || value === "") return null;
+  try {
+    const parsed = new Decimal(String(value));
+    return parsed.isFinite() && !parsed.isNegative() ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function count(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -200,8 +212,21 @@ async function remittanceLine(
     if ((error as { code?: string }).code === "42P01") return unset;
     throw error;
   }
-  const amount = money(row?.threshold);
-  if (!amount) return unset;
+  /* Zero is a real line: every deal of this kind. money() drops it,
+     because zero on the old single column means "never stated". Those
+     are different facts and this row is the new table, where zero was
+     written on purpose. */
+  const stated = statedAmount(row?.threshold);
+  if (stated === null) return unset;
+  if (stated.isZero()) {
+    return {
+      effective: "0.00",
+      deskChoice: null,
+      packValue: "0.00",
+      posture: "following",
+    };
+  }
+  const amount = stated;
   const currency = String(row?.currency ?? "").trim().toUpperCase();
   const home = pack.homeCurrency.trim().toUpperCase();
   let converted: Decimal | null = null;

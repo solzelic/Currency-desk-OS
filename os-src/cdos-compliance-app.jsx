@@ -181,8 +181,19 @@
     // LCTR 24h aggregates (cash)
     cashClusters.forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     if (aggClustersVc) aggClustersVc(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-receipt ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
-    // single international transfers at/over threshold
-    transfers.filter(t => t.status !== 'cancelled').forEach(t => { const cad = t.direction === 'send' ? t.payAmt : (t.recvAmt / xr(t.ccy)); if (regime.threshold != null && cad >= regime.threshold) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] }); });
+    // single international transfers. A wire report with no amount (an
+    // Australian IVTS) is every transfer. A numbered line keeps the old
+    // comparison. No wire code means this pack has no such report.
+    transfers.filter(t => t.status !== 'cancelled' && regime.wireCode).forEach(t => {
+      const homeAmt = t.direction === 'send' ? (+t.payAmt || 0) : (+t.recvAmt || 0);
+      if (regime.wireEvery) {
+        out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: homeAmt, detail: `${regime.wireCode} · ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] });
+        return;
+      }
+      const cad = t.direction === 'send' ? t.payAmt : (t.recvAmt / xr(t.ccy));
+      const line = regime.wireTrigger != null ? regime.wireTrigger : regime.threshold;
+      if (line != null && cad >= line) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] });
+    });
     // EFTR 24h aggregates (wires) — same engine, different trigger
     aggClustersEFT(transfers, beneficiaries, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-transfer ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     return out.map(r => annotateCoverage({ ...r, reportRef: reportRefFor(r.kind, r.id) }, subs));
@@ -320,6 +331,17 @@
   function Aggregation({ rows, settings, subs, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
     const regime = getRegime(settings);
     const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), beneficiaries, regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    /* Australia reports each threshold transaction on its own. Saying
+       "the 24-hour rule" here would be the old, wrong rule. */
+    if (regime.aggregate === false) {
+      const listed = regime.reports || [];
+      return (<div className="p-4">
+        <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Threshold transactions are not added together</div><div className="text-[11px] mt-1" style={{ color: CD.mute, maxWidth: 640 }}>A threshold transaction report is one transaction. Physical currency of {fmt(regime.threshold, regime.currency)} or more, received or paid, is listed on its own and is due within 10 business days. Smaller deals are not combined into one report. An international value transfer has no amount: every transfer in or out is listed. The till does not file either report to AUSTRAC.</div></div>
+        <div className="space-y-1.5">
+          {listed.map(r => <div key={r.code} className="px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.code}</div><div className="text-[11px]" style={{ color: CD.mute }}>{r.name}</div></div>)}
+        </div>
+      </div>);
+    }
     const total = clusters.reduce((s, c) => s + c.total, 0);
     const winStart = (settings && settings.aggWindowStart) || '00:00';
     const benCount = clusters.filter(c => c.basis === 'beneficiary').length;
@@ -608,9 +630,39 @@
     const regime = getRegime(settings);
     const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const reports = (regime.reports || []).filter(r => r && r.kind);
+    const [optInState, setOptInState] = useState(null);
     const isOwner = me && me.role === 'Owner';
     const [optError, setOptError] = useState('');
     const [opting, setOpting] = useState(false);
+    const switchAustralia = async () => {
+      const api = window.CDOS.Backend;
+      if (!api || !api.optInAustraliaV2) return;
+      setOptInState('working');
+      try {
+        await api.optInAustraliaV2();
+        if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+        if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+        setOptInState('done');
+      } catch (error) {
+        setOptInState(error && error.message ? error.message : 'Could not switch.');
+      }
+    };
+    if (pack && (pack.packId === 'pack-au-v1' || pack.packId === 'pack-au-v2')) {
+      const onAustraliaV1 = pack.packId === 'pack-au-v1';
+      return (<div className="p-4">
+        <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>{regime.authority || 'Jurisdiction'} · {regime.country}</div><div className="text-[11px] mt-1" style={{ color: CD.mute, maxWidth: 560 }}>{pack.packId === 'pack-au-v2' ? 'Customer due diligence before a currency exchange of A$1,000 or more, and before every remittance. A threshold transaction is physical currency of A$10,000 or more received or paid, in one transaction. Records are kept 7 years.' : 'The reports this desk is operating under.'}</div></div>
+        <div className="space-y-1.5 mb-3">
+          {reports.map(r => <div key={r.code} className="px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.code} · {r.name}</div>{r.kind === 'large_cash' && r.direction === 'both' && <div className="text-[11px]" style={{ color: CD.mute }}>Physical currency received or paid. Not added to other transactions.</div>}{r.code === 'IVTS' && <div className="text-[11px]" style={{ color: CD.mute }}>Every international transfer of value, in or out. No amount.</div>}{r.code === 'SMR' && <div className="text-[11px]" style={{ color: CD.mute }}>3 business days after the day the suspicion is formed.</div>}{r.code === 'SMR-TF' && <div className="text-[11px]" style={{ color: CD.mute }}>24 hours after the time a terrorism financing suspicion is formed.</div>}{r.code === 'COMPLIANCE' && <div className="text-[11px]" style={{ color: CD.mute }}>Annual. The till does not prepare this report.</div>}</div>)}
+          {!reports.length && <div className="text-[12px]" style={{ color: CD.mute }}>No reports have been loaded for this pack yet.</div>}
+        </div>
+        {onAustraliaV1 && <div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+          <div className="text-[12px] mb-2" style={{ color: CD.mute }}>The current AUSTRAC rules add the international value transfer report and count cash paid out as well as cash received. Deals already posted stay on the rules they were written under. New deals follow the current rules. This cannot be undone.</div>
+          <button onClick={switchAustralia} disabled={optInState === 'working' || optInState === 'done'} className="px-3 py-2 text-[12px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>{optInState === 'working' ? 'Switching…' : optInState === 'done' ? 'Switched' : 'Switch to the current AUSTRAC rules'}</button>
+          {optInState && optInState !== 'working' && optInState !== 'done' && <div className="text-[11px] mt-2" style={{ color: CD.flag }}>{optInState}</div>}
+        </div>}
+        <button onClick={() => onOpenSettings && onOpenSettings()} className="mt-3 flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="gear" s={14} /> View in Settings</button>
+      </div>);
+    }
     const onV1 = pack && pack.packId === 'pack-ca-v1';
     const optIn = async () => {
       const B = window.CDOS.Backend;
@@ -803,7 +855,7 @@
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
 
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation'), 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>

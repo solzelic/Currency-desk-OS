@@ -478,6 +478,11 @@
           body: "{}",
         });
       },
+      /* Australia only. A desk on the previous pack takes the current
+         one. Posted deals stay on the pack they were stamped with. */
+      optInAustraliaV2: function () {
+        return request("/api/ledger/jurisdiction-pack/au-v2", { method: "POST", body: "{}" });
+      },
 
       /* ---- the desk's own thresholds ----
 

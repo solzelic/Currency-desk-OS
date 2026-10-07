@@ -17,14 +17,15 @@ due-diligence level (`identify`, `cdd`, `edd`), and whether it is
 cash-only. A country pack whose lines all equal that pack's single
 `id_threshold` still posts on the single column. `pack-ca-v2` does
 not: its lines differ, and the gate reads the line for the kind of
-deal. Money orders are their own line on that pack. A country pack
-whose identification line is already in the home currency still
-reads the single `id_threshold` column. The baseline gate reads the
-per-deal rows and converts US dollars. Serbia (`pack-rs-v1`) also
-reads the per-deal row, because those lines are in euros and the
-book is dinars. That conversion is the NBS middle rate for the
-Belgrade day, not the market snapshot. Receipt rules are in
-`docs/SERBIA_PACK.md`.
+deal. Money orders are their own line on that pack. Australia v2
+(`pack-au-v2`) also reads the per-deal rows. See
+`docs/AUSTRALIA_PACK.md`. A country pack whose identification line is
+already in the home currency still reads the single `id_threshold`
+column. The baseline gate reads the per-deal rows and converts US
+dollars. Serbia (`pack-rs-v1`) also reads the per-deal row, because
+those lines are in euros and the book is dinars. That conversion is
+the NBS middle rate for the Belgrade day, not the market snapshot.
+Receipt rules are in `docs/SERBIA_PACK.md`.
 Seeded packs copy a positive value of that
 column onto all four kinds, so the two agree. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,
