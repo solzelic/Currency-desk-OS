@@ -187,6 +187,7 @@
             <Field label="Payout method"><select value={b.method} onChange={e => set('method', e.target.value)} className={inputCls} style={inputSty}>{METHODS.filter(m => cor.partners.some(p => p.methods.includes(m[0]))).map(m => <option key={m[0]} value={m[0]}>{m[1]}</option>)}</select></Field>
           </div>
           <Field label="Payout partner"><select value={b.partner} onChange={e => set('partner', e.target.value)} className={inputCls} style={inputSty}>{partners.map(p => <option key={p.name}>{p.name}</option>)}{!partners.length && <option value="">No partner for this method</option>}</select></Field>
+          <Field label="Address" hint="Street, city, country. Required on a Canada version 2 desk once the transfer is at the identification line."><input value={b.address || ''} onChange={e => set('address', e.target.value)} placeholder="Where the beneficiary is" className={inputCls} style={inputSty} /></Field>
           {b.method === 'bank' && (<div className="grid grid-cols-2 gap-3">
             <Field label="Bank"><input value={b.bank} onChange={e => set('bank', e.target.value)} className={inputCls} style={inputSty} /></Field>
             <Field label="Branch"><input value={b.branch} onChange={e => set('branch', e.target.value)} className={inputCls} style={inputSty} /></Field>
@@ -230,6 +231,8 @@
     const [direction, setDirection] = useState('send');
     const [senderName, setSenderName] = useState('');
     const [benId, setBenId] = useState('');
+    const [receiveBeneficiaryName, setReceiveBeneficiaryName] = useState('');
+    const [receiveBeneficiaryAddress, setReceiveBeneficiaryAddress] = useState('');
     const [addBen, setAddBen] = useState(false);
     const [corridorId, setCorridorId] = useState('PH');
     const [partner, setPartner] = useState('');
@@ -329,6 +332,24 @@
       if (B) {
         setBusy(true);
         setServerError('');
+        /* Version 2 asks for the beneficiary's name and address once
+           the cash is at the remittance line. Version 1 does not, and
+           a transfer under the line does not. The server is the
+           authority; this stops the teller finding out only after the
+           round trip. */
+        const packId = packNow && packNow.packId;
+        const remLine = thresholds && thresholds.remittanceIdThreshold && thresholds.remittanceIdThreshold.effective != null
+          ? Number(thresholds.remittanceIdThreshold.effective) : null;
+        const cashHome = direction === 'send' ? (amtN + feeN) : (Number(recvAmt) || 0);
+        if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+          const name = direction === 'send' ? (ben && ben.name) : receiveBeneficiaryName;
+          const address = direction === 'send' ? (ben && ben.address) : receiveBeneficiaryAddress;
+          if (!String(name || '').trim() || !String(address || '').trim()) {
+            setServerError('This transfer needs the beneficiary name and address on the record.');
+            setBusy(false);
+            return;
+          }
+        }
         try {
           const synced = await B.syncCustomer(senderName, clients[senderName]);
           setClients && setClients(list => ({ ...list, [senderName]: { ...(list[senderName] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
@@ -352,6 +373,7 @@
                 corridor: corridorId,
                 partner: partner,
                 beneficiaryName: (ben ? ben.name : senderName),
+                beneficiaryAddress: ben && ben.address ? ben.address : '',
                 ...capture,
               })
             : await B.postRemittanceReceive({
@@ -364,6 +386,8 @@
                 feeAmount: B.asMoney(feeN),
                 corridor: corridorId,
                 partner: partner,
+                beneficiaryName: receiveBeneficiaryName,
+                beneficiaryAddress: receiveBeneficiaryAddress,
                 ...capture,
               });
         } catch (error) {
@@ -442,6 +466,13 @@
               <button key={d} onClick={() => { setDirection(d); setBenId(''); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium" style={{ borderRadius: 9, border: `1px solid ${direction === d ? CD.ink : CD.line}`, background: direction === d ? CD.ink : 'var(--cd-panel)', color: direction === d ? 'var(--cd-on-ink)' : CD.mute }}><Ic n={ic} s={14} c={direction === d ? 'var(--cd-on-ink)' : CD.mute} /> {l}</button>
             ))}
           </div>
+
+          {direction === 'receive' && packNow && packNow.packId === 'pack-ca-v2' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Beneficiary name"><input value={receiveBeneficiaryName} onChange={e => setReceiveBeneficiaryName(e.target.value)} placeholder="Who the funds are for" className={inputCls} style={inputSty} /></Field>
+              <Field label="Beneficiary address"><input value={receiveBeneficiaryAddress} onChange={e => setReceiveBeneficiaryAddress(e.target.value)} placeholder="Street, city, country" className={inputCls} style={inputSty} /></Field>
+            </div>
+          )}
 
           {/* sender */}
           <Field label={direction === 'send' ? 'Sender (your client)' : 'Recipient (your client)'}>

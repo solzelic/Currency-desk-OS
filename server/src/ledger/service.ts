@@ -13,6 +13,10 @@ import {
   ensureBasis,
   reverseEvent,
 } from "./cost-basis.js";
+import {
+  countryIdentification,
+  type IdentificationDeal,
+} from "./canada-rules.js";
 import { baselineIdentification, type ComplianceStamp } from "./compliance-gate.js";
 import {
   pairAllowed,
@@ -206,15 +210,19 @@ export async function requireIdentification(
   pack: JurisdictionPack,
   amountHome: Decimal,
   idStatus: unknown,
-  deal: { kind: string; cash: boolean },
+  deal: IdentificationDeal,
 ): Promise<ComplianceStamp> {
   requireInstalledPack(pack);
   const priced = pack.baseline
     ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
     : { block: false, rate: "1.000000000000", rateAt: null };
   const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
-  if (idStatus === "verified") return stamp;
+  /* A verified customer has already satisfied the identity document.
+     A split Canada pack still asks for the foreign-exchange ticket
+     fields at its line, so that short-circuit cannot sit above the
+     country check. The baseline has no such ticket rule. */
   if (pack.baseline) {
+    if (idStatus === "verified") return stamp;
     /* A missing or stale market rate already sets block. A desk's own
        tighter line, stored in home currency, can only add a refusal. */
     const desk = await deskIdLine(client, actor.legalEntityId);
@@ -226,6 +234,19 @@ export async function requireIdentification(
     }
     return stamp;
   }
+  const country = await countryIdentification(client, {
+    legalEntityId: actor.legalEntityId,
+    branchId: actor.branchId,
+    pack,
+    amountHome,
+    verified: idStatus === "verified",
+    deal,
+  });
+  if (country.split) {
+    if (country.refusal) throw new LedgerError(country.refusal.code, country.refusal.message);
+    return stamp;
+  }
+  if (idStatus === "verified") return stamp;
   const line = await resolveIdThreshold(client, actor.legalEntityId, pack);
   if (line === null)
     throw new LedgerError(
@@ -275,7 +296,7 @@ export class LedgerService {
     pack: JurisdictionPack,
     amountHome: Decimal,
     idStatus: unknown,
-    deal: { kind: string; cash: boolean },
+    deal: IdentificationDeal,
   ) {
     return requireIdentification(client, actor, pack, amountHome, idStatus, deal);
   }
@@ -436,7 +457,13 @@ export class LedgerService {
         pack,
         inputHome,
         customer.rows[0].id_status,
-        { kind: "exchange", cash: true },
+        {
+          kind: "exchange",
+          cash: true,
+          cashIn: true,
+          customerId: quote.customerId,
+          onBehalfOf: quote.thirdParty ? quote.thirdPartyName : null,
+        },
       );
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
@@ -637,7 +664,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)",
         [
           transactionId,
           transactionRef,
@@ -680,6 +707,9 @@ export class LedgerService {
           home,
           compliance.rate,
           compliance.rateAt,
+          /* Home value of what the customer paid, not the fee. Same
+             figure the large-cash window will read back. */
+          fixed(inputHome),
         ],
       );
       for (const [account, side, value] of journal)
@@ -896,7 +926,13 @@ export class LedgerService {
         pack,
         inputHome,
         customer.rows[0].id_status,
-        { kind: "exchange", cash: true },
+        {
+          kind: "exchange",
+          cash: true,
+          cashIn: true,
+          customerId: request.customerId,
+          onBehalfOf: request.thirdParty ? request.thirdPartyName : null,
+        },
       );
       /* Purpose and source of funds, over the desk's REPORTING line — the
          details the report itself is made of. Same story as the ID gate: a
@@ -977,7 +1013,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)",
         [
           transactionId,
           transactionRef,
@@ -1007,6 +1043,10 @@ export class LedgerService {
           pack.homeCurrency,
           compliance.rate,
           compliance.rateAt,
+          /* Home value of what the customer paid, not the fee. The
+             large-cash window reads this column. The fee is a separate
+             cash receipt and is not part of the exchange amount. */
+          fixed(inputHome),
         ],
       );
       for (const [account, side, value] of journal)

@@ -67,6 +67,7 @@ import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
+import { beneficiaryRecordGap } from "./canada-rules.js";
 import {
   LedgerError,
   requireIdentification,
@@ -208,6 +209,10 @@ export type RemittanceSendInput = ComplianceCapture & {
   corridor: string;
   partner: string;
   beneficiaryName: string;
+  /* Where the beneficiary is. Required on a split Canada pack once the
+     cash is at the remittance line. Optional under that line, and on
+     every pack that still uses one shared identification number. */
+  beneficiaryAddress?: string | null;
 };
 
 export type RemittanceReceiveInput = ComplianceCapture & {
@@ -225,6 +230,11 @@ export type RemittanceReceiveInput = ComplianceCapture & {
   feeAmount: string;
   corridor: string;
   partner: string;
+  /* The person the funds are for, when the teller named one. On a
+     payout the customer at the counter is often that person; the
+     fields are still stored when they are sent. */
+  beneficiaryName?: string | null;
+  beneficiaryAddress?: string | null;
 };
 
 export type BillPaymentInput = ComplianceCapture & {
@@ -290,6 +300,8 @@ type DealSpec = {
   };
   obligationRef: string;
   capture: ComplianceCapture;
+  beneficiaryName?: string | null;
+  beneficiaryAddress?: string | null;
   customerId: string;
   idempotencyKey: string;
   receiptLines: (context: { ref: string; customer: string; home: string }) => string[];
@@ -339,6 +351,8 @@ export class ObligationService {
           },
           obligationRef: input.reference,
           capture: input,
+          beneficiaryName: input.beneficiaryName,
+          beneficiaryAddress: input.beneficiaryAddress,
           customerId: input.customerId,
           idempotencyKey: input.idempotencyKey,
           receiptLines: ({ ref, customer, home: h }) => [
@@ -347,6 +361,9 @@ export class ObligationService {
             `Sender: ${customer}`,
             `Transfer ${input.reference} · ${input.partner} (${input.corridor})`,
             `Beneficiary: ${input.beneficiaryName}`,
+            ...(input.beneficiaryAddress?.trim()
+              ? [`Beneficiary address: ${input.beneficiaryAddress.trim()}`]
+              : []),
             `Paid in cash: ${h} ${fixed(principal)}`,
             `Fee paid separately: ${h} ${fixed(fee)}`,
             `Beneficiary receives: ${fixed(payout)} ${input.payoutCurrency}`,
@@ -389,6 +406,8 @@ export class ObligationService {
           },
           obligationRef: input.reference,
           capture: input,
+          beneficiaryName: input.beneficiaryName,
+          beneficiaryAddress: input.beneficiaryAddress,
           customerId: input.customerId,
           idempotencyKey: input.idempotencyKey,
           receiptLines: ({ ref, customer, home: h }) => [
@@ -609,8 +628,28 @@ export class ObligationService {
         pack,
         amountHome,
         customer.rows[0].id_status,
-        { kind: spec.dealKind, cash: true },
+        {
+          kind: spec.dealKind,
+          cash: true,
+          cashIn: spec.cash.direction === "in",
+          customerId: spec.customerId,
+          onBehalfOf: spec.capture.thirdPartyName,
+          beneficiaryName: spec.beneficiaryName,
+        },
       );
+      if (
+        spec.dealKind === "remittance_send" ||
+        spec.dealKind === "remittance_receive"
+      ) {
+        const gap = await beneficiaryRecordGap(
+          client,
+          pack,
+          amountHome,
+          spec.beneficiaryName,
+          spec.beneficiaryAddress,
+        );
+        if (gap) throw new LedgerError("BENEFICIARY_RECORD", gap);
+      }
       if (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim()) {
         const reporting = await resolveReportThreshold(
           client,
@@ -726,8 +765,9 @@ export class ObligationService {
         `INSERT INTO ledger_obligations
            (obligation_id,obligation_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
             customer_id,transaction_id,kind,direction,counterparty,reference,corridor,
-            face_currency,face_amount,home_currency,carrying_amount_home,status,opened_at,created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'open',$19,$20)`,
+            face_currency,face_amount,home_currency,carrying_amount_home,status,opened_at,created_by,
+            beneficiary_name,beneficiary_address)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'open',$19,$20,$21,$22)`,
         [
           obligationId,
           obligationRef,
@@ -745,6 +785,8 @@ export class ObligationService {
           fixed(spec.obligation.carryingHome),
           now,
           actor.userId,
+          spec.beneficiaryName?.trim() || null,
+          spec.beneficiaryAddress?.trim() || null,
         ],
       );
       await client.query(

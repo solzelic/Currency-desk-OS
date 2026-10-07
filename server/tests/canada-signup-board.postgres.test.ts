@@ -113,7 +113,7 @@ postgres("a Canada signup with no home currency", () => {
       )
     ).rows[0];
     expect(String(entity.home_currency).trim()).toBe("CAD");
-    expect(entity.jurisdiction_pack_id).toBe("pack-ca-v1");
+    expect(entity.jurisdiction_pack_id).toBe("pack-ca-v2");
 
     const boards = (
       await pool.query(

@@ -220,7 +220,9 @@ export function pairAllowed(
    screen and the wizard already store ("Canada", "Somewhere else"),
    so a desk that said Canada by name still gets the Canada pack. */
 export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
-  CA: "pack-ca-v1",
+  /* New Canada desks open on version 2. A desk already on pack-ca-v1
+     stays there until its owner opts in. The v1 row is not edited. */
+  CA: "pack-ca-v2",
   US: "pack-us-v1",
   GB: "pack-gb-v1",
   UK: "pack-gb-v1",
@@ -250,6 +252,7 @@ const COUNTRY_CODE: Readonly<Record<string, string>> = {
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-ca-v1": "CAD",
+  "pack-ca-v2": "CAD",
   "pack-us-v1": "USD",
   "pack-gb-v1": "GBP",
   "pack-eu-v1": "EUR",
@@ -274,8 +277,13 @@ export function packForCountry(
   if (!packId) return null;
   const homeCurrency = HOME_FOR_PACK[packId];
   if (!homeCurrency) return null;
-  return { packId, version: 1, homeCurrency };
+  return { packId, version: PACK_VERSION[packId] ?? 1, homeCurrency };
 }
+
+/* Only Canada has a second version. Every other pack is still version 1. */
+const PACK_VERSION: Readonly<Record<string, number>> = {
+  "pack-ca-v2": 2,
+};
 
 /** A country that is known to have a pack. Used where the caller is Canada on purpose. */
 export function requirePackForCountry(country: string): InstalledPack {

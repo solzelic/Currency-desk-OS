@@ -371,7 +371,14 @@ export class ChequeService {
         pack,
         face,
         customer.rows[0].id_status,
-        { kind: "cheque_cashing", cash: true },
+        {
+          kind: "cheque_cashing",
+          cash: true,
+          /* A cheque is not cash received. Section 84's large-cash
+             identity rule does not treat the face as cash in. */
+          cashIn: false,
+          customerId: input.customerId,
+        },
       );
 
       /* The desk's own working day, from the till session rather than

@@ -106,6 +106,8 @@ postgres("pack rule fields against real PostgreSQL", () => {
         direction: "in",
         thresholdCurrency: currency,
         cashOnly: false,
+        aggregateAllAmounts: false,
+        aggregationAxes: null,
       });
     };
     largeCash("pack-ca-v1", "LCTR", "10000.00", "CAD");
@@ -143,6 +145,8 @@ postgres("pack rule fields against real PostgreSQL", () => {
         direction: null,
         thresholdCurrency: null,
         cashOnly: false,
+        aggregateAllAmounts: false,
+        aggregationAxes: null,
       });
     }
   });
@@ -227,6 +231,8 @@ postgres("pack rule fields against real PostgreSQL", () => {
       direction: "out",
       thresholdCurrency: "EUR",
       cashOnly: false,
+      aggregateAllAmounts: false,
+      aggregationAxes: null,
     });
     expect(report.trigger_threshold).toBe("1000.00");
 
@@ -381,7 +387,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
     /* 3,000 is the pack's own line, so the desk follows the pack rather
        than pinning a copy of it. */
     expect(entity.id_threshold).toBeNull();
-    expect(entity.jurisdiction_pack_id).toBe("pack-ca-v1");
+    expect(entity.jurisdiction_pack_id).toBe("pack-ca-v2");
   });
 
   it("opens a desk for an unknown country without installing Canada's pack", async () => {
