@@ -21,7 +21,10 @@ deal. Money orders are their own line on that pack. Australia v2
 (`pack-au-v2`) also reads the per-deal rows. See
 `docs/AUSTRALIA_PACK.md`. `pack-gb-v2` reads the per-deal rows too
 (occasional transaction at £12,000 or more, transfer of funds of more
-than £800, no large-cash report). See `docs/UK_PACK.md`. A country
+than £800, no large-cash report). See `docs/UK_PACK.md`. `pack-ae-v2`
+reads the per-deal rows: foreign exchange at AED 3,500 or more, and a
+money transfer at any amount. It has no cash report. The 90 day bands
+are not stored. See `docs/UAE_PACK.md`. A country
 pack whose identification line is already in the home currency still
 reads the single `id_threshold` column. The baseline gate reads the
 per-deal rows and converts US dollars. Serbia (`pack-rs-v1`) also

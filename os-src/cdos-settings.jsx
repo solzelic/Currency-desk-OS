@@ -269,6 +269,7 @@
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const euAmlr = (desk && desk.packId === 'pack-eu-v2') || (packNow && packNow.packId === 'pack-eu-v2');
     const ukV2 = (desk && desk.packId === 'pack-gb-v2') || (packNow && packNow.packId === 'pack-gb-v2');
+    const aeV2 = (desk && desk.packId === 'pack-ae-v2') || (packNow && packNow.packId === 'pack-ae-v2');
     const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
     const currency = (desk && desk.currency) || settings.baseCurrency || '';
     const authority = baselineNow
@@ -302,6 +303,15 @@
         { k: 'Your policy', v: 'a number you typed. The law does not require it' },
       ]}
       example="A transfer of funds of more than £800 still needs customer due diligence. That line is not this box."
+    />) : aeV2 ? (<window.CDOS.InfoTip
+      w={320}
+      title="No UAE cash report"
+      body="An exchange house does not file a cash report at AED 55,000. Leave the box blank. A number you type is your own policy, and the desk will ask for purpose and source of funds at or above it. It is not a CBUAE cash report."
+      lines={[
+        { k: 'Following', v: 'blank. There is no amount, and that is the rule' },
+        { k: 'Your policy', v: 'a number you typed. The law does not require it' },
+      ]}
+      example="A money transfer still needs identification, purpose, and source of funds at any amount. That line is not this box."
     />) : (<window.CDOS.InfoTip
       w={320}
       title="Where your reporting line sits"
@@ -322,6 +332,11 @@
           There is no large-cash report in UK law for a bureau. Customer due diligence applies to an occasional transaction of £12,000 or more, and to a transfer of funds of more than £800. A suspicious activity report goes to the NCA (UKFIU), as soon as is practicable. Records are kept for 5 years. Deals are not added together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.
         </div>
       )}
+      {aeV2 && (
+        <div data-testid="ae-pack-rules" className="text-[12px] mb-3 leading-relaxed" style={{ color: CD.ink }}>
+          There is no cash report at AED 55,000. That figure is not an exchange-house cash report. Foreign exchange identification stays at AED 3,500 or more. A number below 3,500 tightens it. A number of 3,500 or more is not saved. A money transfer is identified at any amount. Purpose and source of funds are required on a foreign exchange of AED 35,000 or more, and on every money transfer. The 90 day totals in the Exchange Business Standards are not added up by this desk.
+        </div>
+      )}
       {euAmlr ? (
         <Row
           title="Large cash report"
@@ -330,9 +345,11 @@
         </Row>
       ) : (<>
       <Row
-        title={<span className="flex items-center gap-1.5">{ukV2 ? 'Your own reporting line' : 'Large cash / reportable threshold'} {reportTip}</span>}
+        title={<span className="flex items-center gap-1.5">{(ukV2 || aeV2) ? 'Your own reporting line' : 'Large cash / reportable threshold'} {reportTip}</span>}
         desc={ukV2
           ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.'
+          : aeV2
+          ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.'
           : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'}>
         {status === 'ready'
           ? <ThresholdInput value={line('reportThreshold') && line('reportThreshold').effective}
@@ -350,6 +367,8 @@
           ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here."
           : ukV2
           ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.'
+          : aeV2
+          ? 'Foreign exchange stays at AED 3,500 or more. A lower number tightens that line. A number of 3,500 or more does not raise it. A money transfer stays at any amount, whatever this box says.'
           : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."}>
         {status === 'ready'
           ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}
@@ -366,6 +385,8 @@
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
           : ukV2
           ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.'
+          : aeV2
+          ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.'
           : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."}>
         {status !== 'ready' ? unavailable
           : (line('aggregationHours') || {}).effective == null
@@ -1760,7 +1781,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             || ((settings && settings.baselineRules) || paused ? disclaimer : '');
           const jv = window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [];
           const reportLine = window.CDOS.reportingLimit ? window.CDOS.reportingLimit(settings) : null;
-          const reportLabel = reportLine && reportLine.amount != null ? reportLine.label : (baseline || (pack && pack.packId) ? '—' : fmt(+settings.threshold || 10000, base));
+          const aeV2Pack = !!(pack && pack.packId === 'pack-ae-v2');
+          const reportLabel = aeV2Pack && !(reportLine && reportLine.amount != null)
+            ? 'No cash report'
+            : (reportLine && reportLine.amount != null ? reportLine.label : (baseline || (pack && pack.packId) ? '—' : fmt(+settings.threshold || 10000, base)));
           const baselineReports = (regime && regime.reports && regime.reports.length) ? regime.reports : [
             { code: 'CASH-RECORD', name: 'Large cash record' },
             { code: 'SUSPICIOUS', name: 'Suspicious transaction' },
@@ -1836,6 +1860,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <div className="mt-1">Records kept for 5 years. HMRC supervises the business.</div>
                 </div>
               )}
+              {pack.packId === 'pack-ae-v2' && (
+                <div data-testid="ae-pack-v2" className="text-[12px] mt-2 leading-relaxed" style={{ color: CD.ink }}>
+                  <div>There is no cash threshold report for an exchange house.</div>
+                  <div className="mt-1">Foreign exchange: identification at AED 3,500 or more. A single deal of AED 35,000 or more also asks for purpose and source of funds.</div>
+                  <div className="mt-1">A money transfer asks for identification, purpose, and source of funds at any amount.</div>
+                  <div className="mt-1">STR and SAR go to the UAE FIU through goAML. This till does not file them.</div>
+                  <div className="mt-1">Fund Freeze Report and Partial Name Match Report (PMNR) are catalogue items. This till does not file them.</div>
+                  <div className="mt-1">Records are kept for 5 years. Deals are not added up over 90 days.</div>
+                </div>
+              )}
             </div>
           )}
           {!paused && pack && pack.packId === 'pack-rs-v1' && (
@@ -1864,6 +1898,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 }
               }}>
               Move this desk to the current United Kingdom pack
+            </button>
+          )}
+          {isOwner && pack && pack.packId === 'pack-ae-v1' && (
+            <button type="button" data-testid="adopt-ae-pack" className="mb-3 text-left px-3 py-2 text-[12.5px] font-semibold"
+              style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 9, border: 'none', cursor: 'pointer' }}
+              onClick={async () => {
+                try {
+                  const api = window.CDOS && window.CDOS.Backend;
+                  if (!api || !api.adoptAePack) return;
+                  await api.adoptAePack();
+                  if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+                  if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+                  log('United Arab Emirates pack', 'Moved to pack-ae-v2. Posted deals keep the pack they were stamped with.');
+                  setPackRev((n) => n + 1);
+                } catch (e) {
+                  log('United Arab Emirates pack', (e && e.message) || 'Could not move this desk.');
+                }
+              }}>
+              Move this desk to the current United Arab Emirates pack
             </button>
           )}
           {standalone && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>

@@ -2013,7 +2013,8 @@
          field on an older setup still falls back to 10,000. A line
          written in another currency, such as Serbia's euros on a dinar
          book, is not stored as the home-currency line. A United Kingdom
-         desk has no large-cash report. Do not fill the blank with 10,000. */
+         desk has no large-cash report. A UAE desk has no cash report
+         either. Do not fill the blank with 10,000. */
       const foreignRules = setup.reportCurrency && homeCcy && String(setup.reportCurrency).toUpperCase() !== String(homeCcy).toUpperCase();
       const noCashReport = setup.noCashReport === true;
       const reportOver = setup.baselineRules || foreignRules || noCashReport || setup.reportThreshold === null

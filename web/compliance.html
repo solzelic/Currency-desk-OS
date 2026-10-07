@@ -470,14 +470,14 @@ class Component extends DCLogic {
         {name:'RBI KYC norms', spec:'Master Direction checks at onboarding.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'PMLA retention on every client file.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
-    { id:'cbuae', tag:'CBUAE', country:'UAE', regulator:'Central Bank of the UAE', status:'Coming soon', kind:'soon', color:'#6F5293', soft:'rgba(111,82,147,0.11)', official:'https://www.centralbank.ae', updated:'13 Jun 2026', retention:'5 years',
+    { id:'cbuae', tag:'CBUAE', country:'UAE', regulator:'Central Bank of the UAE', status:'Coming soon', kind:'soon', color:'#6F5293', soft:'rgba(111,82,147,0.11)', official:'https://www.centralbank.ae', updated:'7 Oct 2026', retention:'5 years',
       supervisor:'CBUAE, with the UAE Financial Intelligence Unit via goAML',
       deadline:'STR filed immediately on suspicion',
       whatWeDo:'Planned for UAE exchange houses: goAML reporting to the Financial Intelligence Unit against the CBUAE rulebook, with UN and local list screening on every client.',
-      how:[{n:'1',t:'Client screening runs against UNSC and local terrorist lists.'},{n:'2',t:'Cash thresholds are watched per deal at the counter.'},{n:'3',t:'Reports are prepared for goAML and records kept five years.'}],
+      how:[{n:'1',t:'Client screening runs against UNSC and local terrorist lists.'},{n:'2',t:'Foreign exchange asks for identification at AED 3,500. A money transfer asks at any amount.'},{n:'3',t:'STR and SAR are prepared for goAML. Records are kept five years.'}],
       rules:[
         {name:'STR via goAML', spec:'Filed to the UAE FIU from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Cash threshold reporting', spec:'Deals at or above AED 55,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Exchange identification', spec:'AED 3,500 or more on one deal. No cash threshold report.', tag:'Planned', cat:'threshold', when:'At the till'},
         {name:'Sanctions screening', spec:'UNSC consolidated and local lists.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'AML/CFT program', spec:'Maintained to the CBUAE rulebook.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}

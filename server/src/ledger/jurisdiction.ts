@@ -238,17 +238,21 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   /* Version 2. Desks already on pack-au-v1 stay there until they opt in.
      packForCountry is only the pack a new desk is given. */
   AU: "pack-au-v2",
-  AE: "pack-ae-v1",
+  /* Version 2. A desk already on pack-ae-v1 is not moved by this map.
+     Opt-in is a separate act. See server/src/ledger/uae-exchange.ts. */
+  AE: "pack-ae-v2",
   RS: "pack-rs-v1",
 };
 
-/* Canada, the 2027 European Union pack, Australia v2, and the United
-   Kingdom v2 are version 2. Every other pack is still version 1. */
+/* Canada, the 2027 European Union pack, Australia v2, the United
+   Kingdom v2, and the United Arab Emirates v2 are version 2.
+   Every other pack is still version 1. */
 const PACK_VERSION: Readonly<Record<string, number>> = {
   "pack-ca-v2": 2,
   [EU_AMLR_PACK_ID]: 2,
   "pack-au-v2": 2,
   "pack-gb-v2": 2,
+  "pack-ae-v2": 2,
 };
 
 const COUNTRY_CODE: Readonly<Record<string, string>> = {
@@ -284,6 +288,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-au-v1": "AUD",
   "pack-au-v2": "AUD",
   "pack-ae-v1": "AED",
+  "pack-ae-v2": "AED",
   "pack-rs-v1": "RSD",
 };
 

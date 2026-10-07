@@ -685,6 +685,7 @@ export class ObligationService {
           amountHome,
           spec.capture.purpose,
           spec.capture.sourceOfFunds,
+          { kind: spec.dealKind },
         );
       }
 

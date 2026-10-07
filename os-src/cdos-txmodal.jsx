@@ -502,8 +502,15 @@
     /* A remittance used to require identification at every amount.
        pack-gb-v2 does not: a transfer of funds needs it only above
        the statutory line, which the server has already resolved
-       (including a desk number that tightens it). Cents, not a float. */
-    const ukTransfer = (window.CDOS.deskThresholds && window.CDOS.deskThresholds() || {}).transferDueDiligence || null;
+       (including a desk number that tightens it). Cents, not a float.
+       pack-ae-v2 is the other way: a money transfer, money order, or
+       bill needs identification at any amount. The 3,500 line is
+       foreign exchange. */
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const packIdNow = packNow && packNow.packId;
+    const aeV2 = packIdNow === 'pack-ae-v2';
+    const diligence = (window.CDOS.deskThresholds && window.CDOS.deskThresholds() || {}).transferDueDiligence || null;
+    const ukTransfer = packIdNow === 'pack-gb-v2' ? diligence : null;
     const transferKind = isSend || isReceive || isMO || isBill;
     let ukIdRequired = null;
     if (ukTransfer && transferKind && window.CDOS._transfers && window.CDOS._transfers.transferRuling) {
@@ -519,9 +526,10 @@
       });
       ukIdRequired = !!ruling.idRequired || unpriced;
     }
+    const aeTransfer = aeV2 && transferKind;
     const idRequired = !paused && (ukIdRequired != null
       ? ukIdRequired
-      : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+      : (aeTransfer || unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };
@@ -562,10 +570,12 @@
     }
     /* A United Kingdom desk following the pack has no cash report, so
        a small exchange does not need purpose and source of funds.
-       A reporting number the desk typed still does, and so does every
-       other pack. */
-    const noStatutoryCashReport = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-gb-v2' && !(TH > 0));
-    if (serverBacked && isExchange && !single && !noStatutoryCashReport) {
+       A UAE desk following the pack is the same under AED 35,000, and
+       needs the fields at 35,000 or more. A reporting number the desk
+       typed still does, and so does every other pack. */
+    const noStatutoryCashReport = !!(packIdNow === 'pack-gb-v2' && !(TH > 0));
+    const aeCdd = aeV2 && isExchange && !unpriced && (inCadEquiv >= 35000 || (TH != null && TH > 0 && inCadEquiv >= TH));
+    if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd)) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
     }

@@ -32,12 +32,18 @@ import {
   RULES_UNAVAILABLE_NOTICE,
   type JurisdictionPack,
 } from "./jurisdiction.js";
+import { idKindForDeal } from "./compliance-gate.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
 import {
   purposeDecision,
   UK_PACK_V2,
   ukDueDiligenceBlocks,
 } from "./uk-mlr.js";
+import {
+  AE_PACK_V2,
+  aeDueDiligenceBlocks,
+  aePurposeDecision,
+} from "./uae-exchange.js";
 import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -360,6 +366,28 @@ export async function requireIdentification(
     }
     return { ...stamp, identificationRequired: false };
   }
+  /* pack-ae-v2 does not use the single identification column as the
+     gate. Foreign exchange is AED 3,500 or more. A money transfer is
+     every deal. A stored number cannot raise the 3,500 floor. A
+     verified customer has already satisfied that duty. See
+     uae-exchange.ts. */
+  if (pack.packId === AE_PACK_V2) {
+    if (idStatus === "verified") return { ...stamp, identificationRequired: false };
+    const block = await aeDueDiligenceBlocks(
+      client,
+      actor.legalEntityId,
+      pack,
+      amountHome,
+      deal,
+    );
+    if (block) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return { ...stamp, identificationRequired: false };
+  }
   const country = await countryIdentification(client, {
     legalEntityId: actor.legalEntityId,
     branchId: actor.branchId,
@@ -398,8 +426,11 @@ export async function requireIdentification(
    line still requires them, because "we could not tell whether this
    was reportable, so we asked for nothing" is not an answer. The
    United Kingdom v2 pack is the exception: the law has no large-cash
-   report, and a zero on that column means exactly that. A number the
-   desk types for itself still binds. */
+   report, and a zero on that column means exactly that. pack-ae-v2
+   is the exception on a foreign exchange under AED 35,000: a zero
+   reporting column means there is no cash report, not that every
+   exchange needs the fields. A money transfer on that pack needs
+   them at any amount. A number the desk types still binds. */
 const NO_REPORTING_LINE =
   "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed.";
 
@@ -410,6 +441,7 @@ export async function requirePurposeAndSource(
   amountHome: Decimal,
   purpose: string,
   sourceOfFunds: string,
+  deal?: { kind: string },
 ): Promise<void> {
   if (purpose.trim() && sourceOfFunds.trim()) return;
   /* The resolved line, not the figure printed on the pack row. A
@@ -417,6 +449,18 @@ export async function requirePurposeAndSource(
      the comparison has to be the converted amount. pack-gb-v2 stores
      0, which this reader treats as no amount. */
   const line = await resolveReportThreshold(client, legalEntityId, pack);
+  if (pack.packId === AE_PACK_V2) {
+    const decision = aePurposeDecision(
+      idKindForDeal(deal?.kind ?? "fx"),
+      line,
+      amountHome,
+    );
+    if (decision === "allow") return;
+    throw new LedgerError(
+      "COMPLIANCE_BLOCKED",
+      "Authoritative compliance policy blocked posting.",
+    );
+  }
   const decision = purposeDecision(pack.packId, line, amountHome);
   if (decision === "allow") return;
   throw new LedgerError(
@@ -674,6 +718,21 @@ export class LedgerService {
         },
       );
       if (!serbia.ok) throw new LedgerError("COMPLIANCE_BLOCKED", serbia.message);
+      /* Only this pack. A quote on any other pack posts without a
+         purpose check here, the same as it did before. The 35,000
+         line would be skipped if the real till (which posts a frozen
+         quote) never asked. */
+      if (pack.packId === AE_PACK_V2) {
+        await requirePurposeAndSource(
+          client,
+          actor.legalEntityId,
+          pack,
+          inputHome,
+          quote.purpose,
+          quote.sourceOfFunds,
+          { kind: "exchange" },
+        );
+      }
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
@@ -1200,8 +1259,8 @@ export class LedgerService {
       /* The 2027 EU pack has no large-cash report, so an empty reporting
          line is not "purpose on every deal". Due diligence asks for it
          inside requireIdentification, and only when that line is hit.
-         Every other pack, including the United Kingdom, goes through
-         requirePurposeAndSource. */
+         Every other pack, including the United Kingdom and the UAE,
+         goes through requirePurposeAndSource. */
       if (pack.packId !== EU_AMLR_PACK_ID) {
         await requirePurposeAndSource(
           client,
@@ -1210,6 +1269,7 @@ export class LedgerService {
           inputHome,
           request.purpose,
           request.sourceOfFunds,
+          { kind: "exchange" },
         );
       }
       const destination = await client.query(

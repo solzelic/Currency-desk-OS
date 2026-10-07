@@ -173,6 +173,15 @@ desk whose pack says 1,000 cleared four deals in five that it was obliged
 to identify; a UAE desk on 3,500 dirhams refused business it was entitled
 to take. The variable name was the bug in miniature.
 
+`pack-ae-v2` is the other way around. AED 3,500 or more is the
+foreign-exchange identification floor, and a desk must not raise it.
+A stored number at or above 3,500 is ignored. A number below 3,500
+tightens. A money transfer on that pack is identified at any amount,
+whatever the box says. The reporting column is 0, which means there
+is no cash report. It does not mean "cannot say", and it does not
+demand purpose and source of funds on every foreign exchange. See
+`docs/UAE_PACK.md`.
+
 ### When nothing can state a line
 
 `resolveIdThreshold` returns `null` where neither the desk nor its pack

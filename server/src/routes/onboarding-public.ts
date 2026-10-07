@@ -376,9 +376,10 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     const j = JURISDICTION[String(seeded.country ?? "")];
     /* A blank ID answer takes the cash identification default when the
        country has one (the EU cash line), otherwise the occasional
-       identification seed (the United Kingdom's £12,000), otherwise
-       the reporting line. A country with no amount report must not be
-       seeded with the word "null" or with 0. */
+       identification seed (the United Kingdom's £12,000, or the UAE
+       foreign-exchange line of AED 3,500), otherwise the reporting
+       line. A country with no amount report must not be seeded with
+       the word "null" or with 0. */
     if (j && !seeded.idOver) {
       const picked = j.idDefault ?? j.idSeed ?? j.reportThreshold;
       if (typeof picked === "number" && picked > 0) seeded.idOver = String(picked);

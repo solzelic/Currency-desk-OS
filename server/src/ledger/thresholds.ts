@@ -47,6 +47,10 @@ import {
   ukTransferDueDiligence,
   type TransferDueDiligence,
 } from "./uk-mlr.js";
+import {
+  AE_PACK_V2,
+  aeTransferDueDiligence,
+} from "./uae-exchange.js";
 
 /** Where a desk's own number stands against what its regulator requires. */
 export type Posture =
@@ -96,8 +100,9 @@ export type DeskThresholds = {
   aggregationHours: ThresholdSetting<number>;
   /** how long filed reports and their records are kept */
   retentionYears: ThresholdSetting<number>;
-  /** The transfer identification line, already resolved, on pack-gb-v2.
-      Null on every other pack, which keeps using `idThreshold`. */
+  /** The transfer identification line, already resolved, on pack-gb-v2
+      and pack-ae-v2. everyDeal means any amount. Null on every other
+      pack, which keeps using `idThreshold`. */
   transferDueDiligence: TransferDueDiligence | null;
 };
 
@@ -342,7 +347,9 @@ export async function readDeskThresholds(
   const transferDueDiligence =
     pack.packId === UK_PACK_V2
       ? await ukTransferDueDiligence(client, legalEntityId, pack)
-      : null;
+      : pack.packId === AE_PACK_V2
+        ? await aeTransferDueDiligence(client, pack)
+        : null;
   return {
     currency: pack.homeCurrency,
     packId: pack.packId,
