@@ -39,6 +39,11 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
   test.setTimeout(180_000);
   const prior = await pool.query(`SELECT id, fetched_at FROM market_rates`);
   await pool.query(
+    `INSERT INTO enquiries (id, reference, kind, email, name, status)
+     VALUES ($1, $2, 'early_access', $3, $4, 'invited')`,
+    [`enq-rs${stamp}`, `CD-R${String(stamp).slice(-6)}`, EMAIL, "Serbia Owner"],
+  );
+  await pool.query(
     `INSERT INTO market_rates (id, provider, mids, fetched_at)
      VALUES ($1, 'test', $2::jsonb, now())`,
     [SNAP, JSON.stringify(MIDS)],

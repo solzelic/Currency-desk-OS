@@ -306,6 +306,10 @@ export async function readDeskThresholds(
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
+      /* Null on the stored pack means the deals are not added together
+         (Serbia, and the 2027 EU pack). An entity that has not stored a
+         pack id still follows the pack resolvePack already chose, so the
+         baseline keeps its 24-hour window. */
       await packAggregationHours(client, pack, row),
       "higher_is_stricter",
     ),
