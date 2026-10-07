@@ -39,8 +39,10 @@ test("a cashier searches from the keyboard and cannot jump somewhere the dock hi
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(dialog).toBeVisible();
   await page.getByLabel("Search the desk").fill("rate");
-  const rate = dialog.getByRole("option", { name: /Rate board/ });
-  await expect(rate).toBeVisible();
+  /* The empty box already lists Rate board, so visibility alone does not
+     mean the query has landed. One row means the others have dropped. */
+  await expect(dialog.getByRole("option")).toHaveCount(1);
+  await expect(dialog.getByRole("option", { name: /Rate board/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(page.locator(".win").filter({ hasText: "Rate Board" }).first()).toBeVisible();
