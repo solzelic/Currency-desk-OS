@@ -2808,6 +2808,542 @@
 })();
 
 
+/* ---- os-src/cdos-escpos.js ---- */
+/* ESC/POS bytes for a receipt printer.
+   Text, a logo raster, a QR command, a cut, and a cash-drawer pulse.
+   Lines the printer's code page cannot draw are rasters, not question marks,
+   when the caller supplies a bitmap. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) {
+    root.CDOS = root.CDOS || {};
+    root.CDOS.escpos = api;
+  }
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  function concat(parts) {
+    var n = 0;
+    var i;
+    for (i = 0; i < parts.length; i++) n += parts[i].length;
+    var out = new Uint8Array(n);
+    var at = 0;
+    for (i = 0; i < parts.length; i++) {
+      out.set(parts[i], at);
+      at += parts[i].length;
+    }
+    return out;
+  }
+
+  function bytes(list) {
+    return new Uint8Array(list);
+  }
+
+  function needsRaster(text) {
+    var s = String(text || "");
+    var i;
+    for (i = 0; i < s.length; i++) if (s.charCodeAt(i) > 126) return true;
+    return false;
+  }
+
+  function textLine(text) {
+    var s = String(text || "");
+    var list = [0x1b, 0x74, 0x00];
+    var i;
+    for (i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      list.push(c >= 32 && c <= 126 ? c : 0x3f);
+    }
+    list.push(0x0a);
+    return bytes(list);
+  }
+
+  function rasterCommand(bmp) {
+    var widthBytes = bmp.widthBytes | 0;
+    var height = bmp.height | 0;
+    var head = bytes([
+      0x1d, 0x76, 0x30, 0x00,
+      widthBytes & 0xff, (widthBytes >> 8) & 0xff,
+      height & 0xff, (height >> 8) & 0xff,
+    ]);
+    return concat([head, bmp.data]);
+  }
+
+  function qrCommand(url) {
+    var s = String(url || "");
+    var data = [];
+    var i;
+    for (i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 32 && c <= 126) data.push(c);
+    }
+    var len = data.length + 3;
+    return concat([
+      bytes([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+      bytes([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06]),
+      bytes([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+      bytes([0x1d, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30].concat(data)),
+      bytes([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+    ]);
+  }
+
+  function drawerPulse() {
+    return bytes([0x1b, 0x70, 0x00, 0x19, 0x19]);
+  }
+
+  function lineBytes(line, rasterize) {
+    if (needsRaster(line)) {
+      var bmp = rasterize ? rasterize(line) : null;
+      if (bmp && bmp.data) return rasterCommand(bmp);
+      return null;
+    }
+    return textLine(line);
+  }
+
+  function encodeReceipt(model, hooks) {
+    var src = model || {};
+    var rasterize = hooks && hooks.rasterize;
+    var parts = [bytes([0x1b, 0x40]), bytes([0x1b, 0x61, 0x01])];
+    if (src.logo && src.logo.data) parts.push(rasterCommand(src.logo));
+    var lines = src.lines || [];
+    var i;
+    for (i = 0; i < lines.length; i++) {
+      var piece = lineBytes(lines[i], rasterize);
+      if (piece) parts.push(piece);
+    }
+    if (src.qrUrl) parts.push(qrCommand(src.qrUrl));
+    parts.push(bytes([0x0a, 0x0a, 0x0a]));
+    if (src.drawer) parts.push(drawerPulse());
+    if (src.cut !== false) parts.push(bytes([0x1d, 0x56, 0x42, 0x00]));
+    return concat(parts);
+  }
+
+  return {
+    needsRaster: needsRaster,
+    drawerPulse: drawerPulse,
+    qrCommand: qrCommand,
+    rasterCommand: rasterCommand,
+    encodeReceipt: encodeReceipt,
+  };
+});
+
+
+/* ---- os-src/cdos-receipt.js ---- */
+/* Receipt drawing, browser print, and direct ESC/POS.
+   The closing line is receiptClosing(), the same sentence ReceiptModal
+   already used. A printer failure must not throw out to the deal. */
+(function () {
+  var CLOSING = "Thank you \u2014 keep for your records";
+  var HEADING = "CurrencyDesk \u2014 Exchange Receipt";
+  var PRINTER_KEY = "local_printer_v1";
+  var FONT = '"IBM Plex Mono","Noto Sans","Noto Naskh Arabic","Noto Sans CJK JP","Noto Sans JP","Hiragino Sans","Yu Gothic","Segoe UI",sans-serif';
+
+  var PRINTER_HELP = [
+    "Browser print is the default. It works with any printer the computer already has, including a receipt printer installed as a normal printer.",
+    "USB or network receipt printer (Epson TM-T20, TM-m30, Star TSP100):",
+    "1. Install the printer with the maker's driver so it shows up as a printer on this computer.",
+    "2. Set the paper to 80mm (or 58mm if that is the roll in the printer).",
+    "3. In the print dialog, turn headers and footers off, and set margins to none.",
+    "4. Star printers must be set to ESC/POS mode. Many Star printers, including the TSP100, ship in StarPRNT mode. Change that in the printer's memory switch or in Star Quick Setup. This desk sends ESC/POS, not StarPRNT.",
+    "Office printer:",
+    "1. Choose A4 or Letter under Receipts.",
+    "2. Print from the dialog. To keep a file, choose Save as PDF in that same dialog.",
+    "iPhone or iPad:",
+    "Safari cannot open a USB or Bluetooth printer from a web page. Use AirPrint. Put the printer and the iPad on the same Wi-Fi, then tap Print and pick the printer.",
+    "Direct printing (Chrome or Edge on a computer):",
+    "1. Under Printer setup, choose USB, serial, or Bluetooth.",
+    "2. Pair the printer and print a test.",
+    "3. Epson, Bixolon, and other ESC/POS printers can use USB. The browser asks you to pick the device.",
+    "4. A serial cable uses the serial port, usually at 9600 baud.",
+    "5. Bluetooth here is Bluetooth Low Energy. Many receipt printers use classic Bluetooth (SPP), which a web page cannot open. Pair those in the operating system and print with the browser dialog, or use a serial port if the printer offers one.",
+    "6. The cash drawer plugs into the printer's DK port, not into the computer. Open cash drawer sends the ESC/POS pulse. Test it before a customer is at the counter.",
+    "This desk does not send raw bytes to a network port (TCP 9100). A page that could send bytes to any address could reach devices it should not. A print agent for port 9100 is not part of this desk.",
+    "If a direct print fails, the ordinary print dialog opens. The deal is already posted. A printer problem never undoes it.",
+  ].join("\n");
+
+  function receiptClosing(settings) {
+    var s = settings || {};
+    return s.receiptFooter || CLOSING;
+  }
+
+  function receiptHeading(settings, shopName) {
+    var s = settings || {};
+    if (s.receiptHeader) return s.receiptHeader;
+    if (shopName) return shopName;
+    return HEADING;
+  }
+
+  function esc(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function present(value) {
+    if (value == null) return null;
+    var s = String(value).trim();
+    return s ? s : null;
+  }
+
+  var PAGE = { "80mm": "80mm auto", "58mm": "58mm auto", a4: "A4", letter: "letter" };
+  var SHEET = { "80mm": "72mm", "58mm": "50mm", a4: "180mm", letter: "180mm" };
+
+  function renderReceiptFragment(model) {
+    var m = model || {};
+    var paper = PAGE[m.paper] ? m.paper : "80mm";
+    var rows = "";
+    function row(label, value) {
+      if (!value) return;
+      rows += "<tr><td>" + esc(label) + "</td><td>" + esc(value) + "</td></tr>";
+    }
+    row("Receipt", m.receiptNumber);
+    row("Date", m.when);
+    row("Client", m.clientName);
+    row("Paid", m.paid);
+    row("Rate", m.rate);
+    row("Fee", m.fee);
+    row("Received", m.received);
+    var logo = m.showLogo && m.logo ? '<img class="logo" alt="" src="' + esc(m.logo) + '">' : "";
+    var qr = m.qrDataUrl ? '<img class="qr" alt="" src="' + esc(m.qrDataUrl) + '">' : "";
+    return '<style>'
+      + ".cd-receipt{box-sizing:border-box;width:" + SHEET[paper] + ";max-width:100%;margin:0 auto;padding:8mm 5mm 10mm;background:#fff !important;color:#111 !important;font-family:" + FONT + "}"
+      + ".cd-receipt h1{font-size:15px;margin:0 0 4px;text-align:center;color:#111 !important}"
+      + ".cd-receipt .muted{font-size:12px;text-align:center;margin:0;color:#222 !important}"
+      + ".cd-receipt table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}"
+      + ".cd-receipt td{padding:3px 0;vertical-align:top;color:#111 !important} .cd-receipt td:last-child{text-align:right;font-weight:600}"
+      + ".cd-receipt .rule{border-top:1px dashed #000;margin:10px 0}"
+      + ".cd-receipt .closing{text-align:center;font-size:13px;margin:12px 0 0;color:#111 !important}"
+      + ".cd-receipt .fine{text-align:center;font-size:11px;margin:8px 0 0;color:#222}"
+      + ".cd-receipt .sample{text-align:center;font-size:10px;letter-spacing:.12em;margin:0 0 6px}"
+      + ".cd-receipt img.logo{display:block;max-height:42px;margin:0 auto 8px}"
+      + ".cd-receipt img.qr{display:block;width:96px;height:96px;margin:10px auto 0}"
+      + "</style>"
+      + '<article class="cd-receipt" data-receipt-paper="' + paper + '">'
+      + (m.sample ? '<p class="sample">SAMPLE. NOT A POSTED DEAL.</p>' : "")
+      + logo
+      + "<h1>" + esc(m.heading || "") + "</h1>"
+      + (m.address ? '<p class="muted">' + esc(m.address) + "</p>" : "")
+      + (m.phone ? '<p class="muted">' + esc(m.phone) + "</p>" : "")
+      + (m.licence ? '<p class="muted">' + esc(m.licence) + "</p>" : "")
+      + '<p class="muted">' + esc(m.cdIdLine || "No CurrencyDesk ID issued yet") + "</p>"
+      + '<div class="rule"></div><table>' + rows + "</table>"
+      + '<div class="rule"></div>'
+      + '<p class="closing" data-receipt-closing="1">' + esc(m.closing || CLOSING) + "</p>"
+      + (m.disclaimer ? '<p class="fine">' + esc(m.disclaimer) + "</p>" : "")
+      + qr
+      + (m.rateUrl ? '<p class="fine">' + esc(m.rateUrl) + "</p>" : "")
+      + "</article>";
+  }
+
+  function renderReceiptHtml(model, opts) {
+    var m = model || {};
+    var paper = PAGE[m.paper] ? m.paper : "80mm";
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ' + esc(m.receiptNumber || "") + '</title>'
+      + '<link rel="stylesheet" href="/web/fonts/fonts.css">'
+      + "<style>@page{size:" + PAGE[paper] + ";margin:0} html,body{margin:0;padding:0;background:#fff;color:#000}</style></head><body>"
+      + renderReceiptFragment(model)
+      + (opts && opts.autoprint ? '<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},40)})</script>' : "")
+      + "</body></html>";
+  }
+
+  function loadPrinter() {
+    try {
+      var raw = localStorage.getItem(PRINTER_KEY);
+      return raw ? JSON.parse(raw) : { connection: "browser", autoDrawer: false, baud: 9600 };
+    } catch (e) {
+      return { connection: "browser", autoDrawer: false, baud: 9600 };
+    }
+  }
+
+  function savePrinter(next) {
+    var cur = loadPrinter();
+    var merged = Object.assign({}, cur, next || {});
+    try { localStorage.setItem(PRINTER_KEY, JSON.stringify(merged)); } catch (e) {}
+    return merged;
+  }
+
+  function rasterizeLine(text) {
+    if (typeof document === "undefined") return null;
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    var font = "22px " + FONT;
+    ctx.font = font;
+    var width = Math.max(8, Math.ceil(ctx.measureText(String(text)).width) + 8);
+    var height = 32;
+    canvas.width = width;
+    canvas.height = height;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#000";
+    ctx.font = font;
+    ctx.textBaseline = "top";
+    ctx.fillText(String(text), 4, 4);
+    var img = ctx.getImageData(0, 0, width, height);
+    var widthBytes = Math.ceil(width / 8);
+    var data = new Uint8Array(widthBytes * height);
+    var y, x;
+    for (y = 0; y < height; y++) {
+      for (x = 0; x < width; x++) {
+        var i = (y * width + x) * 4;
+        var dark = img.data[i] < 160;
+        if (dark) data[y * widthBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+    return { widthBytes: widthBytes, height: height, data: data };
+  }
+
+  function linesOf(model) {
+    var m = model || {};
+    var lines = [];
+    function add(value) { if (value) lines.push(String(value)); }
+    add(m.heading);
+    add(m.address);
+    add(m.phone);
+    add(m.licence);
+    add(m.cdIdLine);
+    add(m.receiptNumber ? "Receipt " + m.receiptNumber : "");
+    add(m.when);
+    add(m.clientName ? "Client " + m.clientName : "");
+    add(m.paid ? "Paid " + m.paid : "");
+    add(m.rate ? "Rate " + m.rate : "");
+    add(m.fee ? "Fee " + m.fee : "");
+    add(m.received ? "Received " + m.received : "");
+    add(m.closing);
+    return lines;
+  }
+
+  var USB_FILTERS = [
+    { vendorId: 0x04b8 },
+    { vendorId: 0x0519 },
+    { vendorId: 0x1504 },
+    { classCode: 0x07 },
+  ];
+  var BLE = [
+    "000018f0-0000-1000-8000-00805f9b34fb",
+    "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+    "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  ];
+
+  function directAvailable() {
+    var nav = typeof navigator !== "undefined" ? navigator : {};
+    return {
+      usb: !!nav.usb,
+      serial: !!nav.serial,
+      bluetooth: !!nav.bluetooth,
+    };
+  }
+
+  async function writeUsb(pref, data) {
+    var list = await navigator.usb.getDevices();
+    var device = null;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].vendorId === pref.vendorId && list[i].productId === pref.productId) device = list[i];
+    }
+    if (!device) device = await navigator.usb.requestDevice({ filters: USB_FILTERS });
+    await device.open();
+    if (device.configuration == null) await device.selectConfiguration(1);
+    var iface = device.configuration.interfaces[0];
+    await device.claimInterface(iface.interfaceNumber);
+    var alt = iface.alternate || iface.alternates[0];
+    var ep = null;
+    var endpoints = alt.endpoints || [];
+    for (i = 0; i < endpoints.length; i++) if (endpoints[i].direction === "out") ep = endpoints[i];
+    if (!ep) throw new Error("This printer has no output endpoint.");
+    await device.transferOut(ep.endpointNumber, data);
+    savePrinter({
+      connection: "usb",
+      label: device.productName || "USB printer",
+      vendorId: device.vendorId,
+      productId: device.productId,
+    });
+  }
+
+  async function writeSerial(pref, data) {
+    var ports = await navigator.serial.getPorts();
+    var port = ports[0];
+    if (!port) port = await navigator.serial.requestPort();
+    if (!port.readable && !port.writable) await port.open({ baudRate: pref.baud || 9600 });
+    var writer = port.writable.getWriter();
+    await writer.write(data);
+    writer.releaseLock();
+    savePrinter({ connection: "serial", label: "Serial printer", baud: pref.baud || 9600 });
+  }
+
+  async function writeBle(pref, data) {
+    var device = pref._device;
+    if (!device) {
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE });
+    }
+    var server = await device.gatt.connect();
+    var service = null;
+    var i;
+    for (i = 0; i < BLE.length; i++) {
+      try { service = await server.getPrimaryService(BLE[i]); break; } catch (e) {}
+    }
+    if (!service) throw new Error("This Bluetooth printer did not offer a known print service. Classic Bluetooth (SPP) cannot be opened from a page.");
+    var chars = await service.getCharacteristics();
+    var ch = null;
+    for (i = 0; i < chars.length; i++) {
+      if (chars[i].properties.write || chars[i].properties.writeWithoutResponse) ch = chars[i];
+    }
+    if (!ch) throw new Error("This Bluetooth printer has nowhere to write.");
+    var size = 20;
+    for (i = 0; i < data.length; i += size) {
+      await ch.writeValue(data.slice(i, i + size));
+    }
+    savePrinter({ connection: "bluetooth", label: device.name || "Bluetooth printer" });
+    var stored = loadPrinter();
+    stored._device = device;
+    return stored;
+  }
+
+  async function sendDirect(pref, data) {
+    if (!pref || pref.connection === "browser") throw new Error("browser");
+    if (pref.connection === "usb") return writeUsb(pref, data);
+    if (pref.connection === "serial") return writeSerial(pref, data);
+    if (pref.connection === "bluetooth") return writeBle(pref, data);
+    throw new Error("browser");
+  }
+
+  function openBrowserPrint(model) {
+    var html = renderReceiptHtml(model, { autoprint: true });
+    var w = window.open("", "cdos-receipt-print", "noopener,width=480,height=720");
+    if (!w) {
+      window.print();
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  async function printModel(model) {
+    var pref = loadPrinter();
+    var thermal = model.paper === "58mm" || model.paper === "80mm" || !model.paper;
+    if (pref && pref.connection && pref.connection !== "browser" && thermal && window.CDOS.escpos) {
+      try {
+        var bytes = window.CDOS.escpos.encodeReceipt({
+          lines: linesOf(model),
+          qrUrl: model.rateUrl || null,
+          drawer: !!pref.autoDrawer,
+          cut: true,
+        }, { rasterize: rasterizeLine });
+        await sendDirect(pref, bytes);
+        return { via: pref.connection };
+      } catch (e) {
+        openBrowserPrint(model);
+        return { via: "browser", fallback: true };
+      }
+    }
+    openBrowserPrint(model);
+    return { via: "browser" };
+  }
+
+  async function pulseDrawer() {
+    var pref = loadPrinter();
+    if (!window.CDOS.escpos) return { ok: false, message: "Direct printing is not loaded." };
+    if (!pref || !pref.connection || pref.connection === "browser") {
+      return { ok: false, message: "Pair a receipt printer first. The drawer plugs into the printer, not the computer." };
+    }
+    try {
+      await sendDirect(pref, window.CDOS.escpos.drawerPulse());
+      return { ok: true, message: "Drawer pulse sent." };
+    } catch (e) {
+      return { ok: false, message: e && e.message ? e.message : "The drawer did not open. The deal is unchanged." };
+    }
+  }
+
+  function amountText(value) {
+    if (value == null || value === "") return null;
+    return String(value);
+  }
+
+  function modelFromRow(row, settings, desk) {
+    var r = row || {};
+    var s = settings || {};
+    var d = desk || {};
+    var idn = d.identity || {};
+    var opt = d.options || {};
+    var sr = r.serverReceipt || {};
+    var la = r.ledgerAmounts || {};
+    function pick(server, ledger, local) {
+      var a = present(server);
+      if (a) return a;
+      var b = present(ledger);
+      if (b) return b;
+      return present(local);
+    }
+    var showRate = opt.showRate !== false && s.showRate !== false;
+    var showFees = opt.showFees !== false && s.showFees !== false;
+    var showClient = opt.showClientName !== false && s.showClientName !== false;
+    var footer = opt.footer || s.receiptFooter || "";
+    var header = opt.header || s.receiptHeader || "";
+    var paper = opt.paper || s.receiptPaper || "80mm";
+    var paid = pick(sr.inputAmount, la.inputAmount, r.inAmt);
+    var got = pick(sr.outputAmount, la.outputAmount, r.outAmt);
+    var from = pick(sr.fromCurrency, la.from, r.inCcy);
+    var to = pick(sr.toCurrency, la.to, r.outCcy);
+    var fee = pick(sr.feeCad, la.feeCad, r.fee);
+    var rate = pick(sr.rate, la.rate, r.rate);
+    return {
+      sample: !!r.sample,
+      paper: paper,
+      heading: receiptHeading({ receiptHeader: header }, idn.shopName || s.operatingName || s.bizName),
+      address: idn.address || [s.bizAddress, s.bizCity].filter(Boolean).join(", ") || null,
+      phone: idn.phone || s.bizPhone || null,
+      licence: (opt.showMsb !== false && s.showMsbOnReceipt !== false) ? (idn.licence || s.msbNumber || null) : null,
+      cdIdLine: idn.cdId || "No CurrencyDesk ID issued yet",
+      showLogo: opt.showLogo !== false && s.showLogoOnReceipt !== false,
+      logo: opt.logo || s.logo || null,
+      receiptNumber: pick(sr.transactionRef, null, r.ref),
+      when: sr.postedAtLocal || r.date || null,
+      clientName: showClient ? (sr.customerName || r.customer || null) : null,
+      paid: paid && from ? paid + " " + from : null,
+      received: got && to ? got + " " + to : null,
+      rate: showRate ? amountText(rate) : null,
+      fee: showFees ? amountText(fee) : null,
+      closing: receiptClosing({ receiptFooter: footer }),
+      disclaimer: opt.disclaimer || s.receiptDisclaimer || null,
+      qrDataUrl: (opt.showQr !== false) ? (d.qrDataUrl || null) : null,
+      rateUrl: (opt.showQr !== false) ? (idn.rateUrl || null) : null,
+    };
+  }
+
+  function afterDealPosted(row, settings) {
+    try {
+      if (window.CDOS.openDealReceipt) window.CDOS.openDealReceipt(row || {});
+      var opt = (settings && settings.receiptDesk && settings.receiptDesk.options) || {};
+      var auto = !!(settings && settings.autoPrint) || opt.autoPrint === true;
+      if (auto) {
+        setTimeout(function () {
+          try { printModel(modelFromRow(row, settings, settings && settings.receiptDesk)); }
+          catch (e) { try { window.print(); } catch (e2) {} }
+        }, 60);
+      }
+    } catch (e) {}
+  }
+
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    receiptClosing: receiptClosing,
+    receiptHeading: receiptHeading,
+    PRINTER_HELP: PRINTER_HELP,
+    renderReceiptHtml: renderReceiptHtml,
+    renderReceiptFragment: renderReceiptFragment,
+    loadPrinter: loadPrinter,
+    savePrinter: savePrinter,
+    directAvailable: directAvailable,
+    printModel: printModel,
+    pulseDrawer: pulseDrawer,
+    modelFromRow: modelFromRow,
+    afterDealPosted: afterDealPosted,
+    rasterizeLine: rasterizeLine,
+  });
+})();
+
+
 /* ---- os-src/cdos-infotip.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — InfoTip
@@ -4471,14 +5007,21 @@
     }, "Apply"))));
   }
 
-  /* ---- RECEIPT ---- */
+  /* ---- RECEIPT ----
+     The closing line lives in receiptClosing() (os-src/cdos-receipt.js),
+     which is this same sentence. DealReceipt draws the posted receipt. */
   function ReceiptModal({
     row,
     onClose,
     settings
   }) {
+    if (window.CDOS.DealReceipt) return /*#__PURE__*/React.createElement(window.CDOS.DealReceipt, {
+      row: row,
+      settings: settings,
+      onClose: onClose
+    });
     const s = settings || {};
-    const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const head = window.CDOS.receiptHeading ? window.CDOS.receiptHeading(s) : s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -4591,7 +5134,7 @@
       style: {
         color: CD.mute
       }
-    }, s.receiptFooter || 'Thank you — keep for your records'), s.receiptDisclaimer && /*#__PURE__*/React.createElement("div", {
+    }, window.CDOS.receiptClosing ? window.CDOS.receiptClosing(s) : s.receiptFooter || 'Thank you — keep for your records'), s.receiptDisclaimer && /*#__PURE__*/React.createElement("div", {
       className: "text-center text-[9px] mt-2",
       style: {
         color: CD.faint
@@ -4624,6 +5167,742 @@
     Audit,
     Calc,
     ReceiptModal
+  });
+})();
+
+/* ---- os-src/cdos-receipt-ui.jsx ---- */
+/* Receipts and Printer setup, plus the receipt a teller sees after a deal. */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo
+  } = React;
+  const {
+    CD,
+    Ic
+  } = window.CDOS;
+  const SAMPLES = {
+    JPY: {
+      inAmt: "100.00",
+      inCcy: "CAD",
+      outAmt: "10000",
+      outCcy: "JPY",
+      rate: "100.00",
+      fee: "2.50"
+    },
+    AED: {
+      inAmt: "200.00",
+      inCcy: "CAD",
+      outAmt: "500.00",
+      outCcy: "AED",
+      rate: "2.50",
+      fee: "3.00"
+    },
+    RSD: {
+      inAmt: "50.00",
+      inCcy: "CAD",
+      outAmt: "4000.00",
+      outCcy: "RSD",
+      rate: "80.00",
+      fee: "1.50"
+    },
+    USD: {
+      inAmt: "100.00",
+      inCcy: "CAD",
+      outAmt: "73.00",
+      outCcy: "USD",
+      rate: "0.73",
+      fee: "4.00"
+    }
+  };
+  function useDesk() {
+    const [desk, setDesk] = useState(null);
+    const [err, setErr] = useState("");
+    const reload = () => fetch("/api/desk/receipt-settings", {
+      credentials: "same-origin"
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (data) setDesk(data);
+    }).catch(() => {});
+    useEffect(() => {
+      reload();
+    }, []);
+    const save = async patch => {
+      setErr("");
+      const res = await fetch("/api/desk/receipt-settings", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(patch)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(data.message || "Receipt setup was not saved.");
+        return null;
+      }
+      setDesk(data);
+      return data;
+    };
+    return {
+      desk,
+      setDesk,
+      err,
+      setErr,
+      save,
+      reload
+    };
+  }
+  function Preview({
+    model
+  }) {
+    const html = window.CDOS.renderReceiptFragment(model);
+    return /*#__PURE__*/React.createElement("div", {
+      "data-receipt-preview": "1",
+      style: {
+        background: "#fff",
+        color: "#000",
+        border: "1px solid #111",
+        overflow: "auto"
+      },
+      dangerouslySetInnerHTML: {
+        __html: html
+      }
+    });
+  }
+  function ReceiptSettings({
+    settings,
+    set,
+    me
+  }) {
+    const owner = me && me.role === "Owner";
+    const api = useDesk();
+    const opt = api.desk && api.desk.options || {};
+    const idn = api.desk && api.desk.identity || {};
+    const [form, setForm] = useState(null);
+    const [sampleCcy, setSampleCcy] = useState("JPY");
+    useEffect(() => {
+      if (!api.desk || form) return;
+      setForm({
+        header: opt.header || settings.receiptHeader || "",
+        footer: opt.footer || settings.receiptFooter || "",
+        disclaimer: opt.disclaimer || settings.receiptDisclaimer || "",
+        showRate: opt.showRate !== false,
+        showFees: opt.showFees !== false,
+        showClientName: opt.showClientName !== false,
+        showQr: opt.showQr !== false,
+        showLogo: opt.showLogo !== false && settings.showLogoOnReceipt !== false,
+        showMsb: opt.showMsb !== false && settings.showMsbOnReceipt !== false,
+        paper: opt.paper || "80mm",
+        autoPrint: opt.autoPrint === true,
+        offerEmail: opt.offerEmail === true,
+        logo: opt.logo || settings.logo || null
+      });
+    }, [api.desk]);
+    const f = form || {
+      header: settings.receiptHeader || "",
+      footer: settings.receiptFooter || "",
+      disclaimer: settings.receiptDisclaimer || "",
+      showRate: true,
+      showFees: true,
+      showClientName: true,
+      showQr: true,
+      showLogo: settings.showLogoOnReceipt !== false,
+      showMsb: settings.showMsbOnReceipt !== false,
+      paper: "80mm",
+      autoPrint: false,
+      offerEmail: false,
+      logo: settings.logo || null
+    };
+    const patchForm = patch => setForm(Object.assign({}, f, patch));
+    const persist = async patch => {
+      const next = Object.assign({}, f, patch);
+      setForm(next);
+      if (patch.header != null && set) set("receiptHeader", next.header);
+      if (patch.footer != null && set) set("receiptFooter", next.footer);
+      if (patch.disclaimer != null && set) set("receiptDisclaimer", next.disclaimer);
+      if (patch.showLogo != null && set) set("showLogoOnReceipt", next.showLogo);
+      if (patch.showMsb != null && set) set("showMsbOnReceipt", next.showMsb);
+      if (owner) await api.save(patch);
+    };
+    const sample = SAMPLES[sampleCcy] || SAMPLES.JPY;
+    const model = useMemo(() => window.CDOS.modelFromRow({
+      sample: true,
+      ref: "SAMPLE",
+      date: "Sample",
+      customer: "Sample customer",
+      inAmt: sample.inAmt,
+      inCcy: sample.inCcy,
+      outAmt: sample.outAmt,
+      outCcy: sample.outCcy,
+      rate: sample.rate,
+      fee: sample.fee
+    }, Object.assign({}, settings, {
+      receiptHeader: f.header,
+      receiptFooter: f.footer,
+      receiptDisclaimer: f.disclaimer,
+      showLogoOnReceipt: f.showLogo,
+      showMsbOnReceipt: f.showMsb,
+      logo: f.logo
+    }), {
+      options: f,
+      identity: idn,
+      qrDataUrl: f.showQr ? api.desk && api.desk.qrDataUrl : null
+    }), [f, sampleCcy, api.desk, settings]);
+    const field = {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "8px 10px",
+      border: `1px solid ${CD.line}`,
+      borderRadius: 8,
+      background: "transparent",
+      color: CD.ink,
+      fontSize: 13
+    };
+    const onLogo = async file => {
+      const taken = await window.CDOS.intakeIdImage(file);
+      if (!taken.ok) {
+        api.setErr(taken.why);
+        return;
+      }
+      patchForm({
+        logo: taken.dataUrl,
+        showLogo: true
+      });
+      if (set) set("logo", taken.dataUrl, "receipt logo");
+      if (owner) await api.save({
+        logo: taken.dataUrl,
+        showLogo: true
+      });
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      "data-screen": "receipts"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Receipts"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-3",
+      style: {
+        color: CD.mute
+      }
+    }, "What the customer is handed. The preview is a sample, not a posted deal. Language follows the desk: ", idn.language ? idn.language.label : "English", "."), !owner && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Only the owner can change receipt setup."), api.err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.flag || "#8a1f1f"
+      }
+    }, api.err), /*#__PURE__*/React.createElement("div", {
+      className: "cd-receipt-layout"
+    }, /*#__PURE__*/React.createElement("div", {
+      "data-receipt-sheet": "1"
+    }, /*#__PURE__*/React.createElement(Preview, {
+      model: model
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0,
+        flex: "1 1 240px"
+      }
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Sample payout currency"), /*#__PURE__*/React.createElement("select", {
+      "data-sample-ccy": "1",
+      value: sampleCcy,
+      onChange: e => setSampleCcy(e.target.value),
+      className: "text-sm mb-2",
+      style: Object.assign({}, field, {
+        marginTop: 4
+      })
+    }, Object.keys(SAMPLES).map(c => /*#__PURE__*/React.createElement("option", {
+      key: c
+    }, c))), /*#__PURE__*/React.createElement("label", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Header"), /*#__PURE__*/React.createElement("input", {
+      disabled: !owner,
+      value: f.header,
+      placeholder: idn.shopName || "Shop name",
+      onChange: e => patchForm({
+        header: e.target.value
+      }),
+      onBlur: () => persist({
+        header: f.header
+      }),
+      style: Object.assign({}, field, {
+        margin: "4px 0 8px"
+      })
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Footer"), /*#__PURE__*/React.createElement("input", {
+      disabled: !owner,
+      value: f.footer,
+      placeholder: window.CDOS.receiptClosing({}),
+      onChange: e => patchForm({
+        footer: e.target.value
+      }),
+      onBlur: () => persist({
+        footer: f.footer
+      }),
+      style: Object.assign({}, field, {
+        margin: "4px 0 8px"
+      })
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Disclaimer"), /*#__PURE__*/React.createElement("textarea", {
+      disabled: !owner,
+      value: f.disclaimer,
+      rows: 2,
+      onChange: e => patchForm({
+        disclaimer: e.target.value
+      }),
+      onBlur: () => persist({
+        disclaimer: f.disclaimer
+      }),
+      style: Object.assign({}, field, {
+        margin: "4px 0 8px"
+      })
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Paper"), /*#__PURE__*/React.createElement("select", {
+      disabled: !owner,
+      "data-paper": "1",
+      value: f.paper,
+      onChange: e => persist({
+        paper: e.target.value
+      }),
+      style: Object.assign({}, field, {
+        margin: "4px 0 8px"
+      })
+    }, /*#__PURE__*/React.createElement("option", {
+      value: "80mm"
+    }, "80mm thermal"), /*#__PURE__*/React.createElement("option", {
+      value: "58mm"
+    }, "58mm thermal"), /*#__PURE__*/React.createElement("option", {
+      value: "a4"
+    }, "A4"), /*#__PURE__*/React.createElement("option", {
+      value: "letter"
+    }, "Letter")), [["showLogo", "Show logo"], ["showMsb", "Show licence / registration number"], ["showRate", "Show rate"], ["showFees", "Show fees"], ["showClientName", "Show client name"], ["showQr", "Show QR to the public rate page"], ["autoPrint", "Open the print dialog after a deal is posted"], ["offerEmail", "Offer email after each deal"]].map(([key, label]) => /*#__PURE__*/React.createElement("label", {
+      key: key,
+      className: "flex items-center gap-2 text-[13px] mb-1",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      disabled: !owner,
+      checked: !!f[key],
+      onChange: e => persist({
+        [key]: e.target.checked
+      })
+    }), " ", label)), /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Logo ", f.logo ? "on file" : "not uploaded", ". ", idn.cdId ? idn.cdId : "No CurrencyDesk ID issued yet", "."), owner && /*#__PURE__*/React.createElement("label", {
+      className: "text-[12px] inline-block mt-2",
+      style: {
+        color: CD.ink,
+        textDecoration: "underline",
+        cursor: "pointer"
+      }
+    }, "Upload logo", /*#__PURE__*/React.createElement("input", {
+      type: "file",
+      accept: "image/*",
+      style: {
+        display: "none"
+      },
+      onChange: e => {
+        const file = e.target.files && e.target.files[0];
+        if (file) onLogo(file);
+      }
+    })), api.desk && api.desk.emailConfigured === false && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Receipt email is not set up on this desk."))));
+  }
+  function PrinterSetup({
+    me
+  }) {
+    const api = useDesk();
+    const [pref, setPref] = useState(() => window.CDOS.loadPrinter());
+    const [note, setNote] = useState("");
+    const caps = window.CDOS.directAvailable();
+    const help = api.desk && api.desk.printerHelp || window.CDOS.PRINTER_HELP;
+    const owner = me && me.role === "Owner";
+    const opt = api.desk && api.desk.options || {};
+    const pick = connection => setPref(window.CDOS.savePrinter({
+      connection: connection
+    }));
+    const test = async () => {
+      setNote("");
+      const model = window.CDOS.modelFromRow({
+        sample: true,
+        ref: "TEST",
+        date: "Test",
+        customer: "Test",
+        inAmt: "1.00",
+        inCcy: "CAD",
+        outAmt: "1.00",
+        outCcy: "USD",
+        rate: "1.00",
+        fee: "0.00"
+      }, {}, {
+        options: opt,
+        identity: api.desk && api.desk.identity || {},
+        qrDataUrl: null
+      });
+      try {
+        const result = await window.CDOS.printModel(model);
+        setNote(result.fallback ? "Direct print failed. The print dialog is open instead." : "Test sent.");
+      } catch (e) {
+        setNote("The test did not print. The print dialog is the fallback.");
+      }
+    };
+    const drawer = async () => {
+      const result = await window.CDOS.pulseDrawer();
+      setNote(result.message);
+    };
+    const pair = async kind => {
+      setNote("");
+      pick(kind);
+      try {
+        if (kind === "usb") {
+          if (!navigator.usb) throw new Error("This browser has no USB printing. Use the print dialog or AirPrint.");
+          const device = await navigator.usb.requestDevice({
+            filters: [{
+              vendorId: 0x04b8
+            }, {
+              vendorId: 0x0519
+            }, {
+              vendorId: 0x1504
+            }, {
+              classCode: 0x07
+            }]
+          });
+          setPref(window.CDOS.savePrinter({
+            connection: "usb",
+            label: device.productName || "USB printer",
+            vendorId: device.vendorId,
+            productId: device.productId
+          }));
+          setNote("Printer paired on this device.");
+        } else if (kind === "serial") {
+          if (!navigator.serial) throw new Error("This browser has no serial port. Use the print dialog.");
+          await navigator.serial.requestPort();
+          setPref(window.CDOS.savePrinter({
+            connection: "serial",
+            label: "Serial printer"
+          }));
+          setNote("Serial port paired on this device.");
+        } else if (kind === "bluetooth") {
+          if (!navigator.bluetooth) throw new Error("This browser has no Bluetooth printing. Safari on iPhone and iPad uses AirPrint instead.");
+          const device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb", "e7810a71-73ae-499d-8c15-faa9aef0c3f2", "49535343-fe7d-4ae5-8fa9-9fafd205e455"]
+          });
+          setPref(window.CDOS.savePrinter({
+            connection: "bluetooth",
+            label: device.name || "Bluetooth printer"
+          }));
+          setNote("Bluetooth printer paired on this device. Classic Bluetooth (SPP) still has to be a system printer.");
+        }
+      } catch (e) {
+        setNote(e && e.message ? e.message : "The printer was not paired.");
+      }
+    };
+    const btn = {
+      border: `1px solid ${CD.line}`,
+      borderRadius: 8,
+      padding: "6px 10px",
+      fontSize: 13,
+      background: CD.panel,
+      color: CD.ink
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      "data-screen": "printer"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Printer setup"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-3",
+      style: {
+        color: CD.mute
+      }
+    }, "The paired printer stays on this device. It is not copied to the desk's other tills."), !caps.usb && !caps.bluetooth && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, "This browser cannot open USB or Bluetooth from a page. Use AirPrint or the print dialog."), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 mb-3"
+    }, [["browser", "Browser print"], ["usb", "USB"], ["serial", "Serial"], ["bluetooth", "Bluetooth"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+      key: id,
+      "data-connection": id,
+      onClick: () => pick(id),
+      style: Object.assign({}, btn, pref.connection === id ? {
+        background: CD.ink,
+        color: "var(--cd-on-ink)"
+      } : {})
+    }, label))), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Paired: ", pref.label || "none yet", " (", pref.connection || "browser", ")"), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 mb-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      "data-action": "pair-usb",
+      onClick: () => pair("usb"),
+      style: btn
+    }, "Pair USB"), /*#__PURE__*/React.createElement("button", {
+      "data-action": "pair-serial",
+      onClick: () => pair("serial"),
+      style: btn
+    }, "Pair serial"), /*#__PURE__*/React.createElement("button", {
+      "data-action": "pair-bluetooth",
+      onClick: () => pair("bluetooth"),
+      style: btn
+    }, "Pair Bluetooth"), /*#__PURE__*/React.createElement("button", {
+      "data-action": "test-print",
+      onClick: test,
+      style: btn
+    }, "Test print"), /*#__PURE__*/React.createElement("button", {
+      "data-action": "open-drawer",
+      onClick: drawer,
+      style: btn
+    }, "Open cash drawer")), /*#__PURE__*/React.createElement("label", {
+      className: "flex items-center gap-2 text-[13px] mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: !!pref.autoDrawer,
+      onChange: e => setPref(window.CDOS.savePrinter({
+        autoDrawer: e.target.checked
+      }))
+    }), " Open the cash drawer when a receipt prints"), owner && /*#__PURE__*/React.createElement("label", {
+      className: "flex items-center gap-2 text-[13px] mb-3",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: opt.autoPrint === true,
+      onChange: e => api.save({
+        autoPrint: e.target.checked
+      })
+    }), " Open the print dialog after a deal is posted"), note && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, note), /*#__PURE__*/React.createElement("pre", {
+      "data-printer-help": "1",
+      style: {
+        whiteSpace: "pre-wrap",
+        fontFamily: "inherit",
+        fontSize: 12,
+        lineHeight: 1.45,
+        color: CD.text,
+        margin: 0
+      }
+    }, help));
+  }
+  function DealReceipt({
+    row,
+    settings,
+    onClose
+  }) {
+    const [desk, setDesk] = useState(settings && settings.receiptDesk || null);
+    const [emailOpen, setEmailOpen] = useState(false);
+    const [to, setTo] = useState("");
+    const [saveClient, setSaveClient] = useState(false);
+    const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+      let alive = true;
+      fetch("/api/desk/receipt-settings", {
+        credentials: "same-origin"
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        if (!alive || !data) return;
+        setDesk(data);
+        if (data.options && data.options.offerEmail) setEmailOpen(true);
+      }).catch(() => {});
+      return () => {
+        alive = false;
+      };
+    }, []);
+    useEffect(() => {
+      const email = row && row.serverReceipt && row.serverReceipt.clientEmail || row && row.email || "";
+      if (email) setTo(email);
+    }, [row]);
+    const model = window.CDOS.modelFromRow(row, settings, desk);
+    const configured = !desk || desk.emailConfigured !== false;
+    const send = async () => {
+      if (!row || !row.serverTransactionId) {
+        setNote("This receipt is not on the ledger yet, so it cannot be emailed.");
+        return;
+      }
+      setBusy(true);
+      setNote("");
+      try {
+        const res = await fetch("/api/ledger/transactions/" + encodeURIComponent(row.serverTransactionId) + "/receipt/email", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            to: to.trim(),
+            saveToClient: saveClient
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        setNote(data.message || data.detail || (res.ok ? "Sent." : "The receipt email did not send. The deal is unchanged."));
+      } catch (e) {
+        setNote("The receipt email did not send. The deal is unchanged.");
+      } finally {
+        setBusy(false);
+      }
+    };
+    const btn = {
+      border: `1px solid ${CD.line}`,
+      borderRadius: 8,
+      padding: "8px 10px",
+      fontSize: 13,
+      background: CD.panel,
+      color: CD.ink
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "fixed inset-0 flex items-center justify-center p-4",
+      "data-screen": "deal-receipt",
+      style: {
+        background: "var(--cd-scrim)",
+        zIndex: 9000
+      },
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      onClick: e => e.stopPropagation(),
+      style: {
+        width: "min(440px, 100%)",
+        maxHeight: "92vh",
+        overflow: "auto",
+        background: CD.panel,
+        border: `1px solid ${CD.ink}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#fff"
+      },
+      dangerouslySetInnerHTML: {
+        __html: window.CDOS.renderReceiptFragment(model)
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 p-3",
+      "data-receipt-actions": "1",
+      style: {
+        borderTop: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      "data-action": "print",
+      onClick: () => window.CDOS.printModel(model),
+      style: btn
+    }, "Print"), /*#__PURE__*/React.createElement("button", {
+      "data-action": "pdf",
+      onClick: () => window.CDOS.printModel(model),
+      style: btn
+    }, "Save PDF"), configured ? /*#__PURE__*/React.createElement("button", {
+      "data-action": "email",
+      onClick: () => setEmailOpen(true),
+      style: btn
+    }, "Email") : /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Receipt email is not set up on this desk."), /*#__PURE__*/React.createElement("button", {
+      "data-action": "drawer",
+      onClick: async () => {
+        const r = await window.CDOS.pulseDrawer();
+        setNote(r.message);
+      },
+      style: btn
+    }, "Drawer"), /*#__PURE__*/React.createElement("button", {
+      onClick: onClose,
+      style: btn
+    }, "Close")), emailOpen && configured && /*#__PURE__*/React.createElement("div", {
+      className: "px-3 pb-3"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Email this receipt"), /*#__PURE__*/React.createElement("input", {
+      "data-email-to": "1",
+      value: to,
+      onChange: e => setTo(e.target.value),
+      placeholder: "customer@example.com",
+      style: {
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "8px 10px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        marginBottom: 6
+      }
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "flex items-center gap-2 text-[12px] mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: saveClient,
+      onChange: e => setSaveClient(e.target.checked)
+    }), " Save this address on the client"), /*#__PURE__*/React.createElement("button", {
+      disabled: busy,
+      onClick: send,
+      style: Object.assign({}, btn, {
+        background: CD.ink,
+        color: "var(--cd-on-ink)"
+      })
+    }, busy ? "Sending" : "Send receipt")), note && /*#__PURE__*/React.createElement("div", {
+      className: "px-3 pb-3 text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, note)));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    ReceiptSettings: ReceiptSettings,
+    PrinterSetup: PrinterSetup,
+    DealReceipt: DealReceipt
   });
 })();
 
@@ -6243,7 +7522,8 @@
       clients: 'kyc risk id expiry email phone contact',
       rates: 'spread margin fee floor rounding rate lock provider commission',
       vault: 'cash floor reserve stock low valuation cost',
-      receipts: 'print header footer disclaimer logo',
+      receipts: 'print header footer disclaimer logo paper email',
+      printer: 'usb bluetooth serial airprint epson star bixolon drawer escpos',
       tagged: 'auto tag follow-up review',
       ticker: 'tape scroll speed flags',
       employees: 'staff team seats accounts apps roles',
@@ -6511,16 +7791,16 @@
     const toggleCcy = code => setT({
       hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code]
     }, code);
-    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
+    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['printer', 'Printer setup', 'printer'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex",
+      className: "flex cd-settings-shell",
       style: {
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 overflow-auto",
+      className: "flex-none p-3 overflow-auto cd-settings-nav",
       style: {
         width: 212,
         borderRight: `1px solid ${CD.line}`,
@@ -10642,58 +11922,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Rate Board"), "."))), tab === 'receipts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
-      icon: "receipt",
-      title: "Receipts",
-      sub: "What prints on the customer's exchange receipt."
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-2",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Content"), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-1 gap-3 mb-4"
-    }, /*#__PURE__*/React.createElement(Field, {
-      label: "Receipt header"
-    }, /*#__PURE__*/React.createElement(Inp, {
-      k: "receiptHeader",
-      placeholder: "York Currency Exchange"
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Footer line"
-    }, /*#__PURE__*/React.createElement(Inp, {
-      k: "receiptFooter",
-      placeholder: "Thank you \u2014 keep for your records"
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Disclaimer",
-      desc: "Small print at the bottom of every receipt."
-    }, /*#__PURE__*/React.createElement("textarea", {
-      value: settings.receiptDisclaimer || '',
-      onChange: e => set('receiptDisclaimer', e.target.value),
-      rows: 2,
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        resize: 'vertical'
-      },
-      placeholder: "All sales final. Rates as quoted at time of transaction."
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-1",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Print"), /*#__PURE__*/React.createElement(Row, {
-      title: "Show logo on receipt"
-    }, /*#__PURE__*/React.createElement(Sw, {
-      on: settings.showLogoOnReceipt,
-      click: () => toggleSet('showLogoOnReceipt', 'Receipt logo')
-    })), /*#__PURE__*/React.createElement(Row, {
-      title: "Show MSB registration #"
-    }, /*#__PURE__*/React.createElement(Sw, {
-      on: settings.showMsbOnReceipt,
-      click: () => toggleSet('showMsbOnReceipt', 'Receipt MSB #')
-    }))), tab === 'permissions' && (() => {
+    }, "Rate Board"), "."))), tab === 'receipts' && window.CDOS.ReceiptSettings && /*#__PURE__*/React.createElement(window.CDOS.ReceiptSettings, {
+      settings: settings,
+      set: set,
+      me: me
+    }), tab === 'printer' && window.CDOS.PrinterSetup && /*#__PURE__*/React.createElement(window.CDOS.PrinterSetup, {
+      settings: settings,
+      me: me
+    }), tab === 'permissions' && (() => {
       const PRESETS = {
         manager: {
           canDelete: true,
@@ -33425,6 +34661,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           }
         }
         onDone && onDone(row.id);
+        try {
+          window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, row, posted && posted.inputAmount != null ? {
+            ledgerAmounts: {
+              inputAmount: String(posted.inputAmount),
+              outputAmount: String(posted.outputAmount),
+              rate: String(posted.rate),
+              feeCad: String(posted.feeCad),
+              from: posted.from,
+              to: posted.to
+            }
+          } : {}), settings);
+        } catch (printError) {}
       } catch (error) {
         if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
         setServerError(error.message || 'The transaction was not posted.');
@@ -33778,6 +35026,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }
       onDone && onDone(tx.id);
+      try {
+        window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, tx, posted && posted.inputAmount != null ? {
+          ledgerAmounts: {
+            inputAmount: String(posted.inputAmount),
+            outputAmount: String(posted.outputAmount),
+            rate: String(posted.rate),
+            feeCad: String(posted.feeCad),
+            from: posted.from,
+            to: posted.to
+          }
+        } : {}), settings);
+      } catch (printError) {}
     };
 
     // present-quote payload (exchange + send)
@@ -36276,6 +37536,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }
       onDone && onDone(transfer.id);
+      try {
+        window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, tx, posted && posted.inputAmount != null ? {
+          ledgerAmounts: {
+            inputAmount: String(posted.inputAmount),
+            outputAmount: String(posted.outputAmount),
+            rate: String(posted.rate),
+            feeCad: String(posted.feeCad),
+            from: posted.from,
+            to: posted.to
+          }
+        } : {}), settings);
+      } catch (printError) {}
     };
     const saveBen = b => {
       setBeneficiaries(list => {
@@ -61225,8 +62497,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     settings: {
       title: 'Settings',
       icon: 'gearsettings',
-      w: 640,
-      h: 520
+      w: 980,
+      h: 740
     }
   };
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
@@ -64179,6 +65451,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       detail: 'Drawer floats loaded'
     }]);
     const [receipt, setReceipt] = useState(null);
+    useEffect(() => {
+      window.CDOS.openDealReceipt = row => setReceipt(row || null);
+      return () => {
+        try {
+          delete window.CDOS.openDealReceipt;
+        } catch (e) {}
+      };
+    }, []);
     const [addContactOpen, setAddContactOpen] = useState(false); // quick "add a verified contact" flow, launched from the edge-rail
     const [ledgerClient, setLedgerClient] = useState(null);
     const [newDealSignal, setNewDealSignal] = useState(null); // {n} — request the Ledger to open a fresh New-Transaction modal

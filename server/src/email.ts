@@ -14,6 +14,47 @@ export { contactReceivedEmail, passwordResetEmail };
 
 export type EmailStatus = "sent" | "simulated" | "failed";
 
+export interface EmailAttachment {
+  filename: string;
+  contentBase64: string;
+}
+
+export interface EmailBody {
+  text: string;
+  html?: string;
+  replyTo?: string;
+  fromName?: string;
+  attachments?: EmailAttachment[];
+}
+
+export function emailTransportConfigured(): boolean {
+  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim());
+}
+
+type TestEmail = {
+  to: string;
+  subject: string;
+  from: string;
+  text: string;
+  html?: string;
+  replyTo?: string;
+  attachments?: EmailAttachment[];
+};
+
+let testSender: ((input: TestEmail) => Promise<EmailStatus>) | null = null;
+
+/* Tests inject a sender so a receipt email never calls Resend. */
+export function useEmailSenderForTests(sender: ((input: TestEmail) => Promise<EmailStatus>) | null) {
+  testSender = sender;
+}
+
+function fromHeader(from: string, fromName?: string): string {
+  if (!fromName?.trim()) return from;
+  const addr = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
+  const name = fromName.replace(/[\r\n<>"]/g, "").trim();
+  return name ? `"${name}" <${addr}>` : from;
+}
+
 /* Where a reply lands.
 
    Most of what we send is a code or a link and wants no answer. A reply
@@ -26,10 +67,22 @@ export const replyToAddress = (): string | undefined =>
 export async function sendEmail(
   to: string,
   subject: string,
-  body: { text: string; html?: string; replyTo?: string },
+  body: EmailBody,
 ): Promise<EmailStatus> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
+  const header = from ? fromHeader(from, body.fromName) : "";
+  if (testSender) {
+    return testSender({
+      to,
+      subject,
+      from: header,
+      text: body.text,
+      html: body.html,
+      replyTo: body.replyTo,
+      attachments: body.attachments,
+    });
+  }
   if (!key || !from) {
     console.log(`[email simulated] to=${to} :: ${subject} :: ${body.text}`);
     return "simulated";
@@ -39,8 +92,11 @@ export async function sendEmail(
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({
-        from, to, subject, text: body.text, html: body.html,
+        from: header, to, subject, text: body.text, html: body.html,
         ...(body.replyTo ? { reply_to: body.replyTo } : {}),
+        ...(body.attachments?.length
+          ? { attachments: body.attachments.map((item) => ({ filename: item.filename, content: item.contentBase64 })) }
+          : {}),
       }),
     });
     if (!res.ok) {

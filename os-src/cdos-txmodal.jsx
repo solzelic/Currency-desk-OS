@@ -645,6 +645,7 @@
           catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The posted transaction will refresh on the next ledger open'); }
         }
         onDone && onDone(row.id);
+        try { window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, row, posted && posted.inputAmount != null ? { ledgerAmounts: { inputAmount: String(posted.inputAmount), outputAmount: String(posted.outputAmount), rate: String(posted.rate), feeCad: String(posted.feeCad), from: posted.from, to: posted.to } } : {}), settings); } catch (printError) {}
       } catch (error) {
         if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
         setServerError(error.message || 'The transaction was not posted.');
@@ -839,6 +840,7 @@
         catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next ledger open'); }
       }
       onDone && onDone(tx.id);
+      try { window.CDOS.afterDealPosted && window.CDOS.afterDealPosted(Object.assign({}, tx, posted && posted.inputAmount != null ? { ledgerAmounts: { inputAmount: String(posted.inputAmount), outputAmount: String(posted.outputAmount), rate: String(posted.rate), feeCad: String(posted.feeCad), from: posted.from, to: posted.to } } : {}), settings); } catch (printError) {}
     };
 
     // present-quote payload (exchange + send)

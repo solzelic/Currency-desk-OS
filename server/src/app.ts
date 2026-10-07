@@ -16,6 +16,7 @@ import { schema, type Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
+import { registerReceiptSettingsRoutes } from "./routes/receipt-settings.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
@@ -170,6 +171,7 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
   registerPinRoutes(app, db);
   registerStaffRoutes(app, db);
   registerDeskRoutes(app, db);
+  registerReceiptSettingsRoutes(app, db);
   registerTenantRoutes(app, db);
   registerTenantStateRoutes(app, db);
   registerAdminRoutes(app, db);

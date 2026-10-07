@@ -13,6 +13,25 @@ const scope = (actor: LedgerActor) => [
   actor.tillId,
 ];
 
+function deskLocal(iso: string, timeZone: string): string {
+  const when = new Date(iso);
+  const zone = timeZone || "America/Toronto";
+  const format = (tz: string) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(when);
+  try {
+    return format(zone);
+  } catch {
+    return format("America/Toronto");
+  }
+}
+
 export type CustomerInput = {
   externalRef?: string;
   name: string;
@@ -368,12 +387,41 @@ export class LedgerProvisioningService {
         );
       }
       const row = result.rows[0];
+      const zone = await client.query(
+        `SELECT timezone FROM branches WHERE id = $1`,
+        [actor.branchId],
+      );
+      const timezone = typeof zone.rows[0]?.timezone === "string" && zone.rows[0].timezone
+        ? zone.rows[0].timezone
+        : "America/Toronto";
+      const linked = await client.query(
+        `SELECT c.client_id,
+                (SELECT dc.email FROM desk_clients dc
+                  WHERE dc.client_id = c.client_id AND dc.tenant_id = c.tenant_id
+                  LIMIT 1) AS client_email
+           FROM ledger_customers c
+          WHERE c.customer_id = $1 AND c.tenant_id = $2`,
+        [row.customer_id, row.tenant_id],
+      );
+      const postedAt = new Date(row.posted_at).toISOString();
       await client.query("COMMIT");
+      const textOf = (value: unknown) => (value == null ? "" : String(value));
       return {
         receiptId: `rcpt_${row.transaction_id}`,
         transactionId: row.transaction_id,
         transactionRef: row.transaction_ref,
-        postedAt: new Date(row.posted_at).toISOString(),
+        postedAt,
+        postedAtLocal: deskLocal(postedAt, timezone),
+        timezone,
+        customerName: textOf(row.customer_name),
+        clientId: linked.rows[0]?.client_id ?? null,
+        clientEmail: linked.rows[0]?.client_email ?? null,
+        fromCurrency: textOf(row.from_currency).trim(),
+        toCurrency: textOf(row.to_currency).trim(),
+        inputAmount: textOf(row.input_amount),
+        outputAmount: textOf(row.output_amount),
+        rate: textOf(row.rate),
+        feeCad: textOf(row.fee_cad),
         lines: [
           "CurrencyDesk OS",
           `Receipt ${row.transaction_ref}`,

@@ -38,6 +38,7 @@ const migrations: readonly Migration[] = [
   /* 027 and 030 still belong to open drafts. 033 is Serbia. 034 is Australia. */
   ["033_serbia_pack", "src/db/migrations/033_serbia_pack.sql"],
   ["034_pack_au_v2", "src/db/migrations/034_pack_au_v2.sql"],
+  ["035_receipt_settings", "src/db/migrations/035_receipt_settings.sql"],
 ] as const;
 
 export async function runMigrations(

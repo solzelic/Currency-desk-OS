@@ -52,7 +52,7 @@
     pricing:   { title: 'Pricing & Rates', icon: 'pricingpercent', w: 1000, h: 700 },
     assistant: { title: 'AI Assistant',    icon: 'aispark', w: 560, h: 660 },
     tagged:    { title: 'Tagged',          icon: 'taggedbookmark', w: 720, h: 560 },
-    settings:  { title: 'Settings',        icon: 'gearsettings',   w: 640,  h: 520 }
+    settings:  { title: 'Settings',        icon: 'gearsettings',   w: 980,  h: 740 }
   };
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
   // the storefront opens as a window
@@ -1320,6 +1320,10 @@
       { ts: '2026-06-18 09:02', user: 'System', action: 'Day opened', detail: 'Drawer floats loaded' },
     ]);
     const [receipt, setReceipt] = useState(null);
+    useEffect(() => {
+      window.CDOS.openDealReceipt = (row) => setReceipt(row || null);
+      return () => { try { delete window.CDOS.openDealReceipt; } catch (e) {} };
+    }, []);
     const [addContactOpen, setAddContactOpen] = useState(false);   // quick "add a verified contact" flow, launched from the edge-rail
     const [ledgerClient, setLedgerClient] = useState(null);
     const [newDealSignal, setNewDealSignal] = useState(null);   // {n} — request the Ledger to open a fresh New-Transaction modal

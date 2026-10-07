@@ -33,6 +33,7 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
+import { deliverReceiptEmail, parseReceiptEmailBody } from "../receipts/send.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -1184,6 +1185,40 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
             ),
           )
         : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* After the deal is posted. A failure here does not touch the ledger. */
+  app.post("/api/ledger/transactions/:transactionId/receipt/email", async (req, reply) => {
+    let body: { to: string; saveToClient: boolean };
+    try {
+      body = parseReceiptEmailBody(req.body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Enter an email address.";
+      return reply.code(400).send({ error: "invalid_request", message });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return;
+      const receipt = await provisioning.transactionReceipt(
+        actor,
+        (req.params as { transactionId: string }).transactionId,
+      );
+      const forwarded = req.headers["x-forwarded-proto"];
+      const proto = (typeof forwarded === "string" ? forwarded.split(",")[0] : "http")?.trim() || "http";
+      const result = await deliverReceiptEmail({
+        db,
+        pool,
+        actor,
+        receipt,
+        to: body.to,
+        saveToClient: body.saveToClient,
+        origin: `${proto}://${req.headers.host || "localhost"}`,
+      });
+      if (!result.ok) return reply.code(result.status).send({ error: result.error, message: result.message });
+      return { status: result.status, saved: result.saved, detail: result.detail };
     } catch (error) {
       return failure(reply, error);
     }
