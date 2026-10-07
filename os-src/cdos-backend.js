@@ -95,6 +95,13 @@
     return String(session.openedBy || "").split(":").pop() || "";
   }
 
+  /* The download is allowed for the server role `administrator`.
+     The desk shows that person as Owner. The screen that offers the
+     button must use this, because the route refuses every other role. */
+  function deskExportAllowed(serverRole) {
+    return serverRole === "administrator";
+  }
+
   function customerPayload(name, record) {
     record = record || {};
     var riskText = String(record.risk || record.riskRating || "").toLowerCase();
@@ -241,6 +248,7 @@
         });
       },
       tillOccupant: tillOccupant,
+      deskExportAllowed: deskExportAllowed,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {

@@ -16,6 +16,10 @@ export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
 
 export interface DbHandle {
   db: Db;
+  /* The pool createDb opened for DATABASE_URL. Null on the embedded
+     database. It belongs to this handle: close() ends it, and a route
+     that needs it must not open another or end this one. */
+  pool: pg.Pool | null;
   close(): Promise<void>;
 }
 
@@ -627,7 +631,7 @@ export async function createDb(): Promise<DbHandle> {
     await pool.query(DDL);
     await runMigrations(pool);
     const db = drizzlePg(pool, { schema });
-    return { db, close: () => pool.end() };
+    return { db, pool, close: () => pool.end() };
   }
   // embedded Postgres — file-backed in dev so data survives restarts,
   // pure in-memory when PGLITE_MEMORY=1 (tests)
@@ -642,7 +646,7 @@ export async function createDb(): Promise<DbHandle> {
   }
   await client.exec(DDL);
   const db = drizzlePglite(client, { schema });
-  return { db, close: () => client.close() };
+  return { db, pool: null, close: () => client.close() };
 }
 
 export { schema };

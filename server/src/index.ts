@@ -149,7 +149,7 @@ if (shouldPopulateDemoDesk()) {
   }
 }
 
-const app = await buildApp(handle.db);
+const app = await buildApp(handle.db, {}, handle.pool);
 // custom-domain → site map: buildApp loads it once; keep it fresh so a
 // domain recorded on another instance (or straight in the DB) takes effect
 setInterval(() => void refreshSiteDomains(handle.db).catch(() => {}), 60 * 1000).unref();
