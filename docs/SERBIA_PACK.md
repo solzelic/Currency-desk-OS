@@ -59,7 +59,7 @@ later in Settings.
 | Art 8(1)(3) | A transfer of funds higher than 1,000 EUR, one deal or linked deals, when there is no business relationship. "Higher than" is not "at or more". | `remittance` and `eft` lines: 1000 EUR, comparator `gt`, diligence `cdd`. |
 | Art 8(1)(2) | Occasional transaction of 15,000 EUR or more. Art 8(2) replaces that line for exchange business only. | `virtual_currency` line: 15000 EUR, `gte`. Digital-asset rules written in dinars are not copied. |
 | Art 47(1) | Each cash transaction of 15,000 EUR or more, in dinar countervalue, to APML immediately and at latest within 3 days. Not a 24-hour sum. | Report `rpt-rs-ctr`: 15000 EUR, `gte`, cash only, direction both, window `none`, deadline `calendar_days` 3. "Immediately" is in `format_rules`. The desk does not send the report. |
-| Art 47(2) | Reasons to suspect money laundering or terrorist financing: report to APML before the transaction is carried out. No amount. | Report `rpt-rs-str`: kind suspicious, deadline `before_execution`, no threshold. The till has no suspicion flag. Filing the report is not a permanent block: the article allows the deal after the report. |
+| Art 47(2) | Reasons to suspect money laundering or terrorist financing: report to APML before the transaction is carried out. No amount. | Report `rpt-rs-str`: kind suspicious, deadline `before_execution`, no threshold. The teller can stop the attempt. The desk then saves a draft and an audit row, and does not post. It does not send the draft to APML, and it does not spot suspicion on its own. A later attempt without the stop can still post. |
 | Art 95 | Keep the data 5 years, then delete (stav 4). A competent authority may extend by up to 5 more years after a proportionality assessment (stav 6). | `retention_years` is 5. Nothing deletes a row. Nothing adds the extra five years. |
 | NBS Point 23 | Every transaction has a receipt (`potvrda`) with 13 fields. | The fields the desk can already refuse a deal for are enforced. The rest are gaps, listed below. Cash against dinars stores `otkup` with basis `796/701`, or `prodaja` with basis `700/701`. |
 | NBS Point 21 notice item 2 | A sale of USD 50 and 100 notes records the name, the JMBG or passport number, and the serial number of each note. | On `pack-rs-v1`, a cash exchange that pays out USD must say whether those notes are included. Yes requires a non-empty name, a JMBG or passport number, and the serials. No does not. There is no US serial-number pattern and no JMBG checksum. |
@@ -68,22 +68,26 @@ later in Settings.
 
 ## How a euro amount becomes dinars
 
-`market_rates` stores CAD per 1 unit. RSD per EUR is CAD-per-EUR divided by
-CAD-per-RSD. The result is rounded down to the cent (`ROUND_DOWN`, two
-decimal places) and the rate is stored on the deal at 12 decimal places
-(`compliance_threshold_rate`). The shop's board mid is not used.
-
-Same currency needs no snapshot. A missing snapshot, one older than 24
-hours, or a missing mid makes the foreign line unpriced. An unverified
-customer is then refused. A verified customer is not refused for the
-missing rate alone, and the receipt is not told that the euro line was
-met. That is the same fail-closed spirit as the international baseline:
-no fresh rate, no unidentified deal.
-
 The statute names the NBS official middle rate on the day of the
-transaction. This snapshot is not that rate. The gap is written on
-`rpt-rs-ctr.format_rules`. No NBS feed was added, and board mids are not
-overwritten.
+transaction. The desk reads `nbs_middle_rates` for that calendar day in
+Europe/Belgrade: dinars per 1 euro. It does not read `market_rates`, and
+it does not call the bank. A rate is on file only when a row has been
+stored. The result is rounded down to the cent (`ROUND_DOWN`, two
+decimal places). The deal stores the source (`nbs_middle` or `none`),
+the rate at 12 decimal places (`compliance_threshold_rate`), and
+`fetched_at` (`compliance_threshold_rate_at`).
+
+A row for another day is not used. A missing row makes the euro line
+unpriced. An unverified customer is then refused. A verified customer
+is not refused for the missing rate alone. The stored source is `none`,
+the rate is null, and the receipt is not told that the euro line was
+met.
+
+The shop's board can still be built from `market_rates`. That snapshot
+prices the quote. It does not price the euro line. The dinar amount of
+the deal is the amount the book posts at the till's own rate. The euro
+line is turned into dinars at the NBS middle rate. When those two rates
+differ, the gate compares the booked dinars with the NBS line.
 
 A desk override stored in dinars can only add a refusal (at or above that
 dinar figure). It cannot loosen the euro line.
@@ -102,7 +106,7 @@ The thirteen fields, and where each one stands:
 3. Till code. The till id is on the transaction. Collected.
 4. Buy or sell (`otkup` / `prodaja`). Stored for a cash deal with dinars on one side. A cross with no dinar side is not guessed. Gap for that cross.
 5. Receipt number that does not repeat and cannot be changed after the first issue. The transaction reference is server-owned and the row is append-only. Collected, as that reference.
-6. Name plus JMBG or passport number, at or above the AML amount and wherever else the law requires it. Enforced when the identification line is met, when USD 50/100 notes are sold, and when the counter is airside or a casino. The number is `identity_number` on the insert. There is no checksum.
+6. Name plus JMBG or passport number, at or above the AML amount and wherever else the law requires it. Required when the identification line is met, when USD 50/100 notes are sold, and when the counter is airside or a casino. The number is `identity_number` on the insert. There is no checksum.
 7. Basis codes. Cash purchase `796` and `701`. Cash sale `700` and `701`. Stored on `receipt_facts` for those two cases. Cheque basis `795` and `699` is not written. Cheque cashing uses the exchange identification line and does not call the Serbia receipt check. Gap.
 8. Currency code, foreign amount, dinar amount. On the transaction. Collected.
 9. Rate. On the transaction, and copied onto `receipt_facts`. Collected.
@@ -124,9 +128,10 @@ from other activity on the same till. Those remain gaps.
 ## Known gaps
 
 - Linked transactions are not detected. Each line is a single deal.
-- The market snapshot is not the NBS official middle rate.
-- Neither the cash report nor the suspicion report is sent to APML.
-- There is no suspicion control on the till. A teller who suspects reports outside the desk, then the deal may proceed. The desk does not trap the deal.
+- No process fetches the NBS middle rate. A row has to be stored for the Belgrade day or the euro line stays unpriced.
+- The deal's dinars are the booked amount. They are not a second conversion of the foreign leg at the NBS rate.
+- Neither the cash report nor the suspicion draft is sent to APML.
+- The desk does not spot suspicion. The teller has to stop the attempt. Stopping it does not file the report.
 - Article 95's deletion, and the extra five years, are not implemented.
 - Point 21 notice item 3 (other denominations, on request) is not implemented.
 - Cheque deals and a cross with no dinar side do not get the Serbia receipt facts.

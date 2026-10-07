@@ -343,9 +343,9 @@ class Component extends DCLogic {
       { name: 'Suspicious', spec: 'STR · any amount', tag: 'Flagged' },
       { name: 'Records', spec: 'Retained 5 years', tag: 'Kept' } ] },
     { name: 'Serbia', tag: 'APML', live: false, status: 'Available', rules: [
-      { name: 'Exchange ID', spec: '5,000 EUR or more', tag: 'Enforced' },
+      { name: 'Exchange ID', spec: '5,000 EUR, NBS rate', tag: 'Assisted' },
       { name: 'Cash report', spec: '15,000 EUR to APML', tag: 'Prepared' },
-      { name: 'Suspicion', spec: 'Before the deal', tag: 'Assisted' },
+      { name: 'Suspicion', spec: 'Teller can save a draft', tag: 'Assisted' },
       { name: 'Records', spec: '5 years, then delete', tag: 'Kept' } ] },
     { name: 'United States', tag: 'FinCEN', live: false, status: 'Early 2027', rules: [
       { name: 'Currency report', spec: 'CTR · $10,000', tag: 'Planned' },
@@ -390,7 +390,7 @@ class Component extends DCLogic {
     { q: 'Do you take a cut of my trades?', a: 'Never. A flat monthly price, no percentage, no per-transaction fee, no share of your spread. We do not touch your money.' },
     { q: 'How long until my desk is running?', a: 'Rates and your public board can be live the same afternoon. A full desk usually takes about a week, and we do it with you rather than handing you a manual.' },
     { q: 'Can I bring my existing records across?', a: 'Yes. We move your clients, rates and history in during setup, so day one on the desk is not day one of your records.' },
-    { q: 'When will you support my country?', a: 'Serbia is available for new desks: exchange identification at 5,000 EUR, cash of 15,000 EUR reported to APML, suspicion reported before the deal. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union and India late 2027, UAE and Philippines early 2028, Singapore and Hong Kong through 2028.' }
+    { q: 'When will you support my country?', a: 'Serbia is available for new desks. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union and India late 2027, UAE and Philippines early 2028, Singapore and Hong Kong through 2028.' }
   ];
 
   componentDidMount() {

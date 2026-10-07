@@ -478,6 +478,7 @@ export class ChequeService {
         disbursedInstrument: "cash",
         complianceRate: compliance.rate,
         complianceRateAt: compliance.rateAt,
+        complianceSource: compliance.source,
         now,
       });
       for (const [account, side, amount] of journal)
@@ -1028,6 +1029,7 @@ export class ChequeService {
       disbursedInstrument: string;
       complianceRate?: string | null;
       complianceRateAt?: Date | null;
+      complianceSource?: string | null;
       now: Date;
     },
   ) {
@@ -1051,13 +1053,13 @@ export class ChequeService {
           home_currency,fee_amount,fee_currency,spread_home_amount,
           jurisdiction_pack_id,jurisdiction_pack_version,
           deal_kind,received_instrument,disbursed_instrument,
-          compliance_threshold_rate,compliance_threshold_rate_at)
+          compliance_threshold_rate,compliance_threshold_rate_at,compliance_threshold_rate_source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$12,1,
                $13,0,$14,$15,false,NULL,
                $16,$17,$18,
                $10,$13,$10,0,
                $19,$20,
-               $21,$22,$23,$24,$25)`,
+               $21,$22,$23,$24,$25,$26)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1080,6 +1082,7 @@ export class ChequeService {
         row.disbursedInstrument,
         row.complianceRate ?? null,
         row.complianceRateAt ?? null,
+        row.complianceSource ?? null,
       ],
     );
   }

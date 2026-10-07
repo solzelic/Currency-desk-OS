@@ -32890,6 +32890,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [benName, setBenName] = useState('');
     const [purpose, setPurpose] = useState('');
     const [identityNumber, setIdentityNumber] = useState('');
+    const [reportSuspicion, setReportSuspicion] = useState(false);
     const [usdLargeNotes, setUsdLargeNotes] = useState(null);
     const [usdSerials, setUsdSerials] = useState('');
     const [recvRef, setRecvRef] = useState(''); // remittance-receive tracking ref
@@ -33355,6 +33356,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           thirdParty: !!cap.thirdParty,
           thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
           identityNumber: identityNumber.trim() || undefined,
+          ...(serbia && reportSuspicion ? {
+            reportSuspicion: true
+          } : {}),
           ...(serbia && outCcy === 'USD' && (usdLargeNotes === true || usdLargeNotes === false) ? {
             usdLargeNotes,
             usdNoteSerials: usdLargeNotes ? usdSerials.split(/[\s,]+/).filter(Boolean) : undefined
@@ -33888,6 +33892,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       "data-testid": "serbia-receipt",
       className: "space-y-2"
     }, /*#__PURE__*/React.createElement("label", {
+      "data-testid": "serbia-suspicion",
+      className: "flex items-start gap-2 text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: reportSuspicion,
+      onChange: e => setReportSuspicion(e.target.checked),
+      className: "mt-0.5"
+    }), /*#__PURE__*/React.createElement("span", null, "Report suspicion and do not post this deal. The desk saves a draft and does not send it to APML.")), /*#__PURE__*/React.createElement("label", {
       className: "block text-[12px]",
       style: {
         color: CD.mute
@@ -62007,7 +62022,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         marginBottom: 14
       }
-    }, d.country === 'European Union' ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.' : reg.follow ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. The desk converts euros to dinars. A tighter dinar line is set in Settings.' : /*#__PURE__*/React.createElement(React.Fragment, null, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later.")), reg.follow ? null : (d.country === 'European Union' ? [{
+    }, d.country === 'European Union' ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.' : reg.follow ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. Those euro lines need the National Bank of Serbia middle rate for the day. A tighter dinar line is set in Settings.' : /*#__PURE__*/React.createElement(React.Fragment, null, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later.")), reg.follow ? null : (d.country === 'European Union' ? [{
       v: 3000,
       t: 'Only at 3,000',
       d: 'Cash identification. The 2027 minimum.'

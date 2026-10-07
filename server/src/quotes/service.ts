@@ -589,6 +589,7 @@ export class QuoteService {
       identityNumber?: string;
       usdLargeNotes?: boolean;
       usdNoteSerials?: string[];
+      reportSuspicion?: boolean;
     },
   ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
@@ -654,6 +655,7 @@ export class QuoteService {
           identityNumber: capture?.identityNumber,
           usdLargeNotes: capture?.usdLargeNotes,
           usdNoteSerials: capture?.usdNoteSerials,
+          reportSuspicion: capture?.reportSuspicion,
         } as FrozenQuote,
         idempotencyKey,
       );

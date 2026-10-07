@@ -19,6 +19,7 @@
    Article 95 (keep five years, then delete, extension only by an
    authority) is not implemented here. Nothing in this file deletes a
    row or lengthens a retention period. */
+import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { JurisdictionPack } from "./jurisdiction.js";
 import type { LedgerActor } from "./service.js";
@@ -36,6 +37,9 @@ export const SERBIA_AIRSIDE_REQUIRED =
 
 export const SERBIA_RECEIPT_IDENTITY =
   "This receipt needs the customer's JMBG or passport number.";
+
+export const SERBIA_SUSPICION_HELD =
+  "This deal was not posted. A suspicion draft is saved for APML. The desk does not send it.";
 
 export type SerbiaCapture = {
   identityNumber?: string | null;
@@ -156,4 +160,76 @@ export async function serbiaExchangeFacts(
       noteSerials,
     },
   };
+}
+
+/* Article 47(2): a suspicion report goes to APML before the transaction
+   is carried out. The desk does not detect suspicion. When the teller
+   says this attempt is suspicious, the deal is not written and a draft
+   plus an audit row are. Filing to APML is still outside the desk. A
+   later attempt that does not raise the flag can still post, because
+   the article allows the deal after the report has been made. */
+export async function holdSerbiaSuspicion(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  actor: LedgerActor,
+  facts: {
+    reportSuspicion?: boolean | null;
+    customerId: string;
+    customerName: string;
+    amount: string;
+    from: string;
+    to: string;
+  },
+): Promise<boolean> {
+  if (pack.packId !== SERBIA_PACK_ID || facts.reportSuspicion !== true) return false;
+  const filingId = randomUUID();
+  const now = new Date();
+  await client.query(
+    `INSERT INTO ledger_report_filings
+       (filing_id, tenant_id, legal_entity_id, branch_id, report_id,
+        pack_id, pack_version, report_code, status, payload,
+        subject_transaction_ids, subject_customer_ids,
+        created_by, obligation_id, obligation_group_id, subject_name, report_ref)
+     VALUES ($1,$2,$3,$4,'rpt-rs-str',$5,$6,'STR','draft',$7,'[]'::jsonb,$8,$9,$10,$10,$11,$12)`,
+    [
+      filingId,
+      actor.tenantId,
+      actor.legalEntityId,
+      actor.branchId,
+      pack.packId,
+      pack.version,
+      JSON.stringify({
+        statute: "Art 47(2)",
+        note: "The teller stopped this attempt before posting. The desk does not send this draft to APML.",
+        customerName: facts.customerName,
+        from: facts.from,
+        to: facts.to,
+        amount: facts.amount,
+      }),
+      JSON.stringify([facts.customerId]),
+      actor.userId,
+      filingId,
+      facts.customerName,
+      `STR-DRAFT-${filingId.slice(0, 8)}`,
+    ],
+  );
+  await client.query(
+    `INSERT INTO ledger_audit_events
+       (event_id, tenant_id, legal_entity_id, branch_id, workspace_id, actor_id,
+        action, target_id, reason, correlation_id, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,'serbia.suspicion.hold',$7,$8,$9,$10)`,
+    [
+      randomUUID(),
+      actor.tenantId,
+      actor.legalEntityId,
+      actor.branchId,
+      actor.workspaceId,
+      actor.userId,
+      filingId,
+      "Suspicion draft saved. The deal was not posted. The desk does not send this to APML.",
+      randomUUID(),
+      now,
+    ],
+  );
+  return true;
 }

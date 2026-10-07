@@ -22,7 +22,7 @@ import {
   foreignCurrencyIdentification,
   type ComplianceStamp,
 } from "./compliance-gate.js";
-import { serbiaExchangeFacts } from "./serbia.js";
+import { holdSerbiaSuspicion, SERBIA_SUSPICION_HELD, serbiaExchangeFacts } from "./serbia.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
   EU_AMLR_PACK_ID,
@@ -66,6 +66,7 @@ export type PostRequest = {
   identityNumber?: string | null;
   usdLargeNotes?: boolean | null;
   usdNoteSerials?: string[] | null;
+  reportSuspicion?: boolean | null;
 };
 export type FrozenQuote = {
   quoteId: string;
@@ -94,6 +95,7 @@ export type FrozenQuote = {
   identityNumber?: string | null;
   usdLargeNotes?: boolean | null;
   usdNoteSerials?: string[] | null;
+  reportSuspicion?: boolean | null;
 };
 export class LedgerError extends Error {
   constructor(
@@ -238,7 +240,7 @@ export async function requireIdentification(
       cash: deal.cash,
       deskCashIdentify: await deskIdLine(client, actor.legalEntityId),
     });
-    const stamp: ComplianceStamp = { rate: "1.000000000000", rateAt: null };
+    const stamp: ComplianceStamp = { rate: "1.000000000000", rateAt: null, source: null };
     if (duty.failClosed || (idStatus !== "verified" && duty.identify)) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
@@ -266,7 +268,11 @@ export async function requireIdentification(
     deal.cash,
   );
   if (foreign.decided) {
-    const stamp: ComplianceStamp = { rate: foreign.rate, rateAt: foreign.rateAt };
+    const stamp: ComplianceStamp = {
+      rate: foreign.rate,
+      rateAt: foreign.rateAt,
+      source: foreign.source,
+    };
     /* A missing rate fails closed for someone we have not identified.
        It does not, by itself, mean the amount crossed a line we could price. */
     const rateUnknown = foreign.rate == null && foreign.block;
@@ -284,8 +290,8 @@ export async function requireIdentification(
   }
   const priced = pack.baseline
     ? await baselineIdentification(client, pack, amountHome, deal.kind, deal.cash)
-    : { block: false, rate: "1.000000000000", rateAt: null };
-  const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt };
+    : { block: false, rate: "1.000000000000", rateAt: null, source: null };
+  const stamp: ComplianceStamp = { rate: priced.rate, rateAt: priced.rateAt, source: priced.source };
   /* A verified customer has already satisfied the identity document.
      A split Canada pack still asks for the foreign-exchange ticket
      fields at its line, so that short-circuit cannot sit above the
@@ -401,6 +407,7 @@ export class LedgerService {
         "Third-party status and name must be captured together.",
       );
     const client = await this.pool.connect();
+    let committed = false;
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
@@ -471,6 +478,25 @@ export class LedgerService {
           "QUOTE_MISMATCH",
           "Frozen quote terms do not match authoritative record.",
         );
+      if (quote.reportSuspicion === true && pack.packId === "pack-rs-v1") {
+        const named = await client.query(
+          "SELECT name FROM ledger_customers WHERE customer_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5",
+          [quote.customerId, ...scope(actor).slice(0, 4)],
+        );
+        if (!named.rowCount)
+          throw new LedgerError("CUSTOMER_NOT_FOUND", "Customer is not in the active workspace.");
+        await holdSerbiaSuspicion(client, pack, actor, {
+          reportSuspicion: true,
+          customerId: quote.customerId,
+          customerName: String(named.rows[0].name ?? ""),
+          amount: quote.inputAmount,
+          from: quote.from,
+          to: quote.to,
+        });
+        await client.query("COMMIT");
+        committed = true;
+        throw new LedgerError("COMPLIANCE_BLOCKED", SERBIA_SUSPICION_HELD);
+      }
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='quote-post' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), idempotencyKey],
@@ -768,7 +794,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,quote_id,market_mid,rate_board_publication_id,market_snapshot_id,rate_source_type,quote_override_id,posted_at,realized_pnl_home,cost_of_sale_home,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts,compliance_threshold_rate_source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44)",
         [
           transactionId,
           transactionRef,
@@ -817,6 +843,7 @@ export class LedgerService {
           serbia.identityNumber,
           serbia.noteSerials ? JSON.stringify(serbia.noteSerials) : null,
           serbia.receiptFacts ? JSON.stringify(serbia.receiptFacts) : null,
+          compliance.source,
         ],
       );
       for (const [account, side, value] of journal)
@@ -903,9 +930,10 @@ export class LedgerService {
         [response, ...scope(actor), idempotencyKey],
       );
       await client.query("COMMIT");
+      committed = true;
       return response;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!committed) await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "40001") {
         throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Retry the idempotent request.");
       }
@@ -934,6 +962,7 @@ export class LedgerService {
         "Third-party status and name must be captured together.",
       );
     const client = await this.pool.connect();
+    let committed = false;
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
@@ -968,7 +997,27 @@ export class LedgerService {
       );
       if (existing.rowCount && existing.rows[0].response) {
         await client.query("COMMIT");
+        committed = true;
         return existing.rows[0].response;
+      }
+      if (request.reportSuspicion === true && pack.packId === "pack-rs-v1") {
+        const named = await client.query(
+          "SELECT name FROM ledger_customers WHERE customer_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5",
+          [request.customerId, ...scope(actor).slice(0, 4)],
+        );
+        if (!named.rowCount)
+          throw new LedgerError("CUSTOMER_NOT_FOUND", "Customer is not in the active workspace.");
+        await holdSerbiaSuspicion(client, pack, actor, {
+          reportSuspicion: true,
+          customerId: request.customerId,
+          customerName: String(named.rows[0].name ?? ""),
+          amount: request.inputAmount,
+          from: request.from,
+          to: request.to,
+        });
+        await client.query("COMMIT");
+        committed = true;
+        throw new LedgerError("COMPLIANCE_BLOCKED", SERBIA_SUSPICION_HELD);
       }
       if (!existing.rowCount) {
         const claimed = await client.query(
@@ -1151,7 +1200,7 @@ export class LedgerService {
         },
       };
       await client.query(
-        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)",
+        "INSERT INTO ledger_transactions (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,third_party,third_party_name,compliance_captured_by,compliance_captured_at,posted_at,deal_kind,received_instrument,disbursed_instrument,jurisdiction_pack_id,jurisdiction_pack_version,home_currency,compliance_threshold_rate,compliance_threshold_rate_at,cash_in_home,identity_number,note_serials,receipt_facts,compliance_threshold_rate_source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)",
         [
           transactionId,
           transactionRef,
@@ -1188,6 +1237,7 @@ export class LedgerService {
           serbia.identityNumber,
           serbia.noteSerials ? JSON.stringify(serbia.noteSerials) : null,
           serbia.receiptFacts ? JSON.stringify(serbia.receiptFacts) : null,
+          compliance.source,
         ],
       );
       for (const [account, side, value] of journal)
@@ -1232,9 +1282,10 @@ export class LedgerService {
         [response, ...scope(actor), request.idempotencyKey],
       );
       await client.query("COMMIT");
+      committed = true;
       return response;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!committed) await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "40001") {
         const replay = await this.pool.query(
           "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='post' AND idempotency_key=$6",

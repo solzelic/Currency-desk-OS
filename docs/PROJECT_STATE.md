@@ -140,7 +140,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   home currency, with the new fields at their defaults, and they keep
   the numbers they had. Serbia is a seventh country pack
   (`pack-rs-v1`): the lines are written in euros and the book is
-  dinars. A country
+  dinars. Those euro lines convert at the NBS middle rate for the
+  Belgrade day, from `nbs_middle_rates`, and not at the market
+  snapshot. A country
   with no pack is not given Canada's, and it is not paused. It
   operates under `pack-intl-v1`, an international baseline that is not
   a country. A signup that names Canada and leaves home currency blank
@@ -237,13 +239,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   general occasional line, 15,000 EUR or more. Cash of 15,000 EUR or
   more is reported to APML immediately and at latest within 3 days,
   and is not added to other deals (Article 47(1)). A suspicion report
-  is due before the deal (Article 47(2)). The till has no suspicion
-  flag and does not send either report. Euro amounts convert at the
-  newest market snapshot, the same CAD-per-unit table the rate sync
-  stores, rounded down to the cent. A missing snapshot, or one older
-  than 24 hours, refuses an unidentified customer. The statute names
-  the NBS official middle rate on the transaction day. The snapshot
-  is not that rate. A sale of 50 or 100 US dollar notes records the
+  is due before the deal (Article 47(2)). The teller can stop the
+  attempt. The desk saves a draft and an audit row, and does not post.
+  It does not send the draft to APML, and it does not spot suspicion
+  on its own. A later attempt without the stop can still post. Euro
+  amounts convert at the NBS official middle rate for the Belgrade
+  calendar day, from `nbs_middle_rates`, rounded down to the cent.
+  The desk does not read `market_rates` for that conversion and does
+  not fetch the bank. No row for that day refuses an unidentified
+  customer and does not claim the euro line was met. The deal stores
+  `nbs_middle` or `none`, the rate, and when the row was stored. A sale of 50 or 100 US dollar notes records the
   customer's name, JMBG or passport number, and the serial number of
   each note. A counter marked airside or inside a casino requires
   that name and number on every cash buy and sell. Records are kept
@@ -333,10 +338,13 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-07**, Serbia pack `pack-rs-v1`. New desks that pick Serbia
-open on it, in dinars. Euro thresholds convert at the market
-snapshot and fail closed when that snapshot is missing or older than
-24 hours. Existing desks are not moved. The public pages list Serbia
-as Available, not Live. Detail is `docs/SERBIA_PACK.md`.
+open on it, in dinars. Euro thresholds convert at the NBS middle rate
+for the Belgrade day. A missing rate, or a rate for another day,
+refuses an unidentified customer and does not use the market snapshot.
+A teller can stop a suspicious attempt and save a draft. The desk does
+not send it. Existing desks are not moved. The public pages list Serbia
+as Available, not Live, and the euro identification lines as Assisted.
+Detail is `docs/SERBIA_PACK.md`.
 
 **2026-10-07**, EU AMLR 2027. New European Union desks open on
 `pack-eu-v2`. Cash identification is 3,000 EUR. Full customer due

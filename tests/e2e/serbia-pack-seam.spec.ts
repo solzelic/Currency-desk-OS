@@ -1,7 +1,8 @@
 /* A new Serbian desk, on the screen and then on the ledger.
 
-   The exchange line is 5,000 EUR. At the dinar rate in this test that
-   is 500,000.00 RSD. The form and the post have to agree. */
+   The exchange line is 5,000 EUR. The NBS middle rate in this test is
+   100 dinars per euro, so the line is 500,000.00 RSD. The market
+   snapshot is only there so the board can publish. */
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, hasLedger, landOnDesktop, codeFor, logSize } from "./fixtures";
@@ -47,6 +48,14 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
     `INSERT INTO market_rates (id, provider, mids, fetched_at)
      VALUES ($1, 'test', $2::jsonb, now())`,
     [SNAP, JSON.stringify(MIDS)],
+  );
+  await pool.query(
+    `INSERT INTO nbs_middle_rates
+       (id, rate_date, base_currency, quote_currency, middle_rate, fetched_at)
+     VALUES ($1, (timezone('Europe/Belgrade', now()))::date, 'EUR', 'RSD', 100, timestamptz '2026-10-07 08:00:00+00')
+     ON CONFLICT (rate_date, base_currency, quote_currency)
+     DO UPDATE SET middle_rate = EXCLUDED.middle_rate, fetched_at = EXCLUDED.fetched_at`,
+    [`nbs-serbia-seam-${stamp}`],
   );
   try {
     const before = logSize();
@@ -102,6 +111,7 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
     const form = page.locator("div.fixed.inset-0").filter({ has: page.getByText("Customer pays in") });
     await expect(form).toBeVisible();
     await expect(form.getByTestId("serbia-receipt")).toBeVisible();
+    await expect(form.getByTestId("serbia-suspicion")).toContainText("do not post this deal");
     await expect(form.getByTestId("serbia-usd-notes")).toBeVisible();
 
     async function pick(current: string, next: string) {
@@ -162,6 +172,11 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
     expect(posted.over.code, JSON.stringify(posted)).toBe("COMPLIANCE_BLOCKED");
   } finally {
     await pool.query(`DELETE FROM market_rates WHERE id = $1`, [SNAP]);
+    await pool.query(
+      `DELETE FROM nbs_middle_rates
+        WHERE base_currency='EUR' AND quote_currency='RSD'
+          AND fetched_at = timestamptz '2026-10-07 08:00:00+00'`,
+    );
     for (const row of prior.rows) {
       await pool.query(`UPDATE market_rates SET fetched_at = $2 WHERE id = $1`, [row.id, row.fetched_at]);
     }

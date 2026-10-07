@@ -12,12 +12,12 @@
    until somebody opts it in.
 
    The amounts below are the euro amounts in the statute. The book is
-   kept in dinars. Posting converts a euro line at the newest market
-   snapshot (CAD per 1 unit, the same table the rate sync stores) and
-   refuses an unidentified customer when that snapshot is missing or
-   older than 24 hours. The statute names the National Bank of Serbia
-   official middle rate on the day of the transaction. This snapshot
-   is not that rate. The gap is recorded on the report row.
+   kept in dinars. Posting converts a euro line at the National Bank
+   of Serbia official middle rate for the calendar day in Belgrade,
+   from nbs_middle_rates. It does not read market_rates for that
+   conversion. No row for that day refuses an unidentified customer
+   and does not claim the euro line was met. Nothing in this file
+   fetches the bank. A rate is on file only when a row has been stored.
 
    Linked transactions (međusobno povezane) are not a clock window.
    These rows are single-transaction lines. Nothing here adds deals
@@ -96,7 +96,7 @@ VALUES
      Submission to APML is not sent from this desk. */
   ('rpt-rs-ctr', 'pack-rs-v1', 'CTR', 'Cash transaction report', 'large_cash',
    15000, 'EUR', NULL, 'APML', '[]'::jsonb,
-   '{"statute":"Art 47(1)","timing":"Immediately, and at latest within 3 days.","rate":"The statute uses the NBS official middle rate on the transaction day. The desk converts at the market snapshot, which is not that rate.","aggregation":"Each cash transaction. Not a sum.","filing":"The desk does not send this report to APML."}'::jsonb,
+   '{"statute":"Art 47(1)","timing":"Immediately, and at latest within 3 days.","rate":"The statute uses the NBS official middle rate for the Belgrade calendar day. The desk reads nbs_middle_rates and does not use market_rates. No row for that day leaves the euro line unpriced.","aggregation":"Each cash transaction. Not a sum.","filing":"The desk does not send this report to APML."}'::jsonb,
    1, 3, 'calendar_days', 'none', 'gte', 'both', 'EUR', true),
   /* Article 47(2): when there are reasons to suspect money laundering
      or terrorist financing, the report goes to APML before the
@@ -105,7 +105,7 @@ VALUES
      the deal once the report has been made. */
   ('rpt-rs-str', 'pack-rs-v1', 'STR', 'Suspicious transaction report', 'suspicious',
    NULL, NULL, NULL, 'APML', '[]'::jsonb,
-   '{"statute":"Art 47(2)","timing":"Before the transaction is carried out.","filing":"The till has no suspicion flag and does not send this report. A teller who suspects reports to APML first. The deal may then proceed.","retention":"Article 95: keep five years, then delete. An authority may extend by up to five more years. This pack does not extend and does not delete."}'::jsonb,
+   '{"statute":"Art 47(2)","timing":"Before the transaction is carried out.","filing":"A teller can stop the attempt. The desk saves a draft and an audit row, and does not send the report to APML. It does not spot suspicion on its own. A later attempt without the stop can still post, because the article allows the deal after the report.","retention":"Article 95: keep five years, then delete. An authority may extend by up to five more years. This pack does not extend and does not delete."}'::jsonb,
    1, NULL, 'before_execution', 'none', 'gte', NULL, NULL, false)
 ON CONFLICT (report_id) DO NOTHING;
 
@@ -128,3 +128,34 @@ ALTER TABLE ledger_transactions
   ADD COLUMN IF NOT EXISTS identity_number text,
   ADD COLUMN IF NOT EXISTS note_serials jsonb,
   ADD COLUMN IF NOT EXISTS receipt_facts jsonb;
+
+/* Which rate priced a statutory euro line. nbs_middle is the National
+   Bank middle rate for that Belgrade day. none means the line was
+   needed and no such rate was on file, so the desk did not claim the
+   line was met. Null on every other pack. market_rates is not a
+   permitted value: a Serbia line must not be stamped as if the shop
+   snapshot were the statute. */
+ALTER TABLE ledger_transactions
+  ADD COLUMN IF NOT EXISTS compliance_threshold_rate_source text;
+
+ALTER TABLE ledger_transactions
+  DROP CONSTRAINT IF EXISTS ledger_transactions_compliance_threshold_rate_source_check;
+
+ALTER TABLE ledger_transactions
+  ADD CONSTRAINT ledger_transactions_compliance_threshold_rate_source_check
+    CHECK (
+      compliance_threshold_rate_source IS NULL
+      OR compliance_threshold_rate_source IN ('nbs_middle', 'none')
+    );
+
+/* Dinars per 1 unit of the foreign currency, for one Belgrade date.
+   Posting reads the row for today and does not call the bank. */
+CREATE TABLE IF NOT EXISTS nbs_middle_rates (
+  id text PRIMARY KEY,
+  rate_date date NOT NULL,
+  base_currency char(3) NOT NULL,
+  quote_currency char(3) NOT NULL,
+  middle_rate numeric(24,12) NOT NULL CHECK (middle_rate > 0),
+  fetched_at timestamptz NOT NULL,
+  UNIQUE (rate_date, base_currency, quote_currency)
+);

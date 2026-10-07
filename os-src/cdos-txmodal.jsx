@@ -387,6 +387,7 @@
     const [benName, setBenName] = useState('');
     const [purpose, setPurpose] = useState('');
     const [identityNumber, setIdentityNumber] = useState('');
+    const [reportSuspicion, setReportSuspicion] = useState(false);
     const [usdLargeNotes, setUsdLargeNotes] = useState(null);
     const [usdSerials, setUsdSerials] = useState('');
     const [recvRef, setRecvRef] = useState('');   // remittance-receive tracking ref
@@ -627,6 +628,7 @@
           thirdParty: !!cap.thirdParty,
           thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
           identityNumber: identityNumber.trim() || undefined,
+          ...(serbia && reportSuspicion ? { reportSuspicion: true } : {}),
           ...(serbia && outCcy === 'USD' && (usdLargeNotes === true || usdLargeNotes === false)
             ? {
                 usdLargeNotes,
@@ -874,6 +876,10 @@
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
                 <div data-testid="serbia-receipt" className="space-y-2">
+                  <label data-testid="serbia-suspicion" className="flex items-start gap-2 text-[12px]" style={{ color: CD.ink }}>
+                    <input type="checkbox" checked={reportSuspicion} onChange={e => setReportSuspicion(e.target.checked)} className="mt-0.5" />
+                    <span>Report suspicion and do not post this deal. The desk saves a draft and does not send it to APML.</span>
+                  </label>
                   <label className="block text-[12px]" style={{ color: CD.mute }}>
                     JMBG or passport number
                     <input data-testid="serbia-identity" value={identityNumber} onChange={e => setIdentityNumber(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none mt-1" style={inSty} />

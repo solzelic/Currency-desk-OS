@@ -71,6 +71,7 @@ const postBody = z.object({
   identityNumber: z.string().trim().max(40).optional(),
   usdLargeNotes: z.boolean().optional(),
   usdNoteSerials: z.array(z.string().trim().min(1).max(40)).max(200).optional(),
+  reportSuspicion: z.boolean().optional(),
 })
   .refine((value) => value.from !== value.to, { message: "Currencies must differ.", path: ["to"] })
   .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
@@ -1242,6 +1243,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     sourceOfFunds: z.string().trim().max(500).default(""),
     thirdParty: z.boolean().default(false),
     thirdPartyName: z.string().trim().max(200).optional(),
+    reportSuspicion: z.boolean().optional(),
   };
   const thirdPartyPaired = <T extends z.ZodTypeAny>(schema: T) =>
     schema

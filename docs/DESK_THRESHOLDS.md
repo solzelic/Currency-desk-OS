@@ -78,7 +78,8 @@ no line" and zero means "every deal". A country pack whose line is
 already in the home currency still resolves the single column, and
 `money()` still treats zero there as "cannot say". The baseline gate
 reads the per-deal rows. Serbia does too, because its lines are in
-euros: `docs/SERBIA_PACK.md`.
+euros, converted at the NBS middle rate for the Belgrade day and not
+at the market snapshot: `docs/SERBIA_PACK.md`.
 
 ## What the ledger does with it
 

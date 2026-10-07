@@ -1,9 +1,11 @@
 /* Serbia pack-rs-v1.
 
-   Euro lines convert at the market snapshot. 5,000 EUR is the exchange
-   identification line. A sale of 50 or 100 US dollar notes needs serial
-   numbers. An airside counter needs identity on every buy and sell.
-   A missing or stale rate refuses an unidentified customer. */
+   Euro lines convert at the NBS middle rate for today in Belgrade.
+   market_rates alone does not price them. 5,000 EUR is the exchange
+   identification line. A transfer over 1,000 EUR identifies. A sale of
+   50 or 100 US dollar notes needs serial numbers. An airside counter
+   needs identity on every buy and sell. A teller can stop an attempt
+   and leave a suspicion draft. */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -12,6 +14,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import {
   SERBIA_AIRSIDE_REQUIRED,
   SERBIA_RECEIPT_IDENTITY,
+  SERBIA_SUSPICION_HELD,
   SERBIA_USD_NOTES_PROMPT,
   SERBIA_USD_NOTES_REQUIRED,
 } from "../src/ledger/serbia.js";
@@ -55,6 +58,14 @@ postgres("Serbia pack-rs-v1", () => {
       `INSERT INTO market_rates (id, provider, mids, fetched_at)
        VALUES ('snap-serbia','test','{"USD":1.36,"RSD":0.0125,"EUR":1.25}', now())
        ON CONFLICT (id) DO UPDATE SET mids = EXCLUDED.mids, fetched_at = now()`,
+    );
+    await pool.query(
+      `INSERT INTO nbs_middle_rates
+         (id, rate_date, base_currency, quote_currency, middle_rate, fetched_at)
+       VALUES
+         ('nbs-serbia-eur', (timezone('Europe/Belgrade', now()))::date, 'EUR', 'RSD', 100, timestamptz '2026-10-07 08:00:00+00')
+       ON CONFLICT (rate_date, base_currency, quote_currency)
+       DO UPDATE SET middle_rate = EXCLUDED.middle_rate, fetched_at = EXCLUDED.fetched_at`,
     );
     logged = [];
     const created = await appSafeSignup();
@@ -140,6 +151,7 @@ postgres("Serbia pack-rs-v1", () => {
         await client.query("DELETE FROM legal_entities WHERE tenant_id=$1", [tenant]);
         await client.query("DELETE FROM tenants WHERE id=$1", [tenant]);
         await client.query("DELETE FROM market_rates WHERE id='snap-serbia'");
+        await client.query("DELETE FROM nbs_middle_rates WHERE id='nbs-serbia-eur'");
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -264,12 +276,15 @@ postgres("Serbia pack-rs-v1", () => {
 
     const row = (
       await pool.query(
-        `SELECT compliance_threshold_rate, receipt_facts, identity_number
+        `SELECT compliance_threshold_rate, compliance_threshold_rate_at, compliance_threshold_rate_source,
+                receipt_facts, identity_number
            FROM ledger_transactions WHERE transaction_ref=$1`,
         [under.json().transactionRef],
       )
     ).rows[0];
     expect(row.compliance_threshold_rate).toBe("100.000000000000");
+    expect(row.compliance_threshold_rate_source).toBe("nbs_middle");
+    expect(new Date(row.compliance_threshold_rate_at).toISOString()).toBe("2026-10-07T08:00:00.000Z");
     expect(row.identity_number).toBeNull();
     expect(row.receipt_facts.side).toBe("otkup");
     expect(row.receipt_facts.basis).toBe("796/701");
@@ -383,14 +398,184 @@ postgres("Serbia pack-rs-v1", () => {
     );
   });
 
-  it("refuses an unidentified deal when the rate is older than 24 hours", async () => {
-    const prior = await pool.query(`SELECT id, fetched_at FROM market_rates`);
-    await pool.query(`UPDATE market_rates SET fetched_at = now() - interval '25 hours'`);
-    const stale = await sellEur("10.00", "rs-stale");
-    expect(stale.statusCode, stale.body).toBe(422);
-    expect(stale.json().code).toBe("COMPLIANCE_BLOCKED");
-    for (const row of prior.rows) {
-      await pool.query(`UPDATE market_rates SET fetched_at = $2 WHERE id = $1`, [row.id, row.fetched_at]);
+  it("refuses an unidentified deal when only the market snapshot is on file", async () => {
+    const before = await pool.query(
+      `SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1`,
+      [`tnt-${desk.slug}`],
+    );
+    await pool.query(`DELETE FROM nbs_middle_rates WHERE id='nbs-serbia-eur'`);
+    try {
+      const refused = await sellEur("10.00", "rs-market-only");
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
+      const after = await pool.query(
+        `SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1`,
+        [`tnt-${desk.slug}`],
+      );
+      expect(after.rows[0].n).toBe(before.rows[0].n);
+    } finally {
+      await restoreNbs();
     }
   });
+
+  it("refuses an unidentified deal when the NBS rate is for another Belgrade day", async () => {
+    await pool.query(
+      `UPDATE nbs_middle_rates
+          SET rate_date = (timezone('Europe/Belgrade', now()))::date - 1
+        WHERE id='nbs-serbia-eur'`,
+    );
+    try {
+      const refused = await sellEur("10.00", "rs-wrong-day");
+      expect(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
+    } finally {
+      await restoreNbs();
+    }
+  });
+
+  it("does not claim the euro line was met when the NBS rate is missing", async () => {
+    await pool.query(`DELETE FROM nbs_middle_rates WHERE id='nbs-serbia-eur'`);
+    await pool.query(
+      `UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1`,
+      [desk.customerId],
+    );
+    try {
+      const posted = await sellEur("5000.00", "rs-verified-no-rate");
+      expect(posted.statusCode, posted.body).toBe(201);
+      const row = (
+        await pool.query(
+          `SELECT compliance_threshold_rate, compliance_threshold_rate_source, identity_number
+             FROM ledger_transactions WHERE transaction_ref=$1`,
+          [posted.json().transactionRef],
+        )
+      ).rows[0];
+      expect(row.compliance_threshold_rate).toBeNull();
+      expect(row.compliance_threshold_rate_source).toBe("none");
+      expect(row.identity_number).toBeNull();
+    } finally {
+      await pool.query(
+        `UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1`,
+        [desk.customerId],
+      );
+      await restoreNbs();
+    }
+  });
+
+  it("keeps the NBS rate when the market snapshot says something else", async () => {
+    await pool.query(
+      `UPDATE market_rates SET mids='{"USD":1.36,"RSD":0.02,"EUR":1.00}'::jsonb WHERE id='snap-serbia'`,
+    );
+    try {
+      const under = await sellEur("100.00", "rs-rate-source");
+      expect(under.statusCode, under.body).toBe(201);
+      const row = (
+        await pool.query(
+          `SELECT compliance_threshold_rate_source, compliance_threshold_rate
+             FROM ledger_transactions WHERE transaction_ref=$1`,
+          [under.json().transactionRef],
+        )
+      ).rows[0];
+      expect(row.compliance_threshold_rate_source).toBe("nbs_middle");
+      expect(row.compliance_threshold_rate).toBe("100.000000000000");
+    } finally {
+      await pool.query(
+        `UPDATE market_rates SET mids='{"USD":1.36,"RSD":0.0125,"EUR":1.25}'::jsonb WHERE id='snap-serbia'`,
+      );
+    }
+  });
+
+  it("identifies a transfer over 1,000 EUR and lets 1,000.00 through", async () => {
+    const at = await send("100000.00", "rs-remit-at");
+    expect(at.statusCode, at.body).toBe(201);
+    const over = await send("100000.01", "rs-remit-over");
+    expect(over.statusCode, over.body).toBe(422);
+    expect(over.json().code).toBe("COMPLIANCE_BLOCKED");
+    const billAt = await bill("100000.00", "rs-eft-at");
+    expect(billAt.statusCode, billAt.body).toBe(201);
+    const billOver = await bill("100000.01", "rs-eft-over");
+    expect(billOver.statusCode, billOver.body).toBe(422);
+    expect(billOver.json().code).toBe("COMPLIANCE_BLOCKED");
+    const stamp = (
+      await pool.query(
+        `SELECT compliance_threshold_rate_source FROM ledger_transactions WHERE transaction_ref=$1`,
+        [at.json().transactionRef],
+      )
+    ).rows[0];
+    expect(stamp.compliance_threshold_rate_source).toBe("nbs_middle");
+  });
+
+  it("stops a suspicious attempt, saves a draft, and allows a later post", async () => {
+    const held = await sellEur("10.00", "rs-suspect", { reportSuspicion: true });
+    expect(held.statusCode, held.body).toBe(422);
+    expect(held.json().message).toBe(SERBIA_SUSPICION_HELD);
+    const filing = (
+      await pool.query(
+        `SELECT status, report_code FROM ledger_report_filings
+          WHERE tenant_id=$1 AND report_code='STR'`,
+        [`tnt-${desk.slug}`],
+      )
+    ).rows;
+    expect(filing).toEqual([expect.objectContaining({ status: "draft", report_code: "STR" })]);
+    const audit = (
+      await pool.query(
+        `SELECT reason FROM ledger_audit_events
+          WHERE tenant_id=$1 AND action='serbia.suspicion.hold'`,
+        [`tnt-${desk.slug}`],
+      )
+    ).rows;
+    expect(audit).toHaveLength(1);
+    const later = await sellEur("10.00", "rs-after-suspect");
+    expect(later.statusCode, later.body).toBe(201);
+  });
+
+  async function restoreNbs() {
+    await pool.query(`DELETE FROM nbs_middle_rates WHERE base_currency='EUR' AND quote_currency='RSD'`);
+    await pool.query(
+      `INSERT INTO nbs_middle_rates
+         (id, rate_date, base_currency, quote_currency, middle_rate, fetched_at)
+       VALUES
+         ('nbs-serbia-eur', (timezone('Europe/Belgrade', now()))::date, 'EUR', 'RSD', 100, timestamptz '2026-10-07 08:00:00+00')`,
+    );
+  }
+
+  async function send(amount: string, key: string) {
+    return app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: { cdos_session: desk.cookie },
+      payload: {
+        idempotencyKey: key,
+        customerId: desk.customerId,
+        reference: key,
+        principalAmount: amount,
+        feeAmount: "0.00",
+        payoutCurrency: "EUR",
+        payoutAmount: "1.00",
+        corridor: "DE",
+        partner: "Corridor partner",
+        beneficiaryName: "Ann Beneficiary",
+        purpose: "Family support",
+        sourceOfFunds: "Salary",
+      },
+    });
+  }
+
+  async function bill(amount: string, key: string) {
+    return app.inject({
+      method: "POST",
+      url: "/api/ledger/bill-payments",
+      cookies: { cdos_session: desk.cookie },
+      payload: {
+        idempotencyKey: key,
+        customerId: desk.customerId,
+        reference: key,
+        billAmount: amount,
+        feeAmount: "0.00",
+        biller: "City power",
+        accountRef: key,
+        purpose: "Household bill",
+        sourceOfFunds: "Salary",
+      },
+    });
+  }
 });

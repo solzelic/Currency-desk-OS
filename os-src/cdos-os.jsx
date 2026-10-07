@@ -400,7 +400,7 @@
         <div className="station" style={{ marginBottom: 14 }}>{d.country === 'European Union'
           ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.'
           : reg.follow
-            ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. The desk converts euros to dinars. A tighter dinar line is set in Settings.'
+            ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. Those euro lines need the National Bank of Serbia middle rate for the day. A tighter dinar line is set in Settings.'
             : <>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</>}</div>
         {reg.follow ? null : (d.country === 'European Union' ? [
           { v: 3000, t: 'Only at 3,000', d: 'Cash identification. The 2027 minimum.' },
