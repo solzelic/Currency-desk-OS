@@ -10,7 +10,7 @@ import path from "node:path";
 import { test, expect, hasLedger, landOnDesktop, rendered, codeFor, logSize } from "./fixtures";
 import type { Page } from "@playwright/test";
 
-test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
+test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
 const { Pool } = requireFromServer("pg") as {

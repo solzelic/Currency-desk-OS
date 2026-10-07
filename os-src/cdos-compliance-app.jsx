@@ -253,6 +253,14 @@
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
       .sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
+    /* The Philippines pack ships no sanctions list. The OFAC / UN / OSFI
+       queue below would tell the owner those names were matched. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (packNow && packNow.packId === 'pack-ph-v1') return (<div className="p-4">
+      <div className="text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
+      <div className="mt-1 text-[12px] max-w-md" style={{ color: CD.mute }}>No sanctions list ships for the Philippines yet. This desk does not match client or beneficiary names against OFAC, the UN list, or OSFI.</div>
+    </div>);
+
     // Settings → Compliance · sanctions screening switch gates the whole queue
     if (settings && settings.screenSanctions === false) return (<div className="p-4">
       <div className="flex flex-col items-center justify-center text-center py-16 px-6" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12 }}>
@@ -553,6 +561,14 @@
       window.CDOS.LCTR.openSealed(filing, ctx);
     };
     const KindTag = ({ k }) => <span className="text-[10px] px-1.5 py-0.5 font-semibold" style={{ background: k === regime.wireCode ? '#dbe5fb' : (k === regime.strCode ? CD.amberSoft : CD.flagSoft), color: k === regime.wireCode ? '#1d4ed8' : (k === regime.strCode ? 'var(--cd-brass-text)' : CD.flag), borderRadius: 4, fontFamily: 'Space Mono' }}>{k}</span>;
+
+    /* A Philippines desk does not file, and it does not prepare an AMLC
+       form. The FWR worksheet below would say that it does. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (packNow && packNow.packId === 'pack-ph-v1') return (<div className="p-4">
+      <div className="text-sm font-semibold" style={{ color: CD.ink }}>Filings</div>
+      <div className="mt-1 text-[12px] max-w-md" style={{ color: CD.mute }}>The desk does not file. The owner files in the AMLC portal. A single deal over the line is flagged. Deals in one banking day are not summed.</div>
+    </div>);
 
     return (<div className="p-4">
       <div className="mb-4">
@@ -859,7 +875,8 @@
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
 
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const philippines = regime.id === 'pack-ph-v1';
+    const TABS = [['screening', 'Screening', 'shield', philippines ? 0 : screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
@@ -871,7 +888,7 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="grid grid-cols-3 gap-2 mt-3">
-          {[['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
+          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', philippines ? 0 : screenFlagged, philippines ? 'No list yet' : 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
             <button key={l} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>

@@ -10361,7 +10361,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, [1, 7, 14, 30].map(d => /*#__PURE__*/React.createElement("option", {
         key: d,
         value: d
-      }, d, " days")))), /*#__PURE__*/React.createElement(Row, {
+      }, d, " days")))), pack && pack.packId === 'pack-ph-v1' ? /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions / watchlist screening",
+        desc: "No sanctions list ships for the Philippines yet."
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, "Not on this desk")) : /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions / watchlist screening",
         desc: "Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue \u2014 most regulators expect it on."
       }, /*#__PURE__*/React.createElement(Sw, {
@@ -43364,6 +43372,23 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), [subjects]);
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
+    /* The Philippines pack ships no sanctions list. The OFAC / UN / OSFI
+       queue below would tell the owner those names were matched. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (packNow && packNow.packId === 'pack-ph-v1') return /*#__PURE__*/React.createElement("div", {
+      className: "p-4"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1 text-[12px] max-w-md",
+      style: {
+        color: CD.mute
+      }
+    }, "No sanctions list ships for the Philippines yet. This desk does not match client or beneficiary names against OFAC, the UN list, or OSFI."));
+
     // Settings → Compliance · sanctions screening switch gates the whole queue
     if (settings && settings.screenSanctions === false) return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
@@ -44549,6 +44574,23 @@ ${(filing.map || []).map(blockHTML).join('')}
         fontFamily: 'Space Mono'
       }
     }, k);
+
+    /* A Philippines desk does not file, and it does not prepare an AMLC
+       form. The FWR worksheet below would say that it does. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    if (packNow && packNow.packId === 'pack-ph-v1') return /*#__PURE__*/React.createElement("div", {
+      className: "p-4"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Filings"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1 text-[12px] max-w-md",
+      style: {
+        color: CD.mute
+      }
+    }, "The desk does not file. The owner files in the AMLC portal. A single deal over the line is flagged. Deals in one banking day are not summed."));
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -45406,7 +45448,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const philippines = regime.id === 'pack-ph-v1';
+    const TABS = [['screening', 'Screening', 'shield', philippines ? 0 : screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -45447,7 +45490,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
-    }, [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
+    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', philippines ? 0 : screenFlagged, philippines ? 'No list yet' : 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
       const col = bad ? warn : CD.green;
       return /*#__PURE__*/React.createElement("button", {
@@ -50923,7 +50966,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", limit.label, " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.windowKind === 'banking_day' ? null : regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", limit.label, " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(React.Fragment, null, " This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to
