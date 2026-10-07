@@ -2,7 +2,7 @@
    minor units and pieces. The product is an integer. A fraction is not
    a face and not a quantity, so it is refused rather than rounded. */
 import { describe, expect, it } from "vitest";
-import { buildCountSheet, countLineMinor } from "../src/ledger/count-line.js";
+import { buildCountSheet, countLineMinor, countSheetReply } from "../src/ledger/count-line.js";
 
 describe("a till count line", () => {
   it("totals three five-cent coins as 15 minor units", () => {
@@ -19,6 +19,32 @@ describe("a till count line", () => {
 
   it("refuses a fractional quantity", () => {
     expect(() => countLineMinor(5, 1.5)).toThrow(/pieces/);
+  });
+
+  it("refuses a negative face", () => {
+    expect(() => countLineMinor(-5, 1)).toThrow(/minor units/);
+  });
+
+  it("refuses a line that does not fit in a safe integer", () => {
+    expect(() => countLineMinor(Number.MAX_SAFE_INTEGER, 2)).toThrow(/too large/);
+  });
+});
+
+describe("a count sheet fault", () => {
+  it("is not a client error when the fault is unexpected", () => {
+    expect(countSheetReply(new Error("disk failed"))).toBeNull();
+  });
+
+  it("is a client error when the count itself was refused", () => {
+    let refused: unknown;
+    try {
+      countLineMinor(-5, 1);
+    } catch (error) {
+      refused = error;
+    }
+    expect(countSheetReply(refused)).toMatchObject({
+      code: "INVALID_REQUEST",
+    });
   });
 });
 
@@ -54,6 +80,17 @@ describe("a till count sheet", () => {
     expect(sheet.currencies).toEqual([
       { currency: "PHP", counted: "2.00", expected: null, variance: null },
     ]);
+  });
+
+  it("refuses a currency listed twice", () => {
+    expect(() => buildCountSheet({
+      lines: [],
+      typed: [
+        { currency: "CAD", amount: "1.00" },
+        { currency: "CAD", amount: "2.00" },
+      ],
+      expected: {},
+    })).toThrow(/listed twice/);
   });
 
   it("refuses a currency counted both by denomination and as one total", () => {

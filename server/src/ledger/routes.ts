@@ -33,7 +33,7 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
-import { buildCountSheet } from "./count-line.js";
+import * as countLine from "./count-line.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -667,14 +667,15 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (!actor) return;
       const balances = await provisioning.getBalances(actor);
       try {
-        return reply.send(buildCountSheet({
+        return reply.send(countLine.buildCountSheet({
           lines: parsed.data.lines,
           typed: parsed.data.typed,
           expected: balances.balances,
         }));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "That count could not be totalled.";
-        return reply.code(400).send({ code: "INVALID_REQUEST", message });
+        const refused = countLine.countSheetReply(error);
+        if (refused) return reply.code(400).send(refused);
+        throw error;
       }
     } catch (error) {
       return failure(reply, error);

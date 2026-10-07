@@ -13049,6 +13049,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   /* Render an integer number of minor units. 15 is "0.15". This splits
      digits. It does not divide. */
+  /* A printed piece name from the integer face. 5 is "5¢". 10000 is
+     "100". The count screen still uses denLabel. */
+  const faceLabel = faceMinor => {
+    if (typeof faceMinor !== 'number' || !Number.isInteger(faceMinor) || faceMinor < 0) return '—';
+    if (faceMinor < 100) return faceMinor + '¢';
+    const digits = String(faceMinor);
+    const major = digits.slice(0, -2).replace(/^0+/, '') || '0';
+    const cents = digits.slice(-2);
+    return cents === '00' ? major : major + '.' + cents;
+  };
   const minorText = minor => {
     if (typeof minor !== 'number' || !Number.isInteger(minor)) return '—';
     const negative = minor < 0;
@@ -14434,7 +14444,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             faceMinor,
             quantity: qty,
             kind: pieces[i][1],
-            label: denLabel(pieces[i][0])
+            label: faceLabel(faceMinor)
           });
         });
       });

@@ -1,6 +1,7 @@
 import pg from "pg";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as countLine from "../src/ledger/count-line.js";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
@@ -341,6 +342,25 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(anon.statusCode).toBe(401);
     const after = await pool.query("SELECT count(*) FROM ledger_till_count_batches");
     expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
+  it("returns 500 when pricing the sheet fails unexpectedly", async () => {
+    const spy = vi.spyOn(countLine, "buildCountSheet").mockImplementation(() => {
+      throw new Error("unexpected fault");
+    });
+    try {
+      const teller = await cookie();
+      const fault = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-count-lines",
+        cookies: teller,
+        payload: { lines: [] },
+      });
+      expect(fault.statusCode).toBe(500);
+      expect(fault.json()).toMatchObject({ code: "INTERNAL_ERROR" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("records idempotent counts, moves cash, closes the till, and blocks posting", async () => {
