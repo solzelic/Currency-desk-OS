@@ -34,7 +34,10 @@ test("the till print shows the ledger balance and does not pretend to be the sig
   const popup = await popupPromise;
   await expect(popup.locator("body")).toContainText("Till count and day summary");
   const text = await popup.locator("body").innerText();
-  expect(text).toContain("Counted on screen");
+  // KPI labels and table headers are styled uppercase, so innerText
+  // returns COUNTED ON SCREEN. The sentence under the count lines stays
+  // sentence case. Either form is the same label.
+  expect(text.toLowerCase()).toContain("counted on screen");
   expect(text).toContain("End-of-Day Sign-Off");
   expect(text).toContain("never a zero");
 
