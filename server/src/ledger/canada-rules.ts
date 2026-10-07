@@ -79,6 +79,7 @@ type IdRow = {
   dealKind: string;
   amount: Decimal | null;
   comparator: string;
+  currency: string;
 };
 
 /* Cheque clearance and cheque return are not deals a customer did.
@@ -132,7 +133,7 @@ function kindKey(dealKind: string): string {
 
 async function idRows(client: pg.PoolClient, packId: string): Promise<IdRow[]> {
   const found = await client.query(
-    `SELECT deal_kind, threshold, comparator
+    `SELECT deal_kind, threshold, comparator, currency
        FROM jurisdiction_id_thresholds
       WHERE pack_id = $1`,
     [packId],
@@ -141,6 +142,7 @@ async function idRows(client: pg.PoolClient, packId: string): Promise<IdRow[]> {
     dealKind: String(row.deal_kind),
     amount: lineAmount(row.threshold),
     comparator: String(row.comparator || "gte"),
+    currency: String(row.currency ?? "").trim().toUpperCase(),
   }));
 }
 
@@ -491,6 +493,12 @@ export async function beneficiaryRecordGap(
   if (!isSplit(rows, positive(pack.idThreshold))) return null;
   const remittance = rows.find((row) => row.dealKind === "remittance");
   if (!remittance || remittance.amount === null) return null;
+  /* A line written in another currency is not this Canadian record.
+     Serbia's remittance line is euros on a dinar book, and the NBS
+     gate already decided identification. Comparing dinars with the
+     euro figure would demand a beneficiary under the line. */
+  const home = pack.homeCurrency.trim().toUpperCase();
+  if (remittance.currency && remittance.currency !== home) return null;
   if (!hits(amountHome, remittance.amount, remittance.comparator)) return null;
   if (String(name ?? "").trim() && String(address ?? "").trim()) return null;
   return "A transfer at or above the identification line needs the beneficiary's name and address on the record.";
