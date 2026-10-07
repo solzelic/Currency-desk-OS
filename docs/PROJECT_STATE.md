@@ -406,10 +406,13 @@ authenticated narrative dashboard.
 **2026-10-07**, till count print. The Cash Drawer prints the count typed
 on screen and the day's ledger figures (expected cash, transactions,
 earned today). The browser print dialog saves that page as a PDF.
-A denomination line is face times quantity, in cents, the same line
-the count row shows. The page does not post money. The signed
-close-out is still the End-of-Day Sign-Off, which reads the ledger
-on its own. See `docs/GENERATED_DOCUMENTS.md`.
+A denomination line total is `POST /api/ledger/till-count-lines`:
+face and quantity go up as whole numbers, and the line comes back
+as integer minor units. The page prints that number. It does not
+multiply. A currency typed as one total is printed as typed. The
+page does not post money. The signed close-out is still the
+End-of-Day Sign-Off, which reads the ledger on its own. See
+`docs/GENERATED_DOCUMENTS.md`.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing

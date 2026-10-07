@@ -33,6 +33,7 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
+import { priceCountLines } from "./count-line.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -113,6 +114,15 @@ const tillCounts = byCurrency(monetary("0"), "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
+}).strict();
+/* A print of the count, not a posting. Each face is already minor units.
+   The route multiplies. It does not write a till count. */
+const countLinesBody = z.object({
+  lines: z.array(z.object({
+    currency: z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."),
+    faceMinor: z.number().int().nonnegative().max(100_000_000),
+    quantity: z.number().int().nonnegative().max(1_000_000),
+  }).strict()).max(400),
 }).strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -632,6 +642,24 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.code(201).send(await tillControl.open(actor))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/till-count-lines", async (req, reply) => {
+    const parsed = countLinesBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        code: "INVALID_REQUEST",
+        message: "A count line needs a whole number of minor units and a whole number of pieces.",
+      });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send({ lines: priceCountLines(parsed.data.lines) })
         : undefined;
     } catch (error) {
       return failure(reply, error);

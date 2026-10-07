@@ -158,10 +158,12 @@ from a real record is a key in `localStorage`.
 
 The Cash Drawer button "Print summary" opens a page of what that screen
 already shows: the ledger's expected balance, the ledger's earned-today
-figure, and the count typed on the screen (saved or not). Denomination
-lines are face value times quantity, in cents, the same line the count
-row shows. The browser print dialog prints that page or saves it as a
-PDF. It does not post money.
+figure, and the count typed on the screen (saved or not). A denomination
+line is sent to `POST /api/ledger/till-count-lines` as a whole number of
+minor units and a whole number of pieces. The server returns the line
+total as integer minor units. The page prints that number. It does not
+multiply. A currency typed as one total is printed as typed. The browser
+print dialog prints that page or saves it as a PDF. It does not post money.
 
 The signed record remains the End-of-Day Sign-Off. That sheet reads the
 ledger on its own. It does not copy the till print.

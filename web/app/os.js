@@ -2208,6 +2208,14 @@
           body: "{}",
         });
       },
+      /* Totals for the print. The server multiplies face by quantity
+         and returns integer minor units. This call does not post a count. */
+      priceCountLines: function (payload) {
+        return request("/api/ledger/till-count-lines", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
       saveTillCount: function (payload) {
         return request("/api/ledger/till-counts", {
           method: "POST",
@@ -13024,6 +13032,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     MXN: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [20, 'coin'], [10, 'coin'], [5, 'coin'], [2, 'coin'], [1, 'coin'], [0.5, 'coin']],
     AED: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'coin'], [0.5, 'coin'], [0.25, 'coin']]
   };
+  /* The same pieces, as integer minor units, in the same order as DEN.
+     A five-cent coin is 5. A hundred-dollar bill is 10000. The print
+     sends these numbers to the server. It does not turn a decimal face
+     into cents. */
+  const FACE_MINOR = {
+    CAD: [10000, 5000, 2000, 1000, 500, 200, 100, 25, 10, 5],
+    USD: [10000, 5000, 2000, 1000, 500, 100, 25, 10, 5, 1],
+    EUR: [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1],
+    GBP: [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5],
+    INR: [200000, 50000, 20000, 10000, 5000, 2000, 1000, 1000, 500, 200, 100],
+    PHP: [100000, 50000, 20000, 10000, 5000, 2000, 2000, 1000, 500, 100, 25],
+    CNY: [10000, 5000, 2000, 1000, 500, 100, 100, 50, 10],
+    MXN: [100000, 50000, 20000, 10000, 5000, 2000, 2000, 1000, 500, 200, 100, 50],
+    AED: [100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 100, 50, 25]
+  };
+  /* Render an integer number of minor units. 15 is "0.15". This splits
+     digits. It does not divide. */
+  const minorText = minor => {
+    if (typeof minor !== 'number' || !Number.isInteger(minor)) return '—';
+    const negative = minor < 0;
+    const digits = String(Math.abs(minor)).padStart(3, '0');
+    return (negative ? '-' : '') + digits.slice(0, -2) + '.' + digits.slice(-2);
+  };
   const CCYS = Object.keys(DEN);
   const flagOf = c => {
     try {
@@ -14365,14 +14396,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
 
     /* A page the owner can print or save as a PDF from the browser dialog.
-       It reprints this screen. It does not post money and it does not
-       invent a total the screen does not already show.
+       It reprints this screen. It does not post money.
        Expected cash and earned today are the ledger figures already on
        the drawer. The count is what is typed here, saved or not. The
        signed close-out stays the End-of-Day Sign-Off. A denomination
-       line is face times quantity, in cents, which is the same line the
-       count row already shows. Cents keep a five-cent coin exact. */
-    const printCloseSummary = () => {
+       line total comes back from the server as integer minor units.
+       The page prints that number. It does not multiply. */
+    const printCloseSummary = async () => {
       const desk = settings && (settings.operatingName || settings.bizName) || 'This desk';
       const where = [stationName, serverBacked && ledgerTill && ledgerTill.tillId || stationTill || tillNm].filter(Boolean).join(', ');
       const sheetDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
@@ -14382,19 +14412,83 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const difference = r.variance == null ? absent : (r.variance > 0 ? '+' : '') + num(r.variance);
         return `<tr><td>${htmlEscape(r.c)}</td><td class="num">${r.expected == null ? absent : htmlEscape(num(r.expected))}</td><td class="num">${r.counted == null ? absent : htmlEscape(num(r.counted))}</td><td class="num">${r.variance == null ? absent : htmlEscape(difference)}</td></tr>`;
       }).join('');
-      const denomLines = [];
+      const asked = [];
+      let mismatch = '';
+      const typedTotals = [];
       CCYS.forEach(c => {
         if (!isCounted(c)) return;
         if (ccyMode(c) === 'total') {
-          denomLines.push(`<tr><td>${htmlEscape(c)}</td><td>Entered as one total</td><td class="num"></td><td class="num">${htmlEscape(num(ccyTotal(c)))}</td></tr>`);
+          const typed = String(quick[c] == null ? '' : quick[c]).trim();
+          typedTotals.push({
+            c,
+            typed: typed || absent
+          });
           return;
         }
-        (DEN[c] || []).forEach(([face, kind], i) => {
+        const faces = FACE_MINOR[c] || [];
+        const pieces = DEN[c] || [];
+        if (faces.length !== pieces.length) {
+          mismatch = c;
+          return;
+        }
+        faces.forEach((faceMinor, i) => {
           const qty = parseInt((counts[c] || {})[i], 10) || 0;
           if (!qty) return;
-          const cents = Math.round(face * 100) * qty;
-          denomLines.push(`<tr><td>${htmlEscape(c)}</td><td>${htmlEscape(denLabel(face) + ' ' + kind)}</td><td class="num">${qty}</td><td class="num">${htmlEscape((cents / 100).toFixed(2))}</td></tr>`);
+          asked.push({
+            currency: c,
+            faceMinor,
+            quantity: qty,
+            kind: pieces[i][1],
+            label: denLabel(pieces[i][0])
+          });
         });
+      });
+      if (mismatch) {
+        setSessionErr('This desk has no priced denominations for ' + mismatch + '.');
+        return;
+      }
+      let priced = [];
+      if (asked.length) {
+        const api = window.CDOS.Backend;
+        if (!api || !api.priceCountLines) {
+          setSessionErr('The desk could not total the count lines.');
+          return;
+        }
+        try {
+          const body = await api.priceCountLines({
+            lines: asked.map(({
+              currency,
+              faceMinor,
+              quantity
+            }) => ({
+              currency,
+              faceMinor,
+              quantity
+            }))
+          });
+          const returned = body && body.lines || [];
+          if (returned.length !== asked.length || returned.some((line, i) => line.minor == null || line.currency !== asked[i].currency || line.quantity !== asked[i].quantity)) {
+            setSessionErr('The desk did not return every count line.');
+            return;
+          }
+          priced = asked.map((line, i) => ({
+            ...line,
+            minor: returned[i].minor
+          }));
+        } catch (error) {
+          setSessionErr(error && error.message || 'The desk could not total the count lines.');
+          return;
+        }
+      }
+      const denomLines = [];
+      typedTotals.forEach(({
+        c,
+        typed
+      }) => {
+        denomLines.push(`<tr><td>${htmlEscape(c)}</td><td>Entered as one total</td><td class="num"></td><td class="num">${htmlEscape(typed)}</td></tr>`);
+      });
+      priced.forEach(line => {
+        denomLines.push(`<tr><td>${htmlEscape(line.currency)}</td><td>${htmlEscape(line.label + ' ' + line.kind)}</td><td class="num">${line.quantity}</td><td class="num">${htmlEscape(minorText(line.minor))}</td></tr>`);
       });
       const earned = closedEarned == null ? absent : fmt(closedEarned, closedEarnedCcy);
       const txns = closedTxns == null ? absent : String(closedTxns);
@@ -14440,7 +14534,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div><div class="line">${htmlEscape(me ? me.name : '')}</div><div class="cap">Teller on duty<span style="float:right">Date</span></div></div>
           <div><div class="line"></div><div class="cap">Owner<span style="float:right">Date</span></div></div>
         </div>
-        <p class="foot">Prepared by ${htmlEscape(who)}. Trading day ${htmlEscape(sheetDate)}. Expected cash is the ledger balance for this till. Earned today is the ledger figure for this trading day. The count is what is typed on this screen, including a count that has not been saved. The signed close-out is the End-of-Day Sign-Off. A dash means this page has no figure. It is never a zero.</p>
+        <p class="foot">Prepared by ${htmlEscape(who)}. Trading day ${htmlEscape(sheetDate)}. Expected cash is the ledger balance for this till. Earned today is the ledger figure for this trading day. The count is what is typed on this screen, including a count that has not been saved. Each denomination line is the server total of that face and quantity, in minor units. The signed close-out is the End-of-Day Sign-Off. A dash means this page has no figure. It is never a zero.</p>
         </body></html>`;
       const w = window.open('', '_blank', 'width=900,height=1100');
       if (!w) {
@@ -14453,7 +14547,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         try {
           w.focus();
           w.print();
-        } catch (e) {}
+        } catch (error) {
+          setSessionErr(error && error.message || 'The print window did not open.');
+        }
       }, 300);
     };
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];

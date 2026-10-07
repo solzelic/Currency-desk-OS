@@ -307,6 +307,36 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     ).toBe(409);
   });
 
+  it("prices a denomination line in minor units and does not post a count", async () => {
+    const teller = await cookie();
+    const before = await pool.query("SELECT count(*) FROM ledger_till_count_batches");
+    const priced = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      cookies: teller,
+      payload: { lines: [{ currency: "CAD", faceMinor: 5, quantity: 3 }] },
+    });
+    expect(priced.statusCode).toBe(200);
+    expect(priced.json().lines).toEqual([
+      { currency: "CAD", faceMinor: 5, quantity: 3, minor: 15 },
+    ]);
+    const fraction = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      cookies: teller,
+      payload: { lines: [{ currency: "CAD", faceMinor: 0.05, quantity: 3 }] },
+    });
+    expect(fraction.statusCode).toBe(400);
+    const anon = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-count-lines",
+      payload: { lines: [{ currency: "CAD", faceMinor: 5, quantity: 3 }] },
+    });
+    expect(anon.statusCode).toBe(401);
+    const after = await pool.query("SELECT count(*) FROM ledger_till_count_batches");
+    expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
   it("records idempotent counts, moves cash, closes the till, and blocks posting", async () => {
     const teller = await cookie();
     const manager = await cookie("r.haddad");
