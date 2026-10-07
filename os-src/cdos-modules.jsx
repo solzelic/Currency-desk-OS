@@ -79,7 +79,7 @@
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
+      const hours = (monthCash || bankingDay || !aggregate || (regime && regime.id === 'pack-sg-v1')) ? null : (regime.aggHours || 24);
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
@@ -128,6 +128,31 @@
           const idCmp = idRow.comparator === 'gt' ? 'gt' : 'gte';
           const overId = idCmp === 'gt' ? size > rowLine : size >= rowLine;
           idNeeded = single || overId;
+        }
+      }
+      /* Singapore. A cross-border money transfer is every deal. A cheque
+         has no line. Money changing is the server's boolean. This screen
+         does not compare the line. Until the answer arrives, identification
+         stays on. */
+      if (auPack && auPack.packId === 'pack-sg-v1') {
+        if (!window.CDOS.singaporeIdPosture) idNeeded = true;
+        else {
+        const posture = window.CDOS.singaporeIdPosture(row.type);
+        if (posture === 'never') idNeeded = false;
+        else if (posture === 'always') idNeeded = true;
+        else {
+          const from = String(row.inCcy || '').trim().toUpperCase();
+          const to = String(row.outCcy || from).trim().toUpperCase();
+          const inputAmount = window.CDOS.singaporeDecimalText(row.inAmt);
+          const dealKind = window.CDOS.singaporeDealKind(row.type);
+          const key = [dealKind, from, to, inputAmount].join('|');
+          if (!inputAmount || !from || !to) idNeeded = true;
+          else {
+            const answer = window.CDOS.singaporeIdAnswer(key);
+            idNeeded = answer == null ? true : answer;
+            window.CDOS.askSingaporeIdentification([{ key, dealKind, from, to, inputAmount }]);
+          }
+        }
         }
       }
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };

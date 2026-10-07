@@ -77,6 +77,7 @@ import {
   philippinesCashPayout,
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
+import { SG_BOOK_MESSAGE, isSingaporePack } from "./singapore-pack.js";
 import {
   assertIndiaPurpose,
   LedgerError,
@@ -676,6 +677,9 @@ export class ObligationService {
           throw new LedgerError("COMPLIANCE_BLOCKED", PH_PURPOSE_MESSAGE);
         }
       }
+      if (isSingaporePack(pack.packId) && pack.homeCurrency.trim().toUpperCase() !== "SGD") {
+        throw new LedgerError("COMPLIANCE_BLOCKED", SG_BOOK_MESSAGE);
+      }
       const compliance = await requireIdentification(
         client,
         actor,
@@ -716,8 +720,15 @@ export class ObligationService {
       /* Same as an exchange: the 2027 EU pack has no amount report, so
          a missing reporting line must not demand purpose on every transfer.
          A Philippines desk already applied "more than 500,000 PHP".
-         The generic test is "at or above", which would catch 500,000. */
-      if (pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
+         The generic test is "at or above", which would catch 500,000.
+         Singapore has no cash report. A report threshold of 0 reads as
+         no line and would demand purpose on every transfer. Paragraph
+         7.18 does not hard require it. */
+      if (
+        pack.packId !== EU_AMLR_PACK_ID &&
+        !isPhilippinesPack(pack.packId) &&
+        !isSingaporePack(pack.packId)
+      ) {
         await requirePurposeAndSource(
           client,
           actor.legalEntityId,

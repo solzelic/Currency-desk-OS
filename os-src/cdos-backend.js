@@ -470,6 +470,15 @@
         return request("/api/ledger/jurisdiction");
       },
 
+      /* Singapore customer due diligence for the deals on screen.
+         The body is the typed legs. The boolean is the ledger's. */
+      previewSingaporeIdentification: function (deals) {
+        return request("/api/ledger/singapore-identification", {
+          method: "POST",
+          body: JSON.stringify({ deals: deals }),
+        });
+      },
+
       /* Owner only, and only from Canada pack version 1. The server
          refuses anything else. There is no route back. */
       optInCanadaV2: function () {

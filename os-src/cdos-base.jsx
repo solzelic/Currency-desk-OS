@@ -1015,6 +1015,7 @@
       window.addEventListener('cdos-jurisdiction', bump);
       window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
+      window.addEventListener('cdos-singapore-id', bump);
       Promise.all([
         refreshJurisdiction(),
         /* The desk's own lines, alongside the pack that proposes them. A
@@ -1030,6 +1031,7 @@
         window.removeEventListener('cdos-jurisdiction', bump);
         window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
+        window.removeEventListener('cdos-singapore-id', bump);
       };
     }, []);
     return version;

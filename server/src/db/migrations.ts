@@ -35,13 +35,17 @@ const migrations: readonly Migration[] = [
   ["028_pack_rule_fields", "src/db/migrations/028_pack_rule_fields.sql"],
   ["029_pack_ca_v2", "src/db/migrations/029_pack_ca_v2.sql"],
   ["031_pack_eu_amlr", "src/db/migrations/031_pack_eu_amlr.sql"],
-  /* 027 and 030 still belong to open drafts. 033 is Serbia. 034 is Australia. 035 is the United Kingdom. 036 is the United Arab Emirates. 037 is India. 038 is the Philippines. */
+  /* 027 and 030 still belong to open drafts. 033 is Serbia. 034 is Australia. 035 is the United Kingdom. 036 is the United Arab Emirates. 037 is India. 038 is the Philippines. 039 is Singapore. */
   ["033_serbia_pack", "src/db/migrations/033_serbia_pack.sql"],
   ["034_pack_au_v2", "src/db/migrations/034_pack_au_v2.sql"],
   ["035_pack_gb_v2", "src/db/migrations/035_pack_gb_v2.sql"],
   ["036_pack_ae_v2", "src/db/migrations/036_pack_ae_v2.sql"],
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
+  /* 039 stays. 029, 031, and 033 through 038 are already on main. If a
+     later rebase finds 039 taken, renumber this id, the file name, and
+     the header in the SQL together. */
+  ["039_pack_sg_v1", "src/db/migrations/039_pack_sg_v1.sql"],
 ] as const;
 
 export async function runMigrations(

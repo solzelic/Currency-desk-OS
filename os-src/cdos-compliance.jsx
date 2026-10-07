@@ -209,7 +209,8 @@
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = (monthCash || bankingDay)
+    const singaporeDesk = !!(pack && pack.packId === 'pack-sg-v1');
+    const aggregation = (monthCash || bankingDay || singaporeDesk)
       ? null
       : large && large.windowKind === 'none'
       ? {
@@ -304,7 +305,8 @@
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
     const noCashWindow = !!(large && large.windowKind === 'none');
     const wireEvery = !!(wire && (wire.triggerThreshold == null || wire.triggerThreshold === ''));
-    return {
+    const singapore = pack.packId === 'pack-sg-v1';
+    const built = {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : (pack.regulator || ''),
       country: baseline ? 'International baseline' : (pack.name || ''),
@@ -343,6 +345,145 @@
       baseline,
       reports: listed,
     };
+    /* A money changer has no cash transaction report. Force the cash
+       line off even if a desk number is later stored, so the browser
+       cannot flag a currency transaction report this country does not
+       have. The 5000 figure stays on idAt as the money-changing line.
+       A cross-border transfer does not use it. */
+    if (singapore) {
+      built.noCashReport = true;
+      built.threshold = null;
+      built.largeCode = '';
+      built.largeLabel = '';
+      built.wireCode = '';
+      built.wireLabel = '';
+      built.aggHours = null;
+      built.windowKind = 'none';
+      built.comparator = 'gt';
+      built.idComparator = (fxLine && fxLine.comparator) || 'gt';
+      built.sanctionsCode = '';
+      built.sanctionsLabel = '';
+    }
+    return built;
+  }
+
+  /* Kind only. Money is the server's decision, rendered below.
+
+     A cheque has no line. A cross-border money transfer is every deal,
+     and that fact does not read an amount. Money changing, a bill, and
+     a money order are 'ask': the screen posts the typed legs and
+     renders identificationRequired. Until that answer arrives, the
+     screen keeps identification on. It does not compare a line. */
+  function singaporeDealKind(type) {
+    if (type === 'cheque' || type === 'Cheque Cashing') return 'cheque_cashing';
+    if (type === 'remittance' || (typeof type === 'string' && type.indexOf('Remittance') === 0)) {
+      if (type.indexOf('Receive') >= 0) return 'remittance_receive';
+      if (type.indexOf('Send') >= 0) return 'remittance_send';
+      return 'remittance';
+    }
+    if (type === 'Bill Payment') return 'bill_payment';
+    if (type === 'Money Order') return 'money_order';
+    if (type === 'eft') return 'eft';
+    return 'fx';
+  }
+  function singaporeIdPosture(type) {
+    const kind = singaporeDealKind(type);
+    if (kind === 'cheque_cashing') return 'never';
+    if (kind === 'remittance' || kind === 'remittance_send' || kind === 'remittance_receive') return 'always';
+    return 'ask';
+  }
+  /* A typed decimal string is sent as typed. A figure already stored as
+     a number is rendered to two places so the ledger can parse it. This
+     is not the line comparison. */
+  function singaporeDecimalText(value) {
+    if (value == null) return '';
+    const text = String(value).trim();
+    if (/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(text)) return text;
+    const n = Number(text);
+    if (!Number.isFinite(n) || n < 0) return '';
+    return n.toFixed(2);
+  }
+  const sgIdAnswers = new Map();
+  const sgIdWaiting = new Set();
+  let sgIdQueue = [];
+  let sgIdTimer = null;
+  function singaporeIdAnswer(key) {
+    return sgIdAnswers.has(key) ? sgIdAnswers.get(key) : null;
+  }
+  function clearSingaporeIdentification() {
+    sgIdAnswers.clear();
+    sgIdWaiting.clear();
+    sgIdQueue = [];
+  }
+  function askSingaporeIdentification(deals) {
+    let added = false;
+    (deals || []).forEach(deal => {
+      if (!deal || !deal.key || sgIdAnswers.has(deal.key) || sgIdWaiting.has(deal.key)) return;
+      sgIdWaiting.add(deal.key);
+      sgIdQueue.push(deal);
+      added = true;
+    });
+    if (!added || sgIdTimer) return;
+    sgIdTimer = setTimeout(flushSingaporeIdentification, 30);
+  }
+  async function flushSingaporeIdentification() {
+    sgIdTimer = null;
+    const batch = sgIdQueue.splice(0, 40);
+    if (!batch.length) return;
+    const backend = window.CDOS.Backend;
+    const finish = (required) => {
+      batch.forEach(deal => {
+        sgIdAnswers.set(deal.key, required);
+        sgIdWaiting.delete(deal.key);
+      });
+    };
+    try {
+      if (!backend || !backend.previewSingaporeIdentification) {
+        finish(true);
+      } else {
+        const body = await backend.previewSingaporeIdentification(batch);
+        const rows = (body && body.decisions) || [];
+        const seen = new Set();
+        rows.forEach(row => {
+          if (!row || !row.key) return;
+          seen.add(row.key);
+          sgIdAnswers.set(row.key, row.identificationRequired !== false);
+          sgIdWaiting.delete(row.key);
+        });
+        batch.forEach(deal => {
+          if (seen.has(deal.key)) return;
+          sgIdAnswers.set(deal.key, true);
+          sgIdWaiting.delete(deal.key);
+        });
+      }
+    } catch (e) {
+      finish(true);
+    }
+    window.dispatchEvent(new Event('cdos-singapore-id'));
+    if (sgIdQueue.length && !sgIdTimer) sgIdTimer = setTimeout(flushSingaporeIdentification, 30);
+  }
+  window.addEventListener('cdos-thresholds', clearSingaporeIdentification);
+  window.addEventListener('cdos-jurisdiction', clearSingaporeIdentification);
+  /* Live checklist. Kind facts return immediately. An amount line waits
+     for the server and stays required until that boolean arrives. */
+  function useSingaporeIdRequired(active, spec) {
+    const version = window.CDOS.useDeskFacts();
+    const type = spec && spec.type;
+    const posture = active ? singaporeIdPosture(type) : 'never';
+    const dealKind = singaporeDealKind(type);
+    const from = spec && spec.from ? String(spec.from).trim().toUpperCase() : '';
+    const to = spec && spec.to ? String(spec.to).trim().toUpperCase() : '';
+    const inputAmount = singaporeDecimalText(spec && spec.inputAmount);
+    const key = [dealKind, from, to, inputAmount].join('|');
+    useEffect(() => {
+      if (!active || posture !== 'ask' || !inputAmount || !from || !to) return;
+      askSingaporeIdentification([{ key, dealKind, from, to, inputAmount }]);
+    }, [active, posture, key, version]);
+    if (!active || posture === 'never') return false;
+    if (posture === 'always') return true;
+    if (!inputAmount) return true;
+    const answer = singaporeIdAnswer(key);
+    return answer == null ? true : answer;
   }
 
   function getRegime(settings) {
@@ -407,9 +548,10 @@
      the pack would be a migration for a fact this file already knows. */
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);
-    return id !== 'pack-ph-v1';
+    return id !== 'pack-ph-v1' && id !== 'pack-sg-v1';
   }
   const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
+  const SG_SCREENING_NOTE = 'No sanctions list is loaded. Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.';
 
   const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = (s) => norm(s).split(' ').filter(Boolean);
@@ -511,8 +653,9 @@
        amount over the line is flagged on the deal. Connected deals in
        the month are not summed here. indiaCtrFindings can group them,
        and nothing calls it yet. A banking day is not this engine
-       either. The Philippines flags one deal and does not add the day. */
-    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
+       either. The Philippines flags one deal and does not add the day.
+       Singapore has no cash report and does not sum a day. */
+    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day' || regime.id === 'pack-sg-v1')) return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
@@ -626,8 +769,9 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, PH_SCREENING_NOTE },
-    getRegime,
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, PH_SCREENING_NOTE, SG_SCREENING_NOTE },
+    getRegime, singaporeDealKind, singaporeIdPosture, singaporeDecimalText,
+    singaporeIdAnswer, askSingaporeIdentification, useSingaporeIdRequired,
     jurisdictionViolations,
     jurisdictionPosture,
   });

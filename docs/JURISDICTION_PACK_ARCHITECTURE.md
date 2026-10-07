@@ -50,6 +50,11 @@ per-deal rows and converts US dollars. Serbia (`pack-rs-v1`) also
 reads the per-deal row, because those lines are in euros and the book
 is dinars. That conversion is the NBS middle rate for the Belgrade
 day, not the market snapshot. Receipt rules are in `docs/SERBIA_PACK.md`.
+`pack-sg-v1` reads the per-deal rows. Money changing is more than 5,000 SGD.
+A cross-border money transfer is an explicit any-amount gate that does
+not read the stored cell. There is no cash report. Migration 039 stays.
+027 and 030 are still open drafts. See `docs/SINGAPORE_PACK.md`.
+
 Seeded packs copy a positive value of that
 column onto all four kinds, so the two agree. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,

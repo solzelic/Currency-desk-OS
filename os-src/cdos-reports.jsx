@@ -842,14 +842,16 @@
               : regime.authority
               ? <>Prepared for {regime.authority} record-keeping{regime.country ? ` (${regime.country})` : ''}.{' '}</>
               : <>Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.{' '}</>}
-            {limit.amount == null
+            {regime.id === 'pack-sg-v1'
+              ? <>There is no cash transaction report for a money changer. A suspicious transaction report goes to the STRO. This desk does not file it and does not open SONAR.</>
+              : limit.amount == null
               ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.</>
               : regime.windowKind === 'calendar_month'
               ? <>{regime.largeLabel || 'Cash reports'} flag a single cash amount more than {limit.label}. Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.</>
               : regime.windowKind === 'banking_day'
               ? <>A single deal over {limit.label} is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.</>
               : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
-            {regime.windowKind === 'banking_day' ? null : <> This pack is a working summary; verify each filing in the official portal.</>}
+            {regime.windowKind === 'banking_day' || regime.id === 'pack-sg-v1' ? null : <> This pack is a working summary; verify each filing in the official portal.</>}
           </div>
           <Attest />
         </div>);

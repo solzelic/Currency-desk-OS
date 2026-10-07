@@ -70,6 +70,13 @@ describe("which country gets a pack", () => {
     });
     expect(packForCountry("Philippines")?.packId).toBe("pack-ph-v1");
     expect(packForCountry("Republic of the Philippines")?.homeCurrency).toBe("PHP");
+    expect(packForCountry("SG")).toEqual({
+      packId: "pack-sg-v1",
+      version: 1,
+      homeCurrency: "SGD",
+    });
+    expect(packForCountry("Singapore")?.packId).toBe("pack-sg-v1");
+    expect(packForCountry("Republic of Singapore")?.homeCurrency).toBe("SGD");
   });
 
   it("gives an unknown country no pack, and not Canada's", () => {

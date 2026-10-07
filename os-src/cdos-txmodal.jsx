@@ -537,12 +537,20 @@
     const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
     const idAmount = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idFloor;
     const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
+    const sgIdRequired = window.CDOS.useSingaporeIdRequired(packIdNow === 'pack-sg-v1', {
+      type: isCheque ? 'Cheque Cashing' : (isSend || isReceive) ? (isReceive ? 'Remittance — Receive' : 'Remittance — Send') : (isMO ? 'Money Order' : (isBill ? 'Bill Payment' : 'fx')),
+      from: (isSend || isCheque || isMO || isBill) ? home : (isReceive ? outCcy : inCcy),
+      to: isSend ? payoutCcy : ((isCheque || isMO || isBill) ? home : outCcy),
+      inputAmount: inAmt,
+    });
     const idRequired = !paused && (ukIdRequired != null
       ? ukIdRequired
       : aeTransfer
       ? true
       : ph
       ? (unpriced || !idRow || idRow.threshold == null || overId)
+      : (packIdNow === 'pack-sg-v1')
+      ? sgIdRequired
       : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
@@ -586,10 +594,12 @@
        a small exchange does not need purpose and source of funds.
        A UAE desk following the pack is the same under AED 35,000, and
        needs the fields at 35,000 or more. A reporting number the desk
-       typed still does, and so does every other pack. */
+       typed still does, and so does every other pack.
+       Singapore stores a report threshold of 0. That must not demand
+       purpose on a 10 SGD exchange. */
     const noStatutoryCashReport = !!(packIdNow === 'pack-gb-v2' && !(TH > 0));
     const aeCdd = aeV2 && isExchange && !unpriced && (inCadEquiv >= 35000 || (TH != null && TH > 0 && inCadEquiv >= TH));
-    if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd)) {
+    if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd) && packIdNow !== 'pack-sg-v1') {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
     }
@@ -1113,7 +1123,7 @@
                 </div>
               )}
 
-              {serverBacked && isExchange && !single && (
+              {serverBacked && isExchange && !single && !sg && (
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>

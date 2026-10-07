@@ -8,8 +8,8 @@ import { schema } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
-import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
-import { ensureLedgerPrincipal } from "./principal.js";
+import { LedgerError, LedgerService, previewSingaporeIdentification, type LedgerActor } from "./service.js";
+import { authorizeLedgerActor, ensureLedgerPrincipal } from "./principal.js";
 import {
   LedgerProvisioningService,
   type CustomerInput,
@@ -1082,6 +1082,52 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return actor ? reply.send(await reporting.jurisdiction(actor)) : undefined;
     } catch (error) {
       return failure(reply, error);
+    }
+  });
+
+  /* The open Singapore deal: does customer due diligence apply?
+
+     The screen sends the typed legs and renders this boolean. It does
+     not compare the 5000 line. Cheque cashing and a cross-border
+     transfer are answered from the kind. Money changing uses the same
+     Decimal test as posting. */
+  const singaporeIdentificationBody = z.object({
+    deals: z.array(z.object({
+      key: z.string().trim().min(1).max(120),
+      dealKind: z.enum([
+        "fx", "exchange", "remittance", "remittance_send", "remittance_receive",
+        "eft", "bill_payment", "money_order", "cheque_cashing", "virtual_currency",
+      ]),
+      from: currencyCode,
+      to: currencyCode,
+      inputAmount: monetary("0"),
+      outputAmount: monetary("0").optional(),
+    }).strict()).min(1).max(40),
+  }).strict();
+  app.post("/api/ledger/singapore-identification", async (req, reply) => {
+    const parsed = singaporeIdentificationBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    const client = await pool.connect();
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "ledger:view");
+      const decisions = await previewSingaporeIdentification(client, actor, parsed.data.deals.map((deal) => ({
+        key: deal.key,
+        dealKind: deal.dealKind,
+        from: deal.from,
+        to: deal.to,
+        inputAmount: new Decimal(deal.inputAmount),
+        outputAmount: deal.outputAmount == null ? null : new Decimal(deal.outputAmount),
+      })));
+      await client.query("COMMIT");
+      return reply.send({ decisions });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      return failure(reply, error);
+    } finally {
+      client.release();
     }
   });
 
