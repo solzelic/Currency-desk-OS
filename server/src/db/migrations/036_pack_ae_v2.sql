@@ -7,9 +7,11 @@
    an administrator opts in. A deal already posted keeps the pack
    id stamped on it. This file inserts rows and nothing else.
 
-   029, 031, 033, 034, and 035 are already on main. 027 and 030
-   still belong to open drafts. This file is 036. Do not edit a
-   migration that has already been applied.
+   029, 031, 033, 034, and 035 are already on main, so this file
+   stays 036. 027 and 030 still belong to open drafts. If a later
+   rebase finds 036 taken, renumber this file and the entry in
+   server/src/db/migrations.ts together. Do not edit a migration
+   that has already been applied.
 
    What an exchange house actually has to do on one deal:
 
