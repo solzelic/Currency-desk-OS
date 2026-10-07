@@ -2017,6 +2017,13 @@
     return String(session.openedBy || "").split(":").pop() || "";
   }
 
+  /* The download is allowed for the server role `administrator`.
+     The desk shows that person as Owner. The screen that offers the
+     button must use this, because the route refuses every other role. */
+  function deskExportAllowed(serverRole) {
+    return serverRole === "administrator";
+  }
+
   function customerPayload(name, record) {
     record = record || {};
     var riskText = String(record.risk || record.riskRating || "").toLowerCase();
@@ -2163,6 +2170,7 @@
         });
       },
       tillOccupant: tillOccupant,
+      deskExportAllowed: deskExportAllowed,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {
@@ -5988,7 +5996,8 @@
     onOpenLedger,
     askPin,
     reqPin,
-    pinOf
+    pinOf,
+    serverRole
   }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
@@ -6474,9 +6483,11 @@
       });else exportLedger();
     };
     /* The owner's copy of every client and every deal on this desk.
-       The server writes the files. This screen only saves them. A
-       manager who can export the on-screen ledger still cannot call
-       this. The server refuses them. */
+       The server writes the files. This screen only saves them.
+       `serverRole` is the role the session came back with
+       (`administrator`), not the name this desk shows (`Owner`).
+       A manager who can export the on-screen ledger still cannot
+       call this. The server refuses them too. */
     const [deskExportMsg, setDeskExportMsg] = useState('');
     const [deskExportBusy, setDeskExportBusy] = useState(false);
     const downloadDeskFiles = async () => {
@@ -7913,7 +7924,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Two CSV files for this desk: every client on the server, and every deal on the ledger. Excel can open them. A client that lives only in this browser is not included. Scans are not included."))), me && me.role === 'Owner' ? /*#__PURE__*/React.createElement("button", {
+    }, "Two CSV files for this desk: every client on the server, and every deal on the ledger. Excel can open them. A client that lives only in this browser is not included. Scans are not included."))), window.CDOS.Backend && window.CDOS.Backend.deskExportAllowed(serverRole) ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "desk-export-download",
       onClick: downloadDeskFiles,
@@ -66628,7 +66639,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             onOpenLedger: () => openApp('ledger'),
             askPin,
             reqPin,
-            pinOf
+            pinOf,
+            serverRole: srvUser && srvUser.role
           });
         case 'calc':
           return /*#__PURE__*/React.createElement(Calc, {

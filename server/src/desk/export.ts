@@ -52,7 +52,20 @@ const DEAL_HEADERS = [
 const text = (value: unknown) => (value == null ? "" : String(value));
 const code = (value: unknown) => text(value).trim();
 const day = (value: unknown) => (value == null ? "" : String(value).slice(0, 10));
-const when = (value: unknown) => (value == null ? "" : new Date(value as string | Date).toISOString());
+
+/* node-pg returns a Date for timestamptz. A text cast in the query
+   returns a string. Anything else is not a timestamp this file knows
+   how to print, and guessing would put a wrong time in the owner's file. */
+export function postedAtIso(value: unknown): string {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) throw new Error("posted_at was not a timestamp.");
+    return parsed.toISOString();
+  }
+  throw new Error("posted_at was not a timestamp.");
+}
 
 export async function clientsCsv(pool: pg.Pool, tenantId: string, legalEntityId: string): Promise<string> {
   const result = await pool.query(
@@ -113,7 +126,7 @@ export async function dealsCsv(pool: pg.Pool, tenantId: string, legalEntityId: s
   );
   const rows = result.rows.map((row) => [
     text(row.transaction_ref),
-    when(row.posted_at),
+    postedAtIso(row.posted_at),
     text(row.branch_id),
     text(row.till_id),
     text(row.customer_name),

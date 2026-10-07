@@ -32,6 +32,7 @@ import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sit
 import { registerQuoteRoutes } from "./quotes/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerClientRoutes } from "./clients/routes.js";
+import type pg from "pg";
 import { registerDeskExportRoutes } from "./desk/export-routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 
@@ -112,7 +113,7 @@ const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   return accept.includes("text/html");
 };
 
-export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise<FastifyInstance> {
+export async function buildApp(db: Db, growth: GrowthDependencies = {}, pool: pg.Pool | null = null): Promise<FastifyInstance> {
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     // a customer domain pointed at us serves that customer's hosted site
@@ -195,7 +196,9 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
        run. A desk on the embedded database keeps the browser-only client
        store it has always had — see docs/CLIENT_RECORDS.md. */
     registerClientRoutes(app, db, ledgerDatabaseUrl);
-    registerDeskExportRoutes(app, db, ledgerDatabaseUrl);
+    /* Same database the app already opened. These two routes do not
+       open a pool of their own. */
+    if (pool) registerDeskExportRoutes(app, db, pool);
   }
 
   // serve the built frontend (vite build → dist) when configured

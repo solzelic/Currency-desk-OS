@@ -99,7 +99,8 @@ postgres("owner desk export", () => {
       [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, `${DEMO.tenantId}:j.masri`],
     );
 
-    app = await buildApp(handle.db);
+    if (!handle.pool) throw new Error("createDb did not return the app pool");
+    app = await buildApp(handle.db, {}, handle.pool);
   });
 
   afterAll(async () => {

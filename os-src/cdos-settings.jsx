@@ -680,7 +680,7 @@
     );
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
+  function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf, serverRole }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -943,9 +943,11 @@
       else exportLedger();
     };
     /* The owner's copy of every client and every deal on this desk.
-       The server writes the files. This screen only saves them. A
-       manager who can export the on-screen ledger still cannot call
-       this. The server refuses them. */
+       The server writes the files. This screen only saves them.
+       `serverRole` is the role the session came back with
+       (`administrator`), not the name this desk shows (`Owner`).
+       A manager who can export the on-screen ledger still cannot
+       call this. The server refuses them too. */
     const [deskExportMsg, setDeskExportMsg] = useState('');
     const [deskExportBusy, setDeskExportBusy] = useState(false);
     const downloadDeskFiles = async () => {
@@ -1353,7 +1355,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>Two CSV files for this desk: every client on the server, and every deal on the ledger. Excel can open them. A client that lives only in this browser is not included. Scans are not included.</div>
               </div>
             </div>
-            {me && me.role === 'Owner'
+            {window.CDOS.Backend && window.CDOS.Backend.deskExportAllowed(serverRole)
               ? <button type="button" data-testid="desk-export-download" onClick={downloadDeskFiles} disabled={deskExportBusy} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: deskExportBusy ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9 }}><Ic n="download" s={15} c="var(--cd-on-ink)" /> {deskExportBusy ? 'Downloading…' : 'Download CSV files'}</button>
               : <div className="text-[12.5px]" style={{ color: CD.mute }}>Only the owner of this desk can download clients and deals.</div>}
             {deskExportMsg ? <div className="text-[12px] mt-2" style={{ color: CD.ink }}>{deskExportMsg}</div> : null}

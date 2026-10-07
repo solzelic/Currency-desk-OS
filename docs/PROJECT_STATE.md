@@ -405,11 +405,15 @@ authenticated narrative dashboard.
 
 **2026-10-07**, owner download. The owner can download two CSV files from
 Settings, Ledger: every client stored for this desk, and every deal
-on the ledger. The server writes the files. A manager is refused.
-Another desk's rows are not included. Scans are not included. Cheque
-clearing and cheque return rows are not deals. Money is the numeric
-text the database stored. There is no spreadsheet file, because no
-spreadsheet library is installed. See `docs/CLIENT_RECORDS.md`.
+on the ledger. The server writes the files. The button and the route
+both check the server role `administrator`. The rest of the desk still
+shows that person as Owner. A manager is refused. Another desk's rows
+are not included. Scans are not included. Cheque clearing and cheque
+return rows are not deals. Money is the numeric text the database
+stored. The two download routes use the pool the app already opened
+for `DATABASE_URL`. They do not open a second one. There is no
+spreadsheet file, because no spreadsheet library is installed. See
+`docs/CLIENT_RECORDS.md`.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing

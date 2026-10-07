@@ -2,15 +2,16 @@
    The desk is the session's tenant and legal entity. A query string
    cannot point this at another shop. */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import pg from "pg";
+import type pg from "pg";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { clientsCsv, dealsCsv } from "./export.js";
 
-export function registerDeskExportRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
-  const pool = new pg.Pool({ connectionString: databaseUrl });
-  app.addHook("onClose", async () => { await pool.end(); });
+/* `pool` is the one createDb already opened. Closing the app must not
+   end it: the rest of the process is still using it, and handle.close()
+   is what ends it. */
+export function registerDeskExportRoutes(app: FastifyInstance, db: Db, pool: pg.Pool) {
 
   const send = async (req: FastifyRequest, reply: FastifyReply, kind: "clients" | "deals") => {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
