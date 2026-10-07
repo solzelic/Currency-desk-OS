@@ -313,6 +313,10 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
   await page.reload();
   await landOnDesktop(page);
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+  await expect.poll(() => page.evaluate(() => {
+    const t = window.CDOS.deskThresholds && window.CDOS.deskThresholds();
+    return !!(t && t.transferDueDiligence && t.transferDueDiligence.everyDeal);
+  }), { timeout: 20_000 }).toBe(true);
   await page.getByText(/^Transfers$/).first().click();
   const newTransfer = page.getByRole("button", { name: /New transfer/i }).first();
   await expect(newTransfer).toBeVisible({ timeout: 30_000 });

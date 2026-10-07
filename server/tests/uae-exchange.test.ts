@@ -57,9 +57,11 @@ describe("UAE purpose and source of funds", () => {
 
 describe("a new UAE desk does not invent a cash report", () => {
   it("seeds identification at 3,500 and names no reporting amount", () => {
-    expect(JURISDICTION.AE.reportThreshold).toBeNull();
-    expect(JURISDICTION.AE.idSeed).toBe(3500);
-    expect(JURISDICTION.AE.noCashReport).toBe(true);
+    const ae = JURISDICTION.AE;
+    if (!ae) throw new Error("The UAE row is missing from the onboarding table.");
+    expect(ae.reportThreshold).toBeNull();
+    expect(ae.idSeed).toBe(3500);
+    expect(ae.noCashReport).toBe(true);
   });
 });
 
