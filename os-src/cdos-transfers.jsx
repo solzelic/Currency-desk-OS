@@ -51,7 +51,7 @@
      No remittance line (no rate, or a stale one) means identification
      is required. A country pack, Canada included, uses its own
      identification line and does not substitute the baseline's. */
-  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine }) {
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, hongKong }) {
     const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
     if (blank) return { homeAmount: null, reportable: null, idRequired: false };
     const cash = direction === 'receive'
@@ -65,6 +65,15 @@
     if (cash == null) return { homeAmount: null, reportable: null, idRequired: false };
     const homeAmount = centsText(cash);
     const report = centsOf(reportLine);
+    /* A Hong Kong remittance is at or above 8000 HKD. The single
+       identification column is the money-changing line and must not
+       be used here. There is no cash report and no wire report. */
+    if (hongKong) {
+      const need = window.CDOS.hongKongIdNeeded
+        ? window.CDOS.hongKongIdNeeded('remittance', cash)
+        : true;
+      return { homeAmount, reportable: null, idRequired: need };
+    }
     let line = null;
     if (baseline) {
       const remittance = centsOf(remittanceLine);
@@ -236,9 +245,10 @@
     const [method, setMethod] = useState('cash');
     const [payAmt, setPayAmt] = useState('');
     const [fee, setFee] = useState(settings && settings.defaultFee ? String(settings.defaultFee) : '9.99');
-    const requirePurpose = !(settings && settings.transferRequirePurpose === false);   // Settings › Transfers
-    const [purpose, setPurpose] = useState(requirePurpose ? '' : 'Family support');
-    const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
+    const hkPack = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) === 'pack-hk-v1');
+    const requirePurpose = hkPack ? false : !(settings && settings.transferRequirePurpose === false);
+    const [purpose, setPurpose] = useState(hkPack ? '' : (requirePurpose ? '' : 'Family support'));
+    const [sourceOfFunds, setSourceOfFunds] = useState(hkPack ? '' : 'Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
     /* The post is a round trip now, so the button has to be able to say
@@ -284,6 +294,7 @@
       deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
       idLine: idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null),
       reportLine: limit.amount,
+      hongKong: !!(regimeNow && regimeNow.noCashReport),
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -552,6 +563,7 @@
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
               {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
+              {regimeNow && regimeNow.noCashReport && idRequired && <div className="text-[12px]" style={{ color: CD.ink }}>A remittance at or above 8000 HKD needs customer due diligence. This screen does not file a report.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>

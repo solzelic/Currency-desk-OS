@@ -479,17 +479,18 @@ class Component extends DCLogic {
         {name:'Sanctions screening', spec:'MAS and UNSC lists on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
-    { id:'c-ed', tag:'C&ED', country:'Hong Kong', regulator:'Customs & Excise Department', status:'Coming soon', kind:'soon', color:'#4A6B2F', soft:'rgba(74,107,47,0.1)', official:'https://www.customs.gov.hk', updated:'23 May 2026', retention:'Per AMLO',
-      supervisor:'Customs & Excise for money service operators, JFIU for reports',
-      deadline:'STR on suspicion, without delay',
-      whatWeDo:'Planned for Hong Kong money service operators: your MSO licence tracked, customer due diligence triggered at the occasional-transaction threshold, and reports routed to the JFIU.',
-      how:[{n:'1',t:'Your MSO licence and premises list are kept current.'},{n:'2',t:'Due diligence triggers at the occasional-transaction threshold.'},{n:'3',t:'Suspicious transaction reports are drafted for the JFIU.'}],
+    { id:'c-ed', tag:'C&ED', country:'Hong Kong', regulator:'C&ED / JFIU', status:'Not live', kind:'soon', color:'#4A6B2F', soft:'rgba(74,107,47,0.1)', official:'https://www.customs.gov.hk', updated:'7 Oct 2026', retention:'5 years',
+      supervisor:'C&ED for the MSO licence. The JFIU for a suspicious transaction report.',
+      deadline:'STR as soon as it is reasonable to do so. The desk does not file it.',
+      whatWeDo:'A new Hong Kong desk opens on these rules. Money changing at or above HK$120,000 needs customer due diligence. A wire, a remittance, and a virtual asset transfer need it at or above HK$8,000. There is no cash transaction report. Nothing is sent to the JFIU. Not live.',
+      how:[{n:'1',t:'Money changing: customer due diligence at or above HK$120,000. Exactly HK$120,000 does. A wire, a remittance, and a virtual asset transfer: at or above HK$8,000.'},{n:'2',t:'There is no cash transaction report for a money service operator. Linked deals are not summed. The teller has to check them.'},{n:'3',t:'A suspicious transaction report goes to the JFIU. Filing is not live. Records are kept five years. The product does not delete them.'}],
       rules:[
-        {name:'MSO licence', spec:'Customs & Excise licensed operator status.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'STR to the JFIU', spec:'Drafted from the deal record.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Occasional transaction CDD', spec:'Due diligence at HK$120,000.', tag:'Planned', cat:'threshold', when:'At the till'},
-        {name:'Sanctions screening', spec:'UNSC designations on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'Record retention', spec:'Kept in line with the AMLO.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'Money-changing customer due diligence', spec:'At or above HK$120,000. Exactly HK$120,000 does.', tag:'Listed', cat:'threshold', when:'Before the deal'},
+        {name:'Wire, remittance, and virtual asset transfer', spec:'Customer due diligence at or above HK$8,000. Exactly HK$8,000 does.', tag:'Listed', cat:'transfer', when:'Before the deal'},
+        {name:'Suspicious Transaction Report', spec:'To the JFIU, as soon as it is reasonable to do so. The desk does not file it and does not open STREAMS.', tag:'Listed', cat:'suspicious', when:'On review'},
+        {name:'5-year record retention', spec:'AMLO Schedule 2 section 20. The product does not delete records.', tag:'Listed', cat:'records', when:'After the deal'},
+        {name:'Cash transaction report', spec:'None for a money service operator. HK$120,000 is not a cash report.', tag:'Gap', cat:'threshold', when:'Does not apply'},
+        {name:'Sanctions, wire message, and remittance record', spec:'No sanctions list is loaded. The desk does not build the wire message and does not collect the section 13 record fields.', tag:'Gap', cat:'screening', when:'Not on this desk'}
       ] }
   ];
 

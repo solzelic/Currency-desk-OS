@@ -494,8 +494,18 @@
        compliance screen that flags everything gets ignored, which is how a
        real reportable transaction walks past somebody. */
     const unpriced = inCadEquiv == null;
-    const single = TH != null && !unpriced && inCadEquiv >= TH;
-    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+    const hk = !!(regime && regime.noCashReport);
+    const single = !hk && TH != null && !unpriced && inCadEquiv >= TH;
+    const hkNeed = window.CDOS.hongKongIdNeeded;
+    const hkType = isCheque ? 'Cheque Cashing' : (isSend || isReceive) ? 'remittance' : 'fx';
+    /* Canada still identifies every remittance, and an unpriced deal.
+       Hong Kong identifies a wire, a remittance, and a virtual asset
+       transfer at or above 8000 HKD, and money changing at or above
+       120000 HKD. A bill, a money order, and a cheque use the
+       money-changing line. There is no any-amount identification rule. */
+    const idRequired = !paused && (hk
+      ? (hkNeed ? hkNeed(hkType, unpriced ? null : inCadEquiv) : true)
+      : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };
@@ -527,14 +537,14 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${hk ? ((isSend || isReceive) ? 'at or above 8000 HKD' : 'at or above the Hong Kong line') : (single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home))}. Search or add them` : !idOk ? `Their ID is ${kyc}. Fix it on the client file` : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
       const capOk = purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim());
       reqs.push({ key: 'cap', ok: capOk, warn: !capOk, label: `${regime.largeCode} details captured`, sub: !capOk ? 'Purpose, source of funds & third-party — fill below' : 'Pre-fills the filing in Compliance' });
     }
-    if (serverBacked && isExchange && !single) {
+    if (serverBacked && isExchange && !single && !hk) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
     }
@@ -1024,7 +1034,7 @@
                 </div>
               )}
 
-              {serverBacked && isExchange && !single && (
+              {serverBacked && isExchange && !single && !hk && (
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>

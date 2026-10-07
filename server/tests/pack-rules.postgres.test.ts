@@ -155,6 +155,7 @@ postgres("pack rule fields against real PostgreSQL", () => {
          JOIN jurisdiction_packs p ON p.pack_id = t.pack_id
         WHERE t.pack_id LIKE 'pack-%-v1'
           AND t.pack_id <> 'pack-intl-v1'
+          AND t.pack_id <> 'pack-hk-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];

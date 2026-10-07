@@ -409,6 +409,16 @@
      session to get them back. Kept together because they are one fact. */
   let _reports = [];
   const deskReports = () => _reports;
+  /* Per-deal identification lines. The jurisdiction answer carries them.
+     The pack summary does not. A screen that only reads the single
+     identification column cannot tell money changing at 120000 HKD from
+     a wire, a remittance, or a virtual asset transfer at 8000 HKD. */
+  let _idThresholds = [];
+  const deskIdThresholds = () => _idThresholds;
+  const setDeskIdThresholds = (rows) => {
+    _idThresholds = Array.isArray(rows) ? rows : [];
+    return _idThresholds;
+  };
 
   /* ============================================================
      WHICH CURRENCIES THIS DESK DEALS IN
@@ -465,7 +475,10 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return _pack;
       const answer = await B.loadJurisdiction();
-      if (answer && answer.pack) setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+      if (answer && answer.pack) {
+        setDeskPack(answer.pack, answer.reports, answer.currencies, answer.notice);
+        setDeskIdThresholds(answer.idThresholds);
+      }
     } catch (e) { /* not signed in, or a desk with no pack yet */ }
     return _pack;
   }
@@ -1240,7 +1253,7 @@
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
-    deskPack, deskReports, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskPack, deskReports, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,
     rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */

@@ -33,6 +33,14 @@ describe("which country gets a pack", () => {
     expect(packForCountry("Eurozone")?.packId).toBe("pack-eu-v1");
     expect(packForCountry("Australia")?.packId).toBe("pack-au-v1");
     expect(packForCountry("UAE")?.packId).toBe("pack-ae-v1");
+    expect(packForCountry("HK")).toEqual({
+      packId: "pack-hk-v1",
+      version: 1,
+      homeCurrency: "HKD",
+    });
+    expect(packForCountry("Hong Kong")?.packId).toBe("pack-hk-v1");
+    expect(packForCountry("Hong Kong SAR")?.homeCurrency).toBe("HKD");
+    expect(packForCountry("HKSAR")?.packId).toBe("pack-hk-v1");
   });
 
   it("gives an unknown country no pack, and not Canada's", () => {

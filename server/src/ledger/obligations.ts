@@ -68,6 +68,10 @@ import { withSerializationRetry } from "./retry.js";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import {
+  HK_BOOK_MESSAGE,
+  isHongKongPack,
+} from "./hongkong-pack.js";
+import {
   LedgerError,
   requireIdentification,
   requireInstalledPack,
@@ -603,6 +607,9 @@ export class ObligationService {
          engine can apply its own rule — see the columns migration 018
          adds — and the gate here does not pretend to be that engine. */
       const amountHome = spec.cash.amount;
+      if (isHongKongPack(pack.packId) && pack.homeCurrency.trim().toUpperCase() !== "HKD") {
+        throw new LedgerError("COMPLIANCE_BLOCKED", HK_BOOK_MESSAGE);
+      }
       const compliance = await requireIdentification(
         client,
         actor,
@@ -611,7 +618,13 @@ export class ObligationService {
         customer.rows[0].id_status,
         { kind: spec.dealKind, cash: true },
       );
-      if (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim()) {
+      /* Hong Kong has no cash report. A report threshold of 0 reads as
+         no line and would demand purpose on every transfer. Schedule 2
+         section 2(1)(c) does not hard require it on an occasional deal. */
+      if (
+        !isHongKongPack(pack.packId) &&
+        (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim())
+      ) {
         const reporting = await resolveReportThreshold(
           client,
           actor.legalEntityId,

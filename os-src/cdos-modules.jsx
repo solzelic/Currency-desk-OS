@@ -52,20 +52,22 @@
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const single = TH != null && cashIn(row) >= TH;
+      const noCash = !!(regime && regime.noCashReport);
+      const single = !noCash && TH != null && cashIn(row) >= TH;
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cashIn(o), 0);
-      const str = TH != null && !single && agg >= TH;
+      const str = !noCash && TH != null && !single && agg >= TH;
       // TRUE rolling-24h aggregation RULE — same person, cash-in within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction
+      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
+      // A pack with no cash report does not use this clock.
       const end = dt(row);
-      const cluster = live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= (regime.aggHours || 24); })());
+      const cluster = noCash ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= (regime.aggHours || 24); })());
       const agg24Sum = cluster.reduce((s, o) => s + cashIn(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
-      const agg24 = TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const isClusterEnd = !noCash && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= (regime.aggHours || 24) && cashIn(o) >= 0);
+      const agg24 = !noCash && TH != null && !single && agg24Sum >= TH && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
       else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';
@@ -76,7 +78,10 @@
       const governed = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) || (settings && settings.baselineRules));
       const idAt = regime && regime.idAt != null && +regime.idAt > 0 ? +regime.idAt : null;
       const idFloor = governed ? idAt : ((window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings)) ? null : (+settings.idRequiredOver || 3000));
-      const idNeeded = (governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor)));
+      const hkNeed = window.CDOS.hongKongIdNeeded;
+      const idNeeded = noCash
+        ? (hkNeed ? hkNeed(row.type, cadIn(row)) : true)
+        : ((governed && idAt == null) || (idFloor != null && (single || (cadIn(row) != null && cadIn(row) >= idFloor))));
       map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
     });
     return map;

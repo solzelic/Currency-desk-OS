@@ -51,6 +51,10 @@
       largeCode: (pack && pack.reportName) || regime.largeCode || null,
       largeLabel: regime.largeLabel || ((pack && pack.reportName) ? pack.reportName + ' report' : null),
       aggHours: regime.aggHours || null,
+      /* Hong Kong has no cash report. Without this flag the footer
+         falls through to "verify each filing in the official portal",
+         which this desk does not do. */
+      noCashReport: !!regime.noCashReport,
     };
   }
 
@@ -837,10 +841,11 @@
             {regime.authority
               ? <>Prepared for {regime.authority} record-keeping{regime.country ? ` (${regime.country})` : ''}.{' '}</>
               : <>Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.{' '}</>}
-            {limit.amount == null
-              ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.</>
-              : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
-            {' '}This pack is a working summary; verify each filing in the official portal.
+            {regime.noCashReport
+              ? <>There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This desk does not file it and does not open STREAMS.</>
+              : limit.amount == null
+              ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in. This pack is a working summary; verify each filing in the official portal.</>
+              : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack. This pack is a working summary; verify each filing in the official portal.</>}
           </div>
           <Attest />
         </div>);

@@ -273,6 +273,8 @@
       ? 'the international baseline'
       : ((desk && desk.regulator) || (packNow && packNow.regulator) || 'your regulator');
     const disabled = status !== 'ready' || !!busy;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const noCash = !!(regimeNow && regimeNow.noCashReport);
 
     /* Hand a line back to the pack. Offered only where the desk has taken
        one, because "follow the regulator" is not a change a desk already
@@ -306,7 +308,7 @@
     />);
 
     return (<div>
-      <Row
+      {noCash ? <Row title="Cash transaction report" desc="There is no cash transaction report for a money service operator. 120000 HKD is customer due diligence for money changing, not a cash report. A traveller carrying more than 120000 HKD declares it to Customs. That is not this desk."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>None</span></Row> : <Row
         title={<span className="flex items-center gap-1.5">Large cash / reportable threshold {reportTip}</span>}
         desc={`Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`}>
         {status === 'ready'
@@ -314,13 +316,15 @@
               currency={currency} disabled={disabled}
               onCommit={v => save('reportThreshold', v, `reporting threshold ${fmt(+v, currency)}`)} />
           : unavailable}
-      </Row>
-      <PostureNote p={standingOf('threshold')} />
-      <Release field="reportThreshold" label="Reporting threshold" />
+      </Row>}
+      {noCash ? null : <PostureNote p={standingOf('threshold')} />}
+      {noCash ? null : <Release field="reportThreshold" label="Reporting threshold" />}
 
       <Row
         title="Require ID over"
-        desc="The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report.">
+        desc={noCash
+          ? 'Money changing is at or above this figure. A wire transfer, a remittance, and a virtual asset transfer are at or above 8000 HKD, and a higher desk line does not lift that. A bill, a money order, and a cheque use the money-changing line. Linked deals are not summed.'
+          : 'The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report.'}>
         {status === 'ready'
           ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}
               currency={currency} disabled={disabled}
@@ -330,7 +334,7 @@
       <PostureNote p={standingOf('idRequiredOver')} />
       <Release field="idThreshold" label="Identification threshold" />
 
-      <Row
+      {noCash ? null : <Row
         title="Aggregation window"
         desc="Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one.">
         {status === 'ready'
@@ -338,9 +342,9 @@
               onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
               opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />
           : unavailable}
-      </Row>
-      <PostureNote p={standingOf('aggHours')} />
-      <Release field="aggregationHours" label="Aggregation window" />
+      </Row>}
+      {noCash ? null : <PostureNote p={standingOf('aggHours')} />}
+      {noCash ? null : <Release field="aggregationHours" label="Aggregation window" />}
 
       <Row
         title="Record retention"
@@ -1746,7 +1750,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.noCashReport ? 'Your jurisdiction follows the operating country set in Localization. Money changing at or above 120000 HKD needs customer due diligence. Exactly 120000 does. A wire transfer, a remittance, and a virtual asset transfer need it at or above 8000 HKD. Exactly 8000 does. There is no cash transaction report. A suspicious transaction report goes to the JFIU. This desk does not file it.' : <>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</>}</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----
@@ -1757,9 +1761,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          {paused ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
-          {paused ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
-          <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
+          {paused || (regime && regime.noCashReport) ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {paused || (regime && regime.noCashReport) ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
+          {/* sanctionsListShips lives next to the sample watchlist. */}
+          {window.CDOS._compliance.sanctionsListShips(pack)
+            ? <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
+            : <Row title="Sanctions screening" desc={window.CDOS._compliance.HK_SCREENING_NOTE}><span className="text-[12px] px-2.5 py-1.5" data-testid="hongkong-screening-gap" style={{ color: CD.mute }}>No list loaded</span></Row>}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>
@@ -1773,7 +1780,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Row title="Suggest a quick re-screen after" desc="A dismissible Quick-check nudge appears once this many days have passed since the last screening."><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Require full re-verification after" desc="Past this many days — or sooner if the ID on file expires — the nudge becomes a hard stop until a full Verified check runs."><select value={reverifyDays} onChange={e => set('reverifyDays', +e.target.value, `re-verify required ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[180, 365, 545, 730].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Escalate high-risk clients to Verified Plus" desc="When a client is flagged high-risk, upgrade any recommended check to the deepest tier automatically."><Sw on={escalateHighRisk} click={() => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')} /></Row>
-            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>
+            {regime && regime.noCashReport ? null : <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>}
             <Row title="Require ID photo on file" desc="Contacts without a stored ID scan are flagged — in Clients · KYC and here."><Sw on={settings.requireIdPhoto} click={() => toggleSet('requireIdPhoto', 'Require ID photo')} /></Row>
 
             <details style={{ margin: '10px 0 0' }}>
@@ -1785,7 +1792,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             </details>
           </div>
 
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</span></div>
+          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{regime && regime.noCashReport ? 'Money changing at or above 120000 HKD needs customer due diligence. A wire, a remittance, and a virtual asset transfer need it at or above 8000 HKD. There is no cash report. This desk does not file to the JFIU and does not screen a sanctions list.' : <>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</>}</span></div>
         </div>); })()}
 
         {tab === 'rates' && (<div>

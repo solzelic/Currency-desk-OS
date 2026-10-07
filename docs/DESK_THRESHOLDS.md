@@ -29,6 +29,10 @@ a longer window is more diligence, not less. Getting that the wrong way
 round inverts the alarm — it flags the desk running a wider net and says
 nothing to the one running a narrower one.
 
+NULL in `jurisdiction_packs.aggregation_hours` is not 24. Hong Kong stores
+NULL because the desk does not sum linked deals. A desk choice cannot invent a
+24 hour window on that pack. A pack that still stores 24 still reads 24.
+
 ## The rule
 
 **A desk may tighten. A desk may never loosen.**

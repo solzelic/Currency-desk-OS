@@ -201,7 +201,11 @@
     return [
       postureOf(L.reportThreshold, { ...common, ...reportCopy, field: 'threshold', label: 'Reporting threshold', money: true, direction: 'atMost' }),
       postureOf(L.idThreshold, { ...common, ...idCopy, field: 'idRequiredOver', label: 'Identification threshold', money: true, direction: 'atMost' }),
-      postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' }),
+      /* Hong Kong has no hour window. A missing figure is not a violation
+         and it is not 24 hours. */
+      (window.CDOS.getRegime && (window.CDOS.getRegime(settings) || {}).noCashReport)
+        ? null
+        : postureOf(L.aggregationHours, { ...common, field: 'aggHours', label: 'Aggregation window', unit: 'h', direction: 'atLeast' }),
       postureOf(L.retentionYears, { ...common, field: 'retentionYears', label: 'Record retention', unit: ' years', direction: 'atLeast' }),
     ].filter(Boolean);
   }
@@ -270,7 +274,10 @@
     const suspicious = byCode('SUSPICIOUS') || listed.find(r => r && r.kind === 'suspicious');
     const sanctions = byCode('SANCTIONS-STOP');
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
-    return {
+    const hongKong = pack.packId === 'pack-hk-v1';
+    const idLines = (window.CDOS && window.CDOS.deskIdThresholds) ? (window.CDOS.deskIdThresholds() || []) : [];
+    const fxLine = idLines.find(r => r && r.dealKind === 'fx');
+    const built = {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : (pack.regulator || ''),
       country: baseline ? 'International baseline' : (pack.name || ''),
@@ -293,6 +300,53 @@
       baseline,
       reports: listed,
     };
+    /* A money service operator has no cash transaction report. Force
+       the cash line off even if a desk number is later stored, so the
+       browser cannot flag a currency transaction report this country
+       does not have. The 120000 figure stays on idAt as the
+       money-changing line. A wire, a remittance, and a virtual asset
+       transfer do not use it. */
+    if (hongKong) {
+      built.noCashReport = true;
+      built.threshold = null;
+      built.largeCode = '';
+      built.largeLabel = '';
+      built.wireCode = '';
+      built.wireLabel = '';
+      built.aggHours = null;
+      built.windowKind = 'none';
+      built.comparator = 'gte';
+      built.idComparator = (fxLine && fxLine.comparator) || 'gte';
+      built.sanctionsCode = '';
+      built.sanctionsLabel = '';
+    }
+    return built;
+  }
+
+  /* Whether an unverified customer on a Hong Kong desk needs customer
+     due diligence for this deal. Money changing, a bill, a money order,
+     and a cheque are at or above the fx line. A wire, a remittance, and
+     a virtual asset transfer are at or above their own line. Exactly
+     the line does, when the comparator is gte. A missing line, a zero,
+     or an amount this screen cannot price blocks. It never turns the
+     check off. There is no any-amount identification rule. */
+  function hongKongDealKind(type) {
+    if (type === 'remittance' || (typeof type === 'string' && type.indexOf('Remittance') === 0)) return 'remittance';
+    if (type === 'eft' || type === 'EFT') return 'eft';
+    if (type === 'virtual_currency' || type === 'Virtual Currency') return 'virtual_currency';
+    return 'fx';
+  }
+  function hongKongIdNeeded(type, amount) {
+    const kind = hongKongDealKind(type);
+    const rows = (window.CDOS.deskIdThresholds && window.CDOS.deskIdThresholds()) || [];
+    const row = rows.find(r => r && r.dealKind === kind);
+    if (!row) return true;
+    const raw = row.threshold;
+    const line = raw == null || raw === '' ? NaN : +raw;
+    if (!isFinite(line) || !(line > 0)) return true;
+    if (amount == null || !isFinite(+amount)) return true;
+    if (row.comparator !== 'gt' && row.comparator !== 'gte') return true;
+    return row.comparator === 'gt' ? +amount > line : +amount >= line;
   }
 
   function getRegime(settings) {
@@ -341,6 +395,23 @@
     { id: 'w10', name: 'Pyongyang Trading Co.', list: 'OFAC', program: 'DPRK', country: 'KP', type: 'entity' },
   ];
   const LIST_TONE = { OFAC: { c: '#1d4ed8', bg: '#dbe5fb' }, UN: { c: '#0e7490', bg: '#cfeaf0' }, OSFI: { c: CD.flag, bg: CD.flagSoft } };
+
+  /* The names in WATCHLISTS are a fictional sample. They are not the
+     United Nations Sanctions Ordinance list and they are not the
+     UNATMO designated-persons list. A Hong Kong desk must not present
+     those names as a screen. The owner's duty still stands, so the
+     screens that read this flag say the duty instead of hiding it.
+     Every other pack keeps the queue it already shows.
+
+     One function, not a pack id written on each screen. A column on
+     the pack would be a migration for a fact this file already knows.
+     Draft PR 68 returns false for pack-ph-v1 from this same function.
+     Landing both will conflict here, and both ids have to stay out. */
+  function sanctionsListShips(pack) {
+    const id = pack && (pack.packId || pack.id);
+    return id !== 'pack-hk-v1';
+  }
+  const HK_SCREENING_NOTE = 'No sanctions list is loaded. Hong Kong law requires the owner to screen against designated persons under the United Nations Sanctions Ordinance (Cap. 537) and the United Nations (Anti-Terrorism Measures) Ordinance (Cap. 575). The owner does this outside the desk. This screen does not match names.';
 
   const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = (s) => norm(s).split(' ').filter(Boolean);
@@ -419,6 +490,10 @@
   // window, by conductor AND beneficiary. `kind` is the report code stamped on
   // each cluster (LCTR for cash, EFTR for wires) — one machine, two triggers.
   function aggregateEvents(events, regime, settings, kind) {
+    /* Hong Kong has no cash report and does not sum a day. Falling
+       through to 24 hours would tell the teller a rule the ordinance
+       does not use for this desk. */
+    if (regime && regime.noCashReport) return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
@@ -469,8 +544,8 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, cashIn, dt, setFingerprint },
-    getRegime,
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, HK_SCREENING_NOTE },
+    getRegime, hongKongIdNeeded,
     jurisdictionViolations,
     jurisdictionPosture,
   });

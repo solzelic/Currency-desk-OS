@@ -15,9 +15,15 @@ funds transfer, virtual currency). Null means that kind has no line.
 Zero means every deal of that kind. A line can say `gte` or `gt`, a
 due-diligence level (`identify`, `cdd`, `edd`), and whether it is
 cash-only. A country pack's posting gate still reads the single
-`id_threshold` column. The baseline gate reads the per-deal rows.
+`id_threshold` column, except `pack-hk-v1`. That pack reads the per-deal
+rows. Money changing is at or above 120000 HKD. A wire, a remittance,
+and a virtual asset transfer are at or above 8000 HKD. There is no
+any-amount identification gate. A stored NULL or 0 does not turn a
+check off. NULL `aggregation_hours` is not read as 24. The baseline gate reads the per-deal rows.
 Seeded packs copy a positive value of that
-column onto all four kinds, so the two agree. Zero on the old column
+column onto all four kinds, so the two agree. `pack-hk-v1` does not:
+its remittance, wire, and virtual asset rows are 8000 HKD, and the
+single column stays the 120000 HKD money-changing line. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,
 `hours`, `before_execution`, `monthly_day`, `calendar_days`,
 `business_days`), an aggregation window (`fixed_24h`, `calendar_month`,

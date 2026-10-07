@@ -71,6 +71,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Hong Kong pack, draft.** `pack-hk-v1` (migration 040) is the rules for
+  a new Hong Kong desk. Home currency HKD. Money changing at or above
+  120,000 HKD needs customer due diligence. Exactly 120,000 does. A wire,
+  a remittance, and a virtual asset transfer need it at or above 8,000 HKD.
+  Exactly 8,000 does. A bill, a money order, and a cheque use the
+  money-changing line. There is no cash transaction report. Linked deals
+  are not summed. A suspicious transaction report is listed for the JFIU
+  and is not filed. Records are kept five years. No sanctions list is
+  loaded. Existing desks are not moved. The public site stays Not live.
+  Canada is the only Live country. The write-up is `docs/HONG_KONG_PACK.md`.
+
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).
@@ -260,7 +271,16 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-06**, international baseline. A country with no pack is not
+**2026-10-07**, Hong Kong pack. A new Hong Kong desk opens on `pack-hk-v1`,
+in HKD. Money changing is identified at or above 120,000 HKD. A wire, a
+remittance, and a virtual asset transfer are identified at or above
+8,000 HKD. There is no cash transaction report for a money service
+operator. The traveller declaration above 120,000 HKD is not loaded.
+Filing to the JFIU is not live, and no sanctions list is loaded. A pack
+that stores no hour window is not read as 24. Existing desks stay on
+the pack they already have.
+
+**Prior stamp, 2026-10-06**, international baseline. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.
 Cash foreign exchange is identified at 3,000 USD or more; remittance,
 electronic transfer, and virtual currency at 1,000 USD or more; the
