@@ -320,6 +320,12 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(priced.json().lines).toEqual([
       { currency: "CAD", faceMinor: 5, quantity: 3, minor: 15 },
     ]);
+    expect(priced.json().currencies).toEqual(expect.arrayContaining([
+      { currency: "CAD", counted: "0.15", expected: "25000.00", variance: "-24999.85" },
+      { currency: "USD", counted: null, expected: "12000.00", variance: null },
+      { currency: "EUR", counted: null, expected: "7000.00", variance: null },
+      { currency: "GBP", counted: null, expected: "3500.00", variance: null },
+    ]));
     const fraction = await app.inject({
       method: "POST",
       url: "/api/ledger/till-count-lines",

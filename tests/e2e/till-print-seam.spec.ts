@@ -1,7 +1,7 @@
-/* The Cash Drawer print is a page of the screen, not a second sign-off.
-   Expected cash on it has to be the till balance the ledger just returned.
-   The count is labelled as what is typed on the screen. The footer names
-   the End-of-Day Sign-Off as the signed sheet. See GENERATED_DOCUMENTS.md. */
+/* The Cash Drawer print is a page of server figures, not a second sign-off.
+   Expected cash on it has to be the till balance string the ledger just
+   returned. The footer names the End-of-Day Sign-Off as the signed sheet.
+   See GENERATED_DOCUMENTS.md. */
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -41,10 +41,8 @@ test("the till print shows the ledger balance and does not pretend to be the sig
   expect(text).toContain("End-of-Day Sign-Off");
   expect(text).toContain("never a zero");
 
-  const fmt = new Intl.NumberFormat("en-CA", { maximumFractionDigits: 2 });
   for (const [currency, raw] of Object.entries(balances as Record<string, string>)) {
     expect(text).toContain(currency);
-    const amount = Number(raw);
-    if (Number.isFinite(amount)) expect(text).toContain(fmt.format(amount));
+    expect(text).toContain(String(raw).trim());
   }
 });

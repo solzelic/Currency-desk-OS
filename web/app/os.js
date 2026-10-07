@@ -14396,32 +14396,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
 
     /* A page the owner can print or save as a PDF from the browser dialog.
-       It reprints this screen. It does not post money.
-       Expected cash and earned today are the ledger figures already on
-       the drawer. The count is what is typed here, saved or not. The
-       signed close-out stays the End-of-Day Sign-Off. A denomination
-       line total comes back from the server as integer minor units.
-       The page prints that number. It does not multiply. */
+       It does not post money. Every cash amount on it is a string the
+       server returned: line totals, the counted amount, the ledger
+       balance, the difference, and earned today. The live count on
+       this screen is a separate figure and is not copied here. The
+       signed close-out stays the End-of-Day Sign-Off. */
     const printCloseSummary = async () => {
       const desk = settings && (settings.operatingName || settings.bizName) || 'This desk';
       const where = [stationName, serverBacked && ledgerTill && ledgerTill.tillId || stationTill || tillNm].filter(Boolean).join(', ');
       const sheetDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
-      const status = bookClosed ? 'This till is closed.' : 'This till is still open. This page is a snapshot of the screen, not a close-out.';
+      const status = bookClosed ? 'This till is closed.' : 'This till is still open. This page is a snapshot of the count sent to the server, not a close-out.';
       const absent = '—';
-      const reconRows = recon.map(r => {
-        const difference = r.variance == null ? absent : (r.variance > 0 ? '+' : '') + num(r.variance);
-        return `<tr><td>${htmlEscape(r.c)}</td><td class="num">${r.expected == null ? absent : htmlEscape(num(r.expected))}</td><td class="num">${r.counted == null ? absent : htmlEscape(num(r.counted))}</td><td class="num">${r.variance == null ? absent : htmlEscape(difference)}</td></tr>`;
-      }).join('');
       const asked = [];
+      const typed = [];
       let mismatch = '';
-      const typedTotals = [];
       CCYS.forEach(c => {
         if (!isCounted(c)) return;
         if (ccyMode(c) === 'total') {
-          const typed = String(quick[c] == null ? '' : quick[c]).trim();
-          typedTotals.push({
-            c,
-            typed: typed || absent
+          const amount = String(quick[c] == null ? '' : quick[c]).trim();
+          if (amount) typed.push({
+            currency: c,
+            amount
           });
           return;
         }
@@ -14447,50 +14442,61 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setSessionErr('This desk has no priced denominations for ' + mismatch + '.');
         return;
       }
-      let priced = [];
-      if (asked.length) {
-        const api = window.CDOS.Backend;
-        if (!api || !api.priceCountLines) {
-          setSessionErr('The desk could not total the count lines.');
-          return;
-        }
-        try {
-          const body = await api.priceCountLines({
-            lines: asked.map(({
-              currency,
-              faceMinor,
-              quantity
-            }) => ({
-              currency,
-              faceMinor,
-              quantity
-            }))
-          });
-          const returned = body && body.lines || [];
-          if (returned.length !== asked.length || returned.some((line, i) => line.minor == null || line.currency !== asked[i].currency || line.quantity !== asked[i].quantity)) {
-            setSessionErr('The desk did not return every count line.');
-            return;
-          }
-          priced = asked.map((line, i) => ({
-            ...line,
-            minor: returned[i].minor
-          }));
-        } catch (error) {
-          setSessionErr(error && error.message || 'The desk could not total the count lines.');
+      const api = window.CDOS.Backend;
+      if (!api || !api.priceCountLines) {
+        setSessionErr('The desk could not total the count.');
+        return;
+      }
+      let sheet;
+      try {
+        sheet = await api.priceCountLines({
+          lines: asked.map(({
+            currency,
+            faceMinor,
+            quantity
+          }) => ({
+            currency,
+            faceMinor,
+            quantity
+          })),
+          typed
+        });
+      } catch (error) {
+        setSessionErr(error && error.message || 'The desk could not total the count.');
+        return;
+      }
+      const returned = sheet && sheet.lines || [];
+      const currencies = sheet && sheet.currencies || [];
+      if (returned.length !== asked.length || returned.some((line, i) => line.minor == null || line.currency !== asked[i].currency || line.quantity !== asked[i].quantity)) {
+        setSessionErr('The desk did not return every count line.');
+        return;
+      }
+      const currencyRow = code => currencies.find(row => row && row.currency === code) || null;
+      for (const row of typed) {
+        const priced = currencyRow(row.currency);
+        if (!priced || priced.counted == null) {
+          setSessionErr('The desk did not return a total for ' + row.currency + '.');
           return;
         }
       }
+      const moneyText = value => value == null || value === '' ? absent : String(value);
+      const reconRows = currencies.map(row => {
+        return `<tr><td>${htmlEscape(row.currency)}</td><td class="num">${htmlEscape(moneyText(row.expected))}</td><td class="num">${htmlEscape(moneyText(row.counted))}</td><td class="num">${htmlEscape(moneyText(row.variance))}</td></tr>`;
+      }).join('');
       const denomLines = [];
-      typedTotals.forEach(({
-        c,
-        typed
-      }) => {
-        denomLines.push(`<tr><td>${htmlEscape(c)}</td><td>Entered as one total</td><td class="num"></td><td class="num">${htmlEscape(typed)}</td></tr>`);
+      typed.forEach(row => {
+        const priced = currencyRow(row.currency);
+        denomLines.push(`<tr><td>${htmlEscape(row.currency)}</td><td>Entered as one total</td><td class="num"></td><td class="num">${htmlEscape(moneyText(priced.counted))}</td></tr>`);
       });
-      priced.forEach(line => {
-        denomLines.push(`<tr><td>${htmlEscape(line.currency)}</td><td>${htmlEscape(line.label + ' ' + line.kind)}</td><td class="num">${line.quantity}</td><td class="num">${htmlEscape(minorText(line.minor))}</td></tr>`);
+      returned.forEach((line, i) => {
+        const piece = asked[i];
+        denomLines.push(`<tr><td>${htmlEscape(line.currency)}</td><td>${htmlEscape(piece.label + ' ' + piece.kind)}</td><td class="num">${line.quantity}</td><td class="num">${htmlEscape(minorText(line.minor))}</td></tr>`);
       });
-      const earned = closedEarned == null ? absent : fmt(closedEarned, closedEarnedCcy);
+      const countedBits = currencies.filter(row => row.counted != null).map(row => row.currency + ' ' + row.counted);
+      const countedKpi = countedBits.length ? countedBits.join(', ') : absent;
+      const earnedRaw = closedBook && closedBook.earningsHome != null ? String(closedBook.earningsHome) : null;
+      const earnedCcy = closedBook && closedBook.homeCurrency || '';
+      const earned = earnedRaw == null ? absent : earnedCcy ? earnedRaw + ' ' + earnedCcy : earnedRaw;
       const txns = closedTxns == null ? absent : String(closedTxns);
       const who = me ? `${me.name} (${me.role})` : 'not signed in';
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Till count and day summary</title>
@@ -14523,18 +14529,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         <div class="kpis">
           <div class="kpi"><span>Transactions</span><b>${htmlEscape(txns)}</b></div>
           <div class="kpi"><span>Earned today</span><b>${htmlEscape(earned)}</b></div>
-          <div class="kpi"><span>Counted on screen${homeCcy ? ', ' + htmlEscape(homeCcy) : ''}</span><b>${htmlEscape(fmtHome(grandHome))}</b></div>
+          <div class="kpi"><span>Counted on screen</span><b>${htmlEscape(countedKpi)}</b></div>
         </div>
         <h2>Drawer against the ledger</h2>
-        ${recon.length ? `<table><thead><tr><th>Currency</th><th class="num">Expected</th><th class="num">Counted on screen</th><th class="num">Difference</th></tr></thead><tbody>${reconRows}</tbody>
-          <tfoot><tr><td>Total${homeCcy ? ', ' + htmlEscape(homeCcy) : ''}</td><td class="num">${totalExpHome == null ? absent : htmlEscape(num(totalExpHome))}</td><td class="num">${totalCountHome == null ? absent : htmlEscape(num(totalCountHome))}</td><td class="num">${totalVarHome == null ? absent : htmlEscape((totalVarHome > 0 ? '+' : '') + num(totalVarHome))}</td></tr></tfoot></table>` : '<p class="foot">This till has no currencies on the reconcile list.</p>'}
+        ${currencies.length ? `<table><thead><tr><th>Currency</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Difference</th></tr></thead><tbody>${reconRows}</tbody></table>` : '<p class="foot">The ledger returned no currencies for this till.</p>'}
         <h2>Count lines</h2>
-        ${denomLines.length ? `<table><thead><tr><th>Currency</th><th>Piece</th><th class="num">Quantity</th><th class="num">Line</th></tr></thead><tbody>${denomLines.join('')}</tbody></table>` : '<p class="foot">No denomination lines are typed. A currency entered as one total is listed in the drawer table as counted on screen.</p>'}
+        ${denomLines.length ? `<table><thead><tr><th>Currency</th><th>Piece</th><th class="num">Quantity</th><th class="num">Line</th></tr></thead><tbody>${denomLines.join('')}</tbody></table>` : '<p class="foot">No denomination lines are typed. A currency entered as one total is listed above as the server counted it.</p>'}
         <div class="sign">
           <div><div class="line">${htmlEscape(me ? me.name : '')}</div><div class="cap">Teller on duty<span style="float:right">Date</span></div></div>
           <div><div class="line"></div><div class="cap">Owner<span style="float:right">Date</span></div></div>
         </div>
-        <p class="foot">Prepared by ${htmlEscape(who)}. Trading day ${htmlEscape(sheetDate)}. Expected cash is the ledger balance for this till. Earned today is the ledger figure for this trading day. The count is what is typed on this screen, including a count that has not been saved. Each denomination line is the server total of that face and quantity, in minor units. The signed close-out is the End-of-Day Sign-Off. A dash means this page has no figure. It is never a zero.</p>
+        <p class="foot">Prepared by ${htmlEscape(who)}. Trading day ${htmlEscape(sheetDate)}. Expected cash is the ledger balance for this till. Counted and the difference are the server's figures for what was sent on this page, including a count that has not been saved. This page does not add currencies into one total. Earned today is the ledger figure for this trading day. Each denomination line is the server total of that face and quantity, in minor units. The count still showing on the drawer is the screen's own figure. The signed close-out is the End-of-Day Sign-Off. A dash means this page has no figure. It is never a zero.</p>
         </body></html>`;
       const w = window.open('', '_blank', 'width=900,height=1100');
       if (!w) {

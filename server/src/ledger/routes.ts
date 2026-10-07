@@ -33,7 +33,7 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
-import { priceCountLines } from "./count-line.js";
+import { buildCountSheet } from "./count-line.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -116,13 +116,19 @@ const countBody = z.object({
   counts: tillCounts,
 }).strict();
 /* A print of the count, not a posting. Each face is already minor units.
-   The route multiplies. It does not write a till count. */
+   A typed total is the decimal string the teller entered. The route
+   prices the lines, reads the till balances, and subtracts. It does
+   not write a till count. */
 const countLinesBody = z.object({
   lines: z.array(z.object({
     currency: z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."),
     faceMinor: z.number().int().nonnegative().max(100_000_000),
     quantity: z.number().int().nonnegative().max(1_000_000),
   }).strict()).max(400),
+  typed: z.array(z.object({
+    currency: z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."),
+    amount: monetary("0"),
+  }).strict()).max(40).default([]),
 }).strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -658,9 +664,18 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
     try {
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send({ lines: priceCountLines(parsed.data.lines) })
-        : undefined;
+      if (!actor) return;
+      const balances = await provisioning.getBalances(actor);
+      try {
+        return reply.send(buildCountSheet({
+          lines: parsed.data.lines,
+          typed: parsed.data.typed,
+          expected: balances.balances,
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "That count could not be totalled.";
+        return reply.code(400).send({ code: "INVALID_REQUEST", message });
+      }
     } catch (error) {
       return failure(reply, error);
     }
