@@ -257,6 +257,26 @@
       },
       transactionToRow: transactionToRow,
       loadLedger: loadLedger,
+      /* The same transaction list the ledger screen loads, narrowed by
+         the optional q that route already accepts. The palette runs
+         makeSearch over the rows this returns. A desk with no ledger
+         route throws, and the palette keeps the book on screen. */
+      searchDeals: function (q) {
+        var query = q == null ? "" : String(q).trim();
+        if (!query) return Promise.resolve([]);
+        return Promise.all([
+          request("/api/ledger/customers"),
+          request("/api/ledger/transactions?limit=50&q=" + encodeURIComponent(query)),
+        ]).then(function (results) {
+          var names = {};
+          ((results[0] && results[0].customers) || []).forEach(function (customer) {
+            names[customer.customerId] = customer.name;
+          });
+          return ((results[1] && results[1].transactions) || []).map(function (tx) {
+            return transactionToRow(tx, tx.customerName || names[tx.customerId]);
+          });
+        });
+      },
       loadTillBalances: function () {
         return request("/api/ledger/till-balances");
       },
@@ -800,7 +820,14 @@
     DOCUMENT_FIELDS: DOCUMENT_FIELDS,
     toDeskRecord: toDeskRecord,
     fromDeskFields: fromDeskFields,
-    list: function () { return request("/api/clients"); },
+    /* `q` is the same optional narrow the palette types. Absent, this
+       is the full list the Clients screen already loads. */
+    list: function (q) {
+      var query = q == null ? "" : String(q).trim();
+      var path = "/api/clients";
+      if (query) path += "?q=" + encodeURIComponent(query);
+      return request(path);
+    },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
     /* More than one answer is a legitimate answer: two people share a
        name, and the caller chooses rather than this picking one and

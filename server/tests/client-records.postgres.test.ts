@@ -291,6 +291,30 @@ postgres("the desk's customer file, on the server", () => {
     expect((await auditRows("client.file.remove"))).toHaveLength(1);
   });
 
+  it("narrows the customer list this desk can already see, and nobody else's", async () => {
+    const made = await records.create(TILL_1, { legalName: "Wei Zhang", phone: "416-555-0148" });
+    await records.addSupportingFile(TILL_1, made.clientId as string, {
+      label: "Proof of address",
+      fileName: "hydro.pdf",
+      dataUrl: SCAN,
+    });
+    const id = made.clientId as string;
+    const names = async (q?: string) =>
+      (await records.list(TILL_1, q)).clients.map((c) => c.clientId);
+
+    expect(await names("Wei Zhang")).toContain(id);
+    expect(await names("5550148")).toContain(id);
+    expect(await names(id.slice(0, 12))).toContain(id);
+    expect(await names("hydro")).toContain(id);
+    expect((await records.list(STRANGER, "Wei Zhang")).clients).toEqual([]);
+
+    const guest = actorAt("u.guest", TENANT, ENTITY, BRANCH_MAIN, WS_TILL_1, "till-1", "guest");
+    await principal(guest);
+    await expect(records.list(guest, "Wei Zhang")).rejects.toMatchObject({ code: "AUTHORIZATION_DENIED" });
+
+    expect(await names()).toContain(id);
+  });
+
   it("two customers with the same name are two records, and each is told about the other", async () => {
     const first = await records.create(TILL_1, {
       legalName: "David Chen",

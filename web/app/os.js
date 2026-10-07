@@ -2157,6 +2157,26 @@
       },
       transactionToRow: transactionToRow,
       loadLedger: loadLedger,
+      /* The same transaction list the ledger screen loads, narrowed by
+         the optional q that route already accepts. The palette runs
+         makeSearch over the rows this returns. A desk with no ledger
+         route throws, and the palette keeps the book on screen. */
+      searchDeals: function (q) {
+        var query = q == null ? "" : String(q).trim();
+        if (!query) return Promise.resolve([]);
+        return Promise.all([
+          request("/api/ledger/customers"),
+          request("/api/ledger/transactions?limit=50&q=" + encodeURIComponent(query)),
+        ]).then(function (results) {
+          var names = {};
+          ((results[0] && results[0].customers) || []).forEach(function (customer) {
+            names[customer.customerId] = customer.name;
+          });
+          return ((results[1] && results[1].transactions) || []).map(function (tx) {
+            return transactionToRow(tx, tx.customerName || names[tx.customerId]);
+          });
+        });
+      },
       loadTillBalances: function () {
         return request("/api/ledger/till-balances");
       },
@@ -2700,7 +2720,14 @@
     DOCUMENT_FIELDS: DOCUMENT_FIELDS,
     toDeskRecord: toDeskRecord,
     fromDeskFields: fromDeskFields,
-    list: function () { return request("/api/clients"); },
+    /* `q` is the same optional narrow the palette types. Absent, this
+       is the full list the Clients screen already loads. */
+    list: function (q) {
+      var query = q == null ? "" : String(q).trim();
+      var path = "/api/clients";
+      if (query) path += "?q=" + encodeURIComponent(query);
+      return request(path);
+    },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
     /* More than one answer is a legitimate answer: two people share a
        name, and the caller chooses rather than this picking one and
@@ -60780,6 +60807,585 @@ window.CDOS_PERSIST = (function () {
   });
 })();
 
+/* ---- os-src/cdos-palette.js ---- */
+/* ============================================================
+   CurrencyDesk OS — quick search
+
+   Cmd K / Ctrl K, and the header button, ask one question: what
+   on this desk matches? The answer is assembled here, not in a
+   second search engine.
+
+   Deals go through `makeSearch` (os-src/cdos-search.jsx), the same
+   matcher the Ledger screen already runs over the book. Clients
+   and files use the fields the client list already returns: name,
+   the id the server minted, phone, and a file's label or name.
+   The same fields are what `GET /api/clients?q=` and
+   `GET /api/ledger/transactions?q=` narrow by. Those routes stay
+   scoped to the signed-in desk and the permission the person
+   already has. This file only arranges what those calls return,
+   plus the screens this person can already open.
+
+   An empty box is not a search. It shows the last few things they
+   opened from here, then the screens.
+   ============================================================ */
+(function () {
+  /* The five jumps the palette offers. Titles are the words a teller
+     says, which is why the till is "Till" even though the window
+     title is "Cash Drawer". */
+  var JUMPS = [
+    { app: 'till', title: 'Till', hint: 'Cash drawer', icon: 'coins' },
+    { app: 'ledger', title: 'Ledger', hint: 'The book', icon: 'ledgerbook' },
+    { app: 'clients', title: 'Clients', hint: 'Customer files', icon: 'users' },
+    { app: 'settings', title: 'Settings', hint: 'Desk setup', icon: 'gear' },
+    { app: 'rates', title: 'Rate board', hint: 'Live rates', icon: 'rateboard' },
+  ];
+
+  var RECENT_KEY = 'cdos_palette_recent_v1';
+  var LIMIT = 8;
+
+  /* Cmd K on a Mac, Ctrl K everywhere else. Shift and Alt are left
+     alone so they can keep meaning something else. Held keys repeat,
+     and a repeat would open and shut the palette in one gesture. */
+  function isPaletteChord(e) {
+    if (!e || e.altKey || e.shiftKey || e.repeat) return false;
+    var key = e.key;
+    if (key !== 'k' && key !== 'K') return false;
+    return !!(e.metaKey || e.ctrlKey);
+  }
+
+  function includes(hay, needle) {
+    return String(hay == null ? '' : hay).toLowerCase().indexOf(needle) !== -1;
+  }
+
+  function digits(value) {
+    return String(value == null ? '' : value).replace(/\D/g, '');
+  }
+
+  function papersOf(rec) {
+    if (!rec) return [];
+    return [].concat(rec.docs || [], rec.files || []);
+  }
+
+  /* Name, minted id, phone. A phone typed with spaces or dashes still
+     matches the number on the file once both sides are digits. Three
+     digits is the floor so "1" does not hit every North American number. */
+  function clientHit(name, rec, needle) {
+    rec = rec || {};
+    if (includes(name, needle) || includes(rec.legalName, needle)) return true;
+    if (includes(rec.clientId, needle) || includes(rec.phone, needle)) return true;
+    var typed = digits(needle);
+    if (typed.length >= 3 && digits(rec.phone).indexOf(typed) !== -1) return true;
+    var aliases = rec.aliases || [];
+    for (var i = 0; i < aliases.length; i++) {
+      var alias = aliases[i];
+      var text = typeof alias === 'string' ? alias : (alias && alias.alias);
+      if (includes(text, needle)) return true;
+    }
+    return false;
+  }
+
+  function peopleFrom(clients) {
+    var list = [];
+    if (!clients) return list;
+    if (Array.isArray(clients)) {
+      clients.forEach(function (rec) {
+        if (!rec) return;
+        list.push({ name: rec.legalName || rec.name || 'Client', rec: rec });
+      });
+      return list;
+    }
+    Object.keys(clients).forEach(function (name) {
+      list.push({ name: name, rec: clients[name] || {} });
+    });
+    return list;
+  }
+
+  function screensFor(canOpen, needle) {
+    var out = [];
+    JUMPS.forEach(function (jump) {
+      if (typeof canOpen === 'function' && !canOpen(jump.app)) return;
+      if (needle && !includes(jump.title, needle) && !includes(jump.hint, needle) && !includes(jump.app, needle)) return;
+      out.push({
+        kind: 'screen',
+        id: 'screen:' + jump.app,
+        app: jump.app,
+        title: jump.title,
+        subtitle: jump.hint,
+        icon: jump.icon,
+      });
+    });
+    return out;
+  }
+
+  function dealSubtitle(row) {
+    var parts = [];
+    if (row.customer) parts.push(String(row.customer));
+    if (row.inAmt !== '' && row.inAmt != null) {
+      parts.push(String(row.inAmt) + (row.inCcy ? ' ' + row.inCcy : ''));
+    }
+    return parts.join(' · ');
+  }
+
+  /* Local rows are the book the ledger screen is already showing.
+     Server rows are the same list endpoint, narrowed by q, for a
+     receipt that has scrolled off that window. Both are judged by
+     makeSearch so a deal the ledger would hide is not offered here. */
+  function dealRows(localRows, serverRows, query, makeSearch) {
+    var search = (typeof makeSearch === 'function' ? makeSearch : function () {
+      return { active: false, match: function () { return false; } };
+    })(query);
+    if (!search || !search.active) return [];
+    var seen = {};
+    var out = [];
+    function consider(row) {
+      if (!row) return;
+      var key = String(row.serverTransactionId || row.id || row.ref || '');
+      if (!key || seen[key]) return;
+      var hit = false;
+      try { hit = !!search.match(row); } catch (e) { hit = false; }
+      if (!hit) return;
+      seen[key] = true;
+      out.push(row);
+    }
+    (localRows || []).forEach(consider);
+    (serverRows || []).forEach(consider);
+    return out;
+  }
+
+  function flatten(groups) {
+    var items = [];
+    groups.forEach(function (group) {
+      (group.items || []).forEach(function (item) { items.push(item); });
+    });
+    return items;
+  }
+
+  function query(opts) {
+    opts = opts || {};
+    var q = String(opts.query || '').trim();
+    var needle = q.toLowerCase();
+    var canOpen = opts.canOpen;
+    var groups = [];
+
+    if (!needle) {
+      var recent = (opts.recent || []).filter(function (item) {
+        if (!item || !item.kind || !item.title) return false;
+        if (item.kind === 'screen') return typeof canOpen !== 'function' || !!canOpen(item.app);
+        return true;
+      }).slice(0, 6);
+      if (recent.length) groups.push({ id: 'recent', label: 'Recent', items: recent });
+      var home = screensFor(canOpen, '');
+      if (home.length) groups.push({ id: 'screens', label: 'Screens', items: home });
+      return { query: q, groups: groups, items: flatten(groups) };
+    }
+
+    var screens = screensFor(canOpen, needle).slice(0, LIMIT);
+    if (screens.length) groups.push({ id: 'screens', label: 'Screens', items: screens });
+
+    var people = [];
+    var files = [];
+    peopleFrom(opts.clients).forEach(function (person) {
+      var rec = person.rec || {};
+      if (clientHit(person.name, rec, needle)) {
+        var id = rec.clientId || '';
+        var phone = rec.phone || '';
+        var bits = [];
+        if (id) bits.push(id);
+        if (phone) bits.push(phone);
+        people.push({
+          kind: 'client',
+          id: 'client:' + (id || person.name),
+          title: person.name,
+          subtitle: bits.join(' · ') || 'Client',
+          name: person.name,
+          icon: 'users',
+        });
+      }
+      papersOf(rec).forEach(function (doc, i) {
+        if (!doc) return;
+        var label = doc.label || '';
+        var fileName = doc.fileName || doc.file_name || '';
+        if (!includes(label, needle) && !includes(fileName, needle)) return;
+        var fileId = doc.fileId || doc.image_id || null;
+        files.push({
+          kind: 'file',
+          id: 'file:' + (fileId || (person.name + ':' + i)),
+          title: label || fileName || 'File',
+          subtitle: person.name + (fileName && label ? ' · ' + fileName : ''),
+          name: person.name,
+          fileId: fileId,
+          icon: 'scroll',
+        });
+      });
+    });
+    if (people.length) groups.push({ id: 'clients', label: 'Clients', items: people.slice(0, LIMIT) });
+
+    var deals = dealRows(opts.rows, opts.serverRows, q, opts.makeSearch).slice(0, LIMIT).map(function (row) {
+      return {
+        kind: 'deal',
+        id: 'deal:' + (row.id || row.ref),
+        title: row.ref || 'Deal',
+        subtitle: dealSubtitle(row) || 'Deal',
+        rowId: row.id,
+        ref: row.ref || '',
+        row: row,
+        icon: 'receipt',
+      };
+    });
+    if (deals.length) groups.push({ id: 'deals', label: 'Deals', items: deals });
+    if (files.length) groups.push({ id: 'files', label: 'Files', items: files.slice(0, LIMIT) });
+
+    return { query: q, groups: groups, items: flatten(groups) };
+  }
+
+  /* Arrow keys wrap, the way a short list expects. An empty list stays
+     on 0 so the next result has somewhere to land. */
+  function moveIndex(index, dir, count) {
+    if (!count) return 0;
+    var next = (index || 0) + (dir === 'up' ? -1 : 1);
+    if (next < 0) return count - 1;
+    if (next >= count) return 0;
+    return next;
+  }
+
+  function readRecent(storage) {
+    if (!storage || typeof storage.getItem !== 'function') return [];
+    try {
+      var parsed = JSON.parse(storage.getItem(RECENT_KEY) || 'null');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /* Newest first, one row per id, capped so the empty state stays a
+     short list and not a second history. */
+  function remember(storage, item) {
+    var current = readRecent(storage).filter(function (row) {
+      return row && row.id !== item.id;
+    });
+    var next = [{
+      kind: item.kind,
+      id: item.id,
+      title: item.title,
+      subtitle: item.subtitle || '',
+      app: item.app || null,
+      name: item.name || null,
+      rowId: item.rowId != null ? item.rowId : null,
+      ref: item.ref || null,
+      fileId: item.fileId || null,
+      icon: item.icon || null,
+    }].concat(current).slice(0, 8);
+    try { storage.setItem(RECENT_KEY, JSON.stringify(next)); } catch (e) {}
+    return next;
+  }
+
+  window.CDOS_PALETTE = {
+    JUMPS: JUMPS,
+    RECENT_KEY: RECENT_KEY,
+    isPaletteChord: isPaletteChord,
+    clientHit: clientHit,
+    query: query,
+    moveIndex: moveIndex,
+    readRecent: readRecent,
+    remember: remember,
+  };
+})();
+
+
+/* ---- os-src/cdos-palette.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS — quick search palette
+
+   The box itself. Matching lives in cdos-palette.js so a test can
+   run it without painting. This file draws that result, takes the
+   keys, and asks the shell to open whatever was chosen.
+
+   Typing waits a short beat before the list moves, and before any
+   request goes out. The page does not reload. A desk with a server
+   session asks the client list and the transaction list (the same
+   routes the screens already use) and prefers that answer, because
+   it is already limited to this desk and this person. If those
+   routes are not there, the book on screen is the search.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useRef
+  } = React;
+  const {
+    Ic
+  } = window.CDOS;
+  const P = window.CDOS_PALETTE;
+  function shortcutLabel() {
+    var mac = false;
+    try {
+      mac = /Mac|iPhone|iPad/.test(navigator.platform || '') || /Mac/.test(navigator.userAgent || '');
+    } catch (e) {}
+    return mac ? 'Cmd K' : 'Ctrl K';
+  }
+  function QuickSearch({
+    open,
+    onOpen,
+    onClose,
+    blocked,
+    clients,
+    rows,
+    canOpen,
+    serverBacked,
+    onChoose
+  }) {
+    const [query, setQuery] = useState('');
+    const [debounced, setDebounced] = useState('');
+    const [index, setIndex] = useState(0);
+    const [recent, setRecent] = useState(function () {
+      return P.readRecent(window.localStorage);
+    });
+    const [serverClients, setServerClients] = useState(null);
+    const [serverRows, setServerRows] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const inputRef = useRef(null);
+    const listRef = useRef(null);
+    const seq = useRef(0);
+    const chord = shortcutLabel();
+    useEffect(function () {
+      var t = setTimeout(function () {
+        setDebounced(query);
+      }, 140);
+      return function () {
+        clearTimeout(t);
+      };
+    }, [query]);
+    useEffect(function () {
+      if (!open) return undefined;
+      setQuery('');
+      setDebounced('');
+      setIndex(0);
+      setServerClients(null);
+      setServerRows(null);
+      setBusy(false);
+      setRecent(P.readRecent(window.localStorage));
+      var frame = requestAnimationFrame(function () {
+        if (inputRef.current) inputRef.current.focus();
+      });
+      return function () {
+        cancelAnimationFrame(frame);
+      };
+    }, [open]);
+    useEffect(function () {
+      if (!open || !serverBacked) return undefined;
+      var q = debounced.trim();
+      if (!q) {
+        setServerClients(null);
+        setServerRows(null);
+        setBusy(false);
+        return undefined;
+      }
+      var token = ++seq.current;
+      var cancelled = false;
+      setBusy(true);
+      (async function () {
+        var api = window.CDOS.Backend;
+        var nextClients = null;
+        var nextRows = null;
+        if (api && api.Clients && api.Clients.list) {
+          try {
+            var listed = await api.Clients.list(q);
+            nextClients = listed && listed.clients || [];
+          } catch (e) {/* the screen's own copy is the fallback */}
+        }
+        if (api && api.searchDeals) {
+          try {
+            nextRows = await api.searchDeals(q);
+          } catch (e) {}
+        }
+        if (cancelled || token !== seq.current) return;
+        setServerClients(nextClients);
+        setServerRows(nextRows);
+        setBusy(false);
+      })();
+      return function () {
+        cancelled = true;
+      };
+    }, [open, debounced, serverBacked]);
+    const result = useMemo(function () {
+      return P.query({
+        query: debounced,
+        clients: serverClients != null ? serverClients : clients,
+        rows: rows,
+        serverRows: serverRows || [],
+        recent: recent,
+        canOpen: canOpen,
+        makeSearch: window.CDOS.makeSearch
+      });
+    }, [debounced, clients, rows, serverClients, serverRows, recent, canOpen]);
+    useEffect(function () {
+      setIndex(0);
+    }, [debounced, result.items.length]);
+    useEffect(function () {
+      if (!open || !listRef.current) return;
+      var selected = listRef.current.querySelector('[aria-selected="true"]');
+      if (selected && selected.scrollIntoView) selected.scrollIntoView({
+        block: 'nearest'
+      });
+    }, [open, index]);
+    function choose(item) {
+      if (!item) return;
+      var next = P.remember(window.localStorage, item);
+      setRecent(next);
+      onClose();
+      if (onChoose) onChoose(item);
+    }
+    useEffect(function () {
+      function onKey(e) {
+        /* Capture, and stop the event cold. The first-run tour also
+           listens for Escape, on the bubble. Stopping here means the
+           palette closes and the tour does not skip out from under it. */
+        function take(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        }
+        if (P.isPaletteChord(e)) {
+          if (blocked) return;
+          take(e);
+          if (open) onClose();else onOpen();
+          return;
+        }
+        if (!open) return;
+        if (e.key === 'Escape') {
+          take(e);
+          onClose();
+          return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          take(e);
+          setIndex(function (i) {
+            return P.moveIndex(i, e.key === 'ArrowUp' ? 'up' : 'down', result.items.length);
+          });
+          return;
+        }
+        if (e.key === 'Enter') {
+          var item = result.items[index];
+          if (!item) return;
+          take(e);
+          choose(item);
+        }
+      }
+      window.addEventListener('keydown', onKey, true);
+      return function () {
+        window.removeEventListener('keydown', onKey, true);
+      };
+    }, [open, blocked, result, index, onOpen, onClose]);
+    if (!open) return null;
+    var shown = result.items;
+    var active = shown[index] || null;
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "cd-palette-scrim",
+      onMouseDown: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-palette",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": "Quick search",
+      onMouseDown: function (e) {
+        e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-palette-field"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "search",
+      s: 16,
+      c: "var(--mute, rgba(10,10,10,0.55))"
+    }), /*#__PURE__*/React.createElement("input", {
+      ref: inputRef,
+      className: "cd-palette-input",
+      value: query,
+      "aria-label": "Search the desk",
+      "aria-controls": "cd-palette-list",
+      "aria-activedescendant": active ? 'cd-palette-opt-' + index : undefined,
+      placeholder: "Clients, deals, files, or a screen",
+      onChange: function (e) {
+        setQuery(e.target.value);
+      },
+      autoComplete: "off",
+      spellCheck: "false"
+    }), query ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "cd-palette-clear",
+      "aria-label": "Clear search",
+      onClick: function () {
+        setQuery('');
+        if (inputRef.current) inputRef.current.focus();
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 13
+    })) : /*#__PURE__*/React.createElement("span", {
+      className: "cd-palette-kbd"
+    }, chord)), /*#__PURE__*/React.createElement("div", {
+      className: "cd-palette-list",
+      id: "cd-palette-list",
+      role: "listbox",
+      "aria-label": "Search results",
+      ref: listRef
+    }, shown.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      className: "cd-palette-empty"
+    }, debounced.trim() ? 'Nothing matches.' : 'Nothing recent yet.') : result.groups.map(function (group) {
+      var start = 0;
+      result.groups.some(function (g) {
+        if (g === group) return true;
+        start += g.items.length;
+        return false;
+      });
+      return /*#__PURE__*/React.createElement("div", {
+        key: group.id,
+        className: "cd-palette-group"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "cd-palette-label"
+      }, group.label), group.items.map(function (item, i) {
+        var at = start + i;
+        var on = at === index;
+        return /*#__PURE__*/React.createElement("button", {
+          key: item.id,
+          type: "button",
+          id: 'cd-palette-opt-' + at,
+          role: "option",
+          "aria-selected": on,
+          "data-palette-kind": item.kind,
+          className: 'cd-palette-row' + (on ? ' is-on' : ''),
+          onMouseEnter: function () {
+            setIndex(at);
+          },
+          onClick: function () {
+            choose(item);
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "cd-palette-ico"
+        }, /*#__PURE__*/React.createElement(Ic, {
+          n: item.icon || 'search',
+          s: 15
+        })), /*#__PURE__*/React.createElement("span", {
+          className: "cd-palette-copy"
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "cd-palette-title"
+        }, item.title), item.subtitle ? /*#__PURE__*/React.createElement("span", {
+          className: "cd-palette-sub"
+        }, item.subtitle) : null));
+      }));
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "cd-palette-foot"
+    }, /*#__PURE__*/React.createElement("span", null, "Arrows to move"), /*#__PURE__*/React.createElement("span", null, "Enter to open"), /*#__PURE__*/React.createElement("span", null, "Esc to close"), busy ? /*#__PURE__*/React.createElement("span", {
+      className: "cd-palette-busy"
+    }, "Looking") : null))), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    QuickSearch: QuickSearch
+  });
+})();
+
 /* ---- os-src/cdos-os.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -62922,6 +63528,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   /* ====================== ROOT ====================== */
   function App() {
     const [stage, setStage] = useState(ENTRY.signup ? 'signup' : 'lock');
+    const [paletteOpen, setPaletteOpen] = useState(false);
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null); // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null); // {current} while a temporary password must be replaced
@@ -65558,6 +66165,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
+    /* The same two gates the dock uses. The palette must not offer a
+       screen openApp would open for someone the dock hides it from. */
+    const canOpenApp = id => permsOk(id) && planAllows(id);
+    const openPaletteItem = item => {
+      if (!item) return;
+      if (item.kind === 'screen' && item.app) {
+        openApp(item.app);
+        return;
+      }
+      if ((item.kind === 'client' || item.kind === 'file') && item.name) {
+        openClientProfile(item.name);
+        return;
+      }
+      if (item.kind === 'deal') {
+        if (item.row) setRows(rs => rs.some(r => r.id === item.row.id) ? rs : [item.row].concat(rs));
+        if (item.rowId != null) openTransaction(item.rowId);else openApp('ledger');
+      }
+    };
+    const searchChord = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '') ? 'Cmd K' : 'Ctrl K';
     // plan gating: which apps the active subscription unlocks. Locked apps drop
     // off the dock and sit in the Store behind an upgrade paywall — the OS shell
     // is identical regardless of plan. settings/store are always reachable.
@@ -66019,7 +66645,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "mb-ops"
-    }, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "mb-op",
+      "aria-label": "Search",
+      title: 'Search (' + searchChord + ')',
+      onClick: () => setPaletteOpen(true)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "search",
+      s: 17
+    })), /*#__PURE__*/React.createElement("div", {
       className: "mb-bell-wrap",
       ref: bellRef
     }, /*#__PURE__*/React.createElement("button", {
@@ -66568,6 +67203,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setClients: setClients,
       onClose: () => setAddContactOpen(false),
       onDone: () => setAddContactOpen(false)
+    }), window.CDOS.QuickSearch && /*#__PURE__*/React.createElement(window.CDOS.QuickSearch, {
+      open: paletteOpen,
+      onOpen: () => setPaletteOpen(true),
+      onClose: () => setPaletteOpen(false),
+      blocked: !!(deskLocked || handover || pinGate),
+      clients: clients,
+      rows: rows,
+      canOpen: canOpenApp,
+      serverBacked: !!srvUser,
+      onChoose: openPaletteItem
     }), window.CDOS.FirstRun && /*#__PURE__*/React.createElement(window.CDOS.FirstRun, {
       role: me.role,
       staffId: srvUser && srvUser.id || user || me && me.name,

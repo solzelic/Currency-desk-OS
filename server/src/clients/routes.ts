@@ -113,6 +113,11 @@ const fileLabelBody = z.object({
 const aliasBody = z.object({ alias: z.string().trim().min(1).max(300) }).strict();
 const revealBody = z.object({ purpose: z.string().trim().max(200).optional() }).strict();
 const lookupQuery = z.object({ name: z.string().trim().min(1).max(300) });
+/* Optional. Absent is the full list this person can already open.
+   Present narrows it. It is not a different permission. */
+const listQuery = z.object({
+  q: z.string().trim().max(200).optional(),
+});
 const disclosureQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
@@ -212,7 +217,10 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.get("/api/clients", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
-      return actor ? reply.send(await records.list(actor)) : undefined;
+      if (!actor) return undefined;
+      const query = listQuery.safeParse(req.query);
+      if (!query.success) return invalid(reply, query.error);
+      return reply.send(await records.list(actor, query.data.q));
     } catch (error) {
       return failure(reply, error);
     }

@@ -13,6 +13,13 @@ const scope = (actor: LedgerActor) => [
   actor.tillId,
 ];
 
+/* A typed receipt, amount, or customer name. `%` and `_` are the caller's
+   characters, not wildcards, so a search for "100%" does not mean "100" plus
+   anything. */
+function likePattern(raw: string): string {
+  return `%${raw.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
 export type CustomerInput = {
   externalRef?: string;
   name: string;
@@ -261,11 +268,32 @@ export class LedgerProvisioningService {
     }
   }
 
-  async listTransactions(actor: LedgerActor, limit: number) {
+  async listTransactions(actor: LedgerActor, limit: number, query?: string) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
+      /* Same list the ledger screen already loads. `query` only narrows
+         it, by receipt, amount, or customer name, inside this till.
+         The palette then runs the ledger's own matcher (`makeSearch`)
+         over whatever comes back. There is no second search language. */
+      const needle = (query ?? "").trim();
+      const params: unknown[] = [...scope(actor), limit];
+      let customerJoin = "";
+      let customerName = "";
+      let narrowed = "";
+      if (needle) {
+        params.push(likePattern(needle));
+        const slot = params.length;
+        customerJoin = "LEFT JOIN ledger_customers c ON c.customer_id=t.customer_id AND c.tenant_id=t.tenant_id";
+        customerName = ", c.name AS customer_name";
+        narrowed = `AND (
+            t.transaction_ref ILIKE $${slot} ESCAPE '\\'
+            OR coalesce(c.name, '') ILIKE $${slot} ESCAPE '\\'
+            OR t.input_amount::text ILIKE $${slot} ESCAPE '\\'
+            OR t.output_amount::text ILIKE $${slot} ESCAPE '\\'
+          )`;
+      }
       const result = await client.query(
         /* Deals only. A cheque clearance and a cheque return each write a
            journal and therefore each need a transaction row to hang it
@@ -277,21 +305,24 @@ export class LedgerProvisioningService {
            aggregate that decides whether a report is owed. The list of
            settlement kinds lives in cheques.ts; a second copy of it here
            is where the next disagreement starts. */
-        `SELECT t.*,r.reversal_id,r.reason AS reversal_reason,r.posted_at AS reversed_at
+        `SELECT t.*,r.reversal_id,r.reason AS reversal_reason,r.posted_at AS reversed_at${customerName}
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id=t.transaction_id
+           ${customerJoin}
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
             AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
+            ${narrowed}
           ORDER BY t.posted_at DESC,t.transaction_id DESC
           LIMIT $6`,
-        [...scope(actor), limit],
+        params,
       );
       await client.query("COMMIT");
       return {
         transactions: result.rows.map((row) => ({
           transactionId: row.transaction_id,
           transactionRef: row.transaction_ref,
+          customerName: row.customer_name ? String(row.customer_name) : null,
           quoteId: row.quote_id ?? null,
           customerId: row.customer_id,
           actorId: row.actor_id,

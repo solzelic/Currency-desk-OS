@@ -71,6 +71,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Quick search on the desk.** Cmd K or Ctrl K, and a Search button in
+  the header, open one box. An empty box shows recent items, then the
+  screens this person can already open. A query searches clients by
+  name, the id the server minted, and phone; deals by receipt, amount,
+  and client, through the ledger's existing matcher; and files by label
+  or file name. Till and Settings appear only when the dock would show
+  them. `GET /api/clients` and `GET /api/ledger/transactions` take an
+  optional `q` and stay inside the signed-in desk and the permission
+  the person already has.
+
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).
@@ -336,6 +346,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, quick search. Cmd K, Ctrl K, and the header Search button
+open one box. Empty shows recent items and the screens this person
+can open. Clients match name, minted id, and phone. Deals match
+through the ledger search already on the book. Files match label or
+name. The optional `q` on the existing client and transaction lists
+does not widen who can be seen.
 
 **2026-10-07**, Serbia pack `pack-rs-v1`. New desks that pick Serbia
 open on it, in dinars. Euro thresholds convert at the NBS middle rate

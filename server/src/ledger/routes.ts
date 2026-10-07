@@ -108,6 +108,9 @@ const balancesBody = z.object({
 }).strict();
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  /* Optional. Absent means the same list as before. Present narrows
+     that list by receipt, amount, or customer name. */
+  q: z.string().trim().max(200).optional(),
 });
 const tillCounts = byCurrency(monetary("0"), "count");
 const countBody = z.object({
@@ -1153,7 +1156,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.send(
-            await provisioning.listTransactions(actor, parsed.data.limit),
+            await provisioning.listTransactions(actor, parsed.data.limit, parsed.data.q),
           )
         : undefined;
     } catch (error) {
