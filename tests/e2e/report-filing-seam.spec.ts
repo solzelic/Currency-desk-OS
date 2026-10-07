@@ -307,3 +307,102 @@ test("a filed aggregate that takes on a later deal reopens, and the sealed origi
   expect(copy.payload.filing.fwrReceipt).toBe("FWR-SEAM-0001");
   expect(copy.payload.filing.refs).toHaveLength(4);
 });
+
+/* A client saved after the country picker holds an ISO code. A client
+   saved before it holds the English name. The worksheet is a regulatory
+   record, so both have to print as the same words, and a Canadian
+   address on a Canada desk has no country line. This calls buildMap,
+   which is what the filing worksheet renders. */
+test("a country code and a legacy name print the same worksheet", async ({ page }) => {
+  await signInAtDesk(page, "r.haddad");
+  await page.waitForFunction(() => {
+    const pack = window.CDOS && window.CDOS.deskPack && window.CDOS.deskPack();
+    return !!(pack && pack.name === "Canada" && typeof window.CDOS.countryName === "function" && window.CDOS.LCTR && window.CDOS.LCTR.buildMap);
+  });
+
+  const printed = await page.evaluate(() => {
+    const regime = {
+      strCode: "STR",
+      largeCode: "LCTR",
+      wireCode: "EFTR",
+      threshold: 10000,
+      currency: "CAD",
+      strLabel: "Suspicious transaction report",
+      largeLabel: "Large cash transaction report",
+      wireLabel: "Electronic funds transfer report",
+    };
+    const settings = {};
+    const base = {
+      address: "1 King St",
+      city: "Toronto",
+      postal: "M5V 1A1",
+      dob: "1990-01-01",
+      occupation: "clerk",
+      idType: "Passport",
+      idNum: "P1",
+    };
+    const row = {
+      ref: "T-COUNTRY",
+      customer: "Ada Lovelace",
+      inCcy: "CAD",
+      inAmt: 11000,
+      outAmt: 8000,
+      outCcy: "USD",
+      date: "2026-10-07",
+      time: "12:00",
+      type: "Buy",
+    };
+    const value = (map, id) => {
+      for (const block of map) {
+        for (const inst of block.instances || []) {
+          for (const field of inst.fields || []) {
+            if (field.id === id) return field.value;
+          }
+        }
+      }
+      throw new Error(`worksheet has no field ${id}`);
+    };
+    const sheet = (country, province) => {
+      const clients = { "Ada Lovelace": { ...base, country, province } };
+      const str = window.CDOS.LCTR.buildMap(
+        { kind: "STR", subject: "Ada Lovelace", reportRef: "R-STR", amount: 11000, refs: [] },
+        { settings, clients, rows: [], regime },
+      );
+      const lctr = window.CDOS.LCTR.buildMap(
+        { kind: "LCTR", subject: "Ada Lovelace", reportRef: "R-LCTR", refs: ["T-COUNTRY"], basis: "conductor" },
+        { settings, clients, rows: [row], regime },
+      );
+      return {
+        strAddress: value(str, "su_addr"),
+        strJurisdiction: value(str, "su_idjur"),
+        lctrAddress: value(lctr, "cd_addr"),
+        lctrJurisdiction: value(lctr, "cd_idjur"),
+      };
+    };
+    return {
+      canadaCode: sheet("CA", "ON"),
+      canadaName: sheet("Canada", "ON"),
+      iranCode: sheet("IR", ""),
+      iranName: sheet("Iran", ""),
+      iranProvinceCode: sheet("IR", "ON"),
+      iranProvinceName: sheet("Iran", "ON"),
+    };
+  });
+
+  expect(printed.canadaCode).toEqual(printed.canadaName);
+  expect(printed.canadaCode.strAddress).toBe("1 King St, Toronto, ON, M5V 1A1");
+  expect(printed.canadaCode.lctrAddress).toBe("1 King St, Toronto, ON, M5V 1A1");
+  expect(printed.canadaCode.strJurisdiction).toBe("ON, Canada");
+  expect(printed.canadaCode.lctrJurisdiction).toBe("ON, Canada");
+
+  expect(printed.iranCode).toEqual(printed.iranName);
+  expect(printed.iranCode.strAddress).toBe("1 King St, Toronto, M5V 1A1, Iran");
+  expect(printed.iranCode.lctrAddress).toBe("1 King St, Toronto, M5V 1A1, Iran");
+  expect(printed.iranCode.strJurisdiction).toBe("Iran");
+  expect(printed.iranCode.lctrJurisdiction).toBe("Iran");
+
+  expect(printed.iranProvinceCode).toEqual(printed.iranProvinceName);
+  expect(printed.iranProvinceCode.strJurisdiction).toBe("ON, Iran");
+  expect(printed.iranProvinceCode.lctrJurisdiction).toBe("ON, Iran");
+  expect(printed.iranProvinceCode.strAddress).toBe("1 King St, Toronto, ON, M5V 1A1, Iran");
+});

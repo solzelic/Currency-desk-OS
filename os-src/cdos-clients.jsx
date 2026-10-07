@@ -524,11 +524,22 @@
   ISO_COUNTRIES.forEach(([code, name]) => { COUNTRY_NAME[code] = name; });
   const isCanada = (value) => value === 'CA' || value === 'Canada';
   const isUnitedStates = (value) => value === 'US' || value === 'United States' || value === 'USA';
-  const countryLabel = (value) => {
-    if (!value || isCanada(value)) return '';
-    return COUNTRY_NAME[value] || value;
+  /* English name for a stored country. The picker saves an ISO code.
+     A file from before that change still holds the free-text name.
+     Reports call this same function, so both shapes print as one name. */
+  const countryName = (value) => {
+    if (value == null) return '';
+    const stored = String(value).trim();
+    if (!stored) return '';
+    return COUNTRY_NAME[stored] || stored;
   };
-  // join an address. Canada is the home default and is left off. A stored code is shown as its name.
+  /* This screen's address leaves Canada off. A filing worksheet does
+     not: it compares the name from countryName with the desk's pack. */
+  const countryLabel = (value) => {
+    const name = countryName(value);
+    if (!name || isCanada(name)) return '';
+    return name;
+  };
   const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, countryLabel(rec.country)].filter(Boolean).join(', ');
   const RISK = window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = window.CDOS.normalizeRisk, riskTone = window.CDOS.riskTone;
@@ -1619,5 +1630,5 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      `ClientRecords` is exported for the new-contact flow in
      cdos-kyc.jsx, which can run from screens that never mount this
      one. */
-  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan });
+  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, countryName });
 })();

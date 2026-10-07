@@ -22546,11 +22546,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   });
   const isCanada = value => value === 'CA' || value === 'Canada';
   const isUnitedStates = value => value === 'US' || value === 'United States' || value === 'USA';
-  const countryLabel = value => {
-    if (!value || isCanada(value)) return '';
-    return COUNTRY_NAME[value] || value;
+  /* English name for a stored country. The picker saves an ISO code.
+     A file from before that change still holds the free-text name.
+     Reports call this same function, so both shapes print as one name. */
+  const countryName = value => {
+    if (value == null) return '';
+    const stored = String(value).trim();
+    if (!stored) return '';
+    return COUNTRY_NAME[stored] || stored;
   };
-  // join an address. Canada is the home default and is left off. A stored code is shown as its name.
+  /* This screen's address leaves Canada off. A filing worksheet does
+     not: it compares the name from countryName with the desk's pack. */
+  const countryLabel = value => {
+    const name = countryName(value);
+    if (!name || isCanada(name)) return '';
+    return name;
+  };
   const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, countryLabel(rec.country)].filter(Boolean).join(', ');
   const RISK = window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = window.CDOS.normalizeRisk,
@@ -25832,7 +25843,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     Clients,
     ClientIdViewer,
     ClientRecords,
-    IdScan
+    IdScan,
+    countryName
   });
 })();
 
@@ -41741,11 +41753,33 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       other: parts.slice(1, -1).join(' ')
     };
   }
-  /* The country is omitted from an address only when it IS the desk's own
-     country — which the pack states. It used to be omitted whenever it was
-     Canada, so a Canadian client's address filed by a London desk lost its
-     country line. */
-  const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
+  /* The client file may hold an ISO code or an older free-text name.
+     countryName lives with the picker, and this worksheet refuses to
+     print a country until that function is there. A missing helper
+     would otherwise file "CA" on one report and "Canada" on the next. */
+  const storedCountryName = value => {
+    const named = window.CDOS.countryName;
+    if (typeof named !== 'function') {
+      throw new Error('countryName is not loaded. The client file has to load before a filing worksheet can print a country.');
+    }
+    return named(value);
+  };
+  /* Omit the country from an address only when its English name is the
+     desk's own country. The pack states that as a name ("Canada"), not
+     a code, so the comparison is against the name. */
+  const fullAddr = rec => {
+    const name = storedCountryName(rec && rec.country);
+    const country = name && name !== homeCountry() ? name : '';
+    return [rec.address, rec.city, rec.province, rec.postal, country].filter(Boolean).join(', ');
+  };
+  /* Identifier jurisdiction is the province and the English country
+     name. A blank country with a province still falls back to the
+     desk's own country. A blank country with no province stays blank. */
+  const idJurisdiction = rec => {
+    const name = storedCountryName(rec && rec.country);
+    if (rec && rec.province) return `${rec.province}, ${name || homeCountry()}`;
+    return name;
+  };
 
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
@@ -41795,7 +41829,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
+      const subjJur = idJurisdiction(subj);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -41920,7 +41954,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
+      const idJur = idJurisdiction(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -42957,7 +42991,9 @@ ${(filing.map || []).map(blockHTML).join('')}
       requiredPromptKeys,
       fillKeys,
       requiredFillKeys,
-      kindLabelOf
+      kindLabelOf,
+      fullAddr,
+      idJurisdiction
     }
   });
 })();
