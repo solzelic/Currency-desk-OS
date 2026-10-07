@@ -111,4 +111,20 @@ test("a Hong Kong desk shows the Hong Kong pack and no cash report", async ({ pa
     expect(sentence).not.toMatch(/\u2014/);
     expect(sentence).not.toMatch(/\u2013/);
   }
+
+  /* The compliance desk tags the suspicious-transaction duty Listed,
+     the same word as the pack and the website. The large-cash pack
+     must not tell this desk to verify a filing in a portal. */
+  await page.getByText("Compliance", { exact: true }).first().click();
+  await rendered(page, /No cash report/i);
+  const desk = page.locator("body");
+  await expect(desk.getByText("Listed", { exact: true }).first()).toBeVisible();
+  await expect(desk.getByText("STR", { exact: true }).first()).toBeVisible();
+  await page.getByText("Reports", { exact: true }).first().click();
+  /* The launcher names this card from the pack, not from the Canadian title. */
+  await page.getByText(/Suspicious Transaction Report Pack/).first().click();
+  await rendered(page, /does not file it/i);
+  const packText = await page.locator("body").innerText();
+  expect(packText).toMatch(/does not file it/i);
+  expect(packText).not.toMatch(/verify each filing/i);
 });

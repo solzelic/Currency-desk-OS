@@ -10,7 +10,6 @@ import Decimal from "decimal.js";
 import {
   hkdLeg,
   hongKongIdKind,
-  hongKongPurposeRequired,
   identificationBlocks,
 } from "../src/ledger/hongkong-pack.js";
 
@@ -118,9 +117,6 @@ describe("one HKD leg, and no hard purpose rule", () => {
     })).toBeNull();
   });
 
-  it("does not require purpose", () => {
-    expect(hongKongPurposeRequired()).toBe(false);
-  });
 });
 
 describe("the migration inserts and does not move a desk", () => {

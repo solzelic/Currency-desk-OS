@@ -69,7 +69,6 @@ import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import {
   HK_BOOK_MESSAGE,
-  hongKongPurposeRequired,
   isHongKongPack,
 } from "./hongkong-pack.js";
 import {
@@ -623,7 +622,7 @@ export class ObligationService {
          no line and would demand purpose on every transfer. Schedule 2
          section 2(1)(c) does not hard require it on an occasional deal. */
       if (
-        !(isHongKongPack(pack.packId) && !hongKongPurposeRequired()) &&
+        !isHongKongPack(pack.packId) &&
         (!spec.capture.purpose.trim() || !spec.capture.sourceOfFunds.trim())
       ) {
         const reporting = await resolveReportThreshold(

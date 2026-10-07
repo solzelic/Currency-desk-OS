@@ -44481,7 +44481,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, regime.noCashReport ? 'C&ED / JFIU. Money changing at or above 120000 HKD. A wire, a remittance, and a virtual asset transfer at or above 8000 HKD. There is no cash report.' : regime.threshold == null ? 'We don\'t have rules for your country yet. These are the international anti-money-laundering rules. Please check they match your country\'s laws.' : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
-    }, (regime.noCashReport ? [['Cash report', 'None', 'No cash report', 'aggregation', CD.green], ['STR', 'Gap', 'Not filed here', 'submissions', CD.mute], ['Screening', 'Gap', 'No list loaded', 'screening', CD.mute]] : [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]]).map(([l, v, sub, go, warn]) => {
+    }, (regime.noCashReport ? [['Cash report', 'None', 'No cash report', 'aggregation', CD.green], ['STR', 'Listed', 'Not filed here', 'submissions', CD.mute], ['Screening', 'Gap', 'No list loaded', 'screening', CD.mute]] : [['Reportable', draftN, 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag]]).map(([l, v, sub, go, warn]) => {
       const bad = typeof v === 'number' && v > 0;
       const col = bad ? warn : CD.green;
       return /*#__PURE__*/React.createElement("button", {
@@ -48113,7 +48113,11 @@ ${snap}`;
       country: pack && pack.name || regime.country || null,
       largeCode: pack && pack.reportName || regime.largeCode || null,
       largeLabel: regime.largeLabel || (pack && pack.reportName ? pack.reportName + ' report' : null),
-      aggHours: regime.aggHours || null
+      aggHours: regime.aggHours || null,
+      /* Hong Kong has no cash report. Without this flag the footer
+         falls through to "verify each filing in the official portal",
+         which this desk does not do. */
+      noCashReport: !!regime.noCashReport
     };
   }
 
@@ -49954,7 +49958,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), regime.noCashReport ? /*#__PURE__*/React.createElement(React.Fragment, null, "There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This desk does not file it and does not open STREAMS.") : limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), regime.noCashReport ? /*#__PURE__*/React.createElement(React.Fragment, null, "There is no cash transaction report for a money service operator. A suspicious transaction report goes to the JFIU. This desk does not file it and does not open STREAMS.") : limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in. This pack is a working summary; verify each filing in the official portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack. This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to

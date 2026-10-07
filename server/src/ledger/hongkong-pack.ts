@@ -30,8 +30,10 @@ export const HONG_KONG_PACK_ID = "pack-hk-v1";
    HK$120,000. Exactly 120000 is the trigger. */
 export const HK_FX_CDD_HKD = new Decimal("120000");
 
-/* Schedule 2 section 3(1A) and section 13. Equal to or above
-   HK$8,000. Exactly 8000 is the trigger. */
+/* Schedule 2 section 3(1A)(a) is the wire, and section 13 is a
+   non-wire remittance. Equal to or above HK$8,000. Exactly 8000 is
+   the trigger. Section 3(1)(c) is not the wire line. It was repealed
+   by 15 of 2022 section 33. */
 export const HK_TRANSFER_CDD_HKD = new Decimal("8000");
 
 export const HK_UNPRICED_MESSAGE =
@@ -163,14 +165,4 @@ export async function hongKongDealHkd(
     rate: market.rate.toDecimalPlaces(12).toFixed(12),
     rateAt: market.rateAt,
   };
-}
-
-/* Schedule 2 section 2(1)(c) asks for purpose and source of funds on
-   a business relationship, unless it is obvious. It is not a hard
-   requirement on every occasional deal. This pack does not hard
-   require them. The generic posting gate treats a report threshold
-   of 0 as "no line" and would otherwise demand purpose on every
-   deal, including a 10 HKD exchange. Callers skip that gate. */
-export function hongKongPurposeRequired(): boolean {
-  return false;
 }

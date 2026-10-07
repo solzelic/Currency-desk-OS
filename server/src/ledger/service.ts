@@ -26,7 +26,6 @@ import {
   HK_UNPRICED_MESSAGE,
   hongKongDealHkd,
   hongKongIdRow,
-  hongKongPurposeRequired,
   identificationBlocks,
   isHongKongPack,
 } from "./hongkong-pack.js";
@@ -997,7 +996,7 @@ export class LedgerService {
          Schedule 2 section 2(1)(c) does not hard require it on an
          occasional deal. */
       if (
-        !(isHongKongPack(pack.packId) && !hongKongPurposeRequired()) &&
+        !isHongKongPack(pack.packId) &&
         (!request.purpose.trim() || !request.sourceOfFunds.trim())
       ) {
         const reporting = await resolveReportThreshold(

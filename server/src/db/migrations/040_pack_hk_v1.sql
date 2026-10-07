@@ -71,8 +71,10 @@ VALUES
      rule and is not applied here. */
   ('pack-hk-v1', 'fx', 120000, 'HKD', 'gte', 'cdd', false),
   /* Schedule 2 section 3(1A)(a) is customer due diligence on a wire
-     transfer equal to or above 8000 HKD. Section 13 is originator
-     identification on a non-wire remittance equal to or above 8000 HKD.
+     transfer equal to or above 8000 HKD. Section 3(1)(c) is not this
+     line. It was repealed by 15 of 2022 section 33. Section 13 is
+     originator identification on a non-wire remittance equal to or
+     above 8000 HKD.
      The product has one remittance kind and one verified state, so
      this row is 8000, at or above. A stored 0 or NULL must not turn
      the check off. Exactly 8000 blocks. 7999.99 does not. */

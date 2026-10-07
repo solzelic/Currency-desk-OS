@@ -20,7 +20,7 @@ It never means the check is off.
 | --- | --- | --- |
 | Money changing (`fx`, exchange) | at or above 120000 HKD | AMLO Cap. 615 Schedule 2 s.3(1)(b) |
 | Bill, money order, cheque | the same 120000 HKD row | s.3(1)(b), other occasional transaction. The table has no separate kind |
-| Wire (`eft`) | at or above 8000 HKD | s.1(4) and s.3(1A)(a) |
+| Wire (`eft`) | at or above 8000 HKD | s.1(4) and s.3(1A)(a). s.3(1)(c) was repealed by 15 of 2022 s.33 and is not this line |
 | Remittance, send or receive | at or above 8000 HKD | s.3(1A)(a) if it is a wire; s.13 if it is not. See the doubt below |
 | Virtual asset transfer | at or above 8000 HKD | s.3(1A)(b), "no less than" HK$8,000 |
 
