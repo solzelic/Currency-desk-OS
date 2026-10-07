@@ -408,17 +408,18 @@ class Component extends DCLogic {
         {name:'OFSI sanctions screening', spec:'UK consolidated list on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'Client files kept after the relationship ends.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
-    { id:'amla', tag:'AMLA / EU', country:'European Union', regulator:'National FIUs, with the EU Anti-Money Laundering Authority', status:'Coming soon', kind:'soon', color:'#33578F', soft:'rgba(51,87,143,0.11)', official:'https://finance.ec.europa.eu', updated:'03 Jul 2026', retention:'5 years',
-      supervisor:'Your national supervisor and FIU, with AMLA phasing in',
-      deadline:'Set by your national FIU',
-      whatWeDo:'One rulebook, twenty-seven filings. As the EU package phases in we map the harmonised obligations — cash limits, transfer-of-funds data and reporting — onto whichever national FIU you answer to.',
-      how:[{n:'1',t:'Pick your member state; the desk loads that FIU\u2019s formats.'},{n:'2',t:'Cash limits and payer/payee data are enforced at the point of sale.'},{n:'3',t:'Reports are drafted in the national format and records kept five years.'}],
+    { id:'amla', tag:'AMLR', country:'European Union', regulator:'National financial intelligence unit', status:'From 10 July 2027', kind:'soon', color:'#33578F', soft:'rgba(51,87,143,0.11)', official:'https://eur-lex.europa.eu/eli/reg/2024/1624/oj', updated:'07 Oct 2026', retention:'5 years',
+      supervisor:'Your national supervisor and your national financial intelligence unit',
+      deadline:'Suspicious activity is reported promptly, at any amount. A request from your FIU is answered within 5 working days.',
+      whatWeDo:'These are the 2027 European Union rules under Regulation 2024/1624. They apply from 10 July 2027. Until that date, your country\'s current anti-money-laundering law still governs. Reports go to your national financial intelligence unit. There is no single EU regulator and no EU large-cash report.',
+      how:[{n:'1',t:'Cash at or above €3,000 needs identification.'},{n:'2',t:'A transfer of funds at or above €1,000, and any occasional transaction at or above €10,000, need full customer due diligence.'},{n:'3',t:'Suspicious activity, including an attempt, is reported to your national FIU. Records are kept for 5 years.'}],
       rules:[
-        {name:'Cash payment limit', spec:'Harmonised €10,000 ceiling on cash.', tag:'Planned', cat:'threshold', when:'At the till'},
-        {name:'STR to your national FIU', spec:'Drafted in the local format.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Transfer of funds data', spec:'Payer and payee details travel with the transfer.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'Cash identification', spec:'At or above €3,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Full customer due diligence', spec:'Occasional transaction at or above €10,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Transfer of funds', spec:'Customer due diligence at or above €1,000.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'STR to your national FIU', spec:'Any amount, including an attempt. No EU large-cash report.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'EU sanctions screening', spec:'Consolidated list on every client.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'5-year record retention', spec:'After the relationship ends, or after the occasional transaction.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'austrac', tag:'AUSTRAC', country:'Australia', regulator:'Australian Transaction Reports & Analysis Centre', status:'Coming soon', kind:'soon', color:'#C2452D', soft:'rgba(194,69,45,0.1)', official:'https://www.austrac.gov.au', updated:'27 Jun 2026', retention:'7 years',
       supervisor:'AUSTRAC, with ASIC for financial services licensing',

@@ -378,6 +378,8 @@ export class ChequeService {
              identity rule does not treat the face as cash in. */
           cashIn: false,
           customerId: input.customerId,
+          purpose: input.purpose,
+          sourceOfFunds: input.sourceOfFunds,
         },
       );
 

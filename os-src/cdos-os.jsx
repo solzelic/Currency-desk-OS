@@ -358,7 +358,13 @@
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>WHERE YOU OPERATE</div>
         <h1 style={{ marginBottom: 6 }}>Which country are you licensed in?</h1>
         <div className="station" style={{ marginBottom: 14 }}>This sets your regulator, home currency and reporting thresholds — so the desk fits your rules.</div>
-        {REG.map(r => optRow(d.country === r.c, r.c, r.reg + ' · home currency ' + r.cur, () => set('country', r.c), r.flag))}
+        {REG.map(r => optRow(d.country === r.c, r.c, r.reg + ' · home currency ' + r.cur, () => setD(s => ({
+          ...s,
+          country: r.c,
+          idThreshold: r.c === 'European Union'
+            ? (s.country === 'European Union' ? s.idThreshold : 3000)
+            : (s.country === 'European Union' ? 10000 : s.idThreshold),
+        })), r.flag))}
       </div>)}
 
       {step === 1 && (<div>
@@ -390,8 +396,14 @@
       {step === 4 && (<div>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '0.12em', color: ACC, marginBottom: 6 }}>YOUR RULES</div>
         <h1 style={{ marginBottom: 6 }}>When should the desk ask for ID?</h1>
-        <div className="station" style={{ marginBottom: 14 }}>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</div>
-        {THRESH.map(x => optRow(d.idThreshold === x.v, x.t + ' ' + (reg.cur || 'CAD'), x.d, () => set('idThreshold', x.v)))}
+        <div className="station" style={{ marginBottom: 14 }}>{d.country === 'European Union'
+          ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.'
+          : <>{reg.reg || 'Your regulator'} sets the legal minimum. Many shops ask earlier, to be safe — you can change this later.</>}</div>
+        {(d.country === 'European Union' ? [
+          { v: 3000, t: 'Only at 3,000', d: 'Cash identification. The 2027 minimum.' },
+          { v: 1500, t: 'At 1,500', d: 'Ask sooner than the cash line.' },
+          { v: 1000, t: 'At 1,000', d: 'The same amount as a transfer of funds.' },
+        ] : THRESH).map(x => optRow(d.idThreshold === x.v, x.t + ' ' + (reg.cur || 'CAD'), x.d, () => set('idThreshold', x.v)))}
       </div>)}
 
       {step === 5 && (<div>
@@ -1994,13 +2006,19 @@
       const num = (v, fallback) => (typeof v === 'number' && v > 0 ? v : fallback);
       /* A baseline desk's 10,000 is US dollars. Do not store it as the
          home-currency line. The ledger converts it, and the screen reads that. */
-      const reportOver = setup.baselineRules ? null : num(setup.reportThreshold, 10000);
+      /* An explicit null is "this pack has no amount report". A missing
+         field on an older setup still falls back to 10,000. */
+      const reportOver = setup.baselineRules || setup.reportThreshold === null
+        ? null
+        : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || typedId == null ? null : Math.min(typedId, reportOver);
+      const idOver = legacyPause || typedId == null ? null
+        : reportOver == null ? typedId
+        : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;
       const owner = { id: 'e_owner', name: ownerName, role: 'Owner', email: ownerId, phone: '', code: ownerId, active: true, requirePin: true, caps: {}, apps: null, branches: '*', home: null };
       const nextSettings = { ...settings,

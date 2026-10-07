@@ -107,6 +107,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
 
+- **European Union desks can open on the 2027 AMLR pack.**
+  `pack-eu-v2` ("EU AMLR 2027") follows Regulation (EU) 2024/1624,
+  which applies from 10 July 2027. Cash of at least 3,000 EUR needs
+  identification. An occasional transaction of at least 10,000 EUR,
+  and a transfer of funds of at least 1,000 EUR, need customer due
+  diligence. Suspicious activity goes to the national financial
+  intelligence unit at any amount. There is no EU large-cash report.
+  Records are kept 5 years. Until 10 July 2027 the desk shows that
+  these are the 2027 rules and that current national law still
+  governs. `pack-eu-v1` is not edited. A desk already on it stays
+  there until the owner opts in. New European Union signups open on
+  version 2, in euros. Non-euro member states are a later local
+  layer. Detail, sources, and the gaps: `docs/EU_AMLR_PACK.md`.
+
 - **Country rules packs can hold the rule as written.** A pack stores
   an identification line for each of foreign exchange, remittance,
   electronic funds transfer, and virtual currency. Null on that line
@@ -288,6 +302,17 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, EU AMLR 2027. New European Union desks open on
+`pack-eu-v2`. Cash identification is 3,000 EUR. Full customer due
+diligence is 10,000 EUR for an occasional transaction, and 1,000 EUR
+for a transfer of funds. There is no EU large-cash report. The
+suspicious-transaction report has no amount. The pack applies from
+10 July 2027, and the desk says so until that date. `pack-eu-v1`
+is unchanged. An owner on version 1 can opt in. The desk's own
+identification number moves only the cash line. Linked transactions
+and the Article 80 cash payment limit are not enforced.
+`docs/EU_AMLR_PACK.md`.
 
 **2026-10-06**, international baseline. A country with no pack is not
 given Canada's and is not paused. It operates under `pack-intl-v1`.

@@ -17,7 +17,7 @@
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import { resolvePack } from "./jurisdiction.js";
+import { EU_AMLR_PACK_ID, EU_V1_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, requireInstalledPack, type LedgerActor } from "./service.js";
 import { readDeskThresholds, type DeskThresholds } from "./thresholds.js";
@@ -217,6 +217,69 @@ export class ThresholdService {
           actor.userId,
           actor.legalEntityId,
           "Owner moved this desk from pack-ca-v1 to pack-ca-v2. Posted deals keep the pack they were stamped with.",
+          randomUUID(),
+        ],
+      );
+      const after = await readDeskThresholds(client, actor.legalEntityId);
+      await client.query("COMMIT");
+      return after;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Move this desk from the European Union pack version 1 onto the
+   * 2027 pack. One way, and only from version 1. The desk's own
+   * identification number is left as it is. Posted deals keep the
+   * pack version stamped on them.
+   */
+  async optInEuAmlr(actor: LedgerActor): Promise<DeskThresholds> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "compliance:thresholds");
+      const installed = await client.query(
+        "SELECT 1 FROM jurisdiction_packs WHERE pack_id = $1",
+        [EU_AMLR_PACK_ID],
+      );
+      if (!installed.rowCount) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "The 2027 European Union pack is not installed on this database.",
+        );
+      }
+      const moved = await client.query(
+        `UPDATE legal_entities
+            SET jurisdiction_pack_id = $2,
+                jurisdiction_pack_version = 2
+          WHERE id = $1
+            AND jurisdiction_pack_id = $3`,
+        [actor.legalEntityId, EU_AMLR_PACK_ID, EU_V1_PACK_ID],
+      );
+      if (!moved.rowCount) {
+        throw new LedgerError(
+          "PACK_OPT_IN_REFUSED",
+          "Only a desk on the European Union pack version 1 can move to the 2027 rules.",
+        );
+      }
+      await client.query(
+        `INSERT INTO ledger_audit_events
+          (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+           action,target_id,reason,correlation_id,created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,'compliance.pack.opt_in',$7,$8,$9,now())`,
+        [
+          randomUUID(),
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+          actor.workspaceId,
+          actor.userId,
+          actor.legalEntityId,
+          "Owner moved this desk from pack-eu-v1 to pack-eu-v2. Posted deals keep the pack they were stamped with.",
           randomUUID(),
         ],
       );

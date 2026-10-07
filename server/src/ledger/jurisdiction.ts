@@ -216,9 +216,15 @@ export function pairAllowed(
   return { ok: true };
 }
 
+/* The 2027 European Union pack. Version 1 stays installed for desks
+   that have not opted in. New signups use version 2. */
+export const EU_V1_PACK_ID = "pack-eu-v1";
+export const EU_AMLR_PACK_ID = "pack-eu-v2";
+
 /* Country code → pack. The names underneath are the words the signup
    screen and the wizard already store ("Canada", "Somewhere else"),
-   so a desk that said Canada by name still gets the Canada pack. */
+   so a desk that said Canada by name still gets the Canada pack.
+   A new European Union desk gets the 2027 pack, not version 1. */
 export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   /* New Canada desks open on version 2. A desk already on pack-ca-v1
      stays there until its owner opts in. The v1 row is not edited. */
@@ -226,9 +232,16 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   US: "pack-us-v1",
   GB: "pack-gb-v1",
   UK: "pack-gb-v1",
-  EU: "pack-eu-v1",
+  EU: EU_AMLR_PACK_ID,
   AU: "pack-au-v1",
   AE: "pack-ae-v1",
+};
+
+/* Canada and the 2027 European Union pack are version 2.
+   Every other pack is still version 1. */
+const PACK_VERSION: Readonly<Record<string, number>> = {
+  "pack-ca-v2": 2,
+  [EU_AMLR_PACK_ID]: 2,
 };
 
 const COUNTRY_CODE: Readonly<Record<string, string>> = {
@@ -256,6 +269,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-us-v1": "USD",
   "pack-gb-v1": "GBP",
   "pack-eu-v1": "EUR",
+  [EU_AMLR_PACK_ID]: "EUR",
   "pack-au-v1": "AUD",
   "pack-ae-v1": "AED",
 };
@@ -279,11 +293,6 @@ export function packForCountry(
   if (!homeCurrency) return null;
   return { packId, version: PACK_VERSION[packId] ?? 1, homeCurrency };
 }
-
-/* Only Canada has a second version. Every other pack is still version 1. */
-const PACK_VERSION: Readonly<Record<string, number>> = {
-  "pack-ca-v2": 2,
-};
 
 /** A country that is known to have a pack. Used where the caller is Canada on purpose. */
 export function requirePackForCountry(country: string): InstalledPack {

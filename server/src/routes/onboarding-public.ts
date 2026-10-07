@@ -374,7 +374,13 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
        open with nothing chosen and no default behind it. Seed the same
        answer the design would have set. */
     const j = JURISDICTION[String(seeded.country ?? "")];
-    if (j && !seeded.idOver) seeded.idOver = String(j.reportThreshold);
+    /* A blank ID answer takes the cash identification default when the
+       country has one, otherwise the reporting line. A country with no
+       amount report must not be seeded with the word "null" or with 0. */
+    if (j && !seeded.idOver) {
+      const picked = j.idDefault ?? j.reportThreshold;
+      if (typeof picked === "number" && picked > 0) seeded.idOver = String(picked);
+    }
     return {
       at: typeof (row.answers as Record<string, unknown>)?.__at === "number" ? (row.answers as Record<string, number>).__at : 0,
       data: seeded,
