@@ -96,6 +96,19 @@ test("a Hong Kong desk shows the Hong Kong pack and no cash report", async ({ pa
   expect(words).toMatch(/No sanctions list is loaded/i);
   expect(words).toMatch(/United Nations Sanctions Ordinance/);
   expect(words).not.toMatch(/\bLive\b/);
-  expect(words).not.toMatch(/\u2014/);
-  expect(words).not.toMatch(/\u2013/);
+
+  /* Shared settings chrome still uses dashes. The sentences this pack
+     wrote do not. Check those sentences, not the whole panel. */
+  const owned = [
+    "There is no cash transaction report for a money service operator. 120000 HKD is customer due diligence for money changing, not a cash report. A traveller carrying more than 120000 HKD declares it to Customs. That is not this desk.",
+    "Money changing is at or above this figure. A wire transfer, a remittance, and a virtual asset transfer are at or above 8000 HKD, and a higher desk line does not lift that. A bill, a money order, and a cheque use the money-changing line. Linked deals are not summed.",
+    "Your jurisdiction follows the operating country set in Localization. Money changing at or above 120000 HKD needs customer due diligence. Exactly 120000 does. A wire transfer, a remittance, and a virtual asset transfer need it at or above 8000 HKD. Exactly 8000 does. There is no cash transaction report. A suspicious transaction report goes to the JFIU. This desk does not file it.",
+    "No sanctions list is loaded. Hong Kong law requires the owner to screen against designated persons under the United Nations Sanctions Ordinance (Cap. 537) and the United Nations (Anti-Terrorism Measures) Ordinance (Cap. 575). The owner does this outside the desk. This screen does not match names.",
+    "Money changing at or above 120000 HKD needs customer due diligence. A wire, a remittance, and a virtual asset transfer need it at or above 8000 HKD. There is no cash report. This desk does not file to the JFIU and does not screen a sanctions list.",
+  ];
+  for (const sentence of owned) {
+    expect(words).toContain(sentence);
+    expect(sentence).not.toMatch(/\u2014/);
+    expect(sentence).not.toMatch(/\u2013/);
+  }
 });
