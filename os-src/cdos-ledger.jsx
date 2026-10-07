@@ -363,7 +363,16 @@
     const idLine = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idAt;
     const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
     const overId = idLine != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idLine : inCadEquiv >= idLine);
-    const idRequired = ph
+    const sg = !!(packNow && packNow.packId === 'pack-sg-v1');
+    const sgIdRequired = window.CDOS.useSingaporeIdRequired(sg, {
+      type: isCheque ? 'Cheque Cashing' : 'Currency Exchange',
+      from: inCcy,
+      to: isCheque ? inCcy : outCcy,
+      inputAmount: inAmt,
+    });
+    const idRequired = sg
+      ? sgIdRequired
+      : ph
       ? (!idRow || idRow.threshold == null || overId)
       : (single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000));
     const idBlocked = idRequired && kyc !== 'ok';

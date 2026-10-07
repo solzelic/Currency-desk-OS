@@ -253,13 +253,14 @@
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
       .sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
-    /* No list loaded. The queue below matches sample names, not the
-       UN Security Council list, so it stays off this desk. The note
-       is the owner's duty under BSP Circular 1182. */
+    /* No list loaded. The queue below matches sample names. A
+       Philippines desk and a Singapore desk say the owner's duty
+       instead. Every other pack keeps the sample queue. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    if (!C.sanctionsListShips(packNow)) return (<div className="p-4" data-testid="philippines-screening">
-      <div className="text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
-      <div className="mt-1 text-[12px] max-w-xl" style={{ color: CD.mute }}>{C.PH_SCREENING_NOTE}</div>
+    const sgScreen = !!(packNow && packNow.packId === 'pack-sg-v1');
+    if (!C.sanctionsListShips(packNow)) return (<div className="p-4" data-testid={sgScreen ? 'singapore-screening-gap' : 'philippines-screening'}>
+      <div className="text-sm font-semibold" style={{ color: CD.ink }}>{sgScreen ? 'Sanctions screening is not live' : 'Sanctions screening'}</div>
+      <div className="mt-1 text-[12px] max-w-xl" style={{ color: CD.mute }}>{sgScreen ? C.SG_SCREENING_NOTE : C.PH_SCREENING_NOTE}</div>
     </div>);
 
     // Settings → Compliance · sanctions screening switch gates the whole queue
@@ -367,7 +368,7 @@
     const monthCash = regime.windowKind === 'calendar_month';
     const bankingDay = regime.windowKind === 'banking_day';
     return (<div className="p-4">
-      {monthCash ? <div className="mb-3" data-testid="india-cash-month"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Connected cash is not summed yet</div><div className="text-[11px]" style={{ color: CD.mute }}>A single cash deal over the reporting line is flagged. Connected cash deals in a calendar month are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.</div></div> : bankingDay ? <div className="mb-3" data-testid="philippines-banking-day"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Deals in one banking day are not summed</div><div className="text-[11px]" style={{ color: CD.mute }}>A single deal over the reporting line is flagged. Deals in one banking day are not added together. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.</div></div> : (
+      {regime.id === 'pack-sg-v1' ? <div className="mb-3" data-testid="singapore-no-cash-report"><div className="text-sm font-semibold" style={{ color: CD.ink }}>No cash report, and linked deals are not summed</div><div className="text-[11px]" style={{ color: CD.mute }}>A money changer has no cash transaction report. PSN01 says suspected linked or split deals must be aggregated. This desk does not add them up. The teller has to check. Nothing here is filed.</div></div> : monthCash ? <div className="mb-3" data-testid="india-cash-month"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Connected cash is not summed yet</div><div className="text-[11px]" style={{ color: CD.mute }}>A single cash deal over the reporting line is flagged. Connected cash deals in a calendar month are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.</div></div> : bankingDay ? <div className="mb-3" data-testid="philippines-banking-day"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Deals in one banking day are not summed</div><div className="text-[11px]" style={{ color: CD.mute }}>A single deal over the reporting line is flagged. Deals in one banking day are not added together. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.</div></div> : (
       <div className="mb-3"><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>The 24-hour rule, handled for you <window.CDOS.InfoTip title="The 24-hour rule" body={largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.'} lines={largePolicy(regime) ? [{k:'By conductor',v:'totals what one person brings in'},{k:'On behalf of',v:'totals what was done for the same third party'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}] : [{k:'By conductor',v:'totals what one person brings in'},{k:'By beneficiary',v:'totals what one person is paid, even via different senders'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{largePolicy(regime) ? <>Cash received is added across one static window of {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>. Every amount counts, including one already at <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b>. Two or more that reach that line are one <b style={{ color: CD.ink }}>{regime.largeCode}</b>. We keep three separate totals: who conducted the deal, who it was on behalf of, and who it was for. Those totals are not mixed. Wires follow their own rule.</> : <>Someone can stay under the <b style={{ color: CD.ink }}>{fmt(regime.threshold, regime.currency)}</b> reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs {regime.aggHours} hours starting at <b style={{ color: CD.ink }}>{winStart}</b>). A single deal already at the line is filed on its own. The moment the smaller ones reach {fmt(regime.threshold, regime.currency)}, they have to be reported: an <b style={{ color: CD.ink }}>{regime.largeCode}</b> for cash, an <b style={{ color: CD.ink }}>{regime.wireCode}</b> for wires.</>}</div></div>
       )}
       <div className="grid grid-cols-3 gap-2 mb-3">
@@ -406,7 +407,7 @@
                 two new ones in a six-deal cluster are visible at a glance */}
             <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-0.5" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}</button>; })}</div>
           </div>); })}
-        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? noLargeCashCopy(regime) : (monthCash ? <>No calendar-month total is shown on this screen. A single cash amount more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : bankingDay ? <>No banking-day total is shown on this screen. A single deal more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>)}</div></div>}
+        {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.id === 'pack-sg-v1' ? 'There is no cash transaction report, so this screen does not total a day.' : (regime.threshold == null ? noLargeCashCopy(regime) : (monthCash ? <>No calendar-month total is shown on this screen. A single cash amount more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : bankingDay ? <>No banking-day total is shown on this screen. A single deal more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>))}</div></div>}
       </div>
     </div>);
   }
@@ -461,6 +462,11 @@
     };
     const ackCustomer = (cust) => { setRows(rs => rs.map(r => (r.customer === cust && (flags[r.id] || {}).str && !r.ackStr) ? { ...r, ackStr: true, ackStrInfo: { by: me.name, at: stamp2() } } : r)); log && log('Structuring reviewed', `${cust} cleared in Structuring Watch`); };
     const reopenCustomer = (cust) => { setRows(rs => rs.map(r => (r.customer === cust && (flags[r.id] || {}).str && r.ackStr) ? { ...r, ackStr: false, ackStrInfo: null } : r)); log && log('Structuring watch reopened', `${cust}`); };
+
+    if (regime.id === 'pack-sg-v1') return (<div className="p-4" data-testid="singapore-structuring-gap">
+      <div className="text-sm font-semibold" style={{ color: CD.ink }}>No cash line to structure under</div>
+      <div className="mt-1 text-[12px] max-w-lg" style={{ color: CD.mute }}>A money changer has no cash transaction report, so this watch has no line to sit under. Suspected linked deals are not summed on this desk. A suspicious transaction report still goes to the STRO. This screen does not file it.</div>
+    </div>);
 
     return (<div className="p-4">
       <div className="mb-3"><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Structuring watch <window.CDOS.InfoTip title="What is structuring?" body="Structuring is breaking one big transaction into several smaller ones to stay under the reporting line. No single deal is reportable on its own — the pattern is the red flag. Review each case; where it looks deliberate, file a suspicious-transaction report." lines={[{k:'Window',v:`${win}-day rolling`},{k:'Line',v:fmt(regime.threshold, regime.currency)},{k:'Escalate to',v:regime.strCode}]} /></div><div className="text-[11px]" style={{ color: CD.mute, maxWidth: 600 }}>People who keep landing <i>just under</i> {fmt(regime.threshold, regime.currency)} — many small cash deals over a {win}-day window that add up past the line without any one tripping it. This isn't an automatic filing; it's a <b style={{ color: CD.ink }}>judgement call</b>. Review each case, then either clear it or escalate to a <b style={{ color: CD.ink }}>{regime.strCode}</b>.</div></div>
@@ -574,7 +580,7 @@
     return (<div className="p-4">
       <div className="mb-4">
         <div className="text-sm font-semibold" style={{ color: CD.ink }}>Filings</div>
-        <div className="text-[11px]" style={{ color: CD.mute, maxWidth: 560 }}>Each reportable opens a <b style={{ color: CD.ink }}>filing worksheet</b> — every FWR field in form order, pre-filled, with only the point-of-sale questions left blank. Key it into your own FWR login, paste the acknowledgement back, and it <b style={{ color: CD.ink }}>seals into an immutable filed copy</b> welded to the records that triggered it.</div>
+        <div className="text-[11px]" style={{ color: CD.mute, maxWidth: 560 }}>{regime.noCashReport ? 'There is no cash transaction report for a money changer. A suspicious transaction report goes to the STRO. This screen does not send it and does not open SONAR.' : <>Each reportable opens a <b style={{ color: CD.ink }}>filing worksheet</b> — every FWR field in form order, pre-filled, with only the point-of-sale questions left blank. Key it into your own FWR login, paste the acknowledgement back, and it <b style={{ color: CD.ink }}>seals into an immutable filed copy</b> welded to the records that triggered it.</>}</div>
       </div>
 
       {/* Where the sealed copies actually are. Stated rather than assumed:
@@ -870,32 +876,32 @@
     };
 
     // header counts
-    const screenFlagged = useMemo(() => { if (settings && settings.screenSanctions === false) return 0; let n = 0; Object.keys(clients || {}).forEach(name => { if (screen(name).status !== 'clear') n++; }); (beneficiaries || []).forEach(b => { if (screen(b.name).status !== 'clear') n++; }); return n; }, [clients, beneficiaries, settings]);
+    const screenFlagged = useMemo(() => { const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null; if (!C.sanctionsListShips(packNow)) return 0; if (settings && settings.screenSanctions === false) return 0; let n = 0; Object.keys(clients || {}).forEach(name => { if (screen(name).status !== 'clear') n++; }); (beneficiaries || []).forEach(b => { if (screen(b.name).status !== 'clear') n++; }); return n; }, [clients, beneficiaries, settings, regime]);
     const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
 
     /* A hit count from the sample names would say this desk screened
-       someone. When no list ships, the tile stays at zero. Filings
-       still use `philippines` and are not part of this flag. */
+       someone. When no list ships, the tile stays at zero. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const listShips = C.sanctionsListShips(packNow);
     const philippines = regime.id === 'pack-ph-v1';
-    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const singapore = regime.id === 'pack-sg-v1';
+    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (singapore ? 'No cash report' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation'))), 'clock', aggN], ['submissions', (philippines || singapore) ? 'Not filed' : 'Filings', 'filetext', (philippines || singapore) ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="complianceshield" s={16} c="var(--cd-on-ink)" /></span>
-            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.threshold == null ? noLargeCashCopy(regime) : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>}</div></div>
+            <div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Compliance</div><div className="text-[11px]" style={{ color: CD.mute }}>{regime.id === 'pack-sg-v1' ? 'MAS / STRO. Money changing above 5000 SGD. A cross-border money transfer is every deal. There is no cash report.' : (regime.threshold == null ? noLargeCashCopy(regime) : <>{regime.flag} {regime.authority} · {fmt(regime.threshold, regime.currency)} threshold</>)}</div></div>
           </div>
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="grid grid-cols-3 gap-2 mt-3">
-          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
-            <button key={l} data-testid={l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
+          {(regime.id === 'pack-sg-v1' ? [['Cash report', 'None', 'No cash report', 'aggregation', CD.green], ['STR', 'Gap', 'Not filed here', 'submissions', CD.mute], ['Screening', 'Gap', 'No list ships', 'screening', CD.mute]] : [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]]).map(([l, v, sub, go, warn]) => { const bad = typeof v === 'number' && v > 0; const col = bad ? warn : CD.green; return (
+            <button key={l} data-testid={l === 'Screening' && regime.id === 'pack-sg-v1' ? 'singapore-screening-gap' : (l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined)} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
               <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: 24, lineHeight: 1.15 }}>{v}</div>

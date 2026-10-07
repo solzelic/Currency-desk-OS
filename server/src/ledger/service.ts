@@ -68,6 +68,15 @@ import {
   aeDueDiligenceBlocks,
   aePurposeDecision,
 } from "./uae-exchange.js";
+import {
+  SG_BOOK_MESSAGE,
+  SG_UNPRICED_MESSAGE,
+  identificationBlocks as singaporeIdentificationBlocks,
+  isSingaporePack,
+  singaporeDealSgd,
+  singaporeIdentificationRequired,
+  singaporeIdRow,
+} from "./singapore-pack.js";
 import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -264,6 +273,12 @@ export async function requireIdentification(
   deal: IdentificationDeal,
 ): Promise<ComplianceStamp & { identificationRequired: boolean }> {
   requireInstalledPack(pack);
+  /* A Singapore book that is not SGD cannot be priced by the foreign-currency
+     path below: that path treats an SGD row on a non-SGD book as a conversion
+     and would clear a verified customer. The book is refused first. */
+  if (isSingaporePack(pack.packId) && pack.homeCurrency.trim().toUpperCase() !== "SGD") {
+    throw new LedgerError("COMPLIANCE_BLOCKED", SG_BOOK_MESSAGE);
+  }
   /* The 2027 EU pack has three lines, not the single identification
      number every other country pack still uses. A missing line fails
      closed. Customer due diligence also asks for the purpose and the
@@ -389,6 +404,27 @@ export async function requireIdentification(
           "Authoritative compliance policy blocked posting.",
         );
       }
+    }
+    return { ...stamp, identificationRequired: false };
+  }
+  /* Singapore does not use the single identification column with
+     "at or above". Money changing is more than 5000 SGD. A cross-border
+     money transfer is every deal, and that gate does not read the stored
+     remittance cell. A cheque has no line. A missing row on a kind that
+     has a line blocks. Other packs keep the gate below. */
+  if (isSingaporePack(pack.packId)) {
+    if (pack.homeCurrency.trim().toUpperCase() !== "SGD") {
+      throw new LedgerError("COMPLIANCE_BLOCKED", SG_BOOK_MESSAGE);
+    }
+    if (idStatus === "verified") return { ...stamp, identificationRequired: false };
+    if (deal.kind === "cheque_cashing") return { ...stamp, identificationRequired: false };
+    const desk = await deskIdLine(client, actor.legalEntityId);
+    const row = await singaporeIdRow(client, pack.packId, deal.kind);
+    if (singaporeIdentificationBlocks(deal.kind, amountHome, row, desk)) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
     }
     return { ...stamp, identificationRequired: false };
   }
@@ -601,6 +637,93 @@ async function philippinesExchangeGuard(
     }
   }
   return valued;
+}
+
+/* Singapore dollar value of an exchange, for the money-changing line.
+   A verified customer has no amount test, so a missing rate does not
+   refuse them. An unverified cross with no SGD leg and no fresh rate
+   is refused by the caller. Other packs get null and keep their own
+   gate. Returns null when this is not a Singapore desk. */
+async function singaporeExchangeValue(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  legs: {
+    from: string;
+    to: string;
+    inputAmount: Decimal;
+    outputAmount: Decimal;
+  },
+): Promise<{ sgd: Decimal; rate: string; rateAt: Date | null } | null> {
+  if (!isSingaporePack(pack.packId)) return null;
+  if (pack.homeCurrency.trim().toUpperCase() !== "SGD") {
+    throw new LedgerError("COMPLIANCE_BLOCKED", SG_BOOK_MESSAGE);
+  }
+  return singaporeDealSgd(client, legs);
+}
+
+/* What the open deal needs, for the screen to render.
+
+   Posting already decides this and then throws. The checklist cannot
+   wait for that throw, and it must not compare the line itself. The
+   caller passes the teller's typed legs as decimals. An SGD amount
+   the customer handed over is used as written. A cross with no SGD
+   leg uses the market snapshot. When the SGD leg would be the output
+   and the caller has no output yet, the answer is that identification
+   is required: the screen has not been given a figure the ledger
+   priced. A desk that is not on this pack is refused. */
+export async function previewSingaporeIdentification(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  deals: Array<{
+    key: string;
+    dealKind: string;
+    from: string;
+    to: string;
+    inputAmount: Decimal;
+    outputAmount: Decimal | null;
+  }>,
+): Promise<Array<{ key: string; identificationRequired: boolean }>> {
+  const pack = await resolvePack(client, actor.legalEntityId);
+  if (!isSingaporePack(pack.packId)) {
+    throw new LedgerError(
+      "NOT_SINGAPORE_PACK",
+      "This desk is not on the Singapore pack.",
+    );
+  }
+  if (pack.homeCurrency.trim().toUpperCase() !== "SGD") {
+    throw new LedgerError("COMPLIANCE_BLOCKED", SG_BOOK_MESSAGE);
+  }
+  const desk = await deskIdLine(client, actor.legalEntityId);
+  const decisions: Array<{ key: string; identificationRequired: boolean }> = [];
+  for (const deal of deals) {
+    const from = deal.from.trim().toUpperCase();
+    const to = deal.to.trim().toUpperCase();
+    let sgd: Decimal | null = null;
+    if (from === "SGD") {
+      sgd = deal.inputAmount.isFinite() && !deal.inputAmount.isNegative() ? deal.inputAmount : null;
+    } else if (to === "SGD" && deal.outputAmount == null) {
+      sgd = null;
+    } else {
+      const valued = await singaporeDealSgd(client, {
+        from,
+        to,
+        inputAmount: deal.inputAmount,
+        outputAmount: deal.outputAmount ?? new Decimal(0),
+      });
+      sgd = valued ? valued.sgd : null;
+    }
+    const row = await singaporeIdRow(client, pack.packId, deal.dealKind);
+    decisions.push({
+      key: deal.key,
+      identificationRequired: singaporeIdentificationRequired({
+        dealKind: deal.dealKind,
+        sgd,
+        row,
+        deskLine: desk,
+      }),
+    });
+  }
+  return decisions;
 }
 
 export class LedgerService {
@@ -826,11 +949,28 @@ export class LedgerService {
         purpose: quote.purpose,
         sourceOfFunds: quote.sourceOfFunds,
       });
+      /* Singapore limits use an SGD leg, or a market rate. The board
+         mid above is the shop's price. It is not the legal rate. A
+         verified customer has no amount test, so a missing rate does
+         not refuse them. */
+      const sgValue = await singaporeExchangeValue(client, pack, {
+        from: quote.from,
+        to: quote.to,
+        inputAmount: input,
+        outputAmount: output,
+      });
+      if (
+        isSingaporePack(pack.packId) &&
+        customer.rows[0].id_status !== "verified" &&
+        !sgValue
+      ) {
+        throw new LedgerError("COMPLIANCE_BLOCKED", SG_UNPRICED_MESSAGE);
+      }
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        phValue ? phValue.pesos : inputHome,
+        phValue ? phValue.pesos : sgValue ? sgValue.sgd : inputHome,
         customer.rows[0].id_status,
         {
           kind: "exchange",
@@ -845,6 +985,10 @@ export class LedgerService {
       if (phValue) {
         compliance.rate = phValue.rate;
         compliance.rateAt = phValue.rateAt;
+      }
+      if (sgValue) {
+        compliance.rate = sgValue.rate;
+        compliance.rateAt = sgValue.rateAt;
       }
       const serbia = await serbiaExchangeFacts(
         client,
@@ -1378,11 +1522,24 @@ export class LedgerService {
         purpose: request.purpose,
         sourceOfFunds: request.sourceOfFunds,
       });
+      const sgValue = await singaporeExchangeValue(client, pack, {
+        from: request.from,
+        to: request.to,
+        inputAmount: input,
+        outputAmount: output,
+      });
+      if (
+        isSingaporePack(pack.packId) &&
+        customer.rows[0].id_status !== "verified" &&
+        !sgValue
+      ) {
+        throw new LedgerError("COMPLIANCE_BLOCKED", SG_UNPRICED_MESSAGE);
+      }
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
-        phValue ? phValue.pesos : inputHome,
+        phValue ? phValue.pesos : sgValue ? sgValue.sgd : inputHome,
         customer.rows[0].id_status,
         {
           kind: "exchange",
@@ -1397,6 +1554,10 @@ export class LedgerService {
       if (phValue) {
         compliance.rate = phValue.rate;
         compliance.rateAt = phValue.rateAt;
+      }
+      if (sgValue) {
+        compliance.rate = sgValue.rate;
+        compliance.rateAt = sgValue.rateAt;
       }
       const serbia = await serbiaExchangeFacts(
         client,
@@ -1427,8 +1588,15 @@ export class LedgerService {
          India, goes through requirePurposeAndSource. India also asks
          at its own due-diligence line, above. A Philippines desk already
          applied "more than 500,000 PHP" in philippinesExchangeGuard.
-         The generic test is "at or above", which would catch 500,000. */
-      if (pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
+         The generic test is "at or above", which would catch 500,000.
+         Singapore stores a report threshold of 0, which this reader treats
+         as no line, and that would demand purpose on a 10 SGD exchange.
+         PSN01 paragraph 7.18 does not hard require it. */
+      if (
+        pack.packId !== EU_AMLR_PACK_ID &&
+        !isPhilippinesPack(pack.packId) &&
+        !isSingaporePack(pack.packId)
+      ) {
         await requirePurposeAndSource(
           client,
           actor.legalEntityId,

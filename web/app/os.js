@@ -1340,6 +1340,7 @@
       window.addEventListener('cdos-jurisdiction', bump);
       window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
+      window.addEventListener('cdos-singapore-id', bump);
       Promise.all([refreshJurisdiction(),
       /* The desk's own lines, alongside the pack that proposes them. A
          screen that had the pack but not the override would print the
@@ -1352,6 +1353,7 @@
         window.removeEventListener('cdos-jurisdiction', bump);
         window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
+        window.removeEventListener('cdos-singapore-id', bump);
       };
     }, []);
     return version;
@@ -2392,6 +2394,15 @@
         return request("/api/ledger/jurisdiction");
       },
 
+      /* Singapore customer due diligence for the deals on screen.
+         The body is the typed legs. The boolean is the ledger's. */
+      previewSingaporeIdentification: function (deals) {
+        return request("/api/ledger/singapore-identification", {
+          method: "POST",
+          body: JSON.stringify({ deals: deals }),
+        });
+      },
+
       /* Owner only, and only from Canada pack version 1. The server
          refuses anything else. There is no route back. */
       optInCanadaV2: function () {
@@ -3115,7 +3126,7 @@
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = monthCash || bankingDay || !aggregate ? null : regime.aggHours || 24;
+      const hours = monthCash || bankingDay || !aggregate || regime && regime.id === 'pack-sg-v1' ? null : regime.aggHours || 24;
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
         const h = (end - dt(o)) / 3600000;
         return h >= 0 && h <= hours;
@@ -3161,6 +3172,33 @@
           const idCmp = idRow.comparator === 'gt' ? 'gt' : 'gte';
           const overId = idCmp === 'gt' ? size > rowLine : size >= rowLine;
           idNeeded = single || overId;
+        }
+      }
+      /* Singapore. A cross-border money transfer is every deal. A cheque
+         has no line. Money changing is the server's boolean. This screen
+         does not compare the line. Until the answer arrives, identification
+         stays on. */
+      if (auPack && auPack.packId === 'pack-sg-v1') {
+        if (!window.CDOS.singaporeIdPosture) idNeeded = true;else {
+          const posture = window.CDOS.singaporeIdPosture(row.type);
+          if (posture === 'never') idNeeded = false;else if (posture === 'always') idNeeded = true;else {
+            const from = String(row.inCcy || '').trim().toUpperCase();
+            const to = String(row.outCcy || from).trim().toUpperCase();
+            const inputAmount = window.CDOS.singaporeDecimalText(row.inAmt);
+            const dealKind = window.CDOS.singaporeDealKind(row.type);
+            const key = [dealKind, from, to, inputAmount].join('|');
+            if (!inputAmount || !from || !to) idNeeded = true;else {
+              const answer = window.CDOS.singaporeIdAnswer(key);
+              idNeeded = answer == null ? true : answer;
+              window.CDOS.askSingaporeIdentification([{
+                key,
+                dealKind,
+                from,
+                to,
+                inputAmount
+              }]);
+            }
+          }
         }
       }
       map[row.id] = {
@@ -5243,6 +5281,7 @@
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = desk && desk.packId === 'pack-ph-v1' || packNow && packNow.packId === 'pack-ph-v1';
+    const sgPack = desk && desk.packId === 'pack-sg-v1' || packNow && packNow.packId === 'pack-sg-v1';
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
     const fxId = idRows.find(r => r && r.dealKind === 'fx');
     const idMoreThan = !!(phPack && fxId && fxId.comparator === 'gt');
@@ -5314,7 +5353,15 @@
       }],
       example: baselineNow ? "A baseline desk follows 10,000 USD, converted into its own currency, and may choose a lower line — never a higher one" : "A Canadian desk follows FINTRAC at 10,000 and may choose 7,500 or 5,000 — never 12,000"
     });
-    return /*#__PURE__*/React.createElement("div", null, ukV2 && /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement("div", null, sgPack ? /*#__PURE__*/React.createElement(Row, {
+      title: "Cash transaction report",
+      desc: "There is no cash transaction report for a money changer. The 20000 SGD figure is the precious stones cash report and the traveller cash movement report. Neither is this desk."
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] px-2.5 py-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "None")) : /*#__PURE__*/React.createElement(React.Fragment, null, ukV2 && /*#__PURE__*/React.createElement("div", {
       "data-testid": "uk-pack-rules",
       className: "text-[12px] mb-3 leading-relaxed",
       style: {
@@ -5350,9 +5397,9 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "reportThreshold",
       label: "Reporting threshold"
-    })), /*#__PURE__*/React.createElement(Row, {
+    }))), /*#__PURE__*/React.createElement(Row, {
       title: "Require ID over",
-      desc: euAmlr ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here." : ukV2 ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.' : aeV2 ? 'Foreign exchange stays at AED 3,500 or more. A lower number tightens that line. A number of 3,500 or more does not raise it. A money transfer stays at any amount, whatever this box says.' : idMoreThan ? 'Money changing and remittance: more than this, a deal will not post for a customer nobody has identified. Exactly this amount does not. A bill, an electronic transfer, or a cheque uses the higher occasional line. A desk can set a lower line. It cannot set a higher one.' : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
+      desc: euAmlr ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here." : ukV2 ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.' : aeV2 ? 'Foreign exchange stays at AED 3,500 or more. A lower number tightens that line. A number of 3,500 or more does not raise it. A money transfer stays at any amount, whatever this box says.' : sgPack ? 'Money changing is more than this. Exactly this amount does not. A cross-border money transfer is every deal. A desk can set a lower money-changing line. It cannot turn the transfer rule off.' : idMoreThan ? 'Money changing and remittance: more than this, a deal will not post for a customer nobody has identified. Exactly this amount does not. A bill, an electronic transfer, or a cheque uses the higher occasional line. A desk can set a lower line. It cannot set a higher one.' : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('idThreshold') && line('idThreshold').effective,
       currency: currency,
@@ -5363,7 +5410,7 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Row, {
+    }), monthCash || bankingDay || sgPack ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : aeV2 ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
@@ -5381,9 +5428,9 @@
       value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    })), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(PostureNote, {
+    })), monthCash || bankingDay || sgPack ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Release, {
+    }), monthCash || bankingDay || sgPack ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -10277,7 +10324,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : pack && pack.packId === 'pack-sg-v1' ? 'Your jurisdiction follows the operating country set in Localization. Money changing above 5000 SGD needs customer due diligence. Exactly 5000 does not. A cross-border money transfer needs it on every deal. There is no cash transaction report. A suspicious transaction report goes to the STRO. This desk does not file it.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -10313,7 +10360,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
         key: `${pack && pack.packId || 'pack'}-${packRev}`
-      }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
+      }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' || pack && pack.packId === 'pack-sg-v1' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -10347,7 +10394,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "Banking day")), paused ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Banking day")), paused || pack && pack.packId === 'pack-sg-v1' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -10367,7 +10414,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Sw, {
         on: settings.screenSanctions !== false,
         click: () => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)
-      })) : /*#__PURE__*/React.createElement(Row, {
+      })) : pack && pack.packId === 'pack-sg-v1' ? /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions screening",
+        desc: window.CDOS._compliance.SG_SCREENING_NOTE
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        "data-testid": "singapore-screening-gap",
+        style: {
+          color: CD.mute
+        }
+      }, "Gap")) : /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions / watchlist screening",
         desc: window.CDOS._compliance.PH_SCREENING_NOTE
       }, /*#__PURE__*/React.createElement("span", {
@@ -10442,7 +10498,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Sw, {
         on: escalateHighRisk,
         click: () => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')
-      })), /*#__PURE__*/React.createElement(Row, {
+      })), pack && pack.packId === 'pack-sg-v1' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Mandatory check on large deals",
         desc: `Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`
       }, /*#__PURE__*/React.createElement(Seg, {
@@ -10512,7 +10568,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : pack && pack.packId === 'pack-sg-v1' ? 'Money changing above 5000 SGD needs customer due diligence. A cross-border money transfer needs it on every deal. There is no cash report. This desk does not file to the STRO. No sanctions list is loaded. The owner screens every customer against the MAS lists outside this desk for now.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
@@ -11933,8 +11989,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
+      const singapore = !!(regime && regime.id === 'pack-sg-v1');
+      const packNow = P.deskPack ? P.deskPack() : null;
+      const listShips = comp && comp.sanctionsListShips ? comp.sanctionsListShips(packNow) : true;
       let sanc = 0;
-      if (comp) {
+      if (comp && listShips) {
         Object.keys(clients || {}).forEach(n => {
           if (comp.screen(n).status !== 'clear') sanc++;
         });
@@ -11942,10 +12001,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           if (comp.screen(b.name).status !== 'clear') sanc++;
         });
       }
-      const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
+      const agg = singapore ? 0 : comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
         threshold: limit.amount
       } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
+      const eftr = singapore || limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
       return {
         tInProg,
         tHold,
@@ -12671,7 +12730,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, (X.regime && X.regime.id === 'pack-sg-v1' ? [['Screening', 'Gap', T.steel], ['Cash report', 'None', T.green], ['To file', 'Gap', T.steel]] : [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]]).map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       onClick: () => onOpenApp && onOpenApp('compliance'),
       className: "text-left",
@@ -27181,7 +27240,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const idLine = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idAt;
     const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
     const overId = idLine != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idLine : inCadEquiv >= idLine);
-    const idRequired = ph ? !idRow || idRow.threshold == null || overId : single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
+    const sg = !!(packNow && packNow.packId === 'pack-sg-v1');
+    const sgIdRequired = window.CDOS.useSingaporeIdRequired(sg, {
+      type: isCheque ? 'Cheque Cashing' : 'Currency Exchange',
+      from: inCcy,
+      to: isCheque ? inCcy : outCcy,
+      inputAmount: inAmt
+    });
+    const idRequired = sg ? sgIdRequired : ph ? !idRow || idRow.threshold == null || overId : single || (governed ? idAt == null || inCadEquiv != null && inCadEquiv >= idAt : inCadEquiv >= 3000);
     const idBlocked = idRequired && kyc !== 'ok';
     const canSave = amtN > 0 && (isCheque ? maker.trim() && chequeNumber.trim() : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || marginAck && marginReason.trim()) && (!single || cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim()));
     const pickClient = n => {
@@ -33341,7 +33407,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const idCmp = idRow && idRow.comparator === 'gt' ? 'gt' : 'gte';
     const idAmount = idRow && idRow.threshold != null && idRow.threshold !== '' ? +idRow.threshold : idFloor;
     const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
-    const idRequired = !paused && (ukIdRequired != null ? ukIdRequired : aeTransfer ? true : ph ? unpriced || !idRow || idRow.threshold == null || overId : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);
+    const sg = packIdNow === 'pack-sg-v1';
+    const sgIdRequired = window.CDOS.useSingaporeIdRequired(sg, {
+      type: isCheque ? 'Cheque Cashing' : isSend || isReceive ? isReceive ? 'Remittance — Receive' : 'Remittance — Send' : isMO ? 'Money Order' : isBill ? 'Bill Payment' : 'fx',
+      from: isSend || isCheque || isMO || isBill ? home : isReceive ? outCcy : inCcy,
+      to: isSend ? payoutCcy : isCheque || isMO || isBill ? home : outCcy,
+      inputAmount: inAmt
+    });
+    const idRequired = !paused && (ukIdRequired != null ? ukIdRequired : aeTransfer ? true : ph ? unpriced || !idRow || idRow.threshold == null || overId : sg ? sgIdRequired : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return {
@@ -33456,10 +33529,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        a small exchange does not need purpose and source of funds.
        A UAE desk following the pack is the same under AED 35,000, and
        needs the fields at 35,000 or more. A reporting number the desk
-       typed still does, and so does every other pack. */
+       typed still does, and so does every other pack.
+       Singapore stores a report threshold of 0. That must not demand
+       purpose on a 10 SGD exchange. */
     const noStatutoryCashReport = !!(packIdNow === 'pack-gb-v2' && !(TH > 0));
     const aeCdd = aeV2 && isExchange && !unpriced && (inCadEquiv >= 35000 || TH != null && TH > 0 && inCadEquiv >= TH);
-    if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd)) {
+    if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd) && packIdNow !== 'pack-sg-v1') {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({
         key: 'server-facts',
@@ -34945,7 +35020,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...inSty,
         borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag
       }
-    })))), serverBacked && isExchange && !single && /*#__PURE__*/React.createElement("div", {
+    })))), serverBacked && isExchange && !single && !sg && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
@@ -35403,7 +35478,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     ukTransfer,
     aeTransfer,
     reportComparator,
-    idComparator
+    idComparator,
+    anyAmount
   }) {
     const blank = direction === 'receive' ? payout == null || String(payout).trim() === '' : String(principal ?? '').trim() === '';
     if (blank) return {
@@ -35459,6 +35535,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* pack-ae-v2. A money transfer needs identification at any amount.
        The foreign-exchange line of 3,500 is not this line. */
     if (aeTransfer && aeTransfer.everyDeal) {
+      return {
+        homeAmount,
+        reportable: report == null ? null : cash >= report,
+        idRequired: true
+      };
+    }
+    /* A cross-border money transfer on a Singapore desk is every deal.
+       The stored remittance cell is not read. A blank amount already
+       returned above. There is no cash report, so a zero report line
+       must not flag the transfer. */
+    if (anyAmount) {
       return {
         homeAmount,
         reportable: report == null ? null : cash >= report,
@@ -36284,9 +36371,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [method, setMethod] = useState('cash');
     const [payAmt, setPayAmt] = useState('');
     const [fee, setFee] = useState(settings && settings.defaultFee ? String(settings.defaultFee) : '9.99');
-    const requirePurpose = !(settings && settings.transferRequirePurpose === false); // Settings › Transfers
-    const [purpose, setPurpose] = useState(requirePurpose ? '' : 'Family support');
-    const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
+    const sgPack = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) === 'pack-sg-v1');
+    const requirePurpose = sgPack ? false : !(settings && settings.transferRequirePurpose === false);
+    const [purpose, setPurpose] = useState(sgPack ? '' : requirePurpose ? '' : 'Family support');
+    const [sourceOfFunds, setSourceOfFunds] = useState(sgPack ? '' : 'Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
     /* The post is a round trip now, so the button has to be able to say
@@ -36360,7 +36448,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ukTransfer: packNow && packNow.packId === 'pack-gb-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
       aeTransfer: packNow && packNow.packId === 'pack-ae-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
       reportComparator: regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte',
-      idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte'
+      idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte',
+      anyAmount: !!(packNow && packNow.packId === 'pack-sg-v1')
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -36974,7 +37063,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), packNow && packNow.packId === 'pack-sg-v1' && idRequired && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, "A cross-border money transfer needs customer due diligence on every deal. This screen does not file a report."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -40901,7 +40995,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = monthCash || bankingDay ? null : large && large.windowKind === 'none' ? {
+    const singaporeDesk = !!(pack && pack.packId === 'pack-sg-v1');
+    const aggregation = monthCash || bankingDay || singaporeDesk ? null : large && large.windowKind === 'none' ? {
       field: 'aggHours',
       label: 'Aggregation window',
       standing: 'following',
@@ -41038,7 +41133,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const wire = listed.find(r => r && (r.kind === 'wire' || r.kind === 'eft'));
     const noCashWindow = !!(large && large.windowKind === 'none');
     const wireEvery = !!(wire && (wire.triggerThreshold == null || wire.triggerThreshold === ''));
-    return {
+    const singapore = pack.packId === 'pack-sg-v1';
+    const built = {
       id: pack.packId || null,
       authority: baseline ? "Your country's financial intelligence unit" : pack.regulator || '',
       country: baseline ? 'International baseline' : pack.name || '',
@@ -41075,6 +41171,150 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       baseline,
       reports: listed
     };
+    /* A money changer has no cash transaction report. Force the cash
+       line off even if a desk number is later stored, so the browser
+       cannot flag a currency transaction report this country does not
+       have. The 5000 figure stays on idAt as the money-changing line.
+       A cross-border transfer does not use it. */
+    if (singapore) {
+      built.noCashReport = true;
+      built.threshold = null;
+      built.largeCode = '';
+      built.largeLabel = '';
+      built.wireCode = '';
+      built.wireLabel = '';
+      built.aggHours = null;
+      built.windowKind = 'none';
+      built.comparator = 'gt';
+      built.idComparator = fxLine && fxLine.comparator || 'gt';
+      built.sanctionsCode = '';
+      built.sanctionsLabel = '';
+    }
+    return built;
+  }
+
+  /* Kind only. Money is the server's decision, rendered below.
+      A cheque has no line. A cross-border money transfer is every deal,
+     and that fact does not read an amount. Money changing, a bill, and
+     a money order are 'ask': the screen posts the typed legs and
+     renders identificationRequired. Until that answer arrives, the
+     screen keeps identification on. It does not compare a line. */
+  function singaporeDealKind(type) {
+    if (type === 'cheque' || type === 'Cheque Cashing') return 'cheque_cashing';
+    if (type === 'remittance' || typeof type === 'string' && type.indexOf('Remittance') === 0) {
+      if (type.indexOf('Receive') >= 0) return 'remittance_receive';
+      if (type.indexOf('Send') >= 0) return 'remittance_send';
+      return 'remittance';
+    }
+    if (type === 'Bill Payment') return 'bill_payment';
+    if (type === 'Money Order') return 'money_order';
+    if (type === 'eft') return 'eft';
+    return 'fx';
+  }
+  function singaporeIdPosture(type) {
+    const kind = singaporeDealKind(type);
+    if (kind === 'cheque_cashing') return 'never';
+    if (kind === 'remittance' || kind === 'remittance_send' || kind === 'remittance_receive') return 'always';
+    return 'ask';
+  }
+  /* A typed decimal string is sent as typed. A figure already stored as
+     a number is rendered to two places so the ledger can parse it. This
+     is not the line comparison. */
+  function singaporeDecimalText(value) {
+    if (value == null) return '';
+    const text = String(value).trim();
+    if (/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(text)) return text;
+    const n = Number(text);
+    if (!Number.isFinite(n) || n < 0) return '';
+    return n.toFixed(2);
+  }
+  const sgIdAnswers = new Map();
+  const sgIdWaiting = new Set();
+  let sgIdQueue = [];
+  let sgIdTimer = null;
+  function singaporeIdAnswer(key) {
+    return sgIdAnswers.has(key) ? sgIdAnswers.get(key) : null;
+  }
+  function clearSingaporeIdentification() {
+    sgIdAnswers.clear();
+    sgIdWaiting.clear();
+    sgIdQueue = [];
+  }
+  function askSingaporeIdentification(deals) {
+    let added = false;
+    (deals || []).forEach(deal => {
+      if (!deal || !deal.key || sgIdAnswers.has(deal.key) || sgIdWaiting.has(deal.key)) return;
+      sgIdWaiting.add(deal.key);
+      sgIdQueue.push(deal);
+      added = true;
+    });
+    if (!added || sgIdTimer) return;
+    sgIdTimer = setTimeout(flushSingaporeIdentification, 30);
+  }
+  async function flushSingaporeIdentification() {
+    sgIdTimer = null;
+    const batch = sgIdQueue.splice(0, 40);
+    if (!batch.length) return;
+    const backend = window.CDOS.Backend;
+    const finish = required => {
+      batch.forEach(deal => {
+        sgIdAnswers.set(deal.key, required);
+        sgIdWaiting.delete(deal.key);
+      });
+    };
+    try {
+      if (!backend || !backend.previewSingaporeIdentification) {
+        finish(true);
+      } else {
+        const body = await backend.previewSingaporeIdentification(batch);
+        const rows = body && body.decisions || [];
+        const seen = new Set();
+        rows.forEach(row => {
+          if (!row || !row.key) return;
+          seen.add(row.key);
+          sgIdAnswers.set(row.key, row.identificationRequired !== false);
+          sgIdWaiting.delete(row.key);
+        });
+        batch.forEach(deal => {
+          if (seen.has(deal.key)) return;
+          sgIdAnswers.set(deal.key, true);
+          sgIdWaiting.delete(deal.key);
+        });
+      }
+    } catch (e) {
+      finish(true);
+    }
+    window.dispatchEvent(new Event('cdos-singapore-id'));
+    if (sgIdQueue.length && !sgIdTimer) sgIdTimer = setTimeout(flushSingaporeIdentification, 30);
+  }
+  window.addEventListener('cdos-thresholds', clearSingaporeIdentification);
+  window.addEventListener('cdos-jurisdiction', clearSingaporeIdentification);
+  /* Live checklist. Kind facts return immediately. An amount line waits
+     for the server and stays required until that boolean arrives. */
+  function useSingaporeIdRequired(active, spec) {
+    const version = window.CDOS.useDeskFacts();
+    const type = spec && spec.type;
+    const posture = active ? singaporeIdPosture(type) : 'never';
+    const dealKind = singaporeDealKind(type);
+    const from = spec && spec.from ? String(spec.from).trim().toUpperCase() : '';
+    const to = spec && spec.to ? String(spec.to).trim().toUpperCase() : '';
+    const inputAmount = singaporeDecimalText(spec && spec.inputAmount);
+    const key = [dealKind, from, to, inputAmount].join('|');
+    useEffect(() => {
+      if (!active || posture !== 'ask' || !inputAmount || !from || !to) return;
+      askSingaporeIdentification([{
+        key,
+        dealKind,
+        from,
+        to,
+        inputAmount
+      }]);
+    }, [active, posture, key, version]);
+    if (!active || posture === 'never') return false;
+    if (posture === 'always') return true;
+    if (!inputAmount) return true;
+    const answer = singaporeIdAnswer(key);
+    return answer == null ? true : answer;
   }
   function getRegime(settings) {
     const pack = loadedPack();
@@ -41232,9 +41472,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      the pack would be a migration for a fact this file already knows. */
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);
-    return id !== 'pack-ph-v1';
+    return id !== 'pack-ph-v1' && id !== 'pack-sg-v1';
   }
   const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
+  const SG_SCREENING_NOTE = 'No sanctions list is loaded. Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.';
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = s => norm(s).split(' ').filter(Boolean);
   function lev(a, b) {
@@ -41385,8 +41626,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        amount over the line is flagged on the deal. Connected deals in
        the month are not summed here. indiaCtrFindings can group them,
        and nothing calls it yet. A banking day is not this engine
-       either. The Philippines flags one deal and does not add the day. */
-    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
+       either. The Philippines flags one deal and does not add the day.
+       Singapore has no cash report and does not sum a day. */
+    if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day' || regime.id === 'pack-sg-v1')) return [];
     const TH = regime.threshold,
       H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
@@ -41570,9 +41812,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       dt,
       setFingerprint,
       sanctionsListShips,
-      PH_SCREENING_NOTE
+      PH_SCREENING_NOTE,
+      SG_SCREENING_NOTE
     },
     getRegime,
+    singaporeDealKind,
+    singaporeIdPosture,
+    singaporeDecimalText,
+    singaporeIdAnswer,
+    askSingaporeIdentification,
+    useSingaporeIdRequired,
     jurisdictionViolations,
     jurisdictionPosture
   });
@@ -43391,24 +43640,25 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), [subjects]);
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
-    /* No list loaded. The queue below matches sample names, not the
-       UN Security Council list, so it stays off this desk. The note
-       is the owner's duty under BSP Circular 1182. */
+    /* No list loaded. The queue below matches sample names. A
+       Philippines desk and a Singapore desk say the owner's duty
+       instead. Every other pack keeps the sample queue. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const sgScreen = !!(packNow && packNow.packId === 'pack-sg-v1');
     if (!C.sanctionsListShips(packNow)) return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
-      "data-testid": "philippines-screening"
+      "data-testid": sgScreen ? 'singapore-screening-gap' : 'philippines-screening'
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
       style: {
         color: CD.ink
       }
-    }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
+    }, sgScreen ? 'Sanctions screening is not live' : 'Sanctions screening'), /*#__PURE__*/React.createElement("div", {
       className: "mt-1 text-[12px] max-w-xl",
       style: {
         color: CD.mute
       }
-    }, C.PH_SCREENING_NOTE));
+    }, sgScreen ? C.SG_SCREENING_NOTE : C.PH_SCREENING_NOTE));
 
     // Settings → Compliance · sanctions screening switch gates the whole queue
     if (settings && settings.screenSanctions === false) return /*#__PURE__*/React.createElement("div", {
@@ -43804,7 +44054,20 @@ ${(filing.map || []).map(blockHTML).join('')}
     const bankingDay = regime.windowKind === 'banking_day';
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
-    }, monthCash ? /*#__PURE__*/React.createElement("div", {
+    }, regime.id === 'pack-sg-v1' ? /*#__PURE__*/React.createElement("div", {
+      className: "mb-3",
+      "data-testid": "singapore-no-cash-report"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "No cash report, and linked deals are not summed"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "A money changer has no cash transaction report. PSN01 says suspected linked or split deals must be aggregated. This desk does not add them up. The teller has to check. Nothing here is filed.")) : monthCash ? /*#__PURE__*/React.createElement("div", {
       className: "mb-3",
       "data-testid": "india-cash-month"
     }, /*#__PURE__*/React.createElement("div", {
@@ -44088,7 +44351,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? noLargeCashCopy(regime) : monthCash ? /*#__PURE__*/React.createElement(React.Fragment, null, "No calendar-month total is shown on this screen. A single cash amount more than ", fmt(regime.threshold, regime.currency), " is still flagged on the deal.") : bankingDay ? /*#__PURE__*/React.createElement(React.Fragment, null, "No banking-day total is shown on this screen. A single deal more than ", fmt(regime.threshold, regime.currency), " is still flagged on the deal.") : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.id === 'pack-sg-v1' ? 'There is no cash transaction report, so this screen does not total a day.' : regime.threshold == null ? noLargeCashCopy(regime) : monthCash ? /*#__PURE__*/React.createElement(React.Fragment, null, "No calendar-month total is shown on this screen. A single cash amount more than ", fmt(regime.threshold, regime.currency), " is still flagged on the deal.") : bankingDay ? /*#__PURE__*/React.createElement(React.Fragment, null, "No banking-day total is shown on this screen. A single deal more than ", fmt(regime.threshold, regime.currency), " is still flagged on the deal.") : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -44188,6 +44451,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       } : r));
       log && log('Structuring watch reopened', `${cust}`);
     };
+    if (regime.id === 'pack-sg-v1') return /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "singapore-structuring-gap"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "No cash line to structure under"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1 text-[12px] max-w-lg",
+      style: {
+        color: CD.mute
+      }
+    }, "A money changer has no cash transaction report, so this watch has no line to sit under. Suspected linked deals are not summed on this desk. A suspicious transaction report still goes to the STRO. This screen does not file it."));
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -44627,7 +44904,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 560
       }
-    }, "Each reportable opens a ", /*#__PURE__*/React.createElement("b", {
+    }, regime.noCashReport ? 'There is no cash transaction report for a money changer. A suspicious transaction report goes to the STRO. This screen does not send it and does not open SONAR.' : /*#__PURE__*/React.createElement(React.Fragment, null, "Each reportable opens a ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -44635,7 +44912,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "seals into an immutable filed copy"), " welded to the records that triggered it.")), store === 'server' && /*#__PURE__*/React.createElement("div", {
+    }, "seals into an immutable filed copy"), " welded to the records that triggered it."))), store === 'server' && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 mb-3 px-3 py-2 text-[11.5px]",
       style: {
         background: CD.greenSoft,
@@ -45448,6 +45725,8 @@ ${(filing.map || []).map(blockHTML).join('')}
 
     // header counts
     const screenFlagged = useMemo(() => {
+      const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+      if (!C.sanctionsListShips(packNow)) return 0;
       if (settings && settings.screenSanctions === false) return 0;
       let n = 0;
       Object.keys(clients || {}).forEach(name => {
@@ -45457,7 +45736,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         if (screen(b.name).status !== 'clear') n++;
       });
       return n;
-    }, [clients, beneficiaries, settings]);
+    }, [clients, beneficiaries, settings, regime]);
     const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
     const strN = useMemo(() => {
@@ -45471,12 +45750,12 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, [rows, clients, settings]);
 
     /* A hit count from the sample names would say this desk screened
-       someone. When no list ships, the tile stays at zero. Filings
-       still use `philippines` and are not part of this flag. */
+       someone. When no list ships, the tile stays at zero. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const listShips = C.sanctionsListShips(packNow);
     const philippines = regime.id === 'pack-ph-v1';
-    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const singapore = regime.id === 'pack-sg-v1';
+    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : singapore ? 'No cash report' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines || singapore ? 'Not filed' : 'Filings', 'filetext', philippines || singapore ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -45515,14 +45794,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
+    }, regime.id === 'pack-sg-v1' ? 'MAS / STRO. Money changing above 5000 SGD. A cross-border money transfer is every deal. There is no cash report.' : regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
-    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
-      const bad = v > 0;
+    }, (regime.id === 'pack-sg-v1' ? [['Cash report', 'None', 'No cash report', 'aggregation', CD.green], ['STR', 'Gap', 'Not filed here', 'submissions', CD.mute], ['Screening', 'Gap', 'No list ships', 'screening', CD.mute]] : [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]]).map(([l, v, sub, go, warn]) => {
+      const bad = typeof v === 'number' && v > 0;
       const col = bad ? warn : CD.green;
       return /*#__PURE__*/React.createElement("button", {
         key: l,
-        "data-testid": l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined,
+        "data-testid": l === 'Screening' && regime.id === 'pack-sg-v1' ? 'singapore-screening-gap' : l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined,
         onClick: () => setTab(go),
         className: "text-left px-3 py-2.5",
         style: {
@@ -50994,7 +51273,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.windowKind === 'banking_day' ? null : regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", limit.label, " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(React.Fragment, null, " This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.windowKind === 'banking_day' ? null : regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), regime.id === 'pack-sg-v1' ? /*#__PURE__*/React.createElement(React.Fragment, null, "There is no cash transaction report for a money changer. A suspicious transaction report goes to the STRO. This desk does not file it and does not open SONAR.") : limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", limit.label, " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), regime.windowKind === 'banking_day' || regime.id === 'pack-sg-v1' ? null : /*#__PURE__*/React.createElement(React.Fragment, null, " This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to

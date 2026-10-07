@@ -281,6 +281,7 @@
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = (desk && desk.packId === 'pack-ph-v1') || (packNow && packNow.packId === 'pack-ph-v1');
+    const sgPack = (desk && desk.packId === 'pack-sg-v1') || (packNow && packNow.packId === 'pack-sg-v1');
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
     const fxId = idRows.find(r => r && r.dealKind === 'fx');
     const idMoreThan = !!(phPack && fxId && fxId.comparator === 'gt');
@@ -335,6 +336,9 @@
     />);
 
     return (<div>
+      {sgPack ? (
+        <Row title="Cash transaction report" desc="There is no cash transaction report for a money changer. The 20000 SGD figure is the precious stones cash report and the traveller cash movement report. Neither is this desk."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>None</span></Row>
+      ) : (<>
       {ukV2 && (
         <div data-testid="uk-pack-rules" className="text-[12px] mb-3 leading-relaxed" style={{ color: CD.ink }}>
           There is no large-cash report in UK law for a bureau. Customer due diligence applies to an occasional transaction of £12,000 or more, and to a transfer of funds of more than £800. A suspicious activity report goes to the NCA (UKFIU), as soon as is practicable. Records are kept for 5 years. Deals are not added together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.
@@ -370,6 +374,7 @@
       <PostureNote p={standingOf('threshold')} />
       <Release field="reportThreshold" label="Reporting threshold" />
       </>)}
+      </>)}
 
       <Row
         title="Require ID over"
@@ -379,6 +384,8 @@
           ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.'
           : aeV2
           ? 'Foreign exchange stays at AED 3,500 or more. A lower number tightens that line. A number of 3,500 or more does not raise it. A money transfer stays at any amount, whatever this box says.'
+          : sgPack
+          ? 'Money changing is more than this. Exactly this amount does not. A cross-border money transfer is every deal. A desk can set a lower money-changing line. It cannot turn the transfer rule off.'
           : idMoreThan
           ? 'Money changing and remittance: more than this, a deal will not post for a customer nobody has identified. Exactly this amount does not. A bill, an electronic transfer, or a cheque uses the higher occasional line. A desk can set a lower line. It cannot set a higher one.'
           : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."}>
@@ -391,7 +398,7 @@
       <PostureNote p={standingOf('idRequiredOver')} />
       <Release field="idThreshold" label="Identification threshold" />
 
-      {(monthCash || bankingDay) ? null : <Row
+      {(monthCash || bankingDay || sgPack) ? null : <Row
         title="Aggregation window"
         desc={euAmlr && (line('aggregationHours') || {}).effective == null
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
@@ -409,8 +416,8 @@
                 onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
                 opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
       </Row>}
-      {(monthCash || bankingDay) ? null : <PostureNote p={standingOf('aggHours')} />}
-      {(monthCash || bankingDay) ? null : <Release field="aggregationHours" label="Aggregation window" />}
+      {(monthCash || bankingDay || sgPack) ? null : <PostureNote p={standingOf('aggHours')} />}
+      {(monthCash || bankingDay || sgPack) ? null : <Release field="aggregationHours" label="Aggregation window" />}
 
       <Row
         title="Record retention"
@@ -1942,7 +1949,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : (pack && pack.packId === 'pack-sg-v1') ? 'Your jurisdiction follows the operating country set in Localization. Money changing above 5000 SGD needs customer due diligence. Exactly 5000 does not. A cross-border money transfer needs it on every deal. There is no cash transaction report. A suspicious transaction report goes to the STRO. This desk does not file it.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----
@@ -1953,13 +1960,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          {paused || (pack && pack.packId === 'pack-eu-v2') || (regime && regime.windowKind === 'calendar_month') || (regime && regime.windowKind === 'banking_day') ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {paused || (pack && pack.packId === 'pack-eu-v2') || (regime && regime.windowKind === 'calendar_month') || (regime && regime.windowKind === 'banking_day') || (pack && pack.packId === 'pack-sg-v1') ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
           {paused || !(regime && regime.windowKind === 'calendar_month') ? null : <Row title="Cash report window" desc="A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>Calendar month</span></Row>}
           {paused || !(regime && regime.windowKind === 'banking_day') ? null : <Row title="Cash report window" desc="A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>Banking day</span></Row>}
-          {paused ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
+          {paused || (pack && pack.packId === 'pack-sg-v1') ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}
           {/* sanctionsListShips lives next to the sample watchlist. */}
           {window.CDOS._compliance.sanctionsListShips(pack)
             ? <Row title="Sanctions / watchlist screening" desc="Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue — most regulators expect it on."><Sw on={settings.screenSanctions !== false} click={() => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)} /></Row>
+            : (pack && pack.packId === 'pack-sg-v1')
+            ? <Row title="Sanctions screening" desc={window.CDOS._compliance.SG_SCREENING_NOTE}><span className="text-[12px] px-2.5 py-1.5" data-testid="singapore-screening-gap" style={{ color: CD.mute }}>Gap</span></Row>
             : <Row title="Sanctions / watchlist screening" desc={window.CDOS._compliance.PH_SCREENING_NOTE}><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>Not on this desk</span></Row>}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
@@ -1974,7 +1983,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Row title="Suggest a quick re-screen after" desc="A dismissible Quick-check nudge appears once this many days have passed since the last screening."><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Require full re-verification after" desc="Past this many days — or sooner if the ID on file expires — the nudge becomes a hard stop until a full Verified check runs."><select value={reverifyDays} onChange={e => set('reverifyDays', +e.target.value, `re-verify required ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[180, 365, 545, 730].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Escalate high-risk clients to Verified Plus" desc="When a client is flagged high-risk, upgrade any recommended check to the deepest tier automatically."><Sw on={escalateHighRisk} click={() => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')} /></Row>
-            <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>
+            {(pack && pack.packId === 'pack-sg-v1') ? null : <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>}
             <Row title="Require ID photo on file" desc="Contacts without a stored ID scan are flagged — in Clients · KYC and here."><Sw on={settings.requireIdPhoto} click={() => toggleSet('requireIdPhoto', 'Require ID photo')} /></Row>
 
             <details style={{ margin: '10px 0 0' }}>
@@ -1986,7 +1995,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             </details>
           </div>
 
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : <>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</>}</span></div>
+          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : (pack && pack.packId === 'pack-sg-v1') ? 'Money changing above 5000 SGD needs customer due diligence. A cross-border money transfer needs it on every deal. There is no cash report. This desk does not file to the STRO. No sanctions list is loaded. The owner screens every customer against the MAS lists outside this desk for now.' : <>These rules drive the live flags in the Ledger, the verification nudge on every client &amp; counter, and the <b style={{ color: CD.ink }}>Compliance</b> desk — screening, 24-hour aggregation and fileable submissions all follow the active pack.</>}</span></div>
         </div>); })()}
 
         {tab === 'rates' && (<div>

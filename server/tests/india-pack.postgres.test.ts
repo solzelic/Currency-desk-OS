@@ -80,10 +80,10 @@ postgres("India pack against real PostgreSQL", () => {
         WHERE pack_id <> 'pack-in-v1' ORDER BY pack_id`,
     );
     expect(others.rows.length).toBeGreaterThan(0);
-    /* Serbia, the 2027 EU pack, and the Philippines store NULL on
-       purpose. NULL is not a missing 24. Every other pack still stores
-       24. India must not have cleared those. */
-    const nullWindow = new Set(["pack-eu-v2", "pack-rs-v1", "pack-ph-v1"]);
+    /* Serbia, the 2027 EU pack, the Philippines, and Singapore store
+       NULL on purpose. NULL is not a missing 24. Every other pack still
+       stores 24. India must not have cleared those. */
+    const nullWindow = new Set(["pack-eu-v2", "pack-rs-v1", "pack-ph-v1", "pack-sg-v1"]);
     for (const row of others.rows) {
       if (nullWindow.has(row.pack_id)) {
         expect(row.aggregation_hours, row.pack_id).toBeNull();

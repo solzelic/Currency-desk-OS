@@ -264,11 +264,12 @@ async function remittanceLine(
 }
 
 /* The pack's aggregation window.
-   A stored null is an answer: Serbia, the 2027 EU pack, India, and
-   the Philippines do not state an hour window. India keeps the month
-   on the cash-report row. The Philippines keeps the banking day on
-   the covered-transaction row. Do not fill that null in with 24. A
-   pack that stored 24 still reads as 24.
+   A stored null is an answer: Serbia, the 2027 EU pack, India, the
+   Philippines, and Singapore do not state an hour window. India keeps
+   the month on the cash-report row. The Philippines keeps the banking
+   day on the covered-transaction row. Singapore does not add suspected
+   linked deals here. Do not fill that null in with 24. A pack that
+   stored 24 still reads as 24.
    An entity with no pack id of its own is resolved onto the baseline,
    and the join above misses that row. Read the resolved pack instead
    of inventing a number, and invent nothing when that row is missing. */
@@ -364,16 +365,20 @@ export async function readDeskThresholds(
     idThreshold: moneyLine(row.id_threshold, pack.idThreshold),
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
-      /* A Philippines pack stores NULL on purpose. A desk number must
-         not invent an hour window the statute does not state. */
-      pack.packId === "pack-ph-v1" ? null : count(row.aggregation_hours),
+      /* The Philippines and Singapore store NULL on purpose. A desk
+         number must not invent an hour window those packs do not state.
+         Serbia, the 2027 EU pack, and India keep a desk number, because
+         their null window is not this rule. */
+      pack.packId === "pack-ph-v1" || pack.packId === "pack-sg-v1"
+        ? null
+        : count(row.aggregation_hours),
       /* Null on the stored pack means the deals are not added together
          (Serbia, the 2027 EU pack, India, whose cash report is a
-         calendar month, and the Philippines, whose covered transaction
-         is one banking day). An entity that has not stored a pack id
-         still follows the pack resolvePack already chose, so the
-         baseline keeps its 24-hour window. Do not invent 24 for a null
-         window. */
+         calendar month, the Philippines, whose covered transaction is
+         one banking day, and Singapore, which does not add suspected
+         linked deals). An entity that has not stored a pack id still
+         follows the pack resolvePack already chose, so the baseline
+         keeps its 24-hour window. Do not invent 24 for a null window. */
       await packAggregationHours(client, pack, row),
       "higher_is_stricter",
     ),

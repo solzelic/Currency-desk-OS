@@ -169,6 +169,10 @@ postgres("pack rule fields against real PostgreSQL", () => {
              general line is 100,000. That split is checked in
              philippines-pack.postgres.test.ts. */
           AND t.pack_id <> 'pack-ph-v1'
+          /* Singapore does not copy one identification number onto
+             every kind of deal. That split is checked in
+             singapore-pack.postgres.test.ts. */
+          AND t.pack_id <> 'pack-sg-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];

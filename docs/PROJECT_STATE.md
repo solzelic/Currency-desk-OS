@@ -71,6 +71,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Singapore pack, draft.** `pack-sg-v1` (migration 039) is the rules for
+  a new Singapore desk. Home currency SGD. Money changing above 5,000 SGD
+  needs customer due diligence. Exactly 5,000 does not. A cross-border
+  money transfer needs it on every deal, and that gate does not read the
+  stored remittance cell. A domestic bill, money order, or electronic
+  transfer is more than 5,000 SGD. Cheque cashing has no line. There is
+  no cash transaction report. A suspicious transaction report is listed
+  for the STRO and is not filed. No sanctions list is loaded. The owner
+  screens every customer against the MAS lists outside this desk.
+  Records are kept five years. Existing desks are not moved. The screen
+  does not compare the 5,000 line. It asks the ledger and renders
+  `identificationRequired`. This pull request does not change the public
+  site. The write-up is `docs/SINGAPORE_PACK.md`.
+
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -402,6 +416,20 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, Singapore pack. A new Singapore desk opens on `pack-sg-v1`,
+in SGD. Money changing is identified above 5,000 SGD. A cross-border
+money transfer is identified at any amount. There is no cash transaction
+report for a money changer. The 20,000 SGD figure is not loaded. Filing
+to the STRO is not live. No sanctions list is loaded, and the owner
+screens every customer against the MAS lists outside the desk. The
+browser does not compare that line. `POST /api/ledger/singapore-identification`
+returns the Decimal decision and the screen renders it. A pack that stores
+no hour window is not read as 24. Existing desks stay on the pack they
+already have. Migration 039 stays and is insert-only. It does not repeat
+the null hour-window change from 033 and 037. 029, 031, and 033
+through 038 are already on main. 027 and 030 are still open drafts.
+The public site is unchanged in this pull request.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing

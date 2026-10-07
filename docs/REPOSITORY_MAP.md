@@ -102,6 +102,13 @@ commit the generated output — CI diffs `web/` against a fresh build.
   033, 034, 035, 036, and 037 are already on main, so 038 stays. 027
   and 030 are still open drafts. The rule text is
   `docs/PHILIPPINES_PACK.md`.
+- Migration `039_pack_sg_v1` inserts the first Singapore pack. It is
+  insert-only. It does not move a desk that is already open.
+  `aggregation_hours` is null. 033 and 037 already allow a null hour
+  window, so 039 does not alter the column. 029, 031, and 033 through
+  038 are already on main, so 039 stays. 027 and 030 are still open
+  drafts. The screen asks `POST /api/ledger/singapore-identification`
+  and renders that boolean. The rule text is `docs/SINGAPORE_PACK.md`.
 
 ## Test commands
 

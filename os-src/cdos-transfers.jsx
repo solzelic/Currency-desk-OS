@@ -51,7 +51,7 @@
      No remittance line (no rate, or a stale one) means identification
      is required. A country pack, Canada included, uses its own
      identification line and does not substitute the baseline's. */
-  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines, ukTransfer, aeTransfer, reportComparator, idComparator }) {
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines, ukTransfer, aeTransfer, reportComparator, idComparator, anyAmount }) {
     const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
     if (blank) return { homeAmount: null, reportable: null, idRequired: false };
     const cash = direction === 'receive'
@@ -84,6 +84,13 @@
     /* pack-ae-v2. A money transfer needs identification at any amount.
        The foreign-exchange line of 3,500 is not this line. */
     if (aeTransfer && aeTransfer.everyDeal) {
+      return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+    }
+    /* A cross-border money transfer on a Singapore desk is every deal.
+       The stored remittance cell is not read. A blank amount already
+       returned above. There is no cash report, so a zero report line
+       must not flag the transfer. */
+    if (anyAmount) {
       return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
     }
     const reportableNow = report == null ? null : (reportComparator === 'gt' ? cash > report : cash >= report);
@@ -290,9 +297,10 @@
     const [method, setMethod] = useState('cash');
     const [payAmt, setPayAmt] = useState('');
     const [fee, setFee] = useState(settings && settings.defaultFee ? String(settings.defaultFee) : '9.99');
-    const requirePurpose = !(settings && settings.transferRequirePurpose === false);   // Settings › Transfers
-    const [purpose, setPurpose] = useState(requirePurpose ? '' : 'Family support');
-    const [sourceOfFunds, setSourceOfFunds] = useState('Salary');
+    const sgPack = !!((window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId) === 'pack-sg-v1');
+    const requirePurpose = sgPack ? false : !(settings && settings.transferRequirePurpose === false);
+    const [purpose, setPurpose] = useState(sgPack ? '' : (requirePurpose ? '' : 'Family support'));
+    const [sourceOfFunds, setSourceOfFunds] = useState(sgPack ? '' : 'Salary');
     const senderWrap = useRef(null);
     const [senderOpen, setSenderOpen] = useState(false);
     /* The post is a round trip now, so the button has to be able to say
@@ -348,6 +356,7 @@
       aeTransfer: packNow && packNow.packId === 'pack-ae-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
       reportComparator: regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte',
       idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte',
+      anyAmount: !!(packNow && packNow.packId === 'pack-sg-v1'),
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;
@@ -644,6 +653,7 @@
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
               {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
+              {packNow && packNow.packId === 'pack-sg-v1' && idRequired && <div className="text-[12px]" style={{ color: CD.ink }}>A cross-border money transfer needs customer due diligence on every deal. This screen does not file a report.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>

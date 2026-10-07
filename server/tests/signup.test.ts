@@ -203,6 +203,39 @@ describe("signup", () => {
     expect(le.homeCurrency).not.toBe("CAD");
   });
 
+  it("opens a Singapore desk on pack-sg-v1 in SGD, not on Canada", async () => {
+    const su = await app.inject({
+      method: "POST",
+      url: "/api/signup",
+      payload: {
+        businessName: "Raffles FX",
+        ownerName: "Mei Tan",
+        email: "mei@rafflesfx.sg",
+        password: "a-strong-pass",
+        slug: "rafflesfx",
+        onboarding: { country: "SG" },
+      },
+    });
+    expect(su.statusCode).toBe(201);
+    const ok = await app.inject({
+      method: "POST",
+      url: "/api/signup/verify",
+      payload: { email: "mei@rafflesfx.sg", code: codeFromLog() },
+    });
+    expect(ok.statusCode).toBe(201);
+    const le = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-rafflesfx")))[0]!;
+    expect(le.jurisdictionPackId).toBe("pack-sg-v1");
+    expect(le.homeCurrency).toBe("SGD");
+    /* The signup body did not send a regulator string. The column stays
+       blank rather than being labelled FINTRAC. Settings reads the
+       regulator off the pack, which is MAS / STRO. */
+    expect(le.jurisdiction).toBe("");
+    expect(le.jurisdiction).not.toBe("FINTRAC");
+    expect(le.jurisdictionPackId).not.toBe("pack-intl-v1");
+    expect(le.homeCurrency).not.toBe("CAD");
+    expect(le.idThreshold).toBeNull();
+  });
+
   it("rejects a taken slug and a reserved slug", async () => {
     const taken = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Other", ownerName: "X", email: "x@other.ca", password: "a-strong-pass", slug: "yorkfx" } });
     expect(taken.statusCode).toBe(409); // yorkfx is the seeded tenant

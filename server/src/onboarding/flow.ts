@@ -112,6 +112,11 @@ export const JURISDICTION: Record<
   /* More than 500,000. The comparator on the pack row is gt. This
      seed is the amount the wizard shows. */
   PH: { country: "Philippines", regulator: "BSP / AMLC", regLabel: "BSP registration number", currency: "PHP", reportThreshold: 500000, reportCurrency: "PHP", report: "Covered Transaction Report" },
+  /* reportThreshold 0 is "there is no cash transaction report". It is
+     not an identification line. The wizard's own list uses 5000 for
+     the money-changing question. The server drops an idOver of 5000
+     because it is not strictly below the pack. */
+  SG: { country: "Singapore", regulator: "MAS / STRO", regLabel: "MAS licence number", currency: "SGD", reportThreshold: 0, reportCurrency: "SGD", report: "No cash transaction report" },
   XX: { country: "Somewhere else", regulator: "your regulator", regLabel: "Business / AML registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "large-transaction report" },
 };
 
