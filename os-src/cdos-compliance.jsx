@@ -378,6 +378,7 @@
   /* ===================== SANCTIONS / WATCHLISTS ===================== */
   // fictional, illustrative list entries across the three sources. Two are
   // tuned to demonstrate fuzzy matching against the seed book.
+  // These names are not the UN Security Council Consolidated List.
   const WATCHLISTS = [
     { id: 'w1', name: 'Wei Lin', list: 'OFAC', program: 'NPWMD', country: 'CN', type: 'individual', dob: '1979-02-11' },
     { id: 'w2', name: 'Aram Lawson', list: 'OSFI', program: 'Terrorism (Criminal Code)', country: 'CA', type: 'individual', dob: '1984-09-03' },
@@ -391,6 +392,24 @@
     { id: 'w10', name: 'Pyongyang Trading Co.', list: 'OFAC', program: 'DPRK', country: 'KP', type: 'entity' },
   ];
   const LIST_TONE = { OFAC: { c: '#1d4ed8', bg: '#dbe5fb' }, UN: { c: '#0e7490', bg: '#cfeaf0' }, OSFI: { c: CD.flag, bg: CD.flagSoft } };
+
+  /* Does this pack ship a sanctions list the desk can match against?
+
+     The names above are sample entries. True means the desk still
+     shows that sample queue. It does not mean a real list is loaded.
+     A Philippines desk must not present those names as a screen
+     against the UN list. BSP Circular 1182 still requires that
+     owner to screen, so the screens that read this flag say the
+     duty instead of hiding it. Every other pack keeps the queue
+     it already shows.
+
+     One function, not a pack id written on each screen. A column on
+     the pack would be a migration for a fact this file already knows. */
+  function sanctionsListShips(pack) {
+    const id = pack && (pack.packId || pack.id);
+    return id !== 'pack-ph-v1';
+  }
+  const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
 
   const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = (s) => norm(s).split(' ').filter(Boolean);
@@ -607,7 +626,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, PH_SCREENING_NOTE },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

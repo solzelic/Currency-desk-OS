@@ -253,12 +253,13 @@
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
       .sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
-    /* The Philippines pack ships no sanctions list. The OFAC / UN / OSFI
-       queue below would tell the owner those names were matched. */
+    /* No list loaded. The queue below matches sample names, not the
+       UN Security Council list, so it stays off this desk. The note
+       is the owner's duty under BSP Circular 1182. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    if (packNow && packNow.packId === 'pack-ph-v1') return (<div className="p-4">
+    if (!C.sanctionsListShips(packNow)) return (<div className="p-4" data-testid="philippines-screening">
       <div className="text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
-      <div className="mt-1 text-[12px] max-w-md" style={{ color: CD.mute }}>No sanctions list ships for the Philippines yet. This desk does not match client or beneficiary names against OFAC, the UN list, or OSFI.</div>
+      <div className="mt-1 text-[12px] max-w-xl" style={{ color: CD.mute }}>{C.PH_SCREENING_NOTE}</div>
     </div>);
 
     // Settings → Compliance · sanctions screening switch gates the whole queue
@@ -875,8 +876,13 @@
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
 
+    /* A hit count from the sample names would say this desk screened
+       someone. When no list ships, the tile stays at zero. Filings
+       still use `philippines` and are not part of this flag. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const listShips = C.sanctionsListShips(packNow);
     const philippines = regime.id === 'pack-ph-v1';
-    const TABS = [['screening', 'Screening', 'shield', philippines ? 0 : screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
@@ -888,8 +894,8 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="grid grid-cols-3 gap-2 mt-3">
-          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', philippines ? 0 : screenFlagged, philippines ? 'No list yet' : 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
-            <button key={l} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
+          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
+            <button key={l} data-testid={l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
               <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: 24, lineHeight: 1.15 }}>{v}</div>

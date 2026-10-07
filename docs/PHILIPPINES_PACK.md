@@ -57,7 +57,7 @@ Records: `retention_years` is 5. Nothing is deleted.
 | BSP exemption to sell more than 10,000 USD | Gap | A shop with an exemption is still refused above 10,000. Fail closed |
 | Appendix N-8-c documents on a sale | Gap | The till does not collect them |
 | BSP registration / certificate of registration | Gap | Not tracked |
-| Sanctions and targeted financial sanctions | Gap | No list ships. The desk does not claim it screened anyone |
+| Sanctions and targeted financial sanctions | Gap | No list is loaded. The sample names are not shown. The desk tells the owner that Philippine law requires screening clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does that outside the desk |
 | Wire originator and beneficiary information | Gap | MORB section 923 sets what must travel with a transfer, including a 50,000 peso information line. The till does not build that message |
 | AMLC low-risk deferral of some covered transactions for money service businesses | Gap | The deferral list was not confirmed, so nothing is deferred. A flagged cash deal over 500,000 may include an instrument the AMLC defers |
 | 2018 IRR Rule 18 section 3.2, first-time identification at any amount | Gap | Not applied below the BSP occasional lines. The till's only identification state is verified or not |
@@ -71,6 +71,9 @@ Records: `retention_years` is 5. Nothing is deleted.
 - BSP Circular 942 (2017), MORNBFI section 4511N.9. Large-value payouts of more than 500,000 pesos, or the foreign-currency equivalent, in any single transaction, only by cheque or direct credit. Sale of foreign currency not exceeding 10,000 USD or its equivalent per transaction, and not exceeding 50,000 USD per month per customer. The month is not summed.
 - BSP Circular 1170 (2023) amends identity (PhilSys). It does not change these amounts.
 - AMLA section 9(b): records for five years.
+- BSP Circular 1182 (10 November 2023), section 921. A covered person screens customers, including beneficial owners and persons acting for them, transactors, and counterparties on a wire. The sanctions database includes, at minimum, the UNSC Consolidated List (UNSCR 1267/1989, 1988, and 2253 for terrorism; 1718 and 2231 for proliferation) and Anti-Terrorism Council designations. A potential target match is frozen without delay. The AMLC is told the same day. An STR is filed, including for an attempted deal. This pack loads neither list. The screen states that duty.
+- BSP Circular Letter CL-2023-030 (2023), the AMLC Guidance on Sanctions Screening. Covered persons screen against the ATC list and the UNSC Consolidated List.
+- BSP Circular Letter CL-2021-013 (10 February 2021). Covered persons apply targeted financial sanctions on the UNSC Consolidated List, including UNSCR 1718 and 2231, freeze a target match, and file an STR for an attempted deal.
 
 The market snapshot used for a foreign-currency equivalent is the same CAD-per-unit table the rate sync stores, not older than 24 hours. PHP per unit is CAD per unit divided by CAD per PHP.
 

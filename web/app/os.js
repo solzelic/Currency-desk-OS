@@ -10361,21 +10361,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, [1, 7, 14, 30].map(d => /*#__PURE__*/React.createElement("option", {
         key: d,
         value: d
-      }, d, " days")))), pack && pack.packId === 'pack-ph-v1' ? /*#__PURE__*/React.createElement(Row, {
-        title: "Sanctions / watchlist screening",
-        desc: "No sanctions list ships for the Philippines yet."
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "text-[12px] px-2.5 py-1.5",
-        style: {
-          color: CD.mute
-        }
-      }, "Not on this desk")) : /*#__PURE__*/React.createElement(Row, {
+      }, d, " days")))), window.CDOS._compliance.sanctionsListShips(pack) ? /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions / watchlist screening",
         desc: "Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue \u2014 most regulators expect it on."
       }, /*#__PURE__*/React.createElement(Sw, {
         on: settings.screenSanctions !== false,
         click: () => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)
-      })), /*#__PURE__*/React.createElement("div", {
+      })) : /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions / watchlist screening",
+        desc: window.CDOS._compliance.PH_SCREENING_NOTE
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, "Not on this desk")), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -41131,6 +41131,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   /* ===================== SANCTIONS / WATCHLISTS ===================== */
   // fictional, illustrative list entries across the three sources. Two are
   // tuned to demonstrate fuzzy matching against the seed book.
+  // These names are not the UN Security Council Consolidated List.
   const WATCHLISTS = [{
     id: 'w1',
     name: 'Wei Lin',
@@ -41218,6 +41219,22 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       bg: CD.flagSoft
     }
   };
+
+  /* Does this pack ship a sanctions list the desk can match against?
+      The names above are sample entries. True means the desk still
+     shows that sample queue. It does not mean a real list is loaded.
+     A Philippines desk must not present those names as a screen
+     against the UN list. BSP Circular 1182 still requires that
+     owner to screen, so the screens that read this flag say the
+     duty instead of hiding it. Every other pack keeps the queue
+     it already shows.
+      One function, not a pack id written on each screen. A column on
+     the pack would be a migration for a fact this file already knows. */
+  function sanctionsListShips(pack) {
+    const id = pack && (pack.packId || pack.id);
+    return id !== 'pack-ph-v1';
+  }
+  const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const tokens = s => norm(s).split(' ').filter(Boolean);
   function lev(a, b) {
@@ -41551,7 +41568,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       cadIn,
       cashIn,
       dt,
-      setFingerprint
+      setFingerprint,
+      sanctionsListShips,
+      PH_SCREENING_NOTE
     },
     getRegime,
     jurisdictionViolations,
@@ -43372,22 +43391,24 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), [subjects]);
     const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
 
-    /* The Philippines pack ships no sanctions list. The OFAC / UN / OSFI
-       queue below would tell the owner those names were matched. */
+    /* No list loaded. The queue below matches sample names, not the
+       UN Security Council list, so it stays off this desk. The note
+       is the owner's duty under BSP Circular 1182. */
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    if (packNow && packNow.packId === 'pack-ph-v1') return /*#__PURE__*/React.createElement("div", {
-      className: "p-4"
+    if (!C.sanctionsListShips(packNow)) return /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "philippines-screening"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
       style: {
         color: CD.ink
       }
     }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
-      className: "mt-1 text-[12px] max-w-md",
+      className: "mt-1 text-[12px] max-w-xl",
       style: {
         color: CD.mute
       }
-    }, "No sanctions list ships for the Philippines yet. This desk does not match client or beneficiary names against OFAC, the UN list, or OSFI."));
+    }, C.PH_SCREENING_NOTE));
 
     // Settings → Compliance · sanctions screening switch gates the whole queue
     if (settings && settings.screenSanctions === false) return /*#__PURE__*/React.createElement("div", {
@@ -45448,8 +45469,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
+
+    /* A hit count from the sample names would say this desk screened
+       someone. When no list ships, the tile stays at zero. Filings
+       still use `philippines` and are not part of this flag. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const listShips = C.sanctionsListShips(packNow);
     const philippines = regime.id === 'pack-ph-v1';
-    const TABS = [['screening', 'Screening', 'shield', philippines ? 0 : screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -45490,11 +45517,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2 mt-3"
-    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', philippines ? 0 : screenFlagged, philippines ? 'No list yet' : 'Sanctions hits', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
+    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
       const bad = v > 0;
       const col = bad ? warn : CD.green;
       return /*#__PURE__*/React.createElement("button", {
         key: l,
+        "data-testid": l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined,
         onClick: () => setTab(go),
         className: "text-left px-3 py-2.5",
         style: {

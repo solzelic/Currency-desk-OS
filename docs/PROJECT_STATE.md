@@ -78,8 +78,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   over 500,000 PHP is flagged as a covered transaction. Deals in one
   banking day are not summed. A cash payout over 500,000 PHP, and a
   sale of foreign currency over 10,000 USD, are refused. The desk
-  does not file to the AMLC. The website stays Not live. Canada is
-  the only Live country. Write-up: `docs/PHILIPPINES_PACK.md`.
+  does not file to the AMLC. No sanctions list is loaded. The desk
+  says Philippine law requires the owner to screen clients and
+  counterparties against the UNSC Consolidated List and the ATC
+  list, and on a match to freeze without delay, tell the AMLC the
+  same day, and file an STR. The owner does this outside the desk.
+  The website stays Not live. Canada is the only Live country.
+  Write-up: `docs/PHILIPPINES_PACK.md`.
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
   Live `/login` and `/app` serve `/web/app/os.js`. Re-verified 2026-08-17
   at `f31cf21` (#44).
@@ -407,11 +412,15 @@ funds are required only above 500,000 PHP. A cash payout over 500,000
 PHP, or the foreign-currency equivalent, is refused. A sale of foreign
 currency over 10,000 USD, or the equivalent, is refused. A missing or
 stale rate blocks those conversions. The desk does not file to the
-AMLC. Records are kept five years and are not deleted. The public
-site says Not live. Canada remains the only Live country. See
-`docs/PHILIPPINES_PACK.md`. Migration 038 stays. 029, 031, 033, 034,
-035, 036, and 037 are already on main. 027 and 030 are still open
-drafts.
+AMLC. No sanctions list is loaded. The desk says Philippine law
+requires the owner to screen clients and counterparties against the
+UNSC Consolidated List and the ATC list, and on a match to freeze
+without delay, tell the AMLC the same day, and file an STR. The
+owner does this outside the desk. Records are kept five years and
+are not deleted. The public site says Not live. Canada remains the
+only Live country. See `docs/PHILIPPINES_PACK.md`. Migration 038
+stays. 029, 031, 033, 034, 035, 036, and 037 are already on main.
+027 and 030 are still open drafts.
 
 **2026-10-07**, India pack. A new India desk opens on `pack-in-v1`.
 A country with no pack is still not given Canada's. See
