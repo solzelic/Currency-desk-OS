@@ -264,8 +264,10 @@ async function remittanceLine(
 }
 
 /* The pack's aggregation window.
-   A stored null is an answer: this pack does not state a window. Do
-   not fill that in with 24. A pack that stored 24 still reads as 24.
+   A stored null is an answer: Serbia, the 2027 EU pack, and India do
+   not state an hour window. India keeps the month on the cash-report
+   row. Do not fill that null in with 24. A pack that stored 24 still
+   reads as 24.
    An entity with no pack id of its own is resolved onto the baseline,
    and the join above misses that row. Read the resolved pack instead
    of inventing a number, and invent nothing when that row is missing. */

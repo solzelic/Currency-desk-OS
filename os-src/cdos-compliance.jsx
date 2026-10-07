@@ -202,8 +202,14 @@
     const large = reports.find(r => r && r.kind === 'large_cash');
     /* Australia does not add threshold transactions together. The pack
        column still holds 24 because that column cannot be empty. The
-       report row is the rule, and the sentence has to say so. */
-    const aggregation = large && large.windowKind === 'none'
+       report row is the rule, and the sentence has to say so.
+       India files a calendar month, not a count of hours. Naming a
+       missing hour figure "Aggregation window" would tell the desk the
+       rule is 24 hours. The month lives on the cash report instead. */
+    const monthCash = !!(large && large.windowKind === 'calendar_month');
+    const aggregation = monthCash
+      ? null
+      : large && large.windowKind === 'none'
       ? {
           field: 'aggHours',
           label: 'Aggregation window',

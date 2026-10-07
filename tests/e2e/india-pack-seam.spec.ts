@@ -2,16 +2,40 @@
 
    The ledger opens it on pack-in-v1. This checks the screen says so,
    and that it does not call the cash rule a 24-hour window.
+   Signup is invite-only, so the enquiry is invited first, the same
+   way the baseline seam does it.
    ============================================================ */
+import { createRequire } from "node:module";
+import path from "node:path";
 import { test, expect, hasLedger, landOnDesktop, rendered, codeFor, logSize } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (c: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
+    end: () => Promise<void>;
+  };
+};
+
 const stamp = Date.now();
 const EMAIL = `owner-${stamp}@india-seam.example`;
 const SHOP = `India Seam ${stamp}`;
 const SLUG = `iseam${stamp}`;
+
+let pool: InstanceType<typeof Pool>;
+
+test.beforeAll(async () => {
+  if (!hasLedger) return;
+  pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+});
+
+test.afterAll(async () => {
+  if (!pool) return;
+  await pool.end();
+});
 
 async function openComplianceSettings(page: Page) {
   await page.getByText(/^Settings$/i).first().click();
@@ -24,6 +48,11 @@ async function openComplianceSettings(page: Page) {
 }
 
 test("an India desk shows the India pack and a calendar month, not a 24-hour window", async ({ page }) => {
+  await pool.query(
+    `INSERT INTO enquiries (id, reference, kind, email, name, status)
+     VALUES ($1, $2, 'early_access', $3, $4, 'invited')`,
+    [`enq-${stamp}`, `CD-I${String(stamp).slice(-6)}`, EMAIL, "India Owner"],
+  );
   const before = logSize();
   const started = await page.request.post("/api/signup", {
     data: {
@@ -48,13 +77,15 @@ test("an India desk shows the India pack and a calendar month, not a 24-hour win
 
   await openComplianceSettings(page);
   const panel = page.getByTestId("compliance-jurisdiction");
-  await expect(panel.getByTestId("country-pack")).toBeVisible();
+  const packCard = panel.getByTestId("country-pack");
+  await expect(packCard).toBeVisible();
   await expect(panel.getByTestId("baseline-pack")).toHaveCount(0);
-  await expect(panel.getByText("RBI / FIU-IND")).toBeVisible();
-  await expect(panel.getByText("India")).toBeVisible();
-  await expect(panel.getByText("Currency Transaction Report")).toBeVisible();
+  await expect(packCard.getByText("RBI / FIU-IND")).toBeVisible();
+  await expect(packCard.getByText("India", { exact: true })).toBeVisible();
+  await expect(packCard.getByText("Currency Transaction Report")).toBeVisible();
   await expect(panel.getByText("Cash report window")).toBeVisible();
-  await expect(panel.getByText(/calendar month in India/i)).toBeVisible();
+  await expect(panel.getByText(/calendar month in India/i).first()).toBeVisible();
+  await expect(panel.getByText("Aggregation window")).toHaveCount(0);
 
   const words = await panel.innerText();
   expect(words).not.toMatch(/International baseline/);

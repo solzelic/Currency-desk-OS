@@ -276,6 +276,9 @@
       ? 'the international baseline'
       : ((desk && desk.regulator) || (packNow && packNow.regulator) || 'your regulator');
     const disabled = status !== 'ready' || !!busy;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
+    const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
 
     /* Hand a line back to the pack. Offered only where the desk has taken
        one, because "follow the regulator" is not a change a desk already
@@ -350,6 +353,8 @@
           ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.'
           : aeV2
           ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.'
+          : moreThan
+          ? 'Deals more than this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
           : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'}>
         {status === 'ready'
           ? <ThresholdInput value={line('reportThreshold') && line('reportThreshold').effective}
@@ -379,7 +384,7 @@
       <PostureNote p={standingOf('idRequiredOver')} />
       <Release field="idThreshold" label="Identification threshold" />
 
-      <Row
+      {monthCash ? null : <Row
         title="Aggregation window"
         desc={euAmlr && (line('aggregationHours') || {}).effective == null
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
@@ -396,9 +401,9 @@
             : <Seg value={String((line('aggregationHours') || {}).effective)}
                 onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
                 opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
-      </Row>
-      <PostureNote p={standingOf('aggHours')} />
-      <Release field="aggregationHours" label="Aggregation window" />
+      </Row>}
+      {monthCash ? null : <PostureNote p={standingOf('aggHours')} />}
+      {monthCash ? null : <Release field="aggregationHours" label="Aggregation window" />}
 
       <Row
         title="Record retention"
@@ -1930,7 +1935,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>Your jurisdiction follows the operating country set in <b>Localization</b> — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. Cash reports use a calendar month, and the lines below follow that pack.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----

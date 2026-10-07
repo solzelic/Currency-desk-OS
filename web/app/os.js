@@ -5211,6 +5211,9 @@
     const currency = desk && desk.currency || settings.baseCurrency || '';
     const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
     const disabled = status !== 'ready' || !!busy;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
+    const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
 
     /* Hand a line back to the pack. Offered only where the desk has taken
        one, because "follow the regulator" is not a change a desk already
@@ -5304,7 +5307,7 @@
       title: /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5"
       }, ukV2 || aeV2 ? 'Your own reporting line' : 'Large cash / reportable threshold', " ", reportTip),
-      desc: ukV2 ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : aeV2 ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
+      desc: ukV2 ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : aeV2 ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : moreThan ? 'Deals more than this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.' : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('reportThreshold') && line('reportThreshold').effective,
       currency: currency,
@@ -5328,7 +5331,7 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), /*#__PURE__*/React.createElement(Row, {
+    }), monthCash ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : aeV2 ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
@@ -5346,9 +5349,9 @@
       value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    })), /*#__PURE__*/React.createElement(PostureNote, {
+    })), monthCash ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), /*#__PURE__*/React.createElement(Release, {
+    }), monthCash ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -10242,7 +10245,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, "Your jurisdiction follows the operating country set in ", /*#__PURE__*/React.createElement("b", null, "Localization"), " \u2014 switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.")), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. Cash reports use a calendar month, and the lines below follow that pack.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -40815,8 +40818,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const large = reports.find(r => r && r.kind === 'large_cash');
     /* Australia does not add threshold transactions together. The pack
        column still holds 24 because that column cannot be empty. The
-       report row is the rule, and the sentence has to say so. */
-    const aggregation = large && large.windowKind === 'none' ? {
+       report row is the rule, and the sentence has to say so.
+       India files a calendar month, not a count of hours. Naming a
+       missing hour figure "Aggregation window" would tell the desk the
+       rule is 24 hours. The month lives on the cash report instead. */
+    const monthCash = !!(large && large.windowKind === 'calendar_month');
+    const aggregation = monthCash ? null : large && large.windowKind === 'none' ? {
       field: 'aggHours',
       label: 'Aggregation window',
       standing: 'following',
