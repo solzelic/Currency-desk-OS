@@ -154,6 +154,18 @@ explicit demo-tenant flag on the server, generated from that tenant's own
 ledger — never compiled into the browser, where the only thing separating it
 from a real record is a key in `localStorage`.
 
+## The till print is not the sign-off
+
+The Cash Drawer button "Print summary" opens a page of what that screen
+already shows: the ledger's expected balance, the ledger's earned-today
+figure, and the count typed on the screen (saved or not). Denomination
+lines are face value times quantity, in cents, the same line the count
+row shows. The browser print dialog prints that page or saves it as a
+PDF. It does not post money.
+
+The signed record remains the End-of-Day Sign-Off. That sheet reads the
+ledger on its own. It does not copy the till print.
+
 ## Testing it
 
 A document is generated in a popup window, which is exactly where a browser

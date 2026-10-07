@@ -403,6 +403,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, till count print. The Cash Drawer prints the count typed
+on screen and the day's ledger figures (expected cash, transactions,
+earned today). The browser print dialog saves that page as a PDF.
+A denomination line is face times quantity, in cents, the same line
+the count row shows. The page does not post money. The signed
+close-out is still the End-of-Day Sign-Off, which reads the ledger
+on its own. See `docs/GENERATED_DOCUMENTS.md`.
+
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
 and remittance require customer due diligence above 5,000 PHP. A bill,
