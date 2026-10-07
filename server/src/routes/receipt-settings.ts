@@ -7,7 +7,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { emailTransportConfigured } from "../email.js";
-import { PRINTER_HELP } from "../receipts/printer-help.js";
+import { PRINTER_GUIDE, PRINTER_HELP } from "../receipts/printer-help.js";
 import {
   loadReceiptIdentity,
   parseReceiptPatch,
@@ -34,6 +34,7 @@ export function registerReceiptSettingsRoutes(app: FastifyInstance, db: Db) {
     return {
       ...receiptPayload(options, identity, emailTransportConfigured(), qrDataUrl),
       printerHelp: PRINTER_HELP,
+      printerGuide: PRINTER_GUIDE,
     };
   });
 
@@ -59,6 +60,7 @@ export function registerReceiptSettingsRoutes(app: FastifyInstance, db: Db) {
     return {
       ...receiptPayload(options, identity, emailTransportConfigured(), qrDataUrl),
       printerHelp: PRINTER_HELP,
+      printerGuide: PRINTER_GUIDE,
     };
   });
 }

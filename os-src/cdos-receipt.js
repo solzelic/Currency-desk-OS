@@ -7,28 +7,34 @@
   var PRINTER_KEY = "local_printer_v1";
   var FONT = '"IBM Plex Mono","Noto Sans","Noto Naskh Arabic","Noto Sans CJK JP","Noto Sans JP","Hiragino Sans","Yu Gothic","Segoe UI",sans-serif';
 
-  var PRINTER_HELP = [
-    "Browser print is the default. It works with any printer the computer already has, including a receipt printer installed as a normal printer.",
-    "USB or network receipt printer (Epson TM-T20, TM-m30, Star TSP100):",
-    "1. Install the printer with the maker's driver so it shows up as a printer on this computer.",
-    "2. Set the paper to 80mm (or 58mm if that is the roll in the printer).",
-    "3. In the print dialog, turn headers and footers off, and set margins to none.",
-    "4. Star printers must be set to ESC/POS mode. Many Star printers, including the TSP100, ship in StarPRNT mode. Change that in the printer's memory switch or in Star Quick Setup. This desk sends ESC/POS, not StarPRNT.",
-    "Office printer:",
-    "1. Choose A4 or Letter under Receipts.",
-    "2. Print from the dialog. To keep a file, choose Save as PDF in that same dialog.",
-    "iPhone or iPad:",
-    "Safari cannot open a USB or Bluetooth printer from a web page. Use AirPrint. Put the printer and the iPad on the same Wi-Fi, then tap Print and pick the printer.",
-    "Direct printing (Chrome or Edge on a computer):",
-    "1. Under Printer setup, choose USB, serial, or Bluetooth.",
-    "2. Pair the printer and print a test.",
-    "3. Epson, Bixolon, and other ESC/POS printers can use USB. The browser asks you to pick the device.",
-    "4. A serial cable uses the serial port, usually at 9600 baud.",
-    "5. Bluetooth here is Bluetooth Low Energy. Many receipt printers use classic Bluetooth (SPP), which a web page cannot open. Pair those in the operating system and print with the browser dialog, or use a serial port if the printer offers one.",
-    "6. The cash drawer plugs into the printer's DK port, not into the computer. Open cash drawer sends the ESC/POS pulse. Test it before a customer is at the counter.",
-    "This desk does not send raw bytes to a network port (TCP 9100). A page that could send bytes to any address could reach devices it should not. A print agent for port 9100 is not part of this desk.",
-    "If a direct print fails, the ordinary print dialog opens. The deal is already posted. A printer problem never undoes it.",
-  ].join("\n");
+  var PRINTER_GUIDE = {
+    steps: [
+      "Choose Browser print, or pair a USB receipt printer.",
+      "Install the printer on this computer.",
+      "Press Test print and turn headers and footers off.",
+      "Press Open cash drawer if a drawer is plugged into the printer.",
+    ],
+    worksWith: [
+      "Epson TM-T20III and TM-m30, by USB or the print dialog",
+      "Star TSP100 in ESC/POS mode",
+      "Print dialog, for a printer already installed on this computer",
+      "AirPrint on iPhone and iPad",
+    ],
+    unsupported: "Direct classic Bluetooth and direct network port 9100 are not supported.",
+    disclaimer: "Compatibility depends on the model, the driver, and the browser. Test it before a customer is here. A failed print never undoes a posted deal.",
+    more: [
+      "The paired printer stays on this device. It is not copied to the other tills.",
+      "Star TSP100 printers often ship in StarPRNT mode. Switch to ESC/POS in the printer memory or in Star Quick Setup. This desk sends ESC/POS, not StarPRNT.",
+      "Set the paper under Receipts. In the print dialog, set margins to none. To keep a file, choose Save as PDF.",
+      "Safari on iPhone and iPad cannot open USB or Bluetooth from this page. Use AirPrint on the same Wi-Fi.",
+      "Chrome and Edge can use USB, a serial port at 9600 baud, or Bluetooth Low Energy.",
+      "Classic Bluetooth (SPP) cannot be opened from this page. Pair that printer in the operating system and use the print dialog.",
+      "The cash drawer plugs into the printer, not the computer.",
+      "This desk does not send raw bytes to TCP 9100.",
+      "If a direct print fails, the print dialog opens.",
+    ],
+  };
+  var PRINTER_HELP = ["Works with"].concat(PRINTER_GUIDE.steps, PRINTER_GUIDE.worksWith, [PRINTER_GUIDE.unsupported, PRINTER_GUIDE.disclaimer], PRINTER_GUIDE.more).join("\n");
 
   function receiptClosing(settings) {
     var s = settings || {};
@@ -400,6 +406,7 @@
     receiptClosing: receiptClosing,
     receiptHeading: receiptHeading,
     PRINTER_HELP: PRINTER_HELP,
+    printerGuide: PRINTER_GUIDE,
     renderReceiptHtml: renderReceiptHtml,
     renderReceiptFragment: renderReceiptFragment,
     loadPrinter: loadPrinter,

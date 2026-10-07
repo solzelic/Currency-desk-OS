@@ -42,6 +42,28 @@
     return <div data-receipt-preview="1" style={{ background: "#fff", color: "#000", border: "1px solid #111", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
+  function MoreHelp({ children }) {
+    const [open, setOpen] = useState(false);
+    return <div className="mt-2">
+      <button type="button" data-more-help="1" aria-expanded={open ? "true" : "false"} onClick={() => setOpen(!open)} className="text-[12px]" style={{ background: "transparent", border: 0, padding: 0, color: CD.ink, textDecoration: "underline", cursor: "pointer" }}>{open ? "Hide help" : "More help"}</button>
+      {open && <div data-more-body="1" className="text-[12px] mt-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{children}</div>}
+    </div>;
+  }
+
+  function PrinterGuide({ guide }) {
+    const g = guide || window.CDOS.printerGuide;
+    if (!g) return null;
+    const list = { margin: "4px 0 8px", paddingLeft: 18 };
+    return <div data-printer-help="1" className="text-[13px]" style={{ color: CD.ink }}>
+      <ol style={list}>{g.steps.map((line) => <li key={line} style={{ margin: "2px 0" }}>{line}</li>)}</ol>
+      <div className="text-[11px]" style={{ color: CD.mute }}>Works with</div>
+      <ul style={list}>{g.worksWith.map((line) => <li key={line} style={{ margin: "2px 0" }}>{line}</li>)}</ul>
+      <div className="text-[12px] mb-2" style={{ color: CD.mute }}>{g.unsupported}</div>
+      <div className="text-[12px]" style={{ color: CD.mute }}>{g.disclaimer}</div>
+      <MoreHelp>{g.more.map((line) => <div key={line} style={{ marginBottom: 6 }}>{line}</div>)}</MoreHelp>
+    </div>;
+  }
+
   function ReceiptSettings({ settings, set, me }) {
     const owner = me && me.role === "Owner";
     const api = useDesk();
@@ -121,7 +143,11 @@
     };
     return <div data-screen="receipts">
       <div className="text-sm font-medium" style={{ color: CD.ink }}>Receipts</div>
-      <div className="text-[11px] mb-3" style={{ color: CD.mute }}>What the customer is handed. The preview is a sample, not a posted deal. Language follows the desk: {idn.language ? idn.language.label : "English"}.</div>
+      <div className="text-[12px]" style={{ color: CD.mute }}>Sample preview. It fills in from this desk.</div>
+      <MoreHelp>
+        <div>Language follows this desk: {idn.language ? idn.language.label : "English"}.</div>
+        <div>You can change the footer. The preview is not a posted deal.</div>
+      </MoreHelp>
       {!owner && <div className="text-[12px] mb-2" style={{ color: CD.mute }}>Only the owner can change receipt setup.</div>}
       {api.err && <div className="text-[12px] mb-2" style={{ color: CD.flag || "#8a1f1f" }}>{api.err}</div>}
       <div className="cd-receipt-layout">
@@ -174,7 +200,7 @@
     const [pref, setPref] = useState(() => window.CDOS.loadPrinter());
     const [note, setNote] = useState("");
     const caps = window.CDOS.directAvailable();
-    const help = (api.desk && api.desk.printerHelp) || window.CDOS.PRINTER_HELP;
+    const guide = (api.desk && api.desk.printerGuide) || window.CDOS.printerGuide;
     const owner = me && me.role === "Owner";
     const opt = (api.desk && api.desk.options) || {};
     const pick = (connection) => setPref(window.CDOS.savePrinter({ connection: connection }));
@@ -224,8 +250,7 @@
     };
     const btn = { border: `1px solid ${CD.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: CD.panel, color: CD.ink };
     return <div data-screen="printer">
-      <div className="text-sm font-medium" style={{ color: CD.ink }}>Printer setup</div>
-      <div className="text-[11px] mb-3" style={{ color: CD.mute }}>The paired printer stays on this device. It is not copied to the desk's other tills.</div>
+      <div className="text-sm font-medium mb-2" style={{ color: CD.ink }}>Printer setup</div>
       {!caps.usb && !caps.bluetooth && <div className="text-[12px] mb-2" style={{ color: CD.ink }}>This browser cannot open USB or Bluetooth from a page. Use AirPrint or the print dialog.</div>}
       <div className="flex flex-wrap gap-2 mb-3">
         {[["browser", "Browser print"], ["usb", "USB"], ["serial", "Serial"], ["bluetooth", "Bluetooth"]].map(([id, label]) => <button key={id} data-connection={id} onClick={() => pick(id)} style={Object.assign({}, btn, pref.connection === id ? { background: CD.ink, color: "var(--cd-on-ink)" } : {})}>{label}</button>)}
@@ -245,7 +270,7 @@
         <input type="checkbox" checked={opt.autoPrint === true} onChange={(e) => api.save({ autoPrint: e.target.checked })} /> Open the print dialog after a deal is posted
       </label>}
       {note && <div className="text-[12px] mb-2" style={{ color: CD.ink }}>{note}</div>}
-      <pre data-printer-help="1" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 12, lineHeight: 1.45, color: CD.text, margin: 0 }}>{help}</pre>
+      <PrinterGuide guide={guide} />
     </div>;
   }
 

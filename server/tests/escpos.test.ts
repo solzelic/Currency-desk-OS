@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { PRINTER_HELP } from "../src/receipts/printer-help.js";
+import { PRINTER_GUIDE, PRINTER_HELP } from "../src/receipts/printer-help.js";
 import { RECEIPT_CLOSING } from "../src/receipts/closing.js";
 
 const require = createRequire(import.meta.url);
@@ -65,14 +65,20 @@ describe("ESC/POS", () => {
 });
 
 describe("printer help", () => {
-  it("covers Epson, Star, Bixolon, Bluetooth, and AirPrint in the same words the desk shows", () => {
+  it("names the tested paths in the same words the desk shows, and does not claim every printer", () => {
     const js = readFileSync(new URL("../../os-src/cdos-receipt.js", import.meta.url), "utf8");
     for (const line of PRINTER_HELP.split("\n")) expect(js).toContain(line);
-    expect(PRINTER_HELP).toContain("Epson");
-    expect(PRINTER_HELP).toContain("Star");
-    expect(PRINTER_HELP).toContain("Bixolon");
-    expect(PRINTER_HELP).toContain("AirPrint");
+    expect(PRINTER_GUIDE.steps.length).toBeLessThanOrEqual(4);
+    for (const step of PRINTER_GUIDE.steps) expect(step.length).toBeLessThan(80);
+    expect(PRINTER_GUIDE.worksWith.join("\n")).toContain("Epson TM-T20III");
+    expect(PRINTER_GUIDE.worksWith.join("\n")).toContain("TM-m30");
+    expect(PRINTER_GUIDE.worksWith.join("\n")).toContain("Star TSP100");
+    expect(PRINTER_GUIDE.worksWith.join("\n")).toContain("AirPrint");
+    expect(PRINTER_GUIDE.unsupported).toContain("9100");
+    expect(PRINTER_GUIDE.unsupported).toContain("classic Bluetooth");
     expect(PRINTER_HELP).toContain("TCP 9100");
+    expect(PRINTER_HELP.toLowerCase()).not.toContain("all printers");
+    expect(PRINTER_HELP).not.toContain("Bixolon");
     expect(PRINTER_HELP).not.toMatch(/[\u2013\u2014]/);
   });
 });
