@@ -281,7 +281,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   supervises the business. Records are kept five years. `pack-gb-v1`
   is not edited. A desk already on it stays there until an
   administrator opts in. Posted deals keep the pack they were stamped
-  with. A number the desk types can still be stricter. The full
+  with. A number the desk types can still be stricter. It cannot
+  raise the £12,000 occasional floor or the £800 transfer floor. The full
   article table, the sources, and the gaps are `docs/UK_PACK.md`.
   Migration 035. 029, 031, 033, and 034 are already on main. 027 and
   030 are still open drafts, so 035 stays.

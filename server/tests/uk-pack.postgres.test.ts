@@ -328,11 +328,35 @@ postgres("United Kingdom pack v2", () => {
     await expect(send("desk-tr-over", "800.01")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
   });
 
-  it("lets a desk number of 20,000 loosen only the exchange", async () => {
+  it("keeps the £12,000 floor when the desk number is 20,000", async () => {
     await pool.query("UPDATE legal_entities SET id_threshold='20000.00' WHERE id=$1", [actor.legalEntityId]);
-    await exchange("loose-under", "19999.99");
-    await expect(exchange("loose-at", "20000.00")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
-    await expect(send("loose-tr", "800.01")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await exchange("floor-under", "11999.99");
+    await expect(exchange("floor-at", "12000.00")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await expect(exchange("floor-high", "19999.99")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const pack = await resolvePack(client, actor.legalEntityId);
+      await expect(requireIdentification(
+        client, actor, pack, new Decimal("12000.00"), "missing",
+        { kind: "virtual_currency", cash: true },
+      )).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+    await expect(thresholds.set(actor, { idThreshold: "20000.00" })).rejects.toMatchObject({
+      code: "IDENTIFICATION_FLOOR",
+    });
+    const stored = await pool.query("SELECT id_threshold FROM legal_entities WHERE id=$1", [actor.legalEntityId]);
+    expect(stored.rows[0].id_threshold).toBe("20000.00");
+  });
+
+  it("still requires identification at a tighter desk line of 5,000", async () => {
+    await pool.query("UPDATE legal_entities SET id_threshold='5000.00' WHERE id=$1", [actor.legalEntityId]);
+    await exchange("tight-under", "4999.99");
+    await expect(exchange("tight-walk", "11999.99")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await expect(exchange("tight-at", "5000.00")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
   });
 
   it("asks for purpose and source only when the desk has set its own reporting line", async () => {

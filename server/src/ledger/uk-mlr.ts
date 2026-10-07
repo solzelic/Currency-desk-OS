@@ -17,9 +17,10 @@
 
    Settings has one identification box. A number strictly below the
    statutory amount for that kind of deal tightens that kind, and
-   "at or above" is what the box means. A number at or above £12,000
-   replaces only the occasional-transaction line (foreign exchange
-   and virtual currency). It does not lift the transfer line.
+   "at or above" is what the box means. A number at or above the
+   statutory amount is ignored. £12,000 or more is a hard floor for
+   foreign exchange and virtual currency. More than £800 is a hard
+   floor for a transfer. Neither floor can be raised.
 
    There is no large-cash report. A blank reporting box does not
    demand purpose and source of funds on every deal. A number the
@@ -49,8 +50,6 @@ export type TransferDueDiligence = {
   comparator: UkComparator;
 };
 
-const OCCASIONAL: ReadonlySet<IdDealKind> = new Set(["fx", "virtual_currency"]);
-
 function positiveMoney(value: unknown): Decimal | null {
   if (value == null || value === "") return null;
   try {
@@ -71,20 +70,19 @@ function asComparator(value: unknown): UkComparator | null {
  *
  * `desk` null means the desk is following the pack. A non-positive
  * desk number is treated the same way: zero is not a line.
+ *
+ * A desk number raises nothing. It tightens a line only when it is
+ * strictly below that line. £12,000 or more for an occasional
+ * transaction, and more than £800 for a transfer, stay where the
+ * statute put them.
  */
 export function ukOperatingLine(
-  kind: IdDealKind,
+  _kind: IdDealKind,
   statutory: Decimal,
   statutoryComparator: UkComparator,
   desk: Decimal | null,
 ): UkLine {
-  if (desk === null || !desk.isFinite() || !desk.gt(0)) {
-    return { amount: statutory, comparator: statutoryComparator };
-  }
-  if (desk.lt(statutory)) {
-    return { amount: desk, comparator: "gte" };
-  }
-  if (OCCASIONAL.has(kind)) {
+  if (desk !== null && desk.isFinite() && desk.gt(0) && desk.lt(statutory)) {
     return { amount: desk, comparator: "gte" };
   }
   return { amount: statutory, comparator: statutoryComparator };

@@ -2,8 +2,9 @@
 
    £12,000 or more is an occasional transaction. More than £800 is a
    transfer of funds. A desk number tightens a line only when it is
-   strictly below that line, and a higher number does not lift the
-   transfer. The published v1 pack is not this file's subject. */
+   strictly below that line. A higher number does not lift the
+   occasional floor or the transfer. The published v1 pack is not
+   this file's subject. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
@@ -45,12 +46,15 @@ describe("pack-gb-v2 identification lines", () => {
     expect(ukAmountHits(gbp("499.99"), transfer)).toBe(false);
   });
 
-  it("does not let a looser exchange number lift the transfer", () => {
+  it("does not let a higher number lift the occasional floor or the transfer", () => {
     const fx = ukOperatingLine("virtual_currency", gbp("12000"), "gte", gbp("20000"));
+    const exact = ukOperatingLine("fx", gbp("12000"), "gte", gbp("12000"));
     const transfer = ukOperatingLine("remittance", gbp("800"), "gt", gbp("20000"));
-    expect(fx.amount.toFixed(2)).toBe("20000.00");
-    expect(ukAmountHits(gbp("19999.99"), fx)).toBe(false);
-    expect(ukAmountHits(gbp("20000.00"), fx)).toBe(true);
+    expect(fx.amount.toFixed(2)).toBe("12000.00");
+    expect(fx.comparator).toBe("gte");
+    expect(ukAmountHits(gbp("11999.99"), fx)).toBe(false);
+    expect(ukAmountHits(gbp("12000.00"), fx)).toBe(true);
+    expect(exact.amount.toFixed(2)).toBe("12000.00");
     expect(transfer.amount.toFixed(2)).toBe("800.00");
     expect(transfer.comparator).toBe("gt");
   });

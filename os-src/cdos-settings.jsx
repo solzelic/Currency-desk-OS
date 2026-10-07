@@ -259,7 +259,7 @@
           ? 'Only the owner can move a reporting line — it is the standing policy of the registered business, not a branch setting.'
           : e && e.code === 'NETWORK_ERROR'
             ? 'Could not reach the desk — nothing was changed.'
-            : 'Could not save that — nothing was changed.');
+            : (e && e.message) || 'Could not save that — nothing was changed.');
       } finally { setBusy(''); }
     };
 
@@ -349,7 +349,7 @@
         desc={euAmlr
           ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here."
           : ukV2
-          ? 'Foreign exchange and virtual currency: £12,000 or more, unless you set a different number. A number below £12,000 tightens the exchange. A number above £12,000 loosens only the exchange, and the desk says so. A transfer of funds stays at more than £800 unless your number is below £800.'
+          ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.'
           : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."}>
         {status === 'ready'
           ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}

@@ -24,7 +24,7 @@ Regulations page was up to date with changes known on or before
 
 | Rule | Source | What v2 does |
 | --- | --- | --- |
-| Occasional transaction of £12,000 or more: customer due diligence | MLR 2017 reg 27(2), sterling substituted by SI 2026/621 reg 14(b) | Foreign exchange and virtual currency: at or above £12,000 (`gte`). The single Settings identification box compares against this line. |
+| Occasional transaction of £12,000 or more: customer due diligence | MLR 2017 reg 27(2), sterling substituted by SI 2026/621 reg 14(b) | Foreign exchange and virtual currency: at or above £12,000 (`gte`). That amount is a floor. A desk number cannot raise it. |
 | Occasional transfer of funds exceeding £800: customer due diligence | MLR 2017 reg 27(1)(b), sterling substituted by SI 2026/621 reg 14(a) | Remittance and electronic transfer: more than £800 (`gt`). £800.00 does not trigger. £800.01 does. |
 | No large-cash / currency transaction report | No such duty for a bureau. The £10,000 cash figure is reg 27(3) for a high-value dealer, not this pack. | `report_threshold` is 0, which the reader treats as no amount. There is no `large_cash` report row. A following desk is not asked for purpose and source of funds on that account. |
 | Suspicious activity report, no amount, as soon as is practicable | Proceeds of Crime Act 2002 s.330, to a nominated officer or a person authorised by the Director General of the NCA | Report code SAR, name Suspicious Activity Report, kind suspicious, `window_kind` none, filing format NCA SAR Online. The deadline words live on `format_rules.deadline_label`. |
@@ -33,12 +33,13 @@ Regulations page was up to date with changes known on or before
 
 A desk may still type a lower identification number. That number means
 "at or above". It tightens a statutory line only when it is strictly
-below that line. A number at or above £12,000 replaces only the
-occasional-transaction line. It does not lift the transfer line. A
-number the desk types in the reporting box is its own policy. The law
-does not require that report. Posture against a pack figure of "no
-amount" stays unknown, because there is no statutory cash-report
-figure to sit above.
+below that line. A number at or above £12,000 does not raise the
+occasional-transaction floor, and Settings refuses to save it. A
+number that is not strictly below £800 does not raise the transfer
+line. A number the desk types in the reporting box is its own policy.
+The law does not require that report. Posture against a pack figure
+of "no amount" stays unknown, because there is no statutory
+cash-report figure to sit above.
 
 `aggregation_hours` is 24 because the column cannot be empty or zero.
 Nothing is added together. The SAR row says `window_kind` none. Linked

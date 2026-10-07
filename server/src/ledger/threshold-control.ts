@@ -16,6 +16,7 @@
    written here.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import Decimal from "decimal.js";
 import type pg from "pg";
 import { AU_V1_PACK_ID, AU_V2_PACK_ID } from "./australia-rules.js";
 import { EU_AMLR_PACK_ID, EU_V1_PACK_ID, resolvePack } from "./jurisdiction.js";
@@ -52,6 +53,36 @@ const LABEL: Readonly<Record<ThresholdField, string>> = {
   aggregationHours: "aggregation window (hours)",
   retentionYears: "record retention (years)",
 };
+
+/**
+ * pack-gb-v2. £12,000 or more is the occasional customer due
+ * diligence floor. Settings may store a lower number. It may not
+ * store a number that would raise that floor. The posting gate
+ * ignores a stored number at or above the statute as well, so a
+ * row written some other way still cannot lift it.
+ */
+function refuseUnitedKingdomFloor(
+  packId: string,
+  packLine: string,
+  idThreshold: ThresholdChange | undefined,
+): void {
+  if (packId !== UK_PACK_V2 || idThreshold == null) return;
+  let typed: Decimal;
+  let floor: Decimal;
+  try {
+    typed = new Decimal(String(idThreshold));
+    floor = new Decimal(packLine);
+  } catch {
+    return;
+  }
+  if (!typed.isFinite() || !floor.isFinite() || !typed.gt(0)) return;
+  if (typed.gte(floor)) {
+    throw new LedgerError(
+      "IDENTIFICATION_FLOOR",
+      "The occasional customer due diligence line stays at £12,000 or more. A number of £12,000 or higher is not saved. A lower number is this desk's own policy.",
+    );
+  }
+}
 
 const shown = (setting: { deskChoice: unknown; effective: unknown }) =>
   setting.deskChoice === null
@@ -114,7 +145,9 @@ export class ThresholdService {
          open a hole: the desk could name a huge identification line and
          then post under it. The editors on the screen are hidden for the
          same reason. */
-      requireInstalledPack(await resolvePack(client, actor.legalEntityId));
+      const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
+      refuseUnitedKingdomFloor(pack.packId, pack.idThreshold, changes.idThreshold);
       const before = await readDeskThresholds(client, actor.legalEntityId);
       const assignments = entries.map(
         ([field], index) => `${FIELDS[field]}=$${index + 2}`,
