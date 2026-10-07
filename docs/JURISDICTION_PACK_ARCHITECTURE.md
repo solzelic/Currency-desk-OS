@@ -9,6 +9,14 @@ onboarding installs the pack; and the posting path resolves home currency
 from it rather than assuming CAD. Generalized money columns are added and
 backfilled alongside the CAD-named ones — nothing is renamed or retired yet.
 
+India is `pack-in-v1` (migration 037). It is the first India pack.
+The posting gate for that pack reads the per-deal identification rows:
+walk-in foreign exchange at 50,000 INR or more, and every remittance or
+electronic transfer. India's cash report uses a calendar month, so
+`aggregation_hours` on that pack is NULL. NULL means there is no hour
+window. It is not 24. See `docs/INDIA_PACK.md`. 029, 031, 033, 034,
+035, and 036 are already on main, so 037 stays.
+
 A pack can also name an identification line per kind of deal
 (`jurisdiction_id_thresholds`: foreign exchange, remittance, electronic
 funds transfer, virtual currency). Null means that kind has no line.

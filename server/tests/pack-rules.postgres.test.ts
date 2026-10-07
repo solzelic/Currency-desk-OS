@@ -160,6 +160,10 @@ postgres("pack rule fields against real PostgreSQL", () => {
         WHERE t.pack_id LIKE 'pack-%-v1'
           AND t.pack_id <> 'pack-intl-v1'
           AND t.pack_id <> 'pack-rs-v1'
+          /* India does not copy one identification number onto every
+             kind of deal. Remittance is every deal. That split is
+             checked in india-pack.postgres.test.ts. */
+          AND t.pack_id <> 'pack-in-v1'
         ORDER BY t.pack_id, t.deal_kind`,
     );
     const kinds = ["eft", "fx", "remittance", "virtual_currency"];

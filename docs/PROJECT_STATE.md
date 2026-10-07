@@ -287,6 +287,27 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Migration 035. 029, 031, 033, and 034 are already on main. 027 and
   030 are still open drafts, so 035 stays.
 
+- **India pack** — a new desk that signs up as India opens on
+  `pack-in-v1` (migration 037). Home currency INR. Regulator string
+  `RBI / FIU-IND`. A cash transaction report flags a single cash deal
+  more than 10 lakh rupees, comparator `gt`. Exactly 10 lakh is not a
+  report. Connected cash in an Asia/Kolkata calendar month is not
+  summed yet. `indiaCtrFindings` can group one customer across that
+  month, and nothing calls it. The desk must check those deals. The
+  report is due by the 15th of the next month. Walk-in customer due
+  diligence is 50,000 rupees or more. A remittance or electronic transfer is every
+  deal. A suspicious report is stored as 7 business days, with no
+  holiday calendar. Cross-border wires (more than 5 lakh, monthly) and
+  counterfeit notes are catalogue rows. The till cannot mark a
+  counterfeit note and does not file to FINNET. Cash taken for a sale
+  of foreign exchange at 50,000 rupees or more is refused. The resident
+  USD 1,000 cash payout is not enforced. Records say 5 years. Existing
+  desks are not moved. The website does not call India Live. Detail:
+  `docs/INDIA_PACK.md`.
+  029, 031, 033, 034, 035, and 036 are already on main, so 037 stays.
+  027 and 030 are still open drafts.
+
+
 - **First-run tour** — the first time someone reaches the desk, a
   skippable walk-through points at the real screens. The tour does not
   open or raise a window. A step runs only when that window is already
@@ -365,6 +386,10 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-07**, India pack. A new India desk opens on `pack-in-v1`.
+A country with no pack is still not given Canada's. See
+`docs/INDIA_PACK.md`.
 
 **2026-10-07**, United Arab Emirates pack version 2. A new UAE desk
 opens on `pack-ae-v2`. A desk already on `pack-ae-v1` stays there

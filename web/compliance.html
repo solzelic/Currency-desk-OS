@@ -458,17 +458,18 @@ class Component extends DCLogic {
         {name:'AML/CTF program', spec:'Maintained with the desk. The annual compliance report is not prepared here.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'7-year record retention', spec:'Transaction and identity records kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
-    { id:'fiu-ind', tag:'FIU-IND', country:'India', regulator:'Financial Intelligence Unit — India', status:'Coming soon', kind:'soon', color:'#B4682A', soft:'rgba(180,104,42,0.11)', official:'https://fiuindia.gov.in', updated:'20 Jun 2026', retention:'5 years',
-      supervisor:'FIU-IND under the PMLA, with the RBI for authorised dealers',
-      deadline:'CTR and cross-border reports monthly · STR within 7 working days',
-      whatWeDo:'Planned for Indian authorised dealers and money changers: PMLA reporting to FIU-IND with RBI KYC norms applied at the counter, including monthly cash and cross-border summaries.',
-      how:[{n:'1',t:'KYC follows the RBI Master Direction at onboarding.'},{n:'2',t:'Cash and cross-border wires accumulate against monthly thresholds.'},{n:'3',t:'CTRs, CBWTRs and STRs are drafted for FIU-IND on schedule.'}],
+    { id:'fiu-ind', tag:'FIU-IND', country:'India', regulator:'RBI / FIU-IND', status:'Not live', kind:'soon', color:'#B4682A', soft:'rgba(180,104,42,0.11)', official:'https://fiuindia.gov.in', updated:'7 Oct 2026', retention:'5 years',
+      supervisor:'RBI for the licence. FIU-IND for the reports.',
+      deadline:'CTR and CBWTR by the 15th of the next month. STR within 7 working days. The desk does not file them.',
+      whatWeDo:'A new India desk opens on these rules. A single cash deal over 10 lakh INR is flagged. Connected cash deals in a calendar month are not summed yet, so the desk must check them. Nothing is sent to FIU-IND. Not live.',
+      how:[{n:'1',t:'Walk-in customer due diligence at 50,000 INR or more, and on every international money transfer.'},{n:'2',t:'A single cash deal over 10 lakh INR is flagged. Connected deals in a calendar month are not summed yet. The desk must check them. The desk does not send a CTR.'},{n:'3',t:'An STR is due within 7 working days of concluding suspicion. Filing to FIU-IND is not live.'}],
       rules:[
-        {name:'CTR — Cash Transaction Report', spec:'Cash at or above ₹10 lakh in a month.', tag:'Planned', cat:'threshold', when:'Rolling'},
-        {name:'STR — Suspicious Transaction Report', spec:'Assisted drafting under the PMLA.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'CBWTR — Cross-border wires', spec:'Inbound and outbound transfer reporting.', tag:'Planned', cat:'transfer', when:'On transfer'},
-        {name:'RBI KYC norms', spec:'Master Direction checks at onboarding.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'5-year record retention', spec:'PMLA retention on every client file.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'CTR, Cash Transaction Report', spec:'A single cash deal over ₹10 lakh is flagged. Connected deals in a calendar month are not summed yet. The desk must check them.', tag:'On the desk', cat:'threshold', when:'Single deal'},
+        {name:'STR, Suspicious Transaction Report', spec:'Within 7 working days of concluding suspicion. The desk does not file it.', tag:'On the desk', cat:'suspicious', when:'On review'},
+        {name:'CBWTR, cross-border wires', spec:'Wires more than ₹5 lakh in a month. The desk does not file them.', tag:'Listed', cat:'transfer', when:'Calendar month'},
+        {name:'CCR, counterfeit notes', spec:'Listed only. The till cannot flag a counterfeit note.', tag:'Gap', cat:'threshold', when:'Not detected'},
+        {name:'Walk-in KYC', spec:'At ₹50,000 or more, and on every international money transfer.', tag:'On the desk', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'PMLA section 12. The product does not delete records.', tag:'On the desk', cat:'records', when:'After the deal'}
       ] },
     { id:'cbuae', tag:'CBUAE', country:'UAE', regulator:'Central Bank of the UAE', status:'Coming soon', kind:'soon', color:'#6F5293', soft:'rgba(111,82,147,0.11)', official:'https://www.centralbank.ae', updated:'7 Oct 2026', retention:'5 years',
       supervisor:'CBUAE, with the UAE Financial Intelligence Unit via goAML',

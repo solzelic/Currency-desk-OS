@@ -69,6 +69,7 @@ import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.j
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
 import {
+  assertIndiaPurpose,
   LedgerError,
   requireIdentification,
   requireInstalledPack,
@@ -675,6 +676,13 @@ export class ObligationService {
         );
         if (gap) throw new LedgerError("BENEFICIARY_RECORD", gap);
       }
+      assertIndiaPurpose(
+        pack,
+        amountHome,
+        spec.dealKind,
+        spec.capture.purpose,
+        spec.capture.sourceOfFunds,
+      );
       /* Same as an exchange: the 2027 EU pack has no amount report, so
          a missing reporting line must not demand purpose on every transfer. */
       if (pack.packId !== EU_AMLR_PACK_ID) {

@@ -842,6 +842,8 @@
               : <>Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.{' '}</>}
             {limit.amount == null
               ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.</>
+              : regime.windowKind === 'calendar_month'
+              ? <>{regime.largeLabel || 'Cash reports'} flag a single cash amount more than {limit.label}. Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.</>
               : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
             {' '}This pack is a working summary; verify each filing in the official portal.
           </div>

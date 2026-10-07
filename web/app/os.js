@@ -677,7 +677,13 @@
      turns that into `false` has quietly cleared a deal nobody checked. */
   const overReportingLimit = (homeAmount, settings) => {
     const limit = reportingLimit(settings);
-    return limit.amount == null ? null : (+homeAmount || 0) >= limit.amount;
+    if (limit.amount == null) return null;
+    const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const amount = +homeAmount || 0;
+    /* India cash reports are more than the line. Exactly the line is
+       not a report. Every other pack stays at or above. */
+    if (regime && regime.comparator === 'gt') return amount > limit.amount;
+    return amount >= limit.amount;
   };
   /* The line at which this desk asks for identification — the other half
      of the pair, and the one the LEDGER refuses a deal at. Same
@@ -3086,15 +3092,18 @@
         };
         return;
       }
-      const single = TH != null && cashForReport(row) >= TH;
+      const monthCash = regime && regime.windowKind === 'calendar_month';
+      const above = regime && regime.comparator === 'gt' ? n => n > TH : n => n >= TH;
+      const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
-      const str = TH != null && !single && agg >= TH;
+      const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
-      // A pack whose large-cash window is 'none' does not add deals together.
+      // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
+      // A pack whose large-cash window is 'none', and a calendar-month pack
+      // (India), do not use this clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = aggregate ? regime.aggHours || 24 : null;
+      const hours = monthCash || !aggregate ? null : regime.aggHours || 24;
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
         const h = (end - dt(o)) / 3600000;
         return h >= 0 && h <= hours;
@@ -3103,7 +3112,7 @@
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
       const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
-      const agg24 = hours != null && TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
@@ -5202,6 +5211,9 @@
     const currency = desk && desk.currency || settings.baseCurrency || '';
     const authority = baselineNow ? 'the international baseline' : desk && desk.regulator || packNow && packNow.regulator || 'your regulator';
     const disabled = status !== 'ready' || !!busy;
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
+    const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
 
     /* Hand a line back to the pack. Offered only where the desk has taken
        one, because "follow the regulator" is not a change a desk already
@@ -5295,7 +5307,7 @@
       title: /*#__PURE__*/React.createElement("span", {
         className: "flex items-center gap-1.5"
       }, ukV2 || aeV2 ? 'Your own reporting line' : 'Large cash / reportable threshold', " ", reportTip),
-      desc: ukV2 ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : aeV2 ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
+      desc: ukV2 ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : aeV2 ? 'UAE exchange houses do not file a cash threshold report. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.' : moreThan ? 'Deals more than this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.' : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'
     }, status === 'ready' ? /*#__PURE__*/React.createElement(ThresholdInput, {
       value: line('reportThreshold') && line('reportThreshold').effective,
       currency: currency,
@@ -5319,7 +5331,7 @@
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), /*#__PURE__*/React.createElement(Row, {
+    }), monthCash ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : aeV2 ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
@@ -5337,9 +5349,9 @@
       value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    })), /*#__PURE__*/React.createElement(PostureNote, {
+    })), monthCash ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), /*#__PURE__*/React.createElement(Release, {
+    }), monthCash ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -10233,7 +10245,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, "Your jurisdiction follows the operating country set in ", /*#__PURE__*/React.createElement("b", null, "Localization"), " \u2014 switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.")), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -10269,7 +10281,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
         key: `${pack && pack.packId || 'pack'}-${packRev}`
-      }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' ? null : /*#__PURE__*/React.createElement(Row, {
+      }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
         desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
       }, isOwner ? /*#__PURE__*/React.createElement("input", {
@@ -10287,7 +10299,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), paused ? null : /*#__PURE__*/React.createElement(Row, {
+      }, settings.aggWindowStart || '00:00')), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
+        title: "Cash report window",
+        desc: "A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND."
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, "Calendar month")), paused ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Structuring watch window",
         desc: "Longer window scanned for patterns of just-under-threshold deals."
       }, /*#__PURE__*/React.createElement("select", {
@@ -10444,7 +10464,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
@@ -12603,7 +12623,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.aggHours}h aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       onClick: () => onOpenApp && onOpenApp('compliance'),
       className: "text-left",
@@ -40798,8 +40818,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const large = reports.find(r => r && r.kind === 'large_cash');
     /* Australia does not add threshold transactions together. The pack
        column still holds 24 because that column cannot be empty. The
-       report row is the rule, and the sentence has to say so. */
-    const aggregation = large && large.windowKind === 'none' ? {
+       report row is the rule, and the sentence has to say so.
+       India files a calendar month, not a count of hours. Naming a
+       missing hour figure "Aggregation window" would tell the desk the
+       rule is 24 hours. The month lives on the cash report instead. */
+    const monthCash = !!(large && large.windowKind === 'calendar_month');
+    const aggregation = monthCash ? null : large && large.windowKind === 'none' ? {
       field: 'aggHours',
       label: 'Aggregation window',
       standing: 'following',
@@ -40944,10 +40968,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
       /* A 'none' window means do not add deals together. Falling back to
          24 here is how a country that forbids aggregation was shown a
-         24 hour rule. */
+         24 hour rule. A calendar month is not an hour count either.
+         India keeps that month on windowKind and leaves aggHours empty. */
       aggregate: !noCashWindow,
       largeDirection: large && large.direction || 'in',
-      aggHours: noCashWindow ? null : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      windowKind: large && large.windowKind || null,
+      comparator: large && large.comparator || 'gte',
+      aggHours: noCashWindow || large && large.windowKind === 'calendar_month' ? null : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -41254,6 +41281,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   // line; conductor and beneficiary only). A policy with includeAll
   // keeps every amount, and uses the axes the pack named.
   function aggregateEvents(events, regime, settings, kind, policy) {
+    /* A calendar-month pack is not this 24-hour engine. A single cash
+       amount over the line is flagged on the deal. Connected deals in
+       the month are not summed here. indiaCtrFindings can group them,
+       and nothing calls it yet. */
+    if (regime && regime.windowKind === 'calendar_month') return [];
     const TH = regime.threshold,
       H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
@@ -43646,9 +43678,23 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, noLargeCashCopy(regime), " Deals are not added together to reach one."));
     }
+    const monthCash = regime.windowKind === 'calendar_month';
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
+    }, monthCash ? /*#__PURE__*/React.createElement("div", {
+      className: "mb-3",
+      "data-testid": "india-cash-month"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Connected cash is not summed yet"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, "A single cash deal over the reporting line is flagged. Connected cash deals in a calendar month are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.")) : /*#__PURE__*/React.createElement("div", {
       className: "mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold flex items-center gap-1.5",
@@ -43906,7 +43952,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: CD.green
     }), /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[13px]"
-    }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
+    }, regime.threshold == null ? noLargeCashCopy(regime) : monthCash ? /*#__PURE__*/React.createElement(React.Fragment, null, "No calendar-month total is shown on this screen. A single cash amount more than ", fmt(regime.threshold, regime.currency), " is still flagged on the deal.") : /*#__PURE__*/React.createElement(React.Fragment, null, "No ", regime.aggHours, "-hour aggregates over ", fmt(regime.threshold, regime.currency), ".")))));
   }
 
   /* ===================== STRUCTURING WATCH ===================== */
@@ -45270,7 +45316,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', screenFlagged], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', 'Filings', 'filetext', draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -50787,7 +50833,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), ' ', "This pack is a working summary; verify each filing in the official portal."), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to
