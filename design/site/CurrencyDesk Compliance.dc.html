@@ -383,6 +383,18 @@ class Component extends DCLogic {
         {name:'5-year record retention', spec:'Every ticket, ID and receipt, immutable.', tag:'Live', cat:'records', when:'After the deal'},
         {name:'Sanctions and ministerial directives', spec:'The desk keeps a free-text note. Russia, Iran, and DPRK directives are not structured rules in the pack.', tag:'Notes', cat:'screening', when:'A note'}
       ] },
+    { id:'apml', tag:'APML', country:'Serbia', regulator:'National Bank of Serbia, and the Administration for the Prevention of Money Laundering', status:'Available', kind:'live', color:'#1F4E79', soft:'rgba(31,78,121,0.1)', official:'https://www.apml.gov.rs', updated:'07 Oct 2026', retention:'5 years, then delete',
+      supervisor:'The National Bank of Serbia supervises exchange offices. APML is the financial intelligence unit.',
+      deadline:'Cash of 15,000 EUR or more: immediately, and at latest within 3 days. A teller can stop a suspicious attempt and save a draft.',
+      whatWeDo:'A new Serbian exchange desk opens on these rules. Customer due diligence is 5,000 EUR for an exchange, and over 1,000 EUR for a transfer, once the National Bank of Serbia middle rate for that day is on file. Without that rate the desk does not treat the euro line as met. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it, and it does not spot suspicion on its own. Records are kept five years and are not extended automatically.',
+      how:[{n:'1',t:'You take the deal at the till. The desk asks for ID when the euro line, converted to dinars, is met.'},{n:'2',t:'A sale of 50 or 100 US dollar notes also records the serial numbers.'},{n:'3',t:'The cash report is prepared for you to send to APML. The desk does not file it for you.'}],
+      rules:[
+        {name:'Exchange identification', spec:'5,000 EUR or more, before the deal, once the NBS middle rate for the day is on file.', tag:'Assisted', cat:'threshold', when:'At the till'},
+        {name:'Transfer identification', spec:'A transfer over 1,000 EUR, once that NBS rate is on file.', tag:'Assisted', cat:'transfer', when:'On transfer'},
+        {name:'Cash transaction report', spec:'Cash of 15,000 EUR or more, to APML within 3 days.', tag:'Prepared', cat:'threshold', when:'At the till'},
+        {name:'Suspicious transaction report', spec:'The teller can stop the attempt and save a draft. The desk does not send it to APML.', tag:'Assisted', cat:'suspicious', when:'When the teller stops the attempt'},
+        {name:'5-year records', spec:'Kept five years, then deleted. An authority may extend.', tag:'On record', cat:'records', when:'After the deal'}
+      ] },
     { id:'fincen', tag:'FinCEN', country:'United States', regulator:'Financial Crimes Enforcement Network', status:'Coming soon', kind:'soon', color:'#5B6B78', soft:'rgba(91,107,120,0.12)', official:'https://www.fincen.gov', updated:'18 Jul 2026', retention:'5 years',
       supervisor:'FinCEN and OFAC, plus state money-transmitter regulators',
       deadline:'CTR within 15 days · SAR within 30 days',
@@ -602,11 +614,12 @@ class Component extends DCLogic {
     const statusStyle = (kind) => kind === 'live'
       ? 'display:inline-flex;align-items:center;gap:5px;font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--green-deep);background:rgba(29,107,69,0.14);border-radius:999px;padding:4px 10px;'
       : 'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);border-radius:999px;padding:4px 10px;';
-    const live = this.JURS.filter(j => j.kind === 'live').length;
+    const trading = this.JURS.filter(j => j.status === 'Live').length;
+    const available = this.JURS.filter(j => j.kind === 'live' && j.status !== 'Live').length;
     const reports = this.JURS.reduce((n, j) => n + j.rules.length, 0);
     return {
-      lastReviewed: '24 July 2026',
-      coverageNote: live + ' live · ' + (this.JURS.length - live) + ' on the roadmap',
+      lastReviewed: '07 October 2026',
+      coverageNote: trading + ' live · ' + available + ' available · ' + (this.JURS.length - trading - available) + ' on the roadmap',
       howReveal: true,
       howSteps: [
         { reveal: '0.04', n: '01', icon: this.ic('institution', 19, '#1D6B45', 2), title: 'We read your licence', body: 'Tell us where you are registered and which permissions you hold. That decides the rulebook — not a setting you have to maintain.' },
@@ -619,7 +632,7 @@ class Component extends DCLogic {
         style: 'font-family:var(--m);font-size:11px;letter-spacing:0.04em;border-radius:999px;padding:9px 15px;white-space:nowrap;' + (j.kind === 'live' ? 'color:var(--green-deep);background:var(--green-soft);border:1px solid rgba(29,107,69,0.22);' : 'color:var(--ink);background:var(--soft);border:1px solid var(--line);')
       })).concat([{ href: '#kyc', label: 'Client KYC', style: 'font-family:var(--m);font-size:11px;letter-spacing:0.04em;border-radius:999px;padding:9px 15px;white-space:nowrap;color:var(--ink);background:var(--soft);border:1px solid var(--line);' }]),
       coverage: this.JURS.map(j => ({
-        href: '#' + j.id, country: j.country, tag: j.tag, count: j.rules.length + ' reports', retention: j.retention, status: j.kind === 'live' ? 'Live' : 'Soon',
+        href: '#' + j.id, country: j.country, tag: j.tag, count: j.rules.length + ' reports', retention: j.retention, status: j.kind === 'live' ? j.status : 'Soon',
         rowStyle: 'display:grid;grid-template-columns:1.3fr 1.5fr 0.8fr 0.8fr 0.9fr;gap:12px;align-items:center;padding:13px 20px;border-bottom:1px solid var(--hair);color:var(--ink);transition:background .2s;',
         dotStyle: 'width:7px;height:7px;border-radius:50%;flex:none;background:' + (j.kind === 'live' ? 'var(--green-bright)' : 'rgba(23,20,15,0.18)') + ';',
         statusStyle: j.kind === 'live'

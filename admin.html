@@ -519,7 +519,8 @@ function CreateModal({ onClose, onCreated }) {
       <div style={{ display: 'flex', gap: 10 }}>
         <div style={{ flex: 1 }}><span style={lbl}>Licensed in</span><select style={inSty} value={f.country} onChange={e => set('country', e.target.value)}>
           <option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option><option value="AE">United Arab Emirates</option><option value="EU">European Union</option>
+          <option value="AU">Australia</option><option value="AE">United Arab Emirates</option>          <option value="EU">European Union</option>
+          <option value="RS">Serbia</option>
           <option value="XX">Somewhere else</option></select></div>
         <div style={{ flex: 1 }}><span style={lbl}>Website (optional)</span><input style={inSty} value={f.website} onChange={e => set('website', e.target.value)} placeholder="maplefx.ca" /></div>
       </div>

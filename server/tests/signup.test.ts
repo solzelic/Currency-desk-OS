@@ -114,6 +114,12 @@ describe("signup", () => {
       },
     });
     expect(su.statusCode).toBe(201);
+    await handle.db.insert(schema.marketRates).values({
+      id: "snap-signup-rs",
+      provider: "test",
+      mids: { USD: 1.36, EUR: 1.25, GBP: 1.7, RSD: 0.0125 },
+      fetchedAt: new Date(),
+    });
     const ok = await app.inject({
       method: "POST",
       url: "/api/signup/verify",
@@ -123,9 +129,10 @@ describe("signup", () => {
     const le = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-beogradfx")))[0]!;
     expect(le.jurisdiction).toBe("");
     expect(le.jurisdiction).not.toBe("FINTRAC");
-    expect(le.jurisdictionPackId).toBe("pack-intl-v1");
-    expect(le.homeCurrency).toBe("USD");
+    expect(le.jurisdictionPackId).toBe("pack-rs-v1");
+    expect(le.homeCurrency).toBe("RSD");
     expect(le.homeCurrency).not.toBe("CAD");
+    expect(le.homeCurrency).not.toBe("USD");
     const boards = await handle.db.select().from(schema.rateBoards).where(eq(schema.rateBoards.branchId, "br-beogradfx-main"));
     expect(boards).toHaveLength(1);
     expect(boards[0]!.boardRows.CAD).toBeUndefined();

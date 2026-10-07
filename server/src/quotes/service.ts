@@ -577,7 +577,21 @@ export class QuoteService {
       client.release();
     }
   }
-  async post(actor: LedgerActor, quoteId: string, idempotencyKey: string, purpose: string, sourceOfFunds: string, thirdParty = false, thirdPartyName?: string) {
+  async post(
+    actor: LedgerActor,
+    quoteId: string,
+    idempotencyKey: string,
+    purpose: string,
+    sourceOfFunds: string,
+    thirdParty = false,
+    thirdPartyName?: string,
+    capture?: {
+      identityNumber?: string;
+      usdLargeNotes?: boolean;
+      usdNoteSerials?: string[];
+      reportSuspicion?: boolean;
+    },
+  ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
     const validatedSourceOfFunds = complianceFact(sourceOfFunds, "Source of funds");
     const validatedThirdPartyName = thirdParty
@@ -638,6 +652,10 @@ export class QuoteService {
           sourceOfFunds: validatedSourceOfFunds,
           thirdParty,
           thirdPartyName: validatedThirdPartyName,
+          identityNumber: capture?.identityNumber,
+          usdLargeNotes: capture?.usdLargeNotes,
+          usdNoteSerials: capture?.usdNoteSerials,
+          reportSuspicion: capture?.reportSuspicion,
         } as FrozenQuote,
         idempotencyKey,
       );

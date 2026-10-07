@@ -1,22 +1,35 @@
 /* The international baseline states its identification lines in US dollars.
-   A country pack already states them in the currency the book is kept in.
-   This file turns a USD line into that home currency, using the newest
-   market snapshot — the same CAD-per-unit table the rate sync stores —
-   and never a mid the shop typed onto its board. */
+   Those convert at the newest market snapshot, the CAD-per-unit table the
+   rate sync stores, never a mid the shop typed onto its board. A missing
+   or stale snapshot fails closed.
+
+   Serbia states its lines in euros on a dinar book. That conversion is
+   the National Bank of Serbia official middle rate for today in Belgrade
+   (`nbs-middle.ts`). It does not read `market_rates`. No row for today
+   means the euro line is unpriced. */
 import Decimal from "decimal.js";
 import type pg from "pg";
 import type { IdDealKind, JurisdictionPack } from "./jurisdiction.js";
+import { nbsMiddleHomePerUnit } from "./nbs-middle.js";
+import { SERBIA_PACK_ID } from "./serbia.js";
+
+export type ComplianceRateSource = "nbs_middle" | "none";
 
 export type ComplianceStamp = {
   /** Home-currency units per 1 unit of the threshold currency. Null when
-      no fresh market rate was available. "1" when no conversion was needed. */
+      no usable rate was available. "1" when no conversion was needed. */
   rate: string | null;
-  /** When the market snapshot was fetched. Null when none was used. */
+  /** When that rate was stored or fetched. Null when none was used. */
   rateAt: Date | null;
+  /** nbs_middle when a Serbia line was priced from the NBS table.
+      none when that line was needed and no rate for today was on file.
+      Null when this stamp did not use the Serbia converter. */
+  source: ComplianceRateSource | null;
 };
 
-const IDENTITY: ComplianceStamp = { rate: "1.000000000000", rateAt: null };
-const UNPRICED: ComplianceStamp = { rate: null, rateAt: null };
+const IDENTITY: ComplianceStamp = { rate: "1.000000000000", rateAt: null, source: null };
+const UNPRICED: ComplianceStamp = { rate: null, rateAt: null, source: null };
+const UNPRICED_NBS: ComplianceStamp = { rate: null, rateAt: null, source: "none" };
 
 export function idKindForDeal(dealKind: string): IdDealKind {
   if (
@@ -165,5 +178,91 @@ export async function baselineIdentification(
     block: hits(amountHome, roundDownCents(threshold.mul(market.rate)), comparator),
     rate: market.rate.toDecimalPlaces(12).toFixed(12),
     rateAt: market.rateAt,
+    source: null,
+  };
+}
+
+export type ForeignLine = ComplianceStamp & {
+  /** This function decided. False means the line is in home currency,
+      or the table is not on this database, and the caller keeps the
+      single home-currency column. Canada stays on that column. */
+  decided: boolean;
+  /** The line is met, or the rate is missing so an unverified customer
+      is identified. Meaningful only when decided is true. */
+  block: boolean;
+};
+
+const UNDECIDED: ForeignLine = { block: false, decided: false, ...IDENTITY };
+
+/**
+ * A country line written in a currency other than the book.
+ *
+ * Home-currency lines return undecided so Canada keeps the comparison
+ * it already had. A euro line on the Serbia pack is converted at the
+ * NBS middle rate for today in Belgrade, with the comparator stored on
+ * the row. No row for that day means identify, and the stamp says the
+ * source was none. This function does not read market_rates.
+ */
+export async function foreignCurrencyIdentification(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+  amountHome: Decimal,
+  dealKind: string,
+  cash: boolean,
+): Promise<ForeignLine> {
+  if (!pack.packId || pack.baseline) return UNDECIDED;
+  let row: Record<string, unknown> | undefined;
+  try {
+    const found = await client.query(
+      `SELECT threshold, currency, comparator, cash_only
+         FROM jurisdiction_id_thresholds
+        WHERE pack_id = $1 AND deal_kind = $2`,
+      [pack.packId, idKindForDeal(dealKind)],
+    );
+    row = found.rows[0];
+  } catch (error) {
+    if (!missingTable(error)) throw error;
+    return UNDECIDED;
+  }
+  if (!row) return UNDECIDED;
+  const currency = String(row.currency ?? "").trim().toUpperCase();
+  const home = pack.homeCurrency.trim().toUpperCase();
+  if (!currency || currency === home) return UNDECIDED;
+  if (row.cash_only === true && !cash) {
+    return { block: false, decided: true, ...IDENTITY };
+  }
+  const raw = row.threshold;
+  if (raw == null || raw === "") return { block: true, decided: true, ...UNPRICED_NBS };
+  let threshold: Decimal;
+  try {
+    threshold = new Decimal(String(raw));
+  } catch {
+    return { block: true, decided: true, ...UNPRICED_NBS };
+  }
+  if (!threshold.isFinite() || threshold.isNegative()) {
+    return { block: true, decided: true, ...UNPRICED_NBS };
+  }
+  const comparator = String(row.comparator || "gte");
+  if (threshold.isZero()) {
+    return {
+      block: hits(amountHome, new Decimal(0), comparator),
+      decided: true,
+      ...IDENTITY,
+    };
+  }
+  /* Only the Serbia pack has a statutory converter, and it is the NBS
+     middle rate. Any other foreign country line has none on file, so
+     it fails closed rather than borrowing the market snapshot. */
+  if (pack.packId !== SERBIA_PACK_ID) {
+    return { block: true, decided: true, ...UNPRICED_NBS };
+  }
+  const middle = await nbsMiddleHomePerUnit(client, currency, home);
+  if (!middle) return { block: true, decided: true, ...UNPRICED_NBS };
+  return {
+    block: hits(amountHome, roundDownCents(threshold.mul(middle.rate)), comparator),
+    decided: true,
+    rate: middle.rate.toDecimalPlaces(12).toFixed(12),
+    rateAt: middle.rateAt,
+    source: "nbs_middle",
   };
 }

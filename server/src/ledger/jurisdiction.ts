@@ -235,6 +235,7 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   EU: EU_AMLR_PACK_ID,
   AU: "pack-au-v1",
   AE: "pack-ae-v1",
+  RS: "pack-rs-v1",
 };
 
 /* Canada and the 2027 European Union pack are version 2.
@@ -261,6 +262,9 @@ const COUNTRY_CODE: Readonly<Record<string, string>> = {
   AE: "AE",
   UAE: "AE",
   "UNITED ARAB EMIRATES": "AE",
+  RS: "RS",
+  SERBIA: "RS",
+  "REPUBLIC OF SERBIA": "RS",
 };
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
@@ -272,6 +276,15 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   [EU_AMLR_PACK_ID]: "EUR",
   "pack-au-v1": "AUD",
   "pack-ae-v1": "AED",
+  "pack-rs-v1": "RSD",
+};
+
+/* The currency a pack's thresholds are written in, when that is not
+   the currency the book is kept in. Serbia's lines are euros. Every
+   other seeded pack writes them in the home currency and is absent
+   here, so a missing entry means "same as the book". */
+export const REPORT_CURRENCY_FOR_PACK: Readonly<Record<string, string>> = {
+  "pack-rs-v1": "EUR",
 };
 
 /**

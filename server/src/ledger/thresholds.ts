@@ -39,6 +39,8 @@
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { marketHomePerUnit, roundDownCents } from "./compliance-gate.js";
+import { nbsMiddleHomePerUnit } from "./nbs-middle.js";
+import { SERBIA_PACK_ID } from "./serbia.js";
 import { resolvePack, type JurisdictionPack } from "./jurisdiction.js";
 
 /** Where a desk's own number stands against what its regulator requires. */
@@ -80,8 +82,10 @@ export type DeskThresholds = {
   /** The remittance identification line, in home currency.
       On the baseline this is 1,000 USD converted at the market snapshot,
       rounded down to the cent, and null when that rate is stale or missing.
-      A country pack already states it in home currency. The desk's own
-      identification line is `idThreshold`, not this one. */
+      On Serbia it is 1,000 EUR converted at the NBS middle rate for today
+      in Belgrade, and null when that rate is not on file. A country pack
+      that already states the line in home currency does not convert.
+      The desk's own identification line is `idThreshold`, not this one. */
   remittanceIdThreshold: ThresholdSetting<string>;
   /** the window several small deals by one person are summed over */
   aggregationHours: ThresholdSetting<number>;
@@ -167,9 +171,10 @@ const asCountSetting = (
 });
 
 /* The pack's remittance identification line, in the desk's home currency.
-   Same conversion as the cash-exchange line: a USD figure times the newest
-   market snapshot, rounded down to the cent. No fresh rate, no line.
-   A line already in home currency does not need a snapshot. */
+   A USD figure on the baseline uses the newest market snapshot. A euro
+   figure on the Serbia pack uses the NBS middle rate for today in
+   Belgrade. No usable rate, no line. A line already in home currency
+   does not need one. */
 async function remittanceLine(
   client: pg.PoolClient,
   pack: JurisdictionPack,
@@ -201,7 +206,20 @@ async function remittanceLine(
   const home = pack.homeCurrency.trim().toUpperCase();
   let converted: Decimal | null = null;
   if (currency && currency === home) converted = amount;
-  else if (currency === "USD" && market) converted = roundDownCents(amount.mul(market.rate));
+  else if (currency) {
+    /* The report-currency rate is the right one when the line is written
+       in that same currency. Serbia's rate is the NBS middle rate passed
+       in as `market`. Any other foreign line is priced on its own, and a
+       missing rate leaves the line unset. A Serbia line never falls
+       through to the market snapshot. */
+    const priced =
+      market && currency === pack.reportCurrency.trim().toUpperCase()
+        ? market
+        : pack.packId === SERBIA_PACK_ID
+          ? await nbsMiddleHomePerUnit(client, currency, home)
+          : await marketHomePerUnit(client, currency, home);
+    if (priced) converted = roundDownCents(amount.mul(priced.rate));
+  }
   if (!converted) return unset;
   const value = converted.toFixed(2);
   return { effective: value, deskChoice: null, packValue: value, posture: "following" };
@@ -258,22 +276,28 @@ export async function readDeskThresholds(
     [legalEntityId],
   );
   const row = found.rows[0] ?? {};
-  /* A baseline pack states its dollar lines in the desk's currency, at
-     the same market rate the posting gate uses, rounded down to the cent.
-     No fresh rate: the lines are unset, and identification is required. */
-  const baselineForeign =
-    pack.baseline && pack.homeCurrency.trim().toUpperCase() !== "USD";
-  const market = baselineForeign
-    ? await marketHomePerUnit(client, "USD", pack.homeCurrency)
+  /* A line written in another currency is stated in the desk's currency
+     at the same rate the posting gate uses, rounded down to the cent.
+     The baseline's US dollars use the market snapshot. Serbia's euros
+     use the NBS middle rate for today in Belgrade, and never the market
+     snapshot. No usable rate: the lines are unset, and identification
+     is required. A line already in the home currency is not converted. */
+  const home = pack.homeCurrency.trim().toUpperCase();
+  const stated = pack.reportCurrency.trim().toUpperCase();
+  const needsConversion = Boolean(stated) && stated !== home;
+  const market = needsConversion
+    ? pack.packId === SERBIA_PACK_ID
+      ? await nbsMiddleHomePerUnit(client, stated, home)
+      : await marketHomePerUnit(client, stated, home)
     : { rate: new Decimal(1), rateAt: null };
   const packMoney = (raw: unknown): Decimal | null => {
     const amount = money(raw);
-    if (!baselineForeign) return amount;
+    if (!needsConversion) return amount;
     if (!market || !amount) return null;
     return roundDownCents(amount.mul(market.rate));
   };
   const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
-    baselineForeign && !market
+    needsConversion && !market
       ? {
           effective: null,
           deskChoice: money(deskRaw)?.toFixed(2) ?? null,
@@ -294,6 +318,10 @@ export async function readDeskThresholds(
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
       count(row.aggregation_hours),
+      /* Null on the stored pack means the deals are not added together
+         (Serbia, and the 2027 EU pack). An entity that has not stored a
+         pack id still follows the pack resolvePack already chose, so the
+         baseline keeps its 24-hour window. */
       await packAggregationHours(client, pack, row),
       "higher_is_stricter",
     ),

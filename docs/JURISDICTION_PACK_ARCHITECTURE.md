@@ -3,7 +3,7 @@
 ## Status
 
 Phases 1 and 2 are built. `jurisdiction_packs` exists and is seeded for CA,
-US, GB, EU, AU and AE; `legal_entities` carries `home_currency`,
+US, GB, EU, AU, AE, and RS; `legal_entities` carries `home_currency`,
 `jurisdiction_pack_id` and `jurisdiction_pack_version`; the country chosen at
 onboarding installs the pack; and the posting path resolves home currency
 from it rather than assuming CAD. Generalized money columns are added and
@@ -17,8 +17,14 @@ due-diligence level (`identify`, `cdd`, `edd`), and whether it is
 cash-only. A country pack whose lines all equal that pack's single
 `id_threshold` still posts on the single column. `pack-ca-v2` does
 not: its lines differ, and the gate reads the line for the kind of
-deal. Money orders are their own line on that pack. The baseline
-gate reads the per-deal rows.
+deal. Money orders are their own line on that pack. A country pack
+whose identification line is already in the home currency still
+reads the single `id_threshold` column. The baseline gate reads the
+per-deal rows and converts US dollars. Serbia (`pack-rs-v1`) also
+reads the per-deal row, because those lines are in euros and the
+book is dinars. That conversion is the NBS middle rate for the
+Belgrade day, not the market snapshot. Receipt rules are in
+`docs/SERBIA_PACK.md`.
 Seeded packs copy a positive value of that
 column onto all four kinds, so the two agree. Zero on the old column
 is not copied. A report row can name a filing deadline (`immediately`,
@@ -28,8 +34,9 @@ is not copied. A report row can name a filing deadline (`immediately`,
 a cash direction, whether it counts cash only, and the currency the
 threshold is written in. A baseline threshold written in US dollars
 is converted to the desk's home currency at the newest market
-snapshot. The six country packs still state their thresholds in home
-currency. Seeded report rows were mapped onto those columns
+snapshot. The six country packs seeded before Serbia still state
+their thresholds in home currency. Serbia states its lines in euros.
+Seeded report rows were mapped onto those columns
 without changing a trigger amount. Only `aggregation_hours = 24` is
 labelled `fixed_24h`. A country with no installed pack resolves to `pack-intl-v1`, the
 international baseline. It is not given the Canada pack, and new deals

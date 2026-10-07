@@ -68,6 +68,7 @@ import { withSerializationRetry } from "./retry.js";
 import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { resolveReportThreshold } from "./thresholds.js";
 import { beneficiaryRecordGap } from "./canada-rules.js";
+import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
 import {
   LedgerError,
   requireIdentification,
@@ -193,6 +194,7 @@ export type ComplianceCapture = {
   sourceOfFunds: string;
   thirdParty?: boolean;
   thirdPartyName?: string | null;
+  reportSuspicion?: boolean | null;
 };
 
 export type RemittanceSendInput = ComplianceCapture & {
@@ -550,6 +552,7 @@ export class ObligationService {
     build: (home: string) => DealSpec,
   ): Promise<Record<string, unknown>> {
     const client = await this.pool.connect();
+    let committed = false;
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "transaction:post");
@@ -580,7 +583,27 @@ export class ObligationService {
       );
       if (existing.rowCount && existing.rows[0].response) {
         await client.query("COMMIT");
+        committed = true;
         return existing.rows[0].response;
+      }
+      if (spec.capture.reportSuspicion === true && pack.packId === SERBIA_PACK_ID) {
+        const named = await client.query(
+          "SELECT name FROM ledger_customers WHERE customer_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5",
+          [spec.customerId, ...scope(actor).slice(0, 4)],
+        );
+        if (!named.rowCount)
+          throw new LedgerError("CUSTOMER_NOT_FOUND", "Customer is not in the active workspace.");
+        await holdSerbiaSuspicion(client, pack, actor, {
+          reportSuspicion: true,
+          customerId: spec.customerId,
+          customerName: String(named.rows[0].name ?? ""),
+          amount: spec.cash.amount.toFixed(2),
+          from: spec.from,
+          to: spec.to,
+        });
+        await client.query("COMMIT");
+        committed = true;
+        throw new LedgerError("COMPLIANCE_BLOCKED", SERBIA_SUSPICION_HELD);
       }
       if (!existing.rowCount) {
         const claimed = await client.query(
@@ -740,6 +763,7 @@ export class ObligationService {
         journal,
         complianceRate: compliance.rate,
         complianceRateAt: compliance.rateAt,
+        complianceSource: compliance.source,
       });
 
       const delta =
@@ -852,9 +876,10 @@ export class ObligationService {
         [response, ...scope(actor), spec.operation, spec.idempotencyKey],
       );
       await client.query("COMMIT");
+      committed = true;
       return response;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!committed) await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
@@ -1359,6 +1384,7 @@ export class ObligationService {
       journal: JournalLine[];
       complianceRate?: string | null;
       complianceRateAt?: Date | null;
+      complianceSource?: string | null;
     },
   ) {
     /* The check the whole file exists to pass, and it is not routed
@@ -1381,8 +1407,8 @@ export class ObligationService {
           compliance_captured_by,compliance_captured_at,posted_at,
           deal_kind,received_instrument,disbursed_instrument,cross_border,cash_in_home,cash_out_home,
           jurisdiction_pack_id,jurisdiction_pack_version,home_currency,
-          compliance_threshold_rate,compliance_threshold_rate_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
+          compliance_threshold_rate,compliance_threshold_rate_at,compliance_threshold_rate_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
       [
         row.transactionId,
         row.transactionRef,
@@ -1418,6 +1444,7 @@ export class ObligationService {
         row.homeCurrency,
         row.complianceRate ?? null,
         row.complianceRateAt ?? null,
+        row.complianceSource ?? null,
       ],
     );
     for (const [account, side, value] of row.journal) {

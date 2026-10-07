@@ -386,6 +386,10 @@
     const [dest, setDest] = useState(DEST[0]);
     const [benName, setBenName] = useState('');
     const [purpose, setPurpose] = useState('');
+    const [identityNumber, setIdentityNumber] = useState('');
+    const [reportSuspicion, setReportSuspicion] = useState(false);
+    const [usdLargeNotes, setUsdLargeNotes] = useState(null);
+    const [usdSerials, setUsdSerials] = useState('');
     const [recvRef, setRecvRef] = useState('');   // remittance-receive tracking ref
 
     // cheque
@@ -615,12 +619,22 @@
       setServerBusy(true);
       setServerError('');
       try {
+        const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
+        const serbia = packId === 'pack-rs-v1';
         const posted = await window.CDOS.Backend.postQuote(serverQuote.quoteId, {
           idempotencyKey: `web:${serverQuote.quoteId}`,
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
           thirdParty: !!cap.thirdParty,
           thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
+          identityNumber: identityNumber.trim() || undefined,
+          ...(serbia && reportSuspicion ? { reportSuspicion: true } : {}),
+          ...(serbia && outCcy === 'USD' && (usdLargeNotes === true || usdLargeNotes === false)
+            ? {
+                usdLargeNotes,
+                usdNoteSerials: usdLargeNotes ? usdSerials.split(/[\s,]+/).filter(Boolean) : undefined,
+              }
+            : {}),
         });
         const row = window.CDOS.Backend.transactionToRow(posted, customer, { purpose: purpose.trim(), sourceOfFunds: cap.source.trim(), thirdParty: !!cap.thirdParty, thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : '' });
         setRows(current => window.CDOS.Backend.mergeRows(current, [row]));
@@ -860,6 +874,30 @@
             <div className="flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
+              {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
+                <div data-testid="serbia-receipt" className="space-y-2">
+                  <label data-testid="serbia-suspicion" className="flex items-start gap-2 text-[12px]" style={{ color: CD.ink }}>
+                    <input type="checkbox" checked={reportSuspicion} onChange={e => setReportSuspicion(e.target.checked)} className="mt-0.5" />
+                    <span>Report suspicion and do not post this deal. The desk saves a draft and does not send it to APML.</span>
+                  </label>
+                  <label className="block text-[12px]" style={{ color: CD.mute }}>
+                    JMBG or passport number
+                    <input data-testid="serbia-identity" value={identityNumber} onChange={e => setIdentityNumber(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none mt-1" style={inSty} />
+                  </label>
+                  {outCcy === 'USD' && (
+                    <div data-testid="serbia-usd-notes">
+                      <div className="text-[12px] mb-1" style={{ color: CD.mute }}>Does this sale include 50 or 100 US dollar notes?</div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setUsdLargeNotes(true)} className="text-[12px] px-2.5 py-1.5" style={{ borderRadius: 7, border: `1px solid ${usdLargeNotes === true ? CD.ink : CD.line}`, background: usdLargeNotes === true ? CD.ink : 'transparent', color: usdLargeNotes === true ? 'var(--cd-on-ink)' : CD.ink }}>Yes</button>
+                        <button type="button" onClick={() => setUsdLargeNotes(false)} className="text-[12px] px-2.5 py-1.5" style={{ borderRadius: 7, border: `1px solid ${usdLargeNotes === false ? CD.ink : CD.line}`, background: usdLargeNotes === false ? CD.ink : 'transparent', color: usdLargeNotes === false ? 'var(--cd-on-ink)' : CD.ink }}>No</button>
+                      </div>
+                      {usdLargeNotes === true && (
+                        <input data-testid="serbia-serials" value={usdSerials} onChange={e => setUsdSerials(e.target.value)} placeholder="Serial numbers, separated by spaces" className="w-full text-sm px-2.5 py-2 outline-none mt-2" style={inSty} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
               {/* The customer's ID, where the teller actually is when the
                   question comes up. Covered until it is clicked, and the

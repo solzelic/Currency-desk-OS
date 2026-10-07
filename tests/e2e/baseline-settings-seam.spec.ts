@@ -77,7 +77,7 @@ test("a baseline desk's Settings names the international rules and the converted
         email: EMAIL,
         password: "baseline-desk-2026",
         slug: SLUG,
-        onboarding: { country: "Serbia", homeCurrency: "GBP", city: "Belgrade", plan: "full" },
+        onboarding: { country: "Kenya", homeCurrency: "GBP", city: "Nairobi", plan: "full" },
       },
     });
     expect(started.status(), await started.text()).toBe(201);

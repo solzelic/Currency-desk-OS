@@ -648,7 +648,9 @@
        the screen shows nothing, rather than those dollars labelled as
        dinars or pounds. */
     const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
-    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold') : baselineBook ? null : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
+    /* A euro line is not a dinar line. Wait for the server to convert it. */
+    const foreignBook = !!(_pack && _pack.reportCurrency && _pack.homeCurrency && _pack.reportCurrency !== _pack.homeCurrency);
+    const amount = _serverAnswered('reportThreshold') ? _serverLine('reportThreshold') : baselineBook || foreignBook ? null : _pack && _positive(_pack.reportThreshold) ? +_pack.reportThreshold : _positive(settings && settings.threshold) ? +settings.threshold : regime && _positive(regime.threshold) ? +regime.threshold : null;
     const currency = _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -688,7 +690,8 @@
     }
     const regime = window.CDOS && window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const baselineBook = !!(_pack && (_pack.baseline === true || _pack.kind === 'baseline'));
-    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold') : baselineBook ? null : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
+    const foreignBook = !!(_pack && _pack.reportCurrency && _pack.homeCurrency && _pack.reportCurrency !== _pack.homeCurrency);
+    const amount = _serverAnswered('idThreshold') ? _serverLine('idThreshold') : baselineBook || foreignBook ? null : _pack && _positive(_pack.idThreshold) ? +_pack.idThreshold : _positive(settings && settings.idRequiredOver) ? +settings.idRequiredOver : regime && _positive(regime.idAt) ? +regime.idAt : null;
     const currency = _thresholds && _thresholds.currency || _pack && _pack.homeCurrency || settings && settings.baseCurrency || regime && regime.currency || null;
     return {
       amount,
@@ -5224,14 +5227,19 @@
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
-    }, status !== 'ready' ? unavailable : euAmlr && (line('aggregationHours') || {}).effective == null ? /*#__PURE__*/React.createElement("span", {
+    }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
         color: CD.mute
       },
       "data-testid": "eu-no-aggregation"
-    }, "Not stated") : /*#__PURE__*/React.createElement(Seg, {
-      value: String((line('aggregationHours') || {}).effective || 24),
+    }, "Not stated") : /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Not added together") : /*#__PURE__*/React.createElement(Seg, {
+      value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
     })), /*#__PURE__*/React.createElement(PostureNote, {
@@ -5868,6 +5876,39 @@
     const [srvMsg, setSrvMsg] = useState('');
     const [srvBusy, setSrvBusy] = useState(false);
     const [pwForm, setPwForm] = useState(null); // my own password change {cur,a,b,msg,busy}
+    const [airside, setAirside] = useState(false);
+    const [airsideMsg, setAirsideMsg] = useState('');
+    useEffect(() => {
+      let live = true;
+      fetch('/api/ledger/branch-location', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(body => {
+        if (live && body) setAirside(!!body.airsideOrCasino);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
+    const saveAirside = async next => {
+      setAirside(next);
+      setAirsideMsg('');
+      const res = await fetch('/api/ledger/branch-location', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          airsideOrCasino: next
+        })
+      });
+      if (!res.ok) {
+        setAirside(!next);
+        setAirsideMsg('Could not save this counter.');
+        return;
+      }
+      setAirsideMsg(next ? 'Every buy and sell at this counter needs ID.' : 'Saved.');
+    };
     const SRV_ROLE = {
       'Owner': 'administrator',
       'Manager': 'branch_manager',
@@ -9918,7 +9959,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             ...s
           }));
         }
-      }, "Use the 2027 EU rules")), standalone && /*#__PURE__*/React.createElement("div", {
+      }, "Use the 2027 EU rules")), !paused && pack && pack.packId === 'pack-rs-v1' && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "serbia-airside",
+        className: "mb-3 p-3",
+        style: {
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12,
+          background: CD.panel
+        }
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "flex items-start gap-2 text-[12.5px]",
+        style: {
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: airside,
+        onChange: e => saveAirside(e.target.checked)
+      }), /*#__PURE__*/React.createElement("span", null, "This counter is airside or inside a casino. Every buy and sell needs the customer's name and their JMBG or passport number.")), airsideMsg ? /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1",
+        style: {
+          color: CD.mute
+        }
+      }, airsideMsg) : null), standalone && /*#__PURE__*/React.createElement("div", {
         className: "grid gap-2.5 mb-2",
         style: {
           gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr'
@@ -32826,6 +32889,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [dest, setDest] = useState(DEST[0]);
     const [benName, setBenName] = useState('');
     const [purpose, setPurpose] = useState('');
+    const [identityNumber, setIdentityNumber] = useState('');
+    const [reportSuspicion, setReportSuspicion] = useState(false);
+    const [usdLargeNotes, setUsdLargeNotes] = useState(null);
+    const [usdSerials, setUsdSerials] = useState('');
     const [recvRef, setRecvRef] = useState(''); // remittance-receive tracking ref
 
     // cheque
@@ -33280,12 +33347,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setServerBusy(true);
       setServerError('');
       try {
+        const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
+        const serbia = packId === 'pack-rs-v1';
         const posted = await window.CDOS.Backend.postQuote(serverQuote.quoteId, {
           idempotencyKey: `web:${serverQuote.quoteId}`,
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
           thirdParty: !!cap.thirdParty,
-          thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined
+          thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
+          identityNumber: identityNumber.trim() || undefined,
+          ...(serbia && reportSuspicion ? {
+            reportSuspicion: true
+          } : {}),
+          ...(serbia && outCcy === 'USD' && (usdLargeNotes === true || usdLargeNotes === false) ? {
+            usdLargeNotes,
+            usdNoteSerials: usdLargeNotes ? usdSerials.split(/[\s,]+/).filter(Boolean) : undefined
+          } : {})
         });
         const row = window.CDOS.Backend.transactionToRow(posted, customer, {
           purpose: purpose.trim(),
@@ -33811,7 +33888,68 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onAddNew: onAddNew,
       onClear: onClear,
       idRequired: idRequired
-    }), customer && clients[customer] && /*#__PURE__*/React.createElement(CustomerCard, {
+    }), window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "serbia-receipt",
+      className: "space-y-2"
+    }, /*#__PURE__*/React.createElement("label", {
+      "data-testid": "serbia-suspicion",
+      className: "flex items-start gap-2 text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: reportSuspicion,
+      onChange: e => setReportSuspicion(e.target.checked),
+      className: "mt-0.5"
+    }), /*#__PURE__*/React.createElement("span", null, "Report suspicion and do not post this deal. The desk saves a draft and does not send it to APML.")), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "JMBG or passport number", /*#__PURE__*/React.createElement("input", {
+      "data-testid": "serbia-identity",
+      value: identityNumber,
+      onChange: e => setIdentityNumber(e.target.value),
+      className: "w-full text-sm px-2.5 py-2 outline-none mt-1",
+      style: inSty
+    })), outCcy === 'USD' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "serbia-usd-notes"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Does this sale include 50 or 100 US dollar notes?"), /*#__PURE__*/React.createElement("div", {
+      className: "flex gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setUsdLargeNotes(true),
+      className: "text-[12px] px-2.5 py-1.5",
+      style: {
+        borderRadius: 7,
+        border: `1px solid ${usdLargeNotes === true ? CD.ink : CD.line}`,
+        background: usdLargeNotes === true ? CD.ink : 'transparent',
+        color: usdLargeNotes === true ? 'var(--cd-on-ink)' : CD.ink
+      }
+    }, "Yes"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setUsdLargeNotes(false),
+      className: "text-[12px] px-2.5 py-1.5",
+      style: {
+        borderRadius: 7,
+        border: `1px solid ${usdLargeNotes === false ? CD.ink : CD.line}`,
+        background: usdLargeNotes === false ? CD.ink : 'transparent',
+        color: usdLargeNotes === false ? 'var(--cd-on-ink)' : CD.ink
+      }
+    }, "No")), usdLargeNotes === true && /*#__PURE__*/React.createElement("input", {
+      "data-testid": "serbia-serials",
+      value: usdSerials,
+      onChange: e => setUsdSerials(e.target.value),
+      placeholder: "Serial numbers, separated by spaces",
+      className: "w-full text-sm px-2.5 py-2 outline-none mt-2",
+      style: inSty
+    }))), customer && clients[customer] && /*#__PURE__*/React.createElement(CustomerCard, {
       name: customer,
       rec: clients[customer],
       live: live,
@@ -61432,6 +61570,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       cur: 'EUR',
       th: 0
     }, {
+      c: 'Serbia',
+      flag: '🇷🇸',
+      reg: 'NBS / APML',
+      cur: 'RSD',
+      th: 0,
+      follow: true
+    }, {
       c: 'Somewhere else',
       flag: '🌐',
       reg: 'your regulator',
@@ -61507,7 +61652,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (step === 1) return d.businessName.trim().length > 0;
       if (step === 2) return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email) && d.password.length >= 8 && d.slug.length >= 2 && !!d.ownerName.trim();
       if (step === 3) return !!d.plan;
-      if (step === 4) return d.idThreshold > 0;
+      if (step === 4) return !!reg.follow || d.idThreshold > 0;
       return true;
     };
     const back = () => {
@@ -61538,7 +61683,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           homeCurrency: reg.cur,
           msbNumber: d.msbNumber,
           plan: d.plan,
-          idThreshold: d.idThreshold
+          ...(reg.follow ? {} : {
+            idThreshold: d.idThreshold
+          })
         }
       };
       try {
@@ -61875,7 +62022,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         marginBottom: 14
       }
-    }, d.country === 'European Union' ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.' : /*#__PURE__*/React.createElement(React.Fragment, null, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later.")), (d.country === 'European Union' ? [{
+    }, d.country === 'European Union' ? 'Cash at or above 3,000 EUR needs identification. A transfer at or above 1,000 EUR, and any deal at or above 10,000 EUR, needs full customer due diligence. Suspicious activity is reported at any amount. These rules apply from 10 July 2027. You can ask for ID sooner.' : reg.follow ? 'Exchange offices identify at 5,000 EUR or more. Cash of 15,000 EUR or more is reported to APML. Those euro lines need the National Bank of Serbia middle rate for the day. A tighter dinar line is set in Settings.' : /*#__PURE__*/React.createElement(React.Fragment, null, reg.reg || 'Your regulator', " sets the legal minimum. Many shops ask earlier, to be safe \u2014 you can change this later.")), reg.follow ? null : (d.country === 'European Union' ? [{
       v: 3000,
       t: 'Only at 3,000',
       d: 'Cash identification. The 2027 minimum.'
@@ -61920,7 +62067,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: 'var(--ink)'
       }
-    }, d.country), " \xB7 ", reg.reg, " \xB7 ", reg.cur), /*#__PURE__*/React.createElement("div", null, d.plan.charAt(0).toUpperCase() + d.plan.slice(1), " plan \xB7 free trial \xB7 ID at ", Number(d.idThreshold).toLocaleString(), " ", reg.cur), /*#__PURE__*/React.createElement("div", null, d.slug || 'yourshop', ".currencydesk"))), err && /*#__PURE__*/React.createElement("div", {
+    }, d.country), " \xB7 ", reg.reg, " \xB7 ", reg.cur), /*#__PURE__*/React.createElement("div", null, d.plan.charAt(0).toUpperCase() + d.plan.slice(1), " plan \xB7 free trial \xB7 ", reg.follow ? 'ID at 5,000 EUR' : 'ID at ' + Number(d.idThreshold).toLocaleString() + ' ' + reg.cur), /*#__PURE__*/React.createElement("div", null, d.slug || 'yourshop', ".currencydesk"))), err && /*#__PURE__*/React.createElement("div", {
       className: "lock-err",
       style: {
         marginTop: 12
@@ -65058,14 +65205,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       /* A baseline desk's 10,000 is US dollars. Do not store it as the
          home-currency line. The ledger converts it, and the screen reads that. */
       /* An explicit null is "this pack has no amount report". A missing
-         field on an older setup still falls back to 10,000. */
-      const reportOver = setup.baselineRules || setup.reportThreshold === null ? null : num(setup.reportThreshold, 10000);
+         field on an older setup still falls back to 10,000. A line
+         written in another currency, such as Serbia's euros on a dinar
+         book, is not stored as the home-currency line. */
+      const foreignRules = setup.reportCurrency && homeCcy && String(setup.reportCurrency).toUpperCase() !== String(homeCcy).toUpperCase();
+      const reportOver = setup.baselineRules || foreignRules || setup.reportThreshold === null ? null : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
       const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || typedId == null ? null : reportOver == null ? typedId : Math.min(typedId, reportOver);
+      const idOver = legacyPause || foreignRules || typedId == null ? null : reportOver == null ? typedId : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;
       const owner = {
         id: 'e_owner',

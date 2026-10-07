@@ -22,6 +22,7 @@ import {
   type ThresholdChanges,
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
+import { BranchLocationService } from "./branch-location.js";
 import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
@@ -67,6 +68,10 @@ const postBody = z.object({
   sourceOfFunds: z.string().trim().max(500),
   thirdParty: z.boolean().default(false),
   thirdPartyName: z.string().trim().max(200).optional(),
+  identityNumber: z.string().trim().max(40).optional(),
+  usdLargeNotes: z.boolean().optional(),
+  usdNoteSerials: z.array(z.string().trim().min(1).max(40)).max(200).optional(),
+  reportSuspicion: z.boolean().optional(),
 })
   .refine((value) => value.from !== value.to, { message: "Currencies must differ.", path: ["to"] })
   .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
@@ -310,6 +315,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
+  const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
@@ -786,6 +792,29 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  /* Airside or casino. Serbia demands identity on every buy and sell at
+     those counters. The read is the same permission as the threshold
+     line, because the teller has to know. The write is the same
+     permission as moving a threshold, and it is audited. */
+  app.get("/api/ledger/branch-location", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await branchLocation.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+  app.put("/api/ledger/branch-location", async (req, reply) => {
+    const parsed = z.object({ airsideOrCasino: z.boolean() }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await branchLocation.set(actor, parsed.data.airsideOrCasino)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   /* WHICH CURRENCIES THIS DESK DEALS IN.
 
      Read by anyone who can see the ledger; changed by whoever may move a
@@ -1214,6 +1243,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     sourceOfFunds: z.string().trim().max(500).default(""),
     thirdParty: z.boolean().default(false),
     thirdPartyName: z.string().trim().max(200).optional(),
+    reportSuspicion: z.boolean().optional(),
   };
   const thirdPartyPaired = <T extends z.ZodTypeAny>(schema: T) =>
     schema
