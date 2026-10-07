@@ -259,7 +259,7 @@
           ? 'Only the owner can move a reporting line — it is the standing policy of the registered business, not a branch setting.'
           : e && e.code === 'NETWORK_ERROR'
             ? 'Could not reach the desk — nothing was changed.'
-            : 'Could not save that — nothing was changed.');
+            : (e && e.message) || 'Could not save that — nothing was changed.');
       } finally { setBusy(''); }
     };
 
@@ -268,6 +268,7 @@
     const line = (field) => (desk && desk[field]) || null;
     const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const euAmlr = (desk && desk.packId === 'pack-eu-v2') || (packNow && packNow.packId === 'pack-eu-v2');
+    const ukV2 = (desk && desk.packId === 'pack-gb-v2') || (packNow && packNow.packId === 'pack-gb-v2');
     const baselineNow = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline'));
     const currency = (desk && desk.currency) || settings.baseCurrency || '';
     const authority = baselineNow
@@ -292,7 +293,16 @@
         {status === 'loading' ? 'reading…' : 'unavailable'}
       </span>);
 
-    const reportTip = (<window.CDOS.InfoTip
+    const reportTip = ukV2 ? (<window.CDOS.InfoTip
+      w={320}
+      title="No UK large-cash report"
+      body="UK law does not require a bureau to file a large-cash report. Leave the box blank. A number you type is your own policy, and the desk will ask for purpose and source of funds at or above it. It is not a report the NCA requires."
+      lines={[
+        { k: 'Following', v: 'blank. There is no amount, and that is the statute' },
+        { k: 'Your policy', v: 'a number you typed. The law does not require it' },
+      ]}
+      example="A transfer of funds of more than £800 still needs customer due diligence. That line is not this box."
+    />) : (<window.CDOS.InfoTip
       w={320}
       title="Where your reporting line sits"
       body="Your jurisdiction sets the amount a cash deal has to be reported at, and that figure arrives with your country's pack. You may move the line DOWN — some banks and auditors want to see a desk reporting sooner than the law requires, and a desk is free to do that. You may not move it up: a line above what your regulator requires means deals you are legally obliged to report going unreported, and the desk is told so here and in the notification bell until it is fixed."
@@ -307,6 +317,11 @@
     />);
 
     return (<div>
+      {ukV2 && (
+        <div data-testid="uk-pack-rules" className="text-[12px] mb-3 leading-relaxed" style={{ color: CD.ink }}>
+          There is no large-cash report in UK law for a bureau. Customer due diligence applies to an occasional transaction of £12,000 or more, and to a transfer of funds of more than £800. A suspicious activity report goes to the NCA (UKFIU), as soon as is practicable. Records are kept for 5 years. Deals are not added together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.
+        </div>
+      )}
       {euAmlr ? (
         <Row
           title="Large cash report"
@@ -315,8 +330,10 @@
         </Row>
       ) : (<>
       <Row
-        title={<span className="flex items-center gap-1.5">Large cash / reportable threshold {reportTip}</span>}
-        desc={`Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser — so every till agrees, and so a change is recorded in the audit trail.`}>
+        title={<span className="flex items-center gap-1.5">{ukV2 ? 'Your own reporting line' : 'Large cash / reportable threshold'} {reportTip}</span>}
+        desc={ukV2
+          ? 'UK law has no large-cash report for a bureau. Leave this blank to follow the pack. A number you type is your own policy: the desk asks for purpose and source of funds at or above it. It is not a filing the law requires.'
+          : 'Deals at or above this are reportable, and this is the figure every screen and every report on this desk uses. Kept on the ledger, not in this browser, so every till agrees, and so a change is recorded in the audit trail.'}>
         {status === 'ready'
           ? <ThresholdInput value={line('reportThreshold') && line('reportThreshold').effective}
               currency={currency} disabled={disabled}
@@ -331,6 +348,8 @@
         title="Require ID over"
         desc={euAmlr
           ? "This replaces only the cash identification line. A transfer of funds at or above 1,000 EUR, and any occasional transaction at or above 10,000 EUR, still need full customer due diligence. Those two lines are not moved here."
+          : ukV2
+          ? 'Foreign exchange and virtual currency stay at £12,000 or more. A number below £12,000 tightens that line. A number of £12,000 or more does not raise it. A transfer of funds stays at more than £800 unless your number is below £800.'
           : "The line the LEDGER enforces: at or above this, a deal will not post for a customer nobody has identified. Set it below your reporting line to collect identification ahead of the mandatory report."}>
         {status === 'ready'
           ? <ThresholdInput value={line('idThreshold') && line('idThreshold').effective}
@@ -345,6 +364,8 @@
         title="Aggregation window"
         desc={euAmlr && (line('aggregationHours') || {}).effective == null
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
+          : ukV2
+          ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.'
           : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."}>
         {status !== 'ready' ? unavailable
           : (line('aggregationHours') || {}).effective == null
@@ -632,6 +653,7 @@
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
     const canSys = me.role === 'Owner' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
+    const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false);   // enterprise Add-location modal (shared with Branch Network's rail)
     const [importing, setImporting] = useState(false);
     const [expOpts, setExpOpts] = useState({ range: 'all', includeVoid: false, cols: 'all' });
@@ -1806,6 +1828,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     setSettings(s => ({ ...s }));
                   }}>Use the 2027 EU rules</button>
               )}
+              {pack.packId === 'pack-gb-v2' && (
+                <div data-testid="uk-pack-v2" className="text-[12px] mt-2 leading-relaxed" style={{ color: CD.ink }}>
+                  <div>No large-cash report. UK law does not require one for a bureau.</div>
+                  <div className="mt-1">Customer due diligence: an occasional transaction of £12,000 or more, and a transfer of funds of more than £800.</div>
+                  <div className="mt-1">Suspicious Activity Report (SAR) to the NCA (UKFIU), as soon as is practicable. This till does not file it.</div>
+                  <div className="mt-1">Records kept for 5 years. HMRC supervises the business.</div>
+                </div>
+              )}
             </div>
           )}
           {!paused && pack && pack.packId === 'pack-rs-v1' && (
@@ -1816,6 +1846,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </label>
               {airsideMsg ? <div className="text-[11px] mt-1" style={{ color: CD.mute }}>{airsideMsg}</div> : null}
             </div>
+          )}
+          {isOwner && pack && pack.packId === 'pack-gb-v1' && (
+            <button type="button" data-testid="adopt-uk-pack" className="mb-3 text-left px-3 py-2 text-[12.5px] font-semibold"
+              style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 9, border: 'none', cursor: 'pointer' }}
+              onClick={async () => {
+                try {
+                  const api = window.CDOS && window.CDOS.Backend;
+                  if (!api || !api.adoptUkPack) return;
+                  await api.adoptUkPack();
+                  if (window.CDOS.refreshJurisdiction) await window.CDOS.refreshJurisdiction();
+                  if (window.CDOS.refreshDeskThresholds) await window.CDOS.refreshDeskThresholds();
+                  log('United Kingdom pack', 'Moved to pack-gb-v2. Posted deals keep the pack they were stamped with.');
+                  setPackRev((n) => n + 1);
+                } catch (e) {
+                  log('United Kingdom pack', (e && e.message) || 'Could not move this desk.');
+                }
+              }}>
+              Move this desk to the current United Kingdom pack
+            </button>
           )}
           {standalone && <div className="grid gap-2.5 mb-2" style={{ gridTemplateColumns: shownRegimes.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
             {shownRegimes.map(r => { const on = activeRid === r.id; return (
@@ -1835,7 +1884,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               Hidden only when even the baseline pack is missing. A
               baseline desk keeps these editors: it is operating. */}
           {paused ? null : <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reporting & thresholds</div>}
-          {paused ? null : <DeskThresholdRows key={(pack && pack.packId) || 'thresholds'} />}
+          {paused ? null : <DeskThresholdRows key={`${(pack && pack.packId) || 'pack'}-${packRev}`} />}
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />

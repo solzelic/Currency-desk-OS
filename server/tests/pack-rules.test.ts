@@ -28,7 +28,13 @@ describe("which country gets a pack", () => {
     });
     expect(packForCountry("Canada")?.packId).toBe("pack-ca-v2");
     expect(packForCountry("United States")?.packId).toBe("pack-us-v1");
-    expect(packForCountry("UK")?.packId).toBe("pack-gb-v1");
+    expect(packForCountry("UK")).toEqual({
+      packId: "pack-gb-v2",
+      version: 2,
+      homeCurrency: "GBP",
+    });
+    expect(packForCountry("United Kingdom")?.packId).toBe("pack-gb-v2");
+    expect(packForCountry("GB")?.version).toBe(2);
     expect(packForCountry("United Kingdom")?.homeCurrency).toBe("GBP");
     expect(packForCountry("Eurozone")).toEqual({
       packId: "pack-eu-v2",

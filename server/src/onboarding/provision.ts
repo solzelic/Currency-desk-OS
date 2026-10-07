@@ -18,6 +18,7 @@
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
+import { UK_PACK_V2 } from "../ledger/uk-mlr.js";
 import {
   packForCountry,
   packIdThreshold,
@@ -328,6 +329,15 @@ export async function provisionDesk(
   }
   const reportCurrency = pack ? REPORT_CURRENCY_FOR_PACK[pack.packId] : undefined;
   if (reportCurrency && reportCurrency !== bookHome) setup.reportCurrency = reportCurrency;
+  /* The wizard used to seed a £10,000 reporting figure for the UK.
+     The law has no large-cash report. Drop that figure so the first
+     screen does not invent one. The identification box is filled
+     from the pack below, and is stored only when it is stricter. */
+  if (pack?.packId === UK_PACK_V2) {
+    setup.noCashReport = true;
+    setup.reportThreshold = null;
+    setup.reportName = "Suspicious Activity Report";
+  }
   const foreignLine = pack ? await fxLineIsForeign(db, pack.packId, bookHome) : false;
   if (pack && !foreignLine && typedIdentificationLine(setup.idThreshold) == null) {
     const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);

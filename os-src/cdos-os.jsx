@@ -2012,9 +2012,11 @@
       /* An explicit null is "this pack has no amount report". A missing
          field on an older setup still falls back to 10,000. A line
          written in another currency, such as Serbia's euros on a dinar
-         book, is not stored as the home-currency line. */
+         book, is not stored as the home-currency line. A United Kingdom
+         desk has no large-cash report. Do not fill the blank with 10,000. */
       const foreignRules = setup.reportCurrency && homeCcy && String(setup.reportCurrency).toUpperCase() !== String(homeCcy).toUpperCase();
-      const reportOver = setup.baselineRules || foreignRules || setup.reportThreshold === null
+      const noCashReport = setup.noCashReport === true;
+      const reportOver = setup.baselineRules || foreignRules || noCashReport || setup.reportThreshold === null
         ? null
         : num(setup.reportThreshold, 10000);
       /* A blank identification field is not the report line. The pack's

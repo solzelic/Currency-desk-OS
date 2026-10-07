@@ -230,8 +230,10 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
      stays there until its owner opts in. The v1 row is not edited. */
   CA: "pack-ca-v2",
   US: "pack-us-v1",
-  GB: "pack-gb-v1",
-  UK: "pack-gb-v1",
+  /* Version 2. A desk already on pack-gb-v1 is not moved by this map.
+     Opt-in is a separate act. See server/src/ledger/uk-mlr.ts. */
+  GB: "pack-gb-v2",
+  UK: "pack-gb-v2",
   EU: EU_AMLR_PACK_ID,
   /* Version 2. Desks already on pack-au-v1 stay there until they opt in.
      packForCountry is only the pack a new desk is given. */
@@ -240,12 +242,13 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
   RS: "pack-rs-v1",
 };
 
-/* Canada, the 2027 European Union pack, and Australia v2 are version 2.
-   Every other pack is still version 1. */
+/* Canada, the 2027 European Union pack, Australia v2, and the United
+   Kingdom v2 are version 2. Every other pack is still version 1. */
 const PACK_VERSION: Readonly<Record<string, number>> = {
   "pack-ca-v2": 2,
   [EU_AMLR_PACK_ID]: 2,
   "pack-au-v2": 2,
+  "pack-gb-v2": 2,
 };
 
 const COUNTRY_CODE: Readonly<Record<string, string>> = {
@@ -275,6 +278,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-ca-v2": "CAD",
   "pack-us-v1": "USD",
   "pack-gb-v1": "GBP",
+  "pack-gb-v2": "GBP",
   "pack-eu-v1": "EUR",
   [EU_AMLR_PACK_ID]: "EUR",
   "pack-au-v1": "AUD",

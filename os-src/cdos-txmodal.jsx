@@ -499,7 +499,29 @@
        real reportable transaction walks past somebody. */
     const unpriced = inCadEquiv == null;
     const single = TH != null && !unpriced && inCadEquiv >= TH;
-    const idRequired = !paused && (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
+    /* A remittance used to require identification at every amount.
+       pack-gb-v2 does not: a transfer of funds needs it only above
+       the statutory line, which the server has already resolved
+       (including a desk number that tightens it). Cents, not a float. */
+    const ukTransfer = (window.CDOS.deskThresholds && window.CDOS.deskThresholds() || {}).transferDueDiligence || null;
+    const transferKind = isSend || isReceive || isMO || isBill;
+    let ukIdRequired = null;
+    if (ukTransfer && transferKind && window.CDOS._transfers && window.CDOS._transfers.transferRuling) {
+      const cashText = (n) => (Number.isFinite(n) ? n.toFixed(2) : '');
+      const ruling = window.CDOS._transfers.transferRuling({
+        direction: isReceive ? 'receive' : 'send',
+        principal: isReceive ? '' : cashText(isSend ? amtN : (amtN + feeN)),
+        fee: isReceive || !isSend ? '0' : cashText(feeN),
+        payout: isReceive ? cashText(amtN) : '',
+        baseline: false,
+        ukTransfer,
+        reportLine: TH,
+      });
+      ukIdRequired = !!ruling.idRequired || unpriced;
+    }
+    const idRequired = !paused && (ukIdRequired != null
+      ? ukIdRequired
+      : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));   // remittance always needs sender ID; a null floor, or cash we cannot value, means identify
     const idOk = kyc === 'ok';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };
@@ -538,7 +560,12 @@
       const capOk = purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim());
       reqs.push({ key: 'cap', ok: capOk, warn: !capOk, label: `${regime.largeCode} details captured`, sub: !capOk ? 'Purpose, source of funds & third-party — fill below' : 'Pre-fills the filing in Compliance' });
     }
-    if (serverBacked && isExchange && !single) {
+    /* A United Kingdom desk following the pack has no cash report, so
+       a small exchange does not need purpose and source of funds.
+       A reporting number the desk typed still does, and so does every
+       other pack. */
+    const noStatutoryCashReport = !!(window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-gb-v2' && !(TH > 0));
+    if (serverBacked && isExchange && !single && !noStatutoryCashReport) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
       reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
     }

@@ -33,6 +33,11 @@ import {
   type JurisdictionPack,
 } from "./jurisdiction.js";
 import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
+import {
+  purposeDecision,
+  UK_PACK_V2,
+  ukDueDiligenceBlocks,
+} from "./uk-mlr.js";
 import { assertTradeable } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -334,6 +339,27 @@ export async function requireIdentification(
     }
     return { ...stamp, identificationRequired: false };
   }
+  /* pack-gb-v2 does not use the single identification column. The
+     statute is one line per kind of deal, and a transfer is "more
+     than", not "at or above". A verified customer has already
+     satisfied that duty. See uk-mlr.ts. */
+  if (pack.packId === UK_PACK_V2) {
+    if (idStatus === "verified") return { ...stamp, identificationRequired: false };
+    const block = await ukDueDiligenceBlocks(
+      client,
+      actor.legalEntityId,
+      pack,
+      amountHome,
+      deal,
+    );
+    if (block) {
+      throw new LedgerError(
+        "COMPLIANCE_BLOCKED",
+        "Authoritative compliance policy blocked posting.",
+      );
+    }
+    return { ...stamp, identificationRequired: false };
+  }
   const country = await countryIdentification(client, {
     legalEntityId: actor.legalEntityId,
     branchId: actor.branchId,
@@ -366,6 +392,39 @@ export async function requireIdentification(
     );
   }
   return { ...stamp, identificationRequired: packHit || deskHit };
+}
+
+/* Purpose and source of funds, over a reporting line. A pack with no
+   line still requires them, because "we could not tell whether this
+   was reportable, so we asked for nothing" is not an answer. The
+   United Kingdom v2 pack is the exception: the law has no large-cash
+   report, and a zero on that column means exactly that. A number the
+   desk types for itself still binds. */
+const NO_REPORTING_LINE =
+  "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed.";
+
+export async function requirePurposeAndSource(
+  client: pg.PoolClient,
+  legalEntityId: string,
+  pack: JurisdictionPack,
+  amountHome: Decimal,
+  purpose: string,
+  sourceOfFunds: string,
+): Promise<void> {
+  if (purpose.trim() && sourceOfFunds.trim()) return;
+  /* The resolved line, not the figure printed on the pack row. A
+     baseline desk states 10,000 USD and posts in its own currency, so
+     the comparison has to be the converted amount. pack-gb-v2 stores
+     0, which this reader treats as no amount. */
+  const line = await resolveReportThreshold(client, legalEntityId, pack);
+  const decision = purposeDecision(pack.packId, line, amountHome);
+  if (decision === "allow") return;
+  throw new LedgerError(
+    "COMPLIANCE_BLOCKED",
+    decision === "missing"
+      ? NO_REPORTING_LINE
+      : "Authoritative compliance policy blocked posting.",
+  );
 }
 
 export class LedgerService {
@@ -1138,27 +1197,20 @@ export class LedgerService {
         },
       );
       if (!serbia.ok) throw new LedgerError("COMPLIANCE_BLOCKED", serbia.message);
-      /* Purpose and source of funds, over the desk's REPORTING line — the
-         details the report itself is made of. Same story as the ID gate: a
-         hardcoded 10,000 in a book that might be kept in dirhams, where
-         the figure is 55,000. Resolved from the same place, and a capture
-         that is present clears it whatever the line turns out to be. */
       /* The 2027 EU pack has no large-cash report, so an empty reporting
          line is not "purpose on every deal". Due diligence asks for it
-         inside requireIdentification, and only when that line is hit. */
-      if (pack.packId !== EU_AMLR_PACK_ID && (!request.purpose.trim() || !request.sourceOfFunds.trim())) {
-        const reporting = await resolveReportThreshold(
+         inside requireIdentification, and only when that line is hit.
+         Every other pack, including the United Kingdom, goes through
+         requirePurposeAndSource. */
+      if (pack.packId !== EU_AMLR_PACK_ID) {
+        await requirePurposeAndSource(
           client,
           actor.legalEntityId,
           pack,
+          inputHome,
+          request.purpose,
+          request.sourceOfFunds,
         );
-        if (reporting === null || inputHome.gte(reporting))
-          throw new LedgerError(
-            "COMPLIANCE_BLOCKED",
-            reporting === null
-              ? "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed."
-              : "Authoritative compliance policy blocked posting.",
-          );
       }
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",

@@ -83,9 +83,11 @@ commit the generated output — CI diffs `web/` against a fresh build.
   `ledger_transactions`. It also adds `nbs_middle_rates` (dinars per
   1 euro for one Belgrade date; posting reads it and does not fetch
   the bank) and `compliance_threshold_rate_source` (`nbs_middle` or
-  `none`). Open drafts already occupy 027 and 029 through
-  031. A rebase renumbers 033 in the filename and in `migrations.ts`
-  together. The rule text is `docs/SERBIA_PACK.md`.
+  `none`). 033 is on main. 027 and 030 are still open drafts. The rule
+  text is `docs/SERBIA_PACK.md`.
+- Migration `035_pack_gb_v2` inserts the current United Kingdom pack.
+  It does not edit `pack-gb-v1`. 029, 031, 033, and 034 are already on
+  main, so 035 stays. The rule itself is `docs/UK_PACK.md`.
 
 ## Test commands
 

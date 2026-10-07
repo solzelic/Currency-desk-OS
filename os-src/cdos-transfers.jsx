@@ -51,7 +51,7 @@
      No remittance line (no rate, or a stale one) means identification
      is required. A country pack, Canada included, uses its own
      identification line and does not substitute the baseline's. */
-  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines }) {
+  function transferRuling({ direction, principal, fee, payout, baseline, remittanceLine, deskLine, idLine, reportLine, euLines, ukTransfer }) {
     const blank = direction === 'receive' ? (payout == null || String(payout).trim() === '') : String(principal ?? '').trim() === '';
     if (blank) return { homeAmount: null, reportable: null, idRequired: false };
     const cash = direction === 'receive'
@@ -69,6 +69,18 @@
       return { homeAmount, reportable: false, idRequired: eu.idRequired };
     }
     const report = centsOf(reportLine);
+    /* pack-gb-v2. The transfer line is "more than", and it is not the
+       foreign-exchange line. The server has already applied a desk
+       number that tightens it. Compare in cents so 800.00 and 800.01
+       do not depend on a binary float. */
+    if (ukTransfer) {
+      const line = centsOf(ukTransfer.amount);
+      if (line == null) {
+        return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: true };
+      }
+      const over = ukTransfer.comparator === 'gt' ? cash > line : cash >= line;
+      return { homeAmount, reportable: report == null ? null : cash >= report, idRequired: over };
+    }
     let line = null;
     if (baseline) {
       const remittance = centsOf(remittanceLine);
@@ -320,6 +332,7 @@
       idLine: idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null),
       reportLine: limit.amount,
       euLines: packNow && packNow.packId === 'pack-eu-v2' ? (packNow.idThresholds || []) : null,
+      ukTransfer: thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
     });
     const homeAmount = ruling.homeAmount;
     const reportable = ruling.reportable;

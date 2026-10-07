@@ -606,7 +606,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {(single || structuring || idRequired) && (
               <div className="p-3 space-y-2" style={{ background: single ? CD.flagSoft : structuring ? CD.amberSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${single ? CD.flag : structuring ? CD.amber : CD.line}` }}>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
-                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable — pay-in ≈ {fmtHome(inCadEquiv)} (≥ {limit.label}). {(deskPack() && deskPack().reportName) ? `A ${deskPack().reportName} will be required.` : 'A large-cash report will be required.'}</div>}
+                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmtHome(recentTotal)} with this deal.</div>}
                 {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
               </div>

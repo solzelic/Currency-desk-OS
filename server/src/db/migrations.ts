@@ -35,9 +35,10 @@ const migrations: readonly Migration[] = [
   ["028_pack_rule_fields", "src/db/migrations/028_pack_rule_fields.sql"],
   ["029_pack_ca_v2", "src/db/migrations/029_pack_ca_v2.sql"],
   ["031_pack_eu_amlr", "src/db/migrations/031_pack_eu_amlr.sql"],
-  /* 027 and 030 still belong to open drafts. 033 is Serbia. 034 is Australia. */
+  /* 027 and 030 still belong to open drafts. 033 is Serbia. 034 is Australia. 035 is the United Kingdom. */
   ["033_serbia_pack", "src/db/migrations/033_serbia_pack.sql"],
   ["034_pack_au_v2", "src/db/migrations/034_pack_au_v2.sql"],
+  ["035_pack_gb_v2", "src/db/migrations/035_pack_gb_v2.sql"],
 ] as const;
 
 export async function runMigrations(

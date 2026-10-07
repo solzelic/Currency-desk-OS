@@ -89,11 +89,14 @@ export const PHASES = [
    the design defaults to the regulator's number and lets them tighten. */
 export const JURISDICTION: Record<
   string,
-  { country: string; regulator: string; regLabel: string; currency: string; reportThreshold: number | null; reportCurrency: string; report: string; idDefault?: number }
+  { country: string; regulator: string; regLabel: string; currency: string; reportThreshold: number | null; reportCurrency: string; report: string; idDefault?: number; idSeed?: number; noCashReport?: boolean }
 > = {
   CA: { country: "Canada", regulator: "FINTRAC", regLabel: "FINTRAC registration number", currency: "CAD", reportThreshold: 10000, reportCurrency: "CAD", report: "Large Cash Transaction Report" },
   US: { country: "United States", regulator: "FinCEN", regLabel: "FinCEN MSB registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "Currency Transaction Report" },
-  GB: { country: "United Kingdom", regulator: "HMRC", regLabel: "HMRC money-service business number", currency: "GBP", reportThreshold: 10000, reportCurrency: "GBP", report: "Suspicious Activity Report" },
+  /* No large-cash report. idSeed is the occasional-transaction line
+     (£12,000), not a cash-report figure. Leaving it equal to the pack
+     stores "follow the pack", not a stricter override. */
+  GB: { country: "United Kingdom", regulator: "HMRC", regLabel: "HMRC money-service business number", currency: "GBP", reportThreshold: null, reportCurrency: "GBP", report: "Suspicious Activity Report", idSeed: 12000, noCashReport: true },
   AU: { country: "Australia", regulator: "AUSTRAC", regLabel: "AUSTRAC enrolment number", currency: "AUD", reportThreshold: 10000, reportCurrency: "AUD", report: "Threshold Transaction Report" },
   AE: { country: "United Arab Emirates", regulator: "CBUAE", regLabel: "Exchange-house licence number", currency: "AED", reportThreshold: 55000, reportCurrency: "AED", report: "Suspicious Transaction Report" },
   /* No amount report. idDefault is the cash identification line, which
@@ -126,7 +129,7 @@ export const STEPS: Step[] = [
     id: "jurisdiction",
     phase: "business", screen: 1,
     title: "Where you operate",
-    blurb: "Sets the regulator, the home currency and the reporting threshold — so the desk fits their rules, not someone else's.",
+    blurb: "Sets the regulator, the home currency, and the reporting line, so the desk fits their rules.",
     kind: "form", who: "either",
     fields: [
       { id: "country", label: "Licensed in", type: "select", required: true, options: COUNTRIES, prefillFrom: "application.jurisdiction" },
@@ -135,7 +138,7 @@ export const STEPS: Step[] = [
       { id: "elseCcy", label: "Their home currency", type: "text", placeholder: "USD" },
       { id: "regulator", label: "Regulator", type: "text", derived: true, help: "Follows from the country — this is the rulebook the desk carries." },
       { id: "homeCurrency", label: "Home currency", type: "text", derived: true },
-      { id: "reportThreshold", label: "Reports over", type: "money", derived: true, help: "The regulator's number. Not ours to move." },
+      { id: "reportThreshold", label: "Reports over", type: "money", derived: true, help: "The regulator's number, where the law states one. Not ours to move. Blank means there is no amount." },
     ],
   },
   {
@@ -246,7 +249,7 @@ export const STEPS: Step[] = [
     blurb: "The regulator sets a ceiling; plenty of shops ask earlier. This is their choice, not ours.",
     kind: "form", who: "either",
     fields: [
-      { id: "idOver", label: "Take ID over", type: "money", required: true, help: "Defaults to the regulator's threshold." },
+      { id: "idOver", label: "Take ID over", type: "money", required: true, help: "Defaults to the foreign-exchange line. A lower number is this desk's own policy." },
     ],
   },
   {
