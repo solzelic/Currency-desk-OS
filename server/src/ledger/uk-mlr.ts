@@ -186,33 +186,23 @@ export async function ukTransferDueDiligence(
   return { amount: line.amount.toFixed(2), comparator: line.comparator };
 }
 
-export type PurposeBecause = "desk" | "pack" | "missing";
-
 /**
- * Whether a deal with no purpose or source of funds may post.
+ * Whether a blank purpose and source of funds may post.
  *
- * A v2 desk that has not typed its own reporting number has no
- * amount-triggered report, so the fields are not required. Any other
- * pack with no reporting line still requires them: that is a broken
- * desk, not a country with no cash report. A number the desk typed
- * binds at or above that number, on v2 and everywhere else.
+ * `line` is the reporting figure already resolved into the desk's
+ * home currency, including a baseline conversion. Null means that
+ * resolution named no amount.
+ *
+ * On pack-gb-v2, no amount is the statute: there is no large-cash
+ * report, so the fields are not required. On every other pack, no
+ * amount is a broken desk and the fields are required. A number,
+ * whether the pack's or one the desk typed, binds at or above it.
  */
-export async function purposeAndSourceRequired(
-  client: pg.PoolClient,
-  legalEntityId: string,
-  pack: JurisdictionPack,
+export function purposeDecision(
+  packId: string,
+  line: Decimal | null,
   amountHome: Decimal,
-): Promise<{ required: true; because: PurposeBecause } | { required: false }> {
-  const desk = await entityMoney(client, legalEntityId, "report_threshold");
-  if (pack.packId === UK_PACK_V2 && desk === null) return { required: false };
-  if (desk !== null) {
-    return amountHome.gte(desk)
-      ? { required: true, because: "desk" }
-      : { required: false };
-  }
-  const packLine = positiveMoney(pack.reportThreshold);
-  if (packLine === null) return { required: true, because: "missing" };
-  return amountHome.gte(packLine)
-    ? { required: true, because: "pack" }
-    : { required: false };
+): "allow" | "missing" | "over" {
+  if (line === null) return packId === UK_PACK_V2 ? "allow" : "missing";
+  return amountHome.gte(line) ? "over" : "allow";
 }

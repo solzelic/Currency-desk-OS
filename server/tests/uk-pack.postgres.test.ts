@@ -57,9 +57,9 @@ async function reset() {
     `INSERT INTO ledger_customers
        (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
      VALUES
-       ('uk-known',$2,$3,$4,$5,'Known Customer','normal','verified'),
-       ('uk-walkin',$2,$3,$4,$5,'Walk-in','normal','missing')`,
-    [actor.userId, actor.tenantId, actor.legalEntityId, actor.branchId, actor.workspaceId],
+       ('uk-known',$1,$2,$3,$4,'Known Customer','normal','verified'),
+       ('uk-walkin',$1,$2,$3,$4,'Walk-in','normal','missing')`,
+    [actor.tenantId, actor.legalEntityId, actor.branchId, actor.workspaceId],
   );
   await pool.query(
     `INSERT INTO ledger_rates (tenant_id,legal_entity_id,branch_id,workspace_id,currency,units_per_cad)
@@ -138,7 +138,9 @@ postgres("United Kingdom pack v2", () => {
   });
 
   afterAll(async () => {
-    await pool.query("DELETE FROM legal_entities WHERE id=$1", [actor.legalEntityId]);
+    /* The ledger rows point at this entity. A disposable database does
+       not need them removed, and deleting the entity first fails the
+       foreign key. Close the connections and leave the rows. */
     await handle.close();
     await pool.end();
     delete process.env.DATABASE_URL;

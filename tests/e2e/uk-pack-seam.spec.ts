@@ -124,6 +124,29 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
     } else {
       notes.push("session:open");
     }
+    /* A cash-in still updates an existing drawer row. An empty signup
+       has no GBP row, and the movement is refused before it can create
+       one. Top the drawer up the way a manager would. */
+    const held = await fetch("/api/ledger/till-balances").then((r) => r.json());
+    const have = Number(held.balances?.GBP ?? 0);
+    if (have < 1000) {
+      const topped = await fetch("/api/ledger/till-movements", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: `uk-topup-${Date.now()}`,
+          direction: "in",
+          currency: "GBP",
+          amount: (1000 - have).toFixed(2),
+          counterpartyType: "bank",
+          counterpartyRef: "uk-pack-seam",
+          reason: "Top-up so the United Kingdom seam has a drawer row",
+        }),
+      });
+      notes.push(topped.ok ? "GBP:ok" : `GBP:${topped.status} ${await topped.text()}`);
+    } else {
+      notes.push("GBP:ok");
+    }
     const made = await fetch("/api/ledger/customers", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -138,7 +161,7 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
     notes.push(made.status === 201 && customer.customerId ? `customer:${customer.customerId}` : `customer:${made.status}`);
     return { notes, customerId: customer.customerId as string | undefined };
   });
-  expect(ready.notes.filter((n) => !/^(session:open|customer:.+)$/.test(n)), ready.notes.join(" · ")).toEqual([]);
+  expect(ready.notes.filter((n) => !/^(session:open|GBP:ok|customer:.+)$/.test(n)), ready.notes.join(" · ")).toEqual([]);
   const customerId = ready.customerId!;
 
   const send = (principal: string, key: string) =>
@@ -193,14 +216,16 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
     { jurisdiction_pack_id: "pack-gb-v1", jurisdiction_pack_version: 1 },
   ]);
 
-  const panel = page.getByTestId("compliance-jurisdiction");
-  await expect(panel.getByTestId("uk-pack-v2")).toBeVisible();
-  await expect(panel.getByText("No large-cash report. UK law does not require one for a bureau.")).toBeVisible();
-  await expect(panel.getByText(/£12,000 or more/)).toBeVisible();
-  await expect(panel.getByText(/more than £800/)).toBeVisible();
-  await expect(panel.getByText(/NCA \(UKFIU\)/)).toBeVisible();
+  const card = page.getByTestId("compliance-jurisdiction").getByTestId("uk-pack-v2");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("No large-cash report. UK law does not require one for a bureau.");
+  await expect(card).toContainText("£12,000 or more");
+  await expect(card).toContainText("more than £800");
+  await expect(card).toContainText("NCA (UKFIU)");
   await expect(page.getByTestId("adopt-uk-pack")).toHaveCount(0);
-  await expect(page.getByTestId("uk-pack-rules")).toBeVisible();
+  const rules = page.getByTestId("uk-pack-rules");
+  await expect(rules).toContainText("There is no large-cash report");
+  await expect(rules).toContainText("Deals are not added together");
 
   const atLine = await send("800.00", `uk-v2-at-${stamp}`);
   expect(atLine.status, atLine.body).toBe(201);

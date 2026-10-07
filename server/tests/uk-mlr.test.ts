@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
 import { packForCountry } from "../src/ledger/jurisdiction.js";
 import { derive, JURISDICTION } from "../src/onboarding/flow.js";
-import { ukAmountHits, ukOperatingLine } from "../src/ledger/uk-mlr.js";
+import { purposeDecision, ukAmountHits, ukOperatingLine } from "../src/ledger/uk-mlr.js";
 
 const gbp = (value: string) => new Decimal(value);
 
@@ -56,16 +56,31 @@ describe("pack-gb-v2 identification lines", () => {
   });
 });
 
+describe("purpose and source of funds", () => {
+  it("treats no amount on pack-gb-v2 as the statute, and everywhere else as missing", () => {
+    expect(purposeDecision("pack-gb-v2", null, gbp("1.00"))).toBe("allow");
+    expect(purposeDecision("pack-gb-v2", gbp("400"), gbp("400.00"))).toBe("over");
+    expect(purposeDecision("pack-gb-v2", gbp("400"), gbp("399.99"))).toBe("allow");
+    expect(purposeDecision("pack-intl-v1", null, gbp("1.00"))).toBe("missing");
+    expect(purposeDecision("pack-intl-v1", gbp("8000"), gbp("8000.00"))).toBe("over");
+    expect(purposeDecision("pack-intl-v1", gbp("8000"), gbp("7999.99"))).toBe("allow");
+  });
+});
+
 describe("a new United Kingdom desk", () => {
   it("opens on pack-gb-v2 and does not seed a £10,000 cash report", () => {
     expect(packForCountry("UK")?.packId).toBe("pack-gb-v2");
-    expect(JURISDICTION.GB.reportThreshold).toBeNull();
-    expect(JURISDICTION.GB.idSeed).toBe(12000);
-    expect(JURISDICTION.GB.noCashReport).toBe(true);
-    expect(JURISDICTION.GB.report).toBe("Suspicious Activity Report");
+    const gb = JURISDICTION.GB;
+    const ca = JURISDICTION.CA;
+    expect(gb).toBeDefined();
+    expect(ca).toBeDefined();
+    expect(gb!.reportThreshold).toBeNull();
+    expect(gb!.idSeed).toBe(12000);
+    expect(gb!.noCashReport).toBe(true);
+    expect(gb!.report).toBe("Suspicious Activity Report");
     expect(derive({ country: "GB" }).reportThreshold).toBeNull();
     /* Canada is unchanged. Its reporting figure is still 10,000. */
-    expect(JURISDICTION.CA.reportThreshold).toBe(10000);
+    expect(ca!.reportThreshold).toBe(10000);
   });
 
   it("does not edit pack-gb-v1", () => {

@@ -81,6 +81,7 @@ postgres("jurisdiction packs against real PostgreSQL", () => {
     expect(packs.gb.regulator).toBe("HMRC");
     expect(packs.us.regulator).toBe("FinCEN");
     expect(packs.ca.reportName).toBe("LCTR");
+    expect(packs.gb.reportName).toBe("SAR");
     expect(packs.us.reportName).toBe("CTR");
   });
 
@@ -89,11 +90,22 @@ postgres("jurisdiction packs against real PostgreSQL", () => {
       ca: await resolvePack(client, "le-jur-ca"),
       gb: await resolvePack(client, "le-jur-gb"),
     }));
-    /* Canada asks for identification at 3,000; the UK at 1,000. Wiring one
-       of those in as a constant is exactly how a desk ends up out of
-       compliance in a country nobody tested. */
+    /* Canada asks for identification at 3,000. A new United Kingdom desk
+       is on pack-gb-v2, whose occasional line is 12,000. The published
+       v1 row is still 1,000. Wiring either in as a constant is exactly
+       how a desk ends up out of compliance in a country nobody tested. */
     expect(Number(packs.ca.idThreshold)).toBe(3000);
-    expect(Number(packs.gb.idThreshold)).toBe(1000);
+    expect(packs.gb.packId).toBe("pack-gb-v2");
+    expect(Number(packs.gb.idThreshold)).toBe(12000);
+    const v1 = await pool.query(
+      `SELECT report_name, report_threshold::text, id_threshold::text
+         FROM jurisdiction_packs WHERE pack_id='pack-gb-v1'`,
+    );
+    expect(v1.rows[0]).toEqual({
+      report_name: "MLR",
+      report_threshold: "10000.00",
+      id_threshold: "1000.00",
+    });
   });
 
   it("lets a desk trade one foreign currency for another", async () => {

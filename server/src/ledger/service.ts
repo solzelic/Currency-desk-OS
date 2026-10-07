@@ -32,9 +32,9 @@ import {
   RULES_UNAVAILABLE_NOTICE,
   type JurisdictionPack,
 } from "./jurisdiction.js";
-import { resolveIdThreshold } from "./thresholds.js";
+import { resolveIdThreshold, resolveReportThreshold } from "./thresholds.js";
 import {
-  purposeAndSourceRequired,
+  purposeDecision,
   UK_PACK_V2,
   ukDueDiligenceBlocks,
 } from "./uk-mlr.js";
@@ -412,16 +412,16 @@ export async function requirePurposeAndSource(
   sourceOfFunds: string,
 ): Promise<void> {
   if (purpose.trim() && sourceOfFunds.trim()) return;
-  const decision = await purposeAndSourceRequired(
-    client,
-    legalEntityId,
-    pack,
-    amountHome,
-  );
-  if (!decision.required) return;
+  /* The resolved line, not the figure printed on the pack row. A
+     baseline desk states 10,000 USD and posts in its own currency, so
+     the comparison has to be the converted amount. pack-gb-v2 stores
+     0, which this reader treats as no amount. */
+  const line = await resolveReportThreshold(client, legalEntityId, pack);
+  const decision = purposeDecision(pack.packId, line, amountHome);
+  if (decision === "allow") return;
   throw new LedgerError(
     "COMPLIANCE_BLOCKED",
-    decision.because === "missing"
+    decision === "missing"
       ? NO_REPORTING_LINE
       : "Authoritative compliance policy blocked posting.",
   );
