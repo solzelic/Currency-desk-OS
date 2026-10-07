@@ -942,6 +942,49 @@
       if (need) askPin({ title: 'Confirm export', sub: 'Enter your PIN to download the ledger', name: me.name, expected: pinOf ? pinOf(me.name) : '0000', onOk: exportLedger });
       else exportLedger();
     };
+    /* The owner's copy of every client and every deal on this desk.
+       The server writes the files. This screen only saves them. A
+       manager who can export the on-screen ledger still cannot call
+       this. The server refuses them. */
+    const [deskExportMsg, setDeskExportMsg] = useState('');
+    const [deskExportBusy, setDeskExportBusy] = useState(false);
+    const downloadDeskFiles = async () => {
+      if (deskExportBusy) return;
+      setDeskExportBusy(true);
+      setDeskExportMsg('');
+      const saved = [];
+      const files = [['/api/desk/export/clients.csv', 'clients.csv'], ['/api/desk/export/deals.csv', 'deals.csv']];
+      try {
+        for (const [path, filename] of files) {
+          let res;
+          try { res = await fetch(path, { credentials: 'same-origin' }); }
+          catch (e) {
+            setDeskExportMsg(saved.length ? saved.join(' and ') + ' saved. The rest did not finish.' : 'The download did not finish. No file was saved.');
+            return;
+          }
+          if (res.status === 401) { setDeskExportMsg('Sign in again, then try the download.'); return; }
+          if (res.status === 403) {
+            const body = await res.json().catch(() => ({}));
+            setDeskExportMsg((body && body.message) || 'Only the owner of this desk can download clients and deals.');
+            return;
+          }
+          if (!res.ok) {
+            setDeskExportMsg(saved.length ? saved.join(' and ') + ' saved. The rest did not finish.' : 'The download did not finish. No file was saved.');
+            return;
+          }
+          const blob = await res.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          saved.push(filename);
+        }
+        setDeskExportMsg('Saved clients.csv and deals.csv.');
+      } finally {
+        setDeskExportBusy(false);
+      }
+    };
     const inits = (n) => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     // a staff member can ALWAYS manage their own profile; system + app settings need canSettings
     const myProf = (settings.staff && settings.staff[me.name]) || {};
@@ -1300,6 +1343,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <span className="text-[11.5px]" style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}><b style={{ color: CD.ink }}>{expList.length}</b> transaction{expList.length === 1 ? '' : 's'} ready</span>
               <button onClick={exportLedgerGated} disabled={!expList.length} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: !expList.length ? 'var(--cd-disabled)' : exported ? CD.green : CD.ink, borderRadius: 9, cursor: expList.length ? 'pointer' : 'not-allowed' }}><Ic n={exported ? 'check' : 'lock'} s={15} c="var(--cd-on-ink)" /> {exported ? 'Downloaded' : 'Export CSV'}</button>
             </div>
+          </div>
+
+          <div className="p-4 mt-4" data-testid="desk-export" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="grid place-items-center flex-none" style={{ width: 44, height: 44, borderRadius: 12, background: CD.lineSoft }}><Ic n="download" s={22} c={CD.ink} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold" style={{ color: CD.ink }}>Download clients and deals</div>
+                <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>Two CSV files for this desk: every client on the server, and every deal on the ledger. Excel can open them. A client that lives only in this browser is not included. Scans are not included.</div>
+              </div>
+            </div>
+            {me && me.role === 'Owner'
+              ? <button type="button" data-testid="desk-export-download" onClick={downloadDeskFiles} disabled={deskExportBusy} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: deskExportBusy ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9 }}><Ic n="download" s={15} c="var(--cd-on-ink)" /> {deskExportBusy ? 'Downloading…' : 'Download CSV files'}</button>
+              : <div className="text-[12.5px]" style={{ color: CD.mute }}>Only the owner of this desk can download clients and deals.</div>}
+            {deskExportMsg ? <div className="text-[12px] mt-2" style={{ color: CD.ink }}>{deskExportMsg}</div> : null}
           </div>
         </div>)}
 

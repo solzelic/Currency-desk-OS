@@ -383,6 +383,7 @@ be read as more than it is:
 | question | route |
 |---|---|
 | who are this shop's customers | `GET /api/clients` |
+| owner download of every client, no scans | `GET /api/desk/export/clients.csv` |
 | who is this, given a name (aliases included) | `GET /api/clients/lookup?name=` |
 | everything about one customer | `GET /api/clients/:clientId` |
 | open a file / change one | `POST /api/clients`, `PATCH /api/clients/:clientId` |

@@ -403,6 +403,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, owner download. The owner can download two CSV files from
+Settings, Ledger: every client stored for this desk, and every deal
+on the ledger. The server writes the files. A manager is refused.
+Another desk's rows are not included. Scans are not included. Cheque
+clearing and cheque return rows are not deals. Money is the numeric
+text the database stored. There is no spreadsheet file, because no
+spreadsheet library is installed. See `docs/CLIENT_RECORDS.md`.
+
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
 and remittance require customer due diligence above 5,000 PHP. A bill,

@@ -32,6 +32,7 @@ import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sit
 import { registerQuoteRoutes } from "./quotes/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerClientRoutes } from "./clients/routes.js";
+import { registerDeskExportRoutes } from "./desk/export-routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 
 /* Standalone pages of the marketing site, beyond the front door. Each is
@@ -194,6 +195,7 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
        run. A desk on the embedded database keeps the browser-only client
        store it has always had — see docs/CLIENT_RECORDS.md. */
     registerClientRoutes(app, db, ledgerDatabaseUrl);
+    registerDeskExportRoutes(app, db, ledgerDatabaseUrl);
   }
 
   // serve the built frontend (vite build → dist) when configured
