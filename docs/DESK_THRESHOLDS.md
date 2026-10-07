@@ -29,6 +29,10 @@ a longer window is more diligence, not less. Getting that the wrong way
 round inverts the alarm — it flags the desk running a wider net and says
 nothing to the one running a narrower one.
 
+`aggregation_hours` NULL on a pack is not a missing 24. It means that
+pack has no hour window. India stores NULL and puts the calendar month
+on the cash-report row. A reader must not fill that NULL in as 24.
+
 ## The rule
 
 **A desk may tighten. A desk may never loosen.**

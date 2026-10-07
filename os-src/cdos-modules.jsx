@@ -63,22 +63,27 @@
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const single = TH != null && cashForReport(row) >= TH;
+      const monthCash = regime && regime.windowKind === 'calendar_month';
+      const above = regime && regime.comparator === 'gt'
+        ? (n) => n > TH
+        : (n) => n >= TH;
+      const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cashForReport(o), 0);
-      const str = TH != null && !single && agg >= TH;
+      const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
-      // ending at this deal ≥ threshold ⇒ a single REPORTABLE aggregated transaction.
-      // A pack whose large-cash window is 'none' does not add deals together.
+      // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
+      // A pack whose large-cash window is 'none', and a calendar-month pack
+      // (India), do not use this clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = aggregate ? (regime.aggHours || 24) : null;
+      const hours = (monthCash || !aggregate) ? null : (regime.aggHours || 24);
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once — at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
       const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
-      const agg24 = hours != null && TH != null && !single && agg24Sum >= TH && isClusterEnd;
+      const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
       else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';

@@ -304,10 +304,15 @@
       idAt: desk && desk.idThreshold ? lineAmount(desk.idThreshold) : null,
       /* A 'none' window means do not add deals together. Falling back to
          24 here is how a country that forbids aggregation was shown a
-         24 hour rule. */
+         24 hour rule. A calendar month is not an hour count either.
+         India keeps that month on windowKind and leaves aggHours empty. */
       aggregate: !noCashWindow,
       largeDirection: (large && large.direction) || 'in',
-      aggHours: noCashWindow ? null : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
+      windowKind: (large && large.windowKind) || null,
+      comparator: (large && large.comparator) || 'gte',
+      aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month'))
+        ? null
+        : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -470,6 +475,10 @@
   // line; conductor and beneficiary only). A policy with includeAll
   // keeps every amount, and uses the axes the pack named.
   function aggregateEvents(events, regime, settings, kind, policy) {
+    /* A calendar-month pack is not this 24-hour engine. A single cash
+       amount over the line is flagged on the deal. Connected deals in
+       the month are not summed here. */
+    if (regime && regime.windowKind === 'calendar_month') return [];
     const TH = regime.threshold, H = regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */

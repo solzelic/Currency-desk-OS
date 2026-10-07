@@ -56,10 +56,17 @@ describe("which country gets a pack", () => {
     expect(packForCountry("RS")?.packId).toBe("pack-rs-v1");
     expect(packForCountry("Serbia")?.homeCurrency).toBe("RSD");
     expect(packForCountry("Republic of Serbia")?.packId).toBe("pack-rs-v1");
+    expect(packForCountry("IN")).toEqual({
+      packId: "pack-in-v1",
+      version: 1,
+      homeCurrency: "INR",
+    });
+    expect(packForCountry("India")?.packId).toBe("pack-in-v1");
+    expect(packForCountry("Republic of India")?.homeCurrency).toBe("INR");
   });
 
   it("gives an unknown country no pack, and not Canada's", () => {
-    for (const country of ["", "XX", "Somewhere else", "India", "ZZ", null, undefined]) {
+    for (const country of ["", "XX", "Somewhere else", "ZZ", null, undefined]) {
       expect(packForCountry(country), String(country)).toBeNull();
     }
     expect(packForCountry("Somewhere else")?.packId).not.toBe("pack-ca-v1");

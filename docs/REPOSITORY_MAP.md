@@ -91,6 +91,11 @@ commit the generated output — CI diffs `web/` against a fresh build.
 - Migration `036_pack_ae_v2` inserts the current United Arab Emirates
   pack. It does not edit `pack-ae-v1`. 029, 031, 033, 034, and 035 are
   already on main, so 036 stays. The rule itself is `docs/UAE_PACK.md`.
+- Migration `037_pack_in_v1` inserts the first India pack. It does not
+  move a desk that is already open. `aggregation_hours` is null. The
+  calendar month lives on the cash-report row. 029, 031, 033, 034, 035,
+  and 036 are already on main, so 037 stays. The rule text is
+  `docs/INDIA_PACK.md`.
 
 ## Test commands
 

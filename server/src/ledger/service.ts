@@ -26,6 +26,14 @@ import {
 import { holdSerbiaSuspicion, SERBIA_SUSPICION_HELD, serbiaExchangeFacts } from "./serbia.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
+  INDIA_PACK_ID,
+  INDIA_PURPOSE_MESSAGE,
+  INDIA_SALE_CASH_MESSAGE,
+  indiaIdentificationRequired,
+  indiaPurposeRequired,
+  indiaSaleCashBlocked,
+} from "./india-pack.js";
+import {
   EU_AMLR_PACK_ID,
   pairAllowed,
   resolvePack,
@@ -332,6 +340,22 @@ export async function requireIdentification(
       identificationRequired: false,
     };
   }
+  /* India does not use the single identification column for every kind
+     of deal. A remittance is every deal. A walk-in foreign exchange is
+     50,000 INR or more. A verified customer has already satisfied that
+     duty. A desk number can only tighten the walk-in line. */
+  if (pack.packId === INDIA_PACK_ID) {
+    if (idStatus !== "verified") {
+      const desk = await deskIdLine(client, actor.legalEntityId);
+      if (indiaIdentificationRequired(amountHome, deal.kind, desk)) {
+        throw new LedgerError(
+          "COMPLIANCE_BLOCKED",
+          "Authoritative compliance policy blocked posting.",
+        );
+      }
+    }
+    return { ...stamp, identificationRequired: false };
+  }
   if (pack.baseline) {
     if (idStatus === "verified") return { ...stamp, identificationRequired: false };
     /* A missing or stale market rate already sets block. A desk's own
@@ -469,6 +493,42 @@ export async function requirePurposeAndSource(
       ? NO_REPORTING_LINE
       : "Authoritative compliance policy blocked posting.",
   );
+}
+
+/* Purpose and source of funds once India's due-diligence line is met.
+   A verified customer still has to give them. A remittance needs them
+   at any amount. Other packs are untouched: their purpose check stays
+   on the reporting line. */
+export function assertIndiaPurpose(
+  pack: JurisdictionPack,
+  amountHome: Decimal,
+  dealKind: string,
+  purpose: string,
+  sourceOfFunds: string,
+): void {
+  if (pack.packId !== INDIA_PACK_ID) return;
+  if (!indiaPurposeRequired(amountHome, dealKind)) return;
+  if (purpose.trim() && sourceOfFunds.trim()) return;
+  throw new LedgerError("COMPLIANCE_BLOCKED", INDIA_PURPOSE_MESSAGE);
+}
+
+function assertIndiaSaleCash(
+  pack: JurisdictionPack,
+  from: string,
+  to: string,
+  inputAmount: Decimal,
+): void {
+  if (
+    indiaSaleCashBlocked({
+      packId: pack.packId,
+      from,
+      to,
+      inputAmount,
+      home: pack.homeCurrency,
+    })
+  ) {
+    throw new LedgerError("COMPLIANCE_BLOCKED", INDIA_SALE_CASH_MESSAGE);
+  }
 }
 
 export class LedgerService {
@@ -681,6 +741,9 @@ export class LedgerService {
          kept in, taken on each side at that side's own rate. */
       const inputHome = input.mul(fromMid).toDecimalPlaces(2);
       const outputCad = output.mul(toMid).toDecimalPlaces(2);
+      /* Cash for a sale of foreign exchange, India only. The rupee the
+         customer pays, not the fee. A purchase is not this check. */
+      assertIndiaSaleCash(pack, quote.from, quote.to, input);
       const compliance = await this.requireIdentification(
         client,
         actor,
@@ -733,6 +796,7 @@ export class LedgerService {
           { kind: "exchange" },
         );
       }
+      assertIndiaPurpose(pack, inputHome, "exchange", quote.purpose, quote.sourceOfFunds);
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
@@ -1219,6 +1283,7 @@ export class LedgerService {
       const output = input.mul(rate).toDecimalPlaces(2);
       const outputCad = output.div(toRate).toDecimalPlaces(2);
       const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
+      assertIndiaSaleCash(pack, request.from, request.to, input);
       const compliance = await this.requireIdentification(
         client,
         actor,
@@ -1256,11 +1321,13 @@ export class LedgerService {
         },
       );
       if (!serbia.ok) throw new LedgerError("COMPLIANCE_BLOCKED", serbia.message);
+      assertIndiaPurpose(pack, inputHome, "exchange", request.purpose, request.sourceOfFunds);
       /* The 2027 EU pack has no large-cash report, so an empty reporting
          line is not "purpose on every deal". Due diligence asks for it
          inside requireIdentification, and only when that line is hit.
-         Every other pack, including the United Kingdom and the UAE,
-         goes through requirePurposeAndSource. */
+         Every other pack, including the United Kingdom, the UAE, and
+         India, goes through requirePurposeAndSource. India also asks
+         at its own due-diligence line, above. */
       if (pack.packId !== EU_AMLR_PACK_ID) {
         await requirePurposeAndSource(
           client,

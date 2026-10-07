@@ -106,6 +106,9 @@ export const JURISDICTION: Record<
      is what the "when do you take ID?" box is about. */
   EU: { country: "European Union", regulator: "National FIU", regLabel: "AML registration number", currency: "EUR", reportThreshold: null, idDefault: 3000, reportCurrency: "EUR", report: "Suspicious Transaction Report" },
   RS: { country: "Serbia", regulator: "NBS / APML", regLabel: "NBS exchange authorisation number", currency: "RSD", reportThreshold: 15000, reportCurrency: "EUR", report: "Cash transaction report" },
+  /* More than 10 lakh. The comparator on the pack row is gt. This
+     seed is the amount the wizard shows. */
+  IN: { country: "India", regulator: "RBI / FIU-IND", regLabel: "RBI licence number", currency: "INR", reportThreshold: 1000000, reportCurrency: "INR", report: "Currency Transaction Report" },
   XX: { country: "Somewhere else", regulator: "your regulator", regLabel: "Business / AML registration number", currency: "USD", reportThreshold: 10000, reportCurrency: "USD", report: "large-transaction report" },
 };
 

@@ -562,7 +562,13 @@
      turns that into `false` has quietly cleared a deal nobody checked. */
   const overReportingLimit = (homeAmount, settings) => {
     const limit = reportingLimit(settings);
-    return limit.amount == null ? null : (+homeAmount || 0) >= limit.amount;
+    if (limit.amount == null) return null;
+    const regime = (window.CDOS && window.CDOS.getRegime) ? window.CDOS.getRegime(settings) : null;
+    const amount = +homeAmount || 0;
+    /* India cash reports are more than the line. Exactly the line is
+       not a report. Every other pack stays at or above. */
+    if (regime && regime.comparator === 'gt') return amount > limit.amount;
+    return amount >= limit.amount;
   };
   /* The line at which this desk asks for identification — the other half
      of the pair, and the one the LEDGER refuses a deal at. Same

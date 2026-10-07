@@ -242,11 +242,13 @@ export const PACK_FOR_COUNTRY: Readonly<Record<string, string>> = {
      Opt-in is a separate act. See server/src/ledger/uae-exchange.ts. */
   AE: "pack-ae-v2",
   RS: "pack-rs-v1",
+  /* First India pack. A desk that is already open is not moved. */
+  IN: "pack-in-v1",
 };
 
 /* Canada, the 2027 European Union pack, Australia v2, the United
    Kingdom v2, and the United Arab Emirates v2 are version 2.
-   Every other pack is still version 1. */
+   Every other pack, including India, is still version 1. */
 const PACK_VERSION: Readonly<Record<string, number>> = {
   "pack-ca-v2": 2,
   [EU_AMLR_PACK_ID]: 2,
@@ -275,6 +277,9 @@ const COUNTRY_CODE: Readonly<Record<string, string>> = {
   RS: "RS",
   SERBIA: "RS",
   "REPUBLIC OF SERBIA": "RS",
+  IN: "IN",
+  INDIA: "IN",
+  "REPUBLIC OF INDIA": "IN",
 };
 
 export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
@@ -290,6 +295,7 @@ export const HOME_FOR_PACK: Readonly<Record<string, string>> = {
   "pack-ae-v1": "AED",
   "pack-ae-v2": "AED",
   "pack-rs-v1": "RSD",
+  "pack-in-v1": "INR",
 };
 
 /* The currency a pack's thresholds are written in, when that is not

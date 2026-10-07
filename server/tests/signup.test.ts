@@ -138,6 +138,38 @@ describe("signup", () => {
     expect(boards[0]!.boardRows.CAD).toBeUndefined();
   });
 
+  it("opens a new India desk on the India pack, in rupees", async () => {
+    const su = await app.inject({
+      method: "POST",
+      url: "/api/signup",
+      payload: {
+        businessName: "Mumbai FX",
+        ownerName: "Priya Shah",
+        email: "priya@mumbaifx.in",
+        password: "a-strong-pass",
+        slug: "mumbaifx",
+        onboarding: { country: "IN" },
+      },
+    });
+    expect(su.statusCode).toBe(201);
+    const ok = await app.inject({
+      method: "POST",
+      url: "/api/signup/verify",
+      payload: { email: "priya@mumbaifx.in", code: codeFromLog() },
+    });
+    expect(ok.statusCode).toBe(201);
+    const le = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, "tnt-mumbaifx")))[0]!;
+    expect(le.jurisdictionPackId).toBe("pack-in-v1");
+    expect(le.homeCurrency).toBe("INR");
+    /* The signup body did not send a regulator string. The column stays
+       blank rather than being labelled FINTRAC. Settings reads the
+       regulator off the pack, which is RBI / FIU-IND. */
+    expect(le.jurisdiction).toBe("");
+    expect(le.jurisdiction).not.toBe("FINTRAC");
+    expect(le.jurisdictionPackId).not.toBe("pack-intl-v1");
+    expect(le.homeCurrency).not.toBe("CAD");
+  });
+
   it("rejects a taken slug and a reserved slug", async () => {
     const taken = await app.inject({ method: "POST", url: "/api/signup", payload: { businessName: "Other", ownerName: "X", email: "x@other.ca", password: "a-strong-pass", slug: "yorkfx" } });
     expect(taken.statusCode).toBe(409); // yorkfx is the seeded tenant
