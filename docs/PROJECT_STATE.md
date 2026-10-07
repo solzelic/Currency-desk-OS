@@ -75,8 +75,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the desk instead of floating as a desktop panel. The menu bar keeps
   the icon buttons and drops the wordmark, the clock, and the account
   name. Tables that used to be clipped scroll sideways. Sign-in and
-  the station picker stay on the screen. Tagged opens: it was reading
-  `deskFacts` without defining it, so the screen never appeared.
+  the station picker stay on the screen.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -416,7 +415,9 @@ trading day or the pack arrives, the same way the ledger does.
 
 **2026-10-07**, phone layout. At 430px wide and under, windows fill the
 desk. The menu bar keeps its buttons. Tables scroll sideways instead
-of being clipped. Tagged opens.
+of being clipped. A phone-width check opens the Rate Board, Ledger,
+Clients, Cash Drawer, Compliance, and Settings and requires the page
+to stay inside the screen. Tagged is not part of this change.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
