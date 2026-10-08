@@ -35,10 +35,17 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    /* A read that fails must not say "nothing was posted". That sentence
+       is for a write the book refused. A balance or client list that
+       did not load is a different fact. */
+    var method = String(init.method || "GET").toUpperCase();
+    var isRead = method === "GET" || method === "HEAD";
     try {
       response = await fetch(path, init);
     } catch (cause) {
-      var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
+      var networkError = new Error(isRead
+        ? "CurrencyDesk could not reach the ledger server. Try again."
+        : "CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
@@ -73,7 +80,9 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
-      })[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      })[body.code] || (isRead
+        ? "The desk could not load that. Try again."
+        : "The ledger server rejected this request. Nothing was posted."));
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;

@@ -162,7 +162,7 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn’t match this ID. Try again — or reset it below.'); return; }
+        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password does not match this ID. Try again, or send yourself a reset code.'); return; }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
@@ -170,7 +170,8 @@
           setErr((d && d.detail) || 'A code went out moments ago — check your email.');
           return;
         }
-        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
+        if (res && res.status === 403) { sending.current = false; setBusy(false); setErr('This account cannot sign in.'); return; }
+        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('The desk could not sign you in. Wait a moment and try again.'); return; }
         const data = await res.json().catch(() => null);
         const u = (data && data.user) || null;
         const srvPlan = (u && u.plan) || null;

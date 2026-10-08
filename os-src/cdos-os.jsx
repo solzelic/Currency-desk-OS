@@ -172,8 +172,9 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId: rec ? (rec.code || rec.name) : u.trim().toLowerCase(), password: p }),
         });
-        if (res && res.status === 401) { setErr('Wrong staff ID or password' + (rec ? ' for ' + (rec.code || rec.name) : '') + '. Check both and try again \u2014 or ask a manager to reset your password.'); return; }
-        if (res && !res.ok) { setErr('Sign-in service error (' + res.status + ') \u2014 try again in a moment.'); return; }
+        if (res && res.status === 401) { setErr('Wrong staff ID or password. Check both and try again, or ask a manager to reset your password.'); return; }
+        if (res && res.status === 403) { setErr('This account cannot sign in.'); return; }
+        if (res && !res.ok) { setErr('The desk could not sign you in. Wait a moment and try again.'); return; }
         if (res && res.ok) {
           const data = await res.json().catch(() => null);
           mustChange = !!(data && data.user && data.user.mustChangePassword);
@@ -233,8 +234,8 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ currentPassword: current, newPassword: a }),
         });
-        if (!res.ok) { setErr('Couldn\u2019t save the new password (' + res.status + ') \u2014 try again.'); setBusy(false); return; }
-      } catch (_) { setErr('Network error \u2014 try again in a moment.'); setBusy(false); return; }
+        if (!res.ok) { setErr('The new password was not saved. Try again.'); setBusy(false); return; }
+      } catch (_) { setErr('The desk could not be reached. The password was not changed.'); setBusy(false); return; }
       setErr(''); onDone();
     };
     return (<div id="lock"><div className="lock-card">
@@ -318,9 +319,9 @@
       try {
         const res = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) });
         const j = await res.json().catch(() => null);
-        if (!res.ok) { setErr((j && j.detail) || ('Couldn’t create your desk (' + res.status + ').')); setBusy(false); return; }
+        if (!res.ok) { setErr((j && j.detail) || 'The desk was not created. Try again.'); setBusy(false); return; }
         setErr(''); onSent(d.email);
-      } catch (_) { setErr('Network error — try again.'); setBusy(false); }
+      } catch (_) { setErr('The desk could not be reached. Nothing was created.'); setBusy(false); }
     };
     const inSty = { border: `1px solid var(--hair)`, borderRadius: 9, background: 'var(--cd-panel, #fff)' };
     const optRow = (on, main, sub, onClick, left) => (
@@ -434,11 +435,11 @@
       try {
         const res = await fetch('/api/signup/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email, code: code.trim() }) });
         const d = await res.json().catch(() => null);
-        if (!res.ok) { setErr((d && d.detail) || ('That code didn\u2019t work (' + res.status + ').')); setBusy(false); return; }
+        if (!res.ok) { setErr((d && d.detail) || 'That code did not work. Try again.'); setBusy(false); return; }
         setErr(''); onVerified(d);
-      } catch (_) { setErr('Network error \u2014 try again.'); setBusy(false); }
+      } catch (_) { setErr('The desk could not be reached. Try again.'); setBusy(false); }
     };
-    const resend = async () => { setNote('Sending\u2026'); try { await fetch('/api/signup/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email }) }); setNote('A new code is on its way.'); } catch (_) { setNote('Couldn\u2019t resend \u2014 try again.'); } };
+    const resend = async () => { setNote('Sending\u2026'); try { await fetch('/api/signup/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email }) }); setNote('A new code is on its way.'); } catch (_) { setNote('The code was not sent. Try again.'); } };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Verify your email</span></div>
       <h1>Enter your code</h1>

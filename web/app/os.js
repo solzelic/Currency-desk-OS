@@ -1957,10 +1957,17 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    /* A read that fails must not say "nothing was posted". That sentence
+       is for a write the book refused. A balance or client list that
+       did not load is a different fact. */
+    var method = String(init.method || "GET").toUpperCase();
+    var isRead = method === "GET" || method === "HEAD";
     try {
       response = await fetch(path, init);
     } catch (cause) {
-      var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
+      var networkError = new Error(isRead
+        ? "CurrencyDesk could not reach the ledger server. Try again."
+        : "CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
@@ -1995,7 +2002,9 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
-      })[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      })[body.code] || (isRead
+        ? "The desk could not load that. Try again."
+        : "The ledger server rejected this request. Nothing was posted."));
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;
@@ -6101,7 +6110,7 @@
         body: body ? JSON.stringify(body) : undefined
       });
       const d = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(d && (d.detail || d.error) || 'HTTP ' + res.status);
+      if (!res.ok) throw new Error(d && (d.detail || d.message || d.error) || 'That did not save. Try again.');
       return d;
     };
     // blocking or removing a person locally also shuts their server sign-in
@@ -6235,7 +6244,7 @@
           } : siteInfo);
           setPubMsg('Published \u2014 the site shows this now.');
           log('Public site', 'contact & hours published');
-        } else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');else setPubMsg(d && d.detail || 'Couldn\u2019t publish (' + r.status + ').');
+        } else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');else setPubMsg(d && d.detail || 'The site details were not published. Try again.');
       }).catch(() => setPubMsg('Server unreachable \u2014 publish from the live desk.')).then(() => setPubBusy(false));
     };
     const saveSiteDomain = () => {
@@ -6258,7 +6267,7 @@
           setSiteDraft(d.tenant.siteDomain || '');
           setSiteMsg(d.tenant.siteDomain ? 'Saved — point your DNS and the site answers on it.' : 'Domain disconnected.');
           log('Public site', d.tenant.siteDomain ? 'domain ' + d.tenant.siteDomain : 'domain disconnected');
-        } else if (r.status === 401 || r.status === 403) setSiteMsg('Only the owner account can change the site domain.');else setSiteMsg(d && d.detail || 'Couldn\u2019t save (' + r.status + ').');
+        } else if (r.status === 401 || r.status === 403) setSiteMsg('Only the owner account can change the site domain.');else setSiteMsg(d && d.detail || 'The domain was not saved. Try again.');
       }).catch(() => setSiteMsg('Server unreachable \u2014 try again on the live desk.')).then(() => setSiteBusy(false));
     };
     const changeMyPassword = async () => {
@@ -6306,7 +6315,7 @@
           setPwForm(f => ({
             ...f,
             busy: false,
-            msg: 'Couldn\u2019t save (' + res.status + ') \u2014 try again.'
+            msg: 'The password was not saved. Try again.'
           }));
           return;
         }
@@ -58651,7 +58660,7 @@ ${snap}`;
         if (res && res.status === 401) {
           sending.current = false;
           setBusy(false);
-          setErr('That password doesn’t match this ID. Try again — or reset it below.');
+          setErr('That password does not match this ID. Try again, or send yourself a reset code.');
           return;
         }
         if (res && res.status === 429) {
@@ -58662,10 +58671,16 @@ ${snap}`;
           setErr(d && d.detail || 'A code went out moments ago — check your email.');
           return;
         }
+        if (res && res.status === 403) {
+          sending.current = false;
+          setBusy(false);
+          setErr('This account cannot sign in.');
+          return;
+        }
         if (res && !res.ok) {
           sending.current = false;
           setBusy(false);
-          setErr('Sign-in service error (' + res.status + ') — try again in a moment.');
+          setErr('The desk could not sign you in. Wait a moment and try again.');
           return;
         }
         const data = await res.json().catch(() => null);
@@ -61947,11 +61962,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           })
         });
         if (res && res.status === 401) {
-          setErr('Wrong staff ID or password' + (rec ? ' for ' + (rec.code || rec.name) : '') + '. Check both and try again \u2014 or ask a manager to reset your password.');
+          setErr('Wrong staff ID or password. Check both and try again, or ask a manager to reset your password.');
+          return;
+        }
+        if (res && res.status === 403) {
+          setErr('This account cannot sign in.');
           return;
         }
         if (res && !res.ok) {
-          setErr('Sign-in service error (' + res.status + ') \u2014 try again in a moment.');
+          setErr('The desk could not sign you in. Wait a moment and try again.');
           return;
         }
         if (res && res.ok) {
@@ -62126,12 +62145,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           })
         });
         if (!res.ok) {
-          setErr('Couldn\u2019t save the new password (' + res.status + ') \u2014 try again.');
+          setErr('The new password was not saved. Try again.');
           setBusy(false);
           return;
         }
       } catch (_) {
-        setErr('Network error \u2014 try again in a moment.');
+        setErr('The desk could not be reached. The password was not changed.');
         setBusy(false);
         return;
       }
@@ -62366,14 +62385,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         });
         const j = await res.json().catch(() => null);
         if (!res.ok) {
-          setErr(j && j.detail || 'Couldn’t create your desk (' + res.status + ').');
+          setErr(j && j.detail || 'The desk was not created. Try again.');
           setBusy(false);
           return;
         }
         setErr('');
         onSent(d.email);
       } catch (_) {
-        setErr('Network error — try again.');
+        setErr('The desk could not be reached. Nothing was created.');
         setBusy(false);
       }
     };
@@ -62782,14 +62801,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         });
         const d = await res.json().catch(() => null);
         if (!res.ok) {
-          setErr(d && d.detail || 'That code didn\u2019t work (' + res.status + ').');
+          setErr(d && d.detail || 'That code did not work. Try again.');
           setBusy(false);
           return;
         }
         setErr('');
         onVerified(d);
       } catch (_) {
-        setErr('Network error \u2014 try again.');
+        setErr('The desk could not be reached. Try again.');
         setBusy(false);
       }
     };
@@ -62808,7 +62827,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         });
         setNote('A new code is on its way.');
       } catch (_) {
-        setNote('Couldn\u2019t resend \u2014 try again.');
+        setNote('The code was not sent. Try again.');
       }
     };
     return /*#__PURE__*/React.createElement("div", {
