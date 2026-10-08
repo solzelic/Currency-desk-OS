@@ -151,6 +151,12 @@ async function covered(page: Page): Promise<string[]> {
   });
 }
 
+/* The window scales in over a third of a second. A box measured
+   during that scale is a few pixels small and can miss a real overlap. */
+async function settledWindow(page: Page): Promise<void> {
+  await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+}
+
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
@@ -215,12 +221,14 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
       await button.click();
       await expect(page.locator(".win.show").first()).toBeVisible();
       await dismissTour(page);
+      await settledWindow(page);
       expect(await overflowPast(page), `${id} at ${width}px`).toEqual([]);
       expect(await covered(page), `${id} at ${width}px`).toEqual([]);
     }
     await page.locator('button[title="Settings"]').click();
     await expect(page.locator(".win.show").first()).toBeVisible();
     await dismissTour(page);
+    await settledWindow(page);
     expect(await overflowPast(page), `settings at ${width}px`).toEqual([]);
     expect(await covered(page), `settings at ${width}px`).toEqual([]);
   }

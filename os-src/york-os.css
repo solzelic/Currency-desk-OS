@@ -1471,8 +1471,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
   #appbar {
     height: 52px;
-    padding: 0 4px 0 4px;
-    padding-right: 96px;
+    padding: 0 8px;
+    /* The store and ID buttons float on this row. Padding does not
+       keep a scrolling tab out from under them: the extra paints
+       through the padding. The bar's own box has to end first.
+       112px is the rail inset, two 44px buttons, the gap, and a
+       little air. */
+    margin-right: 112px;
+  }
+  /* #appbar:not(.editing) is more specific than #appbar, so a mask
+     reset on #appbar alone left the right-edge fade in place. */
+  #appbar:not(.editing) {
     -webkit-mask-image: none;
     mask-image: none;
   }
@@ -1503,7 +1512,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     opacity: 1 !important;
     pointer-events: auto !important;
   }
-  .win-back, .win-tool, .win-tile, .win-tb-btn { width: 44px; height: 44px; }
+  .win-back, .win-tool, .win-tile { width: 44px; height: 44px; }
+  /* Desktop draws the traffic lights at 12px. At 44px the three
+     dots cover the window title. */
+  .win-tb-btn { width: 12px; height: 12px; }
   .win-body { -webkit-overflow-scrolling: touch; }
   /* Sideways scroll only for a card that holds a table. The earnings
      card and the branch cash-position card put a heading in front of

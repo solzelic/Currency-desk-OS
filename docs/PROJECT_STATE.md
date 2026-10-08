@@ -76,7 +76,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the icon buttons and drops the wordmark, the clock, and the account
   name. A card that holds a table scrolls sideways. Rounded clips,
   photos, and bars stay clipped. Settings stacks its list above the
-  form. Sign-in and the station picker stay on the screen.
+  form. Sign-in and the station picker stay on the screen. The window
+  dots stay 12px, so the title stays readable. The module tab bar
+  ends before the store and ID buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -421,10 +423,14 @@ Settings stacks its list above the form. The phone-width check opens
 sign-in, the Rate Board, Ledger, Clients, Cash Drawer, Compliance,
 and Settings at 390px and at 360px. A control cut off by
 overflow:hidden fails that check. Only a box you can scroll counts
-as contained. That check caught the menu clock still showing (it
-pushed the power button off the screen), the window resize handle
-past the edge, and the Settings rail leaving the form a sliver.
-Those are fixed here. Tagged is not part of this change.
+as contained. A window title that meets a window dot, or a module
+tab that meets the store or ID button, fails that check too. The
+dots stay 12px. The tab bar ends before those buttons. That check
+caught the menu clock still showing (it pushed the power button off
+the screen), the window resize handle past the edge, the Settings
+rail leaving the form a sliver, the 44px dots covering the title,
+and the store and ID buttons covering the Ledger tab. Those are
+fixed here. Tagged is not part of this change.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
