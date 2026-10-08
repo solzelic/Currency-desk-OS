@@ -7,7 +7,18 @@
    Only overflow auto or scroll counts as containment, and only when
    that box itself sits inside the screen. A button, link, input, or
    select that sticks out of a hidden ancestor is still cut off, so
-   the check fails. */
+   the check fails.
+
+   Overlap is a different failure. A window title or a module tab can
+   sit inside the viewport and still be unreadable because another
+   element is painted on top of it. The centre of each front-window
+   title and each on-screen tab is asked with elementFromPoint. A
+   title whose box intersects a window dot, or a tab whose visible
+   box intersects a floating store or ID button, fails as well.
+   The title does not take pointer events, so a hit on its own bar
+   is the title showing through. The first-run card is skipped when
+   it is up, the same way the seam specs skip it, so this check is
+   the chrome. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 
@@ -55,6 +66,94 @@ async function overflowPast(page: Page): Promise<string[]> {
     }
     return seen;
   });
+}
+
+/* The title is pointer-events: none, so elementFromPoint falls
+   through it onto the bar. A dot or a tool button on that point
+   does not. A tab takes its own hits; a floating button on top
+   of it does not. Intersection uses the tab's box clipped to the
+   app bar, so a tab scrolled out of that bar is not a cover. */
+async function covered(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const hits: string[] = [];
+    const shown = (el: Element): el is HTMLElement => {
+      if (!(el instanceof HTMLElement)) return false;
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width >= 1 && rect.height >= 1;
+    };
+    const overlaps = (a: { left: number; top: number; right: number; bottom: number }, b: { left: number; top: number; right: number; bottom: number }) =>
+      a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+    const nameOf = (el: Element | null) => {
+      if (!el || !(el instanceof HTMLElement)) return "nothing";
+      const id = el.id ? "#" + el.id : el.tagName.toLowerCase();
+      const cls = String(el.className || "").trim().slice(0, 60);
+      return cls ? id + "." + cls : id;
+    };
+
+    for (const title of document.querySelectorAll(".win.show.active .win-title")) {
+      if (!shown(title)) continue;
+      const tr = title.getBoundingClientRect();
+      const label = (title.textContent || "").replace(/\s+/g, " ").trim() || "window";
+      const cx = tr.left + tr.width / 2;
+      const cy = tr.top + tr.height / 2;
+      if (cx >= 1 && cy >= 1 && cx <= innerWidth - 1 && cy <= innerHeight - 1) {
+        const hit = document.elementFromPoint(cx, cy);
+        const bar = title.closest(".win-bar");
+        const onBar = !!hit && !!bar && bar.contains(hit);
+        const clear = !!hit && (hit === title || title.contains(hit) || (onBar && !hit.closest(".win-lights") && !hit.closest(".win-rtools") && !hit.closest(".win-back")));
+        if (!clear) hits.push(`title "${label}" centre is ${nameOf(hit)}`);
+      }
+      const win = title.closest(".win");
+      if (!win) continue;
+      for (const dot of win.querySelectorAll(".win-tb-btn")) {
+        if (!shown(dot)) continue;
+        const dr = dot.getBoundingClientRect();
+        if (overlaps(tr, dr)) {
+          hits.push(`title "${label}" intersects a window dot ${Math.round(dr.width)}x${Math.round(dr.height)}`);
+          break;
+        }
+      }
+    }
+
+    const appbar = document.getElementById("appbar");
+    const appBox = appbar ? appbar.getBoundingClientRect() : null;
+    const floaters = [...document.querySelectorAll(".edge-rail .mb-op")].filter(shown);
+    for (const tab of document.querySelectorAll("#appbar .app-btn")) {
+      if (!shown(tab)) continue;
+      const raw = tab.getBoundingClientRect();
+      const visible = appBox
+        ? {
+            left: Math.max(raw.left, appBox.left),
+            top: Math.max(raw.top, appBox.top),
+            right: Math.min(raw.right, appBox.right),
+            bottom: Math.min(raw.bottom, appBox.bottom),
+          }
+        : raw;
+      if (visible.right - visible.left < 2 || visible.bottom - visible.top < 2) continue;
+      const label = tab.getAttribute("data-app") || "tab";
+      const cx = (visible.left + visible.right) / 2;
+      const cy = (visible.top + visible.bottom) / 2;
+      if (cx >= 1 && cy >= 1 && cx <= innerWidth - 1 && cy <= innerHeight - 1) {
+        const hit = document.elementFromPoint(cx, cy);
+        if (!hit || (hit !== tab && !tab.contains(hit))) hits.push(`tab "${label}" centre is ${nameOf(hit)}`);
+      }
+      for (const btn of floaters) {
+        const br = btn.getBoundingClientRect();
+        if (overlaps(visible, br)) {
+          hits.push(`tab "${label}" intersects a floating button ${Math.round(br.width)}x${Math.round(br.height)}`);
+          break;
+        }
+      }
+    }
+    return hits;
+  });
+}
+
+async function dismissTour(page: Page): Promise<void> {
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
 function clipFixture(fixed: boolean): string {
@@ -109,15 +208,20 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
     expect(await overflowPast(page), `sign-in at ${width}px`).toEqual([]);
 
     await signInAtDesk(page);
+    await dismissTour(page);
     for (const id of SCREENS) {
       const button = page.locator(`[data-app="${id}"]`);
       await button.scrollIntoViewIfNeeded();
       await button.click();
       await expect(page.locator(".win.show").first()).toBeVisible();
+      await dismissTour(page);
       expect(await overflowPast(page), `${id} at ${width}px`).toEqual([]);
+      expect(await covered(page), `${id} at ${width}px`).toEqual([]);
     }
     await page.locator('button[title="Settings"]').click();
     await expect(page.locator(".win.show").first()).toBeVisible();
+    await dismissTour(page);
     expect(await overflowPast(page), `settings at ${width}px`).toEqual([]);
+    expect(await covered(page), `settings at ${width}px`).toEqual([]);
   }
 });
