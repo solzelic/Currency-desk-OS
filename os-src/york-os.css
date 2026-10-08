@@ -1446,7 +1446,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
   #menubar { height: 48px; padding: 0 8px; overflow: hidden; }
   #menubar .mb-brand, #menubar .mb-sep, #menubar .mb-active { display: none; }
-  .mb-clock, .mb-acct-id, .mb-acct > svg { display: none; }
+  /* .mb-ops .mb-clock is more specific than .mb-clock, so the clock
+     stayed on screen and pushed the power button past the edge. */
+  #menubar .mb-clock,
+  #menubar .mb-op-div,
+  #menubar .mb-acct-id,
+  #menubar .mb-acct > svg { display: none; }
   .mb-ops { gap: 0; padding: 2px; }
   .mb-op { width: 44px; height: 44px; }
   .mb-acct { min-width: 44px; min-height: 44px; padding: 4px; justify-content: center; }
@@ -1485,6 +1490,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: 100% !important;
     border-radius: 0 !important;
   }
+  /* The east handle sits 3px past the window. A full-width window has
+     nowhere to grow, and that handle lands off the screen. */
+  .win-rz { display: none; }
   .win-bar, .win.bar-hidden .win-bar { height: 44px !important; }
   .win-body, .win.bar-hidden .win-body { padding-top: 44px !important; }
   .win.bar-hidden .win-title { font-size: 12px; }
@@ -1497,14 +1505,35 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .win-back, .win-tool, .win-tile, .win-tb-btn { width: 44px; height: 44px; }
   .win-body { -webkit-overflow-scrolling: touch; }
-  /* Tables sit in overflow-hidden cards on the desktop. On a phone
-     that clips the columns. Let the card scroll sideways instead. */
-  .win-body .overflow-hidden {
-    overflow-x: auto !important;
-    overflow-y: auto !important;
+  /* Sideways scroll only for a card that holds a table. The earnings
+     card and the branch cash-position card put a heading in front of
+     the table, so this is :has(table), not a direct child.
+     Ledger deal list and earnings per transaction.
+     Clients transaction history.
+     Cash Drawer count and count history.
+     Settings spread by currency.
+     Vault on hand, close-out, orders, and P&L.
+     Branches cash position and movements.
+     Cheques fee schedule.
+     Transfers list.
+     Identity strips, the receipt, the theme preview, and progress
+     bars stay overflow:hidden. Desktop width is outside this query. */
+  .win-body .overflow-hidden:has(table) {
+    overflow-x: auto;
     max-width: 100%;
   }
-  .win-body .overflow-hidden table { min-width: 520px; }
+  .win-body .overflow-hidden:has(table) table { min-width: 520px; }
+  /* Settings is a 212px rail beside the panel. On a phone that rail
+     leaves the account form a sliver, and the theme drawing (drawn
+     at a desktop offset) sticks out of the screen. Stack them. */
+  .settings-shell { flex-direction: column; min-height: 0; }
+  .settings-nav {
+    width: 100% !important;
+    max-height: 38%;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+  }
+  .settings-shell > .flex-1 { max-width: none !important; min-width: 0; }
   .fld-bar { padding-left: 8px; padding-right: 8px; }
   .fld-tab { min-height: 44px; font-size: 13px; padding: 10px 18px 10px 12px; }
   .ln-kpis { grid-template-columns: 1fr; }

@@ -6614,12 +6614,12 @@
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex",
+      className: "flex settings-shell",
       style: {
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 overflow-auto",
+      className: "flex-none p-3 overflow-auto settings-nav",
       style: {
         width: 212,
         borderRight: `1px solid ${CD.line}`,
