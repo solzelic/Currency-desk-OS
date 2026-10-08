@@ -403,6 +403,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, plain errors. A failed sign-in, a password that did not
+save, a site publish that did not finish, and a ledger read the
+server refused now say what happened in a sentence. They do not
+show an HTTP status. A failed read no longer says nothing was
+posted.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the

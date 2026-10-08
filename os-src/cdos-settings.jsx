@@ -742,7 +742,7 @@
     const srvCall = async (method, url, body) => {
       const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: body ? JSON.stringify(body) : undefined });
       const d = await res.json().catch(() => null);
-      if (!res.ok) throw new Error((d && (d.detail || d.error)) || ('HTTP ' + res.status));
+      if (!res.ok) throw new Error((d && (d.detail || d.message || d.error)) || 'That did not save. Try again.');
       return d;
     };
     // blocking or removing a person locally also shuts their server sign-in
@@ -831,7 +831,7 @@
           const d = await r.json().catch(() => null);
           if (r.ok) { setSiteInfo(d.tenant ? { ...siteInfo, ...d.tenant } : siteInfo); setPubMsg('Published \u2014 the site shows this now.'); log('Public site', 'contact & hours published'); }
           else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');
-          else setPubMsg((d && d.detail) || 'Couldn\u2019t publish (' + r.status + ').');
+          else setPubMsg((d && d.detail) || 'The site details were not published. Try again.');
         })
         .catch(() => setPubMsg('Server unreachable \u2014 publish from the live desk.'))
         .then(() => setPubBusy(false));
@@ -844,7 +844,7 @@
           const d = await r.json().catch(() => null);
           if (r.ok) { setSiteInfo(d.tenant); setSiteDraft(d.tenant.siteDomain || ''); setSiteMsg(d.tenant.siteDomain ? 'Saved — point your DNS and the site answers on it.' : 'Domain disconnected.'); log('Public site', d.tenant.siteDomain ? 'domain ' + d.tenant.siteDomain : 'domain disconnected'); }
           else if (r.status === 401 || r.status === 403) setSiteMsg('Only the owner account can change the site domain.');
-          else setSiteMsg((d && d.detail) || 'Couldn\u2019t save (' + r.status + ').');
+          else setSiteMsg((d && d.detail) || 'The domain was not saved. Try again.');
         })
         .catch(() => setSiteMsg('Server unreachable \u2014 try again on the live desk.'))
         .then(() => setSiteBusy(false));
@@ -857,7 +857,7 @@
       try {
         const res = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ currentPassword: pwForm.cur, newPassword: pwForm.a }) });
         if (res.status === 401) { setPwForm(f => ({ ...f, busy: false, msg: 'Current password is wrong.' })); return; }
-        if (!res.ok) { setPwForm(f => ({ ...f, busy: false, msg: 'Couldn\u2019t save (' + res.status + ') \u2014 try again.' })); return; }
+        if (!res.ok) { setPwForm(f => ({ ...f, busy: false, msg: 'The password was not saved. Try again.' })); return; }
       } catch (e2) { setPwForm(f => ({ ...f, busy: false, msg: 'Server unreachable \u2014 password changes need the live desk.' })); return; }
       log('Password changed', 'sign-in password');
       setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
