@@ -403,6 +403,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
+because the follow-up list named that version number without
+declaring it. The screen opens. Its flags refresh when the
+trading day or the pack arrives, the same way the ledger does.
+
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing
 and remittance require customer due diligence above 5,000 PHP. A bill,
