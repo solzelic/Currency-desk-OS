@@ -1679,6 +1679,8 @@
       const deskEl = document.getElementById('desktop');
       const dw = deskEl ? deskEl.clientWidth : window.innerWidth;
       const dh = deskEl ? deskEl.clientHeight : (window.innerHeight - 96);
+      /* A phone has no spare desktop around a window. Fill the desk. */
+      if (dw <= 430) return { x: 0, y: 0, w: dw, h: dh };
       const W = Math.max(320, Math.min(w, dw - 16));
       const H = Math.max(240, Math.min(h, dh - 16));
       const X = Math.max(8, Math.min(x, dw - W - 8));

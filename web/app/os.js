@@ -6614,12 +6614,12 @@
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex",
+      className: "flex settings-shell",
       style: {
         height: '100%'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 overflow-auto",
+      className: "flex-none p-3 overflow-auto settings-nav",
       style: {
         width: 212,
         borderRight: `1px solid ${CD.line}`,
@@ -65214,6 +65214,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const deskEl = document.getElementById('desktop');
       const dw = deskEl ? deskEl.clientWidth : window.innerWidth;
       const dh = deskEl ? deskEl.clientHeight : window.innerHeight - 96;
+      /* A phone has no spare desktop around a window. Fill the desk. */
+      if (dw <= 430) return {
+        x: 0,
+        y: 0,
+        w: dw,
+        h: dh
+      };
       const W = Math.max(320, Math.min(w, dw - 16));
       const H = Math.max(240, Math.min(h, dh - 16));
       const X = Math.max(8, Math.min(x, dw - W - 8));

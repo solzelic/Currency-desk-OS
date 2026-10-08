@@ -1015,9 +1015,9 @@
       ]],
     ] : [];
 
-    return (<SettingsCtx.Provider value={ctxVal}><div className="flex" style={{ height: '100%' }}>
+    return (<SettingsCtx.Provider value={ctxVal}><div className="flex settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
-      <div className="flex-none p-3 overflow-auto" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
+      <div className="flex-none p-3 overflow-auto settings-nav" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
         <button onClick={() => setTab('account')} className="w-full flex items-center gap-2.5 p-2 mb-3" style={{ borderRadius: 11, background: tab === 'account' ? CD.ink : CD.panel, border: `1px solid ${tab === 'account' ? CD.ink : CD.line}`, textAlign: 'left' }}>
           <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: tab === 'account' ? 'var(--cd-panel)' : CD.ink, color: tab === 'account' ? CD.ink : 'var(--cd-on-ink)', fontSize: 12, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(me.name)}</span>
           <span className="min-w-0">
