@@ -12,9 +12,17 @@ static surface from the repository root (`STATIC_DIR=..`) behind an explicit
 allow-list in `server/src/app.ts`. There is no bundler SPA; the frontends are
 buildless React compiled ahead of time. Generated frontend output is
 **committed** and CI fails if it is stale — so a deploy always serves exactly
-what the sources say. The server itself is compiled at deploy time
-(`cd server && npm run build`, which is `tsc`) and started with
-`node dist/index.js`. `server/dist/` is not committed. Dev and the
+what the sources say. `server/dist/` is a gitignored `tsc` emit.
+`npm start` is `tsx src/index.ts`. `npm run start:dist` is
+`node dist/index.js`. The live Render dashboard (read 2026-10-09)
+still builds with `node scripts/build-onboarding.mjs && cd server && npm ci`
+and starts with `cd server && npm start`. There is no evidence that
+service syncs `render.yaml`, so production stays on `tsx` until the
+owner sets both dashboard commands in one change: Build Command
+`node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build`,
+Start Command `cd server && npm run start:dist`. Changing only the
+start command would look for a `dist/` the current dashboard build
+does not create. `render.yaml` already names that pair. Dev and the
 Playwright seam still launch `tsx src/index.ts`.
 
 ## Directories
@@ -54,10 +62,12 @@ Playwright seam still launch `tsx src/index.ts`.
 `npm run build` (repo root) runs the three frontend build steps. After any
 source edit to those, rebuild and commit the generated output — CI diffs
 `web/` against a fresh build. The server compile is separate:
-`cd server && npm run build`. Render's `buildCommand` runs the onboarding
-page and then that server compile (`npm ci --include=dev` so `tsc` is
-present while `NODE_ENV=production`). The start command is
-`cd server && node dist/index.js`.
+`cd server && npm run build`. `render.yaml` `buildCommand` runs the
+onboarding page and then that server compile (`npm ci --include=dev`
+so `tsc` is present while `NODE_ENV=production`). Its `startCommand`
+is `cd server && npm run start:dist`. The live dashboard does not
+use those commands yet; see "The shape of production" above. The
+owner sets the dashboard Build Command and Start Command together.
 
 ## Route map
 
@@ -121,6 +131,8 @@ cd server && npm run typecheck && npm test          # server suite (embedded PGl
 TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the Postgres invariant suites
 cd server && npm run build && TEST_DATABASE_URL=postgres://…/freshdb node scripts/check-dist-boot.mjs
                                     # compiled server, node dist/index.js, GET /api/health → 200
+# dashboard path: NODE_ENV=production npm ci (no dist/), then npm start (tsx), GET /api/health → 200
+TEST_DATABASE_URL=postgres://…/freshdb node server/scripts/check-npm-start-boot.mjs
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
 ```
 

@@ -25,10 +25,27 @@ jobs:
       # require.
       - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_ledger_test'
       - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_ledger_test npm run test:ledger:postgres
-      # Production boots compiled JavaScript, not tsx. This database is
-      # fresh so the check pays for DDL and the checksummed SQL migrations
-      # the same way a new Render instance does. It fails while dist/ is
-      # absent.
+      # Compiled boot (`npm run build`, then node dist/index.js). The live
+      # dashboard does not use this until its build and start commands
+      # change together. The database is fresh. The step fails while
+      # dist/ is absent.
       - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_dist_boot'
       - name: Compiled server answers /api/health
         run: npm run build && TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_dist_boot node scripts/check-dist-boot.mjs
+      # The live Render dashboard still installs with `npm ci` under
+      # NODE_ENV=production (no tsc, no dist/) and starts with `npm start`.
+      # That path has to keep booting. The copy is a fresh install so the
+      # workspace node_modules, which includes devDependencies, is not
+      # what this step proves.
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_npm_start'
+      - name: Dashboard npm start still answers /api/health
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          dash="$(mktemp -d)"
+          tar -C server -cf - --exclude node_modules --exclude dist --exclude .pgdata . | tar -C "$dash" -xf -
+          cd "$dash"
+          NODE_ENV=production npm ci
+          test ! -e dist/index.js
+          test -x node_modules/.bin/tsx
+          TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_npm_start node scripts/check-npm-start-boot.mjs

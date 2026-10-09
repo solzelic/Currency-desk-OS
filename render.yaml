@@ -43,9 +43,18 @@ services:
     # Compile the TypeScript server here. NODE_ENV=production is set on
     # this service, and a plain `npm ci` would skip devDependencies,
     # including typescript. --include=dev keeps tsc available for this
-    # build only. The process that serves traffic is plain node.
+    # build only.
+    #
+    # The live dashboard (read 2026-10-09) still builds with
+    # `node scripts/build-onboarding.mjs && cd server && npm ci` and
+    # starts with `cd server && npm start`. There is no evidence that
+    # service syncs this file. `npm start` stays `tsx src/index.ts`, so
+    # an autodeploy that ignores render.yaml keeps today's process.
+    # start:dist is the compiled process. The dashboard Build Command
+    # and Start Command have to change together. Start alone would run
+    # `node dist/index.js` against a build that never created dist/.
     buildCommand: node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build
-    startCommand: cd server && node dist/index.js
+    startCommand: cd server && npm run start:dist
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
