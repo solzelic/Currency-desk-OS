@@ -237,7 +237,7 @@ ${snap}`;
     loan: 'Amortised loan and payment calculator.',
     assistant: 'AI desk assistant trained on your live numbers.',
     reports: 'One-touch reports: summary, FINTRAC, revenue, register.',
-    compliance: 'Sanctions screening, 24h aggregation, fileable submissions and pluggable jurisdiction packs.',
+    compliance: 'Aggregation, fileable submissions and jurisdiction packs. Sanctions screening is not connected yet.',
     tagged: 'Bookmarked transactions flagged for follow-up.',
     settings: 'Permissions, compliance rules and ticker tape.'
   };

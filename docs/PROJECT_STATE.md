@@ -81,10 +81,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the day. A cash payout over 500,000 PHP, and a
   sale of foreign currency over 10,000 USD, are refused. The desk
   does not file to the AMLC. No sanctions list is loaded. The desk
-  says Philippine law requires the owner to screen clients and
-  counterparties against the UNSC Consolidated List and the ATC
-  list, and on a match to freeze without delay, tell the AMLC the
-  same day, and file an STR. The owner does this outside the desk.
+  says screening is not connected, and that Philippine law requires
+  the owner to screen clients and counterparties against the UNSC
+  Consolidated List and the ATC list, and on a match to freeze
+  without delay, tell the AMLC the same day, and file an STR. The
+  owner does this outside the desk.
   The website stays Not live. Canada is the only Live country.
   Write-up: `docs/PHILIPPINES_PACK.md`.
 - The compiled-OS production slice is closed on `main` (`90a3890`, #43).
@@ -122,6 +123,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   stored or shown. Empty transcript until the provider sends one.
   Existing gates are unchanged: admin trigger, kill switch, consent,
   research review, hours.
+
+- **Sanctions screening is not connected.** The Compliance screen
+  used to match client names against a sample of ten fictional
+  names and present the result as OFAC, UN and OSFI screening. That
+  list is gone. The screen says screening is not connected and that
+  the owner checks their government's official lists. Settings shows
+  that same sentence. The dashboard tile says not connected, and it
+  does not show a count. A hit count of zero is not shown, because
+  zero would read as "all clear".
+  `sanctionsListShips()` stays false for the Philippines
+  (`pack-ph-v1`), Singapore (`pack-sg-v1`) and Hong Kong
+  (`pack-hk-v1`), and it is false for every other pack as well.
+  Those three still add their own duty under the sentence. No list
+  is fetched and no name is matched.
 
 - **European Union desks can open on the 2027 AMLR pack.**
   `pack-eu-v2` ("EU AMLR 2027") follows Regulation (EU) 2024/1624,
@@ -403,6 +418,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-09**, sanctions screening. The sample watchlist is not shown.
+The Compliance screen and Settings say screening is not connected.
+The dashboard tile says not connected and does not show a count.
+Philippines, Singapore and Hong Kong stay false
+in `sanctionsListShips()`, and so does every other pack. The
+Philippines line still states the owner's duty: the UNSC Consolidated
+List and the ATC list, freeze without delay, tell the AMLC the same
+day, and file an STR.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the
@@ -424,15 +448,16 @@ funds are required only above 500,000 PHP. A cash payout over 500,000
 PHP, or the foreign-currency equivalent, is refused. A sale of foreign
 currency over 10,000 USD, or the equivalent, is refused. A missing or
 stale rate blocks those conversions. The desk does not file to the
-AMLC. No sanctions list is loaded. The desk says Philippine law
-requires the owner to screen clients and counterparties against the
-UNSC Consolidated List and the ATC list, and on a match to freeze
-without delay, tell the AMLC the same day, and file an STR. The
-owner does this outside the desk. Records are kept five years and
-are not deleted. The public site says Not live. Canada remains the
-only Live country. See `docs/PHILIPPINES_PACK.md`. Migration 038
-stays. 029, 031, 033, 034, 035, 036, and 037 are already on main.
-027 and 030 are still open drafts.
+AMLC. No sanctions list is loaded. The desk says screening is not
+connected, and that Philippine law requires the owner to screen
+clients and counterparties against the UNSC Consolidated List and
+the ATC list, and on a match to freeze without delay, tell the AMLC
+the same day, and file an STR. The owner does this outside the desk.
+Records are kept five years and are not deleted. The public site says
+Not live. Canada remains the only Live country. See
+`docs/PHILIPPINES_PACK.md`. Migration 038 stays. 029, 031, 033, 034,
+035, 036, and 037 are already on main. 027 and 030 are still open
+drafts.
 
 **2026-10-07**, India pack. A new India desk opens on `pack-in-v1`.
 A country with no pack is still not given Canada's. See

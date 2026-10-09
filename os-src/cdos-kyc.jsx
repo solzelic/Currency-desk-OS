@@ -103,17 +103,21 @@
     };
   }
 
-  // a sent check resolves to a result consistent with live sanctions screening
+  // A sent check used to copy a hit off the sample watchlist. That list
+  // is gone, so a check does not report a sanctions result.
   function resolve(check) {
     const t = tmpl(check.template);
     const sc = screenOf(check.subject);
     let decision = 'approved', database = t.db ? 'clear' : 'n/a', pep = 'None found';
+    /* "clear" would say a list was checked. unavailable means it was not. */
     if (t.db) {
       if (sc.status === 'hit') { decision = 'review'; database = 'hit'; pep = 'Sanctions match'; }
       else if (sc.status === 'review') { decision = 'review'; database = 'possible'; pep = 'Possible PEP / adverse media'; }
+      else if (sc.status !== 'clear') { database = 'not checked'; pep = 'Not checked'; }
     }
     return {
       decision,
+      sanctionsChecked: sc.status === 'clear' || sc.status === 'hit' || sc.status === 'review',
       // the provider reads these off the ID and returns them so we can complete the contact.
       // On a records match we already hold the ID, so nothing new is extracted.
       extracted: (t.idv && !check.matchedOnFile) ? extractIdentity(check.subject) : null,
@@ -244,7 +248,7 @@
     const rowChk = (l, v) => `<tr><td style="color:${P.mute};font-size:12.5px;padding:6px 0;width:48%;">${esc(l)}</td><td style="font-size:12.5px;padding:6px 0;font-family:'Space Mono',monospace;color:${P.ink};text-transform:capitalize;">${esc(v)}</td></tr>`;
     const wl = (r.watchlist || []).length
       ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">${r.watchlist.map(h => `<tr><td style="font-size:12px;padding:5px 0;border-bottom:1px solid ${P.soft};">${esc(h.name)} <span style="color:${P.mute};">· ${esc(h.list)} · ${esc(h.program || '')}</span></td><td style="font-size:12px;text-align:right;font-family:'Space Mono',monospace;color:${P.mute};">${h.score}%</td></tr>`).join('')}</table>`
-      : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">No database matches returned.</div>`;
+      : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">${r.sanctionsChecked === false ? "Sanctions screening is not connected yet. Check clients against your government's official lists yourself." : 'No database matches returned.'}</div>`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KYC ${esc(r.reportRef || '')}</title>
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
       <style>*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:40px 46px;color:${P.ink};}@page{margin:14mm;}</style></head>
@@ -572,7 +576,7 @@
         <div className="flex items-center gap-2.5">
           <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
           <div>
-            <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={`A paid background & ID check run through ${PROVIDER} — separate from the ID you hold on file. A Quick check screens the name against sanctions / PEP lists (screening, not identity verification); Verified authenticates the ID; Verified Plus adds a biometric selfie and deep database inquiry.`} example="Quick check ($3.99) · Verified ($6.99) · Verified Plus ($14.99)" /> {isVer ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 5 }}><Ic n="checkcircle" s={11} c={CD.green} /> {isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified'}</span> : isScreened ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 5 }}><Ic n="search" s={11} c={CD.amber} /> Screened only</span> : null}</div>
+            <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={`A paid background and ID check run through ${PROVIDER}, separate from the ID you hold on file. Sanctions screening is not connected yet. Verified authenticates the ID. Verified Plus adds a biometric selfie and a database inquiry.`} example="Quick check ($3.99) · Verified ($6.99) · Verified Plus ($14.99)" /> {isVer ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 5 }}><Ic n="checkcircle" s={11} c={CD.green} /> {isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified'}</span> : isScreened ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 5 }}><Ic n="search" s={11} c={CD.amber} /> Screened only</span> : null}</div>
             <div className="text-[11px]" style={{ color: CD.mute }}>Background & ID checks via {PROVIDER}</div>
           </div>
         </div>
