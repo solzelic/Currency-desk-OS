@@ -22,6 +22,7 @@
    ============================================================ */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SRC = path.join(ROOT, "design", "site");
@@ -384,6 +385,43 @@ const FAVICON =
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/* The fifteen photographs on the public front page. JPEG stays, so a
+   browser without WebP still has a picture. Quality 75 at the current
+   pixel size is the encoding the page-weight check was written against.
+   sharp is pinned; it ships its own libvips, so this buffer is the same
+   on this machine and in CI. */
+const FRONT_PAGE_JPEGS = [
+  "photos/rate-board-storefront.jpg",
+  "photos/sms-storefront.jpg",
+  "photos/till-float.jpg",
+  "photos/kyc-counter.jpg",
+  "photos/compliance-institution.jpg",
+  "photos/reports-ledger.jpg",
+  "photos/cheque-cashing.jpg",
+  "photos/vault-count.jpg",
+  "photos/ai-copilot-guilloche.jpg",
+  "photos/storefront-team.jpg",
+  "assets/site-web-1.jpg",
+  "assets/site-web-2.jpg",
+  "assets/site-web-3.jpg",
+  "assets/site-web-4.jpg",
+  "assets/site-web-5.jpg",
+];
+
+async function writeFrontPageWebp() {
+  let bytes = 0;
+  for (const rel of FRONT_PAGE_JPEGS) {
+    const src = path.join(OUT, rel);
+    if (!existsSync(src)) throw new Error(`missing front-page photograph web/${rel}`);
+    const buf = await sharp(src)
+      .webp({ quality: 75, effort: 4, smartSubsample: false })
+      .toBuffer();
+    writeFileSync(src.replace(/\.jpe?g$/, ".webp"), buf);
+    bytes += buf.length;
+  }
+  console.log(`webp ${FRONT_PAGE_JPEGS.length} front-page photographs, ${Math.round(bytes / 1024)} kB`);
+}
+
 /* ---- preflight ------------------------------------------------ */
 if (!existsSync(SRC)) throw new Error(`no design sources at ${SRC}`);
 for (const dir of ["photos", "assets", "fonts"]) {
@@ -406,6 +444,8 @@ const routeOf = (name) => {
   if (p.product || present.has(name)) return p.route;
   return p.anchor ?? p.route;
 };
+
+await writeFrontPageWebp();
 
 mkdirSync(path.join(OUT, "vendor"), { recursive: true });
 for (const [from, to] of VENDOR) {

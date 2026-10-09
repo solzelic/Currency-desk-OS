@@ -40,7 +40,7 @@ say.
 
 | Source | Command | Output |
 | --- | --- | --- |
-| `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
+| `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/`, and a WebP sibling of each front-page JPEG |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
 | `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |

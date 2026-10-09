@@ -81,11 +81,12 @@ npm test
 npm run typecheck
 ```
 
-One console note is deliberate: the front page's preload scanner fetches
-`{{ p.src }}` literally before the design's runtime substitutes the real
-image path a tick later. Silencing it means renaming attributes in the
-design's markup and copying them back after resolution — a real risk to the
-front page's imagery in exchange for one console line. Left on purpose.
+The front-page photographs are WebP, with the JPEG still in a
+`<picture>` for a browser that cannot read WebP. `npm run build:site`
+writes the WebP next to each JPEG (`sharp`, quality 75, same pixels).
+Photographs below the first screen are `loading="lazy"`. The story
+frames are React elements rather than `<img src="{{ p.src }}">`, so the
+preload scanner does not request that placeholder.
 (The `401` from `/api/auth/me` on `/app` and `/login` is a signed-out
 visitor asking whether they are signed in, and being told no.)
 

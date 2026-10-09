@@ -15,14 +15,16 @@
    ============================================================ */
 import { test, expect, chromium, type Page } from "@playwright/test";
 
-/* Desktop first screen has no photograph. Anything close to one
-   JPEG (the smallest on the page is 188 KB) means a photo loaded
-   before the scroll. */
-const DESKTOP_IMAGE_BUDGET = 100_000;
+/* Desktop first screen has no photograph. The smallest WebP on the
+   page is about 50 KB, so this fails if any of them load before
+   the scroll. */
+const DESKTOP_IMAGE_BUDGET = 20_000;
 
-/* Phone first screen is one hero photograph. The JPEG is 298 KB.
-   A WebP at the same pixels is well under this; the JPEG is not. */
-const PHONE_IMAGE_BUDGET = 180_000;
+/* The phone hero is one photograph. The nine feature photographs
+   sit about 250px below that fold. On a 1.6 Mbps link Chromium still
+   fetches a lazy image that close, so this budget is the WebP weight
+   of that row, not zero. The JPEG row is 2.4 MB and fails it. */
+const PHONE_IMAGE_BUDGET = 1_400_000;
 
 const PHONE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -59,6 +61,18 @@ async function openPage(baseURL: string, width: number, height: number, userAgen
 }
 
 async function imageBytesBeforeScroll(page: Page, path: string) {
+  /* Same shape as the measurement: 1.6 Mbps, 150 ms RTT. A fast
+     localhost makes Chromium prefetch lazy images thousands of
+     pixels down, which is not the first screen. */
+  const client = await page.context().newCDPSession(page);
+  await client.send("Network.enable");
+  await client.send("Network.emulateNetworkConditions", {
+    offline: false,
+    latency: 150,
+    downloadThroughput: (1.6 * 1000 * 1000) / 8,
+    uploadThroughput: (750 * 1000) / 8,
+    connectionType: "cellular3g",
+  });
   const urls: string[] = [];
   const onRequest = (req: import("@playwright/test").Request) => urls.push(req.url());
   page.on("request", onRequest);

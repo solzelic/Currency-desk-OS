@@ -191,6 +191,9 @@
     ':host{display:inline-block;position:relative;vertical-align:top;' +
     '  font:13px/1.3 system-ui,-apple-system,sans-serif;color:rgba(0,0,0,.55);width:240px;height:160px}' +
     '.frame{position:absolute;inset:0;overflow:hidden;background:rgba(0,0,0,.04)}' +
+    // picture is only a format switch. display:contents keeps the img's
+    // containing block on .frame, so the crop math below is unchanged.
+    '.frame picture{display:contents}' +
     // .frame img (clipped) and .spill (unclipped ghost + handles) share the
     // same left/top/width/height in frame-%, computed by _applyView(), so the
     // inside-mask crop and the outside-mask spill stay pixel-aligned.
@@ -278,7 +281,7 @@
 
   class ImageSlot extends HTMLElement {
     static get observedAttributes() {
-      return ['shape', 'radius', 'mask', 'fit', 'placeholder', 'src', 'id', 'credit', 'credit-href'];
+      return ['shape', 'radius', 'mask', 'fit', 'placeholder', 'src', 'webp', 'loading', 'decoding', 'width', 'height', 'id', 'credit', 'credit-href'];
     }
 
     constructor() {
@@ -294,7 +297,8 @@
       root.innerHTML =
         '<style>' + stylesheet + '</style>' +
         '<div class="frame" part="frame">' +
-        '  <img part="image" alt="" draggable="false" style="display:none">' +
+        '  <picture><source type="image/webp">' +
+        '  <img part="image" alt="" draggable="false" style="display:none"></picture>' +
         '  <div class="empty" part="empty">' + icon +
         '    <div class="cap"></div>' +
         '    <div class="sub">or <u>browse files</u></div></div>' +
@@ -313,6 +317,7 @@
         '<input type="file" accept="' + ACCEPT.join(',') + '" hidden>';
       this._frame = root.querySelector('.frame');
       this._ring = root.querySelector('.ring');
+      this._source = root.querySelector('.frame source');
       this._img = root.querySelector('.frame img');
       this._empty = root.querySelector('.empty');
       this._cap = root.querySelector('.cap');
@@ -802,16 +807,43 @@
       // Toggle via style.display — the [hidden] attribute alone loses to
       // the display:flex / display:block rules in the stylesheet above.
       if (url) {
-        if (this._img.getAttribute('src') !== url) {
-          this._img.src = url;
-          this._ghost.src = url;
+        // A dropped image is the picture. The authored webp belongs to the
+        // authored jpeg, so it steps aside. The ghost is the reframe UI;
+        // pointing it at the jpeg on the public page would download the
+        // fallback next to the webp.
+        //
+        // loading=lazy is ignored while this slot is in the hidden design
+        // template (x-dc is display:none). Chromium fetches the file
+        // immediately. Hold it until the slot is actually shown; the
+        // resize observer renders again when that happens.
+        const box = this.getBoundingClientRect();
+        const shown = this.offsetParent !== null || box.height > 0;
+        if (this.getAttribute('loading') === 'lazy' && !this._userUrl && !shown) {
+          this._source.removeAttribute('srcset');
+          this._img.removeAttribute('src');
+          this._img.style.display = 'block';
+          this._empty.style.display = 'none';
+          this.setAttribute('data-filled', '');
+          return;
         }
+        const webp = this._userUrl ? '' : (this.getAttribute('webp') || '');
+        if (webp) this._source.srcset = webp;
+        else this._source.removeAttribute('srcset');
+        for (const name of ['loading', 'decoding', 'width', 'height']) {
+          const value = this.getAttribute(name);
+          if (value) this._img.setAttribute(name, value);
+          else this._img.removeAttribute(name);
+        }
+        if (this._img.getAttribute('src') !== url) this._img.src = url;
+        if (editable) this._ghost.src = url;
+        else this._ghost.removeAttribute('src');
         this._img.style.display = 'block';
         this._empty.style.display = 'none';
         this.setAttribute('data-filled', '');
         this._clampView();
         this._applyView();
       } else {
+        this._source.removeAttribute('srcset');
         this._img.style.display = 'none';
         this._img.removeAttribute('src');
         this._ghost.removeAttribute('src');
