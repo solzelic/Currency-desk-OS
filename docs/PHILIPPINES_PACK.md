@@ -58,7 +58,7 @@ Records: `retention_years` is 5. Nothing is deleted.
 | BSP exemption to sell more than 10,000 USD | Gap | A shop with an exemption is still refused above 10,000. Fail closed |
 | Appendix N-8-c documents on a sale | Gap | The till does not collect them |
 | BSP registration / certificate of registration | Gap | Not tracked |
-| Sanctions and targeted financial sanctions | Gap | No list is loaded. The sample names are not shown. The desk tells the owner that Philippine law requires screening clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does that outside the desk |
+| Sanctions and targeted financial sanctions | Gap | No list is loaded. The screen says screening is not connected. The sample names are not shown. The desk tells the owner that Philippine law requires screening clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does that outside the desk |
 | Wire originator and beneficiary information | Gap | MORB section 923 sets what must travel with a transfer, including a 50,000 peso information line. The till does not build that message |
 | AMLC low-risk deferral of some covered transactions for money service businesses | Gap | The deferral list was not confirmed, so nothing is deferred. A flagged cash deal over 500,000 may include an instrument the AMLC defers |
 | 2018 IRR Rule 18 section 3.2, first-time identification at any amount | Gap | Not applied below the BSP occasional lines. The till's only identification state is verified or not |
