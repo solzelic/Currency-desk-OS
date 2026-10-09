@@ -404,15 +404,15 @@ postgres("York FX demo desk seeder", () => {
     const first = await populateDemoDesk(pool, handle.db);
     expect(first.status).toBe("populated");
 
-    const originalQuery = pool.query.bind(pool);
+    const originalQuery = pool.query.bind(pool) as pg.Pool["query"];
     let thrown = false;
-    const querySpy = vi.spyOn(pool, "query").mockImplementation((...args: never[]) => {
+    const querySpy = vi.spyOn(pool, "query").mockImplementation(((text: string, values?: unknown[]) => {
       if (!thrown) {
         thrown = true;
         return Promise.reject(new Error("book check unavailable"));
       }
-      return originalQuery(...args);
-    });
+      return originalQuery(text, values as never);
+    }) as pg.Pool["query"]);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const second = await populateDemoDesk(pool, handle.db);
