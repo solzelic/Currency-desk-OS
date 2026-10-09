@@ -15,9 +15,11 @@
 
      2. populateDemoDesk — when DEMO_POPULATE=1 (or a caller invokes it),
         post a small already-saved set through the real ledger / quote /
-        client-record services. Stable idempotency keys make a second
-        boot a no-op. The function hard-codes the York FX demo scope and
-        refuses to run unless that tenant is present with siteSlug
+        client-record services. The six quote-post idempotency keys are
+        the marker that the walk finished: a later boot reads them once
+        and does not walk the book again. A failed read is logged and
+        the walk runs. The function hard-codes the York FX demo scope
+        and refuses to run unless that tenant is present with siteSlug
         `yorkfx`. It never accepts a tenant id from the caller.
 
    No secrets belong in this file, in logs, or in git. Log the env var
@@ -44,6 +46,19 @@ export const DEMO_STAFF_NAME = "Demo Teller";
 export const DEMO_TILL_ID = "till-01";
 
 const DEMO_IDEMPOTENCY_PREFIX = "demo-desk:";
+
+/* Written in the same transaction as each post (the quote-post path
+   stores the response before commit). All six present means the walk
+   finished: customers, opening balances, the board and the till are
+   written before these deals. */
+const DEMO_DEAL_KEYS = [
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:1`,
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:2`,
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:3`,
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:4`,
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:5`,
+  `${DEMO_IDEMPOTENCY_PREFIX}tx:6`,
+] as const;
 
 export type DemoStaffResult = "created" | "password_set" | "exists" | "no-tenant";
 
@@ -143,7 +158,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
   const b = foreign[1] ?? "EUR";
   return [
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:1`,
+      key: DEMO_DEAL_KEYS[0],
       customerSlug: "lina-farah",
       from: a,
       to: home,
@@ -153,7 +168,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
       sourceOfFunds: "Savings",
     },
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:2`,
+      key: DEMO_DEAL_KEYS[1],
       customerSlug: "omar-haddad",
       from: home,
       to: a,
@@ -163,7 +178,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
       sourceOfFunds: "Employment income",
     },
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:3`,
+      key: DEMO_DEAL_KEYS[2],
       customerSlug: "priya-nair",
       from: home,
       to: b,
@@ -173,7 +188,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
       sourceOfFunds: "Employment income",
     },
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:4`,
+      key: DEMO_DEAL_KEYS[3],
       customerSlug: "lina-farah",
       from: home,
       to: a,
@@ -183,7 +198,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
       sourceOfFunds: "Savings",
     },
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:5`,
+      key: DEMO_DEAL_KEYS[4],
       customerSlug: "james-okonkwo",
       from: b,
       to: home,
@@ -193,7 +208,7 @@ export function demoDealsForHome(home: string): DemoDealSpec[] {
       sourceOfFunds: "Employment income",
     },
     {
-      key: `${DEMO_IDEMPOTENCY_PREFIX}tx:6`,
+      key: DEMO_DEAL_KEYS[5],
       customerSlug: "omar-haddad",
       from: home,
       to: b,
@@ -328,6 +343,30 @@ async function loadDemoTenant(db: Db) {
     .where(eq(schema.tenants.id, DEMO.tenantId))
     .limit(1)
     .then((rows) => rows[0] ?? null);
+}
+
+/* One indexed read. The primary key leads with the till scope and
+   operation, so this is an index scan of that slice, filtered to the
+   six keys. A throw must propagate: the caller logs and walks. */
+async function demoBookPresent(pool: pg.Pool, actor: LedgerActor): Promise<boolean> {
+  const found = await pool.query(
+    `SELECT count(*)::int AS n
+       FROM ledger_idempotency
+      WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        AND workspace_id=$4 AND till_id=$5
+        AND operation='quote-post'
+        AND response IS NOT NULL
+        AND idempotency_key IN ($6,$7,$8,$9,$10,$11)`,
+    [
+      actor.tenantId,
+      actor.legalEntityId,
+      actor.branchId,
+      actor.workspaceId,
+      actor.tillId,
+      ...DEMO_DEAL_KEYS,
+    ],
+  );
+  return Number(found.rows[0]?.n) === DEMO_DEAL_KEYS.length;
 }
 
 async function alreadyPosted(pool: pg.Pool, actor: LedgerActor, idempotencyKey: string) {
@@ -538,6 +577,29 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
     };
   }
 
+  const teller = demoActor("teller");
+  try {
+    if (await demoBookPresent(pool, teller)) {
+      return {
+        status: "already",
+        reason: "book-present",
+        customers: DEMO_CUSTOMERS.length,
+        transactions: DEMO_DEAL_KEYS.length,
+        posted: 0,
+        reused: DEMO_DEAL_KEYS.length,
+        /* Not a fresh read. The seeder does not close the till; a later
+           close stays closed. The log for this reason does not claim
+           the session was re-checked. */
+        tillOpen: true,
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.warn(
+      `[demo-desk] book-present check failed — ${message}. Falling back to the full populate.`,
+    );
+  }
+
   const staff = await ensureDemoStaff(db, null);
   if (staff === "no-tenant") {
     return {
@@ -551,7 +613,6 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
     };
   }
 
-  const teller = demoActor("teller");
   const admin = demoActor("administrator");
   await ensureLedgerPrincipal(pool, admin);
   await ensureOpeningBalances(pool, admin);

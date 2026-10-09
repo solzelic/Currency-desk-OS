@@ -351,8 +351,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
   saved history through the real quote / ledger / client-record
   services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
-  `siteSlug=yorkfx`. Login is `/login` → `/app`, not `/admin`. How to
-  run it: `docs/DEMO_DESK.md`.
+  `siteSlug=yorkfx`. Once the six demo deals are posted, a later boot
+  reads those idempotency rows once and does not walk the book. A
+  failed read is logged and the walk runs. Login is `/login` → `/app`,
+  not `/admin`. How to run it: `docs/DEMO_DESK.md`.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -402,6 +404,15 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-09**, demo-book boot. `DEMO_POPULATE=1` still posts the York FX
+history through the quote, ledger, and client services, and only while
+`tnt-yorkfx` has `siteSlug=yorkfx`. A later boot treats the six
+`demo-desk:tx:N` quote-post rows (response present) as the marker that
+the walk finished, reads them once on the idempotency primary key, and
+does not reopen the till, republish the board, or rewrite customers.
+A failed read is logged and the old walk runs. Staff bootstrap is
+unchanged. See `docs/DEMO_DESK.md`.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

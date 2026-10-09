@@ -44,14 +44,22 @@ ledger rows. The set is:
 - an open till session
 - six posted CAD↔USD / CAD↔EUR exchanges a teller would see in history
 
-Idempotency keys are stable (`demo-desk:tx:1` …). A second boot posts
-nothing new. The seeder hard-codes the York FX scope and refuses to run
-unless that tenant is present with `siteSlug=yorkfx`. It never accepts a
-tenant id from the caller and never writes to another tenant.
+Idempotency keys are stable (`demo-desk:tx:1` … `demo-desk:tx:6`). Each
+key's response is stored in the same transaction as that deal. A later
+boot reads those six rows once, on the idempotency primary key. When all
+six are posted it does not walk the book again: it does not reopen the
+till, republish the board, or rewrite the customer rows. The first boot
+still does that work. If the read fails, boot logs the failure and runs
+the full seeder. A missing key is not "already populated"; the seeder
+posts that deal.
 
-Unset `DEMO_POPULATE` after the book is populated if you do not want the
-check to run on every deploy. Leaving it set is safe: the second run is
-a no-op.
+The seeder hard-codes the York FX scope and refuses to run unless that
+tenant is present with `siteSlug=yorkfx`. It never accepts a tenant id
+from the caller and never writes to another tenant. A renamed slug skips
+before the key read.
+
+Unset `DEMO_POPULATE` to skip even that one read. Leaving it set does
+not re-post the history.
 
 ## What this is not
 

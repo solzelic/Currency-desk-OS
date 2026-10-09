@@ -428,6 +428,40 @@ postgres("York FX demo desk seeder", () => {
     ).toBe(6);
   });
 
+  it("still walks when one demo deal has not been posted", async () => {
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.posted).toBe(6);
+    await pool.query(`DELETE FROM ledger_idempotency WHERE tenant_id=$1 AND idempotency_key=$2`, [
+      DEMO.tenantId,
+      "demo-desk:tx:6",
+    ]);
+    const queries: string[] = [];
+    const second = await populateDemoDesk(countingPool(pool, queries), handle.db);
+    expect(second.status).toBe("populated");
+    expect(second.posted).toBe(1);
+    expect(second.reused).toBe(5);
+    expect(queries.length).toBeGreaterThan(2);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n,
+    ).toBe(7);
+  });
+
+  it("does not treat a populated book as present after the site slug changes", async () => {
+    await populateDemoDesk(pool, handle.db);
+    await handle.db.update(schema.tenants).set({ siteSlug: "renamed" }).where(eq(schema.tenants.id, DEMO.tenantId));
+    try {
+      const queries: string[] = [];
+      const skipped = await populateDemoDesk(countingPool(pool, queries), handle.db);
+      expect(skipped).toMatchObject({ status: "skipped", reason: "not-demo-tenant", posted: 0 });
+      expect(queries).toEqual([]);
+      expect(
+        (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n,
+      ).toBe(6);
+    } finally {
+      await handle.db.update(schema.tenants).set({ siteSlug: "yorkfx" }).where(eq(schema.tenants.id, DEMO.tenantId));
+    }
+  });
+
   it("skips when York FX is no longer the demo site", async () => {
     await handle.db.update(schema.tenants).set({ siteSlug: "renamed" }).where(eq(schema.tenants.id, DEMO.tenantId));
     try {
