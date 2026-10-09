@@ -36,6 +36,24 @@ npm run dev:prototype   # http://127.0.0.1:8787 — site at /, OS at /app, embed
 
 Demo accounts (any of `j.masri`, `r.haddad`, `a.singh`), password `yorkville`. **Demo only.**
 
+`npm start` is `tsx src/index.ts`. That is what the live Render
+dashboard runs today (build `node scripts/build-onboarding.mjs && cd server && npm ci`,
+start `cd server && npm start`). Production stays on `tsx` until the
+owner sets both dashboard commands in one change:
+
+```sh
+# Build Command
+node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build
+# Start Command
+cd server && npm run start:dist
+```
+
+`npm run start:dist` is `node dist/index.js`. Changing only the start
+command would boot that file when the current dashboard build has not
+created `dist/`. `render.yaml` already names the pair. Migration SQL
+stays in `src/` and is read from this directory. `npm run dev` /
+`dev:prototype` still run the TypeScript through `tsx`.
+
 ## API
 
 Routes are registered per domain in `server/src/app.ts`: auth, signup,

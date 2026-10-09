@@ -35,6 +35,19 @@ layers — they are not blockers for proving this core loop.
 - **Server** — Fastify + Drizzle, `server/src/`. API plus all static serving
   from the repo root behind an allow-list. Embedded PGlite in dev/test,
   Postgres in production; boot applies DDL + checksummed migrations.
+  The live Render dashboard (read 2026-10-09) still builds with
+  `node scripts/build-onboarding.mjs && cd server && npm ci` and starts
+  with `cd server && npm start`, which is `tsx src/index.ts`. There is
+  no evidence that service syncs `render.yaml`. Production stays on
+  `tsx` until the owner sets both dashboard commands in one change:
+  Build Command
+  `node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build`,
+  Start Command `cd server && npm run start:dist` (`node dist/index.js`).
+  Changing only the start command would look for a `dist/` the current
+  build does not create. `render.yaml` already names that pair.
+  Migration SQL stays under `server/src/` and is read from the `server/`
+  working directory. Dev and the Playwright seam still run the sources
+  through `tsx`.
 - **The ledger** — server-side Postgres, `server/src/ledger/` + migrations.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
@@ -402,6 +415,16 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-09**, production server start. The live Render dashboard
+still has the old commands (`npm ci`, then `npm start` / `tsx`).
+Production stays on `tsx` until the owner sets the dashboard Build
+Command to `node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build`
+and the Start Command to `cd server && npm run start:dist`, both in
+one change. The start command alone would boot `node dist/index.js`
+with no `dist/`. `render.yaml` already names that pair. `npm start`
+stays `tsx src/index.ts`. Migration SQL is still read from
+`server/src/` via the `server/` working directory.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
