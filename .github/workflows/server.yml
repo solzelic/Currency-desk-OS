@@ -25,3 +25,10 @@ jobs:
       # require.
       - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_ledger_test'
       - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_ledger_test npm run test:ledger:postgres
+      # Production boots compiled JavaScript, not tsx. This database is
+      # fresh so the check pays for DDL and the checksummed SQL migrations
+      # the same way a new Render instance does. It fails while dist/ is
+      # absent.
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_dist_boot'
+      - name: Compiled server answers /api/health
+        run: npm run build && TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_dist_boot node scripts/check-dist-boot.mjs
