@@ -1,7 +1,7 @@
 /* Product-demo seeder posts through the real quote / ledger / client
    services, only on York FX, and is a no-op the second time. */
 import pg from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import {
@@ -88,6 +88,54 @@ async function resetDemoBook() {
 async function countFor(tenantId: string, table: string) {
   const result = await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1`, [tenantId]);
   return result.rows[0].n as number;
+}
+
+/* Count every statement populateDemoDesk sends on this pool.
+   pool.query is counted here and uses the real client, so it is not
+   counted again. pool.connect is counted on the borrowed client.
+   The two paths do not overlap. */
+function countingPool(inner: pg.Pool, queries: string[]): pg.Pool {
+  const wrapClient = (client: pg.PoolClient): pg.PoolClient =>
+    new Proxy(client, {
+      get(target, prop, receiver) {
+        if (prop === "query") {
+          return (...args: unknown[]) => {
+            const text = args[0];
+            const sql = typeof text === "string" ? text : ((text as { text?: string })?.text ?? "");
+            queries.push(sql.replace(/\s+/g, " ").trim());
+            return (target.query as (...queryArgs: unknown[]) => unknown).apply(target, args);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop === "query") {
+        return (...args: unknown[]) => {
+          const text = args[0];
+          const sql = typeof text === "string" ? text : ((text as { text?: string })?.text ?? "");
+          queries.push(sql.replace(/\s+/g, " ").trim());
+          return (target.query as (...queryArgs: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      if (prop === "connect") {
+        return (cb?: (err: Error | undefined, client: pg.PoolClient, done: (release?: Error) => void) => void) => {
+          const pending = target.connect().then(wrapClient);
+          if (!cb) return pending;
+          pending.then(
+            (client) => cb(undefined, client, (err?: Error) => client.release(err)),
+            (err: Error) => cb(err, undefined as unknown as pg.PoolClient, () => {}),
+          );
+          return undefined;
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 async function seedForeignTenantDeal() {
@@ -319,6 +367,65 @@ postgres("York FX demo desk seeder", () => {
     );
     const after = await resolveDemoPack(pool);
     expect(after.homeCurrency).toBe("GBP");
+  });
+
+  /* Second boot on main re-walks principals, balances, the board, the
+     till, four client files and six idempotency keys. That is the
+     ~6s cold-boot step. A present book is one indexed read. */
+  it("does not walk the book again once the six demo deals are posted", async () => {
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.status).toBe("populated");
+    expect(first.posted).toBe(6);
+
+    const queries: string[] = [];
+    const second = await populateDemoDesk(countingPool(pool, queries), handle.db);
+    expect(second).toMatchObject({
+      status: "already",
+      posted: 0,
+      reused: 6,
+      customers: 4,
+    });
+    expect(queries.length, queries.map((sql) => sql.slice(0, 160)).join("\n")).toBeLessThanOrEqual(2);
+    const walked = queries.filter((sql) =>
+      /desk_clients|ledger_till_sessions|ledger_customers|ledger_principals|rate_boards|FROM ledger_transactions|INTO ledger_transactions/i.test(
+        sql,
+      ),
+    );
+    expect(walked).toEqual([]);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n,
+    ).toBe(6);
+    expect((await pool.query("SELECT count(*)::int AS n FROM desk_clients WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n).toBe(4);
+  });
+
+  /* A failed presence read must not be treated as "empty" and must not
+     abort the boot. The old walk is the fallback. */
+  it("logs and walks the book when the presence check cannot be read", async () => {
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.status).toBe("populated");
+
+    const originalQuery = pool.query.bind(pool);
+    let thrown = false;
+    const querySpy = vi.spyOn(pool, "query").mockImplementation((...args: never[]) => {
+      if (!thrown) {
+        thrown = true;
+        return Promise.reject(new Error("book check unavailable"));
+      }
+      return originalQuery(...args);
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const second = await populateDemoDesk(pool, handle.db);
+      expect(thrown).toBe(true);
+      expect(second).toMatchObject({ status: "already", posted: 0, reused: 6, customers: 4 });
+      expect(warn.mock.calls.map((call) => String(call[0])).join("\n")).toContain("book-present check failed");
+    } finally {
+      querySpy.mockRestore();
+      warn.mockRestore();
+    }
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n,
+    ).toBe(6);
   });
 
   it("skips when York FX is no longer the demo site", async () => {
