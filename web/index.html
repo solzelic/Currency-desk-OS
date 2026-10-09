@@ -275,7 +275,7 @@ window.claimedCount.then(function (d) {
         <div style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
           <sc-for list="{{ features }}" as="f" hint-placeholder-count="9">
             <div style="{{ f.layerStyle }}">
-              <image-slot id="{{ f.slot }}" src="{{ f.src }}" webp="{{ f.webp }}" width="1280" height="859" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
+              <image-slot id="{{ f.slot }}" src="{{ f.src }}" webp="{{ f.webp }}" width="1280" height="859" load="near" fetchpriority="{{ f.priority }}" decoding="async" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
               <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 38%, rgba(23,20,15,0.4));"></div>
               <div style="position: absolute; left: 22px; bottom: 22px; width: 300px; max-width: calc(100% - 44px); background: rgba(251,249,244,0.97); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; padding: 15px 17px; box-shadow: 0 22px 46px -20px rgba(23,20,15,0.6);">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">{{ f.kicker }}</span><span style="{{ f.chipStyle }}">{{ f.chip }}</span></div>
@@ -817,10 +817,15 @@ class Component extends DCLogic {
      preload scanner reads the raw document and would otherwise request
      the placeholder before this runtime fills it in. */
   shot(src, w, h, alt, style) {
+    /* The five story frames are stacked. Chromium fetches a lazy image
+       that is still a couple of screens away, and all five then share the
+       connection with the feature preview the reader is looking at. Hold
+       the file until this section actually meets the viewport. */
+    const show = !!this.state.storyNear;
     const webp = String(src || '').replace(/\.jpe?g$/i, '.webp');
     return React.createElement('picture', { style: { display: 'contents' } },
-      React.createElement('source', { type: 'image/webp', srcSet: webp }),
-      React.createElement('img', { src: src, alt: alt || '', width: w, height: h, loading: 'lazy', decoding: 'async', style: style })
+      React.createElement('source', { type: 'image/webp', srcSet: show ? webp : '' }),
+      React.createElement('img', { src: show ? src : '', alt: alt || '', width: w, height: h, loading: 'lazy', decoding: 'async', style: style })
     );
   }
 
@@ -852,12 +857,26 @@ class Component extends DCLogic {
       this._ro = new ResizeObserver(() => { if (this._fitApply) try { this._fitApply(); } catch (e) {} });
       this._ro.observe(document.documentElement);
     }
+    this.armStory();
     window.claimedCount.then(d => {
       const target = d ? d.claimed : 64;
       this.setState({ cap: d ? d.cap : 100 });
       if (reduce || target <= 0) { this.setState({ claimed: target }); return; }
       this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= target) clearInterval(this._cc); return { claimed: Math.min(n, target) }; }), Math.max(12, Math.round(1650 / target)));
     });
+  }
+  armStory() {
+    const scene = document.querySelector('[data-scene="website"]');
+    if (!scene || typeof IntersectionObserver === 'undefined') {
+      this.setState({ storyNear: true });
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      io.disconnect();
+      this.setState({ storyNear: true });
+    }, { rootMargin: '0px' });
+    io.observe(scene);
   }
   INIT_STEPS = ['initReveal', 'initExit', 'initCard3d', 'signOffInit', 'fixNav', 'startFeature', 'startHero', 'scrubInit', 'scrubStory', 'tillInit', 'jurInit', 'fitFeatures'];
   runInit() {
@@ -1361,7 +1380,7 @@ class Component extends DCLogic {
       const active = i === s.feat;
       return {
         num: String(i + 1).padStart(2, '0'), title: o.title, body: o.body,
-        slot: o.slot, ph: o.ph, src: o.src || '', webp: (o.src || '').replace(/\.jpe?g$/i, '.webp'), kicker: o.kicker, value: o.value, sub: o.sub, chip: o.chip, chipStyle: chip(o.kind),
+        slot: o.slot, ph: o.ph, src: o.src || '', webp: (o.src || '').replace(/\.jpe?g$/i, '.webp'), priority: active ? 'high' : 'low', kicker: o.kicker, value: o.value, sub: o.sub, chip: o.chip, chipStyle: chip(o.kind),
         icon: this.ic(o.icon, 17, active ? '#fff' : '#1D6B45', 1.9),
         onClick: () => this.setFeat(i),
         i: i,

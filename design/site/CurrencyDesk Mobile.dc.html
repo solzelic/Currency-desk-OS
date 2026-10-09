@@ -278,6 +278,36 @@ class Component extends DCLogic {
     );
   }
 
+  /* Feature slides are stacked. loading=lazy on a hidden slide never
+     starts, so the frame is empty when that slide is selected. Once the
+     section is near, one file downloads at a time and the slide on screen
+     goes first, so selecting it still paints on a slow link. */
+  _featShown(src) {
+    return !!(this._featHave && this._featHave[src]);
+  }
+  _featTurn(src) {
+    if (!this.state.featNear || !src) return false;
+    if (this._featShown(src)) return true;
+    const selected = this.FEATURES[this.state.feat];
+    if (selected && !this._featShown(selected.src)) return src === selected.src;
+    const next = this.FEATURES.find((f) => !this._featShown(f.src));
+    return !!(next && next.src === src);
+  }
+  _featDone(src) {
+    if (!src || this._featShown(src)) return;
+    if (!this._featHave) this._featHave = {};
+    this._featHave[src] = true;
+    this.setState((s) => ({ featStamp: (s.featStamp || 0) + 1 }));
+  }
+  featureShot(src, alt, on, style) {
+    const show = this._featTurn(src);
+    const webp = String(src || '').replace(/\.jpe?g$/i, '.webp');
+    return React.createElement('picture', { style: { display: 'contents' } },
+      React.createElement('source', { type: 'image/webp', srcSet: show ? webp : '' }),
+      React.createElement('img', { src: show ? src : '', alt: alt || '', width: 1280, height: 859, decoding: 'async', fetchPriority: on ? 'high' : 'low', style: style, onLoad: (e) => { if (e && e.target && e.target.naturalWidth > 0) this._featDone(src); } })
+    );
+  }
+
   FEATURES = [
     { src: '../photos/rate-board-storefront.jpg', kicker: 'Rates', title: 'Your board, everywhere', body: 'Set your spread once. The desk prices every deal after that, and your window, your counter and your website all move together.' },
     { src: '../photos/sms-storefront.jpg', kicker: 'Messaging', title: 'Bring them back', body: 'Tell a customer their money is ready from the shop number, not a personal phone — and watch them walk back in.' },
@@ -355,6 +385,20 @@ class Component extends DCLogic {
     this._tk = setInterval(() => this.setState(s => ({ tick: s.tick + 1 })), 2600);
     this.setState({ clock: this.clk() });
     this.bindSwipe();
+    this.armFeaturePhotos();
+  }
+  armFeaturePhotos() {
+    const scene = document.querySelector('#product');
+    if (!scene || typeof IntersectionObserver === 'undefined') {
+      this.setState({ featNear: true });
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      io.disconnect();
+      this.setState({ featNear: true });
+    }, { rootMargin: '640px 0px' });
+    io.observe(scene);
   }
   componentWillUnmount() { clearInterval(this._clk); clearInterval(this._tk); clearTimeout(this._sw); }
 
@@ -422,7 +466,7 @@ class Component extends DCLogic {
       featLayers: this.FEATURES.map((f, i) => {
         const on = i === s.feat;
         return {
-          photo: this.shot(f.src, 1280, 859, f.title, {
+          photo: this.featureShot(f.src, f.title, on, {
             position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block',
             transition: 'opacity .6s ease, visibility .6s linear, transform .9s cubic-bezier(.2,.8,.2,1)',
             opacity: on ? 1 : 0, visibility: on ? 'visible' : 'hidden',

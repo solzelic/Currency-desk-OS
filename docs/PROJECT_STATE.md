@@ -405,10 +405,14 @@ authenticated narrative dashboard.
 
 **2026-10-09**, public front page. The fifteen photographs are WebP,
 with the JPEG kept beside them for a browser that cannot read WebP.
-Photographs below the first screen wait (`loading="lazy"`). The phone
-hero does not. The story frames are no longer an `<img src="{{ p.src }}">`
-in the raw page, so that placeholder is not requested. The desk, the
-cache headers, and the server are unchanged.
+Story frames and the team photograph below the first screen wait
+(`loading="lazy"`). The story frames keep their file until that
+section meets the viewport. The phone hero does not wait. The nine
+feature previews start when that section is near the viewport and are
+not lazy: one file at a time, the selected preview first, so the frame
+on screen finishes on a slow link. The story frames are no longer an
+`<img src="{{ p.src }}">` in the raw page, so that placeholder is not
+requested. The desk, the cache headers, and the server are unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

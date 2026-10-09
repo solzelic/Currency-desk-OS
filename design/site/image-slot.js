@@ -277,9 +277,56 @@
     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>' +
     '<path d="m21 15-5-5L5 21"/></svg>';
 
+  // Feature previews (load=near) are stacked, and most of them are
+  // visibility:hidden. They must still download once the section is close,
+  // but nine at once on a slow link leaves the selected frame unfinished.
+  // One file at a time; the selected slot (fetchpriority=high) goes first.
+  const nearLoads = {
+    slots: new Set(),
+    current: null,
+    timer: 0,
+    busy: false,
+    wants(slot) {
+      return slot.isConnected && slot._near && !slot._userUrl
+        && slot.getAttribute('load') === 'near' && !slot._nearFailed
+        && !slot._photoReady();
+    },
+    pump() {
+      if (this.busy) return;
+      this.busy = true;
+      try {
+        for (let n = 0; n < 12; n++) {
+          const pending = [...this.slots].filter((slot) => this.wants(slot));
+          const active = pending.find((slot) => slot.getAttribute('fetchpriority') === 'high');
+          const target = active || pending[0] || null;
+          if (this.current && this.current !== target && !this.current._photoReady()) {
+            this.current._clearHeldSrc();
+          }
+          this.current = target;
+          if (!target) return;
+          this._inPump = true;
+          try { target._render(); } finally { this._inPump = false; }
+          if (!target._photoReady()) return;
+        }
+      } finally {
+        this.busy = false;
+      }
+    },
+    kick(slot) {
+      this.slots.add(slot);
+      if (this._inPump) return;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.pump(), 40);
+    },
+    forget(slot) {
+      this.slots.delete(slot);
+      if (this.current === slot) this.current = null;
+    },
+  };
+
   class ImageSlot extends HTMLElement {
     static get observedAttributes() {
-      return ['shape', 'radius', 'mask', 'fit', 'placeholder', 'src', 'webp', 'loading', 'decoding', 'width', 'height', 'id', 'credit', 'credit-href'];
+      return ['shape', 'radius', 'mask', 'fit', 'placeholder', 'src', 'webp', 'loading', 'load', 'fetchpriority', 'decoding', 'width', 'height', 'id', 'credit', 'credit-href'];
     }
 
     constructor() {
@@ -327,6 +374,19 @@
       this._credit.addEventListener('click', (e) => e.stopPropagation());
       this._credit.addEventListener('dblclick', (e) => e.stopPropagation());
       this._ghost = root.querySelector('.ghost');
+      this._img.addEventListener('load', () => {
+        if (this.getAttribute('load') === 'near') nearLoads.pump();
+      });
+      this._img.addEventListener('error', () => {
+        if (this.getAttribute('load') !== 'near') return;
+        const wanted = this.getAttribute('src') || '';
+        const got = this._img.getAttribute('src') || '';
+        // Clearing src to give the pipe to the selected preview aborts the
+        // request. That is not a broken file.
+        if (!got || got !== wanted) return;
+        this._nearFailed = true;
+        nearLoads.pump();
+      });
       this._err = null;
       this._input = root.querySelector('input');
       this._depth = 0;
@@ -484,6 +544,37 @@
       this._render();
     }
 
+    _photoReady() {
+      const img = this._img;
+      const src = img && (img.getAttribute('src') || '');
+      return !!(src && img.complete && img.naturalWidth > 0);
+    }
+
+    _clearHeldSrc() {
+      this._source.removeAttribute('srcset');
+      this._img.removeAttribute('src');
+      this._img.removeAttribute('loading');
+      this._img.style.display = 'block';
+      this._empty.style.display = 'none';
+      this.setAttribute('data-filled', '');
+    }
+
+    _armNear() {
+      if (this._near || this._nearIO) return;
+      // No observer (old webview): load now. Otherwise wait until this
+      // slot is within 640px of the viewport, then the caller assigns the
+      // file without loading=lazy so a stacked hidden pane still downloads.
+      if (typeof IntersectionObserver === 'undefined') { this._near = true; return; }
+      this._nearIO = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        this._near = true;
+        this._nearIO.disconnect();
+        this._nearIO = null;
+        this._render();
+      }, { rootMargin: '640px 0px' });
+      this._nearIO.observe(this);
+    }
+
     disconnectedCallback() {
       subs.delete(this._subFn);
       this.removeEventListener('pointerenter', this._subFn);
@@ -492,6 +583,8 @@
       this.removeEventListener('dragleave', this);
       this.removeEventListener('drop', this);
       if (this._ro) { this._ro.disconnect(); this._ro = null; }
+      if (this._nearIO) { this._nearIO.disconnect(); this._nearIO = null; }
+      nearLoads.forget(this);
       // commit=false: a disconnect is not a user intent — committing here
       // would persist whatever half-finished drag a React remount or DOM
       // splice happened to interrupt. Deliberate exits commit on their own
@@ -809,6 +902,33 @@
         // pointing it at the jpeg on the public page would download the
         // fallback next to the webp.
         //
+        // Feature previews are stacked panes, most of them visibility:hidden.
+        // loading=lazy never starts on those, so selecting one shows an
+        // empty frame. load=near holds the file until the slot is close,
+        // then nearLoads assigns one file at a time, selected slot first.
+        if (this.getAttribute('load') === 'near' && !this._userUrl && !this._near) {
+          this._armNear();
+          this._clearHeldSrc();
+          return;
+        }
+        if (this.getAttribute('load') === 'near' && !this._userUrl && !this._photoReady()) {
+          const selected = this.getAttribute('fetchpriority') === 'high';
+          if (selected) {
+            // The picture on screen gets the connection now. A background
+            // file that keeps downloading leaves this frame unfinished.
+            for (const other of nearLoads.slots) {
+              if (other !== this && !other._photoReady()) other._clearHeldSrc();
+            }
+            nearLoads.current = this;
+            nearLoads.slots.add(this);
+          } else {
+            nearLoads.kick(this);
+            if (nearLoads.current !== this) {
+              this._clearHeldSrc();
+              return;
+            }
+          }
+        }
         // loading=lazy is ignored while this slot is in the hidden design
         // template (x-dc is display:none). Chromium fetches the file
         // immediately. Hold it until the slot is actually shown; the
@@ -824,14 +944,24 @@
           return;
         }
         const webp = this._userUrl ? '' : (this.getAttribute('webp') || '');
-        if (webp) this._source.srcset = webp;
-        else this._source.removeAttribute('srcset');
+        if (webp) {
+          if (this._source.getAttribute('srcset') !== webp) this._source.setAttribute('srcset', webp);
+        } else this._source.removeAttribute('srcset');
         for (const name of ['loading', 'decoding', 'width', 'height']) {
-          const value = this.getAttribute(name);
+          const value = this.getAttribute('load') === 'near' && name === 'loading'
+            ? ''
+            : (this.getAttribute(name) || '');
           if (value) this._img.setAttribute(name, value);
           else this._img.removeAttribute(name);
         }
-        if (this._img.getAttribute('src') !== url) this._img.src = url;
+        const priority = this.getAttribute('fetchpriority');
+        if (priority) this._img.setAttribute('fetchpriority', priority);
+        else this._img.removeAttribute('fetchpriority');
+        // Assign through the attribute. Setting the .src property resolves
+        // it to an absolute URL, so the next render sees a different
+        // attribute and starts the download over. A selected preview then
+        // never reaches complete on a slow link.
+        if (this._img.getAttribute('src') !== url) this._img.setAttribute('src', url);
         if (editable) this._ghost.src = url;
         else this._ghost.removeAttribute('src');
         this._img.style.display = 'block';
