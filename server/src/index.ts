@@ -122,7 +122,8 @@ if (process.env.PLATFORM_ADMIN_BOOTSTRAP) {
 }
 
 // York FX book activity. Opt-in: DEMO_POPULATE=1. Posts through the real
-// quote / ledger / client-record services and is a no-op on a second boot.
+// quote / ledger / client-record services. Once the six demo deals are
+// posted, a later boot reads that marker and does not walk the book.
 // Never touches a tenant that is not York FX (siteSlug yorkfx).
 if (shouldPopulateDemoDesk()) {
   const ledgerUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -135,6 +136,8 @@ if (shouldPopulateDemoDesk()) {
       const result = await populateDemoDesk(pool, handle.db);
       if (result.status === "skipped") {
         console.warn(`[demo-desk] populate skipped (${result.reason ?? "unknown"})`);
+      } else if (result.reason === "book-present") {
+        console.warn("[demo-desk] already — demo book present; populate skipped");
       } else {
         console.warn(
           `[demo-desk] ${result.status} — ${result.customers} customers, ${result.transactions} deals on the book, till ${result.tillOpen ? "open" : "not open"}`,
