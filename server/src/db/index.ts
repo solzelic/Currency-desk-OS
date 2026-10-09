@@ -58,13 +58,9 @@ CREATE TABLE IF NOT EXISTS rate_quotes (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_quotes_tenant_idx ON rate_quotes(tenant_id, created_at);
--- existing databases created these as double precision; CREATE TABLE IF NOT
--- EXISTS will not change them. Cast in place so PGlite (DDL only) and a
--- lived-in Postgres stay on the same numeric scales as the ledger.
-ALTER TABLE rate_quotes
-  ALTER COLUMN have_amount TYPE numeric(24,2) USING have_amount::numeric(24,2),
-  ALTER COLUMN quoted_rate TYPE numeric(24,12) USING quoted_rate::numeric(24,12),
-  ALTER COLUMN receive_amount TYPE numeric(24,2) USING receive_amount::numeric(24,2);
+-- Older databases created these amounts as double precision. CREATE TABLE
+-- IF NOT EXISTS will not change that. createDb appends the cast only when
+-- a column is not already numeric(24,2) / numeric(24,12). See bootDdl.
 CREATE TABLE IF NOT EXISTS pending_signups (
   id text PRIMARY KEY,
   email text NOT NULL,
@@ -433,9 +429,8 @@ CREATE TABLE IF NOT EXISTS rate_boards (
   published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rate_boards_branch_idx ON rate_boards(branch_id, published_at);
-ALTER TABLE rate_boards
-  ALTER COLUMN buy_margin TYPE numeric(24,12) USING buy_margin::numeric(24,12),
-  ALTER COLUMN sell_margin TYPE numeric(24,12) USING sell_margin::numeric(24,12);
+-- Same cast rule as rate_quotes: only when buy_margin / sell_margin are
+-- not already numeric(24,12). See bootDdl.
 CREATE TABLE IF NOT EXISTS stripe_customers (
   tenant_id text PRIMARY KEY REFERENCES tenants(id),
   stripe_customer_id text NOT NULL UNIQUE,
@@ -614,17 +609,101 @@ CREATE INDEX IF NOT EXISTS desk_client_images_client_idx ON desk_client_images (
 CREATE INDEX IF NOT EXISTS desk_client_images_document_idx ON desk_client_images (document_id) WHERE document_id IS NOT NULL;
 `;
 
+/* Pre-Slice-F databases stored these as double precision. CREATE TABLE
+   IF NOT EXISTS will not change a column that already exists, and PGlite
+   never runs migration 024, so the cast still has to live on the boot
+   path. Postgres 16 takes ACCESS EXCLUSIVE and writes a new pg_attribute
+   row even when the type already matches; it does not rewrite the heap
+   in that case. Append the statement only when format_type disagrees. */
+const RATE_QUOTES_NUMERIC_CAST = `
+ALTER TABLE rate_quotes
+  ALTER COLUMN have_amount TYPE numeric(24,2) USING have_amount::numeric(24,2),
+  ALTER COLUMN quoted_rate TYPE numeric(24,12) USING quoted_rate::numeric(24,12),
+  ALTER COLUMN receive_amount TYPE numeric(24,2) USING receive_amount::numeric(24,2);`;
+
+const RATE_BOARDS_NUMERIC_CAST = `
+ALTER TABLE rate_boards
+  ALTER COLUMN buy_margin TYPE numeric(24,12) USING buy_margin::numeric(24,12),
+  ALTER COLUMN sell_margin TYPE numeric(24,12) USING sell_margin::numeric(24,12);`;
+
+const QUOTE_COLUMN_TYPES: readonly (readonly [string, string])[] = [
+  ["have_amount", "numeric(24,2)"],
+  ["quoted_rate", "numeric(24,12)"],
+  ["receive_amount", "numeric(24,2)"],
+];
+
+const BOARD_COLUMN_TYPES: readonly (readonly [string, string])[] = [
+  ["buy_margin", "numeric(24,12)"],
+  ["sell_margin", "numeric(24,12)"],
+];
+
+/* One round trip for the enum probe and the five column types. A fresh
+   database returns only the staff_role row; CREATE TABLE then declares
+   the numeric scales, so the casts stay off. */
+const BOOT_CATALOG_SQL = `
+SELECT 'staff_role'::text AS relname, NULL::text AS attname,
+       CASE WHEN EXISTS (SELECT 1 FROM pg_type WHERE typname = 'staff_role') THEN 'yes' ELSE 'no' END AS type_name
+UNION ALL
+SELECT c.relname::text, a.attname::text, format_type(a.atttypid, a.atttypmod)
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+ WHERE n.nspname = 'public'
+   AND (
+     (c.relname = 'rate_quotes' AND a.attname IN ('have_amount', 'quoted_rate', 'receive_amount'))
+     OR (c.relname = 'rate_boards' AND a.attname IN ('buy_margin', 'sell_margin'))
+   )`;
+
+interface BootCatalogRow {
+  relname: string | null;
+  attname: string | null;
+  type_name: string | null;
+}
+
+function columnNeedsCast(
+  columns: Map<string, string>,
+  table: string,
+  targets: readonly (readonly [string, string])[],
+): boolean {
+  const present = targets.filter(([name]) => columns.has(`${table}.${name}`));
+  if (present.length === 0) return false;
+  return targets.some(([name, type]) => columns.get(`${table}.${name}`) !== type);
+}
+
+function bootDdl(columns: Map<string, string>): string {
+  let sql = DDL;
+  if (columnNeedsCast(columns, "rate_quotes", QUOTE_COLUMN_TYPES)) sql += RATE_QUOTES_NUMERIC_CAST;
+  if (columnNeedsCast(columns, "rate_boards", BOARD_COLUMN_TYPES)) sql += RATE_BOARDS_NUMERIC_CAST;
+  return sql;
+}
+
+async function readBootCatalog(
+  query: (sql: string) => Promise<{ rows: BootCatalogRow[] }>,
+): Promise<{ staffRoleExists: boolean; columns: Map<string, string> }> {
+  const found = await query(BOOT_CATALOG_SQL);
+  const columns = new Map<string, string>();
+  let staffRoleExists = false;
+  for (const row of found.rows) {
+    if (row.relname === "staff_role") {
+      staffRoleExists = row.type_name === "yes";
+      continue;
+    }
+    if (row.relname && row.attname && row.type_name) columns.set(`${row.relname}.${row.attname}`, row.type_name);
+  }
+  return { staffRoleExists, columns };
+}
+
 export async function createDb(): Promise<DbHandle> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const pool = new pg.Pool({ connectionString: url });
-    // same idempotent bootstrap as the embedded path — a fresh managed
-    // Postgres (Neon) gets its schema on first boot, existing ones no-op
-    const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
-    if (typeExists.rows.length === 0) {
-      await pool.query(ENUM_DDL);
-    }
-    await pool.query(DDL);
+    // Same bootstrap as the embedded path. A fresh managed Postgres gets
+    // its schema on first boot. An existing one keeps it, and does not
+    // re-lock rate_quotes / rate_boards when the numeric scales are
+    // already in place.
+    const catalog = await readBootCatalog((sql) => pool.query(sql));
+    if (!catalog.staffRoleExists) await pool.query(ENUM_DDL);
+    await pool.query(bootDdl(catalog.columns));
     await runMigrations(pool);
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
@@ -633,14 +712,12 @@ export async function createDb(): Promise<DbHandle> {
   // pure in-memory when PGLITE_MEMORY=1 (tests)
   const dataDir = process.env.PGLITE_MEMORY === "1" ? undefined : process.env.PGLITE_DIR ?? "./.pgdata";
   const client = dataDir ? new PGlite(dataDir) : new PGlite();
-  // idempotent bootstrap: the enum CREATE throws if it exists — probe just
-  // that; the table DDL is IF NOT EXISTS throughout, so re-running it picks
-  // up newly added tables in an existing data directory
-  const typeExists = await client.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
-  if (typeExists.rows.length === 0) {
-    await client.exec(ENUM_DDL);
-  }
-  await client.exec(DDL);
+  // The enum CREATE throws if it exists. Tables are IF NOT EXISTS, so a
+  // re-run picks up newly added tables. The numeric casts are appended
+  // only for a data directory that still has the old float columns.
+  const catalog = await readBootCatalog((sql) => client.query(sql));
+  if (!catalog.staffRoleExists) await client.exec(ENUM_DDL);
+  await client.exec(bootDdl(catalog.columns));
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }
