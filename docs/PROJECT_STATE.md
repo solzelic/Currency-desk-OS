@@ -38,11 +38,14 @@ layers — they are not blockers for proving this core loop.
 - **The ledger** — server-side Postgres, `server/src/ledger/` + migrations.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
-  compiled ahead of time to `web/app/` by `scripts/build-os.mjs`.
-  Production `/login` and `/app` serve that compiled shell
-  (`/web/app/os.js`). `STATIC_INDEX` names the uncompiled shell as a
-  fallback only; it does not override compiled output.
-- **Admin panel** — `admin.html`, compiled to `web/app/admin.*`.
+  compiled ahead of time to `web/app/` by `scripts/build-os.mjs`, then
+  minified (function and class names kept). Production `/login` and
+  `/app` serve that compiled shell (`/web/app/os.js`). A source map
+  sits beside it and is not part of the page load. `STATIC_INDEX`
+  names the uncompiled shell as a fallback only; it does not override
+  compiled output.
+- **Admin panel** — `admin.html`, compiled and minified to
+  `web/app/admin.*` by the same step.
 - **Marketing site** — generated into `web/` from `design/site/*.dc.html`.
 - **Onboarding** — `web/onboarding.html`, generated from
   `design/onboarding/currencydesk-onboarding.html`.
@@ -402,6 +405,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-09**, desk script size. `/login` and `/app` still load
+`/web/app/os.js`, and `/admin` still loads `/web/app/admin.js`. Those
+two files are minified after the JSX compile. Function and class names
+are kept. External source maps sit next to the scripts. The script
+URLs, cache headers, and what the screens do are unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

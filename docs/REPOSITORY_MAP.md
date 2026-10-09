@@ -42,12 +42,17 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
-| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
-| `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
+| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js` (minified), `web/app/os.js.map`, `web/app/tw.css` |
+| `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` (minified), `web/app/admin.js.map` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
 
-`npm run build` runs all three build steps. After any source edit, rebuild and
-commit the generated output — CI diffs `web/` against a fresh build.
+`npm run build` runs all three build steps. `build:os` compiles the JSX,
+then minifies `web/app/os.js` and `web/app/admin.js` with esbuild
+(pinned, `keepNames` so function and class names stay). Each script
+gets an external source map beside it (`os.js.map`, `admin.js.map`).
+The map is not requested during a normal page load. The script URLs
+do not change. After any source edit, rebuild and commit the generated
+output — CI diffs `web/` against a fresh build.
 
 ## Route map
 
@@ -106,7 +111,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 ## Test commands
 
 ```bash
-npm run check:parse                     # every browser script parses
+npm run check:parse                     # every browser script parses; os.js and admin.js stay under the size budget
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
 TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 22 Postgres invariant suites
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
