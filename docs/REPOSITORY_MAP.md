@@ -70,6 +70,9 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 
 - App tables: Drizzle; embedded PGlite (dev/test) or Postgres (`DATABASE_URL`).
   Boot applies `DDL` + `runMigrations` — a fresh database self-provisions.
+  `runMigrations` reads `schema_migrations` once per boot. The
+  `rate_quotes` / `rate_boards` numeric casts in `DDL` run only when
+  a column is not already `numeric(24,2)` / `numeric(24,12)`.
 - Ledger tables: raw SQL — `server/src/ledger/migration.sql` registered as
   migration `001_ledger`, then `server/src/db/migrations/002…`. Append-only
   book. Invariants: `docs/CASH_OWNERSHIP_INVARIANTS.md`.
