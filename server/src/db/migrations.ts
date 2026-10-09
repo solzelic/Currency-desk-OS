@@ -54,12 +54,19 @@ export async function runMigrations(
   if (new Set(ordered.map(([migrationId]) => migrationId)).size !== ordered.length)
     throw new Error("Duplicate migration identifier.");
   await pool.query("CREATE TABLE IF NOT EXISTS schema_migrations (migration_id text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())");
+  // One read of the whole table. A per-id SELECT was a round trip per
+  // file (35 on main). The decision is unchanged: a different checksum
+  // still refuses to boot, a missing row still applies below.
+  const applied = await pool.query<{ migration_id: string; checksum: string }>(
+    "SELECT migration_id, checksum FROM schema_migrations",
+  );
+  const recorded = new Map(applied.rows.map((row) => [row.migration_id, row.checksum]));
   for (const [migrationId, path] of ordered) {
     const sql = await readFile(resolve(process.cwd(), path), "utf8");
     const checksum = createHash("sha256").update(sql).digest("hex");
-    const applied = await pool.query("SELECT checksum FROM schema_migrations WHERE migration_id=$1", [migrationId]);
-    if (applied.rowCount) {
-      if (applied.rows[0].checksum !== checksum) throw new Error(`Migration checksum drift: ${migrationId}`);
+    const existing = recorded.get(migrationId);
+    if (existing !== undefined) {
+      if (existing !== checksum) throw new Error(`Migration checksum drift: ${migrationId}`);
       continue;
     }
     const client = await pool.connect();
@@ -68,6 +75,7 @@ export async function runMigrations(
       await client.query(sql);
       await client.query("INSERT INTO schema_migrations (migration_id,checksum) VALUES ($1,$2)", [migrationId, checksum]);
       await client.query("COMMIT");
+      recorded.set(migrationId, checksum);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 }
