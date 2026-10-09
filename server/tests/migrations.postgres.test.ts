@@ -33,4 +33,32 @@ postgres("tracked PostgreSQL migrations", () => {
     expect((await pool.query("SELECT to_regclass('migration_fixture_partial') AS table_name")).rows[0].table_name).toBeNull();
     expect((await pool.query("SELECT count(*) FROM schema_migrations WHERE migration_id='test_003_partial'")).rows[0].count).toBe("0");
   });
+
+  it("still applies a migration that has no recorded row", async () => {
+    await runMigrations(pool, [first]);
+    await runMigrations(pool, [second, first]);
+    expect((await pool.query("SELECT migration_id FROM schema_migrations WHERE migration_id LIKE 'test_%' ORDER BY migration_id")).rows.map((row) => row.migration_id)).toEqual(["test_001_first", "test_002_second"]);
+  });
+
+  /* Steady-state boot used to pay one round trip per migration file.
+     The check itself is unchanged: one read of the whole table has to
+     be enough to skip what matches, refuse what drifted, and apply
+     what is missing. */
+  it("reads every recorded checksum in one query", async () => {
+    await runMigrations(pool, [first, second]);
+    const seen: string[] = [];
+    const watched = {
+      query(text: string, values?: unknown[]) {
+        seen.push(text);
+        return pool.query(text, values);
+      },
+      connect: () => pool.connect(),
+    } as unknown as pg.Pool;
+    await runMigrations(watched, [first, second]);
+    const selects = seen.filter((query) => /^\s*select\b/i.test(query) && /schema_migrations/i.test(query));
+    expect(selects).toHaveLength(1);
+    expect(selects[0]).toMatch(/migration_id/i);
+    expect(selects[0]).toMatch(/checksum/i);
+    expect(seen.some((query) => /where migration_id\s*=\s*\$1/i.test(query))).toBe(false);
+  });
 });
