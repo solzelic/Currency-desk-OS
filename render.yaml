@@ -40,8 +40,12 @@ services:
     # It is committed too, but building it here means a deploy can never serve
     # a page older than the design sitting next to it. No dependencies — it is
     # plain node against node:fs.
-    buildCommand: node scripts/build-onboarding.mjs && cd server && npm ci
-    startCommand: cd server && npm start
+    # Compile the TypeScript server here. NODE_ENV=production is set on
+    # this service, and a plain `npm ci` would skip devDependencies,
+    # including typescript. --include=dev keeps tsc available for this
+    # build only. The process that serves traffic is plain node.
+    buildCommand: node scripts/build-onboarding.mjs && cd server && npm ci --include=dev && npm run build
+    startCommand: cd server && node dist/index.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

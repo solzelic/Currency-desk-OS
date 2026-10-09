@@ -10,15 +10,19 @@ If a PR makes this document wrong, that PR updates it — CI checks
 One Render web service: the Fastify server serves the API **and** every
 static surface from the repository root (`STATIC_DIR=..`) behind an explicit
 allow-list in `server/src/app.ts`. There is no bundler SPA; the frontends are
-buildless React compiled ahead of time. Generated output is **committed** and
-CI fails if it is stale — so a deploy always serves exactly what the sources
-say.
+buildless React compiled ahead of time. Generated frontend output is
+**committed** and CI fails if it is stale — so a deploy always serves exactly
+what the sources say. The server itself is compiled at deploy time
+(`cd server && npm run build`, which is `tsc`) and started with
+`node dist/index.js`. `server/dist/` is not committed. Dev and the
+Playwright seam still launch `tsx src/index.ts`.
 
 ## Directories
 
 | Path | Role | Edit? |
 | --- | --- | --- |
 | `server/src/` | Fastify + Drizzle backend; ledger under `server/src/ledger/` | ✅ |
+| `server/dist/` | Compiled server (`tsc`). Produced by the Render build and by CI. Gitignored | ❌ never by hand |
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
 | `os-src/` | the OS source: domain `.jsx` screens, `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css` | ✅ |
@@ -45,9 +49,15 @@ say.
 | `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
+| `server/src/**/*.ts` | `cd server && npm run build` | `server/dist/` (not committed) |
 
-`npm run build` runs all three build steps. After any source edit, rebuild and
-commit the generated output — CI diffs `web/` against a fresh build.
+`npm run build` (repo root) runs the three frontend build steps. After any
+source edit to those, rebuild and commit the generated output — CI diffs
+`web/` against a fresh build. The server compile is separate:
+`cd server && npm run build`. Render's `buildCommand` runs the onboarding
+page and then that server compile (`npm ci --include=dev` so `tsc` is
+present while `NODE_ENV=production`). The start command is
+`cd server && node dist/index.js`.
 
 ## Route map
 
@@ -108,7 +118,9 @@ commit the generated output — CI diffs `web/` against a fresh build.
 ```bash
 npm run check:parse                     # every browser script parses
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
-TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 22 Postgres invariant suites
+TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the Postgres invariant suites
+cd server && npm run build && TEST_DATABASE_URL=postgres://…/freshdb node scripts/check-dist-boot.mjs
+                                    # compiled server, node dist/index.js, GET /api/health → 200
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
 ```
 

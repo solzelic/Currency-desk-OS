@@ -35,6 +35,10 @@ layers — they are not blockers for proving this core loop.
 - **Server** — Fastify + Drizzle, `server/src/`. API plus all static serving
   from the repo root behind an allow-list. Embedded PGlite in dev/test,
   Postgres in production; boot applies DDL + checksummed migrations.
+  Production compiles that TypeScript during the Render build (`tsc` →
+  `server/dist/`) and starts `node dist/index.js`. Dev and the Playwright
+  seam still run the sources through `tsx`. Migration SQL stays under
+  `server/src/` and is read from the `server/` working directory.
 - **The ledger** — server-side Postgres, `server/src/ledger/` + migrations.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
@@ -402,6 +406,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-09**, production server start. Render compiles the server at
+build time and runs `node dist/index.js`. Boot loads that JavaScript.
+Dev (`tsx watch`) and the Playwright seam still run the TypeScript
+sources. Migration SQL is still read from `server/src/` via the
+`server/` working directory. `STATIC_DIR` is still resolved from that
+working directory.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
