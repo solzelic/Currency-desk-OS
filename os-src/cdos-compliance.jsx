@@ -5,9 +5,9 @@
        slot into ONE engine: threshold, base currency, the rolling-
        aggregation window, report codes, terminology and the fileable
        format all come from the active pack. computeFlags reads it too.
-     • Sanctions / watchlist screening — OFAC / UN / OSFI name screening
-       on every client AND beneficiary, with fuzzy matching (token-set +
-       edit-distance) so reordered and near-miss names still surface.
+     • Sanctions screening is not connected. No pack ships a list,
+       and the desk does not match names. The owner checks the
+       official lists themselves.
      • Rolling-24h aggregation BY RULE — same person, cash-in inside the
        pack's window ≥ threshold ⇒ a single reportable aggregate. No
        manual "watching" tag.
@@ -375,67 +375,42 @@
     return r;
   }
 
-  /* ===================== SANCTIONS / WATCHLISTS ===================== */
-  // fictional, illustrative list entries across the three sources. Two are
-  // tuned to demonstrate fuzzy matching against the seed book.
-  // These names are not the UN Security Council Consolidated List.
-  const WATCHLISTS = [
-    { id: 'w1', name: 'Wei Lin', list: 'OFAC', program: 'NPWMD', country: 'CN', type: 'individual', dob: '1979-02-11' },
-    { id: 'w2', name: 'Aram Lawson', list: 'OSFI', program: 'Terrorism (Criminal Code)', country: 'CA', type: 'individual', dob: '1984-09-03' },
-    { id: 'w3', name: 'Viktor Anatolievich Kozlov', list: 'OFAC', program: 'RUSSIA-EO14024', country: 'RU', type: 'individual' },
-    { id: 'w4', name: 'Crescent Holdings FZE', list: 'UN', program: 'ISIL (Da’esh) & Al-Qaida', country: 'AE', type: 'entity' },
-    { id: 'w5', name: 'Mohammed Al-Rashid', list: 'UN', program: 'ISIL (Da’esh) & Al-Qaida', country: 'SY', type: 'individual' },
-    { id: 'w6', name: 'Banco del Sur Internacional', list: 'OFAC', program: 'SDNT', country: 'MX', type: 'entity' },
-    { id: 'w7', name: 'Olena Petrova', list: 'OSFI', program: 'Russia (SEMA)', country: 'RU', type: 'individual' },
-    { id: 'w8', name: 'Zhang Industrial Group', list: 'OFAC', program: 'NPWMD', country: 'CN', type: 'entity' },
-    { id: 'w9', name: 'Ibrahim Suleiman', list: 'UN', program: 'Somalia & Eritrea', country: 'SO', type: 'individual' },
-    { id: 'w10', name: 'Pyongyang Trading Co.', list: 'OFAC', program: 'DPRK', country: 'KP', type: 'entity' },
-  ];
-  const LIST_TONE = { OFAC: { c: '#1d4ed8', bg: '#dbe5fb' }, UN: { c: '#0e7490', bg: '#cfeaf0' }, OSFI: { c: CD.flag, bg: CD.flagSoft } };
+  /* ===================== SANCTIONS / WATCHLISTS =====================
+     No list is loaded. A sample of ten names used to stand in for
+     OFAC, the UN list and OSFI, and a Canada desk showed those names
+     as hits. They were fiction. The screen says so.
 
-  /* Does this pack ship a sanctions list the desk can match against?
-
-     The names above are sample entries. True means the desk still
-     shows that sample queue. It does not mean a real list is loaded.
-     A Philippines desk must not present those names as a screen
-     against the UN list. BSP Circular 1182 still requires that
-     owner to screen, so the screens that read this flag say the
-     duty instead of hiding it. Every other pack keeps the queue
-     it already shows.
-
-     One function, not a pack id written on each screen. A column on
-     the pack would be a migration for a fact this file already knows. */
+     sanctionsListShips is false for every pack, including the
+     Philippines (pack-ph-v1), Singapore (pack-sg-v1) and Hong Kong
+     (pack-hk-v1). `pack` is read so a later feed can return true for
+     one id without each screen growing its own pack check. */
+  const WATCHLISTS = [];
+  const NOT_CONNECTED = "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
+  /* The duty those three packs already state, after the sentence above. */
+  const PACK_DUTY = {
+    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.',
+    'pack-sg-v1': 'Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.',
+    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the United Nations Sanctions Ordinance (Cap. 537) and the United Nations (Anti-Terrorism Measures) Ordinance (Cap. 575). The owner does this outside the desk. This screen does not match names.',
+  };
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);
-    return id !== 'pack-ph-v1';
+    if (id === 'pack-ph-v1' || id === 'pack-sg-v1' || id === 'pack-hk-v1') return false;
+    /* Canada and the other packs used to show the sample. They do not. */
+    return false;
   }
-  const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
-
-  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  const tokens = (s) => norm(s).split(' ').filter(Boolean);
-  function lev(a, b) { const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]); for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; }
-  function matchScore(a, b) {
-    const na = norm(a), nb = norm(b); if (!na || !nb) return 0;
-    if (na === nb) return 1;
-    const ta = tokens(a).sort().join(' '), tb = tokens(b).sort().join(' ');
-    if (ta === tb) return 0.95;                          // same tokens, reordered
-    const ratio = 1 - lev(na, nb) / Math.max(na.length, nb.length);
-    // token overlap (Jaccard) as a floor for partial matches
-    const sa = new Set(tokens(a)), sb = new Set(tokens(b));
-    const inter = [...sa].filter(x => sb.has(x)).length, uni = new Set([...sa, ...sb]).size;
-    const jac = uni ? inter / uni : 0;
-    return Math.max(ratio, jac * 0.9);
+  function screeningNote(pack) {
+    const id = pack && (pack.packId || pack.id);
+    const duty = id && PACK_DUTY[id];
+    return duty ? NOT_CONNECTED + ' ' + duty : NOT_CONNECTED;
   }
-  // screen one name against the lists → { status, hits[] }
-  function screen(name) {
-    const hits = [];
-    WATCHLISTS.forEach(w => { const s = matchScore(name, w.name); if (s >= 0.82) hits.push({ w, score: s }); });
-    hits.sort((a, b) => b.score - a.score);
-    const top = hits[0];
-    const status = !top ? 'clear' : top.score >= 0.99 ? 'hit' : 'review';
-    return { status, hits };
+  /* Nothing to match. Callers that used to treat "clear" as a finished
+     screen must read sanctionsListShips first. "unavailable" is not a hit
+     and it is not a clear. */
+  function screen() {
+    return { status: 'unavailable', hits: [] };
   }
-  const STAT = { clear: { t: 'Clear', c: CD.green, bg: CD.greenSoft, icon: 'checkcircle' }, review: { t: 'Possible match', c: CD.amber, bg: CD.amberSoft, icon: 'alert' }, hit: { t: 'Confirmed hit', c: CD.flag, bg: CD.flagSoft, icon: 'ban' } };
+  const LIST_TONE = {};
+  const STAT = { unavailable: { t: 'Not connected', c: CD.mute, bg: CD.lineSoft, icon: 'shield' } };
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
@@ -626,7 +601,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, matchScore, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, PH_SCREENING_NOTE },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, screeningNote, NOT_CONNECTED },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

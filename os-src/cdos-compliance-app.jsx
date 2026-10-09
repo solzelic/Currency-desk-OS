@@ -7,7 +7,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
   const C = window.CDOS._compliance;
-  const { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
+  const { REGIMES, getRegime, sanctionsListShips, screeningNote, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const SUBKEY = 'cdos_submissions_v1';
@@ -232,95 +232,18 @@
     return `${o.coveredRefs.length} of these ${total} ${total === 1 ? 'was' : 'were'} already filed under ${acks.join(' · ') || 'an earlier report'} · ${o.newRefs.length} still need${o.newRefs.length === 1 ? 's' : ''} filing`;
   }
 
-  function Pill({ s, small }) { const c = STAT[s] || STAT.clear; return <span className="inline-flex items-center gap-1.5 font-semibold" style={{ background: c.bg, color: c.c, borderRadius: 999, fontSize: small ? 10 : 11, padding: small ? '2px 8px' : '3px 10px' }}><Ic n={c.icon} s={small ? 10 : 12} c={c.c} />{c.t}</span>; }
-  function ListTag({ list }) { const t = LIST_TONE[list] || { c: CD.mute, bg: CD.lineSoft }; return <span className="text-[10px] px-1.5 py-0.5 font-semibold" style={{ background: t.bg, color: t.c, borderRadius: 4, fontFamily: 'Space Mono, monospace' }}>{list}</span>; }
-
-  /* ===================== SCREENING ===================== */
-  function Screening({ clients, setClients, beneficiaries, me, settings, onOpenSettings }) {
-    const [q, setQ] = useState('');
-    const [only, setOnly] = useState('flagged');
-    const [picker, setPicker] = useState(false);
-    const [verify, setVerify] = useState(null);   // { name, kind, rec }
-    const KYC = window.CDOS.KYC;
-    const kycStats = KYC ? KYC.summary() : { monthCount: 0, monthSpend: 0 };
-    const subjects = useMemo(() => {
-      const out = [];
-      Object.keys(clients || {}).forEach(name => out.push({ name, kind: (clients[name].kind === 'corporate' ? 'Business' : 'Client'), ref: name }));
-      (beneficiaries || []).forEach(b => out.push({ name: b.name, kind: 'Beneficiary', ref: 'of ' + b.sender }));
-      return out.map(s => ({ ...s, ...screen(s.name) }));
-    }, [clients, beneficiaries]);
-    const counts = useMemo(() => ({ all: subjects.length, hit: subjects.filter(s => s.status === 'hit').length, review: subjects.filter(s => s.status === 'review').length, clear: subjects.filter(s => s.status === 'clear').length }), [subjects]);
-    const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
-      .sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
-
-    /* No list loaded. The queue below matches sample names, not the
-       UN Security Council list, so it stays off this desk. The note
-       is the owner's duty under BSP Circular 1182. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    if (!C.sanctionsListShips(packNow)) return (<div className="p-4" data-testid="philippines-screening">
-      <div className="text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
-      <div className="mt-1 text-[12px] max-w-xl" style={{ color: CD.mute }}>{C.PH_SCREENING_NOTE}</div>
-    </div>);
-
-    // Settings → Compliance · sanctions screening switch gates the whole queue
-    if (settings && settings.screenSanctions === false) return (<div className="p-4">
+  /* ===================== SCREENING =====================
+     There is no list, so there is no queue. A count of "clear" would
+     say the desk had screened and found nothing. */
+  function Screening() {
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const note = screeningNote(pack);
+    return (<div className="p-4" data-testid="sanctions-not-connected">
       <div className="flex flex-col items-center justify-center text-center py-16 px-6" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12 }}>
         <span className="grid place-items-center" style={{ width: 44, height: 44, borderRadius: '50%', background: CD.lineSoft }}><Ic n="shield" s={22} c={CD.faint} /></span>
-        <div className="mt-3 text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening is switched off</div>
-        <div className="mt-1 text-[12px] max-w-sm" style={{ color: CD.mute }}>No client or beneficiary names are being matched against the OFAC / UN / OSFI lists. Most regulators expect this to stay on.</div>
-        <button onClick={() => onOpenSettings && onOpenSettings()} className="mt-4 flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}><Ic n="gear" s={14} c="var(--cd-on-ink)" /> Turn on in Settings</button>
+        <div className="mt-3 text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
+        <div className="mt-2 text-[13px] leading-relaxed" style={{ color: CD.mute, maxWidth: 460 }}>{note}</div>
       </div>
-    </div>);
-
-    return (<div className="p-4">
-      <div className="flex items-start justify-between mb-3 gap-2">
-        <div><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Sanctions & watchlist screening <window.CDOS.InfoTip title="Sanctions screening" body="Every client and beneficiary name is matched against government watchlists. A hit (or possible match) must be reviewed before you transact with them." lines={[{k:'OFAC',v:'US Treasury sanctions list'},{k:'UN',v:'United Nations consolidated list'},{k:'OSFI',v:'Canada’s terrorist-financing list'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Every client and beneficiary screened against OFAC, UN and OSFI lists.</div></div>
-        <div className="flex items-center gap-2 flex-none">
-          <div className="flex items-center gap-2 px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name…" className="outline-none text-sm bg-transparent" style={{ width: 130 }} /></div>
-          {KYC && <button onClick={() => setPicker(true)} className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={15} c="var(--cd-on-ink)" /> New KYC check</button>}
-        </div>
-      </div>
-
-      {KYC && <div className="flex items-center gap-2 mb-3 px-3 py-2" style={{ background: CD.brassSoft, border: `1px solid color-mix(in srgb, ${CD.brass} 20%, transparent)`, borderRadius: 9 }}>
-        <Ic n="id" s={14} c={CD.brass} />
-        <span className="text-[11.5px]" style={{ color: 'var(--cd-brass-text)' }}>Run a background check or ID verification on any subject through <b>Persona</b> — results attach to the contact and the History log.</span>
-        <span className="ml-auto text-[11px] font-semibold flex-none" style={{ color: 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>{kycStats.monthCount} this month · ${kycStats.monthSpend.toFixed(2)}</span>
-      </div>}
-
-      <div className="grid grid-cols-4 gap-2 mb-3">
-        {[['Subjects', counts.all, CD.ink], ['Confirmed hits', counts.hit, CD.flag], ['Possible matches', counts.review, CD.amber], ['Clear', counts.clear, CD.green]].map(([l, v, c], i) => (
-          <div key={i} className="p-3" style={{ background: CD.panel, border: `1px solid ${i && v ? c : CD.line}`, borderRadius: 10 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-xl font-bold" style={{ color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>))}
-      </div>
-
-      <div className="flex gap-1.5 mb-3">
-        {[['flagged', 'Needs review'], ['hit', 'Hits'], ['review', 'Possible'], ['clear', 'Clear'], ['all', 'All']].map(([id, l]) => <button key={id} onClick={() => setOnly(id)} className="px-3 py-1.5 text-[12px] font-medium" style={{ borderRadius: 8, border: `1px solid ${only === id ? 'transparent' : CD.line}`, background: only === id ? CD.ink : 'transparent', color: only === id ? 'var(--cd-on-ink)' : CD.mute }}>{l}</button>)}
-      </div>
-
-      <div className="space-y-2">
-        {shown.map((s, i) => (
-          <div key={i} className="p-3" style={{ background: CD.panel, border: `1px solid ${s.status === 'hit' ? CD.flag : CD.line}`, borderRadius: 11 }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: CD.lineSoft }}><Ic n={s.kind === 'Business' ? 'building' : s.kind === 'Beneficiary' ? 'send' : 'users'} s={16} c={CD.mute} /></span>
-                <div><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{s.name}</div><div className="text-[11px]" style={{ color: CD.mute }}>{s.kind} · {s.ref}</div></div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Pill s={s.status} />
-                {KYC && <button onClick={() => setVerify({ name: s.name, kind: s.kind === 'Business' ? 'corporate' : 'individual', rec: (clients && clients[s.name]) || {} })} title={`Send ${s.name} for KYC verification`} className="flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: CD.panel }}><Ic n="id" s={12} c={CD.mute} /> Verify</button>}
-              </div>
-            </div>
-            {s.hits.length > 0 && <div className="mt-2 pt-2 space-y-1" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              {s.hits.slice(0, 2).map((h, j) => (
-                <div key={j} className="flex items-center justify-between text-[11.5px]">
-                  <span className="flex items-center gap-1.5" style={{ color: CD.ink }}><ListTag list={h.w.list} /> {h.w.name} <span style={{ color: CD.faint }}>· {h.w.program} · {h.w.country}</span></span>
-                  <span style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{Math.round(h.score * 100)}% match</span>
-                </div>))}
-            </div>}
-          </div>))}
-        {!shown.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="shield" s={24} c={CD.green} /><div className="mt-2 text-[13px]">No subjects need review — all clear.</div></div>}
-      </div>
-      {picker && KYC && <KYC.PickerModal clients={clients} setClients={setClients} beneficiaries={beneficiaries} by={me && me.name} onClose={() => setPicker(false)} />}
-      {verify && KYC && <KYC.SendModal subject={verify.name} kind={verify.kind} rec={verify.rec} by={me && me.name} onClose={() => setVerify(null)} />}
     </div>);
   }
 
@@ -869,19 +792,16 @@
         });
     };
 
-    // header counts
-    const screenFlagged = useMemo(() => { if (settings && settings.screenSanctions === false) return 0; let n = 0; Object.keys(clients || {}).forEach(name => { if (screen(name).status !== 'clear') n++; }); (beneficiaries || []).forEach(b => { if (screen(b.name).status !== 'clear') n++; }); return n; }, [clients, beneficiaries, settings]);
+    /* No list, no hit count. A zero here used to read as "all clear".
+       Filings still use `philippines` and are not part of this flag. */
+    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const listShips = sanctionsListShips(packNow);
+    const screenFlagged = 0;
+    const philippines = regime.id === 'pack-ph-v1';
     const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
-
-    /* A hit count from the sample names would say this desk screened
-       someone. When no list ships, the tile stays at zero. Filings
-       still use `philippines` and are not part of this flag. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    const listShips = C.sanctionsListShips(packNow);
-    const philippines = regime.id === 'pack-ph-v1';
     const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
@@ -894,11 +814,11 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="grid grid-cols-3 gap-2 mt-3">
-          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => { const bad = v > 0; const col = bad ? warn : CD.green; return (
-            <button key={l} data-testid={l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
+          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], listShips ? ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag, true] : ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
+            <button key={l} data-testid={l === 'Screening' && !listShips ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
-              <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: 24, lineHeight: 1.15 }}>{v}</div>
+              <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: numeric ? 24 : 15, lineHeight: 1.15 }}>{v}</div>
               <div className="text-[10.5px]" style={{ color: CD.mute }}>{sub}</div>
             </button>); })}
         </div>

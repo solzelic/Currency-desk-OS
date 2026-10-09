@@ -292,11 +292,14 @@
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
-      let sanc = 0;
-      if (comp) { Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
+      const packNow = P.deskPack ? P.deskPack() : null;
+      const listShips = comp && comp.sanctionsListShips ? comp.sanctionsListShips(packNow) : false;
+      /* A missing list is not zero hits. Zero would paint the tile green. */
+      let sanc = null;
+      if (comp && listShips) { sanc = 0; Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? { threshold: limit.amount } : null)).length : 0;
       const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
-      return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, sanc, agg, eftr, regime, limit };
+      return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, sanc, listShips, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
     const hour = new Date().getHours();
@@ -491,11 +494,11 @@
                 </button>
               ))}
             </div>
-            <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc + X.sanc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc + X.sanc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc + X.sanc) > 0 ? `${D.rptOpen + D.kyc + X.sanc} item(s) need attention` : 'Book is clean — all clear'}</div>
+            <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc) > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
             <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
-              {[['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
-                <button key={l} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+              {[['Sanctions', X.listShips ? X.sanc : 'Not connected', X.listShips ? (X.sanc > 0 ? T.oxblood : T.green) : T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
+                <button key={l} data-testid={l === 'Sanctions' && !X.listShips ? 'dashboard-sanctions-tile' : undefined} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
+                  <div style={{ fontSize: typeof v === 'number' ? 18 : 13, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{v}</div>
                   <div style={{ fontSize: 9.5, color: T.steel }}>{l}</div>
                 </button>))}
             </div>
