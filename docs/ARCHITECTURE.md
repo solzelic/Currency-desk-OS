@@ -75,7 +75,9 @@ ordered such that a failure halfway leaves a recoverable state rather than a
 broken one. Where that ordering matters it is commented at the call site.
 
 **The frontend ships without a build step for its logic** — JSX compiled
-ahead of time into `web/app/`, React served from our own origin, no CDN in
+and minified ahead of time into `web/app/` (function and class names
+kept; a source map sits beside each script and is not part of the page
+load), React served from our own origin, no CDN in
 the request path for anything the product needs to open. `/login` and
 `/app` load `/web/app/os.js` even when `STATIC_INDEX` still names the
 uncompiled shell. The YorkFX storefront is the same rule: customer pages
