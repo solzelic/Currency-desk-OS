@@ -30,10 +30,26 @@ Never rename a migration file after merge.
 
 ## How they run
 
-Boot applies everything: `createDb()` runs `DDL` (idempotent
-`IF NOT EXISTS`) and then `runMigrations` against a Postgres
-`DATABASE_URL` — a fresh database self-provisions exactly the way a fresh
-deployment does. The embedded PGlite database applies `DDL` but **not**
+Boot applies everything: `createDb()` runs `DDL` and then `runMigrations`
+against a Postgres `DATABASE_URL` — a fresh database self-provisions
+exactly the way a fresh deployment does. `runMigrations` reads
+`schema_migrations` once per boot. A changed file still raises
+`Migration checksum drift`. A file with no row still applies, in one
+transaction, and a failure still rolls back without recording it.
+
+The boot DDL's `ALTER COLUMN … TYPE` casts for `rate_quotes` and
+`rate_boards` run only when those columns are not already
+`numeric(24,2)` / `numeric(24,12)`. `CREATE TABLE` already declares
+those types, so a fresh database's boot DDL does not append the cast.
+Migration 024 is unchanged and still applies once on Postgres.
+A column still on `double precision` is still cast in place by the
+boot DDL. On Postgres 16, running the cast when the type already
+matches does not rewrite the heap, but it does take `ACCESS EXCLUSIVE`
+and rewrite the `pg_attribute` row, so a normal boot skips it.
+Migration 024's comment that a same-type `ALTER` is a no-op describes
+the heap only.
+
+The embedded PGlite database applies `DDL` but **not**
 the SQL migrations, which is why the ledger only exists when a real
 database URL is configured, and why the known "two schema mechanisms"
 debt exists (`docs/ARCHITECTURE.md` §8).

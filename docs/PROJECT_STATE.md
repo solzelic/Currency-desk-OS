@@ -35,6 +35,10 @@ layers — they are not blockers for proving this core loop.
 - **Server** — Fastify + Drizzle, `server/src/`. API plus all static serving
   from the repo root behind an allow-list. Embedded PGlite in dev/test,
   Postgres in production; boot applies DDL + checksummed migrations.
+  The checksums are read in one query. The `rate_quotes` /
+  `rate_boards` numeric casts run only when a column is not already
+  that scale, so a normal boot does not lock those tables to restate
+  the type.
 - **The ledger** — server-side Postgres, `server/src/ledger/` + migrations.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
@@ -402,6 +406,16 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-09**, boot schema step. `runMigrations` reads
+`schema_migrations` once. A changed checksum still stops boot, and a
+new file still applies. The boot DDL casts `rate_quotes` and
+`rate_boards` to `numeric(24,2)` / `numeric(24,12)` only when a
+column is not already that type. A fresh database still ends on those
+types. A `double precision` column is still cast in place. On
+Postgres 16 a same-type cast does not rewrite the heap; it does take
+`ACCESS EXCLUSIVE` and rewrite `pg_attribute`, which is why a normal
+boot skips it. Migration 024 is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
