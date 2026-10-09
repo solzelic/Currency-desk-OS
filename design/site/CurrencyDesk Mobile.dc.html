@@ -55,7 +55,10 @@
 
   <div id="top" style="position: relative; background: #0E0C09; overflow: hidden;">
     <div style="position: relative; height: 64vh; min-height: 430px; max-height: 620px; overflow: hidden;">
-      <img src="../photos/rate-board-storefront.jpg" alt="A currency exchange at dusk with its rate board lit in the window" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.62;">
+      <picture style="display: contents;">
+        <source type="image/webp" srcset="../photos/rate-board-storefront.webp">
+        <img src="../photos/rate-board-storefront.jpg" alt="A currency exchange at dusk with its rate board lit in the window" width="1280" height="859" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.62;">
+      </picture>
       <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,12,9,0.62) 0%, rgba(14,12,9,0.18) 32%, rgba(14,12,9,0.82) 76%, #0E0C09 100%);"></div>
 
       <div style="position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 22px 20px 52px;">
@@ -104,7 +107,7 @@
     <div data-feat-card="true" style="position: relative; margin-top: 16px; touch-action: pan-y;">
       <div style="position: relative; aspect-ratio: 4/3; background: #0E0C09; overflow: hidden;">
         <sc-for list="{{ featLayers }}" as="l" hint-placeholder-count="9">
-          <img src="{{ l.src }}" alt="{{ l.title }}" loading="lazy" style="{{ l.style }}">
+          {{ l.photo }}
         </sc-for>
         <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 46%, rgba(14,12,9,0.86) 100%); pointer-events: none;"></div>
         <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; pointer-events: none;">
@@ -267,6 +270,44 @@ class Component extends DCLogic {
     { code: 'INR', mid: 0.0164 }, { code: 'AED', mid: 0.3732 }, { code: 'JPY', mid: 0.0092 }
   ];
 
+  shot(src, w, h, alt, style) {
+    const webp = String(src || '').replace(/\.jpe?g$/i, '.webp');
+    return React.createElement('picture', { style: { display: 'contents' } },
+      React.createElement('source', { type: 'image/webp', srcSet: webp }),
+      React.createElement('img', { src: src, alt: alt || '', width: w, height: h, loading: 'lazy', decoding: 'async', style: style })
+    );
+  }
+
+  /* Feature slides are stacked. loading=lazy on a hidden slide never
+     starts, so the frame is empty when that slide is selected. Once the
+     section is near, one file downloads at a time and the slide on screen
+     goes first, so selecting it still paints on a slow link. */
+  _featShown(src) {
+    return !!(this._featHave && this._featHave[src]);
+  }
+  _featTurn(src) {
+    if (!this.state.featNear || !src) return false;
+    if (this._featShown(src)) return true;
+    const selected = this.FEATURES[this.state.feat];
+    if (selected && !this._featShown(selected.src)) return src === selected.src;
+    const next = this.FEATURES.find((f) => !this._featShown(f.src));
+    return !!(next && next.src === src);
+  }
+  _featDone(src) {
+    if (!src || this._featShown(src)) return;
+    if (!this._featHave) this._featHave = {};
+    this._featHave[src] = true;
+    this.setState((s) => ({ featStamp: (s.featStamp || 0) + 1 }));
+  }
+  featureShot(src, alt, on, style) {
+    const show = this._featTurn(src);
+    const webp = String(src || '').replace(/\.jpe?g$/i, '.webp');
+    return React.createElement('picture', { style: { display: 'contents' } },
+      React.createElement('source', { type: 'image/webp', srcSet: show ? webp : '' }),
+      React.createElement('img', { src: show ? src : '', alt: alt || '', width: 1280, height: 859, decoding: 'async', fetchPriority: on ? 'high' : 'low', style: style, onLoad: (e) => { if (e && e.target && e.target.naturalWidth > 0) this._featDone(src); } })
+    );
+  }
+
   FEATURES = [
     { src: '../photos/rate-board-storefront.jpg', kicker: 'Rates', title: 'Your board, everywhere', body: 'Set your spread once. The desk prices every deal after that, and your window, your counter and your website all move together.' },
     { src: '../photos/sms-storefront.jpg', kicker: 'Messaging', title: 'Bring them back', body: 'Tell a customer their money is ready from the shop number, not a personal phone — and watch them walk back in.' },
@@ -344,6 +385,20 @@ class Component extends DCLogic {
     this._tk = setInterval(() => this.setState(s => ({ tick: s.tick + 1 })), 2600);
     this.setState({ clock: this.clk() });
     this.bindSwipe();
+    this.armFeaturePhotos();
+  }
+  armFeaturePhotos() {
+    const scene = document.querySelector('#product');
+    if (!scene || typeof IntersectionObserver === 'undefined') {
+      this.setState({ featNear: true });
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      io.disconnect();
+      this.setState({ featNear: true });
+    }, { rootMargin: '640px 0px' });
+    io.observe(scene);
   }
   componentWillUnmount() { clearInterval(this._clk); clearInterval(this._tk); clearTimeout(this._sw); }
 
@@ -408,10 +463,17 @@ class Component extends DCLogic {
       featKicker: F.kicker,
       featTitle: F.title,
       featBody: F.body,
-      featLayers: this.FEATURES.map((f, i) => ({
-        src: f.src, title: f.title,
-        style: 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transition:opacity .6s ease, visibility .6s linear, transform .9s cubic-bezier(.2,.8,.2,1);' + (i === s.feat ? 'opacity:1;visibility:visible;transform:none;z-index:2;' : 'opacity:0;visibility:hidden;transform:scale(1.04);z-index:1;')
-      })),
+      featLayers: this.FEATURES.map((f, i) => {
+        const on = i === s.feat;
+        return {
+          photo: this.featureShot(f.src, f.title, on, {
+            position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+            transition: 'opacity .6s ease, visibility .6s linear, transform .9s cubic-bezier(.2,.8,.2,1)',
+            opacity: on ? 1 : 0, visibility: on ? 'visible' : 'hidden',
+            transform: on ? 'none' : 'scale(1.04)', zIndex: on ? 2 : 1,
+          }),
+        };
+      }),
       featDots: this.FEATURES.map((f, i) => {
         const on = i === s.feat;
         return { onClick: this.goFeat(i), label: f.title,

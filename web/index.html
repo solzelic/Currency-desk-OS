@@ -275,7 +275,7 @@ window.claimedCount.then(function (d) {
         <div style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
           <sc-for list="{{ features }}" as="f" hint-placeholder-count="9">
             <div style="{{ f.layerStyle }}">
-              <image-slot id="{{ f.slot }}" src="{{ f.src }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
+              <image-slot id="{{ f.slot }}" src="{{ f.src }}" webp="{{ f.webp }}" width="1280" height="859" load="near" fetchpriority="{{ f.priority }}" decoding="async" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
               <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 38%, rgba(23,20,15,0.4));"></div>
               <div style="position: absolute; left: 22px; bottom: 22px; width: 300px; max-width: calc(100% - 44px); background: rgba(251,249,244,0.97); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; padding: 15px 17px; box-shadow: 0 22px 46px -20px rgba(23,20,15,0.6);">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">{{ f.kicker }}</span><span style="{{ f.chipStyle }}">{{ f.chip }}</span></div>
@@ -330,7 +330,7 @@ window.claimedCount.then(function (d) {
             <sc-for list="{{ panels }}" as="p" hint-placeholder-count="5">
               <div style="{{ p.layerStyle }}">
                 <sc-if value="{{ p.hasImg }}" hint-placeholder-val="{{ false }}">
-                  <img src="{{ p.src }}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;" />
+                  {{ p.photo }}
                 </sc-if>
                 <sc-if value="{{ p.noImg }}" hint-placeholder-val="{{ true }}">
                   <image-slot id="{{ p.slot }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ p.ph }}"></image-slot>
@@ -482,7 +482,7 @@ window.claimedCount.then(function (d) {
         <div data-reveal="true" style="opacity: 0; transform: translateY(18px); transition: opacity 0.7s cubic-bezier(0.2,0.8,0.2,1), transform 0.7s cubic-bezier(0.2,0.8,0.2,1); position: relative;">
           <div style="position: relative; max-width: 470px; margin-left: auto; background: #FCFAF6; padding: 12px 12px 13px; box-shadow: 0 1px 0 rgba(23,20,15,0.1), 0 34px 64px -34px rgba(23,20,15,0.45);">
             <div style="position: relative; overflow: hidden; aspect-ratio: 3/2; background: #1E1B16; box-shadow: inset 0 0 0 1px rgba(23,20,15,0.28);">
-              <image-slot id="site-story-photo" src="/web/photos/storefront-team.jpg" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="Drop the 4K storefront photo here — 3:2 landscape"></image-slot>
+              <image-slot id="site-story-photo" src="/web/photos/storefront-team.jpg" webp="/web/photos/storefront-team.webp" width="1280" height="714" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="Drop the 4K storefront photo here — 3:2 landscape"></image-slot>
             </div>
 
             <div aria-hidden="true" style="position: absolute; top: -20px; right: -18px; width: 94px; height: 94px; transform: rotate(-11deg); filter: drop-shadow(0 12px 20px rgba(23,20,15,0.32));">
@@ -813,6 +813,22 @@ class Component extends DCLogic {
     ];
   }
 
+  /* A React element, not an <img src="{{ }}"> in the template. The
+     preload scanner reads the raw document and would otherwise request
+     the placeholder before this runtime fills it in. */
+  shot(src, w, h, alt, style) {
+    /* The five story frames are stacked. Chromium fetches a lazy image
+       that is still a couple of screens away, and all five then share the
+       connection with the feature preview the reader is looking at. Hold
+       the file until this section actually meets the viewport. */
+    const show = !!this.state.storyNear;
+    const webp = String(src || '').replace(/\.jpe?g$/i, '.webp');
+    return React.createElement('picture', { style: { display: 'contents' } },
+      React.createElement('source', { type: 'image/webp', srcSet: show ? webp : '' }),
+      React.createElement('img', { src: show ? src : '', alt: alt || '', width: w, height: h, loading: 'lazy', decoding: 'async', style: style })
+    );
+  }
+
   storyDefs() {
     return [
       { slot:'gc-web-1', src:'/web/assets/site-web-1.jpg', kicker:'01 \u00B7 THE WEBSITE', caption:'They find you online.', name:'Website', ph:'Comic-book editorial illustration (Adrian Tomine feel) \u2014 a person at a kitchen table looking at a laptop / phone showing a small currency-exchange shop\u2019s website with a live rate board. Warm flat colour, clean ink linework, muted palette.' },
@@ -841,12 +857,26 @@ class Component extends DCLogic {
       this._ro = new ResizeObserver(() => { if (this._fitApply) try { this._fitApply(); } catch (e) {} });
       this._ro.observe(document.documentElement);
     }
+    this.armStory();
     window.claimedCount.then(d => {
       const target = d ? d.claimed : 64;
       this.setState({ cap: d ? d.cap : 100 });
       if (reduce || target <= 0) { this.setState({ claimed: target }); return; }
       this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= target) clearInterval(this._cc); return { claimed: Math.min(n, target) }; }), Math.max(12, Math.round(1650 / target)));
     });
+  }
+  armStory() {
+    const scene = document.querySelector('[data-scene="website"]');
+    if (!scene || typeof IntersectionObserver === 'undefined') {
+      this.setState({ storyNear: true });
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      io.disconnect();
+      this.setState({ storyNear: true });
+    }, { rootMargin: '0px' });
+    io.observe(scene);
   }
   INIT_STEPS = ['initReveal', 'initExit', 'initCard3d', 'signOffInit', 'fixNav', 'startFeature', 'startHero', 'scrubInit', 'scrubStory', 'tillInit', 'jurInit', 'fitFeatures'];
   runInit() {
@@ -1350,7 +1380,7 @@ class Component extends DCLogic {
       const active = i === s.feat;
       return {
         num: String(i + 1).padStart(2, '0'), title: o.title, body: o.body,
-        slot: o.slot, ph: o.ph, src: o.src || '', kicker: o.kicker, value: o.value, sub: o.sub, chip: o.chip, chipStyle: chip(o.kind),
+        slot: o.slot, ph: o.ph, src: o.src || '', webp: (o.src || '').replace(/\.jpe?g$/i, '.webp'), priority: active ? 'high' : 'low', kicker: o.kicker, value: o.value, sub: o.sub, chip: o.chip, chipStyle: chip(o.kind),
         icon: this.ic(o.icon, 17, active ? '#fff' : '#1D6B45', 1.9),
         onClick: () => this.setFeat(i),
         i: i,
@@ -1383,7 +1413,7 @@ class Component extends DCLogic {
       claimed: s.claimed, claimedCap: s.cap || 100,
       claimedPct: Math.min(100, Math.round((s.claimed / (s.cap || 100)) * 100)) + '%',
       features, activeTitle: defs[s.feat].title,
-      panels: this.storyDefs().map((o, i) => ({ slot: o.slot, ph: o.ph, src: o.src || '', hasImg: !!o.src, noImg: !o.src, kicker: o.kicker, caption: o.caption, layerStyle: 'position:absolute;inset:0;overflow:hidden;transition:opacity .6s ease, visibility .6s linear;' + (i === s.panel ? 'opacity:1;visibility:visible;z-index:2;' : 'opacity:0;visibility:hidden;z-index:1;pointer-events:none;') })),
+      panels: this.storyDefs().map((o, i) => ({ slot: o.slot, ph: o.ph, src: o.src || '', hasImg: !!o.src, noImg: !o.src, kicker: o.kicker, caption: o.caption, photo: o.src ? this.shot(o.src, 1200, 900, '', { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }) : null, layerStyle: 'position:absolute;inset:0;overflow:hidden;transition:opacity .6s ease, visibility .6s linear;' + (i === s.panel ? 'opacity:1;visibility:visible;z-index:2;' : 'opacity:0;visibility:hidden;z-index:1;pointer-events:none;') })),
       panelNum: String(s.panel + 1).padStart(2, '0'),
       storySteps: this.storyDefs().map((o, i) => { const a = i === s.panel; return { n: i + 1, name: o.name, dot: 'width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-family:var(--m);font-size:10px;font-weight:600;transition:all .3s;' + (a ? 'background:var(--green);color:#fff;' : 'background:rgba(23,20,15,0.05);color:var(--faint);border:1px solid var(--line);'), label: 'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;' + (a ? 'color:var(--ink);font-weight:600;' : 'color:var(--faint);') }; }),
       detailOpen: s.detail !== null,
