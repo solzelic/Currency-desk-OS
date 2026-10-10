@@ -79,15 +79,16 @@
   function DenRow({ d, ccy, counts, setCount }) {
     const cnt = parseInt((counts[ccy] || {})[d.i], 10) || 0;
     const sub = d.v * cnt;
-    return (<div className="flex items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-      <span className="grid place-items-center flex-none" style={{ width: 44, fontFamily: 'Space Mono, monospace', fontSize: 12.5, fontWeight: 700, color: CD.ink }}>{ccy === 'CAD' || ccy === 'USD' || d.v >= 1 ? (d.v < 1 ? denLabel(d.v) : (['CAD', 'USD', 'GBP', 'EUR', 'AED'].includes(ccy) ? '$' : '') + denLabel(d.v)) : denLabel(d.v)}</span>
-      <span className="text-[9px] px-1.5 py-0.5 flex-none" style={{ borderRadius: 4, background: d.t === 'bill' ? CD.lineSoft : 'transparent', border: d.t === 'coin' ? `1px solid ${CD.line}` : 'none', color: CD.mute, fontFamily: 'Space Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d.t}</span>
-      <div className="flex items-center flex-none" style={{ marginLeft: 'auto' }}>
-        <button onClick={() => setCount(ccy, d.i, String(Math.max(0, cnt - 1)))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '7px 0 0 7px', color: CD.mute }}>−</button>
-        <input type="number" value={(counts[ccy] || {})[d.i] ?? ''} onChange={e => setCount(ccy, d.i, e.target.value)} placeholder="0" className="text-center outline-none" style={{ width: 52, height: 28, border: `1px solid ${CD.line}`, borderLeft: 0, borderRight: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', fontSize: 13 }} />
-        <button onClick={() => setCount(ccy, d.i, String(cnt + 1))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '0 7px 7px 0', color: CD.mute }}>+</button>
+    const face = ccy === 'CAD' || ccy === 'USD' || d.v >= 1 ? (d.v < 1 ? denLabel(d.v) : (['CAD', 'USD', 'GBP', 'EUR', 'AED'].includes(ccy) ? '$' : '') + denLabel(d.v)) : denLabel(d.v);
+    return (<div className="till-den flex items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+      <span className="till-den-face grid place-items-center flex-none" style={{ width: 44, fontFamily: 'Space Mono, monospace', fontSize: 12.5, fontWeight: 700, color: CD.ink }}>{face}</span>
+      <span className="till-den-kind text-[9px] px-1.5 py-0.5 flex-none" style={{ borderRadius: 4, background: d.t === 'bill' ? CD.lineSoft : 'transparent', border: d.t === 'coin' ? `1px solid ${CD.line}` : 'none', color: CD.mute, fontFamily: 'Space Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d.t}</span>
+      <div className="till-den-stepper flex items-center flex-none" style={{ marginLeft: 'auto' }}>
+        <button type="button" aria-label={`Remove one ${face} ${ccy}`} onClick={() => setCount(ccy, d.i, String(Math.max(0, cnt - 1)))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '7px 0 0 7px', color: CD.mute }}>−</button>
+        <input aria-label={`${face} ${ccy} count`} type="number" value={(counts[ccy] || {})[d.i] ?? ''} onChange={e => setCount(ccy, d.i, e.target.value)} placeholder="0" className="till-den-qty text-center outline-none" style={{ width: 52, height: 28, border: `1px solid ${CD.line}`, borderLeft: 0, borderRight: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', fontSize: 13 }} />
+        <button type="button" aria-label={`Add one ${face} ${ccy}`} onClick={() => setCount(ccy, d.i, String(cnt + 1))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '0 7px 7px 0', color: CD.mute }}>+</button>
       </div>
-      <span style={{ width: 92, textAlign: 'right', fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: sub ? CD.ink : CD.faint, fontVariantNumeric: 'tabular-nums', fontWeight: sub ? 600 : 400 }}>{sub ? num(sub) : '—'}</span>
+      <span className="till-den-sub" style={{ width: 92, textAlign: 'right', fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: sub ? CD.ink : CD.faint, fontVariantNumeric: 'tabular-nums', fontWeight: sub ? 600 : 400 }}>{sub ? num(sub) : '—'}</span>
     </div>);
   }
 
@@ -196,6 +197,8 @@
   function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    const [tabSheet, setTabSheet] = useState(false);
+    const [coinsOpen, setCoinsOpen] = useState(false);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -766,10 +769,41 @@
     const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    /* The phone header reads the same people and the same till the
+       desktop already shows. A session stores the staff id; the roster
+       already has that person's name and role. */
+    const drawerId = current ? current.operator : '';
+    const named = roster.find(s => s && drawerId && (s.name === drawerId || s.staffId === drawerId || s.code === drawerId))
+      || (me && drawerId && (me.name === drawerId || me.staffId === drawerId || me.code === drawerId) ? me : null);
+    const drawerName = (named && named.name) || drawerId || (me && me.name) || '—';
+    const drawerRole = (current && current.role) || (named && named.role) || '';
+    const tillShort = String(stationTill || (activeOption && activeOption.name) || 'Till').replace(/\s+—.*/, '');
+    const tabNow = (TABS.find(t => t[0] === tab) || TABS[0])[1];
 
-    return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
+    return (<div className="till-root flex flex-col" data-till-screen={tab} style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
+        <button type="button" className="till-phone-select" aria-haspopup="dialog" aria-expanded={tabSheet ? 'true' : 'false'} onClick={() => setTabSheet(true)}>
+          <span className="till-phone-current">{tabNow}</span>
+          <span className="till-phone-alts">{TABS.filter(t => t[0] !== tab).map(([, label]) => <span key={label} className="till-phone-alt">{label}</span>)}</span>
+        </button>
+        <div className="till-phone-who">
+          <span className="till-phone-bit">On the drawer {drawerName}</span>
+          {drawerRole ? <span className="till-phone-bit">{drawerRole}</span> : null}
+          {tillShort ? <span className="till-phone-bit">{tillShort}</span> : null}
+        </div>
+        {tabSheet && (
+          <div className="till-sheet-scrim" onMouseDown={() => setTabSheet(false)}>
+            <div className="till-sheet" role="dialog" aria-label="Cash drawer" onMouseDown={e => e.stopPropagation()}>
+              {TABS.map(([id, label, ic]) => (
+                <button key={id} type="button" className={'till-sheet-tab' + (tab === id ? ' is-on' : '')} onClick={() => { setTab(id); setTabSheet(false); }}>
+                  <Ic n={ic} s={18} c={tab === id ? '#fff' : 'currentColor'} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="till-head flex items-center gap-2.5 pb-3">
           <span className="till-mark grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
           <div className="till-id min-w-0"><div className="till-name font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="till-meta text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
@@ -859,14 +893,14 @@
           </div>
         )}
         {serverSession && sessionOpen && (
-          <div className="flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
+          <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
             <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
             <span className="ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
           </div>
         )}
         {sessionClosed && (
-          <div className="flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
+          <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
             <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
@@ -895,7 +929,7 @@
         }) : null;
       })()}
       {stripOpen ? (
-      <div className="flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
+      <div className="till-opstrip flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
@@ -909,7 +943,7 @@
         </div>
       </div>
       ) : (
-      <div className="flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
+      <div className="till-opstrip flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
       </div>
       )}
@@ -917,11 +951,11 @@
       <div className="flex-1 overflow-auto">
 
         {/* ===== COUNT ===== */}
-        {tab === 'count' && (<div className="p-4 pb-0">
+        {tab === 'count' && (<div className="till-count p-4 pb-0">
           {/* currency chips */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          <div className="till-chips flex flex-wrap gap-1.5 mb-3">
             {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
-              <button key={c} onClick={() => setCcy(c)} className="till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : CD.panel, color: on ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>
+              <button key={c} type="button" onClick={() => setCcy(c)} className={'till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs' + (on ? ' is-on' : '')} style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : CD.panel, color: on ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>
                 <span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span>{c}{has && <span style={{ width: 5, height: 5, borderRadius: '50%', background: on ? 'var(--cd-panel)' : CD.green }}></span>}
               </button>); })}
           </div>
@@ -929,15 +963,15 @@
           {/* count mode: by denomination, or a quick total.
               The tour points at this switch, not at the whole panel,
               so the card sits beside the count rather than on top of it. */}
-          <div data-tour="till-count" className="flex items-center justify-between mb-3">
-            <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
-              {[['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => <button key={m} onClick={() => setMode(o => ({ ...o, [ccy]: m }))} className="text-[11.5px] px-3 py-1.5" style={{ background: ccyMode(ccy) === m ? CD.ink : 'transparent', color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>{l}</button>)}
+          <div data-tour="till-count" className="till-modebar flex items-center justify-between mb-3">
+            <div className="till-mode inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
+              {[['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => <button key={m} type="button" onClick={() => setMode(o => ({ ...o, [ccy]: m }))} className={'till-mode-opt text-[11.5px] px-3 py-1.5' + (ccyMode(ccy) === m ? ' is-on' : '')} style={{ background: ccyMode(ccy) === m ? CD.ink : 'transparent', color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>{l}</button>)}
             </div>
             {isCounted(ccy) && <button onClick={() => clearCount(ccy)} className="text-[11px]" style={{ color: CD.mute }}>Clear {ccy}</button>}
           </div>
 
           {ccyMode(ccy) === 'total' ? (
-            <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+            <div className="till-total-card p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
               <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Skip the breakdown — just enter the total {ccy} you counted in the drawer.</div>
               <div className="flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
@@ -946,44 +980,49 @@
               {ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy)}</div>}
             </div>
           ) : (
-          <div className="grid md:grid-cols-2 gap-x-5 gap-y-0">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest mb-1 mt-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Notes</div>
+          <div className="till-denoms grid md:grid-cols-2 gap-x-5 gap-y-0">
+            <div className="till-notes">
+              <div className="till-den-label text-[10px] uppercase tracking-widest mb-1 mt-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Notes</div>
               {bills.map(d => <DenRow key={d.i} d={d} ccy={ccy} counts={counts} setCount={setCount} />)}
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest mb-1 mt-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Coin</div>
+            <button type="button" className={'till-coins-btn' + (coinsOpen ? ' is-open' : '')} aria-expanded={coinsOpen ? 'true' : 'false'} onClick={() => setCoinsOpen(o => !o)}>Coins</button>
+            <div className={'till-coins' + (coinsOpen ? ' is-open' : '')}>
+              <div className="till-den-label text-[10px] uppercase tracking-widest mb-1 mt-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Coin</div>
               {coins.map(d => <DenRow key={d.i} d={d} ccy={ccy} counts={counts} setCount={setCount} />)}
             </div>
           </div>
           )}
           {/* per-currency footer — counted (typeable), expected, then the grand total */}
-          <div style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
-            <div className="flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
-                <div className="flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
-                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
-                  <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
+          <div className="till-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
+            <div className="till-foot-main flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
+              <div className="till-foot-figures">
+                <div className="till-counted-k text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
+                <div className="till-counted-box flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
+                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="till-counted-input min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
+                  <span className="till-counted-suffix px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
-                <div className="text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>
-                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float'} className="inline-flex items-center gap-1.5" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
+                <div className="till-expected-row text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>
+                  <button type="button" onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float'} className="till-expected inline-flex items-center gap-1.5" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
-                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
+                    <b className="till-expected-fig" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
                     {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
+                    <span className="till-show-word">{(blind && !revealExp[ccy]) ? 'Show' : 'Hide'}</span>
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
                   </button>
                   {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
                 </div>
                 <div className="text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
               </div>
-              <div className="text-right flex-none">
-                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''}>{fmtHome(grandHome)}</div>
-                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+              <div className="till-foot-side text-right flex-none">
+                <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
+                <div className="till-grand" style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''}>{fmtHome(grandHome)}</div>
+                <div className="till-foot-actions">
+                  <button type="button" className="till-handoff-phone" onClick={() => setHandoffOpen(true)}>Hand off</button>
+                  <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+                </div>
               </div>
             </div>
-            <div className="text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
+            <div className="till-foot-hint text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
           </div>
         </div>)}
 
@@ -1046,7 +1085,7 @@
             <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
           </div>
-          <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
+          <div className="till-table-scroll overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
             <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
@@ -1133,7 +1172,7 @@
               <div className="flex items-center justify-between mb-2"><span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Drawer value · last 90 days</span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, fontWeight: 700, color: CD.ink }}>{fmtHome(histSeries[histSeries.length - 1])}</span></div>
               <HistChart data={histSeries} />
             </div>
-            <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
+            <div className="till-table-scroll overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
               <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Date</th><th className="px-3 py-2 text-right">Total ({homeCcy || 'CAD'})</th><th className="px-3 py-2">Currencies</th><th className="px-3 py-2">Counted by</th></tr></thead>
                 <tbody>{histKeys.slice(0, 60).map(k => { const h = history[k]; return (<tr key={k} onClick={() => setViewDay(k)} className="cursor-pointer" style={{ borderTop: `1px solid ${CD.lineSoft}` }} onMouseEnter={e => e.currentTarget.style.background = 'var(--cd-paper-soft)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td className="px-3 py-2 font-medium" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{k}{k === ((serverSession && serverSession.businessDate) || window.CDOS.businessDate()) && <span className="ml-2 text-[9px] px-1.5 py-0.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 4, fontFamily: 'Space Mono, monospace' }}>TODAY</span>}</td>

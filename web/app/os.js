@@ -13096,13 +13096,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   }) {
     const cnt = parseInt((counts[ccy] || {})[d.i], 10) || 0;
     const sub = d.v * cnt;
+    const face = ccy === 'CAD' || ccy === 'USD' || d.v >= 1 ? d.v < 1 ? denLabel(d.v) : (['CAD', 'USD', 'GBP', 'EUR', 'AED'].includes(ccy) ? '$' : '') + denLabel(d.v) : denLabel(d.v);
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 py-1.5",
+      className: "till-den flex items-center gap-2 py-1.5",
       style: {
         borderTop: `1px solid ${CD.lineSoft}`
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center flex-none",
+      className: "till-den-face grid place-items-center flex-none",
       style: {
         width: 44,
         fontFamily: 'Space Mono, monospace',
@@ -13110,8 +13111,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontWeight: 700,
         color: CD.ink
       }
-    }, ccy === 'CAD' || ccy === 'USD' || d.v >= 1 ? d.v < 1 ? denLabel(d.v) : (['CAD', 'USD', 'GBP', 'EUR', 'AED'].includes(ccy) ? '$' : '') + denLabel(d.v) : denLabel(d.v)), /*#__PURE__*/React.createElement("span", {
-      className: "text-[9px] px-1.5 py-0.5 flex-none",
+    }, face), /*#__PURE__*/React.createElement("span", {
+      className: "till-den-kind text-[9px] px-1.5 py-0.5 flex-none",
       style: {
         borderRadius: 4,
         background: d.t === 'bill' ? CD.lineSoft : 'transparent',
@@ -13122,11 +13123,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         letterSpacing: '0.05em'
       }
     }, d.t), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center flex-none",
+      className: "till-den-stepper flex items-center flex-none",
       style: {
         marginLeft: 'auto'
       }
     }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": `Remove one ${face} ${ccy}`,
       onClick: () => setCount(ccy, d.i, String(Math.max(0, cnt - 1))),
       className: "till-step grid place-items-center",
       style: {
@@ -13137,11 +13140,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "\u2212"), /*#__PURE__*/React.createElement("input", {
+      "aria-label": `${face} ${ccy} count`,
       type: "number",
       value: (counts[ccy] || {})[d.i] ?? '',
       onChange: e => setCount(ccy, d.i, e.target.value),
       placeholder: "0",
-      className: "text-center outline-none",
+      className: "till-den-qty text-center outline-none",
       style: {
         width: 52,
         height: 28,
@@ -13153,6 +13157,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 13
       }
     }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": `Add one ${face} ${ccy}`,
       onClick: () => setCount(ccy, d.i, String(cnt + 1)),
       className: "till-step grid place-items-center",
       style: {
@@ -13163,6 +13169,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "+")), /*#__PURE__*/React.createElement("span", {
+      className: "till-den-sub",
       style: {
         width: 92,
         textAlign: 'right',
@@ -13512,6 +13519,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    const [tabSheet, setTabSheet] = useState(false);
+    const [coinsOpen, setCoinsOpen] = useState(false);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -14361,8 +14370,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    /* The phone header reads the same people and the same till the
+       desktop already shows. A session stores the staff id; the roster
+       already has that person's name and role. */
+    const drawerId = current ? current.operator : '';
+    const named = roster.find(s => s && drawerId && (s.name === drawerId || s.staffId === drawerId || s.code === drawerId)) || (me && drawerId && (me.name === drawerId || me.staffId === drawerId || me.code === drawerId) ? me : null);
+    const drawerName = named && named.name || drawerId || me && me.name || '—';
+    const drawerRole = current && current.role || named && named.role || '';
+    const tillShort = String(stationTill || activeOption && activeOption.name || 'Till').replace(/\s+—.*/, '');
+    const tabNow = (TABS.find(t => t[0] === tab) || TABS[0])[1];
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-col",
+      className: "till-root flex flex-col",
+      "data-till-screen": tab,
       style: {
         height: '100%',
         background: CD.paper,
@@ -14374,7 +14393,48 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         background: CD.panel
       }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-select",
+      "aria-haspopup": "dialog",
+      "aria-expanded": tabSheet ? 'true' : 'false',
+      onClick: () => setTabSheet(true)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-current"
+    }, tabNow), /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-alts"
+    }, TABS.filter(t => t[0] !== tab).map(([, label]) => /*#__PURE__*/React.createElement("span", {
+      key: label,
+      className: "till-phone-alt"
+    }, label)))), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-who"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-bit"
+    }, "On the drawer ", drawerName), drawerRole ? /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-bit"
+    }, drawerRole) : null, tillShort ? /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-bit"
+    }, tillShort) : null), tabSheet && /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-scrim",
+      onMouseDown: () => setTabSheet(false)
     }, /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet",
+      role: "dialog",
+      "aria-label": "Cash drawer",
+      onMouseDown: e => e.stopPropagation()
+    }, TABS.map(([id, label, ic]) => /*#__PURE__*/React.createElement("button", {
+      key: id,
+      type: "button",
+      className: 'till-sheet-tab' + (tab === id ? ' is-on' : ''),
+      onClick: () => {
+        setTab(id);
+        setTabSheet(false);
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: ic,
+      s: 18,
+      c: tab === id ? '#fff' : 'currentColor'
+    }), /*#__PURE__*/React.createElement("span", null, label))))), /*#__PURE__*/React.createElement("div", {
       className: "till-head flex items-center gap-2.5 pb-3"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-mark grid place-items-center",
@@ -14706,7 +14766,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: "var(--cd-on-ink)"
     }), " ", tillBusy === 'open' ? 'Opening…' : 'Open the till')), serverSession && sessionOpen && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`,
@@ -14731,7 +14791,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint
       }
     }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
         borderBottom: `1px solid ${CD.line}`,
@@ -14785,7 +14845,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         onConfirm: confirmPickTill
       }) : null;
     })(), stripOpen ? /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between gap-2 px-4 py-2 flex-none",
+      className: "till-opstrip flex items-center justify-between gap-2 px-4 py-2 flex-none",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`
@@ -14856,7 +14916,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 13,
       c: CD.mute
     })))) : /*#__PURE__*/React.createElement("div", {
-      className: "flex-none px-4 py-1.5",
+      className: "till-opstrip flex-none px-4 py-1.5",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`
@@ -14884,16 +14944,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
-      className: "p-4 pb-0"
+      className: "till-count p-4 pb-0"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-wrap gap-1.5 mb-3"
+      className: "till-chips flex flex-wrap gap-1.5 mb-3"
     }, CCYS.map(c => {
       const on = c === ccy;
       const has = countedCcys.includes(c);
       return /*#__PURE__*/React.createElement("button", {
         key: c,
+        type: "button",
         onClick: () => setCcy(c),
-        className: "till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs",
+        className: 'till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs' + (on ? ' is-on' : ''),
         style: {
           borderRadius: 8,
           border: `1px solid ${on ? CD.ink : CD.line}`,
@@ -14915,9 +14976,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }));
     })), /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-count",
-      className: "flex items-center justify-between mb-3"
+      className: "till-modebar flex items-center justify-between mb-3"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "inline-flex",
+      className: "till-mode inline-flex",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 8,
@@ -14925,11 +14986,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, [['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => /*#__PURE__*/React.createElement("button", {
       key: m,
+      type: "button",
       onClick: () => setMode(o => ({
         ...o,
         [ccy]: m
       })),
-      className: "text-[11.5px] px-3 py-1.5",
+      className: 'till-mode-opt text-[11.5px] px-3 py-1.5' + (ccyMode(ccy) === m ? ' is-on' : ''),
       style: {
         background: ccyMode(ccy) === m ? CD.ink : 'transparent',
         color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute,
@@ -14942,7 +15004,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "Clear ", ccy)), ccyMode(ccy) === 'total' ? /*#__PURE__*/React.createElement("div", {
-      className: "p-4",
+      className: "till-total-card p-4",
       style: {
         background: CD.panel,
         border: `1px solid ${CD.line}`,
@@ -14990,9 +15052,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "\u2248 ", fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy))) : /*#__PURE__*/React.createElement("div", {
-      className: "grid md:grid-cols-2 gap-x-5 gap-y-0"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
+      className: "till-denoms grid md:grid-cols-2 gap-x-5 gap-y-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-notes"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-den-label text-[10px] uppercase tracking-widest mb-1 mt-1",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
@@ -15003,8 +15067,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       ccy: ccy,
       counts: counts,
       setCount: setCount
-    }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
+    }))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: 'till-coins-btn' + (coinsOpen ? ' is-open' : ''),
+      "aria-expanded": coinsOpen ? 'true' : 'false',
+      onClick: () => setCoinsOpen(o => !o)
+    }, "Coins"), /*#__PURE__*/React.createElement("div", {
+      className: 'till-coins' + (coinsOpen ? ' is-open' : '')
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-den-label text-[10px] uppercase tracking-widest mb-1 mt-1",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
@@ -15016,6 +15087,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       counts: counts,
       setCount: setCount
     })))), /*#__PURE__*/React.createElement("div", {
+      className: "till-foot",
       style: {
         position: 'sticky',
         bottom: 0,
@@ -15024,18 +15096,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         marginTop: 8
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-end justify-between gap-4 pt-3",
+      className: "till-foot-main flex items-end justify-between gap-4 pt-3",
       style: {
         borderTop: `1px solid ${CD.line}`
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-foot-figures"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-counted-k text-[10px] uppercase tracking-widest",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
+      className: "till-counted-box flex items-center",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 8,
@@ -15067,7 +15141,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }));
         stampCount(ccy);
       },
-      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
+      className: "till-counted-input min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
       style: {
         width: 150,
         fontVariantNumeric: 'tabular-nums',
@@ -15076,21 +15150,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text'
       }
     }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2.5 text-[11px]",
+      className: "till-counted-suffix px-2.5 text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace',
         borderLeft: `1px solid ${CD.line}`
       }
     }, ccy)), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5 flex items-center gap-2 flex-wrap",
+      className: "till-expected-row text-[11px] mt-1.5 flex items-center gap-2 flex-wrap",
       style: {
         color: CD.faint
       }
     }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: () => toggleReveal(ccy),
       title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
-      className: "inline-flex items-center gap-1.5",
+      className: "till-expected inline-flex items-center gap-1.5",
       style: {
         border: 0,
         background: 'transparent',
@@ -15099,6 +15174,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'inherit'
       }
     }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
+      className: "till-expected-fig",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace',
@@ -15118,7 +15194,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           userSelect: 'none'
         }
       }, off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
-    })(), /*#__PURE__*/React.createElement(Ic, {
+    })(), /*#__PURE__*/React.createElement("span", {
+      className: "till-show-word"
+    }, blind && !revealExp[ccy] ? 'Show' : 'Hide'), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
@@ -15136,14 +15214,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
     })())), /*#__PURE__*/React.createElement("div", {
-      className: "text-right flex-none"
+      className: "till-foot-side text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
+      className: "till-grand-label text-[10px] uppercase tracking-widest",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
+      className: "till-grand",
       style: {
         fontSize: 24,
         fontWeight: 800,
@@ -15152,7 +15231,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         lineHeight: 1.1
       },
       title: grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''
-    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
+    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("div", {
+      className: "till-foot-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-handoff-phone",
+      onClick: () => setHandoffOpen(true)
+    }, "Hand off"), /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
       disabled: saved || !sessionOpen || tillBusy === 'count',
       title: !sessionOpen ? 'Open the till before saving a count' : '',
@@ -15168,8 +15253,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: saved ? 'checkcircle' : 'checkcircle',
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px] py-2",
+    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count')))), /*#__PURE__*/React.createElement("div", {
+      className: "till-foot-hint text-[10.5px] py-2",
       style: {
         color: CD.faint
       }
@@ -15383,7 +15468,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace'
       }
     }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+      className: "till-table-scroll overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -15819,7 +15904,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, fmtHome(histSeries[histSeries.length - 1]))), /*#__PURE__*/React.createElement(HistChart, {
       data: histSeries
     })), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+      className: "till-table-scroll overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 10,
