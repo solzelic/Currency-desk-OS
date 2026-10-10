@@ -403,6 +403,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Cash moves. An opened Move cash form, an issue-to-till form
+(one key per currency), and a wholesale delivery form each keep one
+idempotency key until that movement finishes, including a retry and a
+second tap. Two requests that arrive together under that key replay
+the one movement. A new form is a new movement.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the

@@ -584,7 +584,32 @@ export class VaultControlService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      /* Same race as a till float: both deliveries passed the replay
+         read, one insert won. The loser hands back that delivery. */
+      if ((error as { code?: string }).code === "23505") {
+        const replayed = await this.replayLost(actor, input.idempotencyKey);
+        if (replayed) return replayed;
+      }
       throw this.conflict(error);
+    } finally {
+      client.release();
+    }
+  }
+
+  private async replayLost(actor: LedgerActor, idempotencyKey: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await this.replay(client, actor.branchId, actor, idempotencyKey);
+      if (!existing) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query("COMMIT");
+      return existing;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
     } finally {
       client.release();
     }

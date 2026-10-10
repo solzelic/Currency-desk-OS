@@ -739,6 +739,42 @@ export class TillControlService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      /* Two taps of one form can both pass the "have I seen this key?"
+         read and then one of them loses the unique index. That loser
+         did not move any money — the winner's transaction holds both
+         boxes — so it answers with the winner's movement. A 500 here
+         tells the screen nothing was posted, and the next form it opens
+         would mint a new key and move the cash again. */
+      if ((error as { code?: string }).code === "23505") {
+        const replayed = await this.replayMovement(actor, input.idempotencyKey);
+        if (replayed) return replayed;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async replayMovement(actor: LedgerActor, idempotencyKey: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query(
+        `SELECT *
+           FROM ledger_operational_cash_movements
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5 AND idempotency_key=$6`,
+        [...scope(actor), idempotencyKey],
+      );
+      if (!existing.rowCount) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const response = await this.movementResponse(client, actor, existing.rows[0]);
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();

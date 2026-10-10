@@ -249,6 +249,26 @@ postgres("vault control against real PostgreSQL", () => {
     ).toBe(1);
   });
 
+  it("does not move the money twice when two taps share one float key", async () => {
+    const cookies = await cookie();
+    await openVault({ CAD: "50000.00" }, cookies);
+    const body = {
+      idempotencyKey: "issue-race",
+      direction: "in",
+      currency: "CAD",
+      amount: "400.00",
+    };
+    const [first, second] = await Promise.all([float(cookies, body), float(cookies, body)]);
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(second.json().movement.movementId).toBe(first.json().movement.movementId);
+    expect(first.json().balances.CAD).toBe("25400.00");
+    expect(second.json().balances.CAD).toBe("25400.00");
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_operational_cash_movements")).rows[0].n,
+    ).toBe(1);
+  });
+
   it("records a supplier delivery and a bank deposit", async () => {
     const cookies = await cookie();
     await openVault({ USD: "20000.00" }, cookies);
