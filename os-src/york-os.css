@@ -1643,7 +1643,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-head .mb-acct-av { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
 
-  #desktop { padding-bottom: var(--phone-dock-h); }
+  /* The dock is fixed, so it paints over the desk. A window at 100%
+     of the desk runs underneath it. Stop the window at the dock. */
+  #desktop .win {
+    height: calc(100% - var(--phone-dock-h)) !important;
+    max-height: calc(100% - var(--phone-dock-h)) !important;
+  }
 
   #phone-more {
     display: flex;

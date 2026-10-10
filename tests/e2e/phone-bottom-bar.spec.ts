@@ -162,8 +162,10 @@ test("the plus opens new transaction", async ({ page }) => {
   }
   await expect(page.locator(".phone-till")).toContainText("Till open");
   await page.locator("#phone-fab").click();
-  await expect(page.locator(".fixed.inset-0").getByText("New transaction", { exact: true })).toBeVisible();
-  await expect(page.getByText("Transaction type", { exact: true })).toBeVisible();
+  const deal = page.locator(".fixed.inset-0");
+  await expect(deal.getByText("New transaction", { exact: true })).toBeVisible();
+  await expect(deal.getByRole("button", { name: "Exchange" })).toBeVisible();
+  await expect(deal.getByText("Customer pays in", { exact: true })).toBeVisible();
 });
 
 test("the open window sits above the bar", async ({ page }) => {
