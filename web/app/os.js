@@ -13044,6 +13044,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      total on this screen checks. See docs/ABSENT_FIGURES.md. */
   const HKEY = 'cdos_till_history_v2',
     CKEY = 'cdos_till_counts';
+  /* The mark this count started against. Written on the first figure
+     typed, kept until the day is closed or the count is cleared.
+     A refresh must not replace it with whatever the drawer is now —
+     that is how a count taken before a deal closed over the deal. */
+  const COUNT_MARK = 'cdos_till_count_generation';
+  const readCountMark = () => {
+    try {
+      const raw = localStorage.getItem(COUNT_MARK);
+      return raw ? raw : null;
+    } catch (e) {
+      return null;
+    }
+  };
+  const writeCountMark = mark => {
+    try {
+      localStorage.setItem(COUNT_MARK, String(mark));
+    } catch (e) {}
+  };
+  const dropCountMark = () => {
+    try {
+      localStorage.removeItem(COUNT_MARK);
+    } catch (e) {}
+  };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
   const shiftStamp = () => new Date().toLocaleString('en-CA', {
@@ -13657,7 +13680,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const applyBook = result => {
       setServerBalances(result && result.balances || {});
-      setBalanceGeneration(result && result.balanceGeneration != null ? String(result.balanceGeneration) : null);
+      /* A count in progress keeps the mark it started on. Adopting the
+         generation just fetched would let a refresh, or any other
+         reread, close against money that moved after the count began. */
+      const pinned = readCountMark();
+      setBalanceGeneration(pinned != null ? pinned : result && result.balanceGeneration != null ? String(result.balanceGeneration) : null);
       setServerBalanceError('');
     };
     const refreshTill = () => {
@@ -13721,6 +13748,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setCounts({});
       setCountedAt({});
       setRevealExp({});
+      dropCountMark();
       try {
         localStorage.setItem(CKEY, '{}');
         localStorage.setItem('cdos_till_quick', '{}');
@@ -14027,11 +14055,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, []);
     const ccyMode = c => mode[c] || settings && settings.tillCountMode || 'denom';
 
-    // stamp the moment a drawer was last touched, so we can show staleness
-    const stampCount = c => setCountedAt(o => ({
-      ...o,
-      [c]: Date.now()
-    }));
+    // stamp the moment a drawer was last touched, so we can show staleness.
+    // The first figure also pins the mark. Later keystrokes leave it.
+    const stampCount = c => {
+      setCountedAt(o => ({
+        ...o,
+        [c]: Date.now()
+      }));
+      if (readCountMark() == null && balanceGeneration != null) writeCountMark(balanceGeneration);
+    };
     const clearCount = c => {
       setQuick(o => ({
         ...o,
@@ -14325,6 +14357,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           balanceGeneration,
           note: summary.note
         }));
+        /* The count is done. Drop its mark before reading the book, so
+           the next count pins the generation it actually starts on. */
+        dropCountMark();
         const balances = await window.CDOS.Backend.loadTillBalances();
         applyBook(balances);
         setSessionErr('');
@@ -14353,10 +14388,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
            and not the same one sent against the new mark. */
         if (error.code === 'TILL_COUNT_STALE') {
           try {
+            /* Drop the pin first. Reading the book while it is still
+               stored would put the old mark back, and the next count
+               would close against the drawer that just moved. */
+            clearAllCounts();
             const fresh = await window.CDOS.Backend.loadTill();
             applyBook(fresh);
             applySession(fresh);
-            clearAllCounts();
           } catch (refreshError) {
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }

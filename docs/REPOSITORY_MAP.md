@@ -102,6 +102,12 @@ commit the generated output — CI diffs `web/` against a fresh build.
   033, 034, 035, 036, and 037 are already on main, so 038 stays. 027
   and 030 are still open drafts. The rule text is
   `docs/PHILIPPINES_PACK.md`.
+- Migration `040_till_balance_generation` keeps one generation per till
+  and bumps it when that drawer's cash changes. A close names the
+  generation it counted against. 038 is the last migration on main.
+  039 is the live-cheque index on the other open pull request, so this
+  file is 040. The runner sorts by id and skips an id already recorded,
+  so either request can merge first.
 
 ## Test commands
 

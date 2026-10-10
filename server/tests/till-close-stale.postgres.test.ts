@@ -192,6 +192,38 @@ postgres("a till close after the drawer has moved", () => {
     expect((await book(manager)).balances.CAD).toBe("25040.00");
   });
 
+  it("tells an old tab to reload when the close names no mark", async () => {
+    const manager = await cookie("r.haddad");
+    const counted = await book(manager);
+    /* A tab opened before this mark existed posts the close it always
+       posted: the counts, and no balanceGeneration. That used to come
+       back as a bare validation code. */
+    const closed = await close(manager, {
+      idempotencyKey: "close-no-mark",
+      counts: counted.balances,
+      note: "opened before the mark existed",
+    });
+    expect(closed.statusCode, closed.body).toBe(422);
+    expect(closed.json().message).toBe(
+      "The desk was updated. Reload, then count again.",
+    );
+    expect((await book(manager)).balances).toEqual(counted.balances);
+    expect(
+      (
+        await pool.query(
+          "SELECT status FROM ledger_till_sessions WHERE session_id='session-1'",
+        )
+      ).rows[0].status,
+    ).toBe("open");
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM ledger_till_count_batches WHERE count_kind='close'",
+        )
+      ).rows[0].n,
+    ).toBe(0);
+  });
+
   it("still closes when nothing moved after the count", async () => {
     const manager = await cookie("r.haddad");
     const counted = await book(manager);

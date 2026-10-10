@@ -23,6 +23,25 @@ postgres("tracked PostgreSQL migrations", () => {
     expect((await pool.query("SELECT count(*) FROM schema_migrations WHERE migration_id LIKE 'test_%'")).rows[0].count).toBe("2");
   });
 
+  /* 039 and 040 are open on different pull requests. Whichever is
+     recorded first, the other still applies: sort by id, skip an id
+     already stored. These two fixtures stand in for that pair. */
+  it("applies an earlier migration that arrives after a later one has already run", async () => {
+    await runMigrations(pool, [second]);
+    await runMigrations(pool, [first, second]);
+    expect(
+      (await pool.query(
+        "SELECT migration_id FROM schema_migrations WHERE migration_id LIKE 'test_%' ORDER BY migration_id",
+      )).rows.map((row) => row.migration_id),
+    ).toEqual(["test_001_first", "test_002_second"]);
+    expect(
+      (await pool.query("SELECT to_regclass('migration_fixture_first') AS name")).rows[0].name,
+    ).toBe("migration_fixture_first");
+    expect(
+      (await pool.query("SELECT to_regclass('migration_fixture_second') AS name")).rows[0].name,
+    ).toBe("migration_fixture_second");
+  });
+
   it("fails loudly on checksum drift", async () => {
     await runMigrations(pool, [first, second]);
     await expect(runMigrations(pool, [first, ["test_002_second", "tests/fixtures/migrations/002_second_changed.sql"]])).rejects.toThrow("Migration checksum drift: test_002_second");

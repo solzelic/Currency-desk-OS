@@ -7,7 +7,6 @@
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -135,7 +134,7 @@ async function closeTheDay(page: Page) {
   await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
 }
 
-test("a close after money moved is refused, on screen and in the book", async ({ page }) => {
+test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await signInAtDesk(page);
   const book = ledger(page);
@@ -150,13 +149,10 @@ test("a close after money moved is refused, on screen and in the book", async ({
   expect((await book.session())?.status).toBe("open");
   expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 
-  mkdirSync("/opt/cursor/artifacts/money-fixes", { recursive: true });
-  await page.screenshot({
-    path: "/opt/cursor/artifacts/money-fixes/stale-close-1280.png",
-  });
+  await page.screenshot({ path: testInfo.outputPath("stale-close-1280.png") });
 });
 
-test("the stale-close refusal is readable on a phone", async ({ page }) => {
+test("the stale-close refusal is readable on a phone", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAtDesk(page);
   const book = ledger(page);
@@ -168,8 +164,26 @@ test("the stale-close refusal is readable on a phone", async ({ page }) => {
   await closeTheDay(page);
 
   await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
-  mkdirSync("/opt/cursor/artifacts/money-fixes", { recursive: true });
-  await page.screenshot({
-    path: "/opt/cursor/artifacts/money-fixes/stale-close-390.png",
-  });
+  await page.screenshot({ path: testInfo.outputPath("stale-close-390.png") });
+});
+
+test("a refresh in the middle of a count still closes against the mark it started on", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  const book = ledger(page);
+  await openTill(page);
+
+  const before = await book.till();
+  await countTheBook(page, before);
+  await postFortyCad(page, "stale-close-refresh");
+  /* The figures stay in the browser. The mark they were counted
+     against has to stay with them. A reread that adopted the new
+     generation would let this close write the old count back. */
+  await page.reload();
+  await openTill(page);
+  await closeTheDay(page);
+
+  await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
+  expect((await book.session())?.status).toBe("open");
+  expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 });
