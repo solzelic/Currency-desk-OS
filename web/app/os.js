@@ -66682,6 +66682,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       label: APPMETA[id] && APPMETA[id].title || id
     })));
     const phoneOn = phoneMore ? 'more' : phonePrimary.has(activeBase) ? activeBase : activeBase ? 'more' : '';
+    /* The selected tab borrows the app's existing accent (--c on the
+       dock). More has none of its own: the sheet uses the ink, and an
+       app opened from More lends More that app's accent. */
+    const phoneTabColour = id => {
+      if (id === 'more') {
+        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || 'var(--cd-ink)';
+        return 'var(--cd-ink)';
+      }
+      return APP_ACCENT[id] || 'var(--cd-ink)';
+    };
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = slot => /*#__PURE__*/React.createElement("div", {
       className: "mb-acct-wrap",
@@ -67365,6 +67375,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: 'phone-tab' + (phoneOn === t.id ? ' is-on' : ''),
       "data-phone-app": t.id,
       "aria-current": phoneOn === t.id ? 'page' : undefined,
+      style: {
+        '--c': phoneTabColour(t.id)
+      },
       onClick: () => openApp(t.id)
     }, /*#__PURE__*/React.createElement(Ic, {
       n: APPMETA[t.id].icon,
@@ -67376,6 +67389,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: 'phone-tab' + (phoneOn === 'more' ? ' is-on' : ''),
       "data-phone-app": "more",
       "aria-current": phoneOn === 'more' ? 'page' : undefined,
+      style: {
+        '--c': phoneTabColour('more')
+      },
       onClick: () => setPhoneMore(v => !v)
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "grid4",

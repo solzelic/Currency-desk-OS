@@ -1799,7 +1799,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0;
     color: var(--ink, #111);
   }
-  .phone-tab.is-on .lbl { font-weight: 700; }
+  /* Selected tab uses the app accent already stored on the dock as
+     --c. The label, the icon, and the underline all take it. Every
+     accent in APP_ACCENT clears 4.5:1 on the cream paper, so the
+     label does not need a darker shade. */
+  .phone-tab.is-on .lbl {
+    font-weight: 700;
+    color: var(--c, var(--cd-ink));
+  }
+  .phone-tab.is-on svg { stroke: var(--c, var(--cd-ink)); }
   .phone-tab.is-on::after {
     content: "";
     position: absolute;
@@ -1809,7 +1817,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 2px;
     margin-left: -9px;
     border-radius: 2px;
-    background: var(--green, #1f8a4c);
+    background: var(--c, var(--cd-ink));
   }
   .phone-tab:focus-visible,
   #phone-fab:focus-visible,

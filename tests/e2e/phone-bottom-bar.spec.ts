@@ -217,3 +217,52 @@ test("the open window sits above the bar", async ({ page }) => {
   });
   expect(covered).toEqual([]);
 });
+
+/* The dock already stores each app's accent as --c. The selected
+   phone tab has to paint its label, icon, and underline in that
+   same colour, and a different app has to change it. */
+test("the selected tab takes that app's colour", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+
+  const painted = (id: string, accentId: string) => page.evaluate(({ id, accentId }) => {
+    const tab = document.querySelector(`#phonebar [data-phone-app="${id}"]`);
+    const dock = document.querySelector(`#appbar [data-app="${accentId}"]`);
+    if (!(tab instanceof HTMLElement) || !(dock instanceof HTMLElement)) return { missing: true };
+    const variable = getComputedStyle(dock).getPropertyValue("--c").trim() || dock.style.getPropertyValue("--c").trim();
+    const probe = document.createElement("span");
+    probe.style.color = variable;
+    document.body.appendChild(probe);
+    const expected = getComputedStyle(probe).color;
+    probe.remove();
+    const label = getComputedStyle(tab.querySelector(".lbl") as Element).color;
+    const icon = getComputedStyle(tab.querySelector("svg") as Element).stroke;
+    const line = getComputedStyle(tab, "::after").backgroundColor;
+    return { on: tab.classList.contains("is-on"), expected, label, icon, line };
+  }, { id, accentId });
+
+  let previous = "";
+  for (const id of ["rates", "ledger", "clients", "till"]) {
+    await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
+    await dismissTour(page);
+    await settled(page);
+    const colour = await painted(id, id);
+    expect(colour.on, id).toBe(true);
+    expect(colour.label, id).toBe(colour.expected);
+    expect(colour.icon, id).toBe(colour.expected);
+    expect(colour.line, id).toBe(colour.expected);
+    if (previous) expect(colour.expected, id).not.toBe(previous);
+    previous = colour.expected || "";
+  }
+
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator('#phone-more [data-phone-app="telegraph"]').click();
+  await dismissTour(page);
+  await settled(page);
+  const texts = await painted("more", "telegraph");
+  expect(texts.on).toBe(true);
+  expect(texts.label).toBe(texts.expected);
+  expect(texts.icon).toBe(texts.expected);
+  expect(texts.line).toBe(texts.expected);
+  expect(texts.expected).not.toBe(previous);
+});

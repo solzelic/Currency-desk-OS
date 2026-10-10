@@ -2271,6 +2271,16 @@
       visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({ id, label: (APPMETA[id] && APPMETA[id].title) || id }))
     );
     const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
+    /* The selected tab borrows the app's existing accent (--c on the
+       dock). More has none of its own: the sheet uses the ink, and an
+       app opened from More lends More that app's accent. */
+    const phoneTabColour = (id) => {
+      if (id === 'more') {
+        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || 'var(--cd-ink)';
+        return 'var(--cd-ink)';
+      }
+      return APP_ACCENT[id] || 'var(--cd-ink)';
+    };
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = (slot) => (
       <div className="mb-acct-wrap" ref={slot === 'desk' ? acctRef : undefined}>
@@ -2533,12 +2543,12 @@
         </div>
         <nav id="phonebar" aria-label="Desk">
           {PHONE_TABS.map(t => (
-            <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} onClick={() => openApp(t.id)}>
+            <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
               <Ic n={APPMETA[t.id].icon} s={22} />
               <span className="lbl">{t.label}</span>
             </button>
           ))}
-          <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} onClick={() => setPhoneMore(v => !v)}>
+          <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} style={{ '--c': phoneTabColour('more') }} onClick={() => setPhoneMore(v => !v)}>
             <Ic n="grid4" s={22} />
             <span className="lbl">More</span>
           </button>
