@@ -42,6 +42,8 @@ const migrations: readonly Migration[] = [
   ["036_pack_ae_v2", "src/db/migrations/036_pack_ae_v2.sql"],
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
+  /* 027 and 030 are still open drafts. 039 keeps one live cheque per piece of paper. */
+  ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
 ] as const;
 
 export async function runMigrations(

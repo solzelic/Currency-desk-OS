@@ -666,6 +666,70 @@ postgres("cheque cashing on the ledger", () => {
     expect(await tillCad()).toBe("4035.00");
   });
 
+  /* Two taps of one open form used to be two keys, because the key was
+     built from the clock. Cheque 1002841 (face 40.00, fee 1.00) was then
+     paid twice and 78.00 left the drawer — the net, twice. A second live
+     cheque with the same number, payer and bank is the same paper, and
+     the book has to refuse it even when the keys differ. */
+  it("pays cheque 1002841 once when a second tap arrives under a new key", async () => {
+    const cookies = await cookie();
+    const paper = {
+      chequeNumber: "1002841",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      faceAmount: "40.00",
+      feeAmount: "1.00",
+      holdDays: 0,
+    };
+    const first = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-a" });
+    expect(first.statusCode, first.body).toBe(201);
+    const second = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-b" });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().code).toBe("CHEQUE_ALREADY_HELD");
+    expect(second.json().message).toMatch(/already cashed/i);
+    expect(await tillCad()).toBe("4961.00");
+    expect(
+      (await pool.query(
+        "SELECT count(*)::int AS n FROM ledger_cheques WHERE cheque_number='1002841'",
+      )).rows[0].n,
+    ).toBe(1);
+  });
+
+  it("still cashes a different cheque, and the same number once it is no longer live", async () => {
+    const cookies = await cookie();
+    const paper = {
+      chequeNumber: "1002841",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      faceAmount: "40.00",
+      feeAmount: "1.00",
+      holdDays: 0,
+    };
+    const first = await cashCheque(cookies, { ...paper, idempotencyKey: "live-a" });
+    expect(first.statusCode, first.body).toBe(201);
+    const otherNumber = await cashCheque(cookies, {
+      ...paper,
+      chequeNumber: "1002842",
+      idempotencyKey: "live-b",
+    });
+    expect(otherNumber.statusCode, otherNumber.body).toBe(201);
+    const otherBank = await cashCheque(cookies, {
+      ...paper,
+      draweeBank: "TD Canada Trust",
+      idempotencyKey: "live-c",
+    });
+    expect(otherBank.statusCode, otherBank.body).toBe(201);
+    const undone = await settle(cookies, first.json().cheque.chequeId, "reversal", {
+      reason: "Cashed the wrong cheque",
+    });
+    expect(undone.statusCode, undone.body).toBe(201);
+    const again = await cashCheque(cookies, { ...paper, idempotencyKey: "live-d" });
+    expect(again.statusCode, again.body).toBe(201);
+    /* Four cashes of 39, and the first of them reversed, so three nets
+       have left: 5000 − 117 = 4883. */
+    expect(await tillCad()).toBe("4883.00");
+  });
+
   it("clears once however many times the request arrives", async () => {
     const cookies = await cookie();
     const cashed = await heldCheque(cookies);

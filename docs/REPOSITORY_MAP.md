@@ -102,6 +102,10 @@ commit the generated output — CI diffs `web/` against a fresh build.
   033, 034, 035, 036, and 037 are already on main, so 038 stays. 027
   and 030 are still open drafts. The rule text is
   `docs/PHILIPPINES_PACK.md`.
+- Migration `039_live_cheque_paper` adds a unique index so one branch
+  cannot hold two live cheques with the same number, payer, and bank.
+  It does not edit an older migration. 027 and 030 are still open
+  drafts, so 039 stays. The rule is `docs/CHEQUE_CASHING.md`.
 
 ## Test commands
 

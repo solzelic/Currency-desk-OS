@@ -403,6 +403,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Cheque cashing. An opened cheque form keeps one idempotency
+key until that cashing finishes, including a retry and a second tap.
+The server also refuses a second live cheque at the same branch with
+the same number and payer, and the same bank when both sides stored
+one. A missing bank matches. A different bank is different paper. A
+cheque that has cleared, been returned, or been reversed can be cashed
+again. Migration 039. 027 and 030 are still open drafts.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the
