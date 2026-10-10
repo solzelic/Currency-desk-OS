@@ -28,6 +28,19 @@ postgres("tracked PostgreSQL migrations", () => {
     await expect(runMigrations(pool, [first, ["test_002_second", "tests/fixtures/migrations/002_second_changed.sql"]])).rejects.toThrow("Migration checksum drift: test_002_second");
   });
 
+  it("applies an earlier migration that arrives after a later one has already run", async () => {
+    /* 039 and 040 are separate PRs. Whichever merges first, the other
+       still applies on the next boot: already-recorded ids are skipped,
+       and a newly registered earlier id is applied by its name. */
+    await runMigrations(pool, [second]);
+    await runMigrations(pool, [first, second]);
+    expect(
+      (await pool.query(
+        "SELECT migration_id FROM schema_migrations WHERE migration_id LIKE 'test_%' ORDER BY migration_id",
+      )).rows.map((row) => row.migration_id),
+    ).toEqual(["test_001_first", "test_002_second"]);
+  });
+
   it("rolls back a partially failing migration and does not record it", async () => {
     await expect(runMigrations(pool, [["test_003_partial", "tests/fixtures/migrations/003_partial_failure.sql"]])).rejects.toThrow();
     expect((await pool.query("SELECT to_regclass('migration_fixture_partial') AS table_name")).rows[0].table_name).toBeNull();

@@ -39,7 +39,7 @@
    server cannot silently drop the scans.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useEffect } = React;
+  const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY, crossRate, newTx, mkRef } = window.CDOS;
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
@@ -200,6 +200,20 @@
        from the book. */
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
+    /* One key for this opened form, reused on a retry and on a second
+       tap. It used to be rebuilt from the clock, so two taps of the same
+       cheque were two keys and the drawer paid the net twice. A refusal
+       leaves no idempotency row, so sending the corrected ticket again
+       under this same key is right. Opening the form again is a new
+       attempt. The same shape as a money order and a transfer. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current)
+        attempt.current = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const save = async () => {
       if (!canSave || busy) return;
       const book = ledger();
@@ -215,7 +229,7 @@
            mirrored across before the money moves. */
         const synced = await book.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
         const posted = await book.cashCheque({
-          idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${book.asMoney(amtN)}:${Date.now()}`,
+          idempotencyKey: 'web-chq:' + attemptKey(),
           customerId: synced.customerId,
           chequeNumber: chequeNumber.trim(),
           maker: maker.trim(),
