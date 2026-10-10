@@ -90,10 +90,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   form. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
-  above the bottom bar. The Cash Drawer header stacks: the title
-  and the till on one line, the status under that, the amount, then
-  Move cash and Vault. Its tabs scroll, with a fade where the last
-  one continues. A ledger reference and a client name stay on one
+  above the bottom bar.   On a phone the Cash Drawer count is one selector for Cash drawer,
+  Reconcile & close, and History, then who is on the drawer, the
+  amount, denomination steppers, and Hand off / Save count at the
+  thumb. A note that the branch has more than one till scrolls with
+  the count. Reconcile and History scroll inside their tables. Wider
+  than 430px the drawer is unchanged. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. On a wide window the
   dots stay 12px. The module tab bar ends before the store and ID
@@ -429,6 +431,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, phone cash drawer. At 430px and under, the count is a
+selector, a who-line, big denomination steppers, and Hand off / Save
+count at the thumb. A multi-till note scrolls with that count.
+Reconcile and History only scroll. Wider than 430px the drawer is
+unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

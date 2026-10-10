@@ -1501,7 +1501,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   /* The east handle sits 3px past the window. A full-width window has
      nowhere to grow, and that handle lands off the screen. */
-  .win-rz { display: none; }
+  .win-rz, .win-resize { display: none; }
   .win-bar, .win.bar-hidden .win-bar { height: 44px !important; }
   .win-body, .win.bar-hidden .win-body { padding-top: 44px !important; }
   .win.bar-hidden .win-title { font-size: 12px; }
@@ -1571,6 +1571,19 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 /* These wrappers exist so a phone can restack the drawer header.
    contents keeps the desktop flex items where they already were. */
 .till-statusline, .till-tabwrap { display: contents; }
+/* Phone-only till pieces. Hidden here so a wide window paints the
+   drawer it already had. Shown inside the 430px query below. */
+.till-phone-select,
+.till-phone-who,
+.till-sheet-scrim,
+.till-coins-btn,
+.till-handoff-phone,
+.till-show-word,
+.till-ambiguous-inscroll { display: none; }
+.till-foot-actions { display: contents; }
+.till-count-body { display: contents; }
+.till-expected-fig.is-blind,
+.till-var.is-blind { filter: blur(6px); }
 
 /* ============================================================
    PHONE BOTTOM BAR
@@ -1844,52 +1857,74 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     outline-offset: -2px;
   }
 
-  /* Cash Drawer header. The action cluster is flex: none, so on a
-     narrow screen it squeezed the title down to one word a line.
-     Stack: title and till, then the status at full width, then the
-     amount, then the two actions split across the row. */
-  [data-tour="till"] .till-head {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-  [data-tour="till"] .till-id {
-    flex: 1 1 calc(100% - 42px);
-    min-width: 0;
+  /* Cash Drawer, phone. The folder tabs become one selector. The
+     who-line, the amount, and the count sit under it. Wider than
+     430px these rules do not apply. */
+  [data-tour="till"] {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: 8px;
-    row-gap: 2px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 8px !important;
   }
-  [data-tour="till"] .till-meta { display: contents; }
-  [data-tour="till"] .till-name {
-    font-size: 16px;
-    line-height: 1.25;
-    white-space: nowrap;
-  }
-  [data-tour="till"] .till-station,
-  [data-tour="till"] .till-dot { display: none; }
-  [data-tour="till"] .till-pick {
-    flex: 0 0 auto;
-    min-width: max-content;
-    max-width: none;
-  }
-  [data-tour="till"] .till-pick button {
-    font-size: 15px !important;
-    font-weight: 600;
-    white-space: nowrap !important;
-    max-width: none !important;
-    min-height: 32px;
-  }
-  [data-tour="till"] .till-statusline {
-    display: block;
-    flex: 1 1 100%;
+  .till-phone-select {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     width: 100%;
-    font-size: 12px;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--line, rgba(23, 20, 15, 0.16));
+    border-radius: 12px;
+    background: #fff;
+    color: var(--ft, #17140F);
+    text-align: left;
+    cursor: pointer;
+  }
+  .till-phone-current {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--ft, #17140F);
+  }
+  .till-phone-alts {
+    margin-top: 2px;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 13px;
+    font-weight: 500;
     line-height: 1.35;
+    color: var(--ft, #17140F);
+  }
+  /* Each other name is an inline-block. The dot is the ::before of
+     every name after the first, with a space on both sides, so a
+     wrapped line neither starts nor ends on the dot. */
+  .till-phone-alt { display: inline-block; }
+  .till-phone-alt + .till-phone-alt::before { content: " \00b7 "; }
+  .till-phone-who {
+    display: block;
+    margin: 0;
+    max-width: 100%;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    color: var(--ink, #17140F);
+    white-space: nowrap !important;
+  }
+  .till-phone-bit { display: inline-block; }
+  .till-phone-bit + .till-phone-bit::before { content: " \00b7 "; }
+  [data-tour="till"] .till-mark,
+  [data-tour="till"] .till-name,
+  [data-tour="till"] .till-meta,
+  [data-tour="till"] .till-tabwrap,
+  .till-opstrip { display: none !important; }
+  [data-tour="till"] .till-head {
+    display: block;
+    padding-bottom: 0;
   }
   [data-tour="till"] .till-actions {
-    flex: 1 0 100% !important;
     width: 100% !important;
     margin-left: 0 !important;
     display: grid !important;
@@ -1902,6 +1937,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 44px;
     box-sizing: border-box;
     justify-content: space-between;
+    white-space: nowrap;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+  }
+  [data-tour="till"] .till-pill b {
+    font-family: "Space Mono", monospace !important;
+    font-size: 15px;
   }
   [data-tour="till"] .till-move,
   [data-tour="till"] .till-vault {
@@ -1909,28 +1951,335 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 44px;
     box-sizing: border-box;
     justify-content: center;
+    white-space: nowrap;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
   }
-  /* Three folder tabs do not fit. The bar scrolls, and the fade
-     on the right says there is more. Extra padding lets the last
-     tab scroll clear of that fade. */
-  [data-tour="till"] .till-tabwrap {
-    display: block;
-    position: relative;
-  }
-  [data-tour="till"] .till-tabwrap::after {
-    content: "";
-    position: absolute;
-    top: 0;
+  .till-sheet-scrim {
+    display: flex;
+    position: fixed;
+    z-index: 80;
+    left: 0;
     right: 0;
-    bottom: 0;
-    width: 36px;
-    z-index: 2;
-    pointer-events: none;
-    background: linear-gradient(90deg, rgba(255,255,255,0), #fff 78%);
+    top: 0;
+    bottom: var(--phone-dock-h, 0px);
+    align-items: flex-end;
+    background: rgba(23, 20, 15, 0.42);
   }
-  [data-tour="till"] .fld-bar {
-    padding-right: 36px !important;
-    scroll-padding-right: 36px;
+  .till-sheet {
+    width: 100%;
+    padding: 8px 8px 12px;
+    background: #fff;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 28px rgba(23, 20, 15, 0.16);
+  }
+  .till-sheet-tab {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--ft, #17140F);
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 16px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .till-sheet-tab.is-on {
+    background: var(--ft, #17140F);
+    color: #fff;
+    font-weight: 700;
+  }
+  .till-root .till-chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .till-root .till-chip {
+    flex-wrap: nowrap !important;
+    justify-content: center;
+    min-height: 44px;
+    padding: 8px 4px !important;
+    font-family: "Space Mono", monospace !important;
+    font-size: 15px !important;
+    white-space: nowrap;
+  }
+  /* The flag sits above the code once the chip is only a quarter
+     of the screen. The code is the button. */
+  .till-root .till-chip > span:first-child { display: none; }
+  .till-root .till-chip.is-on {
+    background: var(--ft, #17140F) !important;
+    border-color: var(--ft, #17140F) !important;
+    color: #fff !important;
+  }
+  .till-mode {
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+  .till-mode-opt {
+    min-height: 44px;
+    padding: 8px 2px !important;
+    background: transparent !important;
+    color: var(--ft, #17140F) !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .till-mode-opt.is-on { display: none !important; }
+  .till-den-label { display: none; }
+  .till-session { display: none !important; }
+  /* The multi-till note is a full strip on the desktop. On a phone
+     count it sits in the scrolling list, so the steppers and the
+     mode toggle keep a tap target above the footer. */
+  .till-root[data-till-screen="count"] > .till-ambiguous { display: none !important; }
+  .till-ambiguous-inscroll { display: flex !important; }
+  .till-root .flex.gap-2 > .min-w-0,
+  .till-root .flex.gap-2 > .flex-1,
+  .till-root .flex.gap-3 > .min-w-0,
+  .till-root .flex.gap-3 > .flex-1 {
+    white-space: normal !important;
+  }
+  .till-modebar > button {
+    min-height: 44px;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+  }
+  .till-coins-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    border: 1px solid var(--line, rgba(23, 20, 15, 0.18));
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ft, #17140F);
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .till-coins { display: none; }
+  .till-coins.is-open { display: block; margin-top: 4px; }
+  .till-den {
+    display: grid !important;
+    grid-template-columns: auto auto auto;
+    justify-content: start;
+    align-items: center;
+    column-gap: 10px;
+    width: fit-content;
+    max-width: 100%;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  .till-den-kind { display: none !important; }
+  .till-den-face {
+    width: auto !important;
+    min-width: 44px;
+    justify-content: flex-start !important;
+    font-family: "Space Mono", monospace !important;
+    font-size: 16px !important;
+  }
+  .till-den-stepper { margin-left: 0 !important; }
+  .till-den .till-step {
+    width: 44px !important;
+    height: 44px !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 22px !important;
+  }
+  .till-den-qty {
+    width: 52px !important;
+    height: 44px !important;
+    font-family: "Space Mono", monospace !important;
+    font-size: 18px !important;
+  }
+  .till-den-sub {
+    width: auto !important;
+    min-width: 64px;
+    font-family: "Space Mono", monospace !important;
+    font-size: 15px !important;
+  }
+  .till-total-card input {
+    min-height: 44px;
+    font-family: "Space Mono", monospace !important;
+    font-size: 28px !important;
+  }
+  .win-body:has(.till-root[data-till-screen="count"]) { overflow: hidden; }
+  .till-root[data-till-screen="count"] {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .till-foot {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 2;
+    flex: none;
+    box-sizing: border-box;
+    width: calc(100% + 32px);
+    max-width: none;
+    margin: 8px -16px 0 !important;
+    padding: 10px 12px 12px !important;
+    background: var(--cd-paper, #f7f6f3) !important;
+    box-shadow: 0 -1px 0 var(--hair, rgba(23, 20, 15, 0.12));
+  }
+  .till-root[data-till-screen="count"] > .overflow-auto {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .till-root[data-till-screen="count"] .till-count {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0 !important;
+  }
+  .till-count-body {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .till-expected {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    max-width: 100%;
+    row-gap: 2px;
+    column-gap: 8px;
+  }
+  .till-expected-row { max-width: 100%; }
+  .till-foot-figures { max-width: 100%; min-width: 0; }
+  .till-expected b.is-blind,
+  .till-expected .till-var.is-blind { filter: blur(9px); }
+  .till-foot-main {
+    display: block !important;
+    border-top: 0 !important;
+    padding-top: 0 !important;
+  }
+  .till-grand-label,
+  .till-grand,
+  .till-foot-hint,
+  .till-counted-suffix,
+  .till-expected .till-show-word + svg,
+  .till-foot-figures .text-\[11px\].mt-1 { display: none !important; }
+  .till-counted-k {
+    display: inline;
+    margin-right: 8px;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+    font-weight: 600;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    color: var(--ink, #17140F) !important;
+  }
+  .till-counted-box {
+    display: inline-flex !important;
+    border: 0 !important;
+    background: transparent !important;
+    max-width: none !important;
+    margin-top: 0 !important;
+    vertical-align: baseline;
+  }
+  .till-counted-input {
+    width: auto !important;
+    min-width: 4ch;
+    padding: 0 !important;
+    font-family: "Space Mono", monospace !important;
+    font-size: 20px !important;
+    text-align: left !important;
+  }
+  .till-expected-row {
+    display: flex !important;
+    margin-top: 4px !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+  }
+  .till-expected {
+    min-height: 44px;
+    font-size: 15px !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  }
+  .till-expected-fig {
+    font-family: "Space Mono", monospace !important;
+    font-size: 15px;
+  }
+  .till-show-word {
+    display: inline !important;
+    margin-left: 8px;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ft, #17140F);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .till-foot-side { display: block; }
+  .till-foot-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .till-handoff-phone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    border: 1.5px solid var(--ft, #17140F);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ft, #17140F);
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .till-foot .till-save {
+    width: 100%;
+    min-height: 48px;
+    margin: 0 !important;
+    justify-content: center;
+    border-radius: 10px !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 15px !important;
+  }
+  .till-root .till-table-scroll {
+    overflow-x: auto !important;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  .till-root .till-table-scroll table {
+    width: max-content !important;
+    min-width: 100% !important;
+  }
+  .till-root .till-table-scroll th,
+  .till-root .till-table-scroll td { white-space: nowrap !important; }
+  .till-root {
+    font-size: 15px;
+  }
+  .till-session,
+  .till-root .text-\[10px\],
+  .till-root .text-\[10\.5px\],
+  .till-root .text-\[11px\],
+  .till-root .text-\[11\.5px\],
+  .till-root .text-\[12px\],
+  .till-root .text-\[12\.5px\] {
+    font-size: 15px !important;
   }
 
   /* Dialogs are centred on the whole screen, so on a phone the
