@@ -180,7 +180,12 @@ test("a refresh in the middle of a count still closes against the mark it starte
      against has to stay with them. A reread that adopted the new
      generation would let this close write the old count back. */
   await page.reload();
-  await openTill(page);
+  /* The till is already open. While the session is still loading the
+     screen briefly offers "Open the till", and clicking that races
+     the session arriving. Wait until the open session is back. */
+  await page.getByText(/Cash Drawer/i).first().click();
+  await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 20_000 });
+  await settleCashDrawerChrome(page);
   await closeTheDay(page);
 
   await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
