@@ -1656,7 +1656,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
 
     return (<div className="flex flex-col" style={{ height: '100%', position: 'relative', background: CD.paper, overflow: 'hidden' }}>
-      <div className="fld-bar fld-pinned" style={{ '--ft': '#1D6B45' }}>
+      <div className="fld-bar fld-pinned">
         {[['records', 'Records', 'scroll'], ['compliance', 'Compliance', 'shield']].map(([id, label, ic]) => { const on = section === id; const badge = id === 'compliance' ? compCount : 0; return (
           <button key={id} onClick={() => setSection(id)} className={'fld-tab' + (on ? ' on' : '')}><Ic n={ic} s={13} c={on ? '#fff' : CD.mute} /> {label}{badge > 0 && <span className="text-[9px] px-1 py-0.5" style={{ background: CD.flag, color: '#fff', borderRadius: 4, fontFamily: 'Space Mono, monospace', marginLeft: 2 }}>{badge}</span>}</button>); })}
       </div>

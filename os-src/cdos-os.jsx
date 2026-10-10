@@ -127,7 +127,7 @@
     };
     return (
       <div className={'win' + (shown ? ' show' : '') + (active ? ' active' : '') + (win.max ? ' max' : '') + (barHidden ? ' bar-hidden' : '')} onPointerDown={() => onFocus(win.id)}
-        style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: win.z }}>
+        style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: win.z, '--c': meta.accent || 'var(--cd-ink)', '--ft': meta.accent || 'var(--cd-ink)' }}>
         <div className="win-bar" onPointerDown={startDrag} onDoubleClick={(e) => { if (!e.target.closest('.win-tb-btn') && !e.target.closest('.win-back') && !e.target.closest('.win-rtools')) onZoom(win.id); }}>
           <div className="win-lights">
             <button className="win-tb-btn win-close" title="Close" onClick={() => onClose(win.id)}></button>
@@ -2281,6 +2281,10 @@
       }
       return APP_ACCENT[id] || 'var(--cd-ink)';
     };
+    /* The header dot is the window-title dot. The title bar is hidden
+       on a phone, so the dot sits by the shop name and follows the
+       full-screen app. More's own sheet has no accent, so it uses the ink. */
+    const phoneChrome = (phoneMore || !activeBase) ? 'var(--cd-ink)' : (APP_ACCENT[activeBase] || 'var(--cd-ink)');
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = (slot) => (
       <div className="mb-acct-wrap" ref={slot === 'desk' ? acctRef : undefined}>
@@ -2474,8 +2478,8 @@
       {/* PHONE HEADER — shop, till, profile. Hidden above 430px.
           It follows the tenant name in the document so a desktop
           lookup of the shop name finds the visible one first. */}
-      <header className="phone-head">
-        <div className="phone-shop">{shopName}</div>
+      <header className="phone-head" style={{ '--c': phoneChrome }}>
+        <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shopName}</span></div>
         <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
           <i className="phone-till-dot" />
           <span>{day.closed ? 'Till closed' : 'Till open'}</span>

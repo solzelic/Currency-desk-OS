@@ -76,8 +76,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   shows the shop name, whether the till is open, and the profile
   button. A bottom bar opens Rates, Ledger, Clients, Till, and More.
   The selected tab's icon, label, and underline take that app's
-  colour. More uses the colour of the app it opened, or the ink when
-  More itself is showing. More lists the other apps that role can
+  colour, and so does the header dot and the open in-app folder tab.
+  That is the same set the focused app colours on the desktop: the
+  window-title dot, the active dock icon and underline, and the
+  folder-tab fill and underline. More uses the colour of the app it
+  opened, or the ink when More itself is showing. More lists the other apps that role can
   already open. A round +
   starts a new transaction the same way the menu button does. The
   module tabs and the menu icons those replace are hidden. The
@@ -440,9 +443,11 @@ app fills that space. In-app tabs stay.   A ledger record has its own
   its type buttons and its quote rail the same way. A ledger reference
   and a client name stay on one line. A wide table scrolls inside its
   card instead of breaking each column into single words. The selected
-  tab's icon, label, and underline take that app's colour. More uses
-  the colour of the app it opened, or the ink when More itself is
-  showing. Wider than 430px, the desk is unchanged.
+  tab's icon, label, and underline take that app's colour. The header
+  dot and the open in-app folder tab take it too, which is what that
+  colour paints on the desktop besides the dock. More uses the colour
+  of the app it opened, or the ink when More itself is showing. Wider
+  than 430px, the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

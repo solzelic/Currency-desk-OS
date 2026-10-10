@@ -1628,12 +1628,29 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-family: var(--f-display);
     font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--ink, #111);
     line-height: 1.2;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  /* The window-title dot. Same 6px mark the desktop title bar paints
+     with the focused app's accent. The title bar itself stays hidden. */
+  .phone-appdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+    background: var(--c, var(--cd-ink));
+  }
+  .phone-shop-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

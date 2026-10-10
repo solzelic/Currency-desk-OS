@@ -902,7 +902,7 @@
               <div className="text-[10.5px]" style={{ color: CD.mute }}>{sub}</div>
             </button>); })}
         </div>
-        <div className="fld-bar" style={{ '--ft': '#6B2E54', margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic, badge]) => (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>
               <Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}

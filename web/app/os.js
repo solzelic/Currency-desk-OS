@@ -14601,7 +14601,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -18746,7 +18745,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }))))))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -20697,7 +20695,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, activeBranch.name), " \xB7 ", activeTill.name), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -30953,10 +30950,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "fld-bar fld-pinned",
-      style: {
-        '--ft': '#1D6B45'
-      }
+      className: "fld-bar fld-pinned"
     }, [['records', 'Records', 'scroll'], ['compliance', 'Compliance', 'shield']].map(([id, label, ic]) => {
       const on = section === id;
       const badge = id === 'compliance' ? compCount : 0;
@@ -38767,7 +38761,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), " New transfer")), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#1F7269',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -40655,7 +40648,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), " Cash a cheque")), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#8F6410',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -45603,7 +45595,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     })), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#6B2E54',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -54906,9 +54897,10 @@ ${snap}`;
     Ic,
     fmt,
     num,
-    crossRate
+    crossRate,
+    APP_ACCENT
   } = window.CDOS;
-  const ACC = '#8A4B2F',
+  const ACC = APP_ACCENT.telegraph,
     ACCSOFT = '#F2E6DD';
   const TGKEY = 'cdos_tg_settings_v1',
     RKEY = 'cdos_tg_requests_v2',
@@ -58294,7 +58286,6 @@ ${snap}`;
     })))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': ACC,
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -61858,7 +61849,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         top: win.y,
         width: win.w,
         height: win.h,
-        zIndex: win.z
+        zIndex: win.z,
+        '--c': meta.accent || 'var(--cd-ink)',
+        '--ft': meta.accent || 'var(--cd-ink)'
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "win-bar",
@@ -66692,6 +66685,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
       return APP_ACCENT[id] || 'var(--cd-ink)';
     };
+    /* The header dot is the window-title dot. The title bar is hidden
+       on a phone, so the dot sits by the shop name and follows the
+       full-screen app. More's own sheet has no accent, so it uses the ink. */
+    const phoneChrome = phoneMore || !activeBase ? 'var(--cd-ink)' : APP_ACCENT[activeBase] || 'var(--cd-ink)';
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = slot => /*#__PURE__*/React.createElement("div", {
       className: "mb-acct-wrap",
@@ -67220,10 +67217,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       cfg: tickerCfg,
       book: lockedBook
     }))), /*#__PURE__*/React.createElement("header", {
-      className: "phone-head"
+      className: "phone-head",
+      style: {
+        '--c': phoneChrome
+      }
     }, /*#__PURE__*/React.createElement("div", {
       className: "phone-shop"
-    }, shopName), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-appdot",
+      "aria-hidden": "true"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phone-shop-name"
+    }, shopName)), /*#__PURE__*/React.createElement("div", {
       className: 'phone-till' + (day.closed ? ' is-closed' : '')
     }, /*#__PURE__*/React.createElement("i", {
       className: "phone-till-dot"

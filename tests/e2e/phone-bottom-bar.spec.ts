@@ -218,9 +218,9 @@ test("the open window sits above the bar", async ({ page }) => {
   expect(covered).toEqual([]);
 });
 
-/* The dock already stores each app's accent as --c. The selected
-   phone tab has to paint its label, icon, and underline in that
-   same colour, and a different app has to change it. */
+/* The dock stores each app's accent as --c. On a phone that colour
+   paints the selected tab, the header dot (the window-title dot),
+   and the open in-app folder tab when the app has one. */
 test("the selected tab takes that app's colour", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
@@ -228,7 +228,8 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   const painted = (id: string, accentId: string) => page.evaluate(({ id, accentId }) => {
     const tab = document.querySelector(`#phonebar [data-phone-app="${id}"]`);
     const dock = document.querySelector(`#appbar [data-app="${accentId}"]`);
-    if (!(tab instanceof HTMLElement) || !(dock instanceof HTMLElement)) return { missing: true };
+    const win = document.querySelector(".win.show.active");
+    if (!(tab instanceof HTMLElement) || !(dock instanceof HTMLElement) || !(win instanceof HTMLElement)) return { missing: true };
     const variable = getComputedStyle(dock).getPropertyValue("--c").trim() || dock.style.getPropertyValue("--c").trim();
     const probe = document.createElement("span");
     probe.style.color = variable;
@@ -238,7 +239,19 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     const label = getComputedStyle(tab.querySelector(".lbl") as Element).color;
     const icon = getComputedStyle(tab.querySelector("svg") as Element).stroke;
     const line = getComputedStyle(tab, "::after").backgroundColor;
-    return { on: tab.classList.contains("is-on"), expected, label, icon, line };
+    const dot = getComputedStyle(document.querySelector(".phone-appdot") as Element).backgroundColor;
+    const folder = win.querySelector(".fld-tab.on");
+    const bar = win.querySelector(".fld-bar");
+    return {
+      on: tab.classList.contains("is-on"),
+      expected,
+      label,
+      icon,
+      line,
+      dot,
+      tabBg: folder ? getComputedStyle(folder).backgroundColor : null,
+      barLine: bar ? getComputedStyle(bar).borderBottomColor : null,
+    };
   }, { id, accentId });
 
   let previous = "";
@@ -251,6 +264,11 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     expect(colour.label, id).toBe(colour.expected);
     expect(colour.icon, id).toBe(colour.expected);
     expect(colour.line, id).toBe(colour.expected);
+    expect(colour.dot, id).toBe(colour.expected);
+    if (colour.tabBg != null) {
+      expect(colour.tabBg, id).toBe(colour.expected);
+      expect(colour.barLine, id).toBe(colour.expected);
+    }
     if (previous) expect(colour.expected, id).not.toBe(previous);
     previous = colour.expected || "";
   }
@@ -264,5 +282,8 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   expect(texts.label).toBe(texts.expected);
   expect(texts.icon).toBe(texts.expected);
   expect(texts.line).toBe(texts.expected);
+  expect(texts.dot).toBe(texts.expected);
+  expect(texts.tabBg).toBe(texts.expected);
+  expect(texts.barLine).toBe(texts.expected);
   expect(texts.expected).not.toBe(previous);
 });
