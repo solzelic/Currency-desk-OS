@@ -82,7 +82,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   folder-tab fill and underline. More uses the colour of the app it
   opened, or the ink when More itself is showing. More lists the other apps that role can
   already open. A round +
-  starts a new transaction the same way the menu button does. The
+  starts a new transaction the same way the menu button does. While
+  that page is open it fills the screen under the shop header, the
+  deal type is one card that opens the six types, and the round +
+  and the bottom bar hide so the post button stays clear. Wider
+  than 430px, New transaction stays the desktop dialog. The
   module tabs and the menu icons those replace are hidden. The
   wordmark, the clock, and the account name stay off the phone.
   A card that holds a table scrolls sideways. Rounded clips,
@@ -429,6 +433,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, phone New transaction. At 430px and under, New transaction
+is a full-screen page under the shop header. The deal type is one
+card; tapping it opens the six types. The round + and the bottom
+bar hide while that page is open. Wider than 430px, the dialog is
+unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

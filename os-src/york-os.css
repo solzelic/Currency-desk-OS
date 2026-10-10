@@ -2093,3 +2093,536 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: none;
   }
 }
+
+/* Phone-only pieces of New transaction. Hidden at every width until
+   the 430px block below turns them on, so a wide window is unchanged. */
+.tx-narrow,
+.tx-typecard,
+.tx-close-back,
+.tx-idstatus,
+.tx-ready-narrow { display: none; }
+.tx-pair-text { display: contents; }
+
+/* ============================================================
+   NEW TRANSACTION — full-screen page on a phone
+   The dialog stays a dialog above 430px. At 430 and under it
+   fills the screen under the shop header. The round + and the
+   bottom bar hide while it is open: the bar is 118px, and
+   leaving it up would cover Record or shove it off the thumb.
+   ============================================================ */
+@media (max-width: 430px) {
+  body.tx-open #phone-dock { display: none !important; }
+  body.tx-open .fixed.inset-0 { bottom: 0 !important; }
+
+  .tx-screen.fixed.inset-0 {
+    top: var(--tx-head, 0px) !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: var(--cd-paper, #f4f3f0) !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+  }
+  .tx-screen.fixed.inset-0 > .tx-panel {
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    background: var(--cd-paper, #f4f3f0) !important;
+  }
+  /* The page is portaled onto document.body, outside .win-body,
+     so the window's Archivo rule never reaches it. Inputs then
+     fall back to the browser face. Use the same stacks as the
+     ledger cards: Archivo for words, Space Mono for figures. */
+  .tx-screen,
+  .tx-screen button,
+  .tx-screen input,
+  .tx-screen select,
+  .tx-screen textarea {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  }
+
+  .tx-screen .tx-head {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    min-height: 52px;
+    justify-content: flex-start !important;
+    padding: 0 16px !important;
+    background: var(--cd-paper, #f4f3f0) !important;
+    border-bottom: 0 !important;
+    gap: 2px;
+  }
+  .tx-screen .tx-head-mark,
+  .tx-screen .tx-head-sub { display: none !important; }
+  .tx-screen .tx-title {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 17px !important;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .tx-screen .tx-close {
+    order: -1;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: -12px;
+    display: grid;
+    place-items: center;
+    padding: 0 !important;
+    border: 0;
+    background: transparent;
+  }
+  .tx-screen .tx-close-x { display: none; }
+  .tx-screen .tx-close-back { display: grid; place-items: center; }
+
+  .tx-screen .tx-types {
+    padding: 0 16px 8px !important;
+    background: transparent !important;
+    border-bottom: 0 !important;
+  }
+  .tx-screen .tx-typegrid,
+  .tx-screen .tx-typeblurb { display: none !important; }
+  .tx-screen .tx-typecard {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+    min-height: 64px;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid var(--line, rgba(10, 10, 10, 0.14));
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    box-sizing: border-box;
+    appearance: none;
+  }
+  .tx-screen .tx-typecard-now {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--ink, #111);
+    white-space: nowrap;
+  }
+  /* Each other type is its own inline-block, so a wrap falls between
+     names. The dot is a prefix (" · ") on every name except the first,
+     and except a name that starts a line — a prefix there would open
+     the line with a dot, and a suffix would leave one dangling. */
+  .tx-screen .tx-typecard-rest {
+    display: block;
+    max-width: 100%;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: rgba(10, 10, 10, 0.62);
+  }
+  .tx-screen .tx-typeitem {
+    display: inline-block;
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+  .tx-screen .tx-typeitem:not(:first-child):not(.is-linestart)::before {
+    content: " · ";
+    white-space: pre;
+  }
+
+  .tx-screen .tx-body {
+    flex: none !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible !important;
+    min-height: 0;
+    padding-bottom: 168px;
+    box-sizing: border-box;
+  }
+  /* A phone reads this page at arm's length. Labels, hints, and
+     the lines under a field were 10–13px. 15px is the floor.
+     Amounts, the title, and the type name set a larger size later. */
+  .tx-screen .text-sm,
+  .tx-screen .text-\[9px\],
+  .tx-screen .text-\[9\.5px\],
+  .tx-screen .text-\[10px\],
+  .tx-screen .text-\[11px\],
+  .tx-screen .text-\[11\.5px\],
+  .tx-screen .text-\[12px\],
+  .tx-screen .text-\[12\.5px\],
+  .tx-screen .text-\[13px\] {
+    font-size: 15px !important;
+  }
+  .tx-screen .tx-form {
+    overflow: visible !important;
+    flex: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    align-self: stretch;
+    border-right: 0 !important;
+    padding: 0 16px 8px !important;
+    box-sizing: border-box;
+  }
+  .tx-screen .tx-rail {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    background: transparent !important;
+    display: block !important;
+    box-sizing: border-box;
+  }
+  .tx-screen .tx-rail-scroll {
+    overflow: visible !important;
+    flex: none !important;
+    padding: 0 16px 8px !important;
+  }
+  .tx-screen .tx-exchange {
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+
+  .tx-screen .tx-customer > .tx-lbl { display: none; }
+  .tx-screen .tx-customer,
+  .tx-screen .tx-exchange,
+  .tx-screen .tx-money,
+  .tx-screen .tx-pair,
+  .tx-screen .tx-split,
+  .tx-screen .tx-facts-card,
+  .tx-screen .tx-check {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .tx-screen .tx-custrow {
+    min-height: 48px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid var(--line, rgba(10, 10, 10, 0.14)) !important;
+    border-radius: 9px !important;
+    background: var(--cd-panel, #fff) !important;
+    padding: 4px 12px !important;
+    flex-wrap: nowrap !important;
+    gap: 8px;
+    box-sizing: border-box;
+  }
+  .tx-screen .tx-searchico { display: none; }
+  .tx-screen .tx-idstatus {
+    display: block;
+    flex: none;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .tx-screen .tx-custname {
+    flex: 1 1 auto;
+    width: auto !important;
+    max-width: 100%;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-size: 16px !important;
+    font-weight: 600;
+    min-width: 0 !important;
+    min-height: 44px;
+  }
+  .tx-screen .tx-custname::placeholder {
+    font-weight: 500;
+    color: rgba(10, 10, 10, 0.38);
+  }
+  .tx-screen .tx-idstatus {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  }
+
+  .tx-screen .tx-lbl > span:first-child {
+    font-size: 15px !important;
+    font-weight: 600;
+    color: var(--ink, #111) !important;
+  }
+  .tx-screen .tx-lbl > span:last-child:not(:first-child) { display: none; }
+  .tx-screen .tx-narrow { display: inline; }
+  .tx-screen .tx-wide { display: none; }
+
+  .tx-screen .tx-money {
+    min-height: 56px;
+    border-radius: 12px !important;
+  }
+  .tx-screen .tx-ccy {
+    min-width: 84px !important;
+    min-height: 56px !important;
+    font-size: 16px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .tx-screen .tx-form input.tx-amt,
+  .tx-screen .tx-amt {
+    font-size: 32px !important;
+    line-height: 1.1;
+    min-height: 56px !important;
+    min-width: 0 !important;
+    width: auto;
+  }
+  .tx-screen .tx-amt::placeholder { color: var(--ink, #111); opacity: 1; }
+
+  .tx-screen .tx-pair {
+    justify-content: space-between !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .tx-screen .tx-pair-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .tx-screen .tx-pair-side,
+  .tx-screen .tx-pair-rate {
+    font-size: 15px !important;
+    font-weight: 600;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    white-space: nowrap;
+    line-height: 1.25;
+  }
+  .tx-screen .tx-pair-side {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+  }
+  .tx-screen .tx-amt,
+  .tx-screen .tx-pair-rate,
+  .tx-screen .tx-split input,
+  .tx-screen .tx-ccy {
+    font-family: var(--f-mono, "Space Mono", monospace) !important;
+  }
+  .tx-screen .tx-swap {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    margin-left: auto;
+    padding: 0 !important;
+  }
+
+  .tx-screen .tx-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px;
+  }
+  .tx-screen .grid-cols-2:not(.tx-split) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .tx-screen .tx-form input,
+  .tx-screen .tx-form select,
+  .tx-screen .tx-form button,
+  .tx-screen .tx-split input {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+  .tx-screen .tx-quote-row {
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 8px;
+    border-top: 0 !important;
+    margin-top: 8px !important;
+    padding-top: 0 !important;
+  }
+  .tx-screen .tx-textquote {
+    flex: 1 1 auto !important;
+    min-height: 44px;
+    justify-content: center;
+    background: transparent !important;
+    color: var(--ink, #111) !important;
+    border: 1px solid var(--ink, #111) !important;
+    font-size: 15px !important;
+    white-space: nowrap;
+  }
+  .tx-screen .tx-textquote svg { stroke: var(--ink, #111) !important; }
+  .tx-screen .tx-override {
+    flex: none !important;
+    min-height: 44px;
+    background: transparent !important;
+    border: 0 !important;
+    color: var(--ink, #111) !important;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-size: 15px !important;
+    padding: 0 4px !important;
+    white-space: nowrap;
+  }
+  .tx-screen .tx-override svg { display: none; }
+
+  .tx-screen .tx-facts-card {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+  .tx-screen .tx-facts-card > * { margin-top: 0 !important; }
+  .tx-screen .tx-facts-title,
+  .tx-screen .tx-facts-intro { display: none !important; }
+  .tx-screen .tx-fact-full { grid-column: 1 / -1; }
+
+  .tx-screen .tx-ticket,
+  .tx-screen .tx-margin { display: none !important; }
+  .tx-screen .tx-check > .flex { flex-wrap: nowrap !important; align-items: center; gap: 8px; }
+  .tx-screen .tx-check-title {
+    font-size: 15px !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    color: var(--ink, #111) !important;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+  }
+  .tx-screen .tx-ready { font-size: 15px !important; }
+  .tx-screen .tx-ready-wide { display: none !important; }
+  .tx-screen .tx-ready-narrow {
+    display: inline;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    font-weight: 700;
+  }
+  .tx-screen .tx-check-line,
+  .tx-screen .tx-check-sub {
+    font-size: 15px !important;
+    line-height: 1.35 !important;
+  }
+  .tx-screen .tx-check-line { white-space: normal; }
+
+  .tx-screen .tx-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    background: var(--cd-paper, #f4f3f0);
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    border-top: 1px solid var(--hair, rgba(10, 10, 10, 0.1));
+    margin: 0;
+  }
+  .tx-screen .tx-showquote,
+  .tx-screen .tx-record,
+  .tx-screen .tx-actions .cdos-commit {
+    width: 100%;
+    min-height: 48px;
+    font-size: 16px !important;
+    border-radius: 12px !important;
+    white-space: nowrap;
+  }
+  .tx-screen .tx-showquote {
+    background: transparent !important;
+    border: 1.5px solid var(--ink, #111) !important;
+    color: var(--ink, #111) !important;
+  }
+  .tx-screen .tx-showquote:disabled {
+    color: rgba(10, 10, 10, 0.38) !important;
+    border-color: rgba(10, 10, 10, 0.25) !important;
+  }
+  /* The disabled post button keeps the "N to complete" label. On a
+     phone the faint-on-line pairing was too light to read. */
+  .tx-screen .tx-record:disabled,
+  .tx-screen .tx-actions .cdos-commit:disabled {
+    background: #e4e4e4 !important;
+    color: #3a3a3a !important;
+  }
+  .tx-ccymenu { max-width: calc(100vw - 24px); }
+  .tx-ccymenu button { min-height: 44px; font-size: 16px !important; }
+  .tx-screen .tx-cancel { display: none; }
+  .tx-screen input,
+  .tx-screen select,
+  .tx-screen textarea {
+    scroll-margin-top: 80px;
+    scroll-margin-bottom: 180px;
+  }
+
+  .tx-screen:has(.tx-sheet-scrim) .tx-actions { visibility: hidden; }
+  /* The phone dialog rule caps every direct child of a fixed
+     overlay (max-width, max-height, overflow). The sheet scrim is
+     one of those children, so without this it stopped short of the
+     screen and the form showed through underneath. */
+  .tx-screen.fixed.inset-0 > .tx-sheet-scrim {
+    position: fixed !important;
+    top: var(--tx-head, 0px) !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    z-index: 80;
+    background: rgba(10, 10, 10, 0.45);
+    display: flex;
+    align-items: flex-end;
+  }
+  .tx-sheet {
+    width: 100%;
+    max-height: 85vh;
+    overflow: auto;
+    background: var(--cd-paper, #f4f3f0);
+    border-radius: 16px 16px 0 0;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .tx-sheet-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 64px;
+    padding: 10px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--lineSoft, rgba(10, 10, 10, 0.07));
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    box-sizing: border-box;
+    appearance: none;
+  }
+  .tx-sheet-row.is-on { background: rgba(10, 10, 10, 0.05); }
+  .tx-sheet-ico {
+    width: 32px;
+    flex: none;
+    display: grid;
+    place-items: center;
+  }
+  .tx-sheet-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .tx-sheet-name {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--ink, #111);
+    white-space: nowrap;
+  }
+  .tx-sheet-blurb {
+    font-size: 15px;
+    line-height: 1.3;
+    color: rgba(10, 10, 10, 0.62);
+    text-wrap: pretty;
+  }
+}

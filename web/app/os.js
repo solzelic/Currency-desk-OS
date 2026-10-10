@@ -31874,7 +31874,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     useState,
     useMemo,
     useRef,
-    useEffect
+    useEffect,
+    useLayoutEffect
   } = React;
   const {
     CD,
@@ -32109,6 +32110,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }
   };
   const TYPE_LIST = Object.keys(TYPE_META);
+  /* Short names for the phone type card's second line. The sheet and
+     the desktop grid keep the existing labels (TYPE_META.short). */
+  const TYPE_COMPACT = {
+    'Currency Exchange': 'Exchange',
+    'Remittance — Send': 'Send',
+    'Remittance — Receive': 'Receive',
+    'Cheque Cashing': 'Cheque',
+    'Money Order': 'Money\u00a0order',
+    'Bill Payment': 'Bill'
+  };
 
   /* ---------- tiny shared bits ---------- */
   const inSty = {
@@ -32160,7 +32171,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
     }, [open]);
     if (disabled) return /*#__PURE__*/React.createElement("div", {
-      className: "px-3 grid place-items-center font-semibold text-sm flex-none",
+      className: "tx-ccy px-3 grid place-items-center font-semibold text-sm flex-none",
       style: {
         borderRight: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)',
@@ -32177,7 +32188,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ref: btnRef,
       type: "button",
       onClick: toggle,
-      className: "px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
+      className: "tx-ccy px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
       style: {
         borderRight: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)',
@@ -32189,6 +32200,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 12,
       c: CD.mute
     })), open && rect && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "tx-ccymenu",
       style: {
         position: 'fixed',
         left: rect.left,
@@ -32577,7 +32589,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     autoFocus
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-stretch",
+      className: "tx-money flex items-stretch",
       style: {
         border: `1px solid ${readOnly ? CD.line : CD.ink}`,
         borderRadius: 9,
@@ -32589,7 +32601,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onChange: onCcy,
       disabled: !onCcy
     }), readOnly ? /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-w-0 px-3 py-2.5 font-semibold text-right",
+      className: "tx-amt flex-1 min-w-0 px-3 py-2.5 font-semibold text-right",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: accent || CD.ink,
@@ -32601,7 +32613,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       inputMode: "decimal",
       autoFocus: autoFocus,
       placeholder: "0.00",
-      className: "flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none",
+      className: "tx-amt flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none",
       style: {
         fontVariantNumeric: 'tabular-nums',
         fontSize: big ? 22 : 16
@@ -32621,7 +32633,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     clients,
     onAddNew,
     onClear,
-    idRequired
+    idRequired,
+    status
   }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
@@ -32633,19 +32646,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return () => document.removeEventListener('mousedown', h);
     }, []);
     const shown = names.filter(n => n.toLowerCase().includes((query || '').toLowerCase()));
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
+    const statusTone = !status ? CD.mute : /required|expired/.test(status) || status === 'No ID' ? CD.flag : status === 'ID verified' ? CD.green : status === 'ID on file' ? CD.amber : CD.mute;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "tx-customer"
+    }, /*#__PURE__*/React.createElement(Lbl, {
       hint: hint
     }, label), /*#__PURE__*/React.createElement("div", {
       ref: wrap,
       className: "relative"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-2.5 py-2",
+      className: "tx-custrow flex items-center gap-2 px-2.5 py-2",
       style: inSty
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "tx-searchico"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "search",
       s: 15,
       c: CD.mute
-    }), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("input", {
       value: query,
       onFocus: () => setOpen(true),
       onChange: e => {
@@ -32653,12 +32671,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setOpen(true);
       },
       placeholder: "Type a name\u2026",
-      className: "w-full outline-none text-sm bg-transparent"
-    }), query && /*#__PURE__*/React.createElement("button", {
+      className: "tx-custname w-full outline-none text-sm bg-transparent"
+    }), status ? /*#__PURE__*/React.createElement("span", {
+      className: "tx-idstatus",
+      style: {
+        color: statusTone
+      }
+    }, status) : null, query && /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         onClear();
         setOpen(false);
-      }
+      },
+      "aria-label": "Clear customer"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 14,
@@ -33084,13 +33108,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }) : null), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px] leading-tight",
+      className: "tx-check-line text-[12.5px] leading-tight",
       style: {
         color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute,
         fontWeight: ok ? 500 : 400
       }
     }, label), sub && /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5 leading-snug",
+      className: "tx-check-sub text-[11px] mt-0.5 leading-snug",
       style: {
         color: warn ? CD.amber : CD.faint
       }
@@ -33196,6 +33220,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [marginReason, setMarginReason] = useState('');
     const [memo, setMemo] = useState('');
     const [present, setPresent] = useState(false);
+    const [typeSheet, setTypeSheet] = useState(false);
     // Texts hold redemption — the ref the customer reads at the counter
     const [tqIn, setTqIn] = useState('');
     const [tq, setTq] = useState(null);
@@ -33204,13 +33229,121 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    const typeRestRef = useRef(null);
+    /* Types whose name starts a wrapped line. The dot is a prefix, so
+       a wrapped name would otherwise open its line with " · ". */
+    const [typeBreaks, setTypeBreaks] = useState([]);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const sync = () => setPhoneLayout(mq.matches);
+      sync();
+      mq.addEventListener('change', sync);
+      return () => mq.removeEventListener('change', sync);
+    }, []);
+    useLayoutEffect(() => {
+      if (!phoneLayout) {
+        setTypeBreaks(prev => prev.length ? [] : prev);
+        return undefined;
+      }
+      const root = typeRestRef.current;
+      if (!root) return undefined;
+      const apply = () => {
+        const items = [...root.querySelectorAll(':scope > .tx-typeitem')];
+        const breaks = [...root.querySelectorAll(':scope > .tx-typebreak')];
+        breaks.forEach(el => {
+          el.hidden = true;
+        });
+        items.forEach(el => el.classList.remove('is-linestart'));
+        const next = [];
+        let prevTop = null;
+        items.forEach(el => {
+          const top = el.offsetTop;
+          if (prevTop != null && top > prevTop + 1) next.push(el.getAttribute('data-type'));
+          prevTop = top;
+        });
+        const want = new Set(next);
+        items.forEach(el => el.classList.toggle('is-linestart', want.has(el.getAttribute('data-type'))));
+        breaks.forEach(el => {
+          el.hidden = !want.has(el.getAttribute('data-type'));
+        });
+        setTypeBreaks(prev => prev.join('\n') === next.join('\n') ? prev : next);
+      };
+      apply();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(apply) : null;
+      if (ro) ro.observe(root);
+      return () => {
+        if (ro) ro.disconnect();
+      };
+    }, [phoneLayout, type]);
     useEffect(() => {
       const h = e => {
-        if (e.key === 'Escape' && !present) onClose();
+        if (e.key !== 'Escape' || present) return;
+        if (typeSheet) {
+          setTypeSheet(false);
+          return;
+        }
+        onClose();
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present]);
+    }, [onClose, present, typeSheet]);
+    /* Phone only. The page sits under the shop header, the round +
+       and the bottom bar step aside, and a focused field scrolls
+       clear of the keyboard and the thumb buttons. Desktop never
+       matches, so none of this runs there. */
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      if (!mq.matches) return undefined;
+      document.body.classList.add('tx-open');
+      const head = document.querySelector('.phone-head');
+      const applyHead = () => {
+        const h = head ? Math.round(head.getBoundingClientRect().height) : 0;
+        document.documentElement.style.setProperty('--tx-head', h + 'px');
+      };
+      applyHead();
+      let ro = null;
+      if (head && typeof ResizeObserver === 'function') {
+        ro = new ResizeObserver(applyHead);
+        ro.observe(head);
+      }
+      const intoView = el => {
+        if (!el || !el.getBoundingClientRect || !el.closest || !el.closest('.tx-screen')) return;
+        const r = el.getBoundingClientRect();
+        const vv = window.visualViewport;
+        const top = vv ? vv.offsetTop : 0;
+        const height = vv ? vv.height : window.innerHeight;
+        const visibleTop = top + 12;
+        const visibleBottom = top + height - 160;
+        if (r.top >= visibleTop && r.bottom <= visibleBottom) return;
+        try {
+          el.scrollIntoView({
+            block: 'center',
+            inline: 'nearest'
+          });
+        } catch (err) {}
+        const scroller = el.closest('.tx-panel') || el.closest('.tx-body');
+        if (scroller) scroller.scrollLeft = 0;
+      };
+      const onFocus = e => intoView(e.target);
+      document.addEventListener('focusin', onFocus);
+      const vv = window.visualViewport;
+      const onVv = () => intoView(document.activeElement);
+      if (vv) {
+        vv.addEventListener('resize', onVv);
+        vv.addEventListener('scroll', onVv);
+      }
+      return () => {
+        document.body.classList.remove('tx-open');
+        document.documentElement.style.removeProperty('--tx-head');
+        if (ro) ro.disconnect();
+        document.removeEventListener('focusin', onFocus);
+        if (vv) {
+          vv.removeEventListener('resize', onVv);
+          vv.removeEventListener('scroll', onVv);
+        }
+      };
+    }, []);
     useEffect(() => {
       if (!lock) return;
       const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -33371,6 +33504,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
     const idRequired = !paused && (ukIdRequired != null ? ukIdRequired : aeTransfer ? true : ph ? unpriced || !idRow || idRow.threshold == null || overId : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);
     const idOk = kyc === 'ok';
+    /* The words already used on this screen: the customer badge when
+       a file is open, otherwise the checklist's "No ID needed" /
+       "ID required". Display only — the checklist below is unchanged. */
+    let idVerified = false;
+    if (customer && rec) {
+      try {
+        const ch = window.CDOS.KYC && window.CDOS.KYC.checksFor(customer) || [];
+        idVerified = ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved');
+      } catch (e) {
+        idVerified = false;
+      }
+    }
+    const idStatusText = !customer.trim() || !rec ? idRequired ? 'ID required' : 'No ID needed' : !rec.idType || !rec.idNum ? 'No ID' : rec.idExpiry && rec.idExpiry < TODAY ? 'ID expired' : idVerified ? 'ID verified' : 'ID on file';
     const recent = useMemo(() => {
       if (!customer) return {
         sum: 0,
@@ -34087,7 +34233,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
-      className: "fixed inset-0 flex items-center justify-center p-4",
+      className: "tx-screen fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: addFlow || quickChk ? 8000 : 9200
@@ -34095,7 +34241,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onMouseDown: addFlow || quickChk ? undefined : onClose
     }, /*#__PURE__*/React.createElement("div", {
       onMouseDown: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "tx-panel w-full flex flex-col",
       style: {
         maxWidth: 940,
         maxHeight: 'calc(100vh - 32px)',
@@ -34106,7 +34252,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between px-5 py-3.5",
+      className: "tx-head flex-none flex items-center justify-between px-5 py-3.5",
       style: {
         borderBottom: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
@@ -34114,7 +34260,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2.5"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center",
+      className: "tx-head-mark grid place-items-center",
       style: {
         width: 32,
         height: 32,
@@ -34126,33 +34272,65 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 17,
       c: "var(--cd-on-ink)"
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "font-semibold leading-tight",
+      className: "tx-title font-semibold leading-tight",
       style: {
         color: CD.ink
       }
     }, "New transaction"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "tx-head-sub text-[11px]",
       style: {
         color: CD.mute
       }
     }, meta.short, " \xB7 ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: onClose,
-      className: "p-1.5",
+      className: "tx-close p-1.5",
+      "aria-label": "Close",
       style: {
         borderRadius: 8
       }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "tx-close-x"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
       c: CD.mute
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none px-5 pt-3.5 pb-3",
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "tx-close-back"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "arrowleft",
+      s: 20,
+      c: CD.ink
+    })))), /*#__PURE__*/React.createElement("div", {
+      className: "tx-types flex-none px-5 pt-3.5 pb-3",
       style: {
         borderBottom: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "grid gap-1.5",
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "tx-typecard",
+      "aria-haspopup": "listbox",
+      "aria-expanded": typeSheet,
+      onClick: () => setTypeSheet(true)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "tx-typecard-now"
+    }, meta.short), /*#__PURE__*/React.createElement("span", {
+      className: "tx-typecard-rest",
+      ref: typeRestRef
+    }, TYPE_LIST.filter(t => t !== type).map(t => {
+      const broken = typeBreaks.indexOf(t) >= 0;
+      return [broken ? /*#__PURE__*/React.createElement("br", {
+        key: t + '-br',
+        className: "tx-typebreak",
+        "data-type": t
+      }) : null, /*#__PURE__*/React.createElement("span", {
+        key: t,
+        "data-type": t,
+        className: 'tx-typeitem' + (broken ? ' is-linestart' : '')
+      }, TYPE_COMPACT[t])];
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "tx-typegrid grid gap-1.5",
       style: {
         gridTemplateColumns: 'repeat(6, 1fr)'
       }
@@ -34181,7 +34359,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }, m.short));
     })), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-2.5 flex items-center gap-1.5",
+      className: "tx-typeblurb text-[12px] mt-2.5 flex items-center gap-1.5",
       style: {
         color: CD.mute
       }
@@ -34192,13 +34370,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " ", meta.blurb)), /*#__PURE__*/React.createElement("div", {
       className: "tx-body flex-1 min-h-0 flex"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4",
+      className: "tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4",
       style: {
         borderRight: `1px solid ${CD.line}`
       }
     }, /*#__PURE__*/React.createElement(CustomerPicker, {
       label: custLabel,
       hint: idRequired ? 'ID required' : 'optional',
+      status: idStatusText,
       value: customer,
       query: query,
       setQuery: v => {
@@ -34291,13 +34470,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       idRequired: idRequired && kyc !== 'ok',
       onRun: tpl => setQuickChk(tpl)
     }), isExchange && /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5",
+      className: "tx-exchange p-3.5",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays in"), /*#__PURE__*/React.createElement(Money, {
+    }, /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Customer pays in"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Pays in")), /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
       ccy: inCcy,
@@ -34308,9 +34491,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true,
       autoFocus: true
     }), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-center gap-2 py-2"
+      className: "tx-pair flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
+      className: "tx-pair-text"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "tx-pair-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
       style: {
         borderRadius: 5,
         background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft,
@@ -34318,15 +34503,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontFamily: 'Space Mono, monospace'
       }
     }, pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+      className: "tx-pair-rate text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy)), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
-      className: "p-1",
+      className: "tx-swap p-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 7
@@ -34335,7 +34520,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "swap",
       s: 13,
       c: CD.mute
-    }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
+    }))), /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Customer receives"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Receives")), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: outCcy,
       onCcy: v => {
@@ -34346,7 +34535,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       accent: CD.green,
       big: true
     }), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-2 gap-2 mt-3"
+      className: "tx-split grid grid-cols-2 gap-2 mt-3"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
       hint: override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'
     }, "Rate"), /*#__PURE__*/React.createElement("div", {
@@ -34397,7 +34586,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums'
       }
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between gap-1.5 mt-2.5 pt-2.5",
+      className: "tx-quote-row flex items-center justify-between gap-1.5 mt-2.5 pt-2.5",
       style: {
         borderTop: `1px solid ${CD.lineSoft}`
       }
@@ -34407,7 +34596,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setTqErr('');
       },
       title: "The customer got a quote by text \u2014 enter their ref and it fills this deal in",
-      className: "tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold",
+      className: "tx-textquote tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold",
       style: {
         border: '1px solid #8A4B2F',
         background: tqOpen ? '#F2E6DD' : '#8A4B2F',
@@ -34440,7 +34629,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       },
       title: override ? 'Back to the desk rate' : 'Hand-price this deal',
-      className: "flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium",
+      className: "tx-override flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium",
       style: {
         border: `1px solid ${override ? CD.ink : CD.line}`,
         background: override ? CD.ink : 'transparent',
@@ -34894,14 +35083,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, fmt(amtN + feeN, home)), " \u2014 ", fmt(amtN, home), " to biller, ", fmt(feeN, home), " fee.")), single && /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5 space-y-2.5",
+      className: "tx-facts-card p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.flag}`,
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5"
+      className: "tx-facts-title flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "filetext",
       s: 14,
@@ -34912,32 +35101,46 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, "Reportable \u2014 capture for the ", regime.largeCode)), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "tx-facts-intro text-[11px]",
       style: {
         color: CD.mute
       }
-    }, "This deal is \u2265 ", limit.label, ". Capture now while the customer is here \u2014 it pre-fills the filing."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
+    }, "This deal is \u2265 ", limit.label, ". Capture now while the customer is here \u2014 it pre-fills the filing."), /*#__PURE__*/React.createElement("div", {
+      className: "tx-fact"
+    }, /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Purpose of transaction"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Purpose")), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: purpose.trim() ? CD.line : CD.flag
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Source of funds"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "tx-fact"
+    }, /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Source of funds"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Source of funds")), /*#__PURE__*/React.createElement("input", {
       value: cap.source,
       onChange: e => setCap(s => ({
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: cap.source.trim() ? CD.line : CD.flag
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Acting for someone else?"), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "tx-fact-full"
+    }, /*#__PURE__*/React.createElement(Lbl, null, "Acting for someone else?"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("div", {
       className: "inline-flex flex-none",
@@ -34974,14 +35177,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag
       }
     })))), serverBacked && isExchange && !single && /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5 space-y-2.5",
+      className: "tx-facts-card p-3.5 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5"
+      className: "tx-facts-title flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "shield",
       s: 14,
@@ -34992,26 +35195,38 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, "Authoritative ledger record")), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "tx-facts-intro text-[11px]",
       style: {
         color: CD.mute
       }
-    }, "Required for server posting and the permanent audit trail."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
+    }, "Required for server posting and the permanent audit trail."), /*#__PURE__*/React.createElement("div", {
+      className: "tx-fact"
+    }, /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Purpose of transaction"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Purpose")), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: purpose.trim() ? CD.line : CD.flag
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Source of funds"), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "tx-fact"
+    }, /*#__PURE__*/React.createElement(Lbl, null, /*#__PURE__*/React.createElement("span", {
+      className: "tx-wide"
+    }, "Source of funds"), /*#__PURE__*/React.createElement("span", {
+      className: "tx-narrow"
+    }, "Source of funds")), /*#__PURE__*/React.createElement("input", {
       value: cap.source,
       onChange: e => setCap(s => ({
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35064,14 +35279,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex flex-col",
+      className: "tx-rail flex-none flex flex-col",
       style: {
         width: 320,
         background: 'var(--cd-chip)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto p-4 space-y-3"
+      className: "tx-rail-scroll flex-1 overflow-auto p-4 space-y-3"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "tx-ticket",
       style: {
         background: CD.ink,
         borderRadius: 12,
@@ -35172,7 +35388,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)'
       }
     }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between px-3 py-2",
+      className: "tx-margin flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${belowFloor ? CD.flag : CD.line}`,
@@ -35195,7 +35411,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums'
       }
     }, fmt(profitCad, home), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
-      className: "px-3.5 py-3",
+      className: "tx-check px-3.5 py-3",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
@@ -35204,20 +35420,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between mb-1"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] uppercase tracking-wider font-semibold",
+      className: "tx-check-title text-[10px] uppercase tracking-wider font-semibold",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Before you post"), /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5",
+      className: "tx-ready text-[10px] px-1.5 py-0.5",
       style: {
         borderRadius: 999,
         background: allGreen ? CD.greenSoft : CD.lineSoft,
         color: allGreen ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, allGreen ? 'READY' : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "tx-ready-wide"
+    }, allGreen ? 'READY' : `${remaining} LEFT`), /*#__PURE__*/React.createElement("span", {
+      className: "tx-ready-narrow"
+    }, allGreen ? 'Ready' : `${remaining} left`))), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
       key: r.key,
       ok: r.ok,
       warn: r.warn && !r.ok,
@@ -35235,7 +35455,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
     }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 space-y-2",
+      className: "tx-actions flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
@@ -35243,7 +35463,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, (isExchange || isSend) && /*#__PURE__*/React.createElement("button", {
       onClick: () => setPresent(true),
       disabled: !(amtN > 0 && rateN > 0),
-      className: "w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium",
+      className: "tx-showquote w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 9,
@@ -35282,7 +35502,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, serverError), /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
       disabled: !canSave || serverBusy,
-      className: "w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      className: "tx-record w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
         background: !canSave || serverBusy ? CD.line : CD.ink,
@@ -35299,18 +35519,55 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       label: allGreen ? 'Record transaction' : `${remaining} to complete`,
       doneLabel: "Recorded",
       title: "Post this transaction to the ledger",
-      className: "w-full justify-center",
+      className: "tx-record w-full justify-center",
       style: {
         padding: '0.65rem 1rem',
         fontSize: 14
       }
     }), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
-      className: "w-full py-2 text-[12px]",
+      className: "tx-cancel w-full py-2 text-[12px]",
       style: {
         color: CD.mute
       }
-    }, "Cancel"))))), present && /*#__PURE__*/React.createElement(PresentQuote, {
+    }, "Cancel"))))), typeSheet && /*#__PURE__*/React.createElement("div", {
+      className: "tx-sheet-scrim",
+      onMouseDown: e => {
+        e.stopPropagation();
+        setTypeSheet(false);
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "tx-sheet",
+      role: "listbox",
+      "aria-label": "Deal type",
+      onMouseDown: e => e.stopPropagation()
+    }, TYPE_LIST.map(t => {
+      const m = TYPE_META[t];
+      const on = type === t;
+      return /*#__PURE__*/React.createElement("button", {
+        key: t,
+        type: "button",
+        role: "option",
+        "aria-selected": on,
+        className: 'tx-sheet-row' + (on ? ' is-on' : ''),
+        onClick: () => {
+          setType(t);
+          setTypeSheet(false);
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "tx-sheet-ico"
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: m.icon,
+        s: 22,
+        c: on ? CD.ink : CD.mute
+      })), /*#__PURE__*/React.createElement("span", {
+        className: "tx-sheet-copy"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "tx-sheet-name"
+      }, m.short), /*#__PURE__*/React.createElement("span", {
+        className: "tx-sheet-blurb"
+      }, m.blurb)));
+    }))), present && /*#__PURE__*/React.createElement(PresentQuote, {
       q: presentQ,
       onClose: () => setPresent(false)
     }), addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, {

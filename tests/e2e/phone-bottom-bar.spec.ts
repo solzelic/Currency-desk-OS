@@ -165,7 +165,7 @@ test("the plus opens new transaction", async ({ page }) => {
   const deal = page.locator(".fixed.inset-0");
   await expect(deal.getByText("New transaction", { exact: true })).toBeVisible();
   await expect(deal.getByRole("button", { name: "Exchange" })).toBeVisible();
-  await expect(deal.getByText("Customer pays in", { exact: true })).toBeVisible();
+  await expect(deal.getByText("Pays in", { exact: true })).toBeVisible();
 });
 
 test("the window title bar is hidden on a phone and visible on the desktop", async ({ page }) => {
