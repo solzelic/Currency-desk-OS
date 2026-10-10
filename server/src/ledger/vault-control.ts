@@ -106,6 +106,43 @@ const branchScope = (actor: LedgerActor) => [
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
 
+/* Postgres named this itself from the UNIQUE (tenant, entity, branch,
+   idempotency_key) in migration 009, and truncated it at 63 characters.
+   A 23505 from the primary key is not a replay of this key. */
+export const VAULT_IDEMPOTENCY_CONSTRAINT =
+  "ledger_vault_movements_tenant_id_legal_entity_id_branch_id__key";
+
+export const CHANGED_MOVEMENT_MESSAGE =
+  "This form was already sent with different details. Nothing else was moved.";
+
+/* The row already stored for this key, against the form the teller just
+   submitted. Amounts compare as money, so 100 and 100.00 are the same
+   movement. A char(3) currency comes back padded. */
+export function sameStoredMovement(
+  row: Record<string, unknown>,
+  expected: {
+    direction: string;
+    currency: string;
+    amount: string;
+    counterpartyType: string;
+    counterpartyRef: string;
+    reason: string;
+  },
+) {
+  return (
+    row.direction === expected.direction &&
+    String(row.currency).trim() === expected.currency.trim() &&
+    new Decimal(String(row.amount)).eq(expected.amount) &&
+    row.counterparty_type === expected.counterpartyType &&
+    row.counterparty_ref === expected.counterpartyRef &&
+    row.reason === expected.reason
+  );
+}
+
+function changedMovement() {
+  return new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
+}
+
 const movementJson = (row: Record<string, unknown>) => ({
   movementId: row.movement_id,
   branchId: row.branch_id,
@@ -521,7 +558,21 @@ export class VaultControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "vault:move");
-      const existing = await this.replay(client, actor.branchId, actor, input.idempotencyKey);
+      const existing = await this.replay(
+        client,
+        actor.branchId,
+        actor,
+        input.idempotencyKey,
+        (row) =>
+          sameStoredMovement(row, {
+            direction: input.direction,
+            currency: input.currency,
+            amount: input.amount,
+            counterpartyType: input.counterpartyType,
+            counterpartyRef: input.counterpartyRef,
+            reason: input.reason,
+          }),
+      );
       if (existing) {
         await client.query("COMMIT");
         return existing;
@@ -585,9 +636,16 @@ export class VaultControlService {
     } catch (error) {
       await client.query("ROLLBACK");
       /* Same race as a till float: both deliveries passed the replay
-         read, one insert won. The loser hands back that delivery. */
-      if ((error as { code?: string }).code === "23505") {
-        const replayed = await this.replayLost(actor, input.idempotencyKey);
+         read, one insert won. Only this table's idempotency constraint
+         is that race. The loser then compares the body, the same way
+         the read above does, and hands back the delivery only when it
+         is the same one. */
+      const pgError = error as { code?: string; constraint?: string };
+      if (
+        pgError.code === "23505" &&
+        pgError.constraint === VAULT_IDEMPOTENCY_CONSTRAINT
+      ) {
+        const replayed = await this.replayLost(actor, input);
         if (replayed) return replayed;
       }
       throw this.conflict(error);
@@ -596,11 +654,25 @@ export class VaultControlService {
     }
   }
 
-  private async replayLost(actor: LedgerActor, idempotencyKey: string) {
+  private async replayLost(actor: LedgerActor, input: ReceiveInput) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const existing = await this.replay(client, actor.branchId, actor, idempotencyKey);
+      const existing = await this.replay(
+        client,
+        actor.branchId,
+        actor,
+        input.idempotencyKey,
+        (row) =>
+          sameStoredMovement(row, {
+            direction: input.direction,
+            currency: input.currency,
+            amount: input.amount,
+            counterpartyType: input.counterpartyType,
+            counterpartyRef: input.counterpartyRef,
+            reason: input.reason,
+          }),
+      );
       if (!existing) {
         await client.query("ROLLBACK");
         return null;
@@ -742,7 +814,21 @@ export class VaultControlService {
          anyway — the operator must be authorized for the destination, and
          the destination must have stated a vault position. A branch that
          satisfies both is real by construction. */
-      const existing = await this.replay(client, actor.branchId, actor, input.idempotencyKey);
+      const existing = await this.replay(
+        client,
+        actor.branchId,
+        actor,
+        input.idempotencyKey,
+        (row) =>
+          sameStoredMovement(row, {
+            direction: "out",
+            currency: input.currency,
+            amount: input.amount,
+            counterpartyType: "vault",
+            counterpartyRef: input.toBranchId,
+            reason: input.reason,
+          }),
+      );
       if (existing) {
         await client.query("COMMIT");
         return existing;
@@ -899,20 +985,23 @@ export class VaultControlService {
 
   /* An idempotency key already used at this branch means the caller is
      retrying — hand back what happened the first time rather than moving
-     the money twice. */
+     the money twice. A key that comes back with a different body is not
+     a retry. `matches` is the same comparison the 23505 path uses. */
   private async replay(
     client: pg.PoolClient,
     branchId: string,
     actor: LedgerActor,
     idempotencyKey: string,
+    matches: (row: Record<string, unknown>) => boolean,
   ) {
     const found = await client.query(
-      `SELECT movement_id FROM ledger_vault_movements
+      `SELECT * FROM ledger_vault_movements
         WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
           AND idempotency_key=$4`,
       [actor.tenantId, actor.legalEntityId, branchId, idempotencyKey],
     );
     if (!found.rowCount) return null;
+    if (!matches(found.rows[0])) throw changedMovement();
     return this.snapshot(client, actor, found.rows[0].movement_id);
   }
 

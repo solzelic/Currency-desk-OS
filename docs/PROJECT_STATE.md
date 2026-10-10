@@ -407,7 +407,9 @@ authenticated narrative dashboard.
 (one key per currency), and a wholesale delivery form each keep one
 idempotency key until that movement finishes, including a retry and a
 second tap. Two requests that arrive together under that key replay
-the one movement. A new form is a new movement.
+the one movement. A known key whose amount, currency, direction, or
+the rest of the movement differs is refused, and nothing else moves.
+A new form is a new movement.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

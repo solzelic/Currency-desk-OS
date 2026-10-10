@@ -129,6 +129,34 @@ test("a lost answer on Move cash does not float the drawer twice", async ({ page
   await restoreTill(page, "CAD", before);
 });
 
+test("a lost answer then a changed amount does not replay the first float", async ({ page }) => {
+  const book = await prepareDesk(page);
+  const before = held(await book.till(), "CAD");
+  const posts = await loseFirstResponse(page, "/api/ledger/till-movements");
+
+  await page.getByText(/Cash Drawer/i).first().click();
+  await page.getByRole("button", { name: /^Move cash$/i }).first().click();
+  const amount = page.locator('input[placeholder="0"]').last();
+  await amount.fill(String(FLOAT));
+  const submit = page.getByRole("button", { name: /Issue float/i }).last();
+  await submit.click();
+  await expect(page.getByText(/The response was lost/i)).toBeVisible();
+
+  /* The form is still open and still holds its key. The teller changes
+     the amount and taps again. The first float must not come back as
+     if it were this one. */
+  await amount.fill(String(FLOAT * 2));
+  await submit.click();
+  await expect(page.getByText(/different details/i)).toBeVisible();
+  await expect.poll(() => posts.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  expect(posts[0]?.status).toBe(201);
+  expect(posts[1]?.status).toBe(409);
+  expect(posts[0]?.key).toBe(posts[1]?.key);
+  expect(held(await book.till(), "CAD")).toBe(before + FLOAT);
+
+  await restoreTill(page, "CAD", before);
+});
+
 test("a lost answer on Issue to till does not float the drawer twice", async ({ page }) => {
   const book = await prepareDesk(page);
   const before = held(await book.till(), "CAD");

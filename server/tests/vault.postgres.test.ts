@@ -229,6 +229,113 @@ postgres("vault control against real PostgreSQL", () => {
     expect(leg.reason).toBe("morning float");
   });
 
+  it("refuses the same key when the amount, currency, or direction changed", async () => {
+    const cookies = await cookie();
+    await openVault({ CAD: "50000.00", USD: "20000.00" }, cookies);
+    const first = await float(cookies, {
+      idempotencyKey: "changed-form",
+      direction: "in",
+      currency: "CAD",
+      amount: "100.00",
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    const changedAmount = await float(cookies, {
+      idempotencyKey: "changed-form",
+      direction: "in",
+      currency: "CAD",
+      amount: "250.00",
+    });
+    expect(changedAmount.statusCode, changedAmount.body).toBe(409);
+    expect(changedAmount.json().message).toBe(
+      "This form was already sent with different details. Nothing else was moved.",
+    );
+
+    const changedCurrency = await float(cookies, {
+      idempotencyKey: "changed-form",
+      direction: "in",
+      currency: "USD",
+      amount: "100.00",
+    });
+    expect(changedCurrency.statusCode).toBe(409);
+    expect(changedCurrency.json().message).toMatch(/different details/);
+
+    const changedDirection = await float(cookies, {
+      idempotencyKey: "changed-form",
+      direction: "out",
+      currency: "CAD",
+      amount: "100.00",
+    });
+    expect(changedDirection.statusCode).toBe(409);
+
+    /* The first 100 is the only movement. The edited submits did not
+       replay it as a success, and they did not move anything else. */
+    expect(
+      (
+        await pool.query(
+          "SELECT available_amount FROM ledger_till_balances WHERE currency='CAD'",
+        )
+      ).rows[0].available_amount,
+    ).toBe("25100.00");
+    expect(
+      (
+        await pool.query(
+          "SELECT available_amount FROM ledger_till_balances WHERE currency='USD'",
+        )
+      ).rows[0].available_amount,
+    ).toBe("12000.00");
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM ledger_operational_cash_movements",
+        )
+      ).rows[0].n,
+    ).toBe(1);
+    expect((await vaultOf(cookies)).balances.CAD).toBe("49900.00");
+  });
+
+  it("refuses a wholesale delivery when the same key comes back with a different amount", async () => {
+    const cookies = await cookie();
+    await openVault({ USD: "20000.00" }, cookies);
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/receipts",
+      payload: {
+        idempotencyKey: "wholesale-changed",
+        direction: "in",
+        currency: "USD",
+        amount: "1000.00",
+        counterpartyType: "supplier",
+        counterpartyRef: "Continental FX",
+        reason: "weekly USD order",
+      },
+      cookies,
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/receipts",
+      payload: {
+        idempotencyKey: "wholesale-changed",
+        direction: "in",
+        currency: "USD",
+        amount: "9000.00",
+        counterpartyType: "supplier",
+        counterpartyRef: "Continental FX",
+        reason: "weekly USD order",
+      },
+      cookies,
+    });
+    expect(second.statusCode, second.body).toBe(409);
+    expect(second.json().message).toBe(
+      "This form was already sent with different details. Nothing else was moved.",
+    );
+    expect((await vaultOf(cookies)).balances.USD).toBe("21000.00");
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_vault_movements")).rows[0].n,
+    ).toBe(1);
+  });
+
   it("does not move the money twice when a float is retried", async () => {
     const cookies = await cookie();
     await openVault({ CAD: "50000.00" }, cookies);
