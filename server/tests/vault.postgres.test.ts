@@ -129,26 +129,44 @@ postgres("vault control against real PostgreSQL", () => {
     await reset();
   });
 
-  it("reports an unstated vault as untracked and leaves floats unbalanced", async () => {
+  it("refuses to float a till from a vault that has not been opened", async () => {
     const cookies = await cookie();
     expect((await vaultOf(cookies)).tracked).toBe(false);
 
-    /* A desk that has never said what is in its safe is not balanced
-       against zero — that would be inventing a figure for their cash. The
-       float still works and says plainly that the vault side is untracked. */
     const response = await float(cookies, {
       idempotencyKey: "pre-vault",
       direction: "in",
       currency: "CAD",
-      amount: "100.00",
+      amount: "50.00",
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().code).toBe("VAULT_NOT_INITIALIZED");
+    expect(response.json().message).toBe("Open the vault with a starting count first.");
+    expect(
+      (await pool.query("SELECT available_amount FROM ledger_till_balances WHERE currency='CAD'"))
+        .rows[0].available_amount,
+    ).toBe("25000.00");
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_operational_cash_movements")).rows[0].n,
+    ).toBe(0);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_vault_movements")).rows[0].n,
+    ).toBe(0);
+  });
+
+  it("still takes cash from a bank when the vault has not been opened", async () => {
+    const cookies = await cookie();
+    const response = await float(cookies, {
+      idempotencyKey: "bank-before-vault",
+      direction: "in",
+      currency: "CAD",
+      amount: "25.00",
+      counterpartyType: "bank",
+      counterpartyRef: "RBC night drop",
+      reason: "bank delivery",
     });
     expect(response.statusCode).toBe(201);
-    expect(response.json().vaultTracked).toBe(false);
-    expect(response.json().balances.CAD).toBe("25100.00");
-    expect(
-      (await pool.query("SELECT count(*)::int AS n FROM ledger_vault_movements"))
-        .rows[0].n,
-    ).toBe(0);
+    expect(response.json().balances.CAD).toBe("25025.00");
   });
 
   it("states an opening position exactly once", async () => {

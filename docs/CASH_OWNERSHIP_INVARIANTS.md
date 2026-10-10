@@ -91,7 +91,10 @@ the daily close overwrites the evidence that they did.
 
 - **Balances are never invented for an unstated position.** A branch that has
   not declared its vault opening position is reported as untracked, not as
-  zero. Zero is a claim about somebody's cash; only they can make it.
+  zero. Zero is a claim about somebody's cash; only they can make it. A
+  float that names that vault is refused — "Open the vault with a starting
+  count first." — and the till is not credited. Cash from a bank does not
+  name the vault, and still posts.
 
 - **The physical count is the only external truth, and it is recorded, not
   assumed.** A close writes counted figures back as balances. It therefore

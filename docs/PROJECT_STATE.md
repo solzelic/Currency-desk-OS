@@ -351,7 +351,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
   saved history through the real quote / ledger / client-record
   services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
-  `siteSlug=yorkfx`.   It also states a vault opening position (CAD
+  `siteSlug=yorkfx`. It also states a vault opening position (CAD
   40,000, USD 20,000, EUR 10,000, GBP 5,000) once, so a float comes
   out of the safe. A book that already has its history and has never
   stated a vault position still gets that count. A later boot does
@@ -406,6 +406,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, Vault float. Taking cash from a vault that has no opening
+count is refused. The till is not credited, and nothing is subtracted
+from a figure the book does not have. The message is "Open the vault
+with a starting count first." Cash that arrives from a bank still posts.
+The York FX demo states a vault opening, so a float on that desk comes
+out of the safe.
 
 **2026-10-10**, Demo vault. York FX populate states a vault opening
 position once. A float of 500.00 CAD takes 500.00 out of that safe
