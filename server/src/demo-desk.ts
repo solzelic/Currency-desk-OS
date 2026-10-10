@@ -35,6 +35,7 @@ import { ensureLedgerPrincipal } from "./ledger/principal.js";
 import { resolvePack, type JurisdictionPack } from "./ledger/jurisdiction.js";
 import { LedgerError, type LedgerActor } from "./ledger/service.js";
 import { TillControlService } from "./ledger/till-control.js";
+import { VaultControlService } from "./ledger/vault-control.js";
 import { QuoteService, boardMaxAgeSeconds } from "./quotes/service.js";
 import type { QuoteDirection } from "./quotes/terms.js";
 import { DEMO } from "./seed.js";
@@ -222,6 +223,17 @@ const OPENING_BALANCES = {
   GBP: "3500.00",
 } as const;
 
+/* What is still in the safe. The drawer above is a separate count.
+   A visitor who issues a float has this reserve to take it from.
+   Stated once: a later boot is told the vault is already open and
+   does not add these figures again. */
+const VAULT_OPENING = {
+  CAD: "40000.00",
+  USD: "20000.00",
+  EUR: "10000.00",
+  GBP: "5000.00",
+} as const;
+
 export function demoStaffRowId(tenantId: string = DEMO.tenantId): string {
   return `${tenantId}:${DEMO_STAFF_ID}`;
 }
@@ -361,6 +373,18 @@ async function ensureOpeningBalances(pool: pg.Pool, admin: LedgerActor) {
     ) {
       return;
     }
+    throw error;
+  }
+}
+
+async function ensureVaultOpening(pool: pg.Pool, admin: LedgerActor) {
+  const vault = new VaultControlService(pool);
+  try {
+    await vault.initialize(admin, { ...VAULT_OPENING });
+  } catch (error) {
+    /* The safe was already counted. Adding the reserve again would
+       double the cash. */
+    if (error instanceof LedgerError && error.code === "VAULT_ALREADY_INITIALIZED") return;
     throw error;
   }
 }
@@ -555,6 +579,10 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const admin = demoActor("administrator");
   await ensureLedgerPrincipal(pool, admin);
   await ensureOpeningBalances(pool, admin);
+  /* Before the history walk. A York FX book that already has its
+     deals, and has never stated a vault position, still gets this
+     opening. The tenant gates above are the only early returns. */
+  await ensureVaultOpening(pool, admin);
   await ensureLedgerPrincipal(pool, teller);
 
   await ensureDemoRateBoard(db, pool);

@@ -387,6 +387,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                    else has already dealt with, and 409 is what tells it
                    to go and look again. */
                 error.code === "CHEQUE_NOT_HELD" ||
+                error.code === "CHEQUE_ALREADY_HELD" ||
                 /* Same story on an obligation somebody has already
                    settled, written off or reversed. */
                 error.code === "OBLIGATION_NOT_OPEN" ||

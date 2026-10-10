@@ -17,7 +17,7 @@
    head-office reads consolidated cash position & FX mix.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useEffect } = React;
+  const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY, crossRate, STAFF, ROLE_SCOPE } = window.CDOS;
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
@@ -102,6 +102,18 @@
        return  till → vault   the day's cash goes back, tallied
        vault   vault → vault  an armoured run between branches (main → sub) */
   function MoveModal({ branches, station, preset, onClose, onMove }) {
+    /* One key for as long as this form is open. A second tap, or a tap
+       whose answer never came back, must send the same key — the ledger
+       replays it. A key built from the clock made every tap a new
+       movement. A new form is a new movement, and gets a new key. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current)
+        attempt.current = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const KINDS = [
       ['issue',  'Issue float',   'vaultsafe', 'Vault → till · same branch'],
       ['return', 'Return to vault', 'wallet',  'Till → vault · same branch'],
@@ -139,7 +151,7 @@
       if (!valid || posting) return;
       setPosting(true); setMoveErr('');
       try {
-        const result = await onMove({ kind, fromB: bId, toB: toBId, tId: till && till.id, ccy, amt, fromLabel, toLabel });
+        const result = await onMove({ kind, fromB: bId, toB: toBId, tId: till && till.id, ccy, amt, fromLabel, toLabel, idempotencyKey: 'web-move:' + attemptKey() });
         if (result && result.ok === false) setMoveErr(result.message || 'That movement was refused.');
       } catch (e) {
         setMoveErr((e && e.message) || 'That movement was refused.');

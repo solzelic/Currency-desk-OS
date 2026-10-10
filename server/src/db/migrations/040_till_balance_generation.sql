@@ -1,7 +1,4 @@
--- 038 is the last migration on main. 039 is the live-cheque index, on
--- the other open pull request, so this file is 040. The runner sorts
--- by id and skips an id it has already recorded, so either request
--- can merge first.
+-- 039 is the live-cheque index, now on main. This file is 040.
 --
 -- One mark per till, bumped whenever the cash in that drawer changes.
 -- A close names the mark it counted against. If the mark has moved,

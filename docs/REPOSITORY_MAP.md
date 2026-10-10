@@ -102,12 +102,15 @@ commit the generated output — CI diffs `web/` against a fresh build.
   033, 034, 035, 036, and 037 are already on main, so 038 stays. 027
   and 030 are still open drafts. The rule text is
   `docs/PHILIPPINES_PACK.md`.
+- Migration `039_live_cheque_paper` adds a unique index so one branch
+  cannot hold two live cheques with the same number, payer, and bank.
+  038 is the last migration on main, so this file is 039. A book that
+  already holds a duplicate stays bootable: the older held copy is
+  left out of the index (`paper_guard` false) and the newest copy is
+  the row the index watches. The rule is `docs/CHEQUE_CASHING.md`.
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
-  generation it counted against. 038 is the last migration on main.
-  039 is the live-cheque index on the other open pull request, so this
-  file is 040. The runner sorts by id and skips an id already recorded,
-  so either request can merge first.
+  generation it counted against. 039 is on main, so this file is 040.
 
 ## Test commands
 

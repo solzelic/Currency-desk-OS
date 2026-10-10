@@ -363,6 +363,16 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       },
     });
     expect(deniedMove.statusCode).toBe(403);
+    /* The float names the vault. A vault with no opening count is refused,
+       so this case states one first. The movement is still the thing under
+       test: one key, one credit to the drawer, one debit to the safe. */
+    const openedVault = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/opening-position",
+      cookies: manager,
+      payload: { balances: { CAD: "1000.00" } },
+    });
+    expect(openedVault.statusCode).toBe(201);
     const movePayload = {
       idempotencyKey: "move-1",
       direction: "in",
@@ -380,6 +390,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     });
     expect(moved.statusCode).toBe(201);
     expect(moved.json().balances.CAD).toBe("25100.00");
+    expect(moved.json().vaultBalances.CAD).toBe("900.00");
     const replayedMove = await app.inject({
       method: "POST",
       url: "/api/ledger/till-movements",
@@ -387,6 +398,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: movePayload,
     });
     expect(replayedMove.json().balances.CAD).toBe("25100.00");
+    expect(replayedMove.json().vaultBalances.CAD).toBe("900.00");
 
     const countedAgainst = await app.inject({
       method: "GET",

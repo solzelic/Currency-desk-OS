@@ -351,8 +351,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
   saved history through the real quote / ledger / client-record
   services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
-  `siteSlug=yorkfx`. Login is `/login` → `/app`, not `/admin`. How to
-  run it: `docs/DEMO_DESK.md`.
+  `siteSlug=yorkfx`. It also states a vault opening position (CAD
+  40,000, USD 20,000, EUR 10,000, GBP 5,000) once, so a float comes
+  out of the safe. A book that already has its history and has never
+  stated a vault position still gets that count. A later boot does
+  not add it again once the safe has been counted. Login
+  is `/login` → `/app`, not `/admin`. How to run it: `docs/DEMO_DESK.md`.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -412,9 +416,40 @@ that mark, the close is refused with "Money moved since you counted.
 Count again." The old figures are not written back. A tab that posts
 a close with no mark is told "The desk was updated. Reload, then
 count again." A close of a drawer that has not moved still lands.
-The mark is migration `040_till_balance_generation`. `039` is the
-live-cheque index on the other open pull request; the runner applies
-the two in id order whichever merges first.
+The mark is migration `040_till_balance_generation`. `039` is on main;
+this file follows it.
+
+**2026-10-10**, Vault float. Taking cash from a vault that has no opening
+count is refused. The till is not credited, and nothing is subtracted
+from a figure the book does not have. The message is "Open the vault
+with a starting count first." Cash that arrives from a bank still posts.
+The York FX demo states a vault opening, so a float on that desk comes
+out of the safe.
+
+**2026-10-10**, Demo vault. York FX populate states a vault opening
+position once. A float of 500.00 CAD takes 500.00 out of that safe
+and puts it in the drawer. A second populate leaves the safe where
+the float left it. A desk that already has its history, and has
+never stated a vault position, still gets this count: populate does
+not return before that opening.
+
+**2026-10-10**, Cash moves. An opened Move cash form, an issue-to-till form
+(one key per currency), and a wholesale delivery form each keep one
+idempotency key until that movement finishes, including a retry and a
+second tap. Two requests that arrive together under that key replay
+the one movement. A known key whose amount, currency, direction, or
+the rest of the movement differs is refused, and nothing else moves.
+A new form is a new movement.
+
+**2026-10-10**, Cheque cashing. An opened cheque form keeps one idempotency
+key until that cashing finishes, including a retry and a second tap.
+The server also refuses a second live cheque at the same branch with
+the same number and payer, and the same bank when both sides stored
+one. A missing bank matches. A different bank is different paper. A
+cheque that has cleared, been returned, or been reversed can be cashed
+again. Migration 039. A book that already holds two live copies still
+boots: the older copy stays held and is left out of the unique index
+(`paper_guard` false). The newest copy is the row the index watches.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

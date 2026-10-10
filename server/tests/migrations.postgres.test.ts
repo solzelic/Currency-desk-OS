@@ -23,9 +23,10 @@ postgres("tracked PostgreSQL migrations", () => {
     expect((await pool.query("SELECT count(*) FROM schema_migrations WHERE migration_id LIKE 'test_%'")).rows[0].count).toBe("2");
   });
 
-  /* 039 and 040 are open on different pull requests. Whichever is
-     recorded first, the other still applies: sort by id, skip an id
-     already stored. These two fixtures stand in for that pair. */
+  /* The runner sorts by id and skips an id it has already recorded,
+     so an earlier file that arrives after a later one still applies.
+     039 is on main. 040 follows it. These two fixtures stand in for
+     that order. */
   it("applies an earlier migration that arrives after a later one has already run", async () => {
     await runMigrations(pool, [second]);
     await runMigrations(pool, [first, second]);

@@ -16267,7 +16267,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   const {
     useState,
     useMemo,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD,
@@ -16931,14 +16932,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // vault → till: real cash, so the modal only closes once the movement has
     // actually been taken (by the ledger on a server-backed desk, locally
     // otherwise). A refusal comes back to the modal and stays on screen.
-    const doIssueTill = async (tId, opening) => {
+    const doIssueTill = async (tId, opening, keys) => {
       if (!onIssueTill) {
         setAssigning(false);
         return {
           ok: true
         };
       }
-      const result = await onIssueTill(tId, opening);
+      const result = await onIssueTill(tId, opening, keys);
       if (result && result.ok === false) return result;
       setAssigning(false);
       return {
@@ -17371,6 +17372,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onAssign,
     onIssueTill
   }) {
+    /* One key per currency, minted when this form opens and reused on
+       every retry. Each currency is its own movement, so each needs its
+       own key — one key for the whole float would replay the first
+       currency as the second. */
+    const keys = useRef({});
+    const keyFor = ccy => {
+      if (!keys.current[ccy]) keys.current[ccy] = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return keys.current[ccy];
+    };
     const [target, setTarget] = useState('person'); // 'person' = accountability · 'till' = cash moves on the rail
     const [teller, setTeller] = useState(tellers[0] ? tellers[0].name : '');
     const [tillId, setTillId] = useState(tills && tills[0] ? tills[0].id : '');
@@ -17398,7 +17408,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setIssuing(true);
       setIssueErr('');
       try {
-        const result = await onIssueTill(tillId, opening);
+        const keyMap = {};
+        fc.forEach(c => {
+          if ((+opening[c] || 0) > 0) keyMap[c] = 'web-move:' + keyFor(c);
+        });
+        const result = await onIssueTill(tillId, opening, keyMap);
         if (result && result.ok === false) setIssueErr(result.message || 'That float was refused.');
       } catch (e) {
         setIssueErr(e && e.message || 'That float was refused.');
@@ -17893,6 +17907,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onPlace,
     onReceive
   }) {
+    /* One key for this delivery. Marking the same order received again
+       after a lost answer must not credit the vault a second time. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const src = init && init.order || null; // receiving an existing pending order
     const receiveOnly = !!src;
     const [ccy, setCcy] = useState(src && src.ccy || init && init.ccy || 'USD');
@@ -17901,6 +17922,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const [supplier, setSupplier] = useState(src && src.supplier || 'Bank of Montreal — Wholesale Notes');
     const [receiveNow, setReceiveNow] = useState(false); // "cash already in hand" — opt in
     const [done, setDone] = useState(false); // green-confirm latch (also blocks double-click)
+    const [err, setErr] = useState('');
     const u = +units || 0,
       cc = +costCad || 0;
     const unitCost = u ? cc / u : 0;
@@ -17910,22 +17932,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const receiving = receiveOnly || receiveNow;
     const ready = receiving ? u > 0 && cc > 0 : u > 0;
     // press → flash green + lock, then commit a beat later so the confirm is seen
-    const fire = () => {
+    const fire = async () => {
       if (done || !ready) return;
+      setErr('');
+      if (!receiving) {
+        setDone(true);
+        setTimeout(() => onPlace({
+          ccy,
+          units: u,
+          supplier
+        }), 480);
+        return;
+      }
       setDone(true);
-      setTimeout(() => {
-        if (receiving) onReceive({
+      try {
+        const result = await onReceive({
           id: src ? src.id : null,
           ccy,
           units: u,
           costCad: cc,
-          supplier
-        });else onPlace({
-          ccy,
-          units: u,
-          supplier
+          supplier,
+          idempotencyKey: 'web-rcpt:' + attemptKey()
         });
-      }, 480);
+        if (result && result.ok === false) {
+          setDone(false);
+          setErr(result.message || 'That delivery was refused.');
+        }
+      } catch (e) {
+        setDone(false);
+        setErr(e && e.message || 'That delivery was refused.');
+      }
     };
     return /*#__PURE__*/React.createElement(Modal, {
       onClose: done ? undefined : onClose,
@@ -18081,7 +18117,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "info",
       s: 13,
       c: CD.brass
-    }), /*#__PURE__*/React.createElement("span", null, "Orders aren\u2019t sent to a wholesaler from the app yet \u2014 this records the order. Receiving is what posts the cash to inventory.")), /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, "Orders aren\u2019t sent to a wholesaler from the app yet \u2014 this records the order. Receiving is what posts the cash to inventory.")), err && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 13,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("span", null, err)), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-end"
     }, /*#__PURE__*/React.createElement("button", {
       disabled: !ready || done,
@@ -18513,10 +18560,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setOrdering(null);
       setTab('receive');
     };
-    const onReceive = p => {
+    const onReceive = async p => {
       const units = +p.units || 0,
         costCad = +p.costCad || 0;
-      if (!units || !costCad) return;
+      if (!units || !costCad) return {
+        ok: false,
+        message: 'Nothing to receive.'
+      };
+      /* The ledger first. A delivery the server refused, or whose answer
+         was lost, stays on this form so the same key can be sent again.
+         Marking it received in the list before that answer arrives is how
+         a second tap became a second credit. */
+      if (onOrderReceived) {
+        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey);
+        if (posted && posted.ok === false) return posted;
+      }
       const unitCost = +(costCad / units).toFixed(6);
       if (p.id) {
         setReceipts(list => (list || []).map(o => o.id === p.id ? {
@@ -18548,9 +18606,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setReceipts(list => [rec, ...(list || [])]);
       }
       log && log('Order received', `${num(units)} ${p.ccy} @ ${fmtHome(unitCost)} · ${fmtHome(costCad)} posted to inventory`);
-      onOrderReceived && onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes'); // the notes physically land in THIS branch's vault
       setOrdering(null);
       setTab('receive');
+      return {
+        ok: true
+      };
     };
     const onCancel = id => {
       setReceipts(list => (list || []).filter(o => o.id !== id));
@@ -19048,7 +19108,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const {
     useState,
     useMemo,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD,
@@ -19326,6 +19387,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onClose,
     onMove
   }) {
+    /* One key for as long as this form is open. A second tap, or a tap
+       whose answer never came back, must send the same key — the ledger
+       replays it. A key built from the clock made every tap a new
+       movement. A new form is a new movement, and gets a new key. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const KINDS = [['issue', 'Issue float', 'vaultsafe', 'Vault → till · same branch'], ['return', 'Return to vault', 'wallet', 'Till → vault · same branch'], ['vault', 'Vault run', 'swap', 'Vault → vault · between branches']];
     const p = preset && typeof preset === 'object' ? preset : {};
     const mainB = branches.find(x => x.main) || branches[0];
@@ -19373,7 +19443,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           ccy,
           amt,
           fromLabel,
-          toLabel
+          toLabel,
+          idempotencyKey: 'web-move:' + attemptKey()
         });
         if (result && result.ok === false) setMoveErr(result.message || 'That movement was refused.');
       } catch (e) {
@@ -33840,7 +33911,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }));
       const posted = await book.cashCheque({
-        idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${window.CDOS.Backend.asMoney(amtN)}:${Date.now()}`,
+        /* This ticket's key, not the clock. Two taps are one cashing.
+           See attemptKey above — the same rule as a money order. */
+        idempotencyKey: 'web-chq:' + attemptKey(),
         customerId: synced.customerId,
         chequeNumber: chequeNumber.trim(),
         maker: maker.trim(),
@@ -38941,7 +39014,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     useState,
     useMemo,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD,
@@ -39410,6 +39484,17 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        from the book. */
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
+    /* One key for this opened form, reused on a retry and on a second
+       tap. It used to be rebuilt from the clock, so two taps of the same
+       cheque were two keys and the drawer paid the net twice. A refusal
+       leaves no idempotency row, so sending the corrected ticket again
+       under this same key is right. Opening the form again is a new
+       attempt. The same shape as a money order and a transfer. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const save = async () => {
       if (!canSave || busy) return;
       const book = ledger();
@@ -39426,7 +39511,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
            mirrored across before the money moves. */
         const synced = await book.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
         const posted = await book.cashCheque({
-          idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${book.asMoney(amtN)}:${Date.now()}`,
+          idempotencyKey: 'web-chq:' + attemptKey(),
           customerId: synced.customerId,
           chequeNumber: chequeNumber.trim(),
           maker: maker.trim(),
@@ -64226,7 +64311,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        and it arrives with the jurisdiction. `deskTrades` is true where
        nobody has restricted anything, which is the honest default — and
        where the desk HAS stated a set, the server's refusal names it. */
-    const movementKey = (kind, ccy) => `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const postTillMovement = async ({
       kind,
       fromB,
@@ -64235,7 +64319,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       ccy,
       amt,
       fromLabel,
-      toLabel
+      toLabel,
+      idempotencyKey
     }) => {
       if (!srvUser || !window.CDOS.Backend) return {
         ok: true
@@ -64270,8 +64355,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.'
             };
           }
+          /* The opened form owns the key. Minting one here, from the
+             clock, made a retry a second movement. */
+          if (!idempotencyKey) {
+            return {
+              ok: false,
+              message: 'This movement has no key. Close the form and open it again.'
+            };
+          }
           await window.CDOS.Backend.moveTillCash({
-            idempotencyKey: movementKey(kind, ccy),
+            idempotencyKey,
             direction: kind === 'issue' ? 'in' : 'out',
             currency: ccy,
             amount: Number(amt).toFixed(2),
@@ -64296,7 +64389,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // Assign flow — owner/manager hands money to a drawer, all recorded).
     // Each currency is its own ledger movement, so a rejected one stops the run
     // rather than leaving the drawer half-floated on one side only.
-    const issueToTill = async (tId, amounts) => {
+    const issueToTill = async (tId, amounts, keys) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b) return {
         ok: false,
@@ -64315,6 +64408,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       for (const ccy2 of Object.keys(amounts || {})) {
         const amt = +amounts[ccy2] || 0;
         if (amt <= 0) continue;
+        const idempotencyKey = keys && keys[ccy2];
+        if (!idempotencyKey) {
+          return {
+            ok: false,
+            message: 'This float has no key. Close the form and open it again.'
+          };
+        }
         const posted = await postTillMovement({
           kind: 'issue',
           fromB: b.id,
@@ -64322,7 +64422,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           ccy: ccy2,
           amt,
           fromLabel,
-          toLabel
+          toLabel,
+          idempotencyKey
         });
         if (!posted.ok) {
           // commit whatever already cleared the server, then report the stop
@@ -64369,7 +64470,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        balances against it. It is recorded server-first like every other
        movement, so a delivery that the ledger refused never shows up as
        stock the desk does not have. */
-    const creditVault = async (ccy2, units, supplier) => {
+    const creditVault = async (ccy2, units, supplier, idempotencyKey) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return {
         ok: false,
@@ -64383,8 +64484,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           };
         }
         try {
+          if (!idempotencyKey) {
+            return {
+              ok: false,
+              message: 'This delivery has no key. Close the form and open it again.'
+            };
+          }
           await window.CDOS.Backend.receiveVaultCash({
-            idempotencyKey: movementKey('receipt', ccy2),
+            idempotencyKey,
             direction: 'in',
             currency: ccy2,
             amount: Number(units).toFixed(2),
