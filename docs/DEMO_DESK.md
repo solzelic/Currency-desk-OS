@@ -41,6 +41,10 @@ ledger rows. The set is:
 
 - four identified customers (desk file + ledger counterparty)
 - opening till balances if the drawer has never been initialised
+- a vault opening position, stated once: CAD 40,000, USD 20,000,
+  EUR 10,000, GBP 5,000. That is the safe, separate from the drawer.
+  A later boot is told the vault is already open and does not add
+  the figures again, so a float still comes out of the safe
 - an open till session
 - six posted CAD↔USD / CAD↔EUR exchanges a teller would see in history
 
