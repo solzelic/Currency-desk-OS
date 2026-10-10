@@ -1578,7 +1578,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .till-sheet-scrim,
 .till-coins-btn,
 .till-handoff-phone,
-.till-show-word { display: none; }
+.till-show-word,
+.till-ambiguous-inscroll { display: none; }
 .till-foot-actions { display: contents; }
 .till-count-body { display: contents; }
 .till-expected-fig.is-blind,
@@ -2034,6 +2035,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-mode-opt.is-on { display: none !important; }
   .till-den-label { display: none; }
   .till-session { display: none !important; }
+  /* The multi-till note is a full strip on the desktop. On a phone
+     count it sits in the scrolling list, so the steppers and the
+     mode toggle keep a tap target above the footer. */
+  .till-root[data-till-screen="count"] > .till-ambiguous { display: none !important; }
+  .till-ambiguous-inscroll { display: flex !important; }
   .till-root .flex.gap-2 > .min-w-0,
   .till-root .flex.gap-2 > .flex-1,
   .till-root .flex.gap-3 > .min-w-0,

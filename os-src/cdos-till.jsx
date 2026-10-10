@@ -866,7 +866,7 @@
             money agree by construction — this is a reminder of which drawer is
             being counted, not a warning that two things disagree. */}
         {ledgerAmbiguous && ledgerTill && (
-          <div className="flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+          <div className="till-ambiguous flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="alert" s={13} c={CD.brass} />
             <span className="flex-1 min-w-0">
               This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
@@ -953,6 +953,19 @@
         {/* ===== COUNT ===== */}
         {tab === 'count' && (<div className="till-count p-4 pb-0">
           <div className="till-count-body">
+          {/* On a phone this same note scrolls with the count. The strip
+              above the count stays for the desktop, where it does not
+              cover the steppers. */}
+          {ledgerAmbiguous && ledgerTill && (
+            <div className="till-ambiguous-inscroll flex items-start gap-2 text-[11.5px]" style={{ background: CD.brassSoft, border: `1px solid ${CD.line}`, borderRadius: 10, color: CD.ink, padding: '10px 12px', marginBottom: 10 }}>
+              <Ic n="alert" s={13} c={CD.brass} />
+              <span className="flex-1 min-w-0">
+                This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
+                {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''}.
+                <span style={{ color: CD.mute }}> Use the till name in the header to move to another drawer; the ledger moves with it.</span>
+              </span>
+            </div>
+          )}
           {/* currency chips */}
           <div className="till-chips flex flex-wrap gap-1.5 mb-3">
             {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (

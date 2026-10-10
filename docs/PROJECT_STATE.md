@@ -93,7 +93,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   above the bottom bar.   On a phone the Cash Drawer count is one selector for Cash drawer,
   Reconcile & close, and History, then who is on the drawer, the
   amount, denomination steppers, and Hand off / Save count at the
-  thumb. Reconcile and History scroll inside their tables. Wider
+  thumb. A note that the branch has more than one till scrolls with
+  the count. Reconcile and History scroll inside their tables. Wider
   than 430px the drawer is unchanged. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. On a wide window the
@@ -433,8 +434,9 @@ authenticated narrative dashboard.
 
 **2026-10-10**, phone cash drawer. At 430px and under, the count is a
 selector, a who-line, big denomination steppers, and Hand off / Save
-count at the thumb. Reconcile and History only scroll. Wider than
-430px the drawer is unchanged.
+count at the thumb. A multi-till note scrolls with that count.
+Reconcile and History only scroll. Wider than 430px the drawer is
+unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

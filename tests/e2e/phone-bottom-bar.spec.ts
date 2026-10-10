@@ -177,8 +177,9 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
     await settled(page);
     await expect(page.locator(".win.show.active .win-bar")).toBeHidden();
   }
-  await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reconcile & close", exact: true })).toBeVisible();
+  await expect(page.locator(".till-phone-select")).toBeVisible();
+  await expect(page.locator(".till-phone-select")).toContainText("Cash drawer");
+  await expect(page.locator(".till-phone-select")).toContainText("Reconcile & close");
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await settled(page);
   await expect(page.locator(".win.show.active .win-bar")).toBeHidden();
