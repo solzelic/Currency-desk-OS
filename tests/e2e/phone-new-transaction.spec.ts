@@ -94,6 +94,50 @@ async function overflow(page: Page): Promise<string[]> {
   });
 }
 
+/* The other types read "Send · Receive · Cheque", with a normal space
+   on both sides of the dot. A wrap falls between names, so no line
+   opens or closes on the dot. */
+async function expectSeparators(page: Page, label: string): Promise<void> {
+  const lines = await page.evaluate(() => {
+    const root = document.querySelector(".tx-typecard-rest");
+    if (!(root instanceof HTMLElement)) return null;
+    const probe = document.createElement("span");
+    probe.textContent = " · ";
+    probe.style.cssText = "position:absolute;left:0;top:0;visibility:hidden;white-space:pre;font:inherit;";
+    root.appendChild(probe);
+    const sepWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    const groups = new Map<number, Array<{ text: string; before: string; extra: number }>>();
+    for (const node of root.querySelectorAll(".tx-typeitem")) {
+      if (!(node instanceof HTMLElement)) continue;
+      const top = node.offsetTop;
+      const text = (node.textContent || "").replace(/\u00a0/g, " ").trim();
+      const before = getComputedStyle(node, "::before").content;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const extra = node.getBoundingClientRect().width - range.getBoundingClientRect().width;
+      const row = groups.get(top) || [];
+      row.push({ text, before, extra });
+      groups.set(top, row);
+    }
+    return { sepWidth, lines: [...groups.values()] };
+  });
+  expect(lines, `${label} subtitle`).not.toBeNull();
+  expect(lines!.lines.length, label).toBeGreaterThan(0);
+  expect(lines!.sepWidth, label).toBeGreaterThan(8);
+  for (const line of lines!.lines) {
+    expect(line[0].before, `${label} opens on ${line[0].text}`).toBe("none");
+    expect(line[0].text.startsWith("·") || line[0].text.endsWith("·"), `${label} ${line[0].text}`).toBe(false);
+    expect(line[0].extra, `${label} ${line[0].text}`).toBeLessThan(2);
+    const last = line[line.length - 1];
+    expect(last.text.endsWith("·"), `${label} closes on ${last.text}`).toBe(false);
+    for (const part of line.slice(1)) {
+      expect(part.before, `${label} ${part.text}`).toBe('" · "');
+      expect(part.extra, `${label} ${part.text} gap`).toBeGreaterThan(lines!.sepWidth - 2);
+    }
+  }
+}
+
 async function shell(page: Page): Promise<void> {
   const fit = await page.evaluate(() => {
     const panel = document.querySelector(".tx-panel");
@@ -171,6 +215,7 @@ for (const width of [390, 360]) {
       await row.click();
       await expect(sheet).toBeHidden();
       await expect(page.locator(".tx-typecard-now")).toHaveText(name);
+      await expectSeparators(page, `${width} ${name}`);
       await expect(page.locator(".tx-screen").getByText(marker).first()).toBeVisible();
       await shell(page);
       expect(await overflow(page), name).toEqual([]);

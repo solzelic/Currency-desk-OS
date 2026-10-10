@@ -2216,10 +2216,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--ink, #111);
     white-space: nowrap;
   }
+  /* Each other type is its own inline-block, so a wrap falls between
+     names. The dot is a prefix (" · ") on every name except the first,
+     and except a name that starts a line — a prefix there would open
+     the line with a dot, and a suffix would leave one dangling. */
   .tx-screen .tx-typecard-rest {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
+    display: block;
     max-width: 100%;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 15px;
@@ -2227,8 +2229,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     line-height: 1.35;
     color: rgba(10, 10, 10, 0.62);
   }
-  .tx-screen .tx-typeitem { white-space: nowrap; }
-  .tx-screen .tx-typeitem:not(:last-child)::after { content: " \00b7 "; }
+  .tx-screen .tx-typeitem {
+    display: inline-block;
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+  .tx-screen .tx-typeitem:not(:first-child):not(.is-linestart)::before {
+    content: " · ";
+    white-space: pre;
+  }
 
   .tx-screen .tx-body {
     flex: none !important;

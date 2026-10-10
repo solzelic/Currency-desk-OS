@@ -9,7 +9,7 @@
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useLayoutEffect } = React;
   const {
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
@@ -433,6 +433,10 @@
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    const typeRestRef = useRef(null);
+    /* Types whose name starts a wrapped line. The dot is a prefix, so
+       a wrapped name would otherwise open its line with " · ". */
+    const [typeBreaks, setTypeBreaks] = useState([]);
     useEffect(() => {
       const mq = window.matchMedia('(max-width: 430px)');
       const sync = () => setPhoneLayout(mq.matches);
@@ -440,6 +444,35 @@
       mq.addEventListener('change', sync);
       return () => mq.removeEventListener('change', sync);
     }, []);
+    useLayoutEffect(() => {
+      if (!phoneLayout) {
+        setTypeBreaks(prev => (prev.length ? [] : prev));
+        return undefined;
+      }
+      const root = typeRestRef.current;
+      if (!root) return undefined;
+      const apply = () => {
+        const items = [...root.querySelectorAll(':scope > .tx-typeitem')];
+        const breaks = [...root.querySelectorAll(':scope > .tx-typebreak')];
+        breaks.forEach(el => { el.hidden = true; });
+        items.forEach(el => el.classList.remove('is-linestart'));
+        const next = [];
+        let prevTop = null;
+        items.forEach(el => {
+          const top = el.offsetTop;
+          if (prevTop != null && top > prevTop + 1) next.push(el.getAttribute('data-type'));
+          prevTop = top;
+        });
+        const want = new Set(next);
+        items.forEach(el => el.classList.toggle('is-linestart', want.has(el.getAttribute('data-type'))));
+        breaks.forEach(el => { el.hidden = !want.has(el.getAttribute('data-type')); });
+        setTypeBreaks(prev => (prev.join('\n') === next.join('\n') ? prev : next));
+      };
+      apply();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(apply) : null;
+      if (ro) ro.observe(root);
+      return () => { if (ro) ro.disconnect(); };
+    }, [phoneLayout, type]);
 
     useEffect(() => {
       const h = (e) => {
@@ -1007,7 +1040,13 @@
           <div className="tx-types flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <button type="button" className="tx-typecard" aria-haspopup="listbox" aria-expanded={typeSheet} onClick={() => setTypeSheet(true)}>
               <span className="tx-typecard-now">{meta.short}</span>
-              <span className="tx-typecard-rest">{TYPE_LIST.filter(t => t !== type).map(t => <span key={t} className="tx-typeitem">{TYPE_COMPACT[t]}</span>)}</span>
+              <span className="tx-typecard-rest" ref={typeRestRef}>{TYPE_LIST.filter(t => t !== type).map(t => {
+                const broken = typeBreaks.indexOf(t) >= 0;
+                return [
+                  broken ? <br key={t + '-br'} className="tx-typebreak" data-type={t} /> : null,
+                  <span key={t} data-type={t} className={'tx-typeitem' + (broken ? ' is-linestart' : '')}>{TYPE_COMPACT[t]}</span>,
+                ];
+              })}</span>
             </button>
             <div className="tx-typegrid grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (

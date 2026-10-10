@@ -31874,7 +31874,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     useState,
     useMemo,
     useRef,
-    useEffect
+    useEffect,
+    useLayoutEffect
   } = React;
   const {
     CD,
@@ -33229,6 +33230,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    const typeRestRef = useRef(null);
+    /* Types whose name starts a wrapped line. The dot is a prefix, so
+       a wrapped name would otherwise open its line with " · ". */
+    const [typeBreaks, setTypeBreaks] = useState([]);
     useEffect(() => {
       const mq = window.matchMedia('(max-width: 430px)');
       const sync = () => setPhoneLayout(mq.matches);
@@ -33236,6 +33241,41 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mq.addEventListener('change', sync);
       return () => mq.removeEventListener('change', sync);
     }, []);
+    useLayoutEffect(() => {
+      if (!phoneLayout) {
+        setTypeBreaks(prev => prev.length ? [] : prev);
+        return undefined;
+      }
+      const root = typeRestRef.current;
+      if (!root) return undefined;
+      const apply = () => {
+        const items = [...root.querySelectorAll(':scope > .tx-typeitem')];
+        const breaks = [...root.querySelectorAll(':scope > .tx-typebreak')];
+        breaks.forEach(el => {
+          el.hidden = true;
+        });
+        items.forEach(el => el.classList.remove('is-linestart'));
+        const next = [];
+        let prevTop = null;
+        items.forEach(el => {
+          const top = el.offsetTop;
+          if (prevTop != null && top > prevTop + 1) next.push(el.getAttribute('data-type'));
+          prevTop = top;
+        });
+        const want = new Set(next);
+        items.forEach(el => el.classList.toggle('is-linestart', want.has(el.getAttribute('data-type'))));
+        breaks.forEach(el => {
+          el.hidden = !want.has(el.getAttribute('data-type'));
+        });
+        setTypeBreaks(prev => prev.join('\n') === next.join('\n') ? prev : next);
+      };
+      apply();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(apply) : null;
+      if (ro) ro.observe(root);
+      return () => {
+        if (ro) ro.disconnect();
+      };
+    }, [phoneLayout, type]);
     useEffect(() => {
       const h = e => {
         if (e.key !== 'Escape' || present) return;
@@ -34276,11 +34316,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("span", {
       className: "tx-typecard-now"
     }, meta.short), /*#__PURE__*/React.createElement("span", {
-      className: "tx-typecard-rest"
-    }, TYPE_LIST.filter(t => t !== type).map(t => /*#__PURE__*/React.createElement("span", {
-      key: t,
-      className: "tx-typeitem"
-    }, TYPE_COMPACT[t])))), /*#__PURE__*/React.createElement("div", {
+      className: "tx-typecard-rest",
+      ref: typeRestRef
+    }, TYPE_LIST.filter(t => t !== type).map(t => {
+      const broken = typeBreaks.indexOf(t) >= 0;
+      return [broken ? /*#__PURE__*/React.createElement("br", {
+        key: t + '-br',
+        className: "tx-typebreak",
+        "data-type": t
+      }) : null, /*#__PURE__*/React.createElement("span", {
+        key: t,
+        "data-type": t,
+        className: 'tx-typeitem' + (broken ? ' is-linestart' : '')
+      }, TYPE_COMPACT[t])];
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "tx-typegrid grid gap-1.5",
       style: {
         gridTemplateColumns: 'repeat(6, 1fr)'
