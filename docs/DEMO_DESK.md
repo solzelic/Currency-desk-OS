@@ -44,6 +44,11 @@ ledger rows. The set is:
 - an open till session
 - six posted CAD↔USD / CAD↔EUR exchanges a teller would see in history
 
+It does not state a vault opening position. `ledger_vault_balances` stays
+empty. Issue float on this desk is refused with "Open the vault with a
+starting count first." until somebody counts the safe. Giving the demo
+an opening count is a separate change.
+
 Idempotency keys are stable (`demo-desk:tx:1` …). A second boot posts
 nothing new. The seeder hard-codes the York FX scope and refuses to run
 unless that tenant is present with `siteSlug=yorkfx`. It never accepts a

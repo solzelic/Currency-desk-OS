@@ -6,11 +6,10 @@
    and the book has to be unchanged.
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
-import { mkdirSync } from "node:fs";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
-test("taking cash from an unopened vault is refused, on screen and in the book", async ({ page }) => {
+test("taking cash from an unopened vault is refused, on screen and in the book", async ({ page }, testInfo) => {
   await signInAtDesk(page);
   const book = ledger(page);
   const vault = await book.vault();
@@ -38,14 +37,11 @@ test("taking cash from an unopened vault is refused, on screen and in the book",
   await expect(page.getByText("Open the vault with a starting count first.")).toBeVisible();
   expect(await book.till()).toEqual(before);
 
-  mkdirSync("/opt/cursor/artifacts/money-fixes", { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.screenshot({
-    path: "/opt/cursor/artifacts/money-fixes/vault-not-open-1280.png",
-  });
+  await page.screenshot({ path: testInfo.outputPath("vault-not-open-1280.png") });
 });
 
-test("the unopened-vault refusal is readable on a phone", async ({ page }) => {
+test("the unopened-vault refusal is readable on a phone", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAtDesk(page);
   const book = ledger(page);
@@ -59,8 +55,5 @@ test("the unopened-vault refusal is readable on a phone", async ({ page }) => {
   await page.getByRole("button", { name: /Issue float/i }).last().click();
   await expect(page.getByText("Open the vault with a starting count first.")).toBeVisible();
 
-  mkdirSync("/opt/cursor/artifacts/money-fixes", { recursive: true });
-  await page.screenshot({
-    path: "/opt/cursor/artifacts/money-fixes/vault-not-open-390.png",
-  });
+  await page.screenshot({ path: testInfo.outputPath("vault-not-open-390.png") });
 });

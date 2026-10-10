@@ -407,6 +407,9 @@ authenticated narrative dashboard.
 count is refused. The till is not credited, and nothing is subtracted
 from a figure the book does not have. The message is "Open the vault
 with a starting count first." Cash that arrives from a bank still posts.
+The York FX demo (`DEMO_POPULATE`) opens the drawer and does not state
+a vault opening position, so Issue float on that desk is refused until
+somebody counts the safe.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

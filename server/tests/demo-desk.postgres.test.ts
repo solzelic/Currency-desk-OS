@@ -249,6 +249,17 @@ postgres("York FX demo desk seeder", () => {
     );
     expect(till.rows[0].status).toBe("open");
 
+    /* The drawer is opened. The vault is not. Issue float on this desk
+       is refused until somebody states a starting count. */
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM ledger_vault_balances WHERE tenant_id=$1",
+          [DEMO.tenantId],
+        )
+      ).rows[0].n,
+    ).toBe(0);
+
     const second = await populateDemoDesk(pool, handle.db);
     expect(second.status).toBe("already");
     expect(second.posted).toBe(0);
