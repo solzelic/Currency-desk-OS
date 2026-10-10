@@ -226,6 +226,13 @@ export class TillControlService {
           ORDER BY currency`,
         scope(actor),
       );
+      const mark = await client.query(
+        `SELECT generation::text AS generation
+           FROM ledger_till_balance_generations
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5`,
+        scope(actor),
+      );
       await client.query("COMMIT");
       return {
         workspaceId: actor.workspaceId,
@@ -233,6 +240,7 @@ export class TillControlService {
         branchId: actor.branchId,
         selectedAt: now.toISOString(),
         ...state,
+        balanceGeneration: mark.rows[0]?.generation ?? "0",
         balances: Object.fromEntries(
           balances.rows.map((row) => [
             row.currency.trim(),
@@ -403,9 +411,10 @@ export class TillControlService {
     idempotencyKey: string,
     counts: Counts,
     note: string,
+    balanceGeneration: string,
   ) {
     return withSerializationRetry(() =>
-      this.closeOnce(actor, sessionId, idempotencyKey, counts, note));
+      this.closeOnce(actor, sessionId, idempotencyKey, counts, note, balanceGeneration));
   }
 
   private async closeOnce(
@@ -414,6 +423,7 @@ export class TillControlService {
     idempotencyKey: string,
     counts: Counts,
     note: string,
+    balanceGeneration: string,
   ) {
     const client = await this.pool.connect();
     try {
@@ -445,6 +455,25 @@ export class TillControlService {
         return response;
       }
       const balances = await this.lockBalances(client, actor);
+      /* The count names the drawer it was taken against. A deal, a cheque
+         or a float since that read has a newer mark, and writing the old
+         count back would put the drawer where it was before the money
+         moved. Refuse, and leave both the session and the balances. */
+      const mark = await client.query(
+        `SELECT generation::text AS generation
+           FROM ledger_till_balance_generations
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5
+          FOR UPDATE`,
+        scope(actor),
+      );
+      const currentMark = mark.rows[0]?.generation ?? "0";
+      if (currentMark !== balanceGeneration) {
+        throw new LedgerError(
+          "TILL_COUNT_STALE",
+          "Money moved since you counted. Count again.",
+        );
+      }
       const balanceCurrencies = balances
         .map((row) => row.currency.trim())
         .sort();

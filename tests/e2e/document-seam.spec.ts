@@ -225,6 +225,7 @@ async function countExactlyAndClose(page: Page, key: string) {
       body: JSON.stringify({
         idempotencyKey: `${k}-close`,
         counts,
+        balanceGeneration: held.balanceGeneration,
         note: "All counted drawers balanced",
       }),
     });

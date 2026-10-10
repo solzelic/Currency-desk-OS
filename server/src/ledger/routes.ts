@@ -118,6 +118,9 @@ const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
   note: z.string().trim().max(1000).default(""),
+  /* The mark on the drawer when these figures were counted. A whole
+     number, carried as text so a long generation is not rounded. */
+  balanceGeneration: z.string().regex(/^(?:0|[1-9]\d{0,18})$/),
 }).strict();
 const cashMovementBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -674,6 +677,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               parsed.data.idempotencyKey,
               parsed.data.counts,
               parsed.data.note,
+              parsed.data.balanceGeneration,
             ),
           )
         : undefined;

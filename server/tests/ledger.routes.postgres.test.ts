@@ -388,6 +388,14 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     });
     expect(replayedMove.json().balances.CAD).toBe("25100.00");
 
+    const countedAgainst = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-balances",
+      cookies: manager,
+    });
+    expect(countedAgainst.statusCode).toBe(200);
+    const balanceGeneration = countedAgainst.json().balanceGeneration;
+
     const incomplete = await app.inject({
       method: "POST",
       url: "/api/ledger/till-sessions/session-1/close",
@@ -396,6 +404,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         idempotencyKey: "close-incomplete",
         counts: { CAD: "25100.00" },
         note: "Incomplete",
+        balanceGeneration,
       },
     });
     expect(incomplete.statusCode).toBe(422);
@@ -414,6 +423,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           GBP: "3500.00",
         },
         note: "Variance close",
+        balanceGeneration,
       },
     });
     expect(closed.statusCode).toBe(200);
@@ -630,7 +640,11 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       });
       expect(second.statusCode).toBe(200);
       // a drawer of its own: same branch, its own till, none of till-01's money
-      expect(second.json()).toEqual({ tillId: "till-02", balances: {} });
+      expect(second.json()).toEqual({
+        tillId: "till-02",
+        balances: {},
+        balanceGeneration: "0",
+      });
 
       const quoteBody = {
         customerId: "customer-demo",

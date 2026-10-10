@@ -2197,6 +2197,7 @@
           return {
             tillId: results[0].tillId || null,
             balances: results[0].balances || {},
+            balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
           };
@@ -13522,6 +13523,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
            currency that was not counted must never be sent.
        ------------------------------------------------------------------ */
     const [serverBalances, setServerBalances] = useState(null);
+    /* The mark on the drawer when these expected figures were read.
+       The close sends it back. If money moved, the mark no longer
+       matches and the close is refused. */
+    const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
@@ -13650,17 +13655,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         live = false;
       };
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
+    const applyBook = result => {
+      setServerBalances(result && result.balances || {});
+      setBalanceGeneration(result && result.balanceGeneration != null ? String(result.balanceGeneration) : null);
+      setServerBalanceError('');
+    };
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
       return window.CDOS.Backend.loadTill().then(result => {
-        setServerBalances(result.balances || {});
-        setServerBalanceError('');
+        applyBook(result);
         return applySession(result);
       });
     };
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
         setServerBalances(null);
+        setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError('');
         return;
@@ -13668,12 +13678,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       let active = true;
       window.CDOS.Backend.loadTill().then(result => {
         if (!active) return;
-        setServerBalances(result.balances || {});
-        setServerBalanceError('');
+        applyBook(result);
         applySession(result);
       }).catch(error => {
         if (!active) return;
         setServerBalances(null);
+        setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError(error.message || 'Server balances unavailable');
       });
@@ -13694,8 +13704,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       try {
         const session = applySession(await window.CDOS.Backend.openTillSession());
         const balances = await window.CDOS.Backend.loadTillBalances();
-        setServerBalances(balances.balances || {});
-        setServerBalanceError('');
+        applyBook(balances);
         log && log('Till opened', `Session ${session ? session.sessionNumber : '—'} · ${tillNm}`);
       } catch (error) {
         setSessionErr(error.message || 'The server would not open this till.');
@@ -13811,8 +13820,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           localStorage.setItem('cdos_till_lastcount_v1', '{}');
           localStorage.setItem('cdos_till_mode', '{}');
         } catch (e) {}
-        setServerBalances(resolved.balances || {});
-        setServerBalanceError('');
+        applyBook(resolved);
         applySession(resolved);
         setSessionErr('');
         setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at — count this one afresh.` : ''));
@@ -14314,10 +14322,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
           counts: Object.fromEntries(recon.map(r => [r.c, r.counted.toFixed(2)])),
+          balanceGeneration,
           note: summary.note
         }));
         const balances = await window.CDOS.Backend.loadTillBalances();
-        setServerBalances(balances.balances || {});
+        applyBook(balances);
         setSessionErr('');
       }
       onCloseDay && onCloseDay(summary);
@@ -14336,8 +14345,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       try {
         await doClose();
       } catch (error) {
-        setSessionErr(error.message || 'The server rejected the till close.');
-        log && log('Day close failed', error.message || 'Server rejected the till close');
+        const message = error.message || 'The server rejected the till close.';
+        setSessionErr(message);
+        log && log('Day close failed', message);
+        /* The count was of a drawer that has since moved. Read the book
+           again and drop the figures, so the next close is a new count
+           and not the same one sent against the new mark. */
+        if (error.code === 'TILL_COUNT_STALE') {
+          try {
+            const fresh = await window.CDOS.Backend.loadTill();
+            applyBook(fresh);
+            applySession(fresh);
+            clearAllCounts();
+          } catch (refreshError) {
+            setServerBalanceError(refreshError.message || 'Server balances unavailable');
+          }
+        }
       } finally {
         setClosing(false);
         busyRef.current = false;

@@ -403,6 +403,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Till close. A close names the mark the count was taken
+against. If a deal or any other movement has changed the drawer since
+that read, the close is refused with "Money moved since you counted.
+Count again." The old figures are not written back. A close of a drawer
+that has not moved still lands.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the

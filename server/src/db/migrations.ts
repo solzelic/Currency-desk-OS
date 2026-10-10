@@ -42,6 +42,8 @@ const migrations: readonly Migration[] = [
   ["036_pack_ae_v2", "src/db/migrations/036_pack_ae_v2.sql"],
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
+  /* 039 is the till's balance generation — the mark a close is counted against. */
+  ["039_till_balance_generation", "src/db/migrations/039_till_balance_generation.sql"],
 ] as const;
 
 export async function runMigrations(
