@@ -292,7 +292,11 @@ test("a figure the ledger cannot answer is shown as absent", async ({ page }) =>
   if (totals.unrealizedPnlHome == null) {
     const tile = page.getByText(/Unrealized P&L/i).first();
     await expect(tile).toBeVisible();
-    expect(screen).toMatch(/no cost basis|market value or basis unknown/i);
+    /* `screen` was read when the Position tab label appeared, which is
+       before this fetch is back. A vault an earlier test has already
+       declared makes that gap visible: the tile arrives, and the reason
+       under it has to be read after it does. */
+    await expect(page.getByText(/no cost basis|market value or basis unknown/i).first()).toBeVisible();
   }
 });
 
