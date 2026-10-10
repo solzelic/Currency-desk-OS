@@ -321,6 +321,37 @@ postgres("York FX demo desk seeder", () => {
     expect(await vaultCad()).toBe(vaultAfter);
   });
 
+  it("states the vault opening on a demo book that already exists and was never counted", async () => {
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.status).toBe("populated");
+    /* The live desk was populated before this opening existed.
+       Take the count back off and leave the six deals. */
+    await pool.query("DELETE FROM ledger_vault_balances WHERE tenant_id=$1", [DEMO.tenantId]);
+    const empty = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_vault_balances WHERE tenant_id=$1",
+      [DEMO.tenantId],
+    );
+    expect(empty.rows[0].n).toBe(0);
+
+    const again = await populateDemoDesk(pool, handle.db);
+    expect(again.status).toBe("already");
+    expect(again.posted).toBe(0);
+    expect(again.reused).toBe(6);
+    const rows = await pool.query(
+      `SELECT btrim(currency) AS currency, available_amount
+         FROM ledger_vault_balances
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        ORDER BY currency`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId],
+    );
+    expect(rows.rows).toEqual([
+      { currency: "CAD", available_amount: "40000.00" },
+      { currency: "EUR", available_amount: "10000.00" },
+      { currency: "GBP", available_amount: "5000.00" },
+      { currency: "USD", available_amount: "20000.00" },
+    ]);
+  });
+
   it("does not write customers, sessions, or transactions on any other tenant", async () => {
     const foreign = await seedForeignTenantDeal();
     expect(foreign.transactionId).toBeTruthy();

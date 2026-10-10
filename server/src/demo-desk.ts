@@ -579,6 +579,9 @@ export async function populateDemoDesk(pool: pg.Pool, db: Db): Promise<DemoPopul
   const admin = demoActor("administrator");
   await ensureLedgerPrincipal(pool, admin);
   await ensureOpeningBalances(pool, admin);
+  /* Before the history walk. A York FX book that already has its
+     deals, and has never stated a vault position, still gets this
+     opening. The tenant gates above are the only early returns. */
   await ensureVaultOpening(pool, admin);
   await ensureLedgerPrincipal(pool, teller);
 
