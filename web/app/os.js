@@ -14375,9 +14375,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         background: CD.panel
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5 pb-3"
+      className: "till-head flex items-center gap-2.5 pb-3"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center",
+      className: "till-mark grid place-items-center",
       style: {
         width: 30,
         height: 30,
@@ -14390,23 +14390,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 17,
       c: "var(--cd-on-ink)"
     })), /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0"
+      className: "till-id min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "font-semibold leading-tight",
+      className: "till-name font-semibold leading-tight",
       style: {
         color: CD.ink
       }
     }, "Cash Drawer"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] flex items-center gap-1 flex-wrap",
+      className: "till-meta text-[11px] flex items-center gap-1 flex-wrap",
       style: {
         color: CD.mute
       }
     }, stationName ? /*#__PURE__*/React.createElement("b", {
+      className: "till-station",
       style: {
         color: CD.ink
       }
-    }, stationName) : null, stationName ? /*#__PURE__*/React.createElement("span", null, "\xB7") : null, tillOptions.length ? /*#__PURE__*/React.createElement("span", {
+    }, stationName) : null, stationName ? /*#__PURE__*/React.createElement("span", {
+      className: "till-dot"
+    }, "\xB7") : null, tillOptions.length ? /*#__PURE__*/React.createElement("span", {
       ref: tillMenuRef,
+      className: "till-pick",
       style: {
         position: 'relative',
         display: 'inline-flex'
@@ -14515,10 +14519,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 10,
       c: CD.faint
     }), " To change store, sign out & back in."))) : stationTill ? /*#__PURE__*/React.createElement("b", {
+      className: "till-pick",
       style: {
         color: CD.ink
       }
-    }, stationTill) : null, /*#__PURE__*/React.createElement("span", null, "\xB7 ", serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
+      className: "till-statusline"
+    }, /*#__PURE__*/React.createElement("span", null, "\xB7 ", serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
@@ -14532,8 +14539,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         color: ledgerAmbiguous ? CD.brass : CD.mute
       }
-    }, ledgerTill.tillId)))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5 flex-none ml-auto"
+    }, ledgerTill.tillId))))), /*#__PURE__*/React.createElement("div", {
+      className: "till-actions flex items-center gap-1.5 flex-none ml-auto"
     }, (() => {
       // the drawer's rail balance — changes the moment cash is issued or returned.
       // floats are ISSUED AT THE VAULT (Vault / Branch Network), never from here:
@@ -14543,7 +14550,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // the local rail figure is a demo store and would quietly disagree
       const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
       return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && /*#__PURE__*/React.createElement("span", {
-        className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
+        className: "till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
         style: {
           border: `1px solid ${CD.lineSoft}`,
           borderRadius: 8,
@@ -14564,7 +14571,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           tId: station && station.tillId
         }),
         title: "Issue a float from the vault, or return cash to it \u2014 recorded on the ledger",
-        className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
+        className: "till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 8,
@@ -14578,7 +14585,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }), " Move cash"), /*#__PURE__*/React.createElement("button", {
         onClick: () => onOpenVault && onOpenVault(),
         title: "Floats are issued & returned at the vault",
-        className: "flex items-center gap-1 text-[11px] px-2.5 py-1.5",
+        className: "till-vault flex items-center gap-1 text-[11px] px-2.5 py-1.5",
         style: {
           color: CD.mute,
           border: 0,
@@ -14590,6 +14597,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         c: CD.mute
       }), " Vault \u203A"));
     })())), /*#__PURE__*/React.createElement("div", {
+      className: "till-tabwrap"
+    }, /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
         '--ft': '#17140F',
@@ -14605,7 +14614,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: ic,
       s: 13,
       c: tab === id ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", label)))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
+    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
       className: "flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
       style: {
         background: CD.brassSoft,

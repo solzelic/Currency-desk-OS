@@ -83,7 +83,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   photos, and bars stay clipped. Settings stacks its list above the
   form. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
-  A dialog keeps its own header and close. On a wide window the
+  A dialog keeps its own header and close, and on a phone it stops
+  above the bottom bar. The Cash Drawer header stacks: the title
+  and the till on one line, the status under that, the amount, then
+  Move cash and Vault. Its tabs scroll, with a fade where the last
+  one continues. On a wide window the
   dots stay 12px. The module tab bar ends before the store and ID
   buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
@@ -423,10 +427,13 @@ shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
 Till, More. More is the other apps that role can open. The + above
 the bar opens New transaction. The window title bar is hidden; the
-app fills that space. In-app tabs stay. A ledger record has its own
-Back, because that was the one action that lived only in the title
-bar. The window stops above the bar, including the iPhone safe area.
-Wider than 430px, the desk is unchanged.
+app fills that space. In-app tabs stay.   A ledger record has its own
+  Back, because that was the one action that lived only in the title
+  bar. The window stops above the bar, including the iPhone safe area.
+  The Cash Drawer header stacks down the screen instead of collapsing
+  the title into a narrow column, and a new-transaction dialog stacks
+  its type buttons and its quote rail the same way. Wider than 430px,
+  the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

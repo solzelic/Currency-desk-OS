@@ -1568,6 +1568,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    window title bar. That bar is hidden on a phone, so the record
    shows its own control. Hidden here so a wide window is unchanged. */
 .phone-tx-back { display: none; }
+/* These wrappers exist so a phone can restack the drawer header.
+   contents keeps the desktop flex items where they already were. */
+.till-statusline, .till-tabwrap { display: contents; }
 
 /* ============================================================
    PHONE BOTTOM BAR
@@ -1814,5 +1817,131 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .phone-head .mb-acct:focus-visible {
     outline: 2px solid var(--ink, #111);
     outline-offset: -2px;
+  }
+
+  /* Cash Drawer header. The action cluster is flex: none, so on a
+     narrow screen it squeezed the title down to one word a line.
+     Stack: title and till, then the status at full width, then the
+     amount, then the two actions split across the row. */
+  [data-tour="till"] .till-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  [data-tour="till"] .till-id {
+    flex: 1 1 calc(100% - 42px);
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+  }
+  [data-tour="till"] .till-meta { display: contents; }
+  [data-tour="till"] .till-name {
+    font-size: 16px;
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+  [data-tour="till"] .till-station,
+  [data-tour="till"] .till-dot { display: none; }
+  [data-tour="till"] .till-pick {
+    flex: 0 0 auto;
+    min-width: max-content;
+    max-width: none;
+  }
+  [data-tour="till"] .till-pick button {
+    font-size: 15px !important;
+    font-weight: 600;
+    white-space: nowrap !important;
+    max-width: none !important;
+    min-height: 32px;
+  }
+  [data-tour="till"] .till-statusline {
+    display: block;
+    flex: 1 1 100%;
+    width: 100%;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  [data-tour="till"] .till-actions {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  [data-tour="till"] .till-pill {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+  [data-tour="till"] .till-move,
+  [data-tour="till"] .till-vault {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+  /* Three folder tabs do not fit. The bar scrolls, and the fade
+     on the right says there is more. Extra padding lets the last
+     tab scroll clear of that fade. */
+  [data-tour="till"] .till-tabwrap {
+    display: block;
+    position: relative;
+  }
+  [data-tour="till"] .till-tabwrap::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 36px;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255,255,255,0), #fff 78%);
+  }
+  [data-tour="till"] .fld-bar {
+    padding-right: 36px !important;
+    scroll-padding-right: 36px;
+  }
+
+  /* Dialogs are centred on the whole screen, so on a phone the
+     bottom of a tall one sat under the bar. Keep the scrim, and
+     the panel, above it. */
+  .fixed.inset-0 { bottom: var(--phone-dock-h) !important; }
+  .fixed.inset-0 > div,
+  .fixed.inset-0 > form,
+  .fixed.inset-0 > section {
+    max-height: calc(100dvh - var(--phone-dock-h) - 16px) !important;
+  }
+  /* Six deal types in one row left each label a couple of words
+     tall. Two columns keeps "Money order" on one line. */
+  .fixed.inset-0 .grid[style*="repeat(6, 1fr)"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .fixed.inset-0 .grid[style*="repeat(6, 1fr)"] button {
+    min-height: 44px;
+    flex-direction: row !important;
+    justify-content: flex-start;
+    gap: 8px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+  .fixed.inset-0 .grid[style*="repeat(6, 1fr)"] button span {
+    white-space: nowrap;
+    text-align: left;
+  }
+  /* The quote rail is 320px beside the form. On a phone that
+     squeezed the fields into a column of single words. Stack it. */
+  .fixed.inset-0 > .flex-col > .flex-1.flex {
+    flex-direction: column !important;
+    overflow: auto;
+  }
+  .fixed.inset-0 > .flex-col > .flex-1.flex > .flex-none {
+    width: 100% !important;
+    max-width: 100% !important;
   }
 }
