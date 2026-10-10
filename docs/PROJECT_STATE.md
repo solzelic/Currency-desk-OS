@@ -411,6 +411,16 @@ the one movement. A known key whose amount, currency, direction, or
 the rest of the movement differs is refused, and nothing else moves.
 A new form is a new movement.
 
+**2026-10-10**, Cheque cashing. An opened cheque form keeps one idempotency
+key until that cashing finishes, including a retry and a second tap.
+The server also refuses a second live cheque at the same branch with
+the same number and payer, and the same bank when both sides stored
+one. A missing bank matches. A different bank is different paper. A
+cheque that has cleared, been returned, or been reversed can be cashed
+again. Migration 039. A book that already holds two live copies still
+boots: the older copy stays held and is left out of the unique index
+(`paper_guard` false). The newest copy is the row the index watches.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the

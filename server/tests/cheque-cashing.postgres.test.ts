@@ -666,6 +666,70 @@ postgres("cheque cashing on the ledger", () => {
     expect(await tillCad()).toBe("4035.00");
   });
 
+  /* Two taps of one open form used to be two keys, because the key was
+     built from the clock. Cheque 1002841 (face 40.00, fee 1.00) was then
+     paid twice and 78.00 left the drawer — the net, twice. A second live
+     cheque with the same number, payer and bank is the same paper, and
+     the book has to refuse it even when the keys differ. */
+  it("pays cheque 1002841 once when a second tap arrives under a new key", async () => {
+    const cookies = await cookie();
+    const paper = {
+      chequeNumber: "1002841",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      faceAmount: "40.00",
+      feeAmount: "1.00",
+      holdDays: 0,
+    };
+    const first = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-a" });
+    expect(first.statusCode, first.body).toBe(201);
+    const second = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-b" });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().code).toBe("CHEQUE_ALREADY_HELD");
+    expect(second.json().message).toMatch(/already cashed/i);
+    expect(await tillCad()).toBe("4961.00");
+    expect(
+      (await pool.query(
+        "SELECT count(*)::int AS n FROM ledger_cheques WHERE cheque_number='1002841'",
+      )).rows[0].n,
+    ).toBe(1);
+  });
+
+  it("still cashes a different cheque, and the same number once it is no longer live", async () => {
+    const cookies = await cookie();
+    const paper = {
+      chequeNumber: "1002841",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      faceAmount: "40.00",
+      feeAmount: "1.00",
+      holdDays: 0,
+    };
+    const first = await cashCheque(cookies, { ...paper, idempotencyKey: "live-a" });
+    expect(first.statusCode, first.body).toBe(201);
+    const otherNumber = await cashCheque(cookies, {
+      ...paper,
+      chequeNumber: "1002842",
+      idempotencyKey: "live-b",
+    });
+    expect(otherNumber.statusCode, otherNumber.body).toBe(201);
+    const otherBank = await cashCheque(cookies, {
+      ...paper,
+      draweeBank: "TD Canada Trust",
+      idempotencyKey: "live-c",
+    });
+    expect(otherBank.statusCode, otherBank.body).toBe(201);
+    const undone = await settle(cookies, first.json().cheque.chequeId, "reversal", {
+      reason: "Cashed the wrong cheque",
+    });
+    expect(undone.statusCode, undone.body).toBe(201);
+    const again = await cashCheque(cookies, { ...paper, idempotencyKey: "live-d" });
+    expect(again.statusCode, again.body).toBe(201);
+    /* Four cashes of 39, and the first of them reversed, so three nets
+       have left: 5000 − 117 = 4883. */
+    expect(await tillCad()).toBe("4883.00");
+  });
+
   it("clears once however many times the request arrives", async () => {
     const cookies = await cookie();
     const cashed = await heldCheque(cookies);
@@ -745,4 +809,113 @@ postgres("cheque cashing on the ledger", () => {
       pool.query("DELETE FROM ledger_cheque_events"),
     ).rejects.toThrow(/append-only/);
   });
+
+  /* The unique index lands on a book that may already hold two live
+     copies of one cheque — that is the bug. Creating the index over
+     those rows must not abort boot. The older copy stays held (the
+     cash is still out) and is left out of the index. */
+  it("applies the live-paper index over a book that already holds a duplicate cheque", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies, {
+      chequeNumber: "1002841",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      idempotencyKey: "dup-migrate-newer",
+    });
+    const newerId = cashed.cheque.chequeId as string;
+
+    /* The book as it was before this migration: no index, and two
+       held rows for the same paper. */
+    await pool.query("DROP INDEX IF EXISTS ledger_cheques_live_paper_idx");
+    await pool.query("ALTER TABLE ledger_cheques DROP COLUMN IF EXISTS paper_guard");
+    await pool.query(
+      "DELETE FROM schema_migrations WHERE migration_id = '039_live_cheque_paper'",
+    );
+    await cloneHeldCheque(cashed.transactionId, newerId, {
+      chequeId: "chq_older_dup",
+      chequeRef: "CHQ-OLDER-DUP",
+      transactionId: "tx_older_dup",
+      transactionRef: "CD-OLDER-DUP",
+      hoursEarlier: 1,
+    });
+
+    await runMigrations(pool);
+
+    const held = await pool.query(
+      `SELECT cheque_id, status, paper_guard
+         FROM ledger_cheques
+        WHERE cheque_number = '1002841'
+        ORDER BY created_at`,
+    );
+    expect(held.rows).toEqual([
+      { cheque_id: "chq_older_dup", status: "held", paper_guard: false },
+      { cheque_id: newerId, status: "held", paper_guard: true },
+    ]);
+    expect(
+      (
+        await pool.query(
+          "SELECT 1 FROM schema_migrations WHERE migration_id = '039_live_cheque_paper'",
+        )
+      ).rowCount,
+    ).toBe(1);
+
+    /* The newest copy is the one the index watches. A third live
+       copy of the same paper still cannot land. */
+    await expect(
+      cloneHeldCheque(cashed.transactionId, newerId, {
+        chequeId: "chq_third_dup",
+        chequeRef: "CHQ-THIRD-DUP",
+        transactionId: "tx_third_dup",
+        transactionRef: "CD-THIRD-DUP",
+        hoursEarlier: 0,
+      }),
+    ).rejects.toThrow(/duplicate key value|unique constraint/i);
+  });
 });
+
+/** A second held row for a cheque that is already on the book.
+    Used to build the duplicate this migration has to survive. */
+async function cloneHeldCheque(
+  sourceTransactionId: string,
+  sourceChequeId: string,
+  ids: {
+    chequeId: string;
+    chequeRef: string;
+    transactionId: string;
+    transactionRef: string;
+    hoursEarlier: number;
+  },
+) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "CREATE TEMP TABLE tmp_tx ON COMMIT DROP AS SELECT * FROM ledger_transactions WHERE transaction_id = $1",
+      [sourceTransactionId],
+    );
+    await client.query(
+      "UPDATE tmp_tx SET transaction_id = $1, transaction_ref = $2",
+      [ids.transactionId, ids.transactionRef],
+    );
+    await client.query("INSERT INTO ledger_transactions SELECT * FROM tmp_tx");
+    await client.query(
+      "CREATE TEMP TABLE tmp_chq ON COMMIT DROP AS SELECT * FROM ledger_cheques WHERE cheque_id = $1",
+      [sourceChequeId],
+    );
+    await client.query(
+      `UPDATE tmp_chq
+          SET cheque_id = $1,
+              cheque_ref = $2,
+              cashing_transaction_id = $3,
+              created_at = created_at - ($4 * interval '1 hour')`,
+      [ids.chequeId, ids.chequeRef, ids.transactionId, ids.hoursEarlier],
+    );
+    await client.query("INSERT INTO ledger_cheques SELECT * FROM tmp_chq");
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}

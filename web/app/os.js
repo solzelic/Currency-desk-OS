@@ -33850,7 +33850,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }));
       const posted = await book.cashCheque({
-        idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${window.CDOS.Backend.asMoney(amtN)}:${Date.now()}`,
+        /* This ticket's key, not the clock. Two taps are one cashing.
+           See attemptKey above — the same rule as a money order. */
+        idempotencyKey: 'web-chq:' + attemptKey(),
         customerId: synced.customerId,
         chequeNumber: chequeNumber.trim(),
         maker: maker.trim(),
@@ -38951,7 +38953,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     useState,
     useMemo,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD,
@@ -39420,6 +39423,17 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        from the book. */
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
+    /* One key for this opened form, reused on a retry and on a second
+       tap. It used to be rebuilt from the clock, so two taps of the same
+       cheque were two keys and the drawer paid the net twice. A refusal
+       leaves no idempotency row, so sending the corrected ticket again
+       under this same key is right. Opening the form again is a new
+       attempt. The same shape as a money order and a transfer. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const save = async () => {
       if (!canSave || busy) return;
       const book = ledger();
@@ -39436,7 +39450,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
            mirrored across before the money moves. */
         const synced = await book.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
         const posted = await book.cashCheque({
-          idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${book.asMoney(amtN)}:${Date.now()}`,
+          idempotencyKey: 'web-chq:' + attemptKey(),
           customerId: synced.customerId,
           chequeNumber: chequeNumber.trim(),
           maker: maker.trim(),

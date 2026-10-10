@@ -443,6 +443,48 @@ export class ChequeService {
           "Insufficient till liquidity.",
         );
 
+      /* The same piece of paper, still outstanding. Two taps used to be
+         two idempotency keys — the form built the key from the clock —
+         so cheque 1002841 was paid twice and the net left the drawer
+         twice. The key on the form is now stable for that opened form.
+         This is the backstop for a second form, a second till, or a
+         retry that minted a new key anyway: same number, same payer,
+         and the same bank when both sides stored one. A blank bank on
+         either side still matches, because a missing bank is not a
+         different cheque. A different bank is different paper. A cheque
+         that has cleared, bounced, or been reversed is not live, so the
+         number can be cashed again. */
+      const chequeNumber = String(input.chequeNumber ?? "").trim();
+      const makerName = String(input.maker ?? "").trim();
+      const draweeBank = input.draweeBank ? String(input.draweeBank).trim() : null;
+      const alreadyHeld = await client.query(
+        `SELECT 1
+           FROM ledger_cheques
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND status='held'
+            AND cheque_number=$4
+            AND lower(btrim(maker))=lower(btrim($5))
+            AND (
+              lower(btrim(coalesce(drawee_bank, ''))) = lower(btrim(coalesce($6, '')))
+              OR btrim(coalesce(drawee_bank, '')) = ''
+              OR btrim(coalesce($6, '')) = ''
+            )
+          LIMIT 1`,
+        [
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+          chequeNumber,
+          makerName,
+          draweeBank,
+        ],
+      );
+      if (alreadyHeld.rowCount)
+        throw new LedgerError(
+          "CHEQUE_ALREADY_HELD",
+          "This cheque is already cashed and still outstanding. Nothing was paid again.",
+        );
+
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
       const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
@@ -545,9 +587,9 @@ export class ChequeService {
           chequeRef,
           ...scope(actor),
           input.customerId,
-          String(input.chequeNumber ?? "").trim(),
-          String(input.maker ?? "").trim(),
-          input.draweeBank ? String(input.draweeBank).trim() : null,
+          chequeNumber,
+          makerName,
+          draweeBank,
           String(input.chequeType ?? "").trim(),
           String(input.typeLabel ?? "").trim(),
           home,
@@ -578,9 +620,9 @@ export class ChequeService {
           chequeId,
           ref: chequeRef,
           customerId: input.customerId,
-          chequeNumber: String(input.chequeNumber ?? "").trim(),
-          maker: String(input.maker ?? "").trim(),
-          draweeBank: input.draweeBank ? String(input.draweeBank).trim() : null,
+          chequeNumber,
+          maker: makerName,
+          draweeBank,
           chequeType: String(input.chequeType ?? "").trim(),
           typeLabel: String(input.typeLabel ?? "").trim(),
           currency: home,
@@ -620,6 +662,18 @@ export class ChequeService {
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
+      /* Two cashes of the same live paper can pass the SELECT together.
+         The unique index is what makes the second insert lose, and the
+         teller should hear the same sentence either way. */
+      const pgError = error as { code?: string; constraint?: string };
+      if (
+        pgError.code === "23505" &&
+        pgError.constraint === "ledger_cheques_live_paper_idx"
+      )
+        throw new LedgerError(
+          "CHEQUE_ALREADY_HELD",
+          "This cheque is already cashed and still outstanding. Nothing was paid again.",
+        );
       throw error;
     } finally {
       client.release();
