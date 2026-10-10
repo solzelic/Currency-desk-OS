@@ -432,6 +432,14 @@
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const sync = () => setPhoneLayout(mq.matches);
+      sync();
+      mq.addEventListener('change', sync);
+      return () => mq.removeEventListener('change', sync);
+    }, []);
 
     useEffect(() => {
       const h = (e) => {
@@ -471,7 +479,7 @@
         const visibleBottom = top + height - 160;
         if (r.top >= visibleTop && r.bottom <= visibleBottom) return;
         try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (err) {}
-        const scroller = el.closest('.tx-body');
+        const scroller = el.closest('.tx-panel') || el.closest('.tx-body');
         if (scroller) scroller.scrollLeft = 0;
       };
       const onFocus = (e) => intoView(e.target);
@@ -999,7 +1007,7 @@
           <div className="tx-types flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <button type="button" className="tx-typecard" aria-haspopup="listbox" aria-expanded={typeSheet} onClick={() => setTypeSheet(true)}>
               <span className="tx-typecard-now">{meta.short}</span>
-              <span className="tx-typecard-rest">{TYPE_LIST.filter(t => t !== type).map(t => TYPE_COMPACT[t]).join(' · ')}</span>
+              <span className="tx-typecard-rest">{TYPE_LIST.filter(t => t !== type).map(t => <span key={t} className="tx-typeitem">{TYPE_COMPACT[t]}</span>)}</span>
             </button>
             <div className="tx-typegrid grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (
@@ -1196,8 +1204,8 @@
                 <div className="tx-facts-card p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="tx-facts-title flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
                   <div className="tx-facts-intro text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
-                  <div className="tx-fact"><Lbl><span className="tx-wide">Purpose of transaction</span><span className="tx-narrow">Purpose</span></Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div className="tx-fact"><Lbl><span className="tx-wide">Source of funds</span><span className="tx-narrow">Source of funds</span></Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div className="tx-fact"><Lbl><span className="tx-wide">Purpose of transaction</span><span className="tx-narrow">Purpose</span></Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div className="tx-fact"><Lbl><span className="tx-wide">Source of funds</span><span className="tx-narrow">Source of funds</span></Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                   <div className="tx-fact-full"><Lbl>Acting for someone else?</Lbl>
                     <div className="flex items-center gap-2">
                       <div className="inline-flex flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{[['no', 'No'], ['yes', 'Yes']].map(([v, l], i) => { const on = (cap.thirdParty ? 'yes' : 'no') === v; return <button key={v} onClick={() => setCap(s => ({ ...s, thirdParty: v === 'yes' }))} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none' }}>{l}</button>; })}</div>
@@ -1211,8 +1219,8 @@
                 <div className="tx-facts-card p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="tx-facts-title flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="tx-facts-intro text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
-                  <div className="tx-fact"><Lbl><span className="tx-wide">Purpose of transaction</span><span className="tx-narrow">Purpose</span></Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div className="tx-fact"><Lbl><span className="tx-wide">Source of funds</span><span className="tx-narrow">Source of funds</span></Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div className="tx-fact"><Lbl><span className="tx-wide">Purpose of transaction</span><span className="tx-narrow">Purpose</span></Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div className="tx-fact"><Lbl><span className="tx-wide">Source of funds</span><span className="tx-narrow">Source of funds</span></Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                 </div>
               )}
 

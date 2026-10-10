@@ -2133,29 +2133,48 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-    overflow: hidden !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     background: var(--cd-paper, #f4f3f0) !important;
+  }
+  /* The page is portaled onto document.body, outside .win-body,
+     so the window's Archivo rule never reaches it. Inputs then
+     fall back to the browser face. Use the same stacks as the
+     ledger cards: Archivo for words, Space Mono for figures. */
+  .tx-screen,
+  .tx-screen button,
+  .tx-screen input,
+  .tx-screen select,
+  .tx-screen textarea {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
   }
 
   .tx-screen .tx-head {
-    min-height: 48px;
-    padding: 2px 6px 2px 4px !important;
-    background: transparent !important;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    min-height: 52px;
+    justify-content: flex-start !important;
+    padding: 0 16px !important;
+    background: var(--cd-paper, #f4f3f0) !important;
     border-bottom: 0 !important;
-    gap: 4px;
+    gap: 2px;
   }
   .tx-screen .tx-head-mark,
   .tx-screen .tx-head-sub { display: none !important; }
   .tx-screen .tx-title {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 17px !important;
     font-weight: 700;
     white-space: nowrap;
   }
   .tx-screen .tx-close {
+    order: -1;
     width: 44px;
     height: 44px;
     min-width: 44px;
     min-height: 44px;
+    margin-left: -12px;
     display: grid;
     place-items: center;
     padding: 0 !important;
@@ -2186,7 +2205,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 12px;
     background: #fff;
     cursor: pointer;
-    font-family: inherit;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     box-sizing: border-box;
     appearance: none;
   }
@@ -2198,26 +2217,29 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     white-space: nowrap;
   }
   .tx-screen .tx-typecard-rest {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
     max-width: 100%;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 15px;
     font-weight: 500;
     line-height: 1.35;
     color: rgba(10, 10, 10, 0.62);
-    text-wrap: balance;
   }
+  .tx-screen .tx-typeitem { white-space: nowrap; }
+  .tx-screen .tx-typeitem:not(:last-child)::after { content: " \00b7 "; }
 
   .tx-screen .tx-body {
+    flex: none !important;
     flex-direction: column !important;
     flex-wrap: nowrap !important;
     align-items: stretch;
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
+    overflow: visible !important;
     min-height: 0;
-    -webkit-overflow-scrolling: touch;
     padding-bottom: 168px;
     box-sizing: border-box;
   }
@@ -2283,13 +2305,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    border: 0 !important;
-    border-bottom: 1px solid var(--line, rgba(10, 10, 10, 0.14)) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    padding: 4px 0 !important;
+    border: 1px solid var(--line, rgba(10, 10, 10, 0.14)) !important;
+    border-radius: 9px !important;
+    background: var(--cd-panel, #fff) !important;
+    padding: 4px 12px !important;
     flex-wrap: nowrap !important;
-    gap: 10px;
+    gap: 8px;
     box-sizing: border-box;
   }
   .tx-screen .tx-searchico { display: none; }
@@ -2305,10 +2326,18 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 1 auto;
     width: auto !important;
     max-width: 100%;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 16px !important;
     font-weight: 600;
     min-width: 0 !important;
     min-height: 44px;
+  }
+  .tx-screen .tx-custname::placeholder {
+    font-weight: 500;
+    color: rgba(10, 10, 10, 0.38);
+  }
+  .tx-screen .tx-idstatus {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
   }
 
   .tx-screen .tx-lbl > span:first-child {
@@ -2367,8 +2396,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding: 0 !important;
     border-radius: 0 !important;
     white-space: nowrap;
-    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     line-height: 1.25;
+  }
+  .tx-screen .tx-pair-side {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+  }
+  .tx-screen .tx-amt,
+  .tx-screen .tx-pair-rate,
+  .tx-screen .tx-split input,
+  .tx-screen .tx-ccy {
+    font-family: var(--f-mono, "Space Mono", monospace) !important;
   }
   .tx-screen .tx-swap {
     width: 44px;

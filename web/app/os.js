@@ -33228,6 +33228,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const sync = () => setPhoneLayout(mq.matches);
+      sync();
+      mq.addEventListener('change', sync);
+      return () => mq.removeEventListener('change', sync);
+    }, []);
     useEffect(() => {
       const h = e => {
         if (e.key !== 'Escape' || present) return;
@@ -33274,7 +33282,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             inline: 'nearest'
           });
         } catch (err) {}
-        const scroller = el.closest('.tx-body');
+        const scroller = el.closest('.tx-panel') || el.closest('.tx-body');
         if (scroller) scroller.scrollLeft = 0;
       };
       const onFocus = e => intoView(e.target);
@@ -34269,7 +34277,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "tx-typecard-now"
     }, meta.short), /*#__PURE__*/React.createElement("span", {
       className: "tx-typecard-rest"
-    }, TYPE_LIST.filter(t => t !== type).map(t => TYPE_COMPACT[t]).join(' · '))), /*#__PURE__*/React.createElement("div", {
+    }, TYPE_LIST.filter(t => t !== type).map(t => /*#__PURE__*/React.createElement("span", {
+      key: t,
+      className: "tx-typeitem"
+    }, TYPE_COMPACT[t])))), /*#__PURE__*/React.createElement("div", {
       className: "tx-typegrid grid gap-1.5",
       style: {
         gridTemplateColumns: 'repeat(6, 1fr)'
@@ -35054,7 +35065,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Purpose")), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35072,7 +35083,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35148,7 +35159,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Purpose")), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: phoneLayout ? 'e.g. travel' : 'e.g. vacation funds, invoice settlement',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35166,7 +35177,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: phoneLayout ? 'e.g. savings' : 'e.g. employment income, savings',
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,

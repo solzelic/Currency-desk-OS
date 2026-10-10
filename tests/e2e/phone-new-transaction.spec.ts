@@ -207,8 +207,8 @@ test("an exchange can be filled and recorded, and the ledger keeps it", async ({
   await page.getByPlaceholder("Type a name…").fill(customer);
   await page.locator(".tx-title").click();
   await page.locator(".tx-screen input.tx-amt").fill("100");
-  await page.getByPlaceholder(/vacation funds/).fill("Personal travel");
-  await page.getByPlaceholder(/employment income/).fill("Employment income");
+  await page.getByPlaceholder("e.g. travel").fill("Personal travel");
+  await page.getByPlaceholder("e.g. savings").fill("Employment income");
   const quote = page.locator(".tx-record");
   await expect(quote).toBeEnabled();
   await expect(quote).toContainText("Get server quote");
