@@ -1564,6 +1564,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
 }
 
+/* Back out of a ledger record. On the desktop this lives in the
+   window title bar. That bar is hidden on a phone, so the record
+   shows its own control. Hidden here so a wide window is unchanged. */
+.phone-tx-back { display: none; }
+
 /* ============================================================
    PHONE BOTTOM BAR
    Off at desktop width. At 430px the header and the bar replace
@@ -1576,6 +1581,30 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     --phone-dock-h: calc(118px + env(safe-area-inset-bottom, 0px));
   }
   #menubar, #tenantbar, #appbar, .edge-rail { display: none !important; }
+
+  /* The bottom bar names the app, so the window title bar is
+     spare: traffic lights, the centred name, the extra-window
+     +, and the tile grid. In-app tabs stay in the window body.
+     A dialog keeps its own header. The body padding is what
+     cleared the bar; drop it so the app uses that room.
+     #desktop beats the 44px phone rule on .win-body. */
+  #desktop .win > .win-bar { display: none !important; }
+  #desktop .win > .win-body,
+  #desktop .win.bar-hidden > .win-body { padding-top: 0 !important; }
+  .phone-tx-back {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    margin-left: -6px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink, #111);
+    cursor: pointer;
+    padding: 0;
+  }
 
   .phone-head {
     order: -1;

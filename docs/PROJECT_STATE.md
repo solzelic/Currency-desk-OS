@@ -82,8 +82,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   A card that holds a table scrolls sideways. Rounded clips,
   photos, and bars stay clipped. Settings stacks its list above the
   form. Sign-in and the station picker stay on the screen. The window
-  dots stay 12px, so the title stays readable. The module tab bar
-  ends before the store and ID buttons.
+  title bar is hidden, so the app uses that room. In-app tabs stay.
+  A dialog keeps its own header and close. On a wide window the
+  dots stay 12px. The module tab bar ends before the store and ID
+  buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -420,8 +422,11 @@ authenticated narrative dashboard.
 shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
 Till, More. More is the other apps that role can open. The + above
-the bar opens New transaction. The window stops above the bar,
-including the iPhone safe area. Wider than 430px, the desk is unchanged.
+the bar opens New transaction. The window title bar is hidden; the
+app fills that space. In-app tabs stay. A ledger record has its own
+Back, because that was the one action that lived only in the title
+bar. The window stops above the bar, including the iPhone safe area.
+Wider than 430px, the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

@@ -29183,7 +29183,17 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
       }
-    }, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-tx-back",
+      "aria-label": "Back to records",
+      title: "Back to records",
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "arrowleft",
+      s: 18,
+      c: CD.ink
+    })), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"

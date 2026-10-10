@@ -168,6 +168,31 @@ test("the plus opens new transaction", async ({ page }) => {
   await expect(deal.getByText("Customer pays in", { exact: true })).toBeVisible();
 });
 
+test("the window title bar is hidden on a phone and visible on the desktop", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+  for (const id of ["rates", "ledger", "clients", "till"]) {
+    await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
+    await dismissTour(page);
+    await settled(page);
+    await expect(page.locator(".win.show.active .win-bar")).toBeHidden();
+  }
+  await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reconcile & close", exact: true })).toBeVisible();
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await settled(page);
+  await expect(page.locator(".win.show.active .win-bar")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Records", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Compliance", exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator(".win.show.active .win-bar")).toBeVisible();
+  await expect(page.locator(".win.show.active .win-title")).toBeVisible();
+  await expect(page.locator(".win.show.active .win-close")).toBeVisible();
+  await expect(page.locator(".win.show.active .win-tool")).toBeVisible();
+  await expect(page.locator(".win.show.active .win-tile")).toBeVisible();
+});
+
 test("the open window sits above the bar", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);

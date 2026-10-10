@@ -1058,6 +1058,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       <div className="absolute inset-0 flex flex-col" style={{ background: CD.paper, zIndex: 50, transform: shown ? 'translateX(0)' : 'translateX(2.5%)', opacity: shown ? 1 : 0, transition: 'transform .22s ease, opacity .2s ease' }}>
         {/* header */}
         <div className="flex items-center gap-3 px-5 py-3 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+          <button type="button" className="phone-tx-back" aria-label="Back to records" title="Back to records" onClick={onClose}><Ic n="arrowleft" s={18} c={CD.ink} /></button>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-lg" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', textDecoration: isVoid ? 'line-through' : 'none' }}>{row.ref}</span>
