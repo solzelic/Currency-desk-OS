@@ -26312,7 +26312,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     useState,
     useMemo,
     useRef,
-    useEffect
+    useEffect,
+    useLayoutEffect
   } = React;
   const {
     CD,
@@ -30541,13 +30542,43 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     canReport
   }) {
     const [sheet, setSheet] = useState(false);
+    const [summarySplit, setSummarySplit] = useState(false);
+    const summaryRef = useRef(null);
     const label = phoneViewLabel(view);
     const applyView = v => {
       setFocusRefs(null);
       setView(v);
       setSheet(false);
     };
-    const bits = [`${summary.n} today`, `${!summary.n || summary.vol == null ? '—' : fmtHome(summary.vol)} pay-in`, `${summary.n ? fmtHome(summary.fees) : '—'} fees`, `${summary.rpt} reportable`];
+    const vol = !summary.n || summary.vol == null ? '—' : fmtHome(summary.vol);
+    const fees = summary.n ? fmtHome(summary.fees) : '—';
+    /* "in" rather than "pay-in" so the line fits a 360px phone.
+       Each dot has a space on both sides. If the line still does not
+       fit, it breaks into two lines that neither start nor end on a dot. */
+    const summaryFull = `${summary.n} today · ${vol} in · ${fees} fees · ${summary.rpt} reportable`;
+    const summaryLeft = `${summary.n} today · ${vol} in`;
+    const summaryRight = `${fees} fees · ${summary.rpt} reportable`;
+    useLayoutEffect(() => {
+      const el = summaryRef.current;
+      if (!el) return;
+      const fit = () => {
+        if (!summarySplit) {
+          const line = el.querySelector('.ledger-today-line');
+          if (line && line.scrollWidth > el.clientWidth + 1) setSummarySplit(true);
+          return;
+        }
+        const probe = document.createElement('span');
+        probe.style.cssText = 'position:absolute;white-space:nowrap;visibility:hidden;font:' + getComputedStyle(el).font;
+        probe.textContent = summaryFull;
+        el.appendChild(probe);
+        const fits = probe.scrollWidth <= el.clientWidth + 1;
+        probe.remove();
+        if (fits) setSummarySplit(false);
+      };
+      fit();
+      window.addEventListener('resize', fit);
+      return () => window.removeEventListener('resize', fit);
+    }, [summaryFull, summarySplit]);
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "ledger-phone"
     }, client && /*#__PURE__*/React.createElement("div", {
@@ -30562,12 +30593,17 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       onClick: () => setFocusRefs(null)
     }, "Clear focus")), /*#__PURE__*/React.createElement("button", {
       type: "button",
+      ref: summaryRef,
       className: "ledger-today",
       "data-ledger-summary": true,
       onClick: onSummary
-    }, bits.map((bit, i) => /*#__PURE__*/React.createElement("span", {
-      key: bit
-    }, bit, i < bits.length - 1 ? ' ·' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, summarySplit ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+      className: "ledger-today-line"
+    }, summaryLeft), /*#__PURE__*/React.createElement("span", {
+      className: "ledger-today-line"
+    }, summaryRight)) : /*#__PURE__*/React.createElement("span", {
+      className: "ledger-today-line"
+    }, summaryFull)), /*#__PURE__*/React.createElement("div", {
       className: "ledger-tools"
     }, /*#__PURE__*/React.createElement("label", {
       className: "ledger-search"

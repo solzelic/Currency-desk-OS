@@ -8,7 +8,7 @@
    log, which is what makes the book examiner-ready.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useLayoutEffect } = React;
   const {
     CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
     computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
@@ -1427,20 +1427,47 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
      there, so the table underneath is the one a desktop already had. */
   function PhoneBook({ filtered, flags, q, setQ, view, setView, tf, setTf, setFocusRefs, focusRefs, focusLabel, client, setClient, summary, onSummary, onOpen, onReport, canReport }) {
     const [sheet, setSheet] = useState(false);
+    const [summarySplit, setSummarySplit] = useState(false);
+    const summaryRef = useRef(null);
     const label = phoneViewLabel(view);
     const applyView = (v) => { setFocusRefs(null); setView(v); setSheet(false); };
-    const bits = [
-      `${summary.n} today`,
-      `${!summary.n || summary.vol == null ? '—' : fmtHome(summary.vol)} pay-in`,
-      `${summary.n ? fmtHome(summary.fees) : '—'} fees`,
-      `${summary.rpt} reportable`,
-    ];
+    const vol = !summary.n || summary.vol == null ? '—' : fmtHome(summary.vol);
+    const fees = summary.n ? fmtHome(summary.fees) : '—';
+    /* "in" rather than "pay-in" so the line fits a 360px phone.
+       Each dot has a space on both sides. If the line still does not
+       fit, it breaks into two lines that neither start nor end on a dot. */
+    const summaryFull = `${summary.n} today · ${vol} in · ${fees} fees · ${summary.rpt} reportable`;
+    const summaryLeft = `${summary.n} today · ${vol} in`;
+    const summaryRight = `${fees} fees · ${summary.rpt} reportable`;
+    useLayoutEffect(() => {
+      const el = summaryRef.current;
+      if (!el) return;
+      const fit = () => {
+        if (!summarySplit) {
+          const line = el.querySelector('.ledger-today-line');
+          if (line && line.scrollWidth > el.clientWidth + 1) setSummarySplit(true);
+          return;
+        }
+        const probe = document.createElement('span');
+        probe.style.cssText = 'position:absolute;white-space:nowrap;visibility:hidden;font:' + getComputedStyle(el).font;
+        probe.textContent = summaryFull;
+        el.appendChild(probe);
+        const fits = probe.scrollWidth <= el.clientWidth + 1;
+        probe.remove();
+        if (fits) setSummarySplit(false);
+      };
+      fit();
+      window.addEventListener('resize', fit);
+      return () => window.removeEventListener('resize', fit);
+    }, [summaryFull, summarySplit]);
     return (<>
       <div className="ledger-phone">
         {client && <div className="ledger-phone-note"><span>Viewing {client}</span><button type="button" onClick={() => setClient(null)}>Clear</button></div>}
         {focusRefs && focusRefs.length > 0 && <div className="ledger-phone-note"><span>Showing {focusRefs.length} record{focusRefs.length === 1 ? '' : 's'}{focusLabel ? ` · ${focusLabel}` : ''}.</span><button type="button" onClick={() => setFocusRefs(null)}>Clear focus</button></div>}
-        <button type="button" className="ledger-today" data-ledger-summary onClick={onSummary}>
-          {bits.map((bit, i) => <span key={bit}>{bit}{i < bits.length - 1 ? ' ·' : ''}</span>)}
+        <button type="button" ref={summaryRef} className="ledger-today" data-ledger-summary onClick={onSummary}>
+          {summarySplit
+            ? <><span className="ledger-today-line">{summaryLeft}</span><span className="ledger-today-line">{summaryRight}</span></>
+            : <span className="ledger-today-line">{summaryFull}</span>}
         </button>
         <div className="ledger-tools">
           <label className="ledger-search">

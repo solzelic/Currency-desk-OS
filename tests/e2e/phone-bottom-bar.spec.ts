@@ -242,6 +242,12 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     const dot = getComputedStyle(document.querySelector(".phone-appdot") as Element).backgroundColor;
     const folder = win.querySelector(".fld-tab.on");
     const bar = win.querySelector(".fld-bar");
+    const ftValue = getComputedStyle(win).getPropertyValue("--ft").trim();
+    const ftProbe = document.createElement("span");
+    ftProbe.style.color = ftValue || "transparent";
+    document.body.appendChild(ftProbe);
+    const ft = getComputedStyle(ftProbe).color;
+    ftProbe.remove();
     return {
       on: tab.classList.contains("is-on"),
       expected,
@@ -249,9 +255,9 @@ test("the selected tab takes that app's colour", async ({ page }) => {
       icon,
       line,
       dot,
+      ft,
       tabBg: folder ? getComputedStyle(folder).backgroundColor : null,
       barLine: bar ? getComputedStyle(bar).borderBottomColor : null,
-      barWidth: bar ? getComputedStyle(bar).borderBottomWidth : null,
     };
   }, { id, accentId });
 
@@ -266,12 +272,14 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     expect(colour.icon, id).toBe(colour.expected);
     expect(colour.line, id).toBe(colour.expected);
     expect(colour.dot, id).toBe(colour.expected);
-    if (colour.tabBg != null) {
+    if (id === "ledger") {
+      /* Records / Compliance is a switch. The selected half is filled
+         with the ledger's own --ft, the same green as the desktop folder. */
+      expect(colour.tabBg, id).toBe(colour.ft);
+      expect(colour.ft, id).toBe("rgb(29, 107, 69)");
+    } else if (colour.tabBg != null) {
       expect(colour.tabBg, id).toBe(colour.expected);
-      /* The ledger's Records / Compliance control is a switch, so it
-         has no folder underline. Every other app still draws one in
-         the app colour. */
-      if (colour.barWidth !== "0px") expect(colour.barLine, id).toBe(colour.expected);
+      expect(colour.barLine, id).toBe(colour.expected);
     }
     if (previous) expect(colour.expected, id).not.toBe(previous);
     previous = colour.expected || "";

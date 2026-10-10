@@ -145,7 +145,9 @@ test("cards replace the table at 390 and at 360", async ({ page }) => {
     expect(count).toBeGreaterThanOrEqual(2);
     await expect(page.locator(".win.show.active table")).toBeHidden();
     await expect(page.locator("[data-ledger-summary]")).toContainText(/\d+ today/);
-    await expect(page.locator("[data-ledger-summary]")).toContainText("pay-in");
+    const summaryText = await page.locator("[data-ledger-summary]").innerText();
+    expect(summaryText.replace(/\s+/g, " ").trim()).toMatch(/\d+ today · .+ in · .+ fees · \d+ reportable/);
+    expect(summaryText.split("\n").every((line) => !/^\s*·/.test(line) && !/·\s*$/.test(line))).toBe(true);
     await expect(page.locator("[data-ledger-summary]")).toContainText("fees");
     await expect(page.locator("[data-ledger-summary]")).toContainText("reportable");
     await expect(page.getByPlaceholder("Search the book")).toBeVisible();

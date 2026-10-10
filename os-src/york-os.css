@@ -1500,8 +1500,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 0 !important;
   }
   /* The east handle sits 3px past the window. A full-width window has
-     nowhere to grow, and that handle lands off the screen. */
-  .win-rz { display: none; }
+     nowhere to grow, and that handle lands off the screen.
+     .win-resize is the corner grip (⌟) at the bottom-right. It is a
+     desktop window control. The phone bar already sits there, so the
+     grip is hidden on every app, not only the ledger. */
+  .win-rz, .win-resize { display: none !important; }
   .win-bar, .win.bar-hidden .win-bar { height: 44px !important; }
   .win-body, .win.bar-hidden .win-body { padding-top: 44px !important; }
   .win.bar-hidden .win-title { font-size: 12px; }
@@ -2056,13 +2059,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 1 160px;
     min-width: 140px;
   }
-  .tx-flow { flex-direction: column; }
+  .tx-flow { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  /* flex: 1 1 160px on a column makes the pay-in boxes 160px tall.
+     They should be as tall as their words. */
+  .tx-flow > .min-w-0 {
+    flex: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+  }
   .tx-flow > .flex-none {
     flex-direction: row;
     min-width: 0 !important;
     width: 100%;
+    height: auto;
     justify-content: flex-start;
     gap: 8px;
+  }
+  .tx-flow > .flex-none > div { font-size: 15px !important; }
+  /* The record scrolls inside a window that already stops at the
+     dock. The round + occupies the dock's top row, so the notes
+     need room to scroll clear of it. */
+  .win-body .absolute.inset-0 > .overflow-auto > .mx-auto {
+    padding-bottom: 88px;
   }
   .tx-lbl { flex-wrap: wrap; row-gap: 2px; }
   .tx-lbl > span:first-child { white-space: nowrap; }
@@ -2151,7 +2169,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px 12px 20px;
+    padding: 12px 12px 72px;
     min-width: 0;
     box-sizing: border-box;
     font-size: 15px;
@@ -2165,7 +2183,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     width: 100%;
     min-height: 44px;
     margin: 0;
-    padding: 8px 2px;
+    padding: 8px 0;
     border: 0;
     background: transparent;
     color: var(--ink, #111);
@@ -2176,7 +2194,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     text-align: left;
     cursor: pointer;
   }
-  .ledger-today span { white-space: nowrap; }
+  /* A split summary is two lines. Each takes the full row, so the
+     two halves cannot sit beside each other and drop the dot. */
+  .ledger-today-line { white-space: nowrap; flex: 1 0 100%; }
+  /* 360 is too narrow for the full line at 15px. 14px keeps it one
+     line, with a space on both sides of each dot. */
+  @media (max-width: 370px) {
+    .ledger-today { font-size: 14px; }
+  }
 
   .ledger-tools {
     display: flex;
