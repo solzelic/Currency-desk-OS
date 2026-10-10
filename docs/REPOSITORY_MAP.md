@@ -108,6 +108,9 @@ commit the generated output — CI diffs `web/` against a fresh build.
   already holds a duplicate stays bootable: the older held copy is
   left out of the index (`paper_guard` false) and the newest copy is
   the row the index watches. The rule is `docs/CHEQUE_CASHING.md`.
+- Migration `040_till_balance_generation` keeps one generation per till
+  and bumps it when that drawer's cash changes. A close names the
+  generation it counted against. 039 is on main, so this file is 040.
 
 ## Test commands
 

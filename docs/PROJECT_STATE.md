@@ -407,6 +407,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Till close. A close names the mark the count was taken
+against. The screen pins that mark when the first figure is entered
+and keeps it until the day is closed or the count is cleared, so a
+refresh in the middle of the count cannot close against a newer
+drawer. If a deal or any other movement has changed the drawer since
+that mark, the close is refused with "Money moved since you counted.
+Count again." The old figures are not written back. A tab that posts
+a close with no mark is told "The desk was updated. Reload, then
+count again." A close of a drawer that has not moved still lands.
+The mark is migration `040_till_balance_generation`. `039` is on main;
+this file follows it.
+
 **2026-10-10**, Vault float. Taking cash from a vault that has no opening
 count is refused. The till is not credited, and nothing is subtracted
 from a figure the book does not have. The message is "Open the vault

@@ -99,7 +99,15 @@ the daily close overwrites the evidence that they did.
 - **The physical count is the only external truth, and it is recorded, not
   assumed.** A close writes counted figures back as balances. It therefore
   refuses to run unless every ledger currency has a real count — a substituted
-  figure at that moment overwrites real money.
+  figure at that moment overwrites real money. The close also names the
+  mark the count was taken against. The screen pins that mark when the
+  first figure is entered and keeps it until close or clear, including
+  across a refresh. If money has moved since that mark, the close is
+  refused — "Money moved since you counted. Count again." — and the
+  drawer is left as it stands. The screen reads the book again and
+  drops the pin, so the next count starts on the new mark. A close
+  that names no mark (a tab opened before the mark existed) is refused
+  with "The desk was updated. Reload, then count again."
 
 - **There is no offline mode.** This is a deliberate product decision, not an
   oversight. A desk that cannot reach the ledger cannot post; it says so and

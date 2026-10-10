@@ -42,8 +42,9 @@ const migrations: readonly Migration[] = [
   ["036_pack_ae_v2", "src/db/migrations/036_pack_ae_v2.sql"],
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
-  /* 038 is the last migration on main. 039 is the next number. */
+  /* 039 is the live-cheque index, now on main. 040 is the till mark. */
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
+  ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
 ] as const;
 
 export async function runMigrations(

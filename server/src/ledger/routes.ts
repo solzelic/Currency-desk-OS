@@ -118,6 +118,12 @@ const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
   note: z.string().trim().max(1000).default(""),
+  /* The mark on the drawer when these figures were counted. A whole
+     number, carried as text so a long generation is not rounded.
+     Missing on a tab opened before the mark existed. That close is
+     answered in the route, in a sentence. A mark that is present
+     but not a whole number is still a bad request. */
+  balanceGeneration: z.string().regex(/^(?:0|[1-9]\d{0,18})$/).nullish(),
 }).strict();
 const cashMovementBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -665,6 +671,16 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     if (!parsed.success) {
       return reply.code(400).send({ code: "INVALID_REQUEST" });
     }
+    /* An old tab, still open across the deploy that added the mark,
+       posts the close it always posted: counts, and no generation.
+       There is nothing to compare, so this count cannot be written
+       back. Say that in a sentence and leave the session open. */
+    if (parsed.data.balanceGeneration == null) {
+      return reply.code(422).send({
+        code: "TILL_COUNT_UNMARKED",
+        message: "The desk was updated. Reload, then count again.",
+      });
+    }
     try {
       const actor = await actorOrReply(req, reply);
       return actor
@@ -675,6 +691,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               parsed.data.idempotencyKey,
               parsed.data.counts,
               parsed.data.note,
+              parsed.data.balanceGeneration,
             ),
           )
         : undefined;
