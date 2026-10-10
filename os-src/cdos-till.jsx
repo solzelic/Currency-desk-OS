@@ -770,30 +770,32 @@
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
-        <div className="flex items-center gap-2.5 pb-3">
-          <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
-          <div className="min-w-0"><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
-            {stationName ? <b style={{ color: CD.ink }}>{stationName}</b> : null}
-            {stationName ? <span>·</span> : null}
+        <div className="till-head flex items-center gap-2.5 pb-3">
+          <span className="till-mark grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
+          <div className="till-id min-w-0"><div className="till-name font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="till-meta text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
+            {stationName ? <b className="till-station" style={{ color: CD.ink }}>{stationName}</b> : null}
+            {stationName ? <span className="till-dot">·</span> : null}
             {/* The title of this window IS the ledger's name for the drawer
                 when there is a ledger. It used to be a local till name that
                 could — and did — say "Till 2 — Express" over Till 1's money. */}
-            {tillOptions.length ? (<span ref={tillMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+            {tillOptions.length ? (<span ref={tillMenuRef} className="till-pick" style={{ position: 'relative', display: 'inline-flex' }}>
               <button onClick={() => setTillMenu(o => !o)} title="Switch till at this location" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, border: 0, background: tillMenu ? 'var(--cd-hover)' : 'transparent', borderRadius: 6, padding: '1px 5px', margin: '0 -3px', cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>{(activeOption && activeOption.name) || (onLedgerTills ? 'Till' : stationTill || 'Till')}<span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={10} c={CD.faint} /></span></button>
               {tillMenu && (<div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 5, width: 230, background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 14px 36px var(--cd-shade)', zIndex: 9999, overflow: 'hidden' }}>
                 <div style={{ padding: '8px 11px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{(onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab ? _ab.name : '')} · switch till</div>
                 {tillOptions.map(o => (<button key={o.key} onClick={() => pickTill(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}><Ic n="wallet" s={12} c={o.on ? CD.ink : CD.mute} /><span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}{o.on ? <span style={{ color: CD.faint }}> · you</span> : (o.occupant ? <span style={{ color: CD.faint }}> · {o.occupant} on now</span> : (o.note ? <span style={{ color: CD.faint }}> · {o.note}</span> : null))}</span>{o.on && <Ic n="check" s={12} c={CD.ink} />}</button>))}
                 <div style={{ padding: '7px 11px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10, color: CD.faint, display: 'flex', alignItems: 'center', gap: 5 }}><Ic n="logout" s={10} c={CD.faint} /> To change store, sign out &amp; back in.</div>
               </div>)}
-            </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
+            </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
+            <span className="till-statusline">
             <span>· {serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
                 thing and can disagree */}
             {serverBacked && ledgerTill && <span title="The till the server ledger is answering for" style={{ color: ledgerAmbiguous ? CD.brass : CD.faint }}>· ledger till <b style={{ fontFamily: 'Space Mono, monospace', color: ledgerAmbiguous ? CD.brass : CD.mute }}>{ledgerTill.tillId}</b></span>}
+            </span>
           </div></div>
-          <div className="flex items-center gap-1.5 flex-none ml-auto">
+          <div className="till-actions flex items-center gap-1.5 flex-none ml-auto">
             {(() => {
               // the drawer's rail balance — changes the moment cash is issued or returned.
               // floats are ISSUED AT THE VAULT (Vault / Branch Network), never from here:
@@ -805,18 +807,18 @@
                 ? (serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null)
                 : (_tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null);
               return (<>
-                {_tc != null && <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
+                {_tc != null && <span className="till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
                 {/* the drawer's own end of the cash rail — same modal, same
                     ledger movement, preset to this branch and this till */}
-                {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
-                <button onClick={() => onOpenVault && onOpenVault()} title="Floats are issued & returned at the vault" className="flex items-center gap-1 text-[11px] px-2.5 py-1.5" style={{ color: CD.mute, border: 0, background: 'transparent' }}><Ic n="vaultsafe" s={13} c={CD.mute} /> Vault ›</button>
+                {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
+                <button onClick={() => onOpenVault && onOpenVault()} title="Floats are issued & returned at the vault" className="till-vault flex items-center gap-1 text-[11px] px-2.5 py-1.5" style={{ color: CD.mute, border: 0, background: 'transparent' }}><Ic n="vaultsafe" s={13} c={CD.mute} /> Vault ›</button>
               </>);
             })()}
           </div>
         </div>
-        <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="till-tabwrap"><div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => <button key={id} data-tour={id === 'reconcile' ? 'till-reconcile-tab' : undefined} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
-        </div>
+        </div></div>
       </div>
 
       {/* ===== SESSION STRIP — the open-and-close, made visible =====

@@ -506,7 +506,7 @@
           </div>
         </div>
         {activeBranch && activeTill && <div className="flex items-center gap-2 pt-2 text-[11px]" style={{ color: CD.mute }}><span className="grid place-items-center" style={{ width: 6, height: 6, borderRadius: 999, background: CD.green }}></span>You're operating <b style={{ color: CD.ink }}>{activeBranch.name}</b> · {activeTill.name}</div>}
-        <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>{TABS.map(([id, label, ic]) => (
+        <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>{TABS.map(([id, label, ic]) => (
           <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>))}</div>
       </div>
 

@@ -895,7 +895,7 @@
             </>)}
           </div>
         </div>
-        <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => { const badge = id === 'receive' ? notifs.length : id === 'shifts' && openShifts ? openShifts : 0; return (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>
               <Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}

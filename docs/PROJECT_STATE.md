@@ -72,13 +72,32 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
-  the desk instead of floating as a desktop panel. The menu bar keeps
-  the icon buttons and drops the wordmark, the clock, and the account
-  name. A card that holds a table scrolls sideways. Rounded clips,
+  the desk instead of floating as a desktop panel. A compact header
+  shows the shop name, whether the till is open, and the profile
+  button. A bottom bar opens Rates, Ledger, Clients, Till, and More.
+  The selected tab's icon, label, and underline take that app's
+  colour, and so does the header dot and the open in-app folder tab.
+  That is the same set the focused app colours on the desktop: the
+  window-title dot, the active dock icon and underline, and the
+  folder-tab fill and underline. More uses the colour of the app it
+  opened, or the ink when More itself is showing. More lists the other apps that role can
+  already open. A round +
+  starts a new transaction the same way the menu button does. The
+  module tabs and the menu icons those replace are hidden. The
+  wordmark, the clock, and the account name stay off the phone.
+  A card that holds a table scrolls sideways. Rounded clips,
   photos, and bars stay clipped. Settings stacks its list above the
   form. Sign-in and the station picker stay on the screen. The window
-  dots stay 12px, so the title stays readable. The module tab bar
-  ends before the store and ID buttons.
+  title bar is hidden, so the app uses that room. In-app tabs stay.
+  A dialog keeps its own header and close, and on a phone it stops
+  above the bottom bar. The Cash Drawer header stacks: the title
+  and the till on one line, the status under that, the amount, then
+  Move cash and Vault. Its tabs scroll, with a fade where the last
+  one continues. A ledger reference and a client name stay on one
+  line, and their buttons move to the next row. A wide table keeps
+  each cell on one line and scrolls inside its card. On a wide window the
+  dots stay 12px. The module tab bar ends before the store and ID
+  buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -410,6 +429,25 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, phone bottom bar. At 430px and under, the header is the
+shop name, a till dot that reads Till open or Till closed, and the
+profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
+Till, More. More is the other apps that role can open. The + above
+the bar opens New transaction. The window title bar is hidden; the
+app fills that space. In-app tabs stay.   A ledger record has its own
+  Back, because that was the one action that lived only in the title
+  bar. The window stops above the bar, including the iPhone safe area.
+  The Cash Drawer header stacks down the screen instead of collapsing
+  the title into a narrow column, and a new-transaction dialog stacks
+  its type buttons and its quote rail the same way. A ledger reference
+  and a client name stay on one line. A wide table scrolls inside its
+  card instead of breaking each column into single words. The selected
+  tab's icon, label, and underline take that app's colour. The header
+  dot and the open in-app folder tab take it too, which is what that
+  colour paints on the desktop besides the dock. More uses the colour
+  of the app it opened, or the ink when More itself is showing. Wider
+  than 430px, the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

@@ -702,7 +702,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       fromL = 'Customer pays'; fromV = num((+row.inAmt || 0) + fee);
       toL = 'Paid to biller'; toS = row.notes || 'Biller';
     }
-    return (<div className="flex items-stretch gap-2">
+    return (<div className="tx-flow flex items-stretch gap-2">
       <FlowCard label={fromL} amount={fromV} ccy={fromC} sub={fromS} />
       <div className="flex flex-col items-center justify-center flex-none" style={{ minWidth: 58 }}>
         <Ic n="arrowright" s={18} c={CD.faint} />
@@ -1057,16 +1057,17 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     return (
       <div className="absolute inset-0 flex flex-col" style={{ background: CD.paper, zIndex: 50, transform: shown ? 'translateX(0)' : 'translateX(2.5%)', opacity: shown ? 1 : 0, transition: 'transform .22s ease, opacity .2s ease' }}>
         {/* header */}
-        <div className="flex items-center gap-3 px-5 py-3 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
-          <div className="min-w-0">
+        <div className="tx-detail-head flex items-center gap-3 px-5 py-3 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+          <button type="button" className="phone-tx-back" aria-label="Back to records" title="Back to records" onClick={onClose}><Ic n="arrowleft" s={18} c={CD.ink} /></button>
+          <div className="tx-detail-id min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-lg" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', textDecoration: isVoid ? 'line-through' : 'none' }}>{row.ref}</span>
+              <span className="tx-detail-ref font-semibold text-lg" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', textDecoration: isVoid ? 'line-through' : 'none' }}>{row.ref}</span>
               <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: isVoid ? CD.lineSoft : CD.greenSoft, color: isVoid ? CD.mute : CD.green }}>{isVoid ? 'Void' : 'Posted'}</span>
               {row.tagged && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 font-semibold" style={{ borderRadius: 5, background: CD.green, color: 'var(--cd-on-ink)', fontFamily: 'Space Mono, monospace' }}><Ic n="bookmark" s={10} c="var(--cd-on-ink)" /> TAGGED</span>}
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{row.date} {row.time} · {row.teller}</div>
           </div>
-          <div className="ml-auto flex items-center gap-1.5 flex-none">
+          <div className="tx-detail-actions ml-auto flex items-center gap-1.5 flex-none">
             <button onClick={() => onReceipt(row)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="receipt" s={14} /> Receipt</button>
             <button onClick={toggleTag} title={row.tagged ? 'Remove tag' : 'Tag for follow-up'} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, background: row.tagged ? CD.green : 'transparent', border: `1px solid ${row.tagged ? CD.green : CD.line}` }}><Ic n="bookmark" s={15} c={row.tagged ? 'var(--cd-on-ink)' : CD.mute} /></button>
             {!isVoid && can('canDelete') && !voiding && !correcting && !row.serverTransactionId && <button onClick={() => setCorrecting(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="edit" s={14} /> Correct</button>}
@@ -1628,6 +1629,14 @@ td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}
 .mut{color:#999;}.b{font-weight:600;}.grn{color:#1f8a4c;}
 tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}
+@media (max-width:430px){
+  body{padding:16px;}
+  .hd{flex-direction:column;gap:10px;}
+  .meta{text-align:left;}
+  .kpis{grid-template-columns:1fr;}
+  table{display:block;overflow-x:auto;max-width:100%;}
+  th,td{white-space:nowrap;}
+}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
@@ -1647,7 +1656,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
 
     return (<div className="flex flex-col" style={{ height: '100%', position: 'relative', background: CD.paper, overflow: 'hidden' }}>
-      <div className="fld-bar fld-pinned" style={{ '--ft': '#1D6B45' }}>
+      <div className="fld-bar fld-pinned">
         {[['records', 'Records', 'scroll'], ['compliance', 'Compliance', 'shield']].map(([id, label, ic]) => { const on = section === id; const badge = id === 'compliance' ? compCount : 0; return (
           <button key={id} onClick={() => setSection(id)} className={'fld-tab' + (on ? ' on' : '')}><Ic n={ic} s={13} c={on ? '#fff' : CD.mute} /> {label}{badge > 0 && <span className="text-[9px] px-1 py-0.5" style={{ background: CD.flag, color: '#fff', borderRadius: 4, fontFamily: 'Space Mono, monospace', marginLeft: 2 }}>{badge}</span>}</button>); })}
       </div>

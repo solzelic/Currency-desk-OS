@@ -55,6 +55,28 @@
     settings:  { title: 'Settings',        icon: 'gearsettings',   w: 640,  h: 520 }
   };
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
+  /* Phone bottom bar. The four desks open the apps the dock already
+     calls by these ids. More is every other app the role can open. */
+  const PHONE_TABS = [
+    { id: 'rates', label: 'Rates' },
+    { id: 'ledger', label: 'Ledger' },
+    { id: 'clients', label: 'Clients' },
+    { id: 'till', label: 'Till' },
+  ];
+  const PHONE_MORE = [
+    { id: 'telegraph', label: 'Texts' },
+    { id: 'transfers', label: 'Transfers' },
+    { id: 'cheques', label: 'Cheques' },
+    { id: 'compliance', label: 'Compliance' },
+    { id: 'reports', label: 'Reports' },
+    { id: 'vault', label: 'Vault' },
+    { id: 'branches', label: 'Branches' },
+    { id: 'audit', label: 'Audit trail' },
+    { id: 'calc', label: 'Calculator' },
+    { id: 'loan', label: 'Loan centre' },
+    { id: 'tagged', label: 'Tagged' },
+    { id: 'settings', label: 'Settings' },
+  ];
   // the storefront opens as a window
   APPMETA.store = { title: 'Store', icon: 'storefront', w: 860, h: 640 };
   const AUTH_KEY = 'yorkfx_staff_auth';
@@ -105,7 +127,7 @@
     };
     return (
       <div className={'win' + (shown ? ' show' : '') + (active ? ' active' : '') + (win.max ? ' max' : '') + (barHidden ? ' bar-hidden' : '')} onPointerDown={() => onFocus(win.id)}
-        style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: win.z }}>
+        style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: win.z, '--c': meta.accent || 'var(--cd-ink)', '--ft': meta.accent || 'var(--cd-ink)' }}>
         <div className="win-bar" onPointerDown={startDrag} onDoubleClick={(e) => { if (!e.target.closest('.win-tb-btn') && !e.target.closest('.win-back') && !e.target.closest('.win-rtools')) onZoom(win.id); }}>
           <div className="win-lights">
             <button className="win-tb-btn win-close" title="Close" onClick={() => onClose(win.id)}></button>
@@ -1384,6 +1406,7 @@
     const [removingApps, setRemovingApps] = useState([]);
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false);   // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
+    const [phoneMore, setPhoneMore] = useState(false);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -1449,7 +1472,7 @@
     const acctRef = useRef(null);
     useEffect(() => {
       if (!acctMenu) return;
-      const h = (e) => { if (acctRef.current && !acctRef.current.contains(e.target)) setAcctMenu(false); };
+      const h = (e) => { if (e.target && e.target.closest && e.target.closest('.mb-acct-wrap')) return; setAcctMenu(false); };
       document.addEventListener('mousedown', h);
       return () => document.removeEventListener('mousedown', h);
     }, [acctMenu]);
@@ -1689,6 +1712,7 @@
     };
     function focusWin(id) { setWins(ws => ws.map(w => w.id === id ? { ...w, z: ++zTop.current, min: false } : w)); }
     function openApp(id) {
+      setPhoneMore(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) { openSettingsTab('billing'); return; }
       setWins(ws => {
         const ex = ws.find(w => w.id === id);
@@ -2241,6 +2265,56 @@
       }
     }
 
+    const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
+    const phoneMoreNamed = new Set(PHONE_MORE.map(t => t.id));
+    const phoneMoreApps = PHONE_MORE.filter(t => visibleApps.includes(t.id)).concat(
+      visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({ id, label: (APPMETA[id] && APPMETA[id].title) || id }))
+    );
+    const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
+    /* The selected tab borrows the app's existing accent (--c on the
+       dock). More has none of its own: the sheet uses the ink, and an
+       app opened from More lends More that app's accent. */
+    const phoneTabColour = (id) => {
+      if (id === 'more') {
+        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || 'var(--cd-ink)';
+        return 'var(--cd-ink)';
+      }
+      return APP_ACCENT[id] || 'var(--cd-ink)';
+    };
+    /* The header dot is the window-title dot. The title bar is hidden
+       on a phone, so the dot sits by the shop name and follows the
+       full-screen app. More's own sheet has no accent, so it uses the ink. */
+    const phoneChrome = (phoneMore || !activeBase) ? 'var(--cd-ink)' : (APP_ACCENT[activeBase] || 'var(--cd-ink)');
+    const shopName = settings.operatingName || settings.bizName || 'Exchange house';
+    const profileButton = (slot) => (
+      <div className="mb-acct-wrap" ref={slot === 'desk' ? acctRef : undefined}>
+        <button className={'mb-acct' + (acctMenu ? ' on' : '')} aria-expanded={acctMenu} title="Account & profile" onClick={() => setAcctMenu(o => !o)}>
+          <span className="mb-acct-av">{inits(me.name)}</span>
+          <span className="mb-acct-id"><b>{me.name}</b><i>{me.role}</i></span>
+          <Ic n="chev" s={13} />
+        </button>
+        {acctMenu && (
+          <div className="mb-menu acct-menu mb-menu-solid" role="menu">
+            <div className="mb-menu-head">
+              <span className="mb-menu-av">{inits(me.name)}</span>
+              <span className="mb-menu-id"><b>{me.name}</b><span>{me.role} · {stationName}{stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''}</span></span>
+            </div>
+            <button className="mb-menu-row" onClick={() => { openSettingsTab('account'); setAcctMenu(false); }}><Ic n="id" s={16} /> <span className="mb-menu-lbl">View profile</span></button>
+            {canSettings && <button className="mb-menu-row" onClick={() => { openApp('settings'); setAcctMenu(false); }}><Ic n="gear" s={16} /> <span className="mb-menu-lbl">Account settings</span></button>}
+            <div className="mb-menu-div"></div>
+            <div className="mb-menu-cap">Switch account</div>
+            {(settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => (
+              <button key={s.name} className={'mb-menu-row' + (s.name === me.name ? ' active' : '')} onClick={() => switchTo(s)}>
+                <span className="mb-menu-dot">{inits(s.name)}</span>
+                <span className="mb-menu-lbl">{s.name} <i>· {s.role}</i></span>
+                {s.name === me.name && <Ic n="chev" s={13} />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+
     return (<div id="os">
       {/* B · desk lock — session stays live behind a PIN. Portalled to body
           so the fixed overlay escapes the desktop's stacking context. */}
@@ -2354,32 +2428,7 @@
             <span className="mb-op-div"></span>
             <span className="mb-clock"><Ic n="clock" s={12} /> <b>{clock.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })}</b></span>
             <span className="mb-op-div"></span>
-            <div className="mb-acct-wrap" ref={acctRef}>
-              <button className={'mb-acct' + (acctMenu ? ' on' : '')} aria-expanded={acctMenu} title="Account & profile" onClick={() => setAcctMenu(o => !o)}>
-                <span className="mb-acct-av">{inits(me.name)}</span>
-                <span className="mb-acct-id"><b>{me.name}</b><i>{me.role}</i></span>
-                <Ic n="chev" s={13} />
-              </button>
-              {acctMenu && (
-                <div className="mb-menu acct-menu mb-menu-solid" role="menu">
-                  <div className="mb-menu-head">
-                    <span className="mb-menu-av">{inits(me.name)}</span>
-                    <span className="mb-menu-id"><b>{me.name}</b><span>{me.role} · {stationName}{stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''}</span></span>
-                  </div>
-                  <button className="mb-menu-row" onClick={() => { openSettingsTab('account'); setAcctMenu(false); }}><Ic n="id" s={16} /> <span className="mb-menu-lbl">View profile</span></button>
-                  {canSettings && <button className="mb-menu-row" onClick={() => { openApp('settings'); setAcctMenu(false); }}><Ic n="gear" s={16} /> <span className="mb-menu-lbl">Account settings</span></button>}
-                  <div className="mb-menu-div"></div>
-                  <div className="mb-menu-cap">Switch account</div>
-                  {(settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => (
-                    <button key={s.name} className={'mb-menu-row' + (s.name === me.name ? ' active' : '')} onClick={() => switchTo(s)}>
-                      <span className="mb-menu-dot">{inits(s.name)}</span>
-                      <span className="mb-menu-lbl">{s.name} <i>· {s.role}</i></span>
-                      {s.name === me.name && <Ic n="chev" s={13} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {profileButton('desk')}
             <div className="mb-power-wrap" ref={opMenuRef}>
               <button className={'mb-op mb-op-power' + (opMenu ? ' on' : '')} aria-expanded={opMenu} title="Session menu" onClick={() => setOpMenu(o => !o)}><Ic n="power" s={16} /></button>
               {opMenu && (
@@ -2426,6 +2475,18 @@
         </div>
       </div>
 
+      {/* PHONE HEADER — shop, till, profile. Hidden above 430px.
+          It follows the tenant name in the document so a desktop
+          lookup of the shop name finds the visible one first. */}
+      <header className="phone-head" style={{ '--c': phoneChrome }}>
+        <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shopName}</span></div>
+        <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
+          <i className="phone-till-dot" />
+          <span>{day.closed ? 'Till closed' : 'Till open'}</span>
+        </div>
+        {profileButton('phone')}
+      </header>
+
       {/* APP SUB-BAR */}
       <div id="appbar" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>
         {visibleApps.map(id => {
@@ -2467,6 +2528,35 @@
             {renderApp(w.id)}
           </Win>
         ))}
+        {phoneMore && (
+          <div id="phone-more" role="dialog" aria-label="More">
+            {phoneMoreApps.length === 0 && <p className="phone-more-empty">No other apps for this role.</p>}
+            {phoneMoreApps.map(a => (
+              <button key={a.id} type="button" className="phone-more-row" data-phone-app={a.id} onClick={() => openApp(a.id)}>
+                <span className="phone-more-ico"><Ic n={(APPMETA[a.id] && APPMETA[a.id].icon) || 'grid4'} s={22} /></span>
+                <span className="phone-more-name">{a.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div id="phone-dock">
+        <div className="phone-fab-row">
+          <button id="phone-fab" type="button" className={day.closed ? 'is-closed' : ''} title={day.closed ? 'Day is closed — reopen to post' : 'New transaction'} aria-label="New transaction" onClick={quickNewDeal}><Ic n="plus" s={22} c="#fff" /></button>
+        </div>
+        <nav id="phonebar" aria-label="Desk">
+          {PHONE_TABS.map(t => (
+            <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
+              <Ic n={APPMETA[t.id].icon} s={22} />
+              <span className="lbl">{t.label}</span>
+            </button>
+          ))}
+          <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} style={{ '--c': phoneTabColour('more') }} onClick={() => setPhoneMore(v => !v)}>
+            <Ic n="grid4" s={22} />
+            <span className="lbl">More</span>
+          </button>
+        </nav>
       </div>
 
       {receipt && <ReceiptModal row={receipt} settings={settings} onClose={() => setReceipt(null)} />}
