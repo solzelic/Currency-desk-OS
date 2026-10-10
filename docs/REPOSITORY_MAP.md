@@ -104,8 +104,10 @@ commit the generated output — CI diffs `web/` against a fresh build.
   `docs/PHILIPPINES_PACK.md`.
 - Migration `039_live_cheque_paper` adds a unique index so one branch
   cannot hold two live cheques with the same number, payer, and bank.
-  It does not edit an older migration. 027 and 030 are still open
-  drafts, so 039 stays. The rule is `docs/CHEQUE_CASHING.md`.
+  038 is the last migration on main, so this file is 039. A book that
+  already holds a duplicate stays bootable: the older held copy is
+  left out of the index (`paper_guard` false) and the newest copy is
+  the row the index watches. The rule is `docs/CHEQUE_CASHING.md`.
 
 ## Test commands
 

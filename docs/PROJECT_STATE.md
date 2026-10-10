@@ -409,7 +409,9 @@ The server also refuses a second live cheque at the same branch with
 the same number and payer, and the same bank when both sides stored
 one. A missing bank matches. A different bank is different paper. A
 cheque that has cleared, been returned, or been reversed can be cashed
-again. Migration 039. 027 and 030 are still open drafts.
+again. Migration 039. A book that already holds two live copies still
+boots: the older copy stays held and is left out of the unique index
+(`paper_guard` false). The newest copy is the row the index watches.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

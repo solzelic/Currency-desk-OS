@@ -159,6 +159,21 @@ catches them when they are not simultaneous. A cheque that has
 cleared, been returned, or been reversed is not live, so the number
 can be cashed again.
 
+A book that already holds two live copies of the same cheque still
+boots. The migration leaves the older copy on the book — the cash is
+still out — and sets `paper_guard` false so that row is not in the
+unique index. The newest held copy keeps `paper_guard` true and is
+the row the index watches. Rows set aside are:
+
+```sql
+SELECT cheque_id, cheque_ref, cheque_number, maker, drawee_bank, created_at
+  FROM ledger_cheques
+ WHERE paper_guard = false;
+```
+
+A new cashing defaults `paper_guard` to true, so the index still
+refuses a second live copy.
+
 ## Where a cheque lives
 
 On the ledger. `cdos_cheques_v1` in the browser is a **cache** of it,
