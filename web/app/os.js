@@ -26368,6 +26368,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return rate ? (+amt || 0) / rate : null;
   };
   const fmtHome = v => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
+  /* Two decimals on a card. `num` drops trailing zeros, so 180 rendered
+     as "180" beside "120.53" and the two amounts stopped lining up. */
+  const money2 = n => new Intl.NumberFormat('en-CA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(n) || 0);
   /* `sumHome` stood here — a total that converted every leg at today's
      board mid. Every figure that used it now goes through `sumDealHome`,
      which counts the leg that IS the desk's own currency and counts
@@ -30496,6 +30502,193 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }, "Open client")))
     }));
   }
+  function usePhoneLedger() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+  const PHONE_VIEWS = [['open', 'All posted'], ['RPT', 'Reportable'], ['STR', 'Structuring'], ['ID', 'ID issues'], ['tagged', 'Tagged'], ['void', 'Voided']];
+  const phoneViewLabel = view => (PHONE_VIEWS.find(v => v[0] === view) || ['', 'All posted'])[1];
+
+  /* A phone has no room for the table. Same rows, same flags, same search.
+     The wide window never mounts the sheet, and this block is display:none
+     there, so the table underneath is the one a desktop already had. */
+  function PhoneBook({
+    filtered,
+    flags,
+    q,
+    setQ,
+    view,
+    setView,
+    tf,
+    setTf,
+    setFocusRefs,
+    focusRefs,
+    focusLabel,
+    client,
+    setClient,
+    summary,
+    onSummary,
+    onOpen,
+    onReport,
+    canReport
+  }) {
+    const [sheet, setSheet] = useState(false);
+    const label = phoneViewLabel(view);
+    const applyView = v => {
+      setFocusRefs(null);
+      setView(v);
+      setSheet(false);
+    };
+    const bits = [`${summary.n} today`, `${!summary.n || summary.vol == null ? '—' : fmtHome(summary.vol)} pay-in`, `${summary.n ? fmtHome(summary.fees) : '—'} fees`, `${summary.rpt} reportable`];
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "ledger-phone"
+    }, client && /*#__PURE__*/React.createElement("div", {
+      className: "ledger-phone-note"
+    }, /*#__PURE__*/React.createElement("span", null, "Viewing ", client), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setClient(null)
+    }, "Clear")), focusRefs && focusRefs.length > 0 && /*#__PURE__*/React.createElement("div", {
+      className: "ledger-phone-note"
+    }, /*#__PURE__*/React.createElement("span", null, "Showing ", focusRefs.length, " record", focusRefs.length === 1 ? '' : 's', focusLabel ? ` · ${focusLabel}` : '', "."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setFocusRefs(null)
+    }, "Clear focus")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ledger-today",
+      "data-ledger-summary": true,
+      onClick: onSummary
+    }, bits.map((bit, i) => /*#__PURE__*/React.createElement("span", {
+      key: bit
+    }, bit, i < bits.length - 1 ? ' ·' : ''))), /*#__PURE__*/React.createElement("div", {
+      className: "ledger-tools"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "ledger-search"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "search",
+      s: 16,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("input", {
+      value: q,
+      onChange: e => {
+        setQ(e.target.value);
+        if (e.target.value) setFocusRefs(null);
+      },
+      placeholder: "Search the book",
+      "aria-label": "Search the book"
+    }), q && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ledger-search-clear",
+      "aria-label": "Clear search",
+      onClick: () => setQ('')
+    }, "\xD7")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ledger-filters",
+      "data-ledger-filters": true,
+      "aria-expanded": sheet,
+      onClick: () => setSheet(true)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "k"
+    }, "Filters"), /*#__PURE__*/React.createElement("span", {
+      className: "v"
+    }, label), tf !== 'All' && /*#__PURE__*/React.createElement("span", {
+      className: "v"
+    }, tf))), /*#__PURE__*/React.createElement("div", {
+      className: "ledger-cards"
+    }, filtered.map(x => {
+      const f = flags[x.id] || {};
+      const isVoid = x.status === 'void';
+      const badges = [];
+      if (f.single) badges.push(['Reportable', CD.flag, CD.flagSoft]);
+      if (f.str) badges.push(['Structuring', CD.amber, CD.amberSoft]);
+      if (f.kyc && f.kyc !== 'ok' && f.idNeeded) badges.push(['ID needed', CD.ink, CD.lineSoft]);
+      if (x.tagged) badges.push(['Tagged', CD.green, CD.greenSoft]);
+      if (isVoid) badges.push(['Voided', CD.mute, CD.lineSoft]);
+      const out = x.outAmt === '' || x.outAmt == null ? '—' : `${money2(x.outAmt)} ${x.outCcy}`;
+      return /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        key: x.id,
+        className: "ledger-card",
+        "data-ledger-card": true,
+        style: {
+          opacity: isVoid ? 0.55 : 1
+        },
+        onClick: () => onOpen(x.id)
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-top"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-name",
+        style: {
+          textDecoration: isVoid ? 'line-through' : 'none'
+        }
+      }, x.customer || '—'), /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-ref"
+      }, x.ref)), /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-bot"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-pair"
+      }, money2(x.inAmt), " ", x.inCcy, " \u2192 ", out), /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-when"
+      }, x.time, " \xB7 ", money2(x.fee))), badges.length > 0 && /*#__PURE__*/React.createElement("span", {
+        className: "ledger-card-flags"
+      }, badges.map(([t, c, bg]) => /*#__PURE__*/React.createElement("span", {
+        key: t,
+        className: "ledger-badge",
+        style: {
+          color: c,
+          background: bg
+        }
+      }, t))));
+    }), filtered.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "ledger-empty",
+      "data-ledger-empty": true
+    }, "No deals match."))), sheet && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      className: "ledger-sheet-scrim",
+      onClick: () => setSheet(false)
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "ledger-sheet",
+      role: "dialog",
+      "aria-label": "Filters",
+      "data-ledger-sheet": true,
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "ledger-sheet-h"
+    }, "Filters"), PHONE_VIEWS.map(([id, name]) => /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      key: id,
+      className: 'ledger-sheet-row' + (view === id ? ' is-on' : ''),
+      onClick: () => applyView(id)
+    }, name)), /*#__PURE__*/React.createElement("label", {
+      className: "ledger-sheet-type"
+    }, "Type", /*#__PURE__*/React.createElement("select", {
+      "aria-label": "Type",
+      value: tf,
+      onChange: e => {
+        setTf(e.target.value);
+        setSheet(false);
+      }
+    }, /*#__PURE__*/React.createElement("option", null, "All"), TYPES.map(t => /*#__PURE__*/React.createElement("option", {
+      key: t
+    }, t)))), canReport && /*#__PURE__*/React.createElement("div", {
+      className: "ledger-sheet-reportblock"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ledger-sheet-report",
+      onClick: () => {
+        setSheet(false);
+        onReport();
+      }
+    }, "Generate report"), /*#__PURE__*/React.createElement("p", {
+      className: "ledger-sheet-note"
+    }, "Reports work best on a computer"))))));
+  }
 
   /* =====================================================================
      LEDGER — immutable record list
@@ -30535,6 +30728,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     onTillChanged
   }) {
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
+    const phoneLedger = usePhoneLedger();
     /* The desk's own trading day and its own reporting line, both from the
        server. `deskFacts` changes when either arrives, which is what makes
        the flags below re-derive against the real threshold rather than
@@ -30796,6 +30990,25 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       };
     }, [rows, client, flags, range]);
 
+    /* Today's line on a phone. Same home-leg total the stat cards use
+       (`sumDealHome`), limited to the trading day. A day with no deals
+       has no pay-in and no fees — absent, not $0. */
+    const today = useMemo(() => {
+      const day = businessDate();
+      const src = rows.filter(r => r.status !== 'void' && String(r.date).slice(0, 10) === day && (!client || r.customer === client));
+      let rpt = 0;
+      src.forEach(r => {
+        if ((flags[r.id] || {}).single) rpt++;
+      });
+      const volume = sumDealHome(src, homeCcy());
+      return {
+        n: src.length,
+        vol: volume.total,
+        fees: src.reduce((s, x) => s + (+x.fee || 0), 0),
+        rpt
+      };
+    }, [rows, client, flags, deskFacts]);
+
     // live summary of exactly what's on screen (CAD-equivalent)
     const result = useMemo(() => {
       let vol = 0,
@@ -30942,7 +31155,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-col",
+      className: "ledger-shell flex flex-col",
       style: {
         height: '100%',
         position: 'relative',
@@ -30996,7 +31209,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onOpenAccount: openLedgerForClient,
       onFileLCTR: onFileLCTR
     }), section === 'records' && /*#__PURE__*/React.createElement(React.Fragment, null, dayClosed && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-4 py-2.5",
+      className: "ledger-day flex items-center gap-2 px-4 py-2.5",
       style: {
         background: CD.inkSoft,
         color: 'var(--cd-on-ink)'
@@ -31006,7 +31219,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 14,
       c: "var(--cd-on-ink)"
     }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12.5px]"
+      className: "ledger-daynote text-[12.5px]"
     }, "The trading day is closed \u2014 the book is read-only. Reopen from Till & Cash Drawer to post new transactions."), onOpenDayClose && /*#__PURE__*/React.createElement("button", {
       onClick: onOpenDayClose,
       className: "ml-auto text-[11px] font-semibold px-2.5 py-1",
@@ -31014,8 +31227,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-on-ink-faint)',
         borderRadius: 6
       }
-    }, "Open Till \u2192")), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-2 md:grid-cols-4",
+    }, "Open Till \u2192")), phoneLedger && /*#__PURE__*/React.createElement(PhoneBook, {
+      filtered: filtered,
+      flags: flags,
+      q: q,
+      setQ: setQ,
+      view: view,
+      setView: setView,
+      tf: tf,
+      setTf: setTf,
+      setFocusRefs: setFocusRefs,
+      focusRefs: focusRefs,
+      focusLabel: focusLabel,
+      client: client,
+      setClient: setClient,
+      summary: today,
+      onSummary: () => today.n && setBreakdown('volume'),
+      onOpen: setDetailId,
+      onReport: genReport,
+      canReport: can('canExport')
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "ledger-wide grid grid-cols-2 md:grid-cols-4",
       style: {
         borderBottom: `1px solid ${CD.line}`,
         background: CD.panel
@@ -31140,7 +31372,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onClick: () => setViewToggle('RPT'),
       active: view === 'RPT'
     })), /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-wrap items-center gap-2 px-4 py-3"
+      className: "ledger-wide flex flex-wrap items-center gap-2 px-4 py-3"
     }, client && /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-2 text-xs px-2.5 py-1.5",
       style: {
@@ -31320,7 +31552,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: "var(--cd-on-ink)"
     })), "Generate report")), /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-wrap items-center gap-1.5 px-4 pb-2"
+      className: "ledger-wide flex flex-wrap items-center gap-1.5 px-4 pb-2"
     }, /*#__PURE__*/React.createElement(Chip, {
       on: view === 'open',
       onClick: () => {
@@ -31372,7 +31604,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         v: 'KYC exception — ID missing or expired'
       }]
     }))), focusRefs && focusRefs.length > 0 && /*#__PURE__*/React.createElement("div", {
-      className: "mx-4 mb-2 flex items-center justify-between gap-2 px-3 py-2",
+      className: "ledger-wide mx-4 mb-2 flex items-center justify-between gap-2 px-3 py-2",
       style: {
         background: CD.brassSoft,
         border: `1px solid ${CD.brass}`,
@@ -31396,7 +31628,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 6
       }
     }, "Clear focus")), /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-2.5"
+      className: "ledger-wide flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-2.5"
     }, search.active && search.chips.length > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap items-center gap-1.5"
     }, /*#__PURE__*/React.createElement("span", {
@@ -31444,7 +31676,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.faint
       }
     }, "fees")))), /*#__PURE__*/React.createElement("div", {
-      className: "px-4 pb-6"
+      className: "ledger-wide px-4 pb-6"
     }, /*#__PURE__*/React.createElement("div", {
       className: "overflow-hidden",
       style: {

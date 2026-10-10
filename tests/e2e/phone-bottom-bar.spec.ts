@@ -251,6 +251,7 @@ test("the selected tab takes that app's colour", async ({ page }) => {
       dot,
       tabBg: folder ? getComputedStyle(folder).backgroundColor : null,
       barLine: bar ? getComputedStyle(bar).borderBottomColor : null,
+      barWidth: bar ? getComputedStyle(bar).borderBottomWidth : null,
     };
   }, { id, accentId });
 
@@ -267,7 +268,10 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     expect(colour.dot, id).toBe(colour.expected);
     if (colour.tabBg != null) {
       expect(colour.tabBg, id).toBe(colour.expected);
-      expect(colour.barLine, id).toBe(colour.expected);
+      /* The ledger's Records / Compliance control is a switch, so it
+         has no folder underline. Every other app still draws one in
+         the app colour. */
+      if (colour.barWidth !== "0px") expect(colour.barLine, id).toBe(colour.expected);
     }
     if (previous) expect(colour.expected, id).not.toBe(previous);
     previous = colour.expected || "";
