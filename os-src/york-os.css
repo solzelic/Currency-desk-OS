@@ -1500,8 +1500,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 0 !important;
   }
   /* The east handle sits 3px past the window. A full-width window has
-     nowhere to grow, and that handle lands off the screen. */
-  .win-rz { display: none; }
+     nowhere to grow, and that handle lands off the screen.
+     .win-resize is the corner grip (⌟) at the bottom-right. It is a
+     desktop window control. The phone bar already sits there, so the
+     grip is hidden on every app, not only the ledger. */
+  .win-rz, .win-resize { display: none !important; }
   .win-bar, .win.bar-hidden .win-bar { height: 44px !important; }
   .win-body, .win.bar-hidden .win-body { padding-top: 44px !important; }
   .win.bar-hidden .win-title { font-size: 12px; }
@@ -2056,13 +2059,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 1 160px;
     min-width: 140px;
   }
-  .tx-flow { flex-direction: column; }
+  .tx-flow { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  /* flex: 1 1 160px on a column makes the pay-in boxes 160px tall.
+     They should be as tall as their words. */
+  .tx-flow > .min-w-0 {
+    flex: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+  }
   .tx-flow > .flex-none {
     flex-direction: row;
     min-width: 0 !important;
     width: 100%;
+    height: auto;
     justify-content: flex-start;
     gap: 8px;
+  }
+  .tx-flow > .flex-none > div { font-size: 15px !important; }
+  /* The record scrolls inside a window that already stops at the
+     dock. The round + occupies the dock's top row, so the notes
+     need room to scroll clear of it. */
+  .win-body .absolute.inset-0 > .overflow-auto > .mx-auto {
+    padding-bottom: 88px;
   }
   .tx-lbl { flex-wrap: wrap; row-gap: 2px; }
   .tx-lbl > span:first-child { white-space: nowrap; }
@@ -2091,5 +2109,381 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .fixed.inset-0 .flex.items-center > button,
   .fixed.inset-0 .flex.items-center > label {
     flex: none;
+  }
+}
+
+/* ============================================================
+   LEDGER ON A PHONE
+   Cards instead of the table, at 430px only. The wide blocks
+   carry ledger-wide, which has no rule above this width, so a
+   desktop window paints as it did before the class existed.
+   ============================================================ */
+.ledger-phone { display: none; }
+.ledger-sheet-scrim { display: none; }
+
+@media (max-width: 430px) {
+  .ledger-wide { display: none !important; }
+  .ledger-daynote { font-size: 15px !important; line-height: 1.35; }
+  .ledger-day button { min-height: 44px; font-size: 15px !important; white-space: nowrap; }
+
+  .ledger-shell > .fld-bar {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 12px 0;
+    border-bottom: 0;
+    overflow: hidden;
+    gap: 0;
+  }
+  .ledger-shell > .fld-bar .fld-tab {
+    flex: 1 1 0;
+    justify-content: center;
+    margin: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+    clip-path: none;
+    border: 1px solid var(--ft, #1D6B45);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ft, #1D6B45);
+    font-family: var(--f-display);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
+  .ledger-shell > .fld-bar .fld-tab svg { display: none; }
+  .ledger-shell > .fld-bar .fld-tab:first-child { border-radius: 8px 0 0 8px; }
+  .ledger-shell > .fld-bar .fld-tab + .fld-tab { margin-left: -1px; border-radius: 0 8px 8px 0; }
+  .ledger-shell > .fld-bar .fld-tab.on,
+  .ledger-shell > .fld-bar .fld-tab.on:hover {
+    background: var(--ft, #1D6B45);
+    color: #fff;
+  }
+  .ledger-shell > .fld-bar .fld-tab:hover {
+    background: transparent;
+    color: var(--ft, #1D6B45);
+  }
+
+  .ledger-phone {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 12px 72px;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--ink, #111);
+  }
+  .ledger-today {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink, #111);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* A split summary is two lines. Each takes the full row, so the
+     two halves cannot sit beside each other and drop the dot. */
+  .ledger-today-line { white-space: nowrap; flex: 1 0 100%; }
+  /* 360 is too narrow for the full line at 15px. 14px keeps it one
+     line, with a space on both sides of each dot. */
+  @media (max-width: 370px) {
+    .ledger-today { font-size: 14px; }
+  }
+
+  .ledger-tools {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ledger-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px 0 12px;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .ledger-search svg { flex: none; }
+  .ledger-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    height: 42px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font: inherit;
+    font-size: 15px;
+    color: var(--ink, #111);
+  }
+  .ledger-search-clear {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    margin-right: -8px;
+    border: 0;
+    background: transparent;
+    color: var(--mute);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .ledger-filters {
+    flex: 0 0 auto;
+    max-width: none;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 6px 12px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink, #111);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ledger-filters .k,
+  .ledger-filters .v {
+    display: block;
+    max-width: none;
+    overflow: visible;
+    white-space: nowrap;
+    font-size: 15px;
+    line-height: 1.15;
+  }
+  .ledger-filters .k { font-weight: 700; }
+  .ledger-filters .v { font-weight: 500; color: var(--mute); }
+
+  .ledger-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ledger-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--ink, #111);
+    font: inherit;
+    font-size: 15px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ledger-card-top,
+  .ledger-card-bot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ledger-card-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .ledger-card-ref {
+    flex: none;
+    font-family: var(--f-mono, "Space Mono", monospace);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--mute);
+    white-space: nowrap;
+  }
+  .ledger-card-pair {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ft, #1D6B45);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .ledger-card-when {
+    flex: none;
+    white-space: nowrap;
+    font-size: 15px;
+    color: var(--ink, #111);
+    font-variant-numeric: tabular-nums;
+  }
+  .ledger-card-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ledger-badge {
+    font-family: var(--f-display);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 3px 6px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .ledger-empty {
+    margin: 4px 0 0;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink, #111);
+  }
+  .ledger-phone-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    font-size: 15px;
+  }
+  .ledger-phone-note span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ledger-phone-note button {
+    flex: none;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .ledger-sheet-scrim {
+    display: flex;
+    position: fixed;
+    z-index: 640;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: var(--phone-dock-h, 0px);
+    align-items: flex-end;
+    background: rgba(10, 10, 10, 0.45);
+  }
+  .ledger-sheet {
+    width: 100%;
+    max-height: 100%;
+    overflow: auto;
+    box-sizing: border-box;
+    background: var(--cd-paper, #f4f3f0);
+    border-radius: 16px 16px 0 0;
+    padding: 6px 0 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ledger-sheet-h {
+    padding: 10px 16px 4px;
+    font-family: var(--f-display);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink, #111);
+  }
+  .ledger-sheet-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 16px;
+    box-sizing: border-box;
+    border: 0;
+    background: transparent;
+    color: var(--ink, #111);
+    font: inherit;
+    font-size: 15px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ledger-sheet-row.is-on {
+    background: var(--ft, #1D6B45);
+    color: #fff;
+    font-weight: 700;
+  }
+  .ledger-sheet-type {
+    display: block;
+    padding: 12px 16px 4px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink, #111);
+  }
+  .ledger-sheet-type select {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 6px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink, #111);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .ledger-sheet-reportblock { padding: 8px 16px 4px; }
+  .ledger-sheet-report {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: var(--ft, #1D6B45);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ledger-sheet-note {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.35;
+    color: var(--mute);
   }
 }

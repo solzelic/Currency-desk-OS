@@ -258,7 +258,7 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
    the page. Anything else narrower than 80px and taller than three
    lines is the column. A control whose painted box is the bottom
    bar, and that no scrollport above the bar can bring up, is hidden. */
-function phoneProblems(): { overflow: boolean; narrow: string[]; under: string[] } {
+function phoneProblems(): { overflow: boolean; narrow: string[]; under: string[]; grip: boolean } {
   const dock = document.getElementById("phone-dock");
   const dockTop = dock ? dock.getBoundingClientRect().top : innerHeight;
   const inStrip = (el: Element) => {
@@ -333,10 +333,13 @@ function phoneProblems(): { overflow: boolean; narrow: string[]; under: string[]
       if (under.length >= 4) break;
     }
   }
+  const gripEl = document.querySelector(".win.show.active .win-resize");
+  const grip = gripEl instanceof HTMLElement && getComputedStyle(gripEl).display !== "none" && gripEl.getBoundingClientRect().height > 0;
   return {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     narrow,
     under,
+    grip,
   };
 }
 
@@ -361,7 +364,7 @@ test("every app stays readable on a phone", async ({ page }) => {
         await dismissTour(page);
         await settledWindow(page);
         const problems = await page.evaluate(phoneProblems);
-        expect(problems, `${staff} ${id} at ${width}px`).toEqual({ overflow: false, narrow: [], under: [] });
+        expect(problems, `${staff} ${id} at ${width}px`).toEqual({ overflow: false, narrow: [], under: [], grip: false });
       }
     }
   }

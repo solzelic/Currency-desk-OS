@@ -94,10 +94,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and the till on one line, the status under that, the amount, then
   Move cash and Vault. Its tabs scroll, with a fade where the last
   one continues. A ledger reference and a client name stay on one
-  line, and their buttons move to the next row. A wide table keeps
+  line, and their buttons move to the next row.   A wide table keeps
   each cell on one line and scrolls inside its card. On a wide window the
   dots stay 12px. The module tab bar ends before the store and ID
-  buttons.
+  buttons. At 430px and under, the ledger is cards: one deal each,
+  with today's count, pay-in, fees, and reportable deals on one line
+  (`6 today · $1,765.05 in · $18.00 fees · 0 reportable`). The line
+  uses a slightly smaller size at 360 so it stays one line; if it
+  still cannot fit, it breaks after a separator. The desktop corner
+  grip is hidden on a phone. Wider than that, the table is unchanged.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -429,6 +434,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, ledger cards on a phone. At 430px and under, Records
+and Compliance are a switch in the ledger green, and each deal is a
+card. Search stays. The other filters open in a sheet, and that sheet
+is where Generate report lives, with a note that a report is easier
+on a computer. Today's line keeps a space on both sides of each dot.
+The desktop corner grip is hidden. The wide window still shows the table.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

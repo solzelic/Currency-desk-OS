@@ -8,7 +8,7 @@
    log, which is what makes the book examiner-ready.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useLayoutEffect } = React;
   const {
     CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
     computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
@@ -33,6 +33,9 @@
   const homeCcy = () => { const pack = deskPack(); return (pack && pack.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const homeOf = (amt, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return +amt || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', ccy); return rate ? (+amt || 0) / rate : null; };
   const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
+  /* Two decimals on a card. `num` drops trailing zeros, so 180 rendered
+     as "180" beside "120.53" and the two amounts stopped lining up. */
+  const money2 = (n) => new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
   /* `sumHome` stood here — a total that converted every leg at today's
      board mid. Every figure that used it now goes through `sumDealHome`,
      which counts the leg that IS the desk's own currency and counts
@@ -1403,11 +1406,136 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     </div>);
   }
 
+  function usePhoneLedger() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+
+  const PHONE_VIEWS = [['open', 'All posted'], ['RPT', 'Reportable'], ['STR', 'Structuring'], ['ID', 'ID issues'], ['tagged', 'Tagged'], ['void', 'Voided']];
+  const phoneViewLabel = (view) => (PHONE_VIEWS.find(v => v[0] === view) || ['', 'All posted'])[1];
+
+  /* A phone has no room for the table. Same rows, same flags, same search.
+     The wide window never mounts the sheet, and this block is display:none
+     there, so the table underneath is the one a desktop already had. */
+  function PhoneBook({ filtered, flags, q, setQ, view, setView, tf, setTf, setFocusRefs, focusRefs, focusLabel, client, setClient, summary, onSummary, onOpen, onReport, canReport }) {
+    const [sheet, setSheet] = useState(false);
+    const [summarySplit, setSummarySplit] = useState(false);
+    const summaryRef = useRef(null);
+    const label = phoneViewLabel(view);
+    const applyView = (v) => { setFocusRefs(null); setView(v); setSheet(false); };
+    const vol = !summary.n || summary.vol == null ? '—' : fmtHome(summary.vol);
+    const fees = summary.n ? fmtHome(summary.fees) : '—';
+    /* "in" rather than "pay-in" so the line fits a 360px phone.
+       Each dot has a space on both sides. If the line still does not
+       fit, it breaks into two lines that neither start nor end on a dot. */
+    const summaryFull = `${summary.n} today · ${vol} in · ${fees} fees · ${summary.rpt} reportable`;
+    const summaryLeft = `${summary.n} today · ${vol} in`;
+    const summaryRight = `${fees} fees · ${summary.rpt} reportable`;
+    useLayoutEffect(() => {
+      const el = summaryRef.current;
+      if (!el) return;
+      const fit = () => {
+        if (!summarySplit) {
+          const line = el.querySelector('.ledger-today-line');
+          if (line && line.scrollWidth > el.clientWidth + 1) setSummarySplit(true);
+          return;
+        }
+        const probe = document.createElement('span');
+        probe.style.cssText = 'position:absolute;white-space:nowrap;visibility:hidden;font:' + getComputedStyle(el).font;
+        probe.textContent = summaryFull;
+        el.appendChild(probe);
+        const fits = probe.scrollWidth <= el.clientWidth + 1;
+        probe.remove();
+        if (fits) setSummarySplit(false);
+      };
+      fit();
+      window.addEventListener('resize', fit);
+      return () => window.removeEventListener('resize', fit);
+    }, [summaryFull, summarySplit]);
+    return (<>
+      <div className="ledger-phone">
+        {client && <div className="ledger-phone-note"><span>Viewing {client}</span><button type="button" onClick={() => setClient(null)}>Clear</button></div>}
+        {focusRefs && focusRefs.length > 0 && <div className="ledger-phone-note"><span>Showing {focusRefs.length} record{focusRefs.length === 1 ? '' : 's'}{focusLabel ? ` · ${focusLabel}` : ''}.</span><button type="button" onClick={() => setFocusRefs(null)}>Clear focus</button></div>}
+        <button type="button" ref={summaryRef} className="ledger-today" data-ledger-summary onClick={onSummary}>
+          {summarySplit
+            ? <><span className="ledger-today-line">{summaryLeft}</span><span className="ledger-today-line">{summaryRight}</span></>
+            : <span className="ledger-today-line">{summaryFull}</span>}
+        </button>
+        <div className="ledger-tools">
+          <label className="ledger-search">
+            <Ic n="search" s={16} c={CD.mute} />
+            <input value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setFocusRefs(null); }} placeholder="Search the book" aria-label="Search the book" />
+            {q && <button type="button" className="ledger-search-clear" aria-label="Clear search" onClick={() => setQ('')}>×</button>}
+          </label>
+          <button type="button" className="ledger-filters" data-ledger-filters aria-expanded={sheet} onClick={() => setSheet(true)}>
+            <span className="k">Filters</span>
+            <span className="v">{label}</span>
+            {tf !== 'All' && <span className="v">{tf}</span>}
+          </button>
+        </div>
+        <div className="ledger-cards">
+          {filtered.map(x => {
+            const f = flags[x.id] || {};
+            const isVoid = x.status === 'void';
+            const badges = [];
+            if (f.single) badges.push(['Reportable', CD.flag, CD.flagSoft]);
+            if (f.str) badges.push(['Structuring', CD.amber, CD.amberSoft]);
+            if (f.kyc && f.kyc !== 'ok' && f.idNeeded) badges.push(['ID needed', CD.ink, CD.lineSoft]);
+            if (x.tagged) badges.push(['Tagged', CD.green, CD.greenSoft]);
+            if (isVoid) badges.push(['Voided', CD.mute, CD.lineSoft]);
+            const out = (x.outAmt === '' || x.outAmt == null) ? '—' : `${money2(x.outAmt)} ${x.outCcy}`;
+            return (
+              <button type="button" key={x.id} className="ledger-card" data-ledger-card style={{ opacity: isVoid ? 0.55 : 1 }} onClick={() => onOpen(x.id)}>
+                <span className="ledger-card-top">
+                  <span className="ledger-card-name" style={{ textDecoration: isVoid ? 'line-through' : 'none' }}>{x.customer || '—'}</span>
+                  <span className="ledger-card-ref">{x.ref}</span>
+                </span>
+                <span className="ledger-card-bot">
+                  <span className="ledger-card-pair">{money2(x.inAmt)} {x.inCcy} → {out}</span>
+                  <span className="ledger-card-when">{x.time} · {money2(x.fee)}</span>
+                </span>
+                {badges.length > 0 && <span className="ledger-card-flags">{badges.map(([t, c, bg]) => <span key={t} className="ledger-badge" style={{ color: c, background: bg }}>{t}</span>)}</span>}
+              </button>
+            );
+          })}
+          {filtered.length === 0 && <p className="ledger-empty" data-ledger-empty>No deals match.</p>}
+        </div>
+      </div>
+      {sheet && <Portal><div className="ledger-sheet-scrim" onClick={() => setSheet(false)}>
+        <div className="ledger-sheet" role="dialog" aria-label="Filters" data-ledger-sheet onClick={e => e.stopPropagation()}>
+          <div className="ledger-sheet-h">Filters</div>
+          {PHONE_VIEWS.map(([id, name]) => (
+            <button type="button" key={id} className={'ledger-sheet-row' + (view === id ? ' is-on' : '')} onClick={() => applyView(id)}>{name}</button>
+          ))}
+          <label className="ledger-sheet-type">Type
+            <select aria-label="Type" value={tf} onChange={e => { setTf(e.target.value); setSheet(false); }}>
+              <option>All</option>
+              {TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </label>
+          {canReport && <div className="ledger-sheet-reportblock">
+            <button type="button" className="ledger-sheet-report" onClick={() => { setSheet(false); onReport(); }}>Generate report</button>
+            <p className="ledger-sheet-note">Reports work best on a computer</p>
+          </div>}
+        </div>
+      </div></Portal>}
+    </>);
+  }
+
   /* =====================================================================
      LEDGER — immutable record list
   ===================================================================== */
   function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
+    const phoneLedger = usePhoneLedger();
     /* The desk's own trading day and its own reporting line, both from the
        server. `deskFacts` changes when either arrives, which is what makes
        the flags below re-derive against the real threshold rather than
@@ -1561,6 +1689,18 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: src.reduce((s, x) => s + (+x.fee || 0), 0), rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
 
+    /* Today's line on a phone. Same home-leg total the stat cards use
+       (`sumDealHome`), limited to the trading day. A day with no deals
+       has no pay-in and no fees — absent, not $0. */
+    const today = useMemo(() => {
+      const day = businessDate();
+      const src = rows.filter(r => r.status !== 'void' && String(r.date).slice(0, 10) === day && (!client || r.customer === client));
+      let rpt = 0;
+      src.forEach(r => { if ((flags[r.id] || {}).single) rpt++; });
+      const volume = sumDealHome(src, homeCcy());
+      return { n: src.length, vol: volume.total, fees: src.reduce((s, x) => s + (+x.fee || 0), 0), rpt };
+    }, [rows, client, flags, deskFacts]);
+
     // live summary of exactly what's on screen (CAD-equivalent)
     const result = useMemo(() => {
       let vol = 0, fees = 0, posted = 0;
@@ -1655,7 +1795,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const toggleTag = (x) => { setRows(rs => rs.map(r => r.id === x.id ? { ...r, tagged: !r.tagged, tagInfo: r.tagged ? null : { by: me.name, at: stamp(), note: '' } } : r)); log(x.tagged ? 'Tag removed' : 'Transaction tagged', `${x.ref} · follow-up`); };
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
 
-    return (<div className="flex flex-col" style={{ height: '100%', position: 'relative', background: CD.paper, overflow: 'hidden' }}>
+    return (<div className="ledger-shell flex flex-col" style={{ height: '100%', position: 'relative', background: CD.paper, overflow: 'hidden' }}>
       <div className="fld-bar fld-pinned">
         {[['records', 'Records', 'scroll'], ['compliance', 'Compliance', 'shield']].map(([id, label, ic]) => { const on = section === id; const badge = id === 'compliance' ? compCount : 0; return (
           <button key={id} onClick={() => setSection(id)} className={'fld-tab' + (on ? ' on' : '')}><Ic n={ic} s={13} c={on ? '#fff' : CD.mute} /> {label}{badge > 0 && <span className="text-[9px] px-1 py-0.5" style={{ background: CD.flag, color: '#fff', borderRadius: 4, fontFamily: 'Space Mono, monospace', marginLeft: 2 }}>{badge}</span>}</button>); })}
@@ -1664,14 +1804,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       {section === 'compliance' && <LedgerCompliance rows={rows} flags={flags} settings={settings} clients={clients} me={me} setRows={setRows} log={log} onOpenDetail={setDetailId} onOpenRecordsWindow={openLedgerForRefs} onOpenClient={(n, ref) => { openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} onOpenFocus={(refs, label) => { setSection('records'); setFocusRefs(refs); setFocusLabel(label || ''); }} onOpenCompliance={onOpenCompliance} onOpenAccount={openLedgerForClient} onFileLCTR={onFileLCTR} />}
       {section === 'records' && (<>
       {dayClosed && (
-        <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: CD.inkSoft, color: 'var(--cd-on-ink)' }}>
+        <div className="ledger-day flex items-center gap-2 px-4 py-2.5" style={{ background: CD.inkSoft, color: 'var(--cd-on-ink)' }}>
           <Ic n="lock" s={14} c="var(--cd-on-ink)" />
-          <span className="text-[12.5px]">The trading day is closed — the book is read-only. Reopen from Till & Cash Drawer to post new transactions.</span>
+          <span className="ledger-daynote text-[12.5px]">The trading day is closed — the book is read-only. Reopen from Till & Cash Drawer to post new transactions.</span>
           {onOpenDayClose && <button onClick={onOpenDayClose} className="ml-auto text-[11px] font-semibold px-2.5 py-1" style={{ background: 'var(--cd-on-ink-faint)', borderRadius: 6 }}>Open Till →</button>}
         </div>
       )}
+      {phoneLedger && <PhoneBook filtered={filtered} flags={flags} q={q} setQ={setQ} view={view} setView={setView} tf={tf} setTf={setTf} setFocusRefs={setFocusRefs} focusRefs={focusRefs} focusLabel={focusLabel} client={client} setClient={setClient} summary={today} onSummary={() => today.n && setBreakdown('volume')} onOpen={setDetailId} onReport={genReport} canReport={can('canExport')} />}
       {/* stat strip — cards filter / drill into the list */}
-      <div className="grid grid-cols-2 md:grid-cols-4" style={{ borderBottom: `1px solid ${CD.line}`, background: CD.panel }}>
+      <div className="ledger-wide grid grid-cols-2 md:grid-cols-4" style={{ borderBottom: `1px solid ${CD.line}`, background: CD.panel }}>
         <div className="relative" ref={rangeRef} style={{ borderRight: `1px solid ${CD.lineSoft}` }}>
           <button onClick={() => setRangeMenu(o => !o)} className="w-full text-left px-5 py-3.5" style={{ cursor: 'pointer', background: rangeMenu ? 'var(--cd-chip)' : 'transparent' }}>
             <div className="text-[11px] flex items-center gap-1" style={{ color: CD.mute }}>{client ? `Records · ${client}` : 'Records'} <span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={11} c={CD.mute} /></span></div>
@@ -1709,7 +1850,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </div>
 
       {/* toolbar */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+      <div className="ledger-wide flex flex-wrap items-center gap-2 px-4 py-3">
         {client && <span className="flex items-center gap-2 text-xs px-2.5 py-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Viewing {client} <button onClick={() => setClient(null)}><Ic n="x" s={13} /></button></span>}
         <div ref={searchWrap} className="relative flex-1 min-w-[240px]">
           <div className="flex items-center gap-2 px-3 py-2" style={{ background: CD.panel, border: `1px solid ${helpOpen ? CD.ink : CD.line}`, borderRadius: 8, transition: 'border-color .12s' }}>
@@ -1742,7 +1883,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </div>
 
       {/* filter chips */}
-      <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+      <div className="ledger-wide flex flex-wrap items-center gap-1.5 px-4 pb-2">
         <Chip on={view === 'open'} onClick={() => { setFocusRefs(null); setView('open'); }}>All posted</Chip>
         <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={CD.flag} bg={CD.flagSoft}>Reportable {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
         <Chip on={view === 'STR'} onClick={() => setViewToggle('STR')} c={CD.amber} bg={CD.amberSoft}>Structuring {stats.str > 0 && `· ${stats.str}`}</Chip>
@@ -1752,14 +1893,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         <span className="flex items-center" style={{ marginLeft: 2 }}><window.CDOS.InfoTip title="Compliance flags" body="The desk tags each record so nothing slips through. Click a flag on a row to act on it." lines={[{k:'RPT',c:CD.flag,v:'Reportable — a Large Cash Transaction Report is due'},{k:'STR',c:CD.amber,v:'Structuring watch — smaller deals adding up'},{k:'ID',c:CD.ink,v:'KYC exception — ID missing or expired'}]} /></span>
       </div>
       {focusRefs && focusRefs.length > 0 && (
-        <div className="mx-4 mb-2 flex items-center justify-between gap-2 px-3 py-2" style={{ background: CD.brassSoft, border: `1px solid ${CD.brass}`, borderRadius: 9 }}>
+        <div className="ledger-wide mx-4 mb-2 flex items-center justify-between gap-2 px-3 py-2" style={{ background: CD.brassSoft, border: `1px solid ${CD.brass}`, borderRadius: 9 }}>
           <span className="text-[12px] flex items-center gap-1.5" style={{ color: 'var(--cd-brass-text)' }}><Ic n="shield" s={13} c={CD.brass} /> Showing the <b>{focusRefs.length}</b> record{focusRefs.length === 1 ? '' : 's'} {focusLabel ? <span>behind <b>{focusLabel}</b></span> : 'from a compliance aggregate'}.</span>
           <button onClick={() => setFocusRefs(null)} className="text-[11px] font-semibold px-2.5 py-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 6 }}>Clear focus</button>
         </div>
       )}
 
       {/* parsed search + live result summary */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-2.5">
+      <div className="ledger-wide flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-2.5">
         {search.active && search.chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Matching</span>
@@ -1778,7 +1919,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       </div>
 
       {/* table */}
-      <div className="px-4 pb-6"><div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+      <div className="ledger-wide px-4 pb-6"><div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
         <table className="w-full border-collapse text-sm" style={{ background: CD.panel }}>
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-left text-[11px] uppercase tracking-wide">{COLS.map(([h, key], i) => (
             <th key={i} onClick={() => key && toggleSort(key)} className="px-3 py-2.5 font-medium select-none" style={{ borderBottom: `1px solid ${CD.line}`, cursor: key ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
