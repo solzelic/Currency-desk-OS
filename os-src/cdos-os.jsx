@@ -1110,9 +1110,7 @@
        and it arrives with the jurisdiction. `deskTrades` is true where
        nobody has restricted anything, which is the honest default — and
        where the desk HAS stated a set, the server's refusal names it. */
-    const movementKey = (kind, ccy) =>
-      `cash-move-${kind}-${ccy}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const postTillMovement = async ({ kind, fromB, toB, tId, ccy, amt, fromLabel, toLabel }) => {
+    const postTillMovement = async ({ kind, fromB, toB, tId, ccy, amt, fromLabel, toLabel, idempotencyKey }) => {
       if (!srvUser || !window.CDOS.Backend) return { ok: true };
       /* Asked, not assumed. The screen can say so early where the desk
          has named its currencies; where it has not, the request goes and
@@ -1138,8 +1136,13 @@
           if (!station || tId !== station.tillId || fromB !== station.branchId) {
             return { ok: false, message: 'The server ledger can only move cash for the till you are signed in at. Switch to that till first.' };
           }
+          /* The opened form owns the key. Minting one here, from the
+             clock, made a retry a second movement. */
+          if (!idempotencyKey) {
+            return { ok: false, message: 'This movement has no key. Close the form and open it again.' };
+          }
           await window.CDOS.Backend.moveTillCash({
-            idempotencyKey: movementKey(kind, ccy),
+            idempotencyKey,
             direction: kind === 'issue' ? 'in' : 'out',
             currency: ccy,
             amount: Number(amt).toFixed(2),
@@ -1159,14 +1162,18 @@
     // Assign flow — owner/manager hands money to a drawer, all recorded).
     // Each currency is its own ledger movement, so a rejected one stops the run
     // rather than leaving the drawer half-floated on one side only.
-    const issueToTill = async (tId, amounts) => {
+    const issueToTill = async (tId, amounts, keys) => {
       const b = branches.find(x => x.id === station.branchId); if (!b) return { ok: false, message: 'No active branch.' };
       const t = (b.tills || []).find(x => x.id === tId); if (!t) return { ok: false, message: 'No such till at this branch.' };
       const fromLabel = b.code + ' · Vault', toLabel = b.code + ' · ' + t.name.replace(/\s+—.*/, '');
       let list = branches, mv = branchMoves; const parts = [];
       for (const ccy2 of Object.keys(amounts || {})) {
         const amt = +amounts[ccy2] || 0; if (amt <= 0) continue;
-        const posted = await postTillMovement({ kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel, toLabel });
+        const idempotencyKey = keys && keys[ccy2];
+        if (!idempotencyKey) {
+          return { ok: false, message: 'This float has no key. Close the form and open it again.' };
+        }
+        const posted = await postTillMovement({ kind: 'issue', fromB: b.id, tId, ccy: ccy2, amt, fromLabel, toLabel, idempotencyKey });
         if (!posted.ok) {
           // commit whatever already cleared the server, then report the stop
           if (parts.length) { setBranches(list); setBranchMoves(mv); log('Float issued', `${parts.join(' + ')} · ${fromLabel} → ${toLabel}`); }
@@ -1189,7 +1196,7 @@
        balances against it. It is recorded server-first like every other
        movement, so a delivery that the ledger refused never shows up as
        stock the desk does not have. */
-    const creditVault = async (ccy2, units, supplier) => {
+    const creditVault = async (ccy2, units, supplier, idempotencyKey) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return { ok: false, message: 'Nothing to receive.' };
       if (srvUser && window.CDOS.Backend && vaultTracked) {
@@ -1197,8 +1204,11 @@
           return { ok: false, message: `This desk does not trade ${ccy2}. Add it in Settings › Compliance & jurisdiction if it should.` };
         }
         try {
+          if (!idempotencyKey) {
+            return { ok: false, message: 'This delivery has no key. Close the form and open it again.' };
+          }
           await window.CDOS.Backend.receiveVaultCash({
-            idempotencyKey: movementKey('receipt', ccy2),
+            idempotencyKey,
             direction: 'in',
             currency: ccy2,
             amount: Number(units).toFixed(2),

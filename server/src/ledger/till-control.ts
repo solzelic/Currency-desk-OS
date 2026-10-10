@@ -10,8 +10,11 @@ import { withSerializationRetry } from "./retry.js";
 import {
   applyVaultLeg,
   boardUnitCostHome,
+  CHANGED_MOVEMENT_MESSAGE,
   lockVault,
+  sameStoredMovement,
   transferCost,
+  VAULT_IDEMPOTENCY_CONSTRAINT,
   vaultBox,
   vaultIsTracked,
   type CostBox,
@@ -33,6 +36,23 @@ type MovementInput = {
   counterpartyType: "vault" | "bank" | "other";
   counterpartyRef: string;
   reason: string;
+};
+
+/* Postgres named this itself from the UNIQUE (tenant, entity, branch,
+   workspace, till, idempotency_key) in migration 006, and truncated it
+   at 63 characters. A float also writes that same key on the vault leg,
+   so the loser of a race can hit the vault's idempotency constraint
+   instead. Either name is this key. The primary key is not. */
+const TILL_IDEMPOTENCY_CONSTRAINT =
+  "ledger_operational_cash_movem_tenant_id_legal_entity_id_bra_key";
+
+const cashMoveKeyConflict = (error: unknown) => {
+  const pgError = error as { code?: string; constraint?: string };
+  return (
+    pgError.code === "23505" &&
+    (pgError.constraint === TILL_IDEMPOTENCY_CONSTRAINT ||
+      pgError.constraint === VAULT_IDEMPOTENCY_CONSTRAINT)
+  );
 };
 
 const scope = (actor: LedgerActor) => [
@@ -552,6 +572,12 @@ export class TillControlService {
         [...scope(actor), input.idempotencyKey],
       );
       if (existing.rowCount) {
+        /* A lost answer leaves the form open on this key. Editing the
+           amount, the currency, or the direction and tapping again is
+           not a retry of the movement that already landed. */
+        if (!sameStoredMovement(existing.rows[0], input)) {
+          throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
+        }
         const response = await this.movementResponse(client, actor, existing.rows[0]);
         await client.query("COMMIT");
         return response;
@@ -752,6 +778,45 @@ export class TillControlService {
         now,
       );
       const response = await this.movementResponse(client, actor, movement.rows[0]);
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      /* Two taps of one form can both pass the "have I seen this key?"
+         read and then one of them loses the unique index. That loser
+         did not move any money — the winner's transaction holds both
+         boxes — so it answers with the winner's movement when the body
+         is the same one. A different body is the same refusal as the
+         read above. A 23505 from any other constraint is not this key. */
+      if (cashMoveKeyConflict(error)) {
+        const replayed = await this.replayMovement(actor, input);
+        if (replayed) return replayed;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async replayMovement(actor: LedgerActor, input: MovementInput) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query(
+        `SELECT *
+           FROM ledger_operational_cash_movements
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5 AND idempotency_key=$6`,
+        [...scope(actor), input.idempotencyKey],
+      );
+      if (!existing.rowCount) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      if (!sameStoredMovement(existing.rows[0], input)) {
+        throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
+      }
+      const response = await this.movementResponse(client, actor, existing.rows[0]);
       await client.query("COMMIT");
       return response;
     } catch (error) {

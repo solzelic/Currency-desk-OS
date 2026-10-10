@@ -41,13 +41,14 @@ ledger rows. The set is:
 
 - four identified customers (desk file + ledger counterparty)
 - opening till balances if the drawer has never been initialised
+- a vault opening position, stated once: CAD 40,000, USD 20,000,
+  EUR 10,000, GBP 5,000. That is the safe, separate from the drawer.
+  A desk that already has its history, and has never stated a vault
+  position, still gets this count. A vault that already has a
+  position is left where it is, so a later boot does not add the
+  figures again and a float still comes out of the safe
 - an open till session
 - six posted CAD↔USD / CAD↔EUR exchanges a teller would see in history
-
-It does not state a vault opening position. `ledger_vault_balances` stays
-empty. Issue float on this desk is refused with "Open the vault with a
-starting count first." until somebody counts the safe. Giving the demo
-an opening count is a separate change.
 
 Idempotency keys are stable (`demo-desk:tx:1` …). A second boot posts
 nothing new. The seeder hard-codes the York FX scope and refuses to run
@@ -55,8 +56,9 @@ unless that tenant is present with `siteSlug=yorkfx`. It never accepts a
 tenant id from the caller and never writes to another tenant.
 
 Unset `DEMO_POPULATE` after the book is populated if you do not want the
-check to run on every deploy. Leaving it set is safe: the second run is
-a no-op.
+check to run on every deploy. Leaving it set is safe: deals are not
+posted twice, and a vault that already has a position is not counted
+again. A vault that was never counted gets this opening.
 
 ## What this is not
 
