@@ -1168,13 +1168,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return (<div className="fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         {/* header */}
-        <div className="flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="client-file-head flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <div className="relative flex-none">
             <Avatar rec={rec} name={name} size={64} />
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
@@ -1183,7 +1183,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               {(corp ? rec.jurisdiction : rec.occupation) && <span className="flex items-center gap-1.5"><Ic n={corp ? 'mappin' : 'briefcase'} s={12} c={CD.faint} /> {corp ? rec.jurisdiction : rec.occupation}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-none">
+          <div className="client-file-actions flex items-center gap-2 flex-none">
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
             {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
             <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>

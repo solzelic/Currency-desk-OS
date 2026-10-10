@@ -87,7 +87,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   above the bottom bar. The Cash Drawer header stacks: the title
   and the till on one line, the status under that, the amount, then
   Move cash and Vault. Its tabs scroll, with a fade where the last
-  one continues. On a wide window the
+  one continues. A ledger reference and a client name stay on one
+  line, and their buttons move to the next row. A wide table keeps
+  each cell on one line and scrolls inside its card. On a wide window the
   dots stay 12px. The module tab bar ends before the store and ID
   buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
@@ -432,8 +434,10 @@ app fills that space. In-app tabs stay.   A ledger record has its own
   bar. The window stops above the bar, including the iPhone safe area.
   The Cash Drawer header stacks down the screen instead of collapsing
   the title into a narrow column, and a new-transaction dialog stacks
-  its type buttons and its quote rail the same way. Wider than 430px,
-  the desk is unchanged.
+  its type buttons and its quote rail the same way. A ledger reference
+  and a client name stay on one line. A wide table scrolls inside its
+  card instead of breaking each column into single words. Wider than
+  430px, the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

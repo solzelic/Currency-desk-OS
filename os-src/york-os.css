@@ -1944,4 +1944,127 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     width: 100% !important;
     max-width: 100% !important;
   }
+
+  /* A record's reference sits beside Receipt / Void. Those buttons
+     were flex: none, so the reference wrapped one chunk a line. */
+  .tx-detail-head { flex-wrap: wrap; row-gap: 8px; align-items: flex-start; }
+  .tx-detail-id { flex: 1 1 calc(100% - 56px); min-width: 0; }
+  .tx-detail-ref { white-space: nowrap; }
+  .tx-detail-actions {
+    flex: 1 1 100% !important;
+    width: 100%;
+    margin-left: 0 !important;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .tx-detail-actions button { white-space: nowrap; min-height: 44px; }
+
+  /* The client file puts Edit and Export on the same row as the
+     name, and the name collapsed to a word a line. */
+  .client-file-head { flex-wrap: wrap; row-gap: 10px; }
+  .client-file-head > .flex-1 { flex: 1 1 calc(100% - 88px); }
+  .client-file-name { white-space: nowrap; }
+  .client-file-actions {
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .client-file-actions button { white-space: nowrap; min-height: 44px; }
+
+  /* A desktop table stays a table. Cells keep their words on one
+     line and the card scrolls sideways, instead of collapsing
+     each column to a few letters. */
+  .win-body .overflow-hidden:has(table),
+  .fixed.inset-0 .overflow-hidden:has(table) {
+    overflow-x: auto !important;
+    max-width: 100%;
+  }
+  .win-body .overflow-hidden:has(table) table,
+  .fixed.inset-0 .overflow-hidden:has(table) table {
+    width: max-content !important;
+    min-width: 100% !important;
+  }
+  .win-body .overflow-hidden:has(table) th,
+  .win-body .overflow-hidden:has(table) td,
+  .fixed.inset-0 .overflow-hidden:has(table) th,
+  .fixed.inset-0 .overflow-hidden:has(table) td {
+    white-space: nowrap !important;
+  }
+
+  /* A desktop grid of four or five stats becomes a strip of
+     one word a line. Two columns keeps the label together. */
+  .win-body .grid-cols-3,
+  .win-body .grid-cols-4,
+  .win-body .grid-cols-5,
+  .fixed.inset-0 .grid-cols-3,
+  .fixed.inset-0 .grid-cols-4,
+  .fixed.inset-0 .grid-cols-5 {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* A 296px preview beside a form leaves the form a few pixels
+     wide. One column, preview underneath. */
+  .win-body .grid[style*="296px"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  /* Title on the left, a button on the right. The button was
+     allowed to shrink until its label broke. */
+  .win-body .flex.justify-between,
+  .fixed.inset-0 .flex.justify-between {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .win-body .flex.justify-between > button,
+  .fixed.inset-0 .flex.justify-between > button {
+    flex: none;
+    white-space: nowrap;
+  }
+  /* A text column with min-width: 0 was shrinking to the longest
+     word while the amount and the buttons kept their width. */
+  .win-body .flex:has(> .min-w-0),
+  .fixed.inset-0 .flex:has(> .min-w-0) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .win-body .flex:has(> .min-w-0) > .min-w-0,
+  .fixed.inset-0 .flex:has(> .min-w-0) > .min-w-0 {
+    flex: 1 1 160px;
+    min-width: 140px;
+  }
+  .tx-flow { flex-direction: column; }
+  .tx-flow > .flex-none {
+    flex-direction: row;
+    min-width: 0 !important;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .tx-lbl { flex-wrap: wrap; row-gap: 2px; }
+  .tx-lbl > span:first-child { white-space: nowrap; }
+  .tx-body { flex-direction: column !important; overflow: auto; }
+  .tx-body > .flex-none { width: 100% !important; max-width: 100% !important; }
+
+  /* A row of chips or a name beside a reference. The row wraps.
+     The words inside a chip or a name do not. */
+  .win-body .flex.gap-1\.5,
+  .win-body .flex.gap-2,
+  .fixed.inset-0 .flex.gap-1\.5,
+  .fixed.inset-0 .flex.gap-2 {
+    flex-wrap: wrap;
+  }
+  .win-body .flex.items-center > button,
+  .win-body .flex.items-center > label,
+  .win-body .flex.gap-2 > span,
+  .win-body .flex.gap-1\.5 > button,
+  .fixed.inset-0 .flex.items-center > button,
+  .fixed.inset-0 .flex.items-center > label,
+  .fixed.inset-0 .flex.gap-2 > span {
+    white-space: nowrap;
+  }
+  .win-body .flex.items-center > button,
+  .win-body .flex.items-center > label,
+  .fixed.inset-0 .flex.items-center > button,
+  .fixed.inset-0 .flex.items-center > label {
+    flex: none;
+  }
 }

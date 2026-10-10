@@ -24570,7 +24570,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-4 px-6 py-5 flex-none",
+      className: "client-file-head flex items-start gap-4 px-6 py-5 flex-none",
       style: {
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
@@ -24601,7 +24601,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-wrap"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[20px] font-bold",
+      className: "client-file-name text-[20px] font-bold",
       style: {
         color: CD.ink
       }
@@ -24679,7 +24679,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       s: 12,
       c: CD.faint
     }), " ", corp ? rec.jurisdiction : rec.occupation))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
+      className: "client-file-actions flex items-center gap-2 flex-none"
     }, canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setEdit(e => !e),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium",
@@ -28276,7 +28276,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       toS = row.notes || 'Biller';
     }
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-stretch gap-2"
+      className: "tx-flow flex items-stretch gap-2"
     }, /*#__PURE__*/React.createElement(FlowCard, {
       label: fromL,
       amount: fromV,
@@ -29187,7 +29187,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         transition: 'transform .22s ease, opacity .2s ease'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-3 px-5 py-3 flex-none",
+      className: "tx-detail-head flex items-center gap-3 px-5 py-3 flex-none",
       style: {
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
@@ -29203,11 +29203,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       s: 18,
       c: CD.ink
     })), /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0"
+      className: "tx-detail-id min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "font-semibold text-lg",
+      className: "tx-detail-ref font-semibold text-lg",
       style: {
         color: CD.ink,
         fontFamily: 'Space Mono, monospace',
@@ -29238,7 +29238,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute
       }
     }, row.date, " ", row.time, " \xB7 ", row.teller)), /*#__PURE__*/React.createElement("div", {
-      className: "ml-auto flex items-center gap-1.5 flex-none"
+      className: "tx-detail-actions ml-auto flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onReceipt(row),
       className: "flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium",
@@ -30901,6 +30901,14 @@ td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}
 .mut{color:#999;}.b{font-weight:600;}.grn{color:#1f8a4c;}
 tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}
+@media (max-width:430px){
+  body{padding:16px;}
+  .hd{flex-direction:column;gap:10px;}
+  .meta{text-align:left;}
+  .kpis{grid-template-columns:1fr;}
+  table{display:block;overflow-x:auto;max-width:100%;}
+  th,td{white-space:nowrap;}
+}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
@@ -32119,7 +32127,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     hint
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between mb-1"
+      className: "tx-lbl flex items-center justify-between mb-1"
     }, /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
@@ -34188,7 +34196,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }), " ", meta.blurb)), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-h-0 flex"
+      className: "tx-body flex-1 min-h-0 flex"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4",
       style: {

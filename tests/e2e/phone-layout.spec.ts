@@ -170,7 +170,12 @@ async function openOnPhone(page: Page, id: string): Promise<void> {
     await tab.click();
     return;
   }
-  await page.locator('#phonebar [data-phone-app="more"]').click();
+  /* More toggles. A second click while the sheet is open closes it,
+     and the row underneath is gone. Open it only when it is shut. */
+  const sheet = page.locator("#phone-more");
+  if (!(await sheet.isVisible().catch(() => false))) {
+    await page.locator('#phonebar [data-phone-app="more"]').click();
+  }
   await page.locator(`#phone-more [data-phone-app="${id}"]`).click();
 }
 
@@ -245,5 +250,119 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
     await settledWindow(page);
     expect(await overflowPast(page), `settings at ${width}px`).toEqual([]);
     expect(await covered(page), `settings at ${width}px`).toEqual([]);
+  }
+});
+
+/* A heading squeezed into a column wraps one word a line. A wide
+   table is allowed to scroll inside its own card; that card is not
+   the page. Anything else narrower than 80px and taller than three
+   lines is the column. A control whose painted box is the bottom
+   bar, and that no scrollport above the bar can bring up, is hidden. */
+function phoneProblems(): { overflow: boolean; narrow: string[]; under: string[] } {
+  const dock = document.getElementById("phone-dock");
+  const dockTop = dock ? dock.getBoundingClientRect().top : innerHeight;
+  const inStrip = (el: Element) => {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const st = getComputedStyle(node);
+      if ((st.overflowX === "auto" || st.overflowX === "scroll") && node.scrollWidth > node.clientWidth + 8) return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const clippedAboveDock = (el: Element) => {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const st = getComputedStyle(node);
+      if (st.overflowY === "hidden" || st.overflowY === "auto" || st.overflowY === "scroll" || st.overflowY === "clip") {
+        if (node.getBoundingClientRect().bottom <= dockTop + 2) return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const shown = (el: Element) => {
+    if (!(el instanceof HTMLElement)) return false;
+    const st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden" || Number(st.opacity) === 0) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 1 && r.height >= 1;
+  };
+  const linesOf = (el: HTMLElement) => {
+    let lines = 0;
+    const seen: number[] = [];
+    for (const node of el.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE || !(node.textContent || "").trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (rect.width < 0.5 || rect.height < 0.5) continue;
+        if (!seen.some((t) => Math.abs(t - rect.top) < 3)) {
+          seen.push(rect.top);
+          lines += 1;
+        }
+      }
+    }
+    return lines;
+  };
+  const narrow: string[] = [];
+  for (const el of document.body.querySelectorAll("button, a, p, span, div, label, li, td, th, h1, h2, h3")) {
+    if (!(el instanceof HTMLElement) || !shown(el)) continue;
+    if (el.closest("#phone-dock, #phone-more")) continue;
+    if (inStrip(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width >= 80) continue;
+    const lines = linesOf(el);
+    if (lines <= 3) continue;
+    narrow.push(((el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60) || el.tagName) + " " + Math.round(r.width) + "px/" + lines);
+    if (narrow.length >= 6) break;
+  }
+  const under: string[] = [];
+  for (const el of document.querySelectorAll("button, a, input, select, textarea, h1, h2, h3, .fld-tab")) {
+    if (!(el instanceof HTMLElement) || !shown(el)) continue;
+    if (!dock || dock.contains(el) || el.closest("#phone-more")) continue;
+    if (clippedAboveDock(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.bottom < dockTop + 8) continue;
+    const y = Math.min(r.bottom - 2, dockTop + 16);
+    if (y <= r.top) continue;
+    const x = Math.min(Math.max(r.left + Math.min(20, r.width / 2), 2), innerWidth - 2);
+    const hit = document.elementFromPoint(x, y);
+    if (hit && dock.contains(hit)) {
+      under.push(((el.innerText || el.getAttribute("aria-label") || el.tagName) + "").replace(/\s+/g, " ").trim().slice(0, 50));
+      if (under.length >= 4) break;
+    }
+  }
+  return {
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    narrow,
+    under,
+  };
+}
+
+test("every app stays readable on a phone", async ({ page }) => {
+  test.setTimeout(420_000);
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 780 });
+    for (const staff of ["j.masri", "m.costa"] as const) {
+      await page.context().clearCookies();
+      await page.goto("/app");
+      await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+      await signInAtDesk(page, staff);
+      await dismissTour(page);
+      await page.locator('#phonebar [data-phone-app="more"]').click();
+      await expect(page.locator("#phone-more")).toBeVisible();
+      const more = await page.locator("#phone-more [data-phone-app]").evaluateAll((els) =>
+        els.map((el) => el.getAttribute("data-phone-app") || "").filter(Boolean)
+      );
+      const apps = ["rates", "ledger", "clients", "till", ...more];
+      for (const id of apps) {
+        await openOnPhone(page, id);
+        await dismissTour(page);
+        await settledWindow(page);
+        const problems = await page.evaluate(phoneProblems);
+        expect(problems, `${staff} ${id} at ${width}px`).toEqual({ overflow: false, narrow: [], under: [] });
+      }
+    }
   }
 });
