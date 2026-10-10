@@ -952,6 +952,7 @@
 
         {/* ===== COUNT ===== */}
         {tab === 'count' && (<div className="till-count p-4 pb-0">
+          <div className="till-count-body">
           {/* currency chips */}
           <div className="till-chips flex flex-wrap gap-1.5 mb-3">
             {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
@@ -992,6 +993,7 @@
             </div>
           </div>
           )}
+          </div>
           {/* per-currency footer — counted (typeable), expected, then the grand total */}
           <div className="till-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
             <div className="till-foot-main flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
@@ -1004,8 +1006,8 @@
                 <div className="till-expected-row text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>
                   <button type="button" onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float'} className="till-expected inline-flex items-center gap-1.5" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
-                    <b className="till-expected-fig" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
-                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
+                    <b className={'till-expected-fig' + ((blind && !revealExp[ccy]) ? ' is-blind' : '')} style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
+                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b className={'till-var' + ((blind && !revealExp[ccy]) ? ' is-blind' : '')} style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
                     <span className="till-show-word">{(blind && !revealExp[ccy]) ? 'Show' : 'Hide'}</span>
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
                   </button>

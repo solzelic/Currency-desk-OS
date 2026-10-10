@@ -14946,6 +14946,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count p-4 pb-0"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-body"
+    }, /*#__PURE__*/React.createElement("div", {
       className: "till-chips flex flex-wrap gap-1.5 mb-3"
     }, CCYS.map(c => {
       const on = c === ccy;
@@ -15086,7 +15088,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       ccy: ccy,
       counts: counts,
       setCount: setCount
-    })))), /*#__PURE__*/React.createElement("div", {
+    }))))), /*#__PURE__*/React.createElement("div", {
       className: "till-foot",
       style: {
         position: 'sticky',
@@ -15174,11 +15176,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'inherit'
       }
     }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
-      className: "till-expected-fig",
+      className: 'till-expected-fig' + (blind && !revealExp[ccy] ? ' is-blind' : ''),
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace',
-        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
         transition: 'filter .15s',
         userSelect: 'none'
       }
@@ -15186,10 +15187,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const v = ccyTotal(ccy) - expectedOf(ccy);
       const off = Math.abs(v) > 0.005;
       return /*#__PURE__*/React.createElement("b", {
+        className: 'till-var' + (blind && !revealExp[ccy] ? ' is-blind' : ''),
         style: {
           color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
           fontFamily: 'Space Mono, monospace',
-          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
           transition: 'filter .15s',
           userSelect: 'none'
         }

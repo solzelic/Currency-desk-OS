@@ -1580,6 +1580,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .till-handoff-phone,
 .till-show-word { display: none; }
 .till-foot-actions { display: contents; }
+.till-count-body { display: contents; }
+.till-expected-fig.is-blind,
+.till-var.is-blind { filter: blur(6px); }
 
 /* ============================================================
    PHONE BOTTOM BAR
@@ -1900,12 +1903,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone-who {
     display: block;
     margin: 0;
+    max-width: 100%;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 15px;
     font-weight: 600;
     line-height: 1.3;
+    letter-spacing: -0.02em;
     color: var(--ink, #17140F);
-    white-space: nowrap;
+    white-space: nowrap !important;
   }
   .till-phone-bit { display: inline-block; }
   .till-phone-bit + .till-phone-bit::before { content: " \00b7 "; }
@@ -1995,6 +2000,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     gap: 8px;
   }
   .till-root .till-chip {
+    flex-wrap: nowrap !important;
     justify-content: center;
     min-height: 44px;
     padding: 8px 4px !important;
@@ -2002,6 +2008,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 15px !important;
     white-space: nowrap;
   }
+  /* The flag sits above the code once the chip is only a quarter
+     of the screen. The code is the button. */
+  .till-root .till-chip > span:first-child { display: none; }
   .till-root .till-chip.is-on {
     background: var(--ft, #17140F) !important;
     border-color: var(--ft, #17140F) !important;
@@ -2097,18 +2106,60 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: "Space Mono", monospace !important;
     font-size: 28px !important;
   }
+  .win-body:has(.till-root[data-till-screen="count"]) { overflow: hidden; }
+  .till-root[data-till-screen="count"] {
+    min-height: 0;
+    overflow: hidden;
+  }
   .till-foot {
-    position: fixed !important;
-    left: 0;
-    right: 0;
-    bottom: var(--phone-dock-h, 0px);
-    z-index: 40;
-    margin: 0 !important;
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 2;
+    flex: none;
+    box-sizing: border-box;
+    width: calc(100% + 32px);
+    max-width: none;
+    margin: 8px -16px 0 !important;
     padding: 10px 12px 12px !important;
     background: var(--cd-paper, #f7f6f3) !important;
     box-shadow: 0 -1px 0 var(--hair, rgba(23, 20, 15, 0.12));
   }
-  .till-count { padding-bottom: 148px !important; }
+  .till-root[data-till-screen="count"] > .overflow-auto {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .till-root[data-till-screen="count"] .till-count {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0 !important;
+  }
+  .till-count-body {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .till-expected {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    max-width: 100%;
+    row-gap: 2px;
+    column-gap: 8px;
+  }
+  .till-expected-row { max-width: 100%; }
+  .till-foot-figures { max-width: 100%; min-width: 0; }
+  .till-expected b.is-blind,
+  .till-expected .till-var.is-blind { filter: blur(9px); }
   .till-foot-main {
     display: block !important;
     border-top: 0 !important;

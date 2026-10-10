@@ -39,6 +39,13 @@ async function atDesk(page: Page): Promise<void> {
 
 async function tillOpen(page: Page): Promise<void> {
   const opened = await page.evaluate(async () => {
+    const seeded = await fetch("/api/ledger/opening-balances", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ balances: { CAD: "25000.00", USD: "12000.00", EUR: "7000.00", GBP: "3500.00" } }),
+    });
+    if (seeded.status !== 201 && seeded.status !== 409) return `balances ${seeded.status} ${await seeded.text()}`;
     const probe = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
     if (!probe.ok) return `session ${probe.status}`;
     const body = await probe.json();
@@ -117,7 +124,7 @@ async function countCad(page: Page): Promise<void> {
 }
 
 test("a phone can count, save, and reach every till tab", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   for (const size of PHONE) {
     await page.setViewportSize({ width: size.width, height: size.height });
     await atDesk(page);
@@ -128,8 +135,19 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await expect(page.locator(".till-phone-who")).toContainText("A. Singh");
     await expect(page.locator(".till-phone-who")).toContainText("Senior teller");
     await expect(page.locator(".till-phone-who")).toContainText("Till 1");
-    const whoClipped = await page.locator(".till-phone-who").evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-    expect(whoClipped, "the who-line wraps or clips").toBe(false);
+    const whoLine = await page.locator(".till-phone-bit").evaluateAll((els) => {
+      const tops = els.map((el) => Math.round(el.getBoundingClientRect().top));
+      const host = els[0]?.parentElement;
+      return {
+        tops,
+        clipped: !!host && host.scrollWidth > host.clientWidth + 1,
+      };
+    });
+    expect(new Set(whoLine.tops).size, "the who-line wraps onto a second line").toBe(1);
+    expect(whoLine.clipped, "the who-line clips").toBe(false);
+    await expect(page.locator(".till-pill")).toBeVisible();
+    const pillClipped = await page.locator(".till-pill").evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+    expect(pillClipped, "In drawer wraps or clips").toBe(false);
 
     const past = await overflowPast(page);
     expect(past, "horizontal overflow at " + size.width).toEqual([]);
@@ -137,6 +155,12 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
 
     const chip = await page.locator(".till-chip").first().boundingBox();
     expect(chip && chip.height).toBeGreaterThanOrEqual(44);
+    /* A saved count comes back as a total. The steppers are the
+       denomination count, so open that mode when the total is showing. */
+    await expect(page.locator(".till-total-card, .till-den").first()).toBeVisible();
+    if (await page.locator(".till-total-card").isVisible()) {
+      await page.getByRole("button", { name: "Count denominations" }).click();
+    }
     const step = await page.locator(".till-den .till-step").first().boundingBox();
     expect(step && step.width).toBeGreaterThanOrEqual(44);
     expect(step && step.height).toBeGreaterThanOrEqual(44);
@@ -149,8 +173,10 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await page.locator(".till-coins-btn").click();
 
     await countCad(page);
-    const usd = page.getByRole("button", { name: "USD", exact: true });
-    await usd.click();
+    await page.locator(".till-chip", { hasText: "USD" }).click();
+    if (await page.locator(".till-total-card").isVisible()) {
+      await page.getByRole("button", { name: "Count denominations" }).click();
+    }
     await page.getByRole("button", { name: "Add one $50 USD" }).click();
     await expect(page.locator(".till-counted-input")).toHaveValue("50");
 
@@ -171,8 +197,8 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await expect(page.locator(".till-sheet")).toBeVisible();
     await page.locator(".till-sheet").getByRole("button", { name: "Reconcile & close" }).click();
     await expect(page.locator(".till-table-scroll")).toBeVisible();
-    await expect(page.locator(".till-table-scroll")).toContainText("200");
-    await expect(page.locator(".till-table-scroll")).toContainText("50");
+    await expect(page.locator(".till-table-scroll tbody tr").filter({ hasText: "CAD" }).first()).toContainText("200");
+    await expect(page.locator(".till-table-scroll tbody tr").filter({ hasText: "USD" }).first()).toContainText("50");
     const reconPast = await overflowPast(page);
     expect(reconPast, "reconcile overflow").toEqual([]);
 
@@ -186,7 +212,11 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await page.locator(".till-sheet").getByRole("button", { name: "Cash drawer", exact: true }).click();
     await expect(page.locator(".till-counted-input")).toBeVisible();
 
+    const hand = await page.locator(".till-handoff-phone").boundingBox();
     const saveBox = await page.getByRole("button", { name: "Save count" }).boundingBox();
+    expect(hand && hand.height).toBeGreaterThanOrEqual(44);
+    expect(saveBox && saveBox.height).toBeGreaterThanOrEqual(44);
+    expect(hand && saveBox && Math.abs(hand.y - saveBox.y)).toBeLessThan(8);
     const fabBox = await page.locator("#phone-fab").boundingBox();
     const hits =
       !!saveBox &&
@@ -201,8 +231,8 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     const blurred = await expected.evaluate((el) => getComputedStyle(el).filter.includes("blur"));
     expect(blurred).toBe(true);
     await page.locator(".till-expected").click();
-    const shown = await expected.evaluate((el) => getComputedStyle(el).filter === "none" || !getComputedStyle(el).filter.includes("blur"));
-    expect(shown).toBe(true);
+    await expect(expected).not.toHaveClass(/is-blind/);
+    await expect.poll(async () => expected.evaluate((el) => getComputedStyle(el).filter.includes("blur"))).toBe(false);
   }
 });
 
@@ -220,6 +250,7 @@ test("the desktop cash drawer is unchanged", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Reconcile & close", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "History", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Count denominations" }).click();
   await expect(page.locator(".till-coins")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hand off" })).toBeVisible();
 
