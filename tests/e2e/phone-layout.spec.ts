@@ -162,6 +162,18 @@ async function dismissTour(page: Page): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
+/* The module tabs are hidden on a phone. Rates, Ledger, Clients, and
+   Till are on the bottom bar. Everything else is a row under More. */
+async function openOnPhone(page: Page, id: string): Promise<void> {
+  const tab = page.locator(`#phonebar [data-phone-app="${id}"]`);
+  if (await tab.count()) {
+    await tab.click();
+    return;
+  }
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator(`#phone-more [data-phone-app="${id}"]`).click();
+}
+
 function clipFixture(fixed: boolean): string {
   const clip = fixed
     ? "#clip { width: 360px; height: 220px; overflow: hidden; }"
@@ -216,16 +228,18 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
     await signInAtDesk(page);
     await dismissTour(page);
     for (const id of SCREENS) {
-      const button = page.locator(`[data-app="${id}"]`);
-      await button.scrollIntoViewIfNeeded();
-      await button.click();
+      await openOnPhone(page, id);
       await expect(page.locator(".win.show").first()).toBeVisible();
       await dismissTour(page);
       await settledWindow(page);
       expect(await overflowPast(page), `${id} at ${width}px`).toEqual([]);
       expect(await covered(page), `${id} at ${width}px`).toEqual([]);
     }
-    await page.locator('button[title="Settings"]').click();
+    /* Settings is not on a senior teller's More list. An owner still
+       opens it from there, and that form is the one this check covers. */
+    await signInAtDesk(page, "j.masri");
+    await dismissTour(page);
+    await openOnPhone(page, "settings");
     await expect(page.locator(".win.show").first()).toBeVisible();
     await dismissTour(page);
     await settledWindow(page);

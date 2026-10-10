@@ -72,9 +72,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
-  the desk instead of floating as a desktop panel. The menu bar keeps
-  the icon buttons and drops the wordmark, the clock, and the account
-  name. A card that holds a table scrolls sideways. Rounded clips,
+  the desk instead of floating as a desktop panel. A compact header
+  shows the shop name, whether the till is open, and the profile
+  button. A bottom bar opens Rates, Ledger, Clients, Till, and More.
+  More lists the other apps that role can already open. A round +
+  starts a new transaction the same way the menu button does. The
+  module tabs and the menu icons those replace are hidden. The
+  wordmark, the clock, and the account name stay off the phone.
+  A card that holds a table scrolls sideways. Rounded clips,
   photos, and bars stay clipped. Settings stacks its list above the
   form. Sign-in and the station picker stay on the screen. The window
   dots stay 12px, so the title stays readable. The module tab bar
@@ -410,6 +415,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, phone bottom bar. At 430px and under, the header is the
+shop name, a till dot that reads Till open or Till closed, and the
+profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
+Till, More. More is the other apps that role can open. The + above
+the bar opens New transaction. The window stops above the bar,
+including the iPhone safe area. Wider than 430px, the desk is unchanged.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

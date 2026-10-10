@@ -61647,6 +61647,58 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
   };
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
+  /* Phone bottom bar. The four desks open the apps the dock already
+     calls by these ids. More is every other app the role can open. */
+  const PHONE_TABS = [{
+    id: 'rates',
+    label: 'Rates'
+  }, {
+    id: 'ledger',
+    label: 'Ledger'
+  }, {
+    id: 'clients',
+    label: 'Clients'
+  }, {
+    id: 'till',
+    label: 'Till'
+  }];
+  const PHONE_MORE = [{
+    id: 'telegraph',
+    label: 'Texts'
+  }, {
+    id: 'transfers',
+    label: 'Transfers'
+  }, {
+    id: 'cheques',
+    label: 'Cheques'
+  }, {
+    id: 'compliance',
+    label: 'Compliance'
+  }, {
+    id: 'reports',
+    label: 'Reports'
+  }, {
+    id: 'vault',
+    label: 'Vault'
+  }, {
+    id: 'branches',
+    label: 'Branches'
+  }, {
+    id: 'audit',
+    label: 'Audit trail'
+  }, {
+    id: 'calc',
+    label: 'Calculator'
+  }, {
+    id: 'loan',
+    label: 'Loan centre'
+  }, {
+    id: 'tagged',
+    label: 'Tagged'
+  }, {
+    id: 'settings',
+    label: 'Settings'
+  }];
   // the storefront opens as a window
   APPMETA.store = {
     title: 'Store',
@@ -64718,6 +64770,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [removingApps, setRemovingApps] = useState([]);
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false); // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
+    const [phoneMore, setPhoneMore] = useState(false);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -64823,7 +64876,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       if (!acctMenu) return;
       const h = e => {
-        if (acctRef.current && !acctRef.current.contains(e.target)) setAcctMenu(false);
+        if (e.target && e.target.closest && e.target.closest('.mb-acct-wrap')) return;
+        setAcctMenu(false);
       };
       document.addEventListener('mousedown', h);
       return () => document.removeEventListener('mousedown', h);
@@ -65240,6 +65294,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       } : w));
     }
     function openApp(id) {
+      setPhoneMore(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) {
         openSettingsTab('billing');
         return;
@@ -66593,6 +66648,76 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           return null;
       }
     }
+    const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
+    const phoneMoreNamed = new Set(PHONE_MORE.map(t => t.id));
+    const phoneMoreApps = PHONE_MORE.filter(t => visibleApps.includes(t.id)).concat(visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({
+      id,
+      label: APPMETA[id] && APPMETA[id].title || id
+    })));
+    const phoneOn = phoneMore ? 'more' : phonePrimary.has(activeBase) ? activeBase : activeBase ? 'more' : '';
+    const shopName = settings.operatingName || settings.bizName || 'Exchange house';
+    const profileButton = slot => /*#__PURE__*/React.createElement("div", {
+      className: "mb-acct-wrap",
+      ref: slot === 'desk' ? acctRef : undefined
+    }, /*#__PURE__*/React.createElement("button", {
+      className: 'mb-acct' + (acctMenu ? ' on' : ''),
+      "aria-expanded": acctMenu,
+      title: "Account & profile",
+      onClick: () => setAcctMenu(o => !o)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-acct-av"
+    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-acct-id"
+    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("i", null, me.role)), /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 13
+    })), acctMenu && /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu acct-menu mb-menu-solid",
+      role: "menu"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-av"
+    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-id"
+    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("span", null, me.role, " \xB7 ", stationName, stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''))), /*#__PURE__*/React.createElement("button", {
+      className: "mb-menu-row",
+      onClick: () => {
+        openSettingsTab('account');
+        setAcctMenu(false);
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 16
+    }), " ", /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, "View profile")), canSettings && /*#__PURE__*/React.createElement("button", {
+      className: "mb-menu-row",
+      onClick: () => {
+        openApp('settings');
+        setAcctMenu(false);
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "gear",
+      s: 16
+    }), " ", /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, "Account settings")), /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-div"
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-cap"
+    }, "Switch account"), (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => /*#__PURE__*/React.createElement("button", {
+      key: s.name,
+      className: 'mb-menu-row' + (s.name === me.name ? ' active' : ''),
+      onClick: () => switchTo(s)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-dot"
+    }, inits(s.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, s.name, " ", /*#__PURE__*/React.createElement("i", null, "\xB7 ", s.role)), s.name === me.name && /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 13
+    })))));
     return /*#__PURE__*/React.createElement("div", {
       id: "os"
     }, deskLocked && ReactDOM.createPortal(/*#__PURE__*/React.createElement(LockDesk, {
@@ -66617,7 +66742,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           to: op.name
         });
       }
-    }), document.body), /*#__PURE__*/React.createElement("div", {
+    }), document.body), /*#__PURE__*/React.createElement("header", {
+      className: "phone-head"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-shop"
+    }, shopName), /*#__PURE__*/React.createElement("div", {
+      className: 'phone-till' + (day.closed ? ' is-closed' : '')
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-till-dot"
+    }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
       id: "menubar"
     }, /*#__PURE__*/React.createElement("div", {
       className: "mb-brand",
@@ -66903,68 +67036,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hour12: false
     }))), /*#__PURE__*/React.createElement("span", {
       className: "mb-op-div"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "mb-acct-wrap",
-      ref: acctRef
-    }, /*#__PURE__*/React.createElement("button", {
-      className: 'mb-acct' + (acctMenu ? ' on' : ''),
-      "aria-expanded": acctMenu,
-      title: "Account & profile",
-      onClick: () => setAcctMenu(o => !o)
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-acct-av"
-    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-acct-id"
-    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("i", null, me.role)), /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13
-    })), acctMenu && /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu acct-menu mb-menu-solid",
-      role: "menu"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-head"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-av"
-    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-id"
-    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("span", null, me.role, " \xB7 ", stationName, stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''))), /*#__PURE__*/React.createElement("button", {
-      className: "mb-menu-row",
-      onClick: () => {
-        openSettingsTab('account');
-        setAcctMenu(false);
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 16
-    }), " ", /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, "View profile")), canSettings && /*#__PURE__*/React.createElement("button", {
-      className: "mb-menu-row",
-      onClick: () => {
-        openApp('settings');
-        setAcctMenu(false);
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "gear",
-      s: 16
-    }), " ", /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, "Account settings")), /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-div"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-cap"
-    }, "Switch account"), (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => /*#__PURE__*/React.createElement("button", {
-      key: s.name,
-      className: 'mb-menu-row' + (s.name === me.name ? ' active' : ''),
-      onClick: () => switchTo(s)
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-dot"
-    }, inits(s.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, s.name, " ", /*#__PURE__*/React.createElement("i", null, "\xB7 ", s.role)), s.name === me.name && /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13
-    }))))), /*#__PURE__*/React.createElement("div", {
+    }), profileButton('desk'), /*#__PURE__*/React.createElement("div", {
       className: "mb-power-wrap",
       ref: opMenuRef
     }, /*#__PURE__*/React.createElement("button", {
@@ -67223,7 +67295,67 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onResize: sizeWin,
       onSnap: snapWin,
       onAdd: duplicateWin
-    }, renderApp(w.id)))), receipt && /*#__PURE__*/React.createElement(ReceiptModal, {
+    }, renderApp(w.id))), phoneMore && /*#__PURE__*/React.createElement("div", {
+      id: "phone-more",
+      role: "dialog",
+      "aria-label": "More"
+    }, phoneMoreApps.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "phone-more-empty"
+    }, "No other apps for this role."), phoneMoreApps.map(a => /*#__PURE__*/React.createElement("button", {
+      key: a.id,
+      type: "button",
+      className: "phone-more-row",
+      "data-phone-app": a.id,
+      onClick: () => openApp(a.id)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "phone-more-ico"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: APPMETA[a.id] && APPMETA[a.id].icon || 'grid4',
+      s: 22
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "phone-more-name"
+    }, a.label))))), /*#__PURE__*/React.createElement("div", {
+      id: "phone-dock"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-fab-row"
+    }, /*#__PURE__*/React.createElement("button", {
+      id: "phone-fab",
+      type: "button",
+      className: day.closed ? 'is-closed' : '',
+      title: day.closed ? 'Day is closed — reopen to post' : 'New transaction',
+      "aria-label": "New transaction",
+      onClick: quickNewDeal
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "plus",
+      s: 22,
+      c: "#fff"
+    }))), /*#__PURE__*/React.createElement("nav", {
+      id: "phonebar",
+      "aria-label": "Desk"
+    }, PHONE_TABS.map(t => /*#__PURE__*/React.createElement("button", {
+      key: t.id,
+      type: "button",
+      className: 'phone-tab' + (phoneOn === t.id ? ' is-on' : ''),
+      "data-phone-app": t.id,
+      "aria-current": phoneOn === t.id ? 'page' : undefined,
+      onClick: () => openApp(t.id)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: APPMETA[t.id].icon,
+      s: 22
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "lbl"
+    }, t.label))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: 'phone-tab' + (phoneOn === 'more' ? ' is-on' : ''),
+      "data-phone-app": "more",
+      "aria-current": phoneOn === 'more' ? 'page' : undefined,
+      onClick: () => setPhoneMore(v => !v)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "grid4",
+      s: 22
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "lbl"
+    }, "More")))), receipt && /*#__PURE__*/React.createElement(ReceiptModal, {
       row: receipt,
       settings: settings,
       onClose: () => setReceipt(null)

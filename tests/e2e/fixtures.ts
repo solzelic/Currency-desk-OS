@@ -97,10 +97,13 @@ export const hasLedger = !!process.env.SEAM_DATABASE_URL;
 /**
  * Get from wherever the page is to the desk itself.
  *
- * An owner is asked where they are working before the desk opens — "Owner
- * access — every branch, any till" — because they are the one person the
- * product cannot infer a drawer for. A teller or a manager has one, so they
- * land straight on the desktop.
+ * An owner, and anyone posted to more than one branch, is asked where
+ * they are working before the desk opens. A person with one branch and
+ * a till on it lands straight on the desktop.
+ *
+ * The desk signal is an open window. The module strip used to be the
+ * signal, because it always said "Rate Board", and a phone hides that
+ * strip.
  *
  * Exported because ANY reload puts an owner back on that screen, and a
  * helper that reloads mid-test (to open a till, to top up a drawer) leaves
@@ -109,15 +112,22 @@ export const hasLedger = !!process.env.SEAM_DATABASE_URL;
  */
 export async function landOnDesktop(page: Page): Promise<void> {
   const chooser = page.getByRole("heading", { name: /Where are you working/i });
-  const desktop = page.getByText(/Rate Board/i).first();
+  const deskWin = page.locator("#desktop .win.show");
+  /* A wide window still paints "Rate Board" on the module strip before
+     the window has finished opening. A phone hides that strip. */
+  const rateBoard = page.getByText(/Rate Board/i).first();
+  const onDesk = async () =>
+    (await deskWin.first().isVisible().catch(() => false)) ||
+    (await rateBoard.isVisible().catch(() => false));
   /* Waits for whichever arrives. `isVisible()` does NOT wait — it answers
      about this instant — so asking it straight after a reload answered "no
      chooser" while the chooser was still rendering. */
   await Promise.race([
     chooser.waitFor({ state: "visible", timeout: 45_000 }),
-    desktop.waitFor({ state: "visible", timeout: 45_000 }),
+    deskWin.first().waitFor({ state: "visible", timeout: 45_000 }),
+    rateBoard.waitFor({ state: "visible", timeout: 45_000 }),
   ]);
-  if (!(await chooser.isVisible())) {
+  if (!(await chooser.isVisible()) || (await onDesk())) {
     await frontWindow(page);
     return;
   }
@@ -125,21 +135,27 @@ export async function landOnDesktop(page: Page): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     /* A free drawer by preference: the chooser labels each till with who is
        on it, and a session outlives a browser context, so the obvious first
-       till is often one this same person already holds. */
-    const free = page.getByRole("button", { name: /· free$/ });
-    const anyTill = page.getByRole("button", { name: /^(Till \d|Wholesale)/ });
+       till is often one this same person already holds. Scoped to the
+       chooser so a phone tab named Till is not that button. */
+    const free = page.locator("#lock").getByRole("button", { name: /· free$/ });
+    const anyTill = page.locator("#lock").getByRole("button", { name: /^(Till \d|Wholesale)/ });
     await ((await free.count()) ? free.first() : anyTill.first()).click();
     await page.getByRole("button", { name: /^Open workspace$/ }).click();
     /* Somebody may already be on that drawer. The desk asks before taking
        it, and confirming is what a person does. */
     const takeOver = page.getByRole("button", { name: /^Take over till$/ });
     if (await takeOver.isVisible({ timeout: 3_000 }).catch(() => false)) await takeOver.click();
-    if (await desktop.isVisible({ timeout: 15_000 }).catch(() => false)) {
+    if (await onDesk()) {
+      await frontWindow(page);
+      return;
+    }
+    await deskWin.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+    if (await onDesk()) {
       await frontWindow(page);
       return;
     }
   }
-  await desktop.waitFor({ state: "visible", timeout: 45_000 });
+  await deskWin.first().waitFor({ state: "visible", timeout: 45_000 });
   await frontWindow(page);
 }
 
