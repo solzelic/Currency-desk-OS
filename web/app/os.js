@@ -66742,15 +66742,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           to: op.name
         });
       }
-    }), document.body), /*#__PURE__*/React.createElement("header", {
-      className: "phone-head"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "phone-shop"
-    }, shopName), /*#__PURE__*/React.createElement("div", {
-      className: 'phone-till' + (day.closed ? ' is-closed' : '')
-    }, /*#__PURE__*/React.createElement("i", {
-      className: "phone-till-dot"
-    }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
+    }), document.body), /*#__PURE__*/React.createElement("div", {
       id: "menubar"
     }, /*#__PURE__*/React.createElement("div", {
       className: "mb-brand",
@@ -67190,7 +67182,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       locked: locked,
       cfg: tickerCfg,
       book: lockedBook
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("header", {
+      className: "phone-head"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-shop"
+    }, shopName), /*#__PURE__*/React.createElement("div", {
+      className: 'phone-till' + (day.closed ? ' is-closed' : '')
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-till-dot"
+    }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
       id: "appbar",
       ref: appbarRef,
       className: (editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')

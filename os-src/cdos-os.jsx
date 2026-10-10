@@ -2311,15 +2311,6 @@
       {handover && ReactDOM.createPortal(<Handover operators={(settings.employees && settings.employees.length ? settings.employees : STAFF)} current={me}
         onCancel={() => setHandover(false)}
         onConfirm={(op) => { setHandover(false); applyRole(op); log && log('operator.handover', { to: op.name }); }} />, document.body)}
-      {/* PHONE HEADER — shop, till, profile. Hidden above 430px. */}
-      <header className="phone-head">
-        <div className="phone-shop">{shopName}</div>
-        <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
-          <i className="phone-till-dot" />
-          <span>{day.closed ? 'Till closed' : 'Till open'}</span>
-        </div>
-        {profileButton('phone')}
-      </header>
       {/* MENU BAR */}
       <div id="menubar">
         <div className="mb-brand" title={chromeCollapsed ? 'Show the app row' : 'Hide the bars for more room'} style={{ cursor: 'pointer' }} onClick={() => setChromeCollapsed(c => !c)}>
@@ -2469,6 +2460,18 @@
           <Ticker locked={locked} cfg={tickerCfg} book={lockedBook} />
         </div>
       </div>
+
+      {/* PHONE HEADER — shop, till, profile. Hidden above 430px.
+          It follows the tenant name in the document so a desktop
+          lookup of the shop name finds the visible one first. */}
+      <header className="phone-head">
+        <div className="phone-shop">{shopName}</div>
+        <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
+          <i className="phone-till-dot" />
+          <span>{day.closed ? 'Till closed' : 'Till open'}</span>
+        </div>
+        {profileButton('phone')}
+      </header>
 
       {/* APP SUB-BAR */}
       <div id="appbar" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>

@@ -1578,6 +1578,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   #menubar, #tenantbar, #appbar, .edge-rail { display: none !important; }
 
   .phone-head {
+    order: -1;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
