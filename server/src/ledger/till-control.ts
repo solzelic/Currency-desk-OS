@@ -13,6 +13,7 @@ import {
   lockVault,
   transferCost,
   vaultBox,
+  vaultIsTracked,
   type CostBox,
 } from "./vault-control.js";
 
@@ -596,6 +597,24 @@ export class TillControlService {
       );
       const carriesCost =
         input.counterpartyType === "vault" && input.currency !== home;
+      /* A float names the vault as the other box. If that box has never
+         been counted, there is nothing to subtract, and crediting the
+         till anyway invents cash. Refuse before either balance moves.
+         Cash from a bank or from 'other' has no vault leg, and still posts. */
+      if (input.counterpartyType === "vault") {
+        const tracked = await vaultIsTracked(
+          client,
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+        );
+        if (!tracked) {
+          throw new LedgerError(
+            "VAULT_NOT_INITIALIZED",
+            "Open the vault with a starting count first.",
+          );
+        }
+      }
       const tillBox: CostBox = {
         tenantId: actor.tenantId,
         legalEntityId: actor.legalEntityId,
@@ -656,9 +675,7 @@ export class TillControlService {
          strong room is debited here, in this transaction, against the same
          locks. Either both boxes move or neither does — the till can no
          longer be floated from a vault that did not have the money.
-         A branch that has never stated a vault opening position returns
-         null: nothing is balanced, because balancing against an unstated
-         position would be inventing a number for somebody else's cash. */
+         An unopened vault was refused above, before this till moved. */
       let vaultLegId: string | null = null;
       if (input.counterpartyType === "vault") {
         vaultLegId = await applyVaultLeg(client, {
