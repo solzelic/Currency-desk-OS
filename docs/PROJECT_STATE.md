@@ -403,6 +403,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Cash moves. An opened Move cash form, an issue-to-till form
+(one key per currency), and a wholesale delivery form each keep one
+idempotency key until that movement finishes, including a retry and a
+second tap. Two requests that arrive together under that key replay
+the one movement. A known key whose amount, currency, direction, or
+the rest of the movement differs is refused, and nothing else moves.
+A new form is a new movement.
+
 **2026-10-10**, Cheque cashing. An opened cheque form keeps one idempotency
 key until that cashing finishes, including a retry and a second tap.
 The server also refuses a second live cheque at the same branch with

@@ -48,15 +48,28 @@ the daily close overwrites the evidence that they did.
   written, and never rendered.
 
 - **The book names things, the browser does not.** A transaction's
-  reference, an obligation's reference and the key that makes a post
-  idempotent are all minted server-side. The browser used to count its own
-  local list for them — `transfers.filter(t => t.date === TODAY).length + 1`
-  — and that counter restarts at 1 on every fresh sign-in and runs
-  independently on every till. The second remittance of a day was refused
-  by the ledger's uniqueness rule as an "Unexpected server error", and the
-  idempotency key would have made the ledger replay the first deal and move
-  no cash while the screen said posted. An identifier a second browser can
-  mint again is not an identifier.
+  reference and an obligation's reference are minted server-side. The key
+  that makes a post idempotent is minted once, when the form that will
+  send it opens, and reused until that form is finished — a transfer, a
+  cash move, a float onto a till (one key per currency), a wholesale
+  delivery. The browser used to count its own local list for them —
+  `transfers.filter(t => t.date === TODAY).length + 1` — and that counter
+  restarts at 1 on every fresh sign-in and runs independently on every
+  till. The second remittance of a day was refused by the ledger's
+  uniqueness rule as an "Unexpected server error", and the idempotency
+  key would have made the ledger replay the first deal and move no cash
+  while the screen said posted. A cash move's key was worse in the other
+  direction: it was the clock plus a random tail, so a second tap, or a
+  tap whose answer never came back, was a new key and the money moved
+  twice. An identifier a second browser can mint again is not an
+  identifier. A key that changes every tap is not one either. Two
+  requests that do share a key, and arrive together, replay the one
+  movement; the loser of the unique index does not answer as if nothing
+  had been posted. A key that comes back with a different amount,
+  currency, direction, or the rest of the movement is refused: "This
+  form was already sent with different details. Nothing else was moved."
+  The unique-index replay uses that same comparison, and only when the
+  constraint is the idempotency one.
 
 - **A cash figure is the cash that crossed the counter.** Not the size of
   the deal, which is a different number on two of the six lines: a
