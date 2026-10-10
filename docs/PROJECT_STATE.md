@@ -351,8 +351,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
   saved history through the real quote / ledger / client-record
   services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
-  `siteSlug=yorkfx`. Login is `/login` → `/app`, not `/admin`. How to
-  run it: `docs/DEMO_DESK.md`.
+  `siteSlug=yorkfx`.   It also states a vault opening position (CAD
+  40,000, USD 20,000, EUR 10,000, GBP 5,000) once, so a float comes
+  out of the safe. A book that already has its history and has never
+  stated a vault position still gets that count. A later boot does
+  not add it again once the safe has been counted. Login
+  is `/login` → `/app`, not `/admin`. How to run it: `docs/DEMO_DESK.md`.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -402,6 +406,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-10**, Demo vault. York FX populate states a vault opening
+position once. A float of 500.00 CAD takes 500.00 out of that safe
+and puts it in the drawer. A second populate leaves the safe where
+the float left it. A desk that already has its history, and has
+never stated a vault position, still gets this count: populate does
+not return before that opening.
 
 **2026-10-10**, Cash moves. An opened Move cash form, an issue-to-till form
 (one key per currency), and a wholesale delivery form each keep one
