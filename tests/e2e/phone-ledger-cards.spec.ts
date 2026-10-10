@@ -145,9 +145,18 @@ test("cards replace the table at 390 and at 360", async ({ page }) => {
     expect(count).toBeGreaterThanOrEqual(2);
     await expect(page.locator(".win.show.active table")).toBeHidden();
     await expect(page.locator("[data-ledger-summary]")).toContainText(/\d+ today/);
-    const summaryText = await page.locator("[data-ledger-summary]").innerText();
-    expect(summaryText.replace(/\s+/g, " ").trim()).toMatch(/\d+ today · .+ in · .+ fees · \d+ reportable/);
-    expect(summaryText.split("\n").every((line) => !/^\s*·/.test(line) && !/·\s*$/.test(line))).toBe(true);
+    /* A narrow book is one line. A wider one breaks after "in", so
+       neither line starts or ends on a dot. */
+    const lines = (await page.locator("[data-ledger-summary] .ledger-today-line").allInnerTexts()).map((line) => line.trim());
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    expect(lines.every((line) => !/^·/.test(line) && !/·$/.test(line))).toBe(true);
+    if (lines.length === 1) {
+      expect(lines[0]).toMatch(/^\d+ today · .+ in · .+ fees · \d+ reportable$/);
+    } else {
+      expect(lines[0]).toMatch(/^\d+ today · .+ in$/);
+      expect(lines[1]).toMatch(/^.+ fees · \d+ reportable$/);
+    }
     await expect(page.locator("[data-ledger-summary]")).toContainText("fees");
     await expect(page.locator("[data-ledger-summary]")).toContainText("reportable");
     await expect(page.getByPlaceholder("Search the book")).toBeVisible();
