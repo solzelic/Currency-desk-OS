@@ -6,7 +6,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { ID_STATUS_NOT_CLIENT_MESSAGE } from "../src/ledger/id-on-file.js";
+import { derivedIdStatus, ID_NEEDED_MESSAGE, ID_STATUS_NOT_CLIENT_MESSAGE } from "../src/ledger/id-on-file.js";
 import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -91,6 +91,22 @@ async function resetLedger() {
        session_number,business_date,status,opened_by,opened_at)
      VALUES ('session-1',$1,$2,$3,$4,$5,1,current_date,'open',$1||':a.singh',now())`,
     scope,
+  );
+  /* The client file is a different table from the ledger, and reset
+     truncates only the ledger. The tenant and the entity have to be
+     here on every test: a document filed for a customer is refused
+     by the foreign key when they are not, and the tests below must
+     not depend on an earlier test having inserted them. */
+  await pool.query(
+    "INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT DO NOTHING",
+    [DEMO.tenantId],
+  );
+  await pool.query(
+    `INSERT INTO legal_entities
+       (id, tenant_id, name, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+     VALUES ($1, $2, 'York', 'CAD', 'pack-ca-v1', 1)
+     ON CONFLICT (id) DO NOTHING`,
+    [DEMO.legalEntityId, DEMO.tenantId],
   );
 }
 
@@ -874,6 +890,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       (customer: { customerId: string }) => customer.customerId === customerId,
     );
     expect(row.idStatus).toBe("verified");
+    expect(row.idStanding).toBe("on_file");
 
     const posted = await app.inject({
       method: "POST",
@@ -923,10 +940,292 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       },
     });
     expect(posted.statusCode, posted.body).toBe(422);
-    expect(posted.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(posted.json()).toMatchObject({
+      code: "COMPLIANCE_BLOCKED",
+      message: ID_NEEDED_MESSAGE,
+    });
     const booked = await pool.query(
       "SELECT count(*)::int AS n FROM ledger_transactions WHERE customer_id='customer-demo'",
     );
     expect(booked.rows[0].n).toBe(0);
+  });
+
+  async function exchange(
+    cookies: { cdos_session: string },
+    customerId: string,
+    amount: string,
+    key: string,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies,
+      payload: {
+        idempotencyKey: key,
+        customerId,
+        from: "CAD",
+        to: "USD",
+        inputAmount: amount,
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Salary",
+        thirdParty: false,
+      },
+    });
+  }
+
+  async function openClient(cookies: { cdos_session: string }, name: string) {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/clients",
+      cookies,
+      payload: { legalName: name, kind: "individual" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    return created.json() as { clientId: string; idStanding: string };
+  }
+
+  async function fileDocument(
+    cookies: { cdos_session: string },
+    clientId: string,
+    document: Record<string, unknown>,
+  ) {
+    const filed = await app.inject({
+      method: "POST",
+      url: `/api/clients/${clientId}/documents`,
+      cookies,
+      payload: document,
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    return filed.json() as {
+      clientId: string;
+      idStanding: string;
+      displayedDocument: { docType: string; docNumber: string | null; isPrimary: boolean } | null;
+    };
+  }
+
+  async function counterId(clientId: string) {
+    const found = await pool.query(
+      "SELECT customer_id FROM ledger_customers WHERE client_id=$1",
+      [clientId],
+    );
+    expect(found.rowCount).toBe(1);
+    return found.rows[0]!.customer_id as string;
+  }
+
+  /* Each of these is the test that goes red when that one check is
+     taken out of the standing expression. A document that fails the
+     check must not post at the identification line or above the
+     large-cash line. */
+  for (const amount of ["3000.00", "10500.00"]) {
+    it(`refuses ${amount} when the only document is an expired non-primary passport`, async () => {
+      const cookies = await cookie();
+      const client = await openClient(cookies, `Expired secondary ${amount}`);
+      const filed = await fileDocument(cookies, client.clientId, {
+        docType: "Passport",
+        docNumber: `EXP-${amount}`,
+        expiresOn: "2001-01-01",
+        isPrimary: false,
+      });
+      expect(filed.idStanding).toBe("expired");
+      const posted = await exchange(cookies, await counterId(client.clientId), amount, `exp-${amount}`);
+      expect(posted.statusCode, posted.body).toBe(422);
+      expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+    });
+
+    it(`refuses ${amount} when the only document type is Not stated`, async () => {
+      const cookies = await cookie();
+      const client = await openClient(cookies, `Not stated ${amount}`);
+      const filed = await fileDocument(cookies, client.clientId, {
+        docType: "Not stated",
+        docNumber: `NS-${amount}`,
+        expiresOn: "2031-05-01",
+      });
+      expect(filed.idStanding).toBe("missing");
+      const posted = await exchange(cookies, await counterId(client.clientId), amount, `ns-${amount}`);
+      expect(posted.statusCode, posted.body).toBe(422);
+      expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+    });
+
+    it(`refuses ${amount} when the number is only a zero-width space`, async () => {
+      const cookies = await cookie();
+      const client = await openClient(cookies, `Zero width ${amount}`);
+      const filed = await fileDocument(cookies, client.clientId, {
+        docType: "Passport",
+        docNumber: "\u200B\u200B",
+        expiresOn: "2031-05-01",
+      });
+      expect(filed.idStanding).toBe("missing");
+      const posted = await exchange(cookies, await counterId(client.clientId), amount, `zw-${amount}`);
+      expect(posted.statusCode, posted.body).toBe(422);
+      expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+    });
+  }
+
+  it("refuses a large deal when the number is only non-breaking spaces", async () => {
+    const cookies = await cookie();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: { name: "NBSP number", risk: "normal" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const customerId = created.json().customerId as string;
+    /* The client route's trim already drops NBSP, so this row is
+       written the way a migration can write it: the characters are
+       in the table. btrim does not remove them. The strip has to. */
+    await fileTypedId(pool, customerId, { number: "\u00A0\u00A0", expiresOn: "2031-05-01" });
+    for (const amount of ["3000.00", "10500.00"]) {
+      const posted = await exchange(cookies, customerId, amount, `nbsp-${amount}`);
+      expect(posted.statusCode, posted.body).toBe(422);
+      expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+    }
+  });
+
+  it("treats a current secondary document as ID on file, and a blank number as not", async () => {
+    const cookies = await cookie();
+    const current = await openClient(cookies, "Secondary current");
+    const filed = await fileDocument(cookies, current.clientId, {
+      docType: "Passport",
+      docNumber: "SEC-1",
+      expiresOn: "2031-05-01",
+      isPrimary: false,
+    });
+    expect(filed.idStanding).toBe("on_file");
+    expect(filed).toMatchObject({
+      displayedDocument: { docType: "Passport", docNumber: "SEC-1", isPrimary: false },
+    });
+    const posted = await exchange(cookies, await counterId(current.clientId), "3000.00", "secondary-current");
+    expect(posted.statusCode, posted.body).toBe(201);
+
+    const blank = await openClient(cookies, "Blank number");
+    const empty = await fileDocument(cookies, blank.clientId, {
+      docType: "Passport",
+      docNumber: "   ",
+      expiresOn: "2031-05-01",
+    });
+    expect(empty.idStanding).toBe("missing");
+    const refused = await exchange(cookies, await counterId(blank.clientId), "3000.00", "blank-number");
+    expect(refused.statusCode, refused.body).toBe(422);
+  });
+
+  it("keeps ID on file when the primary is expired and a secondary document is current", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Primary expired");
+    await fileDocument(cookies, client.clientId, {
+      docType: "Passport",
+      docNumber: "PRI-OLD",
+      expiresOn: "2001-01-01",
+      isPrimary: true,
+    });
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Driver licence",
+      docNumber: "SEC-NEW",
+      expiresOn: "2031-05-01",
+      isPrimary: false,
+    });
+    expect(filed.idStanding).toBe("on_file");
+    expect(filed.displayedDocument).toMatchObject({ docType: "Passport", isPrimary: true });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "primary-expired-secondary-current");
+    expect(posted.statusCode, posted.body).toBe(201);
+  });
+
+  it("counts a document with no expiry as not expired", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "No expiry");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Passport",
+      docNumber: "NO-EXP",
+      expiresOn: null,
+    });
+    expect(filed.idStanding).toBe("on_file");
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "no-expiry");
+    expect(posted.statusCode, posted.body).toBe(201);
+  });
+
+  it("uses the branch's business date, not UTC, across midnight", async () => {
+    const cookies = await cookie();
+    await pool.query(
+      `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+       VALUES ($1, $2, $3, 'Yorkville', 'America/Toronto')
+       ON CONFLICT (id) DO UPDATE SET timezone = 'America/Toronto'`,
+      [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
+    );
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: { name: "Midnight expiry", risk: "normal" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const customerId = created.json().customerId as string;
+    /* Expires on the Toronto date of the earlier instant. That instant
+       is still 11 October in Toronto and already 12 October in UTC.
+       The later instant is 12 October in both. current_date cannot
+       satisfy both expectations. */
+    await fileTypedId(pool, customerId, { expiresOn: "2026-10-11" });
+    const db = await pool.connect();
+    try {
+      const stillThatDay = await derivedIdStatus(
+        db,
+        customerId,
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        new Date("2026-10-12T03:30:00Z"),
+      );
+      const nextDay = await derivedIdStatus(
+        db,
+        customerId,
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        new Date("2026-10-12T04:30:00Z"),
+      );
+      expect(stillThatDay).toBe("verified");
+      expect(nextDay).toBe("expired");
+    } finally {
+      db.release();
+    }
+  });
+
+  it("posts a large deal for an identified client when the till sync carries the client id", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Nadia Passport");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Passport",
+      docNumber: "P7712345",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toBe("on_file");
+    const unlinked = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: { externalRef: "os:nadia-passport", name: "Nadia Passport", risk: "normal" },
+    });
+    expect(unlinked.statusCode, unlinked.body).toBe(201);
+    expect(unlinked.json().idStanding).toBe("missing");
+    const refused = await exchange(cookies, unlinked.json().customerId, "3000.00", "nadia-unlinked");
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
+
+    const linked = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: {
+        externalRef: "os:nadia-passport",
+        name: "Nadia Passport",
+        risk: "normal",
+        clientId: client.clientId,
+      },
+    });
+    expect(linked.statusCode, linked.body).toBe(201);
+    expect(linked.json().idStanding).toBe("on_file");
+    expect(linked.json().clientId).toBe(client.clientId);
+    const posted = await exchange(cookies, linked.json().customerId, "3000.00", "nadia-linked");
+    expect(posted.statusCode, posted.body).toBe(201);
   });
 });

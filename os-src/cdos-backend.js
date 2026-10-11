@@ -110,10 +110,15 @@
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
     /* ID standing is not sent. The server refuses idStatus on this
-       body and decides ID on file from a typed document record. A
-       passport number that lives only in this browser is not that. */
+       body and decides ID on file from the documents on the client
+       file. The client id has to go with the row: an os:<slug>
+       customer with no client id cannot see those documents, and a
+       large deal is then refused for someone the desk is holding a
+       passport for. */
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
-    return { externalRef: externalRef, name: String(name).trim(), risk: risk };
+    var payload = { externalRef: externalRef, name: String(name).trim(), risk: risk };
+    if (record.clientId) payload.clientId = String(record.clientId);
+    return payload;
   }
 
   async function syncCustomer(name, record) {
@@ -845,6 +850,10 @@
       possibleDuplicate: !!record.possibleDuplicate,
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
+      /* The server's answer. The primary document below is what is
+         shown; it is not what decides whether a deal can post. */
+      idStanding: record.idStanding || null,
+      displayedDocument: record.displayedDocument || null,
       idType: primary ? primary.docType : "",
       /* Said when this shop has switched the primary's type off. The
          document still counts; the next visit records another. */

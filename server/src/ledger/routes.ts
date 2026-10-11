@@ -89,6 +89,9 @@ const customerBody = z.object({
   externalRef: z.string().trim().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
   risk: z.enum(["normal", "enhanced", "high"]),
+  /* Which client file this till customer is. Not a standing: the
+     server still decides ID on file from the documents. */
+  clientId: z.string().trim().min(1).max(120).optional(),
 }).strict();
 /* A map keyed by currency — a drawer count, an opening position, the unit
    costs beside one.

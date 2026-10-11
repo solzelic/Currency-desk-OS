@@ -751,11 +751,20 @@ authenticated narrative dashboard.
 request that carries `idStatus`, `id_status`, `kycStatus`, a verified
 flag, or the same claim nested under identity or KYC is refused with
 422 for a teller and for an owner. A new customer is stored as
-missing. An update does not rewrite the column. The posting gate, on
-a deal that needs ID, reads a typed identity document on the linked
-client (type and number, primary not past its expiry). A row already
-stored as verified with no document is left as it is and is not ID
-on file. `scripts/audit-ledger-id-without-document.mjs` lists those
+missing. An update does not rewrite the column. The till sync sends
+the client id. A ledger row that already points at that client is
+the one returned, so the deal posts against the file the documents
+are on. ID on file is one server rule: at least one document with a
+real type (not empty and not "Not stated"), a number that is still
+non-empty after whitespace and invisible characters are stripped,
+and an expiry on or after the branch's business date. No expiry
+counts as not expired. The primary document is only what is shown.
+Client and ledger customer responses carry `idStanding`
+(`on_file`, `missing`, `expired`) and `displayedDocument`. A deal
+that needs ID and does not have it is refused with "ID needed for
+this amount. Record the customer's ID." A row already stored as
+verified with no such document is left as it is and is not ID on
+file. `scripts/audit-ledger-id-without-document.mjs` lists those
 rows and does not change them.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only an environment variable name. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.

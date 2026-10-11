@@ -26,7 +26,7 @@ import {
   type ComplianceStamp,
 } from "./compliance-gate.js";
 import { holdSerbiaSuspicion, SERBIA_SUSPICION_HELD, serbiaExchangeFacts } from "./serbia.js";
-import { derivedIdStatus } from "./id-on-file.js";
+import { derivedIdStatus, ID_NEEDED_MESSAGE } from "./id-on-file.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
   INDIA_PACK_ID,
@@ -291,7 +291,7 @@ export async function requireIdentification(
         "COMPLIANCE_BLOCKED",
         duty.failClosed
           ? "This desk's European Union rules are incomplete, so it cannot tell whether this customer needs to be identified."
-          : "Authoritative compliance policy blocked posting.",
+          : ID_NEEDED_MESSAGE,
       );
     }
     if (duty.cdd && (!(deal.purpose ?? "").trim() || !(deal.sourceOfFunds ?? "").trim())) {
@@ -328,7 +328,7 @@ export async function requireIdentification(
     if (idStatus !== "verified" && (packHit || deskHit)) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired };
@@ -355,7 +355,7 @@ export async function requireIdentification(
     if (judged.block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return {
@@ -375,7 +375,7 @@ export async function requireIdentification(
       if (indiaIdentificationRequired(amountHome, deal.kind, desk)) {
         throw new LedgerError(
           "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
+          ID_NEEDED_MESSAGE,
         );
       }
     }
@@ -395,7 +395,7 @@ export async function requireIdentification(
       if (identificationBlocks(amountHome, row, desk)) {
         throw new LedgerError(
           "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
+          ID_NEEDED_MESSAGE,
         );
       }
     }
@@ -409,7 +409,7 @@ export async function requireIdentification(
     if (priced.block || (desk !== null && amountHome.gte(desk))) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -430,7 +430,7 @@ export async function requireIdentification(
     if (block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -452,7 +452,7 @@ export async function requireIdentification(
     if (block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -485,7 +485,7 @@ export async function requireIdentification(
   if (idStatus !== "verified" && (packHit || deskHit)) {
     throw new LedgerError(
       "COMPLIANCE_BLOCKED",
-      "Authoritative compliance policy blocked posting.",
+      ID_NEEDED_MESSAGE,
     );
   }
   return { ...stamp, identificationRequired: packHit || deskHit };
@@ -851,6 +851,7 @@ export class LedgerService {
         quote.customerId,
         actor.tenantId,
         actor.legalEntityId,
+        actor.branchId,
       );
       const compliance = await this.requireIdentification(
         client,
@@ -1407,6 +1408,7 @@ export class LedgerService {
         request.customerId,
         actor.tenantId,
         actor.legalEntityId,
+        actor.branchId,
       );
       const compliance = await this.requireIdentification(
         client,

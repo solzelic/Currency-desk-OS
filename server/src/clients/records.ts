@@ -97,8 +97,13 @@ import {
   notAcceptedHereSentence,
   notInCatalogueSentence,
   resolveIdType,
-  typeKeySql,
 } from "./id-document-types.js";
+import { branchBusinessDate } from "../ledger/canada-rules.js";
+import {
+  documentStandingSql,
+  idFileForClients,
+  type ClientIdFile,
+} from "../ledger/id-on-file.js";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -175,28 +180,8 @@ const CLIENT_COLUMNS = {
 
 type ClientField = keyof typeof CLIENT_COLUMNS;
 
-/* How the desk's word for an identity becomes the ledger's word for it.
-
-   The ledger has four states and the posting gate refuses above the
-   identification threshold unless the row says exactly "verified". The
-   desk draws a finer distinction the ledger does not have: `identified`
-   means papers are on file, `verified` means a provider authenticated
-   them, and only the second is KYC in the sense a regulator means.
-
-   Both map to the ledger's "verified" here, and that is deliberate
-   rather than sloppy. The desk has always posted deals on the strength
-   of papers on file; narrowing it in this change would start refusing
-   transactions that cleared yesterday, silently, as a side effect of a
-   customer-records migration. Whether the posting gate should require a
-   provider verification is a real question and it belongs to the
-   compliance path, out loud, not here. */
-const LEDGER_ID_STATUS: Readonly<Record<VerificationStatus, string>> = {
-  unverified: "missing",
-  identified: "verified",
-  verified: "verified",
-  expired: "expired",
-};
-
+/* The desk's risk words and the ledger's. Medium is the desk's
+   enhanced watch, not a third ledger state. */
 const LEDGER_RISK: Readonly<Record<RiskRating, string>> = {
   low: "normal",
   normal: "normal",
@@ -307,6 +292,7 @@ export class ClientRecordService {
       const photo = new Map(photographs.rows.map((row) => [row.client_id, row]));
       const files = await this.supportingFiles(client, ids);
       const accepted = new Set((await resolveAcceptedIdTypes(client, actor.legalEntityId)).accepted);
+      const idFiles = await idFileForClients(client, actor.branchId, ids);
       /* Same-name records, surfaced rather than merged. This is the
          entire defect being fixed, said out loud on every read: two
          David Chens come back as two clients, each told about the
@@ -329,6 +315,7 @@ export class ClientRecordService {
             ),
             files.get(row.client_id as string) ?? [],
             accepted,
+            idFiles.get(row.client_id as string),
           ),
         ),
       };
@@ -381,6 +368,7 @@ export class ClientRecordService {
     );
     const files = await this.supportingFiles(client, [clientId]);
     const accepted = shop ?? (await resolveAcceptedIdTypes(client, actor.legalEntityId));
+    const idFiles = await idFileForClients(client, actor.branchId, [clientId]);
     return clientJson(
       row,
       documents.rows,
@@ -390,6 +378,7 @@ export class ClientRecordService {
       sameName.rows.map((s) => s.client_id as string),
       files.get(clientId) ?? [],
       new Set(accepted.accepted),
+      idFiles.get(clientId),
     );
   }
 
@@ -660,7 +649,7 @@ export class ClientRecordService {
         clientId,
         `${docType}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -726,7 +715,7 @@ export class ClientRecordService {
         clientId,
         `${documentId} · changed: ${names.join(", ") || "scan"}`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -750,7 +739,7 @@ export class ClientRecordService {
         clientId,
         `${removed.rows[0]!.doc_type} removed`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -1118,36 +1107,24 @@ export class ClientRecordService {
     actor: LedgerActor,
     clientId: string,
   ): Promise<string | null> {
-    /* A health card is not a document on file for this purpose: its
-       number does not count, and its expiry is not the primary's. */
+    const businessDate = await branchBusinessDate(client, actor.branchId);
     const found = await client.query(
-      `SELECT c.display_name, c.risk_rating, c.verification_status,
-              (SELECT min(expires_on) FROM desk_client_identity_documents d
-                WHERE d.client_id=c.client_id AND d.is_primary
-                  AND ${NOT_HEALTH_CARD_SQL("$4")}) AS primary_expiry,
-              (SELECT count(*)::int FROM desk_client_identity_documents d
-                WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'')<>''
-                  AND ${NOT_HEALTH_CARD_SQL("$4")}) AS numbered
+      `SELECT c.display_name, c.risk_rating,
+              ${documentStandingSql("c.client_id", "c.tenant_id", "c.legal_entity_id", "$4")} AS id_status
          FROM desk_clients c
         WHERE c.client_id=$1 AND c.tenant_id=$2 AND c.legal_entity_id=$3`,
-      [clientId, ...entityScope(actor), HEALTH_CARD_KEYS],
+      [clientId, ...entityScope(actor), businessDate],
     );
     if (!found.rowCount) return null;
     const row = found.rows[0]!;
-    /* The ledger's four-state word, derived rather than stored twice.
-       An identity with no numbered document is "missing" whatever the
-       desk's own status column says, and a primary document past its
-       expiry is "expired" — the two states the posting gate actually
-       acts on, computed from the documents rather than from a field
-       somebody forgot to update. */
-    const expiry = civilDate(row.primary_expiry);
-    const expired = expiry != null && expiry < civilToday();
-    const status: VerificationStatus =
-      row.numbered === 0
-        ? "unverified"
-        : expired
-          ? "expired"
-          : (row.verification_status as VerificationStatus);
+    /* The column the counter row stores. The posting gate does not
+       read it; it reads the same expression, so the two cannot grant
+       ID the documents do not support. A provider 'verified' on the
+       client is not copied across: no provider is connected. */
+    const ledgerStatus =
+      row.id_status === "verified" ? "verified"
+        : row.id_status === "expired" ? "expired"
+          : "missing";
     const externalRef = `client:${clientId}`;
     const existing = await client.query(
       `SELECT customer_id FROM ledger_customers
@@ -1166,7 +1143,7 @@ export class ClientRecordService {
           customerId,
           row.display_name,
           LEDGER_RISK[row.risk_rating as RiskRating],
-          LEDGER_ID_STATUS[status],
+          ledgerStatus,
           actor.userId,
         ],
       );
@@ -1191,7 +1168,7 @@ export class ClientRecordService {
         clientId,
         row.display_name,
         LEDGER_RISK[row.risk_rating as RiskRating],
-        LEDGER_ID_STATUS[status],
+        ledgerStatus,
         actor.userId,
         nameKey(row.display_name as string),
       ],
@@ -1212,7 +1189,7 @@ export class ClientRecordService {
         externalRef,
         row.display_name,
         LEDGER_RISK[row.risk_rating as RiskRating],
-        LEDGER_ID_STATUS[status],
+        ledgerStatus,
         clientId,
         actor.userId,
       ],
@@ -1238,25 +1215,21 @@ export class ClientRecordService {
    * number does not make the file identified and its expiry does not
    * make it expired.
    */
-  private async refreshVerification(client: pg.PoolClient, clientId: string) {
+  private async refreshVerification(client: pg.PoolClient, actor: LedgerActor, clientId: string) {
+    const businessDate = await branchBusinessDate(client, actor.branchId);
+    /* Same document rule as the posting gate. `verified` is left
+       alone: it would mean a provider authenticated the paper, and
+       adding a row here must not grant that. On file becomes
+       `identified`, which is this desk's word for "we hold the paper". */
     await client.query(
       `UPDATE desk_clients c
-          SET verification_status = CASE
-            WHEN NOT EXISTS (
-              SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
-                 AND ${NOT_HEALTH_CARD_SQL("$2")}
-            ) THEN 'unverified'
-            WHEN EXISTS (
-              SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id AND d.is_primary
-                 AND ${NOT_HEALTH_CARD_SQL("$2")}
-                 AND d.expires_on IS NOT NULL AND d.expires_on < current_date
-            ) THEN 'expired'
-            ELSE 'identified'
+          SET verification_status = CASE (${documentStandingSql("c.client_id", "c.tenant_id", "c.legal_entity_id", "$2")})
+            WHEN 'verified' THEN 'identified'
+            WHEN 'expired' THEN 'expired'
+            ELSE 'unverified'
           END
         WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
-      [clientId, HEALTH_CARD_KEYS],
+      [clientId, businessDate],
     );
   }
 
@@ -1457,6 +1430,7 @@ function clientJson(
   sameNameClientIds: string[],
   files: Record<string, unknown>[],
   accepted: ReadonlySet<string>,
+  idFile?: ClientIdFile,
 ) {
   return {
     clientId: row.client_id,
@@ -1480,6 +1454,11 @@ function clientJson(
     notes: row.notes ?? null,
     riskRating: row.risk_rating,
     verificationStatus: verificationForRead(row.verification_status, documents),
+    /* The posting gate's answer, not a second reading of the primary
+       document. The displayed document is the primary when one is
+       marked, otherwise the earliest. */
+    idStanding: idFile?.idStanding ?? "missing",
+    displayedDocument: idFile?.displayedDocument ?? null,
     verifiedAt: row.verified_at ? new Date(row.verified_at as string | Date).toISOString() : null,
     screeningOutcome: row.screening_outcome ?? null,
     screeningMatched: row.screening_matched ?? null,

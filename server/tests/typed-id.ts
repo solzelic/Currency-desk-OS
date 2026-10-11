@@ -7,7 +7,13 @@ import type pg from "pg";
 export async function fileTypedId(
   pool: pg.Pool | pg.PoolClient,
   customerId: string,
-  opts: { expiresOn?: string | null; number?: string } = {},
+  opts: {
+    expiresOn?: string | null;
+    number?: string;
+    docType?: string;
+    isPrimary?: boolean;
+    documentId?: string;
+  } = {},
 ): Promise<void> {
   const found = await pool.query(
     `SELECT tenant_id, legal_entity_id, name, client_id
@@ -28,18 +34,21 @@ export async function fileTypedId(
     `INSERT INTO desk_client_identity_documents
        (document_id, client_id, tenant_id, legal_entity_id,
         doc_type, doc_number, expires_on, is_primary)
-     VALUES ($1,$2,$3,$4,'Passport',$5,$6,true)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (document_id) DO UPDATE
-       SET doc_number = EXCLUDED.doc_number,
+       SET doc_type = EXCLUDED.doc_type,
+           doc_number = EXCLUDED.doc_number,
            expires_on = EXCLUDED.expires_on,
-           is_primary = true`,
+           is_primary = EXCLUDED.is_primary`,
     [
-      `doc_typed_${customerId}`,
+      opts.documentId ?? `doc_typed_${customerId}`,
       clientId,
       row.tenant_id,
       row.legal_entity_id,
+      opts.docType ?? "Passport",
       opts.number ?? `P-${customerId}`,
       opts.expiresOn === undefined ? "2032-04-01" : opts.expiresOn,
+      opts.isPrimary !== false,
     ],
   );
   await pool.query(
