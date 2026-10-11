@@ -129,8 +129,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   rail are hidden. The wordmark, the clock, and the account name
   stay off the phone. A card that holds a table scrolls sideways,
   and the right edge fades. Rounded clips,
-  photos, and bars stay clipped. Settings stacks its list above the
-  form. Sign-in and the station picker stay on the screen. The window
+  photos, and bars stay clipped. Settings on a phone is a list:
+  search, the person’s own row, PIN and sign-in, notifications,
+  and sign out. An owner also sees the shop and the other apps,
+  and each of those opens the current desktop section in a sheet.
+  A cashier sees only their own rows and sign out. Texts, receipts,
+  billing, the ticker, and the role matrix stay off the phone.
+  Changing a PIN is a keypad: each step moves on after the fourth
+  digit, and the last digit saves. Wider than 430px, Settings is
+  the rail and the form it already was. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
   above the bottom bar. A task sheet fills the phone and covers the
@@ -658,6 +665,24 @@ sticky action. It is inset 16px, `--radius-md`, `--gray-900`, with
 white 14/20 text. An optional action is a white weight-600 text
 button. It leaves after 4 seconds. `role="status"`.
 
+**2026-10-12**, phone Settings. Under 430px, Settings is a list. Search, the
+person’s row, PIN and sign-in, notifications, and sign out are on
+it. An owner also sees the shop and the other apps; those rows open
+the desktop section that already exists, in a sheet. A cashier sees
+their own rows and sign out. Texts, receipts, billing, the ticker,
+and the role matrix are not phone screens. A PIN is four digits on
+a keypad, and the fourth digit of the last step saves it. Wider
+than 430px, Settings is still the rail beside the form.
+
+**2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
+FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
+styled in `os-src/phone-shell.css` with `tokens.css` variables. A
+sheet and a toast stay hidden above 430px. A row’s second line
+starts at the title’s left edge. The phone header initials and a
+profile avatar use the same sans. ChoiceTiles, AmountField,
+SummaryList, and StepHeader are the next shared files, added on
+top of these six. Contract: `docs/PHONE_SHELL.md`.
+
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
 audit seed still shows 9:05 AM, and the Cheques picture is the seeded
@@ -682,15 +707,6 @@ query. They are rendered in the seam job from main
 `5216ef4780b750c2dcce5847296288920d63b443` (the teller-earnings
 reads), not from `9f1efb8`. The phone ledger's day fee is the
 server summary, or it is omitted.
-
-**2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
-FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
-styled in `os-src/phone-shell.css` with `tokens.css` variables. A
-sheet and a toast stay hidden above 430px. A row’s second line
-starts at the title’s left edge. The phone header initials and a
-profile avatar use the same sans. ChoiceTiles, AmountField,
-SummaryList, and StepHeader are the next shared files, added on
-top of these six. Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.

@@ -255,8 +255,8 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
       expect(await overflowPast(page), `${id} at ${width}px`).toEqual([]);
       expect(await covered(page), `${id} at ${width}px`).toEqual([]);
     }
-    /* Settings is not on a senior teller's More list. An owner still
-       opens it from there, and that form is the one this check covers. */
+    /* Every signed-in person opens Settings from More. This check
+       is the owner's list, which is the long one. */
     await signInAtDesk(page, "j.masri");
     await dismissTour(page);
     await openOnPhone(page, "settings");

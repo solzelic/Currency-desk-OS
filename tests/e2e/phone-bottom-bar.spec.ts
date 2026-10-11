@@ -179,6 +179,7 @@ test("more lists the apps this role can open", async ({ page }) => {
     "Loan calculator",
     "Pricing",
     "Apps",
+    "Settings",
   ]);
   const body = await page.locator(".phone-more-name").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(body).toBeGreaterThanOrEqual(14);
@@ -207,8 +208,9 @@ test("a teller only sees the apps a teller can open", async ({ page }) => {
     "Loan calculator",
     "Pricing",
     "Apps",
+    "Settings",
   ]);
-  for (const hidden of ["Reports", "Vault", "Branches", "Settings", "Dashboard", "Texts", "Assistant"]) {
+  for (const hidden of ["Reports", "Vault", "Branches", "Dashboard", "Texts", "Assistant"]) {
     expect(labels, hidden).not.toContain(hidden);
   }
 });

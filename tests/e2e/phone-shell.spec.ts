@@ -208,7 +208,7 @@ test("the bar is five tabs and has no centre plus", async ({ page }) => {
   await expect(page.locator("#phonebar").getByRole("button", { name: "+" })).toHaveCount(0);
 });
 
-test("an owner sees Settings and a cashier does not", async ({ page }) => {
+test("an owner and a cashier both open Settings, and Texts stays off the phone", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "j.masri");
   const owner = await moreNames(page);
@@ -224,7 +224,7 @@ test("an owner sees Settings and a cashier does not", async ({ page }) => {
 
   await atDesk(page, "m.costa");
   const cashier = await moreNames(page);
-  expect(cashier).not.toContain("Settings");
+  expect(cashier).toContain("Settings");
   expect(cashier).not.toContain("Vault");
   expect(cashier).not.toContain("Reports");
   expect(cashier).not.toContain("Dashboard");

@@ -2268,7 +2268,7 @@
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf, onSignOut: logout, tillOpen: !day.closed, onLeave: () => { closeWin('settings'); setPhoneMore(true); } }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
@@ -2287,13 +2287,17 @@
        in the browser and never reads /api/desk/branches. Assistant
        calls window.claude and has no model API. Both stay off the
        phone. Store is the same door as the desktop edge rail, which
-       is not an app-bar id. */
+       is not an app-bar id. Settings stays off the desktop dock unless
+       this person may change the shop. On a phone every signed-in
+       person opens it, because a cashier sets their own PIN and signs
+       out from there. */
     const phoneAllowed = visibleApps.filter(id => {
       if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
       if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
       return true;
     });
     if (planAllows('store') && permsOk('store') && phoneAllowed.indexOf('store') < 0) phoneAllowed.push('store');
+    if (phoneAllowed.indexOf('settings') < 0) phoneAllowed.push('settings');
     const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
     /* The selected tab borrows the app's existing accent (--c on the
        dock). More has none of its own: the sheet uses the same ink as

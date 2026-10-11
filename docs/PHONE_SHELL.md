@@ -572,6 +572,10 @@ does not keep it on screen.
 FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
+`os-src/phone/settings.jsx` is the Settings screen. Owner rows that
+are real shop sections open the existing desktop panel in a sheet.
+A later pass draws those sections for a phone.
+
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,
 summary cards, search, type select, `FilterChips`, `ListRow`s grouped
