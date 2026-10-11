@@ -716,6 +716,12 @@
 
   const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, two places, then the code.
+     '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
+  const formatPhoneMoney = (n, ccy) => {
+    const body = new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+    return ccy ? body + ' ' + ccy : body;
+  };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
 
   /* ============================================================
@@ -1263,7 +1269,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

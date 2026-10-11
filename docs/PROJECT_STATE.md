@@ -97,13 +97,31 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   screen for the whole sheet, including while the amount is focused
   and while the keyboard is open. The X is 44px. If the ticket has
   anything entered, the X asks "Discard this deal?" before it closes.
-  Swap, Override, and Text quote are 44px targets. Customer, the
-  amounts, the rate, and the required fields are the full width of
-  the form and at least 44px tall. The text in those fields is 16px, so the phone
-  does not zoom in when a cashier taps one. A long value ends in an
-  ellipsis. At 1280 the dialog is the same two columns as main. The
-  ID row, the discard question, and the phone footer are not on
-  that dialog.
+  Swap and Override are 44px targets, and the swap control is 44×44
+  on the rate line. The customer clear control is 44px. Text quote
+  is hidden unless SMS is configured, and the $6.99 verify nudge is
+  hidden while Persona is off. An incomplete deal says "N steps
+  left" and stays tappable; tapping it scrolls to the first missing
+  item and marks it. The checklist says "ID not recorded yet" and
+  offers Record the ID. Rates show four decimals. Ticket amounts
+  include the currency code, and the amount the customer receives
+  stays green. Purpose and source of funds stay in the ordinary
+  border until the cashier leaves an empty field. The "Authoritative
+  ledger record" heading is hidden; the two fields stay, because
+  the server still requires them. The buy and sell badge reads
+  WE BUY or WE SELL in the flag and green colours. An ID expiry
+  reads like "1 Apr 2030". The customer stats read ID ON FILE and
+  LAST {n}D. The type row keeps a 16px inset and fades the pills at
+  the right edge. Record the ID is one column, so the ID type is
+  not cut off. Customer, the amounts, the rate, and the required
+  fields are the full width of the form and at least 44px tall. The
+  text in those fields is 16px, so the phone does not zoom in when
+  a cashier taps one. A long value ends in an ellipsis. At 1280 the
+  dialog is the same two columns as before this phone work. Text
+  quote still shows, an incomplete deal still says "N to complete"
+  and stays disabled, and the ledger heading still shows. The ID
+  row, the discard question, and the phone footer are not on that
+  dialog.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -574,6 +592,20 @@ server starts at midnight in the branch time zone. Screening is not
 connected. Texting is not connected. The site does not claim encryption
 at rest, and it does not claim data is held in the region where the desk
 operates. Subscription prices printed on the site are unchanged.
+
+**2026-10-11**, New transaction on a phone, follow-up. Under 600px
+an incomplete deal says "N steps left" and stays tappable. Tapping
+it marks the first missing item. The checklist says "ID not
+recorded yet". Text quote is hidden unless SMS is configured, and
+the verify nudge is hidden while Persona is off. Rates show four
+decimals. Ticket amounts include the currency code. Purpose and
+source borders turn red only after an empty field is left. The
+ledger-record heading is hidden. The type row keeps a 16px inset
+and fades at the right edge. Record the ID is one column. Recording
+an ID for a customer who already has a file posts the document on
+that file. Wider than 600px, including 1280, the dialog is unchanged:
+Text quote shows, and an incomplete deal still says "N to complete"
+and stays disabled.
 
 **2026-10-11**, New transaction on a phone. Under 600px the form is a
 full-screen sheet and one column. The type names are a horizontal

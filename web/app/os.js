@@ -917,6 +917,15 @@
   const num = n => new Intl.NumberFormat('en-CA', {
     maximumFractionDigits: 2
   }).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, two places, then the code.
+     '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
+  const formatPhoneMoney = (n, ccy) => {
+    const body = new Intl.NumberFormat('en-CA', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(Number(n) || 0);
+    return ccy ? body + ' ' + ccy : body;
+  };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
 
   /* ============================================================
@@ -1868,6 +1877,7 @@
     perCadLive,
     fmt,
     num,
+    formatPhoneMoney,
     dDiff,
     mkRef,
     nowTime,
@@ -32327,6 +32337,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     return per == null ? null : n * per;
   }
   const shownRate = r => r > 0 && isFinite(r) ? num(r) : 'Rate unavailable';
+  const formatPhoneRate = r => r > 0 && isFinite(r) ? Number(r).toFixed(4) : 'Rate unavailable';
+  const phoneMoney = (n, ccy) => {
+    const fn = window.CDOS.formatPhoneMoney;
+    return typeof fn === 'function' ? fn(n, ccy) : num(n) + (ccy ? ' ' + ccy : '');
+  };
+  const phoneDay = iso => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const parts = String(iso).split('-');
+    return Number(parts[2]) + ' ' + months[Number(parts[1]) - 1] + ' ' + parts[0];
+  };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2',
@@ -33074,6 +33095,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "w-full outline-none text-sm bg-transparent"
     }), query && /*#__PURE__*/React.createElement("button", {
       type: "button",
+      className: "cd-tx-clear",
+      "aria-label": "Clear customer",
       onClick: () => {
         onClear();
         setOpen(false);
@@ -33151,6 +33174,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     live,
     settings
   }) {
+    const phone = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
@@ -33291,12 +33315,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         gridTemplateColumns: '1fr 1fr 1fr'
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
-      label: "ID on file",
+      label: phone ? 'ID ON FILE' : 'ID on file',
       value: idMissing ? '—' : rec.idType || 'ID',
-      sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file',
+      sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
-      label: `Last ${s.winDays}d`,
+      label: phone ? `LAST ${s.winDays}D` : `Last ${s.winDays}d`,
       value: s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome()),
       sub: s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range',
       tone: over ? CD.flag : near ? CD.amber : CD.ink,
@@ -33476,12 +33500,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     ok,
     warn,
     label,
-    sub
+    sub,
+    action,
+    mark
   }) {
-    const tone = ok ? CD.green : warn ? CD.amber : CD.faint;
-    const ic = ok ? 'checkcircle' : warn ? 'alert' : 'circle';
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-2 py-1.5"
+      className: 'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')
     }, /*#__PURE__*/React.createElement("span", {
       className: "flex-none grid place-items-center",
       style: {
@@ -33501,7 +33525,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 11,
       c: CD.amber
     }) : null), /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0"
+      className: "min-w-0 flex-1"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] leading-tight",
       style: {
@@ -33513,7 +33537,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: warn ? CD.amber : CD.faint
       }
-    }, sub)));
+    }, sub), action));
   }
 
   /* =====================================================================
@@ -33558,15 +33582,26 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
     const phoneSheet = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+    const smsOn = !!(window.CDOS.smsConfigured && window.CDOS.smsConfigured());
+    const personaOn = !!(window.CDOS.KYC && window.CDOS.KYC.personaConnected && window.CDOS.KYC.personaConnected());
+    const [missKey, setMissKey] = useState('');
+    const [touched, setTouched] = useState({});
+    const markTouched = k => setTouched(t => t[k] ? t : {
+      ...t,
+      [k]: true
+    });
+    const openBorder = (k, filled) => (!phoneSheet || touched[k]) && !filled ? CD.flag : CD.line;
+    const rateShown = r => phoneSheet ? formatPhoneRate(r) : shownRate(r);
     const selectedChip = useRef(null);
     useEffect(() => {
       if (!phoneSheet || !selectedChip.current) return;
       const chip = selectedChip.current;
       const row = chip.parentElement;
       if (!row) return;
+      const gutter = 16;
       const left = chip.offsetLeft;
       const right = left + chip.offsetWidth;
-      if (left < row.scrollLeft) row.scrollLeft = left;else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
+      if (left - gutter < row.scrollLeft) row.scrollLeft = Math.max(0, left - gutter);else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
     }, [phoneSheet, type]);
     const purposePh = phoneSheet ? 'e.g. vacation, invoice' : 'e.g. vacation funds, invoice settlement';
     const sourcePh = phoneSheet ? 'e.g. salary, savings' : 'e.g. employment income, savings';
@@ -33969,7 +34004,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: !!customer && idOk,
       warn: !!customer && !idOk,
       label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file` : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -34015,6 +34050,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const allGreen = hardReqs.every(r => r.ok);
     const canSave = amtN > 0 && allGreen;
     const remaining = hardReqs.filter(r => !r.ok).length;
+    const stepsLabel = `${remaining} ${remaining === 1 ? 'step' : 'steps'} left`;
+    const missField = !missKey ? '' : missKey === 'id' ? customer ? 'id' : 'cust' : missKey === 'cap' || missKey === 'server-facts' ? 'facts' : missKey;
+    const showMissing = () => {
+      const first = hardReqs.find(r => !r.ok);
+      if (!first) return;
+      setMissKey(first.key);
+      const field = first.key === 'id' ? customer ? 'id' : 'cust' : first.key === 'cap' || first.key === 'server-facts' ? 'facts' : first.key;
+      const el = document.querySelector('.cd-tx [data-req-field="' + field + '"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({
+        block: 'center',
+        inline: 'nearest'
+      });
+    };
 
     // ---- actions ----
     const resetPricing = () => {
@@ -34127,8 +34175,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     // hand-pricing usually means the customer is showing a texted quote — offer the ref box
     useEffect(() => {
-      if (override && !tq) setTqOpen(true);
-    }, [override]);
+      if (override && !tq && (!phoneSheet || smsOn)) setTqOpen(true);
+    }, [override, phoneSheet, smsOn, tq]);
     // a ref handed over by the Texts app (Start transaction) — apply on mount
     useEffect(() => {
       const p = window.__cdosTqPrefill;
@@ -34578,7 +34626,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
       give: `${num(amtN)} ${home}`,
-      rateLine: `1 ${home} = ${shownRate(rateN)} ${payoutCcy}`,
+      rateLine: `1 ${home} = ${rateShown(rateN)} ${payoutCcy}`,
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
@@ -34588,7 +34636,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${shownRate(rateN)} ${outCcy}`,
+      rateLine: `1 ${inCcy} = ${rateShown(rateN)} ${outCcy}`,
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -34711,6 +34759,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         borderRight: `1px solid ${CD.line}`
       }
+    }, /*#__PURE__*/React.createElement("div", {
+      "data-req-field": "cust",
+      className: missField === 'cust' ? 'cd-tx-missing' : undefined
     }, /*#__PURE__*/React.createElement(CustomerPicker, {
       label: custLabel,
       hint: idRequired ? 'ID required' : 'optional',
@@ -34726,7 +34777,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onAddNew: onAddNew,
       onClear: onClear,
       idRequired: idRequired
-    }), window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && /*#__PURE__*/React.createElement("div", {
+    })), window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && /*#__PURE__*/React.createElement("div", {
       "data-testid": "serbia-receipt",
       className: "space-y-2"
     }, /*#__PURE__*/React.createElement("label", {
@@ -34797,7 +34848,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rec: clients[customer],
       log,
       compact: true
-    }), customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && React.createElement(window.CDOS.KYC.VerificationNudge, {
+    }), customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) && React.createElement(window.CDOS.KYC.VerificationNudge, {
       key: customer + ':' + single + ':' + idRequired,
       name: customer,
       rec: clients[customer],
@@ -34806,7 +34857,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       idRequired: idRequired && kyc !== 'ok',
       onRun: tpl => setQuickChk(tpl)
     }), idRequired && String(customer || '').trim() && !idOk && /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-id-need"
+      "data-req-field": "id",
+      className: 'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-id-need-label"
     }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
@@ -34821,14 +34873,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.green
     }), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-id-need-label"
-    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
+    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays in"), /*#__PURE__*/React.createElement(Money, {
+    }, /*#__PURE__*/React.createElement(Lbl, null, "Customer pays in"), /*#__PURE__*/React.createElement("div", {
+      "data-req-field": "amt",
+      className: missField === 'amt' ? 'cd-tx-missing' : undefined
+    }, /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
       ccy: inCcy,
@@ -34838,26 +34893,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       },
       big: true,
       autoFocus: true
-    }), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
+      className: "cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
       style: {
         borderRadius: 5,
         background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft,
         color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
+    }, pricing.side === 'buy' ? phoneSheet ? `WE BUY ${inCcy}` : `We buy ${inCcy}` : pricing.side === 'sell' ? phoneSheet ? `WE SELL ${outCcy}` : `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", rateShown(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
-      className: "cd-tx-hit p-1",
+      "aria-label": "Swap",
+      className: "cd-tx-hit cd-tx-swap p-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 7
@@ -34887,10 +34943,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : shownRate(rateN),
+      value: override ? manualRate : rateShown(rateN),
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : '');
+          setManualRate(pricing.deskRate > 0 ? phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate) : '');
           setOverride(true);
         }
       },
@@ -34932,7 +34988,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         borderTop: `1px solid ${CD.lineSoft}`
       }
-    }, !tq ? /*#__PURE__*/React.createElement("button", {
+    }, tq ? /*#__PURE__*/React.createElement("span", {
+      className: "flex items-center gap-1.5 text-[11px]",
+      style: {
+        color: '#8A4B2F',
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "smartphone",
+      s: 12,
+      c: "#8A4B2F"
+    }), "Priced by ", tq.ref) : (!phoneSheet || smsOn) && /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setTqOpen(o => !o);
         setTqErr('');
@@ -34949,17 +35015,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "smartphone",
       s: 14,
       c: tqOpen ? '#8A4B2F' : '#fff'
-    }), " Text quote") : /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1.5 text-[11px]",
-      style: {
-        color: '#8A4B2F',
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "smartphone",
-      s: 12,
-      c: "#8A4B2F"
-    }), "Priced by ", tq.ref), /*#__PURE__*/React.createElement("button", {
+    }), " Text quote"), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         if (override) {
           setOverride(false);
@@ -35167,7 +35223,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " 1 ", home, " = ", shownRate(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " 1 ", home, " = ", rateShown(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -35425,7 +35481,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, fmt(amtN + feeN, home)), " \u2014 ", fmt(amtN, home), " to biller, ", fmt(feeN, home), " fee.")), single && /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5 space-y-2.5",
+      "data-req-field": "facts",
+      className: 'p-3.5 space-y-2.5' + (missField === 'facts' ? ' cd-tx-missing' : ''),
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.flag}`,
@@ -35449,15 +35506,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, "This deal is \u2265 ", limit.label, ". Capture now while the customer is here \u2014 it pre-fills the filing."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
       value: purpose,
+      onBlur: () => markTouched('purpose'),
       onChange: e => setPurpose(e.target.value),
       placeholder: purposePh,
       className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
-        borderColor: purpose.trim() ? CD.line : CD.flag
+        borderColor: openBorder('purpose', !!purpose.trim())
       }
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Source of funds"), /*#__PURE__*/React.createElement("input", {
       value: cap.source,
+      onBlur: () => markTouched('source'),
       onChange: e => setCap(s => ({
         ...s,
         source: e.target.value
@@ -35466,7 +35525,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
-        borderColor: cap.source.trim() ? CD.line : CD.flag
+        borderColor: openBorder('source', !!cap.source.trim())
       }
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Acting for someone else?"), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-pair flex items-center gap-2"
@@ -35505,14 +35564,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag
       }
     })))), serverBacked && isExchange && !single && /*#__PURE__*/React.createElement("div", {
-      className: "p-3.5 space-y-2.5",
+      "data-req-field": "facts",
+      className: 'p-3.5 space-y-2.5' + (missField === 'facts' ? ' cd-tx-missing' : ''),
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5"
+      className: "cd-tx-facts-intro flex items-center gap-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "shield",
       s: 14,
@@ -35523,21 +35583,23 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, "Authoritative ledger record")), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "cd-tx-facts-intro text-[11px]",
       style: {
         color: CD.mute
       }
     }, "Required for server posting and the permanent audit trail."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
       value: purpose,
+      onBlur: () => markTouched('purpose'),
       onChange: e => setPurpose(e.target.value),
       placeholder: purposePh,
       className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
-        borderColor: purpose.trim() ? CD.line : CD.flag
+        borderColor: openBorder('purpose', !!purpose.trim())
       }
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Source of funds"), /*#__PURE__*/React.createElement("input", {
       value: cap.source,
+      onBlur: () => markTouched('source'),
       onChange: e => setCap(s => ({
         ...s,
         source: e.target.value
@@ -35546,7 +35608,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
-        borderColor: cap.source.trim() ? CD.line : CD.flag
+        borderColor: openBorder('source', !!cap.source.trim())
       }
     }))), needOverride && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
@@ -35645,13 +35707,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
       }
-    }, amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, phoneSheet ? phoneMoney(amtN > 0 ? isExchange || isCheque || isReceive ? amtN : amtN + feeN : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : /*#__PURE__*/React.createElement(React.Fragment, null, amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? inCcy : isReceive ? out.ccy : home))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? inCcy : isReceive ? out.ccy : home)))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 py-1",
       style: {
         color: 'var(--cd-on-ink-faint)'
@@ -35688,13 +35750,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, out.amt ? num(out.amt) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, out.amt ? num(out.amt) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
         color: 'rgba(127,209,163,0.7)'
       }
-    }, out.ccy))), /*#__PURE__*/React.createElement("div", {
+    }, out.ccy)))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
@@ -35703,7 +35765,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -35754,7 +35816,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: r.ok,
       warn: r.warn && !r.ok,
       label: r.label,
-      sub: !r.ok ? r.sub : null
+      sub: !r.ok ? r.sub : null,
+      mark: phoneSheet && missKey === r.key,
+      action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setRecordId(true),
+        className: "cd-tx-id-need-go mt-1"
+      }, "Record the ID") : null
     }))), (single || structuring) && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 text-[11px] flex items-start gap-2",
       style: {
@@ -35811,7 +35879,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, serverError), /*#__PURE__*/React.createElement("button", {
+    }, serverError), phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: showMissing,
+      className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      style: {
+        borderRadius: 9,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 15,
+      c: "currentColor"
+    }), " ", stepsLabel) : /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
       disabled: !canSave || serverBusy,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
@@ -35824,7 +35905,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: serverQuote ? 'check' : 'lock',
       s: 15,
       c: "currentColor"
-    }), " ", serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`)) : /*#__PURE__*/React.createElement(CommitBtn, {
+    }), " ", serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`)) : phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: showMissing,
+      className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      style: {
+        borderRadius: 9,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)'
+      }
+    }, stepsLabel) : /*#__PURE__*/React.createElement(CommitBtn, {
       onCommit: record,
       disabled: !canSave,
       icon: "check",
@@ -46245,6 +46335,9 @@ ${(filing.map || []).map(blockHTML).join('')}
     listeners.forEach(l => l());
   }
   const getProvider = () => PROVIDER;
+  /* The chooser names Persona. Nothing is sent. The phone sheet hides
+     the paid verify while this is false. */
+  const personaConnected = () => false;
   function createCheck({
     subject,
     kind,
@@ -47241,7 +47334,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const c = force ? CD.flag : BLUE;
     const cta = NUDGE_CTA[tier];
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-2.5 p-3 mb-2",
+      className: "cd-tx-nudge flex items-start gap-2.5 p-3 mb-2",
       style: {
         background: force ? CD.flagSoft : 'rgba(43,80,226,.07)',
         border: `1px solid ${force ? CD.flag : 'rgba(43,80,226,.32)'}`,
@@ -48510,6 +48603,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       setContactSink,
       setProvider,
       getProvider,
+      personaConnected,
       applyPartnerCode,
       getPartnerRate,
       SendModal,
@@ -58363,9 +58457,16 @@ ${snap}`;
       tg: tg
     })));
   }
+
+  /* A painted desk number is not a carrier. SMS delivery is not
+     connected, so the phone sheet does not offer Text quote. */
+  function smsConfigured() {
+    return false;
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Telegraph,
-    TextsSettings
+    TextsSettings,
+    smsConfigured
   });
 })();
 

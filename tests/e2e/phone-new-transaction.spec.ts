@@ -189,6 +189,12 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(chipRow.wrap, `chip row nowrap at ${width}`).toBe("nowrap");
     expect(chipRow.scrolls, `chip row overflows at ${width}`).toBe(true);
     expect(chipRow.selectedInView, `selected chip in view at ${width}`).toBe(true);
+    const chipInset = await page.locator(".cd-tx-types").evaluate((el) => {
+      const first = el.querySelector("button");
+      if (!(first instanceof HTMLElement)) return -1;
+      return first.getBoundingClientRect().left - el.getBoundingClientRect().left;
+    });
+    expect(chipInset, `first chip inset at ${width}`).toBeGreaterThanOrEqual(16);
     const typePos = await page.locator(".cd-tx-types-bar").evaluate((el) => getComputedStyle(el).position);
     expect(typePos, `type bar pinned at ${width}`).not.toBe("sticky");
     const sheet = await boxOf(page, ".cd-tx");
@@ -212,8 +218,10 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     const icon = await boxOf(page, ".cd-tx-customer svg");
     const name = await boxOf(page, ".cd-tx-customer input");
     const clear = await boxOf(page, ".cd-tx-customer button");
-    const tops = [icon.y, name.y, clear.y];
-    expect(Math.max(...tops) - Math.min(...tops), `customer row at ${width}`).toBeLessThanOrEqual(4);
+    const mids = [icon, name, clear].map((b) => b.y + b.height / 2);
+    expect(Math.max(...mids) - Math.min(...mids), `customer row at ${width}`).toBeLessThanOrEqual(4);
+    expect(clear.width, `clear hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(clear.height, `clear hit at ${width}`).toBeGreaterThanOrEqual(44);
     const row = await customer.boundingBox();
     expect(row!.height, `customer field height at ${width}`).toBeGreaterThanOrEqual(44);
     expect(row!.height, `customer field height at ${width}`).toBeLessThanOrEqual(52);
@@ -256,13 +264,33 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       await expect(page.locator(".cd-tx-purpose")).toBeVisible();
       await expect(page.locator(".cd-tx-purpose")).toHaveAttribute("placeholder", "e.g. vacation, invoice");
       await expect(page.locator(".cd-tx-source")).toHaveAttribute("placeholder", "e.g. salary, savings");
+      const before = await page.locator(".cd-tx-purpose").evaluate((el) => getComputedStyle(el).borderTopColor);
+      expect(before, `purpose border before touch at ${width}`).not.toBe("rgb(192, 57, 43)");
+      await page.locator(".cd-tx-purpose").focus();
+      await page.locator(".cd-tx-purpose").blur();
+      const after = await page.locator(".cd-tx-purpose").evaluate((el) => getComputedStyle(el).borderTopColor);
+      expect(after, `purpose border after touch at ${width}`).toBe("rgb(192, 57, 43)");
+      await expect(page.locator(".cd-tx-facts-intro")).toHaveCount(2);
+      const intro = await page.locator(".cd-tx-facts-intro").first().evaluate((el) => getComputedStyle(el).display);
+      expect(intro, `ledger intro hidden at ${width}`).toBe("none");
     }
+    await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
+    await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
+    await expect(page.locator(".cd-tx-rate-line")).toContainText(/\d\.\d{4}/);
+    await expect(page.locator(".cd-tx-side")).toContainText(/WE (BUY|SELL) [A-Z]{3}/);
+    await expect(page.locator(".cd-tx-ticket")).toContainText(/\d[\d,]*\.\d{2} [A-Z]{3}/);
+    await expect(page.locator(".cd-tx").getByText("ID not recorded yet")).toBeVisible();
+    await expect(page.locator(".cd-tx").getByText(/Their ID is/)).toHaveCount(0);
     await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Add a note");
     await expectWideFields(page);
     expect(await horizontalProblems(page), `amount and ID at ${width}`).toEqual([]);
 
-    const action = page.locator(".cd-tx-actions").getByRole("button", { name: /to complete|server quote|Record transaction|Post frozen/i });
+    const action = page.locator(".cd-tx-actions").getByRole("button", { name: /steps? left|to complete|server quote|Record transaction|Post frozen/i });
     await expect(action).toBeVisible();
+    await expect(action).toBeEnabled();
+    await expect(action).toHaveText(/\d+ steps? left/);
+    await action.click();
+    await expect(page.locator(".cd-tx-missing").first()).toBeVisible();
     const button = await action.boundingBox();
     expect(button, "post button").toBeTruthy();
     expect(button!.y).toBeGreaterThanOrEqual(0);
@@ -291,21 +319,18 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     const close = await boxOf(page, ".cd-tx-x");
     expect(close.width, `close hit at ${width}`).toBeGreaterThanOrEqual(44);
     expect(close.height, `close hit at ${width}`).toBeGreaterThanOrEqual(44);
-    const swap = page.locator(".cd-tx-rate-line .cd-tx-hit");
+    const swap = page.locator(".cd-tx-swap");
     await swap.scrollIntoViewIfNeeded();
     const swapBox = await swap.boundingBox();
+    const rateLine = await boxOf(page, ".cd-tx-rate-line");
     expect(swapBox!.width, `swap hit at ${width}`).toBeGreaterThanOrEqual(44);
     expect(swapBox!.height, `swap hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(Math.abs((swapBox!.y + swapBox!.height / 2) - (rateLine.y + rateLine.height / 2)), `swap centred at ${width}`).toBeLessThanOrEqual(4);
     const override = page.getByRole("button", { name: /^Override$/ });
     await override.scrollIntoViewIfNeeded();
     const overrideBox = await override.boundingBox();
     expect(overrideBox!.width, `override hit at ${width}`).toBeGreaterThanOrEqual(44);
     expect(overrideBox!.height, `override hit at ${width}`).toBeGreaterThanOrEqual(44);
-    const textQuote = page.getByRole("button", { name: /^Text quote$/ });
-    await textQuote.scrollIntoViewIfNeeded();
-    const textBox = await textQuote.boundingBox();
-    expect(textBox!.width, `text quote hit at ${width}`).toBeGreaterThanOrEqual(44);
-    expect(textBox!.height, `text quote hit at ${width}`).toBeGreaterThanOrEqual(44);
 
     await page.locator(".cd-tx-x").click();
     const discard = page.getByRole("dialog", { name: "Discard this deal?" });
@@ -321,7 +346,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
 test("recording an ID from the phone deal writes the document", async ({ page }) => {
   test.skip(!hasLedger, "no ledger");
   test.setTimeout(90_000);
-  const name = "Phone Id Rowan";
+  const name = "Phone Id Rowan " + Date.now().toString(36);
   await page.setViewportSize({ width: 360, height: 780 });
   await page.context().clearCookies();
   await signInAtDesk(page, "m.costa");
@@ -330,12 +355,20 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await page.locator(".cd-tx-customer input").fill(name);
   await page.locator(".cd-money input").first().click();
   await page.locator(".cd-money input").first().fill("3000");
-  const record = page.getByRole("button", { name: "Record the ID" });
+  const record = page.locator(".cd-tx-id-need").getByRole("button", { name: "Record the ID" });
   await record.scrollIntoViewIfNeeded();
   await record.click();
   const sheet = page.locator(".cd-tx-record");
   await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
-  await sheet.locator("select").first().selectOption("Driver's Licence");
+  const idType = sheet.locator("select").first();
+  const typeBox = await idType.boundingBox();
+  expect(typeBox!.width, "ID type width").toBeGreaterThanOrEqual(240);
+  const columns = await idType.evaluate((el) => {
+    const grid = el.closest(".grid");
+    return grid ? getComputedStyle(grid).gridTemplateColumns : "";
+  });
+  expect(columns.trim().split(/\s+/).length, `ID sheet columns: ${columns}`).toBe(1);
+  await idType.selectOption("Driver's Licence");
   await sheet.getByLabel("ID number").fill("DL-778899");
   await sheet.getByLabel("Expiry").fill("2030-04-01");
   const saved = page.waitForResponse((res) =>
@@ -344,7 +377,10 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await saved;
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
-  await expect(page.locator(".cd-tx-id-need")).toContainText("2030-04-01");
+  await expect(page.locator(".cd-tx-id-need")).toContainText("1 Apr 2030");
+  await expect(page.locator(".cd-tx-stats")).toContainText("ID ON FILE");
+  await expect(page.locator(".cd-tx-stats")).toContainText(/LAST \d+D/);
+  await expect(page.locator(".cd-tx-stats")).toContainText("1 Apr 2030");
   const document = await page.evaluate(async (who) => {
     const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
     const body = await res.json();
@@ -354,6 +390,50 @@ test("recording an ID from the phone deal writes the document", async ({ page })
     return primary ? { docType: primary.docType, docNumber: primary.docNumber, expiresOn: primary.expiresOn } : null;
   }, name);
   expect(document).toEqual({ docType: "Driver's Licence", docNumber: "DL-778899", expiresOn: "2030-04-01" });
+});
+
+test("recording an ID on an existing customer stays on that file", async ({ page }) => {
+  test.skip(!hasLedger, "no ledger");
+  test.setTimeout(90_000);
+  const name = "Phone File " + Date.now().toString(36);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.context().clearCookies();
+  await signInAtDesk(page, "m.costa");
+  await dismissTour(page);
+  const created = await page.evaluate(async (legalName) => {
+    const res = await fetch("/api/clients", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ legalName, kind: "individual" }),
+    });
+    const body = await res.json();
+    return { status: res.status, clientId: body.clientId as string };
+  }, name);
+  expect(created.status, "create client").toBe(201);
+  expect(created.clientId).toMatch(/^cli_/);
+  await openNewTransaction(page);
+  await page.locator(".cd-tx-customer input").fill(name);
+  await page.locator(".cd-money input").first().click();
+  await page.locator(".cd-money input").first().fill("3000");
+  const record = page.locator(".cd-tx-id-need").getByRole("button", { name: "Record the ID" });
+  await record.scrollIntoViewIfNeeded();
+  await record.click();
+  const sheet = page.locator(".cd-tx-record");
+  await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
+  await sheet.locator("select").first().selectOption("Passport");
+  await sheet.getByLabel("ID number").fill("PP-100200");
+  await sheet.getByLabel("Expiry").fill("2031-06-15");
+  const saved = page.waitForResponse((res) =>
+    res.request().method() === "POST" && res.ok() && /\/api\/clients\/[^/]+\/documents/.test(res.url()));
+  await sheet.getByRole("button", { name: "Save and return" }).click();
+  const response = await saved;
+  expect(response.url(), "document posted on the original file").toContain("/api/clients/" + created.clientId + "/documents");
+  const looked = await page.evaluate(async (who) => {
+    const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
+    const body = await res.json();
+    return (body.clients || []).map((c: { clientId: string }) => c.clientId);
+  }, name);
+  expect(looked).toEqual([created.clientId]);
 });
 
 test("new transaction stays two columns on a desk", async ({ page }) => {
@@ -370,4 +450,14 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
   await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
   await expect(page.locator(".cd-tx-cancel")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Text quote$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /steps left/ })).toHaveCount(0);
+  await expect(page.locator(".cd-tx-go")).toBeDisabled();
+  await expect(page.locator(".cd-tx-go")).toContainText(/to complete/);
+  if (hasLedger) {
+    await expect(page.locator(".cd-tx-purpose")).toBeAttached();
+    const border = await page.locator(".cd-tx-purpose").evaluate((el) => getComputedStyle(el).borderTopColor);
+    expect(border, "desk purpose border").toBe("rgb(192, 57, 43)");
+    await expect(page.locator(".cd-tx-facts-intro").first()).toBeVisible();
+  }
 });
