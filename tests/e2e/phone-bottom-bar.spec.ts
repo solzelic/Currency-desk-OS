@@ -162,20 +162,19 @@ test("more lists the apps this role can open", async ({ page }) => {
   await atDesk(page, "a.singh");
   const labels = await moreLabels(page);
   expect(labels).toEqual([
-    "Texts",
     "Transfers",
     "Cheques",
-    "Compliance",
-    "Reports",
     "Vault",
-    "Branches",
+    "Compliance",
+    "Tagged deals",
     "Audit trail",
-    "Calculator",
-    "Loan centre",
-    "Tagged",
-    "Pricing & Rates",
+    "Reports",
     "Dashboard",
-    "AI Assistant",
+    "Calculator",
+    "Loan calculator",
+    "Assistant",
+    "Pricing",
+    "Apps",
   ]);
   const body = await page.locator(".phone-more-name").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(body).toBeGreaterThanOrEqual(14);
@@ -194,18 +193,18 @@ test("a teller only sees the apps a teller can open", async ({ page }) => {
   await atDesk(page, "m.costa");
   const labels = await moreLabels(page);
   expect(labels).toEqual([
-    "Texts",
     "Transfers",
     "Cheques",
     "Compliance",
+    "Tagged deals",
     "Audit trail",
     "Calculator",
-    "Loan centre",
-    "Tagged",
-    "Pricing & Rates",
-    "AI Assistant",
+    "Loan calculator",
+    "Assistant",
+    "Pricing",
+    "Apps",
   ]);
-  for (const hidden of ["Reports", "Vault", "Branches", "Settings", "Dashboard"]) {
+  for (const hidden of ["Reports", "Vault", "Branches", "Settings", "Dashboard", "Texts"]) {
     expect(labels, hidden).not.toContain(hidden);
   }
 });
@@ -598,18 +597,18 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   }
 
   await page.locator('#phonebar [data-phone-app="more"]').click();
-  await page.locator('#phone-more [data-phone-app="telegraph"]').click();
+  await page.locator('#phone-more [data-phone-app="compliance"]').click();
   await dismissTour(page);
   await settled(page);
-  const texts = await painted("more", "telegraph");
-  expect(texts.on).toBe(true);
-  expect(texts.label).toBe(texts.expected);
-  expect(texts.icon).toBe(texts.expected);
-  expect(texts.line).toBe(texts.expected);
+  const opened = await painted("more", "compliance");
+  expect(opened.on).toBe(true);
+  expect(opened.label).toBe(opened.expected);
+  expect(opened.icon).toBe(opened.expected);
+  expect(opened.line).toBe(opened.expected);
   await expect(page.locator(".phone-appdot")).toBeHidden();
-  expect(texts.tabBg).toBe(texts.expected);
-  expect(texts.barLine).toBe(texts.expected);
-  expect(texts.expected).not.toBe(previous);
+  expect(opened.tabBg).toBe(opened.expected);
+  expect(opened.barLine).toBe(opened.expected);
+  expect(opened.expected).not.toBe(previous);
 });
 
 /* The window glass is 44% white. Opening Clients used to leave the

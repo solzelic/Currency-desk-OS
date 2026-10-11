@@ -21,7 +21,7 @@ say.
 | `server/src/` | Fastify + Drizzle backend; ledger under `server/src/ledger/` | ✅ |
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
-| `os-src/` | the OS source: domain `.jsx` screens, `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css` | ✅ |
+| `os-src/` | the OS source: domain `.jsx` screens, `cdos-phone.jsx` (phone shell), `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`, `tokens.css`, `phone-shell.css`. Phone contract: `docs/PHONE_SHELL.md` | ✅ |
 | `CurrencyDesk OS.html` | OS shell — lists every `os-src` script; also the production fallback when `web/app` is absent | ✅ |
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
@@ -64,7 +64,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
-The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css` is a 404, including a browser navigation — it is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. The compiled desk links `/os-src/york-os.css`, so that stylesheet stays public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production`, a missing `web/app/index.html` logs that the uncompiled shell and `os-src` are public, and a missing `web/app/admin.html` logs that the uncompiled admin shell is public. The admin warning does not mention `os-src`. The same boot logs nothing when `NODE_ENV` is unset or `test`. The fallback itself stays, so a skipped build does not take the desk down.
+The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css`, `/os-src/tokens.css`, and `/os-src/phone-shell.css` is a 404, including a browser navigation — it is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. The compiled desk links those three stylesheets, so they stay public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production`, a missing `web/app/index.html` logs that the uncompiled shell and `os-src` are public, and a missing `web/app/admin.html` logs that the uncompiled admin shell is public. The admin warning does not mention `os-src`. The same boot logs nothing when `NODE_ENV` is unset or `test`. The fallback itself stays, so a skipped build does not take the desk down.
 
 ## Databases
 
@@ -138,7 +138,7 @@ is not load-bearing.
 
 - API/business logic → `server/src/<domain>/` (routes registered in `app.ts`)
 - Schema → a **new** migration (never edit an old one)
-- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`
+- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`. Phone screens use `os-src/cdos-phone.jsx` (`docs/PHONE_SHELL.md`)
 - Marketing/site content → `design/site/`, then `npm run build:site`
 - Storefront → `YorkFX/`
 - Tests beside their layer: `server/tests/` or `tests/e2e/<behaviour>.spec.ts`

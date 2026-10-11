@@ -61568,6 +61568,642 @@ window.CDOS_PERSIST = (function () {
   });
 })();
 
+/* ---- os-src/cdos-phone.jsx ---- */
+/* Phone shell. Shared layout for every phone screen.
+   Props and names are the contract in docs/PHONE_SHELL.md. */
+(function () {
+  const {
+    useState
+  } = React;
+  const Ic = window.CDOS && window.CDOS.Ic;
+  if (!Ic) throw new Error('Phone shell: icons did not load.');
+
+  /* Minor units. Mirrors EXCEPTIONS in server/src/ledger/currencies.ts.
+     The browser cannot import that module. Change both together. */
+  const ZERO_MINOR = {
+    BIF: 0,
+    CLP: 0,
+    DJF: 0,
+    GNF: 0,
+    ISK: 0,
+    JPY: 0,
+    KMF: 0,
+    KRW: 0,
+    PYG: 0,
+    RWF: 0,
+    UGX: 0,
+    UYI: 0,
+    VND: 0,
+    VUV: 0,
+    XAF: 0,
+    XOF: 0,
+    XPF: 0
+  };
+  const THREE_MINOR = {
+    BHD: 3,
+    IQD: 3,
+    JOD: 3,
+    KWD: 3,
+    LYD: 3,
+    OMR: 3,
+    TND: 3
+  };
+  function minorUnits(code) {
+    const c = String(code || '').trim().toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(ZERO_MINOR, c)) return 0;
+    if (Object.prototype.hasOwnProperty.call(THREE_MINOR, c)) return 3;
+    return 2;
+  }
+
+  /* Code after the number. Never Intl currency style — that prints "$".
+     Absent (null, blank, not a number, bad code) is an empty string. */
+  function formatPhoneMoney(amount, code) {
+    if (amount == null || amount === '') return '';
+    const raw = typeof amount === 'number' ? amount : Number(String(amount).replace(/,/g, '').trim());
+    if (!Number.isFinite(raw)) return '';
+    const ccy = String(code || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(ccy)) return '';
+    const digits = minorUnits(ccy);
+    const body = new Intl.NumberFormat('en-CA', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+      useGrouping: true
+    }).format(Math.abs(raw));
+    return (raw < 0 ? '\u2212' : '') + body + ' ' + ccy;
+  }
+  function svg(path) {
+    return React.createElement('svg', {
+      width: 22,
+      height: 22,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.8,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': 'true',
+      dangerouslySetInnerHTML: {
+        __html: path
+      }
+    });
+  }
+  const TAB_SVG = {
+    rates: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 15l3-3 3 2 4-5"/></svg>',
+    ledger: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14"/></svg>',
+    clients: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.5 3.5 5.2"/></svg>',
+    till: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M3 11h18M7 15h4"/></svg>',
+    more: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>'
+  };
+  function TabIcon({
+    name
+  }) {
+    const html = TAB_SVG[name] || '';
+    return /*#__PURE__*/React.createElement("span", {
+      className: "phone-tab-ico",
+      dangerouslySetInnerHTML: {
+        __html: html
+      }
+    });
+  }
+  function PhoneTopBar({
+    shop,
+    desk,
+    tillOpen,
+    unread,
+    onBell,
+    avatar
+  }) {
+    return /*#__PURE__*/React.createElement("header", {
+      className: "phone-head"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-shop"
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-appdot",
+      "aria-hidden": "true"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phone-shop-name"
+    }, shop)), /*#__PURE__*/React.createElement("div", {
+      className: 'phone-till' + (tillOpen ? '' : ' is-closed')
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-till-dot"
+    }), /*#__PURE__*/React.createElement("span", null, desk)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-bell",
+      "aria-label": unread ? 'Alerts' : 'No alerts',
+      onClick: onBell
+    }, svg('<path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9"/><path d="M10 20a2 2 0 0 0 4 0"/>'), unread ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-bell-dot"
+    }) : null), avatar);
+  }
+  function PhoneTitle({
+    title,
+    subtitle,
+    action
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-title"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", null, title), subtitle ? /*#__PURE__*/React.createElement("p", null, subtitle) : null), action || null);
+  }
+  function SummaryCards({
+    cards,
+    columns
+  }) {
+    const cols = columns === 2 ? 2 : 3;
+    return /*#__PURE__*/React.createElement("div", {
+      className: 'phone-stats cols-' + cols
+    }, (cards || []).map((card, i) => {
+      const Tag = card.onClick ? 'button' : 'div';
+      return /*#__PURE__*/React.createElement(Tag, {
+        key: card.id || i,
+        type: card.onClick ? 'button' : undefined,
+        className: "phone-stat",
+        onClick: card.onClick
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "phone-stat-label"
+      }, card.label), /*#__PURE__*/React.createElement("span", {
+        className: "phone-stat-value num"
+      }, card.value), card.caption ? /*#__PURE__*/React.createElement("span", {
+        className: "phone-stat-cap"
+      }, card.caption) : null);
+    }));
+  }
+  function PhoneSearch({
+    value,
+    onChange,
+    placeholder,
+    label
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-search"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "phone-search-ico"
+    }, svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')), /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      value: value || '',
+      "aria-label": label || placeholder || 'Search',
+      placeholder: placeholder || 'Search',
+      onChange: e => onChange(e.target.value)
+    }), value ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-search-clear",
+      "aria-label": "Clear search",
+      onClick: () => onChange('')
+    }, svg('<path d="M6 6l12 12M18 6 6 18"/>')) : null);
+  }
+  function FilterChips({
+    chips,
+    value,
+    onChange
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-chips",
+      role: "tablist"
+    }, (chips || []).map(chip => /*#__PURE__*/React.createElement("button", {
+      key: chip.id,
+      type: "button",
+      role: "tab",
+      "aria-selected": value === chip.id,
+      className: 'phone-chip' + (value === chip.id ? ' is-on' : ''),
+      onClick: () => onChange(chip.id)
+    }, /*#__PURE__*/React.createElement("span", null, chip.label, chip.count != null ? ' ' + chip.count : ''))));
+  }
+  function AppGlyph({
+    icon,
+    accent
+  }) {
+    return /*#__PURE__*/React.createElement("span", {
+      className: "phone-appic",
+      style: {
+        color: accent || '#17140F'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: icon || 'grid4',
+      s: 22
+    }));
+  }
+  function ListRow({
+    title,
+    subtitle,
+    amount,
+    meta,
+    leading,
+    badge,
+    chevron,
+    onClick,
+    danger,
+    className,
+    appId,
+    disabled
+  }) {
+    const Tag = onClick ? 'button' : 'div';
+    const cls = ['phone-row', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
+    const tone = badge && badge.tone ? badge.tone : 'neutral';
+    return /*#__PURE__*/React.createElement(Tag, {
+      type: onClick ? 'button' : undefined,
+      className: cls,
+      "data-phone-app": appId || undefined,
+      disabled: onClick && disabled ? true : undefined,
+      onClick: disabled ? undefined : onClick
+    }, leading || null, /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-main"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: appId ? 'phone-more-name' : 'phone-row-title'
+    }, title), subtitle ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-sub"
+    }, subtitle) : null), amount || meta || badge ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-end"
+    }, badge && badge.label ? /*#__PURE__*/React.createElement("span", {
+      className: 'phone-badge tone-' + tone
+    }, badge.label) : null, amount ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-amt num"
+    }, amount) : null, meta ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-meta"
+    }, meta) : null) : null, chevron ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-chev"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 16
+    })) : null);
+  }
+  function ListSection({
+    title,
+    meta,
+    children
+  }) {
+    return /*#__PURE__*/React.createElement("section", {
+      className: "phone-section"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-sec"
+    }, /*#__PURE__*/React.createElement("span", null, title), meta ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-sec-meta"
+    }, meta) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-list"
+    }, children));
+  }
+  function StickyAction({
+    label,
+    onClick,
+    disabled,
+    disabledReason
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-sticky"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sticky-btn",
+      disabled: !!disabled,
+      onClick: onClick
+    }, label), disabled && disabledReason ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-sticky-why"
+    }, disabledReason) : null);
+  }
+  function EmptyState({
+    title,
+    message,
+    actionLabel,
+    onAction
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-empty"
+    }, /*#__PURE__*/React.createElement("h2", null, title), message ? /*#__PURE__*/React.createElement("p", null, message) : null, actionLabel && onAction ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-text-btn",
+      onClick: onAction
+    }, actionLabel) : null);
+  }
+  function LoadingState({
+    rows,
+    label
+  }) {
+    const n = rows || 4;
+    const items = [];
+    for (let i = 0; i < n; i++) items.push(/*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "phone-skel"
+    }));
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-loading",
+      role: "status",
+      "aria-label": label || 'Loading'
+    }, items);
+  }
+  function ErrorState({
+    message,
+    onRetry
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-error",
+      role: "alert"
+    }, /*#__PURE__*/React.createElement("p", null, message), onRetry ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-text-btn",
+      onClick: onRetry
+    }, "Try again") : null);
+  }
+  function PhoneScreen({
+    app,
+    title,
+    subtitle,
+    action,
+    top,
+    banner,
+    tabs,
+    sticky,
+    children,
+    className
+  }) {
+    const cls = ['phone-shell', sticky ? 'has-sticky' : '', className || ''].filter(Boolean).join(' ');
+    return /*#__PURE__*/React.createElement("div", {
+      className: cls,
+      "data-phone-shell": "",
+      "data-app": app || undefined
+    }, top || null, title || subtitle || action ? /*#__PURE__*/React.createElement(PhoneTitle, {
+      title: title,
+      subtitle: subtitle,
+      action: action
+    }) : null, banner ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-banner"
+    }, banner) : null, /*#__PURE__*/React.createElement("div", {
+      className: "phone-scroll"
+    }, children), sticky || null, tabs || null);
+  }
+
+  /* Texts and Branches are not in this catalog. The desktop dock still
+     has them. Search words sit beside the purpose line so "cash" finds
+     Cheques, Vault, Compliance, and Till. */
+  const GROUPS = [{
+    title: 'Money',
+    ids: ['transfers', 'cheques', 'vault']
+  }, {
+    title: 'Checks',
+    ids: ['compliance', 'tagged', 'audit']
+  }, {
+    title: 'Numbers',
+    ids: ['reports', 'dashboard']
+  }, {
+    title: 'Tools',
+    ids: ['calc', 'loan', 'assistant']
+  }, {
+    title: 'Shop setup',
+    ids: ['pricing', 'store', 'settings']
+  }];
+  const CATALOG = {
+    transfers: {
+      title: 'Transfers',
+      detail: 'Send money abroad, track it',
+      words: 'remit wire send payout',
+      icon: 'transferarrows'
+    },
+    cheques: {
+      title: 'Cheques',
+      detail: 'Cash a cheque, see holds',
+      words: 'cash check cheque hold',
+      icon: 'cheque'
+    },
+    vault: {
+      title: 'Vault',
+      detail: 'Cash in the safe, floats',
+      words: 'cash safe float',
+      icon: 'vaultsafe'
+    },
+    compliance: {
+      title: 'Compliance',
+      detail: 'Reports to file, warnings',
+      words: 'cash str lctr alert flag',
+      icon: 'complianceshield'
+    },
+    tagged: {
+      title: 'Tagged deals',
+      detail: 'Deals marked to check again',
+      words: 'flag review',
+      icon: 'taggedbookmark'
+    },
+    audit: {
+      title: 'Audit trail',
+      detail: 'Who did what, and when',
+      words: 'log history',
+      icon: 'audittrail'
+    },
+    reports: {
+      title: 'Reports',
+      detail: 'End of day, sales by currency',
+      words: 'eod sales',
+      icon: 'reportsdoc'
+    },
+    dashboard: {
+      title: 'Dashboard',
+      detail: 'Today at a glance',
+      words: 'today summary',
+      icon: 'dashboardgrid'
+    },
+    calc: {
+      title: 'Calculator',
+      detail: 'Add up, convert, margin',
+      words: 'fx convert',
+      icon: 'calcdevice'
+    },
+    loan: {
+      title: 'Loan calculator',
+      detail: 'Monthly loan payment',
+      words: 'payment interest',
+      icon: 'loancentre'
+    },
+    assistant: {
+      title: 'Assistant',
+      detail: 'Ask about your desk',
+      words: 'help question',
+      icon: 'aispark'
+    },
+    pricing: {
+      title: 'Pricing',
+      detail: 'Spreads, fees, publish rates',
+      words: 'spread fee rate',
+      icon: 'pricingpercent'
+    },
+    store: {
+      title: 'Apps',
+      detail: 'Add or remove apps',
+      words: 'store install',
+      icon: 'storefront'
+    },
+    settings: {
+      title: 'Settings',
+      detail: 'Desk, staff, your PIN',
+      words: 'pin staff',
+      icon: 'gearsettings'
+    }
+  };
+  const BAR = [{
+    id: 'rates',
+    title: 'Rates',
+    detail: 'Buy and sell prices',
+    words: 'fx board quote',
+    icon: 'rateboard'
+  }, {
+    id: 'ledger',
+    title: 'Ledger',
+    detail: "Today's deals",
+    words: 'transactions deals',
+    icon: 'ledgerbook'
+  }, {
+    id: 'clients',
+    title: 'Clients',
+    detail: 'Find a customer',
+    words: 'kyc customer',
+    icon: 'clientskyc'
+  }, {
+    id: 'till',
+    title: 'Till',
+    detail: 'Count the drawer, close the day',
+    words: 'cash drawer count',
+    icon: 'tilldrawer'
+  }];
+  function matches(item, query) {
+    const hay = (item.title + ' ' + item.detail + ' ' + item.words).toLowerCase();
+    const tokens = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return true;
+    return tokens.every(token => hay.indexOf(token) >= 0);
+  }
+  function PhoneMore({
+    allowed,
+    accent,
+    onOpen,
+    onLock,
+    onHandover,
+    onSignOut
+  }) {
+    const [query, setQuery] = useState('');
+    const [armSignOut, setArmSignOut] = useState(false);
+    const allow = {};
+    (allowed || []).forEach(id => {
+      allow[id] = true;
+    });
+    const q = query.trim();
+    const pick = id => {
+      if (id === 'telegraph' || id === 'branches' || !allow[id] || !CATALOG[id]) return null;
+      const item = CATALOG[id];
+      if (q && !matches(item, q)) return null;
+      return {
+        id,
+        ...item
+      };
+    };
+    const row = item => /*#__PURE__*/React.createElement(ListRow, {
+      key: item.id,
+      appId: item.id,
+      title: item.title,
+      subtitle: item.detail,
+      leading: /*#__PURE__*/React.createElement(AppGlyph, {
+        icon: item.icon,
+        accent: accent && accent[item.id] || '#17140F'
+      }),
+      chevron: true,
+      onClick: () => onOpen && onOpen(item.id)
+    });
+    let body;
+    if (!q) {
+      body = GROUPS.map(group => {
+        const items = group.ids.map(pick).filter(Boolean);
+        if (!items.length) return null;
+        return /*#__PURE__*/React.createElement(ListSection, {
+          key: group.title,
+          title: group.title
+        }, items.map(row));
+      });
+    } else {
+      const found = [];
+      GROUPS.forEach(group => group.ids.forEach(id => {
+        const item = pick(id);
+        if (item) found.push(item);
+      }));
+      const bar = BAR.filter(item => matches(item, q));
+      body = /*#__PURE__*/React.createElement(React.Fragment, null, found.length || bar.length ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-sec"
+      }, "Results for \"", q, "\"") : null, found.length ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, found.map(row)) : null, bar.length ? /*#__PURE__*/React.createElement(ListSection, {
+        title: "On the bottom bar"
+      }, bar.map(item => row(item))) : null, !found.length && !bar.length ? /*#__PURE__*/React.createElement(EmptyState, {
+        title: "No matches",
+        message: 'Nothing matches "' + q + '".'
+      }) : null, /*#__PURE__*/React.createElement("p", {
+        className: "phone-search-hint"
+      }, "Search looks at app names and what each app does."));
+    }
+    const sticky = !q && armSignOut ? /*#__PURE__*/React.createElement(StickyAction, {
+      label: "Sign out",
+      onClick: onSignOut
+    }) : null;
+    return /*#__PURE__*/React.createElement(PhoneScreen, {
+      app: "more",
+      sticky: sticky,
+      banner: /*#__PURE__*/React.createElement(PhoneSearch, {
+        value: query,
+        onChange: next => {
+          setQuery(next);
+          if (next) setArmSignOut(false);
+        },
+        placeholder: "Search",
+        label: "Search apps"
+      })
+    }, body, q ? null : /*#__PURE__*/React.createElement(ListSection, {
+      title: "Your session"
+    }, /*#__PURE__*/React.createElement(ListRow, {
+      className: "phone-session-row",
+      title: "Lock the desk",
+      subtitle: "Step away, PIN to return",
+      leading: /*#__PURE__*/React.createElement(AppGlyph, {
+        icon: "lock",
+        accent: "#17140F"
+      }),
+      chevron: true,
+      onClick: onLock
+    }), /*#__PURE__*/React.createElement(ListRow, {
+      className: "phone-session-row",
+      title: "Hand over the desk",
+      subtitle: "Another cashier takes over",
+      leading: /*#__PURE__*/React.createElement(AppGlyph, {
+        icon: "users",
+        accent: "#17140F"
+      }),
+      chevron: true,
+      onClick: onHandover
+    }), /*#__PURE__*/React.createElement(ListRow, {
+      className: "phone-session-row",
+      danger: true,
+      title: "Sign out",
+      subtitle: "Asks first, till stays open",
+      leading: /*#__PURE__*/React.createElement(AppGlyph, {
+        icon: "logout",
+        accent: "#B42318"
+      }),
+      chevron: true,
+      onClick: () => setArmSignOut(true)
+    })));
+  }
+  const Phone = {
+    TopBar: PhoneTopBar,
+    Title: PhoneTitle,
+    SummaryCards,
+    Search: PhoneSearch,
+    FilterChips,
+    ListRow,
+    ListSection,
+    StickyAction,
+    EmptyState,
+    LoadingState,
+    ErrorState,
+    Screen: PhoneScreen,
+    More: PhoneMore,
+    TabIcon,
+    formatMoney: formatPhoneMoney
+  };
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    formatPhoneMoney,
+    Phone
+  });
+})();
+
 /* ---- os-src/cdos-os.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -61629,6 +62265,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     LockDesk,
     Handover
   } = window.CDOS;
+  const Phone = window.CDOS.Phone;
+  if (!Phone || !Phone.TopBar || !Phone.More || !Phone.TabIcon || !window.CDOS.formatPhoneMoney) {
+    throw new Error('The phone shell did not load.');
+  }
 
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
@@ -61775,57 +62415,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      green circle are that drawing: neither one is a live state. */
   const PHONE_TABS = [{
     id: 'rates',
-    label: 'Rates',
-    icon: 'rateboardbar'
+    label: 'Rates'
   }, {
     id: 'ledger',
-    label: 'Ledger',
-    icon: 'ledgerbookbar'
+    label: 'Ledger'
   }, {
     id: 'clients',
-    label: 'Clients',
-    icon: 'clientskycbar'
+    label: 'Clients'
   }, {
     id: 'till',
-    label: 'Till',
-    icon: 'tilldrawerbar'
-  }];
-  const PHONE_MORE = [{
-    id: 'telegraph',
-    label: 'Texts'
-  }, {
-    id: 'transfers',
-    label: 'Transfers'
-  }, {
-    id: 'cheques',
-    label: 'Cheques'
-  }, {
-    id: 'compliance',
-    label: 'Compliance'
-  }, {
-    id: 'reports',
-    label: 'Reports'
-  }, {
-    id: 'vault',
-    label: 'Vault'
-  }, {
-    id: 'branches',
-    label: 'Branches'
-  }, {
-    id: 'audit',
-    label: 'Audit trail'
-  }, {
-    id: 'calc',
-    label: 'Calculator'
-  }, {
-    id: 'loan',
-    label: 'Loan centre'
-  }, {
-    id: 'tagged',
-    label: 'Tagged'
-  }, {
-    id: 'settings',
-    label: 'Settings'
+    label: 'Till'
   }];
   // the storefront opens as a window
   APPMETA.store = {
@@ -66801,11 +67400,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }
     const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
-    const phoneMoreNamed = new Set(PHONE_MORE.map(t => t.id));
-    const phoneMoreApps = PHONE_MORE.filter(t => visibleApps.includes(t.id)).concat(visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({
-      id,
-      label: APPMETA[id] && APPMETA[id].title || id
-    })));
+    /* More shows apps this role can already open. Texts and Branches
+       stay on the desktop dock and off the phone list. Store is the
+       same door as the desktop edge rail, which is not an app-bar id. */
+    const phoneAllowed = visibleApps.filter(id => id !== 'telegraph' && id !== 'branches' && !phonePrimary.has(id));
+    if (planAllows('store') && permsOk('store') && phoneAllowed.indexOf('store') < 0) phoneAllowed.push('store');
     const phoneOn = phoneMore ? 'more' : phonePrimary.has(activeBase) ? activeBase : activeBase ? 'more' : '';
     /* The selected tab borrows the app's existing accent (--c on the
        dock). More has none of its own: the sheet uses the same ink as
@@ -66818,10 +67417,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
       return APP_ACCENT[id] || '#17140F';
     };
-    /* The header dot is the window-title dot. The title bar is hidden
-       on a phone, so the dot sits by the shop name and follows the
-       full-screen app. More's own sheet has no accent, so it uses the ink. */
-    const phoneChrome = phoneMore || !activeBase ? 'var(--cd-ink)' : APP_ACCENT[activeBase] || 'var(--cd-ink)';
+    /* The window-title dot stays off the phone header. The till line
+       carries open or closed in words, and the More tab carries the
+       open app's accent. */
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = slot => /*#__PURE__*/React.createElement("div", {
       className: "mb-acct-wrap",
@@ -67349,23 +67947,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       locked: locked,
       cfg: tickerCfg,
       book: lockedBook
-    }))), /*#__PURE__*/React.createElement("header", {
-      className: "phone-head",
-      style: {
-        '--c': phoneChrome
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "phone-shop"
-    }, /*#__PURE__*/React.createElement("i", {
-      className: "phone-appdot",
-      "aria-hidden": "true"
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "phone-shop-name"
-    }, shopName)), /*#__PURE__*/React.createElement("div", {
-      className: 'phone-till' + (day.closed ? ' is-closed' : '')
-    }, /*#__PURE__*/React.createElement("i", {
-      className: "phone-till-dot"
-    }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement(Phone.TopBar, {
+      shop: shopName,
+      desk: [stationName, stationTill ? stationTill.replace(/\s+—.*/, '') : '', day.closed ? 'Till closed' : 'Till open'].filter(Boolean).join(' · '),
+      tillOpen: !day.closed,
+      unread: alertCount > 0,
+      onBell: () => openApp('compliance'),
+      avatar: profileButton('phone')
+    }), /*#__PURE__*/React.createElement("div", {
       id: "appbar",
       ref: appbarRef,
       className: (editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')
@@ -67474,22 +68063,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       id: "phone-more",
       role: "dialog",
       "aria-label": "More"
-    }, phoneMoreApps.length === 0 && /*#__PURE__*/React.createElement("p", {
-      className: "phone-more-empty"
-    }, "No other apps for this role."), phoneMoreApps.map(a => /*#__PURE__*/React.createElement("button", {
-      key: a.id,
-      type: "button",
-      className: "phone-more-row",
-      "data-phone-app": a.id,
-      onClick: () => openApp(a.id)
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "phone-more-ico"
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: APPMETA[a.id] && APPMETA[a.id].icon || 'grid4',
-      s: 22
-    })), /*#__PURE__*/React.createElement("span", {
-      className: "phone-more-name"
-    }, a.label))))), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement(Phone.More, {
+      allowed: phoneAllowed,
+      accent: APP_ACCENT,
+      onOpen: openApp,
+      onLock: () => setDeskLocked(true),
+      onHandover: () => setHandover(true),
+      onSignOut: logout
+    }))), /*#__PURE__*/React.createElement("div", {
       id: "phone-dock"
     }, /*#__PURE__*/React.createElement("nav", {
       id: "phonebar",
@@ -67505,9 +68086,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         '--brand-primary': phoneTabColour(t.id)
       },
       onClick: () => openApp(t.id)
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: t.icon || APPMETA[t.id].icon,
-      s: 22
+    }, /*#__PURE__*/React.createElement(Phone.TabIcon, {
+      name: t.id
     }), /*#__PURE__*/React.createElement("span", {
       className: "lbl"
     }, t.label))), /*#__PURE__*/React.createElement("button", {
@@ -67520,9 +68100,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         '--brand-primary': phoneTabColour('more')
       },
       onClick: () => setPhoneMore(v => !v)
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "grid4",
-      s: 22
+    }, /*#__PURE__*/React.createElement(Phone.TabIcon, {
+      name: "more"
     }), /*#__PURE__*/React.createElement("span", {
       className: "lbl"
     }, "More")))), receipt && /*#__PURE__*/React.createElement(ReceiptModal, {

@@ -86,8 +86,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   window-title dot, no top icon menu, no logo or store row, no
   dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
   More uses the colour of the app it
-  opened. When More itself is showing, that colour is #17140F. More lists the other apps that role can already open. There is no
-  floating + on a phone. New transaction stays on the ledger, and
+  opened. When More itself is showing, that colour is #17140F. More is a grouped
+  list — Money, Checks, Numbers, Tools, Shop setup — of the other
+  apps that role can already open. Each row is that app's coloured
+  icon and a one-line purpose. Texts and Branches stay off the phone
+  list. Your session holds Lock the desk, Hand over the desk, and
+  Sign out, and Sign out asks before it runs. Search matches the job
+  as well as the name. Amounts on a phone go through one formatter
+  and show the currency code (`docs/PHONE_SHELL.md`). The bar is five
+  tabs and has no centre plus. There is no
+  floating + on a phone. New transaction stays on the ledger until
+  that screen takes a StickyAction, and
   New contact stays where it already was. The header till dot is
   the open session: 8px, #157A3E, with a 2px white ring. The green
   marks drawn into the Ledger and Till icons are artwork, and the
@@ -518,6 +527,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone shell. The desk shell still owns the one header and
+the five-tab bar. More is the shared phone column: grouped apps,
+a session group, and search that matches what an app does.
+`formatPhoneMoney` is the only phone amount format. Texts and
+Branches are not on the phone list. The ledger screen is unchanged.
+Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
