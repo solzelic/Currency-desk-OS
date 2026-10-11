@@ -577,15 +577,17 @@ function zoneParts(at: Date, timeZone: string) {
 
 function zonedInstant(isoDate: string, hour: number, minute: number, timeZone: string): Date {
   const [year, month, day] = isoDate.split("-").map(Number);
-  let utc = Date.UTC(year!, month! - 1, day!, hour, minute, 0);
-  for (let i = 0; i < 4; i++) {
+  const guess = Date.UTC(year!, month! - 1, day!, hour, minute, 0);
+  const offsetAt = (utc: number) => {
     const parts = zoneParts(new Date(utc), timeZone);
     const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    const delta = asUtc - utc;
-    if (delta === 0) break;
-    utc -= delta;
-  }
-  return new Date(utc);
+    return asUtc - utc;
+  };
+  const offset = offsetAt(guess);
+  let start = guess - offset;
+  const corrected = offsetAt(start);
+  if (corrected !== offset) start = guess - corrected;
+  return new Date(start);
 }
 
 function justAfterLocalMidnight(timeZone: string): Date {
@@ -639,6 +641,9 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
 
     test(`the sheet names ${timeZone}'s business date and includes the deal`, async ({ page }, testInfo) => {
       const at = justAfterLocalMidnight(timeZone);
+      const atLocal = zoneParts(at, timeZone);
+      expect(atLocal.hour, `${timeZone} clock is just after midnight`).toBe(0);
+      expect(atLocal.minute).toBe(30);
       const expected = calendarDate(at, timeZone);
       let previous: string | null = null;
       let needsClose = false;

@@ -137,7 +137,7 @@ export class TillControlService {
   ): Promise<string> {
     const result = await client.query(
       `SELECT timezone FROM branches
-        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3`,
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
       [actor.tenantId, actor.legalEntityId, actor.branchId],
     );
     const zone = result.rows[0]?.timezone;
