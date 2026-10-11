@@ -1597,6 +1597,19 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 0 1 auto;
     max-width: 100%;
   }
+  /* The count footer keeps Total drawer and Save count from shrinking.
+     At 360px that column ends a pixel past the screen. It takes the
+     next row, at the full width, so the button stays inside. */
+  .win-body .flex.items-end.justify-between {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .win-body .flex.items-end.justify-between > .flex-none {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+  .till-save { max-width: 100%; box-sizing: border-box; }
   /* Search plus New KYC is the same squeeze. Stack them full width. */
   .win-body .flex.items-start.justify-between {
     flex-direction: column;
