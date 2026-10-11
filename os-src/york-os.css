@@ -1699,16 +1699,20 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    the menu, the shop row, and the module tabs.
    ============================================================ */
 .phone-head, #phone-dock, #phone-more { display: none; }
-/* The scroll pad exists for the phone count. A desktop column has no floating +. */
+/* The scroll pad exists for the phone count panel. A desktop column has none. */
 .till-scroll-pad { display: none; }
 
 @media (max-width: 430px) {
   :root {
-    --phone-bar-h: calc(58px + env(safe-area-inset-bottom, 0px));
-    --phone-fab-size: 52px;
-    --phone-fab-gap: 12px;
-    /* The bar is the dock. The round + floats over the window,
-       so it does not add a band under the app. */
+    /* Head of Design tokens, phone bar only.
+       --tab-inactive #6B6760 is the unselected icon and label.
+       --tabbar-h 64px is the bar before the safe-area inset.
+       --color-positive #157A3E is the till-open mark. */
+    --tab-inactive: #6B6760;
+    --tabbar-h: 64px;
+    --color-positive: #157A3E;
+    --phone-top-h: 56px;
+    --phone-bar-h: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
     --phone-dock-h: var(--phone-bar-h);
   }
   /* A phone has its own header and bar. The desktop menu, the
@@ -1759,13 +1763,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     grid-template-rows: auto auto;
     align-items: center;
     column-gap: 8px;
-    row-gap: 2px;
+    row-gap: 0;
     flex: none;
-    position: relative;
+    position: sticky;
+    top: 0;
     z-index: 540;
-    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px 14px;
-    background: var(--cd-paper, #f4f3f0);
-    border-bottom: 1px solid var(--hair);
+    height: calc(var(--phone-top-h) + env(safe-area-inset-top, 0px));
+    box-sizing: border-box;
+    padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 14px;
+    background: #fff;
+    border-bottom: 1px solid #E2DFD8;
   }
   .phone-shop {
     grid-column: 1;
@@ -1813,17 +1820,18 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--ink, #111);
     line-height: 1.2;
   }
+  /* Open session. Closed is the ink, so the line still reads. */
   .phone-till-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex: none;
-    background: var(--green, #1f8a4c);
-    box-shadow: 0 0 0 3px rgba(31, 138, 76, 0.16);
+    background: var(--color-positive, #157A3E);
+    box-shadow: 0 0 0 2px #fff;
   }
   .phone-till.is-closed .phone-till-dot {
     background: var(--ink, #111);
-    box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.08);
+    box-shadow: 0 0 0 2px #fff;
   }
   .phone-head .mb-acct-wrap { grid-column: 2; grid-row: 1 / span 2; }
   .phone-head .mb-acct-id,
@@ -1838,11 +1846,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-head .mb-acct-av { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
 
-  /* The dock is fixed, so it paints over the desk. A window at 100%
-     of the desk runs underneath it. Stop the window at the dock. */
+  /* The bar is fixed over the desk. The window runs under it.
+     Scroll padding, not a shorter window, keeps the last row clear. */
   #desktop .win {
-    height: calc(100% - var(--phone-dock-h)) !important;
-    max-height: calc(100% - var(--phone-dock-h)) !important;
+    height: 100% !important;
+    max-height: 100% !important;
   }
 
   #phone-more {
@@ -1857,8 +1865,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow: auto;
     background: var(--cd-paper, #f4f3f0);
     -webkit-overflow-scrolling: touch;
-    /* The + floats over this sheet. The last row can scroll clear. */
-    padding-bottom: calc(var(--phone-fab-size) + var(--phone-fab-gap));
+    /* The sheet runs under the bar. The last row can scroll clear. */
+    padding-bottom: calc(var(--phone-bar-h) + 16px);
   }
   .phone-more-empty {
     margin: 0;
@@ -1898,8 +1906,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
 
   #phone-dock {
-    display: flex;
-    flex-direction: column;
+    display: block;
     position: fixed;
     left: 0;
     right: 0;
@@ -1908,87 +1915,63 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: var(--phone-dock-h);
     box-sizing: border-box;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: var(--cd-paper, #f4f3f0);
-    box-shadow: inset 0 1px 0 var(--hair);
+    background: #fff;
+    border-top: 1px solid #E2DFD8;
+    box-shadow: none;
   }
-  .phone-fab-row {
-    flex: none;
-    height: 0;
-    padding: 0;
-    overflow: visible;
-  }
-  #phone-fab {
-    position: fixed;
-    z-index: 530;
-    right: 16px;
-    bottom: calc(var(--phone-bar-h) + var(--phone-fab-lift, 0px));
-    width: var(--phone-fab-size);
-    height: var(--phone-fab-size);
-    border: 0;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    background: var(--ink, #111);
-    color: #fff;
-    cursor: pointer;
-    /* A paper ring keeps the circle a separate control when a
-       black in-app button, such as Save count, sits just above it. */
-    box-shadow: 0 0 0 3px var(--cd-paper, #f4f3f0), 0 8px 18px rgba(10, 10, 10, 0.22);
-  }
-  #phone-fab.is-closed { opacity: 0.55; }
-  #phone-fab:active { transform: scale(0.97); }
   #phonebar {
-    flex: none;
-    height: 58px;
+    height: var(--tabbar-h);
     display: flex;
     align-items: stretch;
   }
   .phone-tab {
     position: relative;
     flex: 1 1 0;
-    min-width: 44px;
-    min-height: 44px;
+    width: 20%;
+    min-width: 0;
+    min-height: var(--tabbar-h);
+    height: var(--tabbar-h);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
-    padding: 4px 0 8px;
+    padding: 8px 0 4px;
     border: 0;
     background: transparent;
-    color: var(--ink, #111);
+    color: var(--tab-inactive, #6B6760);
     cursor: pointer;
   }
+  .phone-tab svg { stroke: var(--tab-inactive, #6B6760); }
   .phone-tab .lbl {
     font-family: var(--f-display);
     font-size: 12px;
-    font-weight: 600;
-    line-height: 1.1;
+    font-weight: 500;
+    line-height: 16px;
     letter-spacing: 0;
-    color: var(--ink, #111);
+    color: var(--tab-inactive, #6B6760);
   }
-  /* Selected tab uses the app accent already stored on the dock as
-     --c. The label, the icon, and the underline all take it. Every
-     accent in APP_ACCENT clears 4.5:1 on the cream paper, so the
-     label does not need a darker shade. */
-  .phone-tab.is-on .lbl {
-    font-weight: 700;
-    color: var(--c, var(--cd-ink));
+  /* Selected tab. --brand-primary is that app's APP_ACCENT,
+     written on the tab as --c. Till's black moves with the rest. */
+  .phone-tab.is-on,
+  .phone-tab.is-on .lbl,
+  .phone-tab.is-on svg {
+    color: var(--brand-primary, var(--c, var(--cd-ink)));
+    stroke: var(--brand-primary, var(--c, var(--cd-ink)));
   }
-  .phone-tab.is-on svg { stroke: var(--c, var(--cd-ink)); }
+  .phone-tab.is-on .lbl { font-weight: 700; }
   .phone-tab.is-on::after {
     content: "";
     position: absolute;
     left: 50%;
-    bottom: 4px;
-    width: 18px;
-    height: 2px;
-    margin-left: -9px;
-    border-radius: 2px;
-    background: var(--c, var(--cd-ink));
+    top: 0;
+    width: 32px;
+    height: 3px;
+    margin-left: -16px;
+    border-radius: 0 0 3px 3px;
+    background: var(--brand-primary, var(--c, var(--cd-ink)));
   }
   .phone-tab:focus-visible,
-  #phone-fab:focus-visible,
   .phone-more-row:focus-visible,
   .phone-head .mb-acct:focus-visible {
     outline: 2px solid var(--ink, #111);
@@ -2286,9 +2269,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-count-hint { display: none; }
   /* One column. The header, the session line, and the hand-off
      scroll away with the denomination rows. The count panel sticks
-     to the bottom of that column, flush with the bar. The round +
-     floats over the rows just above the panel and does not take a
-     band of its own. */
+     just above the bar. Nothing is drawn behind the panel. */
   #desktop .win:has(.till-screen) > .win-body {
     overflow: hidden !important;
   }
@@ -2320,11 +2301,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 0;
     padding-bottom: 0;
   }
-  /* Room for the floating +. The last row can scroll clear of it,
-     and this pad sits above the panel, so it is not a band under it. */
+  /* The panel covers this much of the column. The last row can
+     scroll clear of it, with 16px to spare. It is not a band
+     reserved under the list. */
   .till-scroll-pad {
     display: block;
-    height: calc(var(--phone-fab-size) + var(--phone-fab-gap));
+    height: calc(var(--till-panel-h, 96px) + 16px);
+  }
+  .till-screen {
+    scroll-padding-bottom: calc(var(--phone-bar-h) + 16px + var(--till-panel-h, 96px));
   }
   /* Chips stay one row so the count list can start under them.
      The row itself scrolls sideways when the currencies do not fit. */
@@ -2337,7 +2322,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-chip { flex: none; }
   .till-count-foot {
     position: sticky !important;
-    bottom: 0 !important;
+    bottom: var(--phone-bar-h) !important;
     z-index: 5;
     margin-top: 0 !important;
     margin-left: -16px;
@@ -2348,10 +2333,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-bottom: 8px !important;
     background: var(--cd-paper, #f4f3f0) !important;
   }
-  /* The + floats over every other app too. Scroll padding lets the
-     last line clear it. The till keeps its own pad above the panel. */
+  /* Content scrolls under the bar. This padding is the bar plus
+     16px, so the last line can sit clear of it. The till adds the
+     count panel on top of that, in .till-screen. */
   #desktop .win:not(:has(.till-screen)) > .win-body {
-    padding-bottom: calc(var(--phone-fab-size) + var(--phone-fab-gap)) !important;
+    padding-bottom: calc(var(--phone-bar-h) + 16px) !important;
+    scroll-padding-bottom: calc(var(--phone-bar-h) + 16px);
   }
   /* Padding only. The 44px Move cash, Vault, and amount targets stay.
      The hand-off stays one row: wrapping the buttons put the first
@@ -2389,13 +2376,30 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 0 !important;
     line-height: 1.15;
   }
+  .till-grand { white-space: nowrap; }
   .till-grand-num[data-absent="1"]::after {
     content: "Not counted";
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0;
     text-transform: none;
+    white-space: nowrap;
     color: var(--ink, #17140F);
+  }
+  /* The session sentence is one line. Wrapping it hid a denomination. */
+  .till-sessionline { flex-wrap: nowrap !important; }
+  .till-sessionline > .flex-1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .till-scope-note { padding-top: 6px !important; padding-bottom: 6px !important; }
+  .till-scope-note > .flex-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
   .till-grand:has(.till-grand-num[data-absent="1"]) .till-grand-label {
     font-size: 0 !important;
@@ -2428,4 +2432,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding: 8px 16px 8px 10px;
     gap: 4px;
   }
+}
+
+/* Phones, as the Head of Design measures them. The round + is not
+   part of this shell. Wider than 600px the desktop menu plus stays. */
+@media (max-width: 600px) {
+  #phone-fab, .phone-fab-row { display: none !important; }
 }

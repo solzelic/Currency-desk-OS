@@ -45,7 +45,7 @@ test("the bar shows on a phone and is hidden on the desktop", async ({ page }) =
   await page.setViewportSize(PHONE);
   await atDesk(page);
   await expect(page.locator("#phonebar")).toBeVisible();
-  await expect(page.locator("#phone-fab")).toBeVisible();
+  await expect(page.locator("#phone-fab")).toHaveCount(0);
   await expect(page.locator(".phone-head")).toBeVisible();
   await expect(page.locator(".phone-shop")).toHaveText("York Currency Exchange");
   await expect(page.locator("#appbar")).toBeHidden();
@@ -55,6 +55,25 @@ test("the bar shows on a phone and is hidden on the desktop", async ({ page }) =
   }
   const labelSize = await page.locator("#phonebar .lbl").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(labelSize).toBeGreaterThanOrEqual(12);
+  const idle = await page.locator("#phonebar .phone-tab:not(.is-on) .lbl").first().evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { color: style.color, weight: style.fontWeight, size: style.fontSize, line: style.lineHeight };
+  });
+  expect(idle).toEqual({ color: "rgb(107, 103, 96)", weight: "500", size: "12px", line: "16px" });
+  const dock = await page.locator("#phone-dock").evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { h: style.height, bg: style.backgroundColor, shadow: style.boxShadow, border: style.borderTopColor, borderW: style.borderTopWidth };
+  });
+  expect(dock.h).toBe("64px");
+  expect(dock.bg).toBe("rgb(255, 255, 255)");
+  expect(dock.shadow).toBe("none");
+  expect(dock.borderW).toBe("1px");
+  expect(dock.border).toBe("rgb(226, 223, 216)");
+  const mark = await page.locator("#phonebar .phone-tab.is-on").evaluate((el) => {
+    const style = getComputedStyle(el, "::after");
+    return { top: style.top, width: style.width, height: style.height, radius: style.borderBottomRightRadius };
+  });
+  expect(mark).toEqual({ top: "0px", width: "32px", height: "3px", radius: "3px" });
   const tillSize = await page.locator(".phone-till").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(tillSize).toBeGreaterThanOrEqual(12);
 
@@ -138,41 +157,23 @@ test("a teller only sees the apps a teller can open", async ({ page }) => {
   }
 });
 
-test("the plus opens new transaction", async ({ page }) => {
+test("a phone has no floating plus", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
-  const opened = await page.evaluate(async () => {
-    const probe = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
-    if (probe.status === 404) return "no-ledger";
-    const body = await probe.json().catch(() => {
-      /* A probe that is not JSON has no session to read. The test
-         opens one below. */
-      return {};
-    });
-    if (body.session && body.session.status === "open") return "open";
-    const res = await fetch("/api/ledger/till-sessions/open", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: "{}",
-    });
-    if (res.ok || res.status === 409) return "open";
-    return `${res.status} ${await res.text()}`;
-  });
-  if (opened !== "no-ledger") {
-    expect(opened, "the till did not open").toBe("open");
-    const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
-    await page.reload();
-    await landOnDesktop(page);
-    await sync;
-    await dismissTour(page);
-  }
-  await expect(page.locator(".phone-till")).toContainText("Till open");
-  await page.locator("#phone-fab").click();
+  await expect(page.locator("#phone-fab")).toHaveCount(0);
+  await page.setViewportSize({ width: 599, height: 800 });
+  await expect(page.locator("#phone-fab")).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("#menubar")).toBeVisible();
+  await page.setViewportSize(PHONE);
+  await tillOpen(page);
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  await settled(page);
+  await page.getByRole("button", { name: "New transaction", exact: true }).click();
   const deal = page.locator(".fixed.inset-0");
   await expect(deal.getByText("New transaction", { exact: true })).toBeVisible();
   await expect(deal.getByRole("button", { name: "Exchange" })).toBeVisible();
-  await expect(deal.getByText("Customer pays in", { exact: true })).toBeVisible();
 });
 
 /* The cash drawer is one scrolling column. On first load at least
@@ -185,26 +186,20 @@ async function countGeometry(page: Page): Promise<{
   fullyVisible: number;
   panelOpaque: boolean;
   panelOnBar: boolean;
-  fabOnPanel: boolean;
-  fabHitsSave: boolean;
-  inputHits: number;
   pad: number;
 }> {
   return page.evaluate(() => {
     const screen = document.querySelector(".till-screen");
     const foot = document.querySelector(".till-count-foot");
-    const fab = document.getElementById("phone-fab");
-    const save = document.querySelector(".till-save");
     const dock = document.getElementById("phone-dock");
     const pad = document.querySelector(".till-scroll-pad");
     const rows = [...document.querySelectorAll(".till-den-row")];
-    if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement) || !(fab instanceof HTMLElement) || !(save instanceof HTMLElement) || !(dock instanceof HTMLElement) || !(pad instanceof HTMLElement)) {
-      return { rowCount: rows.length, fullyVisible: -1, panelOpaque: false, panelOnBar: false, fabOnPanel: false, fabHitsSave: true, inputHits: -1, pad: -1 };
+    if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement) || !(dock instanceof HTMLElement) || !(pad instanceof HTMLElement)) {
+      return { rowCount: rows.length, fullyVisible: -1, panelOpaque: false, panelOnBar: false, pad: -1 };
     }
     const box = (el: Element) => el.getBoundingClientRect();
     const view = box(screen);
     const panel = box(foot);
-    const plus = box(fab);
     const fullyVisible = rows.filter((row) => {
       const r = box(row);
       return r.height > 8
@@ -214,45 +209,29 @@ async function countGeometry(page: Page): Promise<{
         && r.left >= view.left - 1
         && r.right <= view.right + 1;
     }).length;
-    const inputHits = rows.filter((row) => {
-      const input = row.querySelector("input");
-      return input instanceof HTMLElement && intersects(box(input), plus);
-    }).length;
     const bg = getComputedStyle(foot).backgroundColor;
     const opaque = /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/.test(bg);
-    function intersects(a: DOMRect, b: DOMRect): boolean {
-      return a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5 && a.right > b.left + 0.5 && a.left < b.right - 0.5;
-    }
     return {
       rowCount: rows.length,
       fullyVisible,
       panelOpaque: opaque,
       panelOnBar: Math.abs(box(dock).top - panel.bottom) <= 1,
-      fabOnPanel: plus.bottom <= panel.top + 1 && plus.bottom >= panel.top - 4,
-      fabHitsSave: intersects(plus, box(save)),
-      inputHits,
       pad: Math.round(pad.getBoundingClientRect().height),
     };
   });
 }
 
-async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: number; inputHits: number; fabHitsSave: boolean }> {
+async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: number }> {
   return page.evaluate(() => {
     const screen = document.querySelector(".till-screen");
     const foot = document.querySelector(".till-count-foot");
-    const fab = document.getElementById("phone-fab");
-    const save = document.querySelector(".till-save");
     const rows = [...document.querySelectorAll(".till-den-row")];
-    if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement) || !(fab instanceof HTMLElement) || !(save instanceof HTMLElement)) {
-      return { placed: -1, blocked: rows.length, inputHits: -1, fabHitsSave: true };
+    if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement)) {
+      return { placed: -1, blocked: rows.length };
     }
     const box = (el: Element) => el.getBoundingClientRect();
-    function hits(a: DOMRect, b: DOMRect): boolean {
-      return a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5 && a.right > b.left + 0.5 && a.left < b.right - 0.5;
-    }
     let placed = 0;
     let blocked = 0;
-    let inputHits = 0;
     for (const row of rows) {
       const before = box(row);
       const view = box(screen);
@@ -267,10 +246,8 @@ async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: num
         && r.right <= port.right + 1;
       if (clear) placed += 1;
       else blocked += 1;
-      const input = row.querySelector("input");
-      if (input instanceof HTMLElement && hits(box(input), box(fab))) inputHits += 1;
     }
-    return { placed, blocked, inputHits, fabHitsSave: hits(box(fab), box(save)) };
+    return { placed, blocked };
   });
 }
 
@@ -314,25 +291,27 @@ test("an owner can bring every denomination fully above the count panel", async 
     await page.locator('#phonebar [data-phone-app="till"]').click();
     await dismissTour(page);
     await settled(page);
+    await expect(page.locator(".phone-till")).toContainText("Till open");
+    const dot = await page.locator(".phone-till-dot").evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { w: style.width, h: style.height, bg: style.backgroundColor, shadow: style.boxShadow };
+    });
+    expect(dot.w).toBe("8px");
+    expect(dot.h).toBe("8px");
+    expect(dot.bg).toBe("rgb(21, 122, 62)");
+    expect(dot.shadow).toContain("2px");
     await expect(page.locator(".till-den-row")).toHaveCount(10);
     const first = await countGeometry(page);
     expect(first.rowCount, `${size.width} rows`).toBe(10);
     expect(first.fullyVisible, `${size.width} first load`).toBeGreaterThanOrEqual(3);
     expect(first.panelOpaque, `${size.width} panel`).toBe(true);
     expect(first.panelOnBar, `${size.width} panel on the bar`).toBe(true);
-    expect(first.fabOnPanel, `${size.width} plus above the panel`).toBe(true);
-    expect(first.fabHitsSave, `${size.width} plus on Save count`).toBe(false);
-    expect(first.inputHits, `${size.width} plus on an input`).toBe(0);
-    expect(first.pad, `${size.width} scroll pad`).toBe(64);
+    expect(first.pad, `${size.width} scroll pad`).toBeGreaterThanOrEqual(16);
     const scrolled = await placeEveryRow(page);
     expect(scrolled.placed, `${size.width} scrolled into view`).toBe(10);
     expect(scrolled.blocked, `${size.width} blocked`).toBe(0);
-    expect(scrolled.inputHits, `${size.width} scrolled input`).toBe(0);
-    expect(scrolled.fabHitsSave, `${size.width} scrolled Save count`).toBe(false);
   }
-  await page.setViewportSize(PHONE);
-  await page.locator("#phone-fab").click();
-  await expect(page.locator(".fixed.inset-0").getByText("New transaction", { exact: true })).toBeVisible();
+  await expect(page.locator("#phone-fab")).toHaveCount(0);
 });
 
 /* Desktop window chrome. A phone draws none of it: no traffic
@@ -361,7 +340,7 @@ async function expectNoDesktopChrome(page: Page): Promise<void> {
     for (let i = 0; i < n; i++) await expect(page.locator(sel).nth(i), sel).toBeHidden();
   }
   await expect(page.locator(".phone-till-dot")).toBeVisible();
-  await expect(page.locator("#phone-fab")).toBeVisible();
+  await expect(page.locator("#phone-fab")).toHaveCount(0);
   await expect(page.locator(".phone-head .mb-acct")).toBeVisible();
   await expect(page.getByText("Your logo", { exact: true })).toBeHidden();
 }
@@ -428,8 +407,10 @@ test("the open window sits above the bar", async ({ page }) => {
     const bar = dock.getBoundingClientRect();
     const box = win.getBoundingClientRect();
     const hits: string[] = [];
-    if (box.bottom > bar.top + 1) hits.push(`window bottom ${Math.round(box.bottom)} meets the bar at ${Math.round(bar.top)}`);
-    const targets = "#phonebar .phone-tab, #phone-fab, .phone-head .mb-acct";
+    const body = win.querySelector(".win-body");
+    const pad = body instanceof HTMLElement ? parseFloat(getComputedStyle(body).paddingBottom) : 0;
+    if (pad + 0.5 < bar.height + 16) hits.push(`padding ${Math.round(pad)} is under the bar ${Math.round(bar.height)} plus 16`);
+    const targets = "#phonebar .phone-tab, .phone-head .mb-acct";
     for (const el of document.querySelectorAll(targets)) {
       if (!(el instanceof HTMLElement)) continue;
       const r = el.getBoundingClientRect();

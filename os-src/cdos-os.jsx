@@ -57,11 +57,14 @@
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
   /* Phone bottom bar. The four desks open the apps the dock already
      calls by these ids. More is every other app the role can open. */
+  /* Bar icons are one colour, the tab colour. The desktop icons
+     keep their two-tone drawing. Ledger's green ribbon and Till's
+     green circle are that drawing: neither one is a live state. */
   const PHONE_TABS = [
-    { id: 'rates', label: 'Rates' },
-    { id: 'ledger', label: 'Ledger' },
-    { id: 'clients', label: 'Clients' },
-    { id: 'till', label: 'Till' },
+    { id: 'rates', label: 'Rates', icon: 'rateboardbar' },
+    { id: 'ledger', label: 'Ledger', icon: 'ledgerbookbar' },
+    { id: 'clients', label: 'Clients', icon: 'clientskycbar' },
+    { id: 'till', label: 'Till', icon: 'tilldrawerbar' },
   ];
   const PHONE_MORE = [
     { id: 'telegraph', label: 'Texts' },
@@ -2552,17 +2555,14 @@
       </div>
 
       <div id="phone-dock">
-        <div className="phone-fab-row">
-          <button id="phone-fab" type="button" className={day.closed ? 'is-closed' : ''} title={day.closed ? 'Day is closed — reopen to post' : 'New transaction'} aria-label="New transaction" onClick={quickNewDeal}><Ic n="plus" s={22} c="#fff" /></button>
-        </div>
         <nav id="phonebar" aria-label="Desk">
           {PHONE_TABS.map(t => (
-            <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
-              <Ic n={APPMETA[t.id].icon} s={22} />
+            <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id), '--brand-primary': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
+              <Ic n={t.icon || APPMETA[t.id].icon} s={22} />
               <span className="lbl">{t.label}</span>
             </button>
           ))}
-          <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} style={{ '--c': phoneTabColour('more') }} onClick={() => setPhoneMore(v => !v)}>
+          <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} style={{ '--c': phoneTabColour('more'), '--brand-primary': phoneTabColour('more') }} onClick={() => setPhoneMore(v => !v)}>
             <Ic n="grid4" s={22} />
             <span className="lbl">More</span>
           </button>

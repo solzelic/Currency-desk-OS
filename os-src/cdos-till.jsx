@@ -824,12 +824,13 @@
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
 
-    /* On a phone the round + sits just above the count panel. The
-       panel's height is the lift. Off that screen the + sits on the bar. */
+    /* The phone count panel covers the bottom of the scrolling
+       column. Its height is the pad that lets the last denomination
+       scroll clear of it. */
     useEffect(() => {
       const root = document.documentElement;
       const phone = window.matchMedia('(max-width: 430px)');
-      const clear = () => root.style.removeProperty('--phone-fab-lift');
+      const clear = () => root.style.removeProperty('--till-panel-h');
       const host = tillRootRef.current;
       const win = host && host.closest('.win');
       const foot = host && host.querySelector('.till-count-foot');
@@ -842,7 +843,7 @@
           clear();
           return;
         }
-        root.style.setProperty('--phone-fab-lift', foot.offsetHeight + 'px');
+        root.style.setProperty('--till-panel-h', foot.offsetHeight + 'px');
       };
       apply();
       const sizes = new ResizeObserver(apply);
@@ -923,7 +924,7 @@
             money agree by construction — this is a reminder of which drawer is
             being counted, not a warning that two things disagree. */}
         {ledgerAmbiguous && ledgerTill && (
-          <div className="flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+          <div className="till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="alert" s={13} c={CD.brass} />
             <span className="flex-1 min-w-0">
               This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
@@ -950,7 +951,7 @@
           </div>
         )}
         {serverSession && sessionOpen && (
-          <div className="flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
+          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
             <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
             <span className="ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>

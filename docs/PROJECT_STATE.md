@@ -76,15 +76,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   shows the shop name, whether the till is open, and the profile
   button. With no shop logo set, that header has no placeholder box.
   A bottom bar opens Rates, Ledger, Clients, Till, and More.
-  The selected tab's icon, label, and underline take that app's
-  colour, and so does the open in-app folder tab. A phone draws no
+  An unselected tab is #6B6760, 12px on a 16px line, weight 500.
+  The selected tab is that app's colour at weight 700, with a 32px
+  marker along the top of the tab. The bar is 64px, white, with a
+  1px top border and no shadow. A phone draws no
   desktop window chrome: no traffic lights, no title bar, no
   window-title dot, no top icon menu, no logo or store row, no
   dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
   More uses the colour of the app it
-  opened, or the ink when More itself is showing. More lists the other apps that role can already open. A round +
-  starts a new transaction the same way the menu button does, on
-  every phone screen, including Till. The
+  opened, or the ink when More itself is showing. More lists the other apps that role can already open. There is no
+  floating + on a phone. New transaction stays on the ledger, and
+  New contact stays where it already was. The header till dot is
+  the open session: 8px, #157A3E, with a 2px white ring. The green
+  marks drawn into the Ledger and Till icons are artwork, and the
+  phone tabs do not use them. The
   module tabs, the menu bar, the shop row, and the store and ID
   rail are hidden. The wordmark, the clock, and the account name
   stay off the phone. A card that holds a table scrolls sideways,
@@ -105,11 +110,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   so the header, the session line, and the hand-off scroll away and
   the denomination rows use that room. The count panel stays a solid
   sticky panel pinned directly above the bottom bar, with nothing
-  drawn behind it. The round + floats over the rows just above that
-  panel and does not reserve a band of its own. The list's end is
-  padded by the + height plus a gap, so the last row can scroll
-  clear of the +, and the + does not cover a row's input or Save
-  count. An uncounted drawer says "Not counted"
+  drawn behind it. The list ends with room for that panel, the
+  bar, and 16px, so the last denomination can scroll clear of the
+  panel. An uncounted drawer says "Not counted"
   rather than a lone dash — the ledger amount stays on the "In drawer"
   pill, because a zero would claim the drawer was counted empty.
   The ledger search is one line, with its help mark in that line.
@@ -487,11 +490,12 @@ authenticated narrative dashboard.
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
-Till, More. More is the other apps that role can open. The + above
-the bar opens New transaction. The window title bar is hidden; the
-app fills that space. In-app tabs stay. A ledger record has its own
-Back, because that was the one action that lived only in the title
-bar. The window stops above the bar, including the iPhone safe area.
+Till, More. More is the other apps that role can open. There is no
+floating +. New transaction stays on the ledger. The window title
+bar is hidden; the app fills that space and scrolls under the
+56px header and the 64px bar. In-app tabs stay. A ledger record
+has its own Back, because that was the one action that lived only
+in the title bar. The bar includes the iPhone safe area.
 The Cash Drawer header stacks down the screen instead of collapsing
 the title into a narrow column, and a new-transaction dialog stacks
 its type buttons and its quote rail the same way. A ledger reference
@@ -502,11 +506,10 @@ the open in-app folder tab. The window-title dot stays off the phone
 header. A phone shows no desktop window chrome: no traffic lights,
 title bar, top icon menu, logo or store row, dashed Your logo box, or
 resize grip. With no shop logo set, the phone header is the shop name.
-The till line keeps its open or closed mark. The round + is the New
-transaction control on every phone screen, including Till. On the
-cash drawer the whole column scrolls, the count panel is a solid
-sticky panel pinned to the bar, and the + floats just above that
-panel without a reserved band. More uses the colour of the app it opened, or the ink when
+The till line keeps its open or closed mark: an 8px #157A3E dot
+with a 2px white ring while the session is open. On the cash
+drawer the whole column scrolls, and the count panel is a solid
+sticky panel pinned to the bar. More uses the colour of the app it opened, or the ink when
 More itself is showing. Wider than 430px, the desk is unchanged. Rate rows lead the
 rate board. The drawer count keeps its chips and Save count in view,
 and says "Not counted" until a currency is counted. The ledger search
