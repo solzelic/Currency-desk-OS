@@ -82,6 +82,28 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and bars stay clipped. Settings stacks its list above the form.
   Sign-in and the station picker stay on the screen. The window
   dots stay 12px, so the title stays readable.
+- **New transaction on a phone.** Under 600px the dialog is a
+  full-screen sheet, one column. The type names are one scrolling
+  row of pills, and the selected pill is in view when the sheet
+  opens. That row scrolls away with the fields. The customer search
+  is one row: icon, name, clear. The suggestion list closes when
+  focus leaves it. When the customer needs identification, the sheet
+  shows one row, "ID needed for this amount", and "Record the ID".
+  That opens the client file's identity editor (type, number, issued,
+  expiry, and the scan) and saves the document on the server, then
+  returns to the deal. The phone does not keep a type and number that
+  exist only in this browser. The deal ticket follows the fields in
+  the same scroll. The quote button and the post button stay on
+  screen for the whole sheet, including while the amount is focused
+  and while the keyboard is open. The X is 44px. If the ticket has
+  anything entered, the X asks "Discard this deal?" before it closes.
+  Swap, Override, and Text quote are 44px targets. Customer, the
+  amounts, the rate, and the required fields are the full width of
+  the form and at least 44px tall. The text in those fields is 16px, so the phone
+  does not zoom in when a cashier taps one. A long value ends in an
+  ellipsis. At 1280 the dialog is the same two columns as main. The
+  ID row, the discard question, and the phone footer are not on
+  that dialog.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -573,6 +595,22 @@ server starts at midnight in the branch time zone. Screening is not
 connected. Texting is not connected. The site does not claim encryption
 at rest, and it does not claim data is held in the region where the desk
 operates. Subscription prices printed on the site are unchanged.
+
+**2026-10-11**, New transaction on a phone. Under 600px the form is a
+full-screen sheet and one column. The type names are a horizontal
+row of pills, with the selected pill in view on open, and that row
+scrolls away with the fields. The customer row is icon, name, and
+clear on one line. The suggestion list closes when the amount is
+focused. A deal that needs identification shows "ID needed for this
+amount" and "Record the ID", which opens the client file's identity
+editor and saves type, number, and expiry on the server, then
+returns to the deal. A type and number typed only into the browser
+is not how this sheet records an ID. The quote and the post button
+stay on screen for the whole sheet, including with the keyboard
+open, and the last field can scroll clear of them. The X is 44px.
+If anything has been entered, it asks "Discard this deal?" with
+Discard and Keep editing. Swap, Override, and Text quote are 44px
+targets. Wider than 600px, including 1280, the dialog matches main.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
