@@ -144,8 +144,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   rather than a lone dash — the ledger amount stays on the "In drawer"
   pill, because a zero would claim the drawer was counted empty.
   The ledger search is one line, with its help mark in that line.
-  The compliance header stacks Screening, Reportable, and Structuring.
-  Screening reads Not connected. Wider than 430px, the desk is
+  Compliance on a phone is the shared phone shell. The home is a More
+  control, the reporting line in plain words, Reportable and Structuring
+  cards, and Screening or the 24-hour list. Amounts use formatPhoneMoney,
+  so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
+  used. Screening says Not connected and shows no count. Automatic ID
+  checks say not connected and open Clients. Possible split deals are
+  warnings. The desk does not send the report. A failed filings load
+  says Not loaded, with Try again, and does not show a zero. There is
+  no centre plus and no floating New transaction. Wider than 430px, the desk is
   unchanged: the dots stay 12px, and the module tab bar ends before
   the store and ID buttons.
 - **New transaction on a phone.** Under 600px the dialog is a
@@ -706,6 +713,14 @@ the phone. The desktop dock still has all three.
 `--color-surface`. The title and the first filter chip start 16px
 in, and the chip row keeps 16px after the last chip with a fade on
 the right.
+
+**2026-10-11**, phone Compliance. At 430px and under, Compliance
+from More uses the shared phone shell. The threshold is
+`formatPhoneMoney`. Screening is Not connected, with no count.
+A failed load says Not loaded and does not show a zero. Try again
+is the one sticky button on that error. Wider than 430px the
+Compliance window is the desktop one. Phone detail views are still
+the desktop panels.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

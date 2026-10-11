@@ -683,8 +683,11 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp }) {
+  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, onOpenClients, onLeave, fileSignal, subs: subsProp, setSubs: setSubsProp }) {
     const [tab, setTab] = useState('screening');
+    const narrow = window.CDOS.usePhoneWidth();
+    const [phonePane, setPhonePane] = useState('home');
+    const [reloadToken, setReloadToken] = useState(0);
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -699,7 +702,7 @@
 
     const refHash2 = (id) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36).toUpperCase().padStart(5, '0').slice(-5); };
     // open the filing worksheet for a report (from Aggregation or Submissions)
-    const openWorksheet = (r) => { const reportRef = r.reportRef || `${r.kind}-${(TODAY || '').slice(0, 4)}-${refHash2(r.id)}`; setWorksheet({ ...r, reportRef }); setTab('submissions'); };
+    const openWorksheet = (r) => { const reportRef = r.reportRef || `${r.kind}-${(TODAY || '').slice(0, 4)}-${refHash2(r.id)}`; setWorksheet({ ...r, reportRef }); setTab('submissions'); setPhonePane('detail'); };
     // external request (from the Ledger's File-LCTR buttons) to open the worksheet
     useEffect(() => { if (fileSignal && fileSignal.n && fileSignal.n !== lastFileSig.current) { lastFileSig.current = fileSignal.n; const rep = fileSignal.report; const sub = subs[rep.id]; openWorksheet({ ...rep, prompts: (sub && sub.prompts) || {}, ticks: (sub && sub.ticks) || {} }); } }, [fileSignal]);
 
@@ -710,10 +713,21 @@
        and the Filings page says so rather than letting the sealed PDF's
        "retain 5 years" stand over a copy nobody can retain. */
     const [store, setStore] = useState('unknown');
+    /* loading | ready | error. The phone home refuses to show a count
+       until this answers. The desktop header is unchanged: it still
+       reads the deals already on screen. */
+    const [countsState, setCountsState] = useState('loading');
+    const [loadedAt, setLoadedAt] = useState(null);
     useEffect(() => {
       const api = filingsApi();
-      if (!api) { setStore('local'); return; }
+      if (!api) {
+        setStore('local');
+        setCountsState('ready');
+        setLoadedAt(new Date());
+        return;
+      }
       let cancelled = false;
+      setCountsState('loading');
       api.loadReportFilings()
         .then(result => {
           if (cancelled) return;
@@ -735,10 +749,20 @@
             });
             return next;
           });
+          setCountsState('ready');
+          setLoadedAt(new Date());
         })
-        .catch(() => { if (!cancelled) setStore('local'); });
+        .catch((error) => {
+          if (cancelled) return;
+          /* The desktop filings page still falls back to the local cache.
+             The phone home says the counts did not load, and the error
+             stays in the console instead of disappearing. */
+          console.error('Could not load compliance filings', error);
+          setStore('local');
+          setCountsState('error');
+        });
       return () => { cancelled = true; };
-    }, []);
+    }, [reloadToken]);
 
     /* Seal a filled worksheet into a filed record.
        The ledger first: if it refuses, nothing is sealed and the worksheet
@@ -813,6 +837,34 @@
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
+    /* The phone home needs the shared money formatter. Without it this
+       window stays the desktop one, including on a narrow screen, so a
+       missing shell cannot invent a second amount spelling. */
+    const canPhone = narrow && typeof window.CDOS.phoneMoneyFn() === 'function';
+    const body = (<div className="flex-1 overflow-auto">
+        {tab === 'screening' && <Screening clients={clients} setClients={setClients} beneficiaries={beneficiaries} me={me} settings={settings} onOpenSettings={onOpenSettings} />}
+        {tab === 'aggregation' && <Aggregation rows={rows} settings={settings} subs={subs} fileReport={openWorksheet} beneficiaries={beneficiaries} onOpenTransaction={onOpenTransaction} onOpenClient={onOpenClient} onOpenRefs={onOpenRefs} onOpenTransfers={onOpenTransfers} />}
+        {tab === 'submissions' && <Submissions rows={rows} clients={clients} settings={settings} me={me} log={log} subs={subs} beneficiaries={beneficiaries} openWorksheet={openWorksheet} store={store} openFilingCopy={openFilingCopy} />}
+        {tab === 'structuring' && <StructuringWatch rows={rows} setRows={setRows} clients={clients} settings={settings} me={me} log={log} subs={subs} fileReport={openWorksheet} onOpenRefs={onOpenRefs} onOpenClient={onOpenClient} />}
+        {tab === 'reports' && (window.CDOS.Reports ? <window.CDOS.Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} /> : null)}
+        {tab === 'history' && (window.CDOS.ReportHistory ? <window.CDOS.ReportHistory /> : null)}
+        {tab === 'regime' && <Regime settings={settings} me={me} onOpenSettings={onOpenSettings} />}
+      </div>);
+    const sheet = worksheet && <window.CDOS.LCTR.Worksheet report={worksheet} ctx={ctx} onFile={onSeal} onClose={() => setWorksheet(null)} />;
+    if (canPhone) {
+      return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
+        <window.CDOS.PhoneCompliance
+          regime={regime} rows={rows} clients={clients} settings={settings}
+          reportable={philippines ? 0 : draftN} structuring={strN} aggregates={aggN}
+          countsState={countsState} loadedAt={loadedAt} onRetry={() => setReloadToken(n => n + 1)}
+          onLeave={onLeave} onOpenClients={onOpenClients} onOpenClient={onOpenClient}
+          pane={phonePane} detail={tab}
+          onOpen={(id) => { if (id === 'missing') { setPhonePane('missing'); return; } setTab(id); setPhonePane('detail'); }}
+          onBack={() => setPhonePane('home')}
+        >{phonePane === 'detail' ? body : null}</window.CDOS.PhoneCompliance>
+        {sheet}
+      </div>);
+    }
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="flex items-center justify-between">
@@ -839,16 +891,8 @@
             </button>))}
         </div>
       </div>
-      <div className="flex-1 overflow-auto">
-        {tab === 'screening' && <Screening clients={clients} setClients={setClients} beneficiaries={beneficiaries} me={me} settings={settings} onOpenSettings={onOpenSettings} />}
-        {tab === 'aggregation' && <Aggregation rows={rows} settings={settings} subs={subs} fileReport={openWorksheet} beneficiaries={beneficiaries} onOpenTransaction={onOpenTransaction} onOpenClient={onOpenClient} onOpenRefs={onOpenRefs} onOpenTransfers={onOpenTransfers} />}
-        {tab === 'submissions' && <Submissions rows={rows} clients={clients} settings={settings} me={me} log={log} subs={subs} beneficiaries={beneficiaries} openWorksheet={openWorksheet} store={store} openFilingCopy={openFilingCopy} />}
-        {tab === 'structuring' && <StructuringWatch rows={rows} setRows={setRows} clients={clients} settings={settings} me={me} log={log} subs={subs} fileReport={openWorksheet} onOpenRefs={onOpenRefs} onOpenClient={onOpenClient} />}
-        {tab === 'reports' && (window.CDOS.Reports ? <window.CDOS.Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} /> : null)}
-        {tab === 'history' && (window.CDOS.ReportHistory ? <window.CDOS.ReportHistory /> : null)}
-        {tab === 'regime' && <Regime settings={settings} me={me} onOpenSettings={onOpenSettings} />}
-      </div>
-      {worksheet && <window.CDOS.LCTR.Worksheet report={worksheet} ctx={ctx} onFile={onSeal} onClose={() => setWorksheet(null)} />}
+      {body}
+      {sheet}
     </div>);
   }
 

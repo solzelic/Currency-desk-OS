@@ -607,8 +607,10 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   expect(opened.icon).toBe(opened.expected);
   expect(opened.line).toBe(opened.expected);
   await expect(page.locator(".phone-appdot")).toBeHidden();
-  expect(opened.tabBg).toBe(opened.expected);
-  expect(opened.barLine).toBe(opened.expected);
+  /* Phone Compliance is the shell home, not the desktop folder tabs.
+     More carries the accent. There is no folder tab to paint. */
+  expect(opened.tabBg).toBe(null);
+  expect(opened.barLine).toBe(null);
   expect(opened.expected).not.toBe(previous);
 });
 

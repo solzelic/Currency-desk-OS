@@ -3089,3 +3089,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760) !important;
   }
 }
+
+
+/* Compliance error uses the shell's sticky button. Keep it a full
+   48px tap. The accent comes from data-app on the phone shell. */
+@media (max-width: 430px) {
+  [data-app="compliance"] .phone-sticky-btn {
+    height: 48px;
+    min-height: 48px;
+    box-sizing: border-box;
+  }
+}
