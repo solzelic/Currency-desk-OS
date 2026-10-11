@@ -455,6 +455,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, eleventh pass. The
+onboarding greeting says the desk is set up. The homepage and the
+mobile page say available in Canada, early access, where they used
+to say live in Canada. The Live and Not live country labels stay.
+
 **2026-10-11**, public site claims, tenth pass. The homepage
 says a rate board built from market rates, and the setup step says
 mid-market rates. The legal page says the service is in early access

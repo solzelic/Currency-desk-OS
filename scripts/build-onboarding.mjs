@@ -926,6 +926,11 @@ patch(
   "you're ready to trade once your desk is set up",
 );
 patch(
+  "the last screen greeted them as live",
+  "You\\u2019re live, ",
+  "Your desk is set up, ",
+);
+patch(
   "the publish step said the public page goes live",
   "Your public page goes live at your own address",
   "Your public page uses your own address",
