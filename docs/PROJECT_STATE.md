@@ -455,6 +455,16 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, seventh pass. The desktop
+footer has no clock. The public rate board says it is a sample, and
+its figures do not move. The onboarding landing has no clock and no
+LIVE pill. Its ticker starts with a fixed "Sample rates" tag. The
+FAQ does not say owners stop using their old books within a
+fortnight. The claims check also rejects an N-minute compound,
+same-day, a fortnight, within N hours, in N hours, 24/7, real-time,
+and live rates. A regulator deadline that names SMR, STR, SAR, TTR,
+CTR, or IVTS may still say within N hours.
+
 **2026-10-11**, public site claims, sixth pass. The mobile
 hero strip says "Sample rates" above the figures, in the strip
 itself. The desktop hero card is titled "Sample rates", with no

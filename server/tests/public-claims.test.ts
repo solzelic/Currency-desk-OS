@@ -210,6 +210,59 @@ describe("public marketing claims", () => {
     expect(result.out).toMatch(/within a week/);
   });
 
+  it("flags an N-minute compound, including a hyphen entity", () => {
+    const result = probe("a 10&#45;minute setup");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N-minute/);
+  });
+
+  it("flags same-day, including a hyphen entity", () => {
+    const result = probe("same&#45;day answers");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same-day/);
+  });
+
+  it("flags a fortnight, including a zero-width split", () => {
+    const result = probe("within a fort&#8203;night");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/fortnight/);
+  });
+
+  it("flags within N hours, including a zero-width split", () => {
+    const result = probe("ready within 24&#8203;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/within N hours/);
+  });
+
+  it("flags in N hours, including a soft hyphen", () => {
+    const result = probe("back in 2&shy;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N hours/);
+  });
+
+  it("flags 24/7, including a slash entity", () => {
+    const result = probe("open 24&#47;7");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/24\/7/);
+  });
+
+  it("flags real-time, including a hyphen entity", () => {
+    const result = probe("real&#45;time rates");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real-time/);
+  });
+
+  it("flags live rates, including a soft hyphen", () => {
+    const result = probe("live&shy;rates on the board");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
+  it("allows a regulator deadline measured in hours", () => {
+    const result = probe("SMR within 24 hours for terrorism financing. Cash is added across a static 24 hours. A worksheet within 3 business days.");
+    expect(result.ok).toBe(true);
+  });
+
   it("allows the moment a deal is written and an untimed launch", () => {
     const result = probe("the second it happens. a second shop. an on-site launch week. We have not timed it.");
     expect(result.ok).toBe(true);

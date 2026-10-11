@@ -110,7 +110,7 @@
         <div data-hero-rates="card" style="position: absolute; top: 50%; left: 50%; width: 430px; transform: translate(-50%,-50%); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 0 50px 100px -34px rgba(23,20,15,0.6), 0 0 0 1px var(--line); animation: cdFloat 9s ease-in-out infinite;">
           <div style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
           <div style="padding: 20px 22px 22px;">
-            <div style="display: flex; align-items: baseline; justify-content: space-between;"><div style="font-family: var(--serif); font-size: 25px; line-height: 1; color: var(--ink);">Sample rates</div></div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between;"><div data-sample-label style="font-family: var(--serif); font-size: 25px; line-height: 1; color: var(--ink);">Sample rates</div></div>
             <sc-for list="{{ heroRows }}" as="r" hint-placeholder-count="5">
               <div style="display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--hair);"><span style="flex: 1; display: inline-flex; align-items: center; gap: 9px;">{{ r.flag }}<b style="font-family: var(--m); font-size: 13px;">{{ r.code }}</b></span><span style="font-family: var(--m); font-size: 13px; color: var(--mute);">{{ r.buy }}</span><span style="font-family: var(--m); font-size: 13px; color: var(--green); font-weight: 600;">{{ r.sell }}</span></div>
             </sc-for>
@@ -135,7 +135,7 @@
     </div>
 
     <div data-hero-rates="ticker" style="position: relative; z-index: 1; display: flex; align-items: stretch; background: var(--ink); overflow: hidden;">
-      <div style="flex: none; display: flex; align-items: center; padding: 0 16px; background: var(--ink); border-right: 1px solid rgba(255,255,255,0.16); font-family: var(--m); font-size: 11px; line-height: 1.2; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Sample rates</div>
+      <div data-sample-label style="flex: none; display: flex; align-items: center; padding: 0 16px; background: var(--ink); border-right: 1px solid rgba(255,255,255,0.16); font-family: var(--m); font-size: 11px; line-height: 1.2; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Sample rates</div>
       <div style="flex: 1; min-width: 0; overflow: hidden;">
         <div style="display: flex; width: max-content; animation: cdTick 28s linear infinite; padding: 11px 0;">
           <div style="display: flex; gap: 32px; padding-right: 32px; font-family: var(--m); font-size: 12px; color: #E7E0D2;">{{ tickerA }}</div>
@@ -297,18 +297,17 @@
 
       <div style="display: flex; min-width: 0; overflow: hidden; opacity: var(--ro, 1); transform: translateY(var(--rty, 0px)); pointer-events: var(--rpe, auto);">
         <div style="width: 100%; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 26px 56px -34px rgba(23,20,15,0.4);">
-          <div style="position: relative; flex: none; overflow: hidden; background: linear-gradient(150deg, var(--green-deep), #123f2b); color: #F1EEE8; padding: 16px 16px 18px;">
+          <div data-hero-rates="board" style="position: relative; flex: none; overflow: hidden; background-color: #123f2b; background-image: linear-gradient(150deg, var(--green-deep), #123f2b); color: #F1EEE8; padding: 16px 16px 18px;">
             <div aria-hidden="true" style="position: absolute; top: -40%; right: -14%; width: 300px; height: 300px; border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06) 0 1.5px, transparent 1.5px 11px); opacity: 0.6;"></div>
-            <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-              <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8fe0b3; font-weight: 600;">Live on your website</span>
-              <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #eaf4ee;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 1.9s infinite;"></span>Auto-synced</span>
+            <div style="position: relative;">
+              <span data-sample-label style="font-family: var(--m); font-size: 11px; line-height: 1.2; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Your public rate board (sample)</span>
             </div>
             <div data-till-board="true" style="position: relative; margin-top: 12px; border-radius: 12px; overflow: hidden; background: var(--panel); color: var(--ink);">
               <div style="display: flex; align-items: center; gap: 7px; padding: 9px 13px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 8px; height: 8px; border-radius: 50%; background: #e2695b;"></span><span style="width: 8px; height: 8px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 8px; height: 8px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 8px; font-family: var(--m); font-size: 10px; color: var(--faint);">yourshop.com</span></div>
               <div style="padding: 12px 16px 13px;">
-                <div style="font-family: var(--serif); font-size: 20px; line-height: 1;">Today's Rates</div>
+                <div style="font-family: var(--serif); font-size: 20px; line-height: 1;">Sample rates</div>
                 <sc-for list="{{ webRows }}" as="r" hint-placeholder-count="5">
-                  <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--hair);"><span style="flex: 1; display: inline-flex; align-items: center; gap: 8px;">{{ r.flag }}<b style="font-family: var(--m); font-size: 12.5px;">{{ r.code }}</b></span><span style="font-family: var(--m); font-size: 12.5px; color: var(--mute);">{{ r.buy }}</span><span key="{{ r.flipKey }}" style="font-family: var(--m); font-size: 12.5px; color: var(--green); font-weight: 600; animation: cdFlip 0.4s ease;">{{ r.sell }}</span></div>
+                  <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--hair);"><span style="flex: 1; display: inline-flex; align-items: center; gap: 8px;">{{ r.flag }}<b style="font-family: var(--m); font-size: 12.5px;">{{ r.code }}</b></span><span style="font-family: var(--m); font-size: 12.5px; color: var(--mute);">{{ r.buy }}</span><span style="font-family: var(--m); font-size: 12.5px; color: var(--green); font-weight: 600;">{{ r.sell }}</span></div>
                 </sc-for>
               </div>
             </div>
@@ -664,7 +663,7 @@
 
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hair); font-family: var(--m); font-size: 10.5px; color: var(--faint);">
         <span>currencydeskos.com · © 2026 CurrencyDesk</span>
-        <span style="display: inline-flex; align-items: center; gap: 12px;"><span style="font-variant-numeric: tabular-nums;">{{ heroClock }}</span><span style="letter-spacing: 0.16em; text-transform: uppercase;">On the record</span></span>
+        <span data-hero-rates="footer" style="display: inline-flex; align-items: center; gap: 12px;"><span data-sample-label style="letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--ink);">Sample</span><span style="letter-spacing: 0.16em; text-transform: uppercase;">On the record</span></span>
       </div>
     </div>
   </div>
@@ -768,13 +767,10 @@ class Component extends DCLogic {
     ];
   }
 
-  state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0, feat: 0, featTick: 0, detail: null, panel: 0, till: 0, jur: 0, ruleN: 0, faq: 0 };
-  clk() { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0'); }
+  state = { showAll: false, detected: '', term: 'monthly', claimed: 0, feat: 0, featTick: 0, detail: null, panel: 0, till: 0, jur: 0, ruleN: 0, faq: 0 };
 
   componentDidMount() {
     this._pJur = this.state.jur; this._pShow = this.state.showAll;
-    this._clk = setInterval(() => this.setState({ clock: this.clk() }), 1000);
-    this._tk = setInterval(() => this.setState(s => ({ tick: s.tick + 1 })), 2600);
     try { this.detectJur(); } catch (e) { console.warn('detectJur', e); }
     let reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
     this._reduce = reduce;
@@ -903,7 +899,7 @@ class Component extends DCLogic {
     els.forEach((el, i) => { el.style.transitionDelay = (Math.min(i % 3, 2) * 0.08) + 's'; this._io.observe(el); });
     return true;
   }
-  componentWillUnmount() { clearInterval(this._clk); clearInterval(this._tk); clearInterval(this._cc); clearInterval(this._ft); (this._retry || []).forEach(clearTimeout); if (this._signOff) { window.removeEventListener('scroll', this._signOff); window.removeEventListener('resize', this._signOff); } if (this._c3 && this._c3.raf) cancelAnimationFrame(this._c3.raf); if (this._ro) this._ro.disconnect(); if (this._io) this._io.disconnect(); if (this._onScroll) { window.removeEventListener('scroll', this._onScroll); window.removeEventListener('resize', this._onScroll); } if (this._scrub) { window.removeEventListener('scroll', this._scrub); window.removeEventListener('resize', this._scrub); } if (this._scrubF) { window.removeEventListener('scroll', this._scrubF); window.removeEventListener('resize', this._scrubF); } if (this._fit) { window.removeEventListener('resize', this._fit); } if (this._scrubW) { window.removeEventListener('scroll', this._scrubW); window.removeEventListener('resize', this._scrubW); } if (this._tillIO) { this._tillIO.disconnect(); } clearInterval(this._rc); if (this._jio) this._jio.disconnect(); if (this._auto) clearInterval(this._auto); clearTimeout(this._flipT); clearTimeout(this._cflipT); }
+  componentWillUnmount() { clearInterval(this._cc); clearInterval(this._ft); (this._retry || []).forEach(clearTimeout); if (this._signOff) { window.removeEventListener('scroll', this._signOff); window.removeEventListener('resize', this._signOff); } if (this._c3 && this._c3.raf) cancelAnimationFrame(this._c3.raf); if (this._ro) this._ro.disconnect(); if (this._io) this._io.disconnect(); if (this._onScroll) { window.removeEventListener('scroll', this._onScroll); window.removeEventListener('resize', this._onScroll); } if (this._scrub) { window.removeEventListener('scroll', this._scrub); window.removeEventListener('resize', this._scrub); } if (this._scrubF) { window.removeEventListener('scroll', this._scrubF); window.removeEventListener('resize', this._scrubF); } if (this._fit) { window.removeEventListener('resize', this._fit); } if (this._scrubW) { window.removeEventListener('scroll', this._scrubW); window.removeEventListener('resize', this._scrubW); } if (this._tillIO) { this._tillIO.disconnect(); } clearInterval(this._rc); if (this._jio) this._jio.disconnect(); if (this._auto) clearInterval(this._auto); clearTimeout(this._flipT); clearTimeout(this._cflipT); }
   fixNav() { const n = document.querySelector('[data-nav-links]'); if (!n) return false; if (window.innerWidth > 860) n.style.display = 'flex'; return true; }
   scrubInit(reduce) {
     const scene = document.querySelector('[data-scene="oldway"]');
@@ -1258,12 +1254,10 @@ class Component extends DCLogic {
       const v = r.mid * 1.02;
       return { code: r.code, sell: v >= 100 ? v.toFixed(2) : v.toFixed(4) };
     }));
-    const till = s.till;
-    const webRows = this.RATES.map((r, i) => {
+    const webRows = this.RATES.slice(0, 3).map((r, i) => {
       const sp = 0.02 + i * 0.002; const dec = r.mid >= 100 ? 2 : 4;
-      const wob = 1 + (((s.panel * 7 + i * 3) % 5) - 2) * 0.0007;
-      return { code: r.code, flag: this.flag(this.CC[r.code], 24), buy: (r.mid * (1 - sp) * wob * till).toFixed(dec), sell: (r.mid * (1 + sp) * wob * till).toFixed(dec), flipKey: 'w' + r.code + s.panel };
-    }).slice(0, 3);
+      return { code: r.code, flag: this.flag(this.CC[r.code], 24), buy: (r.mid * (1 - sp)).toFixed(dec), sell: (r.mid * (1 + sp)).toFixed(dec) };
+    });
 
     const cardWrap = () => 'opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,.8,.2,1);padding:22px;border-radius:16px;background:var(--panel);border:1px solid var(--line);';
     const reveal = 'opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,.8,.2,1);';
@@ -1306,7 +1300,7 @@ class Component extends DCLogic {
     });
 
     return {
-      heroRows, heroUsdFlag: this.flag('US', 26), heroUsd: heroRows[0].sell, heroClock: s.clock,
+      heroRows, heroUsdFlag: this.flag('US', 26), heroUsd: heroRows[0].sell,
       webRows,
       tickerA: this.tickerSpan(tickerRows), tickerB: this.tickerSpan(tickerRows),
       regulators: ['FINTRAC', 'FinCEN', 'HMRC', 'AUSTRAC', 'CBUAE'],
@@ -1401,7 +1395,7 @@ class Component extends DCLogic {
       ].map((p) => ({ ...p, nStyle: 'font-family:var(--serif);font-size:27px;line-height:1;letter-spacing:-0.025em;font-style:italic;color:' + (p.n === 'More' ? 'var(--green)' : 'var(--brass)') + ';' })),
       replaces: ['Rate whiteboard', 'POS & till', 'Cash-count sheets', 'Spreadsheets', 'KYC binder', 'Shoebox receipts', 'Scrap paper', 'Reporting tool', 'Website editor', 'Google listing', 'Bookkeeping exports', 'Vault logbook'],
       addOns: [
-        { name: 'Custom website build', desc: 'Your live rates on a site we design and build for you.', was: '$5,000', now: '$2,500', tag: '50% off for founders' },
+        { name: 'Custom website build', desc: 'Your public rate board on a site we design and build for you.', was: '$5,000', now: '$2,500', tag: '50% off for founders' },
         { name: 'Launch support', desc: 'Guided setup, onboarding calls and video training for your team.', was: '', now: 'Free', tag: 'Included for founders' },
         { name: 'On-site setup visit', desc: 'We come to the shop and set the desk up with your team.', was: '', now: '50% off', tag: 'For founders' }
       ],

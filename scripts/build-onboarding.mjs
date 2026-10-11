@@ -855,6 +855,62 @@ patch(
   'href="/legal"',
 );
 
+/* The after-activation desk was a 24-hour clock, a LIVE pill, and a
+   ticker of hard-coded rates with up and down marks. None of that is a
+   live feed. The clock and the interval that only painted it go away.
+   The pill becomes a fixed Sample rates tag. The figures stay the
+   design's rates, without a change mark. */
+patch(
+  "the landing menubar clock",
+  '<span style="font-family: var(--m); font-size: 12px; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 12px;">{{ clock }}</span>\n        ',
+  "",
+);
+patch(
+  "the landing LIVE pill on the rate ticker",
+  '<span style="display: inline-flex; align-items: center; gap: 7px; font-family: var(--m); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: #fff; background: var(--green-live); padding: 6px 12px; border-radius: 999px; flex: none;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: cdLive 1.8s ease-out infinite;"></span>LIVE</span>',
+  '<span data-sample-label style="flex: none; display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: #17140F; color: #F4F0E6; font-family: var(--m); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;">Sample rates</span>',
+);
+patch(
+  "the ticker row is the surface the sample label sits on",
+  '<div style="height: 54px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: rgba(255,255,255,0.44);',
+  '<div data-hero-rates="onboarding" style="height: 54px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: rgba(255,255,255,0.44);',
+);
+patch(
+  "the landing clock in component state",
+  "termsRead: false, clock: this.nowStr(), landKey: 0",
+  "termsRead: false, landKey: 0",
+);
+patch(
+  "nowStr only existed to paint the landing clock",
+  "nowStr() { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }\n\n  ",
+  "",
+);
+patch(
+  "the 20 second interval that refreshed the landing clock",
+  "this._clk = setInterval(() => this.setState({ clock: this.nowStr() }), 20000);\n    ",
+  "",
+);
+patch(
+  "clearing a clock interval that no longer exists",
+  "componentWillUnmount() { clearInterval(this._clk); }",
+  "componentWillUnmount() {}",
+);
+patch(
+  "the render value for the landing clock",
+  "clock: this.state.clock,\n      ",
+  "",
+);
+patch(
+  "the website add-on said the rates it wires in are live",
+  "desc:'We build your site and wire your live rates in by hand.'",
+  "desc:'We build your site and wire your rate board in by hand.'",
+);
+patch(
+  "the ticker change marks made frozen rates look like a live feed",
+  "const up = k % 2 === 0; const chg = (0.03 + (k % 5) * 0.04).toFixed(2);\n      return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate),\n        React.createElement('span', { key: 'g', style: { fontFamily: 'var(--m)', fontSize: '9.5px', fontWeight: 700, color: up ? 'var(--green-live)' : 'var(--flag)' } }, (up ? '▲' : '▼') + chg + '%')\n      ]);",
+  "return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate)\n      ]);",
+);
+
 /* Two preview links are deliberately left pointing at design documents:
    "CurrencyDesk Rate Page" and "CurrencyDesk Board Display" are pages
    that have not been built as routes yet. Sending a customer to a

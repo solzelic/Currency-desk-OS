@@ -6,8 +6,15 @@
    zero-width character is read twice: deleted, so it cannot split a
    word, and replaced with a space, so it cannot hide a gap. A phrase
    on either reading fails. Timing phrases are included: a visit in
-   seconds, a count of minutes, the same afternoon or day, about a
-   week, or within a week. */
+   seconds, a count of minutes, an N-minute compound, the same
+   afternoon or day (including same-day), a fortnight, about a week,
+   within a week, within N hours, in N hours, 24/7, real-time, and
+   live rates.
+
+   A regulator deadline may say "within N hours" when the same
+   sentence names the report: SMR, STR, SAR, TTR, CTR, or IVTS. That
+   is the rule's clock, not a promise about this product. "static 24
+   hours" and "within 3 business days" are not that pattern. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,9 +61,20 @@ const phrases = [
   [/\b(?:\d+|two|five|ten|fifteen|twenty|thirty|sixty|ninety) seconds\b/, "N seconds"],
   [/\bsame afternoon\b/, "same afternoon"],
   [/\bsame day\b/, "same day"],
+  [/\bsame-day\b/, "same-day"],
+  [/\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)-minutes?\b/, "N-minute"],
+  [/\bfortnights?\b/, "fortnight"],
+  [/\b24\s*\/\s*7\b/, "24/7"],
+  [/\breal[-\s]time\b/, "real-time"],
+  [/\blive rates\b/, "live rates"],
   [/\babout a week\b/, "about a week"],
   [/\bwithin a week\b/, "within a week"],
 ];
+
+const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
+const HOURS = new RegExp(`\\b(?:within|in) ${HOUR_WORD} hours?\\b`, "g");
+/* The report name has to sit in the same sentence as the deadline. */
+const REPORT_DEADLINE = /\b(?:smr|str|sar|ttr|ctr|ivts)\b/;
 
 function normalize(html, invisible) {
   let text = String(html);
@@ -113,6 +131,14 @@ function claimsIn(text, problems) {
   for (const [re, label] of phrases) {
     if (re.test(text)) problems.push(label);
     re.lastIndex = 0;
+  }
+  HOURS.lastIndex = 0;
+  let hoursMatch;
+  while ((hoursMatch = HOURS.exec(text))) {
+    const from = Math.max(0, hoursMatch.index - 80);
+    const to = Math.min(text.length, hoursMatch.index + hoursMatch[0].length + 40);
+    if (REPORT_DEADLINE.test(text.slice(from, to))) continue;
+    problems.push(hoursMatch[0].startsWith("within") ? "within N hours" : "in N hours");
   }
   /* "sanctions screening is not connected" is the honest sentence.
      Any other "sanctions screening" is a claim that a screen exists. */
