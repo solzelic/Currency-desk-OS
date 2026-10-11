@@ -111,6 +111,13 @@ commit the generated output — CI diffs `web/` against a fresh build.
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `041_persona_inquiry_events` stores a Persona delivery:
+  the event id, the inquiry id, the event name, a status, and the
+  client id when the reference is a desk client. It does not store a
+  name, a date of birth, or a document number. Rows are append-only.
+  040 is on main, so this file is 041. The table is also in the boot
+  DDL, because PGlite does not run the SQL migrations. The trigger is
+  only in the migration.
 
 ## Test commands
 

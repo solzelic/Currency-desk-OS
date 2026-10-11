@@ -71,6 +71,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **ID checks stay disconnected until Persona is configured.**
+  `GET /api/kyc/persona` answers "ID checks not connected yet" unless
+  `PERSONA_API_KEY` and `PERSONA_WEBHOOK_SECRET` are both set. The
+  identity panel and the compliance banner show that sentence, and the
+  desk does not complete a check on a timer. A signed webhook at
+  `POST /api/webhooks/persona` stores an append-only row
+  (`041_persona_inquiry_events`) linked to the client file when the
+  reference is a client id, and writes `kyc.persona.recorded` on the
+  audit log. The name, the date of birth, and the document number are
+  not stored and not logged. `verification_status` is not changed.
+  Starting an inquiry from the Verify button is the next job.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. The menu bar keeps
   the icon buttons and drops the wordmark, the clock, and the account
@@ -417,6 +429,12 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, Persona client. ID checks say they are not connected
+until both Persona secrets are set. A signed webhook stores the
+inquiry id and the status, links a client id, and writes an audit
+row. It does not store the name or the document, and it does not
+mark the client verified. Migration `041_persona_inquiry_events`.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

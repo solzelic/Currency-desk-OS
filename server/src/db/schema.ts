@@ -737,6 +737,25 @@ export const auditEvents = pgTable(
    they reply it goes to the reply-to address, which is a real inbox a
    person reads — not into this table. The panel says so rather than
    implying a two-way thread it does not have. */
+/* One Persona delivery. The event id is Persona's, so a replay inserts
+   nothing. client_id is set only when the reference is a desk client.
+   There is no column for a name, a date of birth, or a document number. */
+export const personaInquiryEvents = pgTable(
+  "persona_inquiry_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    inquiryId: text("inquiry_id").notNull(),
+    eventName: text("event_name").notNull(),
+    status: text("status").notNull(),
+    clientId: text("client_id"),
+    tenantId: text("tenant_id"),
+    legalEntityId: text("legal_entity_id"),
+    environment: text("environment").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("persona_inquiry_events_client_idx").on(t.clientId, t.receivedAt)],
+);
+
 export const enquiryReplies = pgTable(
   "enquiry_replies",
   {

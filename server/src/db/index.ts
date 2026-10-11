@@ -612,6 +612,23 @@ CREATE TABLE IF NOT EXISTS desk_client_images (
 );
 CREATE INDEX IF NOT EXISTS desk_client_images_client_idx ON desk_client_images (client_id, purpose, captured_at DESC);
 CREATE INDEX IF NOT EXISTS desk_client_images_document_idx ON desk_client_images (document_id) WHERE document_id IS NOT NULL;
+/* Persona deliveries. Ids and a status. The append-only trigger lives
+   in migration 041, which PGlite does not run; this bootstrap still
+   creates the table so a desk on the embedded database can record one.
+   The application inserts and does not update. */
+CREATE TABLE IF NOT EXISTS persona_inquiry_events (
+  event_id text PRIMARY KEY,
+  inquiry_id text NOT NULL,
+  event_name text NOT NULL,
+  status text NOT NULL,
+  client_id text REFERENCES desk_clients(client_id),
+  tenant_id text REFERENCES tenants(id),
+  legal_entity_id text,
+  environment text NOT NULL CHECK (environment IN ('sandbox','live','unknown')),
+  received_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS persona_inquiry_events_client_idx
+  ON persona_inquiry_events (client_id, received_at DESC);
 `;
 
 export async function createDb(): Promise<DbHandle> {

@@ -43514,6 +43514,24 @@ ${(filing.map || []).map(blockHTML).join('')}
     const [only, setOnly] = useState('flagged');
     const [picker, setPicker] = useState(false);
     const [verify, setVerify] = useState(null); // { name, kind, rec }
+    const [personaOn, setPersonaOn] = useState(false);
+    useEffect(() => {
+      let cancelled = false;
+      fetch('/api/kyc/persona', {
+        credentials: 'same-origin'
+      }).then(res => res.ok ? res.json() : {
+        connected: false
+      }).then(body => {
+        if (!cancelled) setPersonaOn(!!(body && body.connected));
+      }).catch(function (err) {
+        const name = err && err.name ? err.name : 'Error';
+        console.warn('[CurrencyDesk] ID checks not connected yet (' + name + ')');
+        if (!cancelled) setPersonaOn(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []);
     const KYC = window.CDOS.KYC;
     const kycStats = KYC ? KYC.summary() : {
       monthCount: 0,
@@ -43655,7 +43673,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         width: 130
       }
-    })), KYC && /*#__PURE__*/React.createElement("button", {
+    })), KYC && personaOn && /*#__PURE__*/React.createElement("button", {
       onClick: () => setPicker(true),
       className: "flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none",
       style: {
@@ -43682,7 +43700,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: 'var(--cd-brass-text)'
       }
-    }, "Run a background check or ID verification on any subject through ", /*#__PURE__*/React.createElement("b", null, "Persona"), " \u2014 results attach to the contact and the History log."), /*#__PURE__*/React.createElement("span", {
+    }, personaOn ? /*#__PURE__*/React.createElement(React.Fragment, null, "Run a background check or ID verification on any subject through ", /*#__PURE__*/React.createElement("b", null, "Persona"), " \u2014 results attach to the contact and the History log.") : 'ID checks not connected yet'), personaOn && /*#__PURE__*/React.createElement("span", {
       className: "ml-auto text-[11px] font-semibold flex-none",
       style: {
         color: 'var(--cd-brass-text)',
@@ -43762,7 +43780,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement(Pill, {
       s: s.status
-    }), KYC && /*#__PURE__*/React.createElement("button", {
+    }), KYC && personaOn && /*#__PURE__*/React.createElement("button", {
       onClick: () => setVerify({
         name: s.name,
         kind: s.kind === 'Business' ? 'corporate' : 'individual',
@@ -45994,6 +46012,26 @@ ${(filing.map || []).map(blockHTML).join('')}
     } catch (e) {}
     listeners.forEach(l => l());
   };
+  /* Off until the server says both Persona secrets are set. A teller
+     does not start the timer in that state: the panel says the checks
+     are not connected, and createCheck refuses to invent a result. */
+  let personaState = 'off';
+  function notePersona(connected) {
+    personaState = connected ? 'on' : 'off';
+    listeners.forEach(l => l());
+  }
+  function refreshPersona() {
+    fetch('/api/kyc/persona', {
+      credentials: 'same-origin'
+    }).then(res => res.ok ? res.json() : {
+      connected: false
+    }).then(body => notePersona(body && body.connected === true)).catch(function (err) {
+      const name = err && err.name ? err.name : 'Error';
+      console.warn('[CurrencyDesk] ID checks not connected yet (' + name + ')');
+      notePersona(false);
+    });
+  }
+  refreshPersona();
   const useStore = () => {
     const [, force] = useState(0);
     useEffect(() => {
@@ -46210,6 +46248,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     contact,
     by
   }) {
+    if (personaState !== 'on') return null;
     const now = Date.now();
     const id = 'kyc_' + now.toString(36) + Math.random().toString(36).slice(2, 5);
     const t = tmpl(template);
@@ -46824,6 +46863,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       subject
     });
     const send = () => {
+      if (personaState !== 'on') return;
       const c = createCheck({
         subject,
         kind,
@@ -46832,6 +46872,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         contact: del.contact,
         by
       });
+      if (!c) return;
       setSent(c);
       setStep('sent');
     };
@@ -47328,6 +47369,25 @@ ${(filing.map || []).map(blockHTML).join('')}
         };
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
+    if (personaState !== 'on') return /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "persona-disconnected",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Identity verification"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, "ID checks not connected yet"));
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
@@ -47664,6 +47724,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     };
     // create the contact, fire the chosen verification, then watch it complete
     const startCheck = () => {
+      if (personaState !== 'on') return;
       const nm = name.trim();
       if (!nm) return;
       const del = deliveryFor({
@@ -48027,7 +48088,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "send",
       s: 11,
       c: CD.faint
-    }), " Next you'll pick the verification and send it to their phone or email.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
+    }), " Next you'll pick the verification and send it to their phone or email.")), step === 'choose' && personaState !== 'on' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "ID checks not connected yet"), step === 'choose' && personaState === 'on' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
       subject: name.trim() || 'this contact',
       hasId: !!photo,
       verified: false,
@@ -48208,7 +48274,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "chev",
       s: 14,
       c: "var(--cd-on-ink)"
-    }))), step === 'choose' && (() => {
+    }))), step === 'choose' && personaState !== 'on' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "ID checks not connected yet"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setStep('details'),
+      className: "px-3.5 py-2.5 text-sm font-medium",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        color: CD.mute
+      }
+    }, "Back")), step === 'choose' && personaState === 'on' && (() => {
       const del = deliveryFor({
         tplId,
         mode,

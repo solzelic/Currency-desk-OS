@@ -241,6 +241,19 @@
     const [only, setOnly] = useState('flagged');
     const [picker, setPicker] = useState(false);
     const [verify, setVerify] = useState(null);   // { name, kind, rec }
+    const [personaOn, setPersonaOn] = useState(false);
+    useEffect(() => {
+      let cancelled = false;
+      fetch('/api/kyc/persona', { credentials: 'same-origin' })
+        .then(res => res.ok ? res.json() : { connected: false })
+        .then(body => { if (!cancelled) setPersonaOn(!!(body && body.connected)); })
+        .catch(function (err) {
+          const name = err && err.name ? err.name : 'Error';
+          console.warn('[CurrencyDesk] ID checks not connected yet (' + name + ')');
+          if (!cancelled) setPersonaOn(false);
+        });
+      return () => { cancelled = true; };
+    }, []);
     const KYC = window.CDOS.KYC;
     const kycStats = KYC ? KYC.summary() : { monthCount: 0, monthSpend: 0 };
     const subjects = useMemo(() => {
@@ -277,14 +290,14 @@
         <div><div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Sanctions & watchlist screening <window.CDOS.InfoTip title="Sanctions screening" body="Every client and beneficiary name is matched against government watchlists. A hit (or possible match) must be reviewed before you transact with them." lines={[{k:'OFAC',v:'US Treasury sanctions list'},{k:'UN',v:'United Nations consolidated list'},{k:'OSFI',v:'Canada’s terrorist-financing list'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Every client and beneficiary screened against OFAC, UN and OSFI lists.</div></div>
         <div className="flex items-center gap-2 flex-none">
           <div className="flex items-center gap-2 px-3 py-2" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 8 }}><Ic n="search" s={15} c={CD.mute} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name…" className="outline-none text-sm bg-transparent" style={{ width: 130 }} /></div>
-          {KYC && <button onClick={() => setPicker(true)} className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={15} c="var(--cd-on-ink)" /> New KYC check</button>}
+          {KYC && personaOn && <button onClick={() => setPicker(true)} className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={15} c="var(--cd-on-ink)" /> New KYC check</button>}
         </div>
       </div>
 
       {KYC && <div className="flex items-center gap-2 mb-3 px-3 py-2" style={{ background: CD.brassSoft, border: `1px solid color-mix(in srgb, ${CD.brass} 20%, transparent)`, borderRadius: 9 }}>
         <Ic n="id" s={14} c={CD.brass} />
-        <span className="text-[11.5px]" style={{ color: 'var(--cd-brass-text)' }}>Run a background check or ID verification on any subject through <b>Persona</b> — results attach to the contact and the History log.</span>
-        <span className="ml-auto text-[11px] font-semibold flex-none" style={{ color: 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>{kycStats.monthCount} this month · ${kycStats.monthSpend.toFixed(2)}</span>
+        <span className="text-[11.5px]" style={{ color: 'var(--cd-brass-text)' }}>{personaOn ? <>Run a background check or ID verification on any subject through <b>Persona</b> — results attach to the contact and the History log.</> : 'ID checks not connected yet'}</span>
+        {personaOn && <span className="ml-auto text-[11px] font-semibold flex-none" style={{ color: 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>{kycStats.monthCount} this month · ${kycStats.monthSpend.toFixed(2)}</span>}
       </div>}
 
       <div className="grid grid-cols-4 gap-2 mb-3">
@@ -306,7 +319,7 @@
               </div>
               <div className="flex items-center gap-2">
                 <Pill s={s.status} />
-                {KYC && <button onClick={() => setVerify({ name: s.name, kind: s.kind === 'Business' ? 'corporate' : 'individual', rec: (clients && clients[s.name]) || {} })} title={`Send ${s.name} for KYC verification`} className="flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: CD.panel }}><Ic n="id" s={12} c={CD.mute} /> Verify</button>}
+                {KYC && personaOn && <button onClick={() => setVerify({ name: s.name, kind: s.kind === 'Business' ? 'corporate' : 'individual', rec: (clients && clients[s.name]) || {} })} title={`Send ${s.name} for KYC verification`} className="flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: CD.panel }}><Ic n="id" s={12} c={CD.mute} /> Verify</button>}
               </div>
             </div>
             {s.hits.length > 0 && <div className="mt-2 pt-2 space-y-1" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>

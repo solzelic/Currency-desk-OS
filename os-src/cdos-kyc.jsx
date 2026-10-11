@@ -78,6 +78,25 @@
   const load = () => { try { return JSON.parse(localStorage.getItem(KKEY) || '{}') || {}; } catch (e) { return {}; } };
   let STORE = load();
   const persist = () => { try { localStorage.setItem(KKEY, JSON.stringify(STORE)); } catch (e) {} listeners.forEach(l => l()); };
+  /* Off until the server says both Persona secrets are set. A teller
+     does not start the timer in that state: the panel says the checks
+     are not connected, and createCheck refuses to invent a result. */
+  let personaState = 'off';
+  function notePersona(connected) {
+    personaState = connected ? 'on' : 'off';
+    listeners.forEach(l => l());
+  }
+  function refreshPersona() {
+    fetch('/api/kyc/persona', { credentials: 'same-origin' })
+      .then(res => res.ok ? res.json() : { connected: false })
+      .then(body => notePersona(body && body.connected === true))
+      .catch(function (err) {
+        const name = err && err.name ? err.name : 'Error';
+        console.warn('[CurrencyDesk] ID checks not connected yet (' + name + ')');
+        notePersona(false);
+      });
+  }
+  refreshPersona();
   const useStore = () => { const [, force] = useState(0); useEffect(() => { const l = () => force(x => x + 1); listeners.add(l); return () => listeners.delete(l); }, []); return STORE; };
 
   const screenOf = (name) => { try { return window.CDOS._compliance.screen(name); } catch (e) { return { status: 'clear', hits: [] }; } };
@@ -206,6 +225,7 @@
   const getProvider = () => PROVIDER;
 
   function createCheck({ subject, kind, template, channel, contact, by }) {
+    if (personaState !== 'on') return null;
     const now = Date.now();
     const id = 'kyc_' + now.toString(36) + Math.random().toString(36).slice(2, 5);
     const t = tmpl(template);
@@ -395,7 +415,9 @@
     const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject });
 
     const send = () => {
+      if (personaState !== 'on') return;
       const c = createCheck({ subject, kind, template: tplId, channel: del.channel, contact: del.contact, by });
+      if (!c) return;
       setSent(c); setStep('sent');
     };
 
@@ -566,6 +588,11 @@
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
 
+    if (personaState !== 'on') return (<div className="p-4" data-testid="persona-disconnected" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      <div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity verification</div>
+      <div className="text-[12px] mt-1" style={{ color: CD.mute }}>ID checks not connected yet</div>
+    </div>);
+
     return (<div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <VerificationNudge name={name} rec={rec} settings={settings} onRun={(tpl) => { setSendTpl(tpl); setSend(true); }} />
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -700,6 +727,7 @@
     };
     // create the contact, fire the chosen verification, then watch it complete
     const startCheck = () => {
+      if (personaState !== 'on') return;
       const nm = name.trim(); if (!nm) return;
       const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: nm });
       if (del.missing) return;
@@ -768,7 +796,8 @@
             <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Next you'll pick the verification and send it to their phone or email.</div>
           </div>)}
 
-          {step === 'choose' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
+          {step === 'choose' && personaState !== 'on' && <div className="text-[13px]" style={{ color: CD.ink }}>ID checks not connected yet</div>}
+          {step === 'choose' && personaState === 'on' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
 
           {step === 'verifying' && (<div className="text-center py-8">
             <span className="grid place-items-center mx-auto mb-4" style={{ width: 56, height: 56, borderRadius: '50%', background: CD.brassSoft }}><span className="kyc-spin" style={{ width: 24, height: 24, border: `3px solid ${CD.brass}`, borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} /></span>
@@ -805,7 +834,11 @@
             <div className="flex-1" />
             <button onClick={() => setStep('choose')} disabled={!name.trim()} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: name.trim() ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
           </>)}
-          {step === 'choose' && (() => { const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: name.trim() }); return (<>
+          {step === 'choose' && personaState !== 'on' && <>
+            <div className="flex-1 text-[12.5px]" style={{ color: CD.mute }}>ID checks not connected yet</div>
+            <button onClick={() => setStep('details')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
+          </>}
+          {step === 'choose' && personaState === 'on' && (() => { const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: name.trim() }); return (<>
             <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>You'll be billed</div><div className="text-[20px] font-bold leading-none" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money(net(tmpl(tplId).price))}</div></div>
             <button onClick={() => setStep('details')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
             <button onClick={startCheck} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer' }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {del.label}</button>
