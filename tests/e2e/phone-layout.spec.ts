@@ -159,7 +159,10 @@ async function settledWindow(page: Page): Promise<void> {
 
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
-  if (await skip.isVisible().catch(() => false)) await skip.click();
+  /* isVisible answers this instant. A missing Skip button is false,
+     not an error, so there is nothing to catch. A throw is a broken
+     page and the check should fail on it. */
+  if (await skip.isVisible()) await skip.click();
 }
 
 function clipFixture(fixed: boolean): string {
