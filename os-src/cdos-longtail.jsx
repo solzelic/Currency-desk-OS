@@ -73,6 +73,7 @@
         app={props.app}
         className="longtail"
         title={props.title}
+        subtitle={props.subtitle}
         sticky={showAction ? <Phone.StickyAction label={props.action} onClick={props.onAction} /> : null}
         top={<>
           {props.toast ? <div className="phone-toast" role="status">{props.toast}</div> : null}
@@ -128,8 +129,25 @@
   }
 
   function clockLabel(date) {
-    if (!date) return '';
-    return date.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+    if (!date || !window.CDOS.formatPhoneTime) return '';
+    return window.CDOS.formatPhoneTime(date);
+  }
+
+  /* Sum of the home figures the position already returned. A currency
+     with no rate is named, not counted as zero, and not given a rate
+     the ledger did not publish. */
+  function knownHomeWorth(rows) {
+    const unvalued = [];
+    let sum = 0;
+    let any = false;
+    (rows || []).forEach(r => {
+      if (r.worth == null || r.worth === '') { unvalued.push(r.code); return; }
+      const n = Number(String(r.worth).replace(/,/g, ''));
+      if (!Number.isFinite(n)) { unvalued.push(r.code); return; }
+      any = true;
+      sum += n;
+    });
+    return { unvalued, sum: any ? sum : null };
   }
 
   function FloatSheet({ settings, branches, station, position, onClose, onAssignPerson, onIssueTill, onDone }) {
@@ -307,10 +325,18 @@
     const shown = held.filter(r => match(r.name + ' ' + r.code));
     const total = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
     const when = clockLabel(readAt);
+    const known = knownHomeWorth(held);
+    const countLine = (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : '');
+    /* The ledger withholds the vault total when any currency has no
+       rate. The phone headline still shows the CAD it could value. */
     const summaryCard = [{
       label: 'Cash in the vault, valued in ' + home,
-      value: total == null ? null : money(total, home),
-      sub: (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : ''),
+      value: known.unvalued.length
+        ? (known.sum == null ? null : money(known.sum, home))
+        : (total == null ? null : money(total, home)),
+      sub: known.unvalued.length
+        ? (known.unvalued.join(', ') + ' not valued, no rate yet')
+        : countLine,
     }];
     const openShifts = (shifts || []).filter(s => s.status === 'open');
     const orders = (receipts || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -394,7 +420,7 @@
           : summaryCard) : null}
         segments={VAULT_TABS} segment={tab} onSegment={setTab}
         search={q} onSearch={setQ} searchPlaceholder={tab === 'floats' ? 'Find a cashier' : tab === 'orders' ? 'Find an order' : 'Find a currency'}
-        action="Give out a float"
+        action={state === 'ready' ? 'Give out a float' : null}
         onAction={() => setSheet(true)}
         toast={toast}
         sheet={<>{sheet && <FloatSheet settings={settings} branches={branches} station={station} position={position} onClose={() => setSheet(false)} onAssignPerson={onAssignPerson} onIssueTill={onIssueTill} onDone={(label, worthText) => { setSheet(false); setToast('Float given to ' + label + '. ' + worthText + '.'); }} />}{detailNode}</>}
@@ -446,24 +472,23 @@
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
   }
 
+  function signedName(row) {
+    const cut = String((row && row.detail) || '').split('·')[0].trim();
+    return cut || (row && row.user) || '';
+  }
+
   function PhoneAudit({ audit, settings, onOpenRef }) {
     const Phone = window.CDOS.Phone;
     const [q, setQ] = useState('');
     const [chip, setChip] = useState('all');
     const [open, setOpen] = useState(null);
-    const use12 = ((settings && settings.timeFormat) || '12h') !== '24h';
     const items = (audit || []).map((a, i) => {
-      const m = /(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(a.ts || '');
+      const m = /(\d{4}-\d{2}-\d{2})/.exec(a.ts || '');
       const date = m ? m[1] : String(a.ts || '').slice(0, 10);
-      const hh = m ? +m[2] : 0;
-      const mm = m ? m[3] : '00';
-      let time = m ? m[2] + ':' + mm : '';
-      if (m && use12) {
-        const ap = hh < 12 ? 'AM' : 'PM';
-        let h = hh % 12; if (h === 0) h = 12;
-        time = h + ':' + mm + ' ' + ap;
-      }
-      return { ...a, i, date, time, title: plainAction(a.action), group: auditGroup(a.action) };
+      const signIn = /^signed in\b/i.test(String(a.action || ''));
+      const who = signIn ? signedName(a) : (a.user || '');
+      const title = signIn ? ((who || 'Someone') + ' signed in') : plainAction(a.action);
+      return { ...a, i, date, time: window.CDOS.formatPhoneTime(a.ts || ''), who, title, group: auditGroup(a.action) };
     });
     const needle = q.trim().toLowerCase();
     const filtered = items.filter(a => {
@@ -475,7 +500,7 @@
     const today = localDay(new Date());
     const yestDate = new Date(); yestDate.setDate(yestDate.getDate() - 1);
     const yesterday = localDay(yestDate);
-    const dayName = (d) => d === today ? 'Today' : d === yesterday ? 'Yesterday' : d;
+    const dayName = (d) => d === today ? 'Today' : d === yesterday ? 'Yesterday' : (window.CDOS.formatPhoneDate(d) || d);
     const groups = [];
     filtered.forEach(a => {
       const last = groups[groups.length - 1];
@@ -490,6 +515,7 @@
     return (
       <LongTailScreen
         app="audit" title="Audit trail" state={state}
+        subtitle="Actions on this device. The full audit trail is on a computer."
         loadingText="Reading the trail…"
         errorText="The audit trail did not load. Try again."
         emptyText="Nothing is on the trail yet."
@@ -499,8 +525,8 @@
           <div className="phone-sheet" role="dialog" aria-label="Audit detail">
             <div className="phone-sheet-h"><span /><h2>{open.title}</h2><button type="button" className="phone-sheet-x" onClick={() => setOpen(null)}>Close</button></div>
             <div className="phone-sheet-b">
-              <div className="phone-kv"><span>When</span><b>{open.ts}</b></div>
-              <div className="phone-kv"><span>Who</span><b>{open.user}</b></div>
+              <div className="phone-kv"><span>When</span><b>{[window.CDOS.formatPhoneDate(open.date), open.time].filter(Boolean).join(', ')}</b></div>
+              <div className="phone-kv"><span>Who</span><b>{open.who || open.user}</b></div>
               <div className="phone-kv"><span>What</span><b>{open.title}</b></div>
               {open.detail && <div className="phone-kv"><span>Detail</span><b>{open.detail}</b></div>}
               {refOf(open.detail) && onOpenRef && (
@@ -514,7 +540,7 @@
         {groups.map(g => (
           <Phone.ListSection key={g.date} title={g.label}>
             {g.rows.map(a => (
-              <Phone.ListRow key={a.i} title={a.title} subtitle={a.detail || ('By ' + a.user)} meta={(a.time ? a.time + ' · ' : '') + 'By ' + a.user} onClick={() => setOpen(a)} />
+              <Phone.ListRow key={a.i} title={a.title} subtitle={[a.time, a.who].filter(Boolean).join(' · ')} onClick={() => setOpen(a)} />
             ))}
           </Phone.ListSection>
         ))}

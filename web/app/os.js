@@ -63210,6 +63210,7 @@ window.CDOS_PERSIST = (function () {
       app: props.app,
       className: "longtail",
       title: props.title,
+      subtitle: props.subtitle,
       sticky: showAction ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
         label: props.action,
         onClick: props.onAction
@@ -63280,11 +63281,34 @@ window.CDOS_PERSIST = (function () {
     return position && position.homeCurrency || window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
   }
   function clockLabel(date) {
-    if (!date) return '';
-    return date.toLocaleTimeString('en-CA', {
-      hour: 'numeric',
-      minute: '2-digit'
+    if (!date || !window.CDOS.formatPhoneTime) return '';
+    return window.CDOS.formatPhoneTime(date);
+  }
+
+  /* Sum of the home figures the position already returned. A currency
+     with no rate is named, not counted as zero, and not given a rate
+     the ledger did not publish. */
+  function knownHomeWorth(rows) {
+    const unvalued = [];
+    let sum = 0;
+    let any = false;
+    (rows || []).forEach(r => {
+      if (r.worth == null || r.worth === '') {
+        unvalued.push(r.code);
+        return;
+      }
+      const n = Number(String(r.worth).replace(/,/g, ''));
+      if (!Number.isFinite(n)) {
+        unvalued.push(r.code);
+        return;
+      }
+      any = true;
+      sum += n;
     });
+    return {
+      unvalued,
+      sum: any ? sum : null
+    };
   }
   function FloatSheet({
     settings,
@@ -63530,10 +63554,14 @@ window.CDOS_PERSIST = (function () {
     const shown = held.filter(r => match(r.name + ' ' + r.code));
     const total = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
     const when = clockLabel(readAt);
+    const known = knownHomeWorth(held);
+    const countLine = (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : '');
+    /* The ledger withholds the vault total when any currency has no
+       rate. The phone headline still shows the CAD it could value. */
     const summaryCard = [{
       label: 'Cash in the vault, valued in ' + home,
-      value: total == null ? null : money(total, home),
-      sub: (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : '')
+      value: known.unvalued.length ? known.sum == null ? null : money(known.sum, home) : total == null ? null : money(total, home),
+      sub: known.unvalued.length ? known.unvalued.join(', ') + ' not valued, no rate yet' : countLine
     }];
     const openShifts = (shifts || []).filter(s => s.status === 'open');
     const orders = (receipts || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -63659,7 +63687,7 @@ window.CDOS_PERSIST = (function () {
       search: q,
       onSearch: setQ,
       searchPlaceholder: tab === 'floats' ? 'Find a cashier' : tab === 'orders' ? 'Find an order' : 'Find a currency',
-      action: "Give out a float",
+      action: state === 'ready' ? 'Give out a float' : null,
       onAction: () => setSheet(true),
       toast: toast,
       sheet: /*#__PURE__*/React.createElement(React.Fragment, null, sheet && /*#__PURE__*/React.createElement(FloatSheet, {
@@ -63727,6 +63755,10 @@ window.CDOS_PERSIST = (function () {
   function localDay(date) {
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
   }
+  function signedName(row) {
+    const cut = String(row && row.detail || '').split('·')[0].trim();
+    return cut || row && row.user || '';
+  }
   function PhoneAudit({
     audit,
     settings,
@@ -63736,25 +63768,19 @@ window.CDOS_PERSIST = (function () {
     const [q, setQ] = useState('');
     const [chip, setChip] = useState('all');
     const [open, setOpen] = useState(null);
-    const use12 = (settings && settings.timeFormat || '12h') !== '24h';
     const items = (audit || []).map((a, i) => {
-      const m = /(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(a.ts || '');
+      const m = /(\d{4}-\d{2}-\d{2})/.exec(a.ts || '');
       const date = m ? m[1] : String(a.ts || '').slice(0, 10);
-      const hh = m ? +m[2] : 0;
-      const mm = m ? m[3] : '00';
-      let time = m ? m[2] + ':' + mm : '';
-      if (m && use12) {
-        const ap = hh < 12 ? 'AM' : 'PM';
-        let h = hh % 12;
-        if (h === 0) h = 12;
-        time = h + ':' + mm + ' ' + ap;
-      }
+      const signIn = /^signed in\b/i.test(String(a.action || ''));
+      const who = signIn ? signedName(a) : a.user || '';
+      const title = signIn ? (who || 'Someone') + ' signed in' : plainAction(a.action);
       return {
         ...a,
         i,
         date,
-        time,
-        title: plainAction(a.action),
+        time: window.CDOS.formatPhoneTime(a.ts || ''),
+        who,
+        title,
         group: auditGroup(a.action)
       };
     });
@@ -63769,7 +63795,7 @@ window.CDOS_PERSIST = (function () {
     const yestDate = new Date();
     yestDate.setDate(yestDate.getDate() - 1);
     const yesterday = localDay(yestDate);
-    const dayName = d => d === today ? 'Today' : d === yesterday ? 'Yesterday' : d;
+    const dayName = d => d === today ? 'Today' : d === yesterday ? 'Yesterday' : window.CDOS.formatPhoneDate(d) || d;
     const groups = [];
     filtered.forEach(a => {
       const last = groups[groups.length - 1];
@@ -63788,6 +63814,7 @@ window.CDOS_PERSIST = (function () {
       app: "audit",
       title: "Audit trail",
       state: state,
+      subtitle: "Actions on this device. The full audit trail is on a computer.",
       loadingText: "Reading the trail\u2026",
       errorText: "The audit trail did not load. Try again.",
       emptyText: "Nothing is on the trail yet.",
@@ -63811,9 +63838,9 @@ window.CDOS_PERSIST = (function () {
         className: "phone-sheet-b"
       }, /*#__PURE__*/React.createElement("div", {
         className: "phone-kv"
-      }, /*#__PURE__*/React.createElement("span", null, "When"), /*#__PURE__*/React.createElement("b", null, open.ts)), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, "When"), /*#__PURE__*/React.createElement("b", null, [window.CDOS.formatPhoneDate(open.date), open.time].filter(Boolean).join(', '))), /*#__PURE__*/React.createElement("div", {
         className: "phone-kv"
-      }, /*#__PURE__*/React.createElement("span", null, "Who"), /*#__PURE__*/React.createElement("b", null, open.user)), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, "Who"), /*#__PURE__*/React.createElement("b", null, open.who || open.user)), /*#__PURE__*/React.createElement("div", {
         className: "phone-kv"
       }, /*#__PURE__*/React.createElement("span", null, "What"), /*#__PURE__*/React.createElement("b", null, open.title)), open.detail && /*#__PURE__*/React.createElement("div", {
         className: "phone-kv"
@@ -63830,8 +63857,7 @@ window.CDOS_PERSIST = (function () {
     }, g.rows.map(a => /*#__PURE__*/React.createElement(Phone.ListRow, {
       key: a.i,
       title: a.title,
-      subtitle: a.detail || 'By ' + a.user,
-      meta: (a.time ? a.time + ' · ' : '') + 'By ' + a.user,
+      subtitle: [a.time, a.who].filter(Boolean).join(' · '),
       onClick: () => setOpen(a)
     })))));
   }
@@ -67698,6 +67724,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
     function openApp(id) {
       setPhoneMore(false);
+      /* More already hides Assistant. The store, a tour step, or any
+         other caller hits this same door, so a phone cannot raise the
+         desktop chat while no model is configured. */
+      if (baseApp(id) === 'assistant' && window.matchMedia('(max-width: 430px)').matches && !(window.claude && window.claude.complete)) return;
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) {
         openSettingsTab('billing');
         return;

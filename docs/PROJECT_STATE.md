@@ -201,13 +201,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   trail use one screen (`LongTailScreen` in `os-src/cdos-longtail.jsx`,
   written up in `docs/PHONE_SHELL.md`): a title, one headline, sub-view
   tabs or chips, search, a list, and one main button. Audit trail is
-  read-only, so it has no button. Amounts on that screen carry the
-  currency code. There is no "Example data" tag. Vault's "Give out a
-  float" still posts through the existing till-movement endpoint, with
-  one key per currency, and an unopened vault is still refused. The
-  opening count is the existing opening-position dialog. A cashier's
-  expected count stays hidden. Wider than 430px, Vault and Audit trail
-  render the desktop they already did.
+  read-only, so it has no button, and the caption says the list is
+  actions on this device. It reads the on-device log, not
+  `ledger_audit_events`. The desktop audit reads that same log.
+  Amounts on that screen carry the currency code. Times on the phone
+  use `formatPhoneTime` (`3:02 pm`), added in the phone shell because
+  it had no shared clock. There is no "Example data" tag. Vault's
+  "Give out a float" posts through the existing till-movement
+  endpoint, with one key per currency, and only after the vault has
+  a starting count. The opening count is the existing
+  opening-position dialog. A cashier's expected count stays hidden.
+  When some currencies have no rate, the vault headline shows the
+  home value the ledger could price and names the rest. Assistant
+  stays off More. `openApp` also refuses it on a phone unless
+  `window.claude.complete` exists, so no other door can raise it.
+  Wider than 430px, Vault and Audit trail render the desktop they
+  already did.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other

@@ -1724,6 +1724,10 @@
     function focusWin(id) { setWins(ws => ws.map(w => w.id === id ? { ...w, z: ++zTop.current, min: false } : w)); }
     function openApp(id) {
       setPhoneMore(false);
+      /* More already hides Assistant. The store, a tour step, or any
+         other caller hits this same door, so a phone cannot raise the
+         desktop chat while no model is configured. */
+      if (baseApp(id) === 'assistant' && window.matchMedia('(max-width: 430px)').matches && !(window.claude && window.claude.complete)) return;
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) { openSettingsTab('billing'); return; }
       setWins(ws => {
         const ex = ws.find(w => w.id === id);

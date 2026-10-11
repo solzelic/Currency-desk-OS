@@ -525,6 +525,7 @@ the string in.
 | --- | --- |
 | `app` | `data-app` on `Phone.Screen`. |
 | `title` | The app name. No "Example data" tag. |
+| `subtitle` | One line under the title. Audit uses it to say the log is this device. |
 | `summary` | `[{ label, value, sub }]`. `value` null renders "No rate yet". |
 | `segments`, `segment`, `onSegment` | Two to four tabs. |
 | `chips`, `chip`, `onChip` | Filters when there are more than four sub-views. |
@@ -541,9 +542,16 @@ the string in.
 Headline: cash in the vault, in the desk's currency, from
 `GET /api/ledger/position`. Tabs: Cash, Floats, Orders, Profit.
 Cash rows are ledger quantities. Worth is `marketValueHome`. No rate
-is "No rate yet". Stock uses the same bands as the desktop
-(`vaultStock`): below the floor "Running low", above the max "Too much",
-otherwise "Healthy", and no band means no badge.
+is "No rate yet". When the ledger withholds the vault total because
+some currencies have no rate, the headline shows the sum of the home
+figures it did return (not a new rate, and a missing figure is not
+zero) and the subtitle names them: "USD not valued, no rate yet".
+Stock uses the same `vaultStock` comparison as the desktop. The floor
+is the owner's CAD reserve, else that currency's floor, else the
+built-in minimum. Below that floor the phone says "Running low".
+Above the built-in maximum it says "Too much". Otherwise "Healthy".
+No floor and no maximum means no badge. Settings do not raise the
+maximum. The desktop pill says "Low stock" for the same comparison.
 
 "Give out a float" opens one sheet. A cashier is accountability only
 (holdings do not move; the shift is the same record the desktop assigns).
@@ -554,21 +562,29 @@ movement once. An unopened vault is refused by that endpoint with
 "Open the vault with a starting count first."
 
 The empty unopened screen says the safe has no opening position and
-offers "Put the vault on the ledger", which is the existing opening
-dialog. The float button stays, so the refusal can still be reached.
+offers only "Put the vault on the ledger", which is the existing
+opening dialog. "Give out a float" stays hidden until that count
+exists, so the phone cannot reach the server's refusal. The server
+still refuses a till movement from an unopened vault.
 A tracked vault that holds nothing says so. A cashier settling a float
 still cannot see the expected figure; the phone says the count stays
 hidden until it is locked.
 
 ### Audit trail
 
-Read-only. No main button. Newest first, grouped Today / Yesterday /
-the date. Chips: All, Deals, Cash, Sign-ins, Settings, Staff, matched
-from the action words already on the log. Search matches the plain
-name, the detail, the person, and any reference. A dotted internal
-code is shown as plain words (`transaction.post` is "Deal posted").
-The log is the same on-device trail the desktop reads. Role gates are
-unchanged: a cashier does not get Vault, and does get Audit trail.
+Read-only. No main button. The caption under the title says "Actions
+on this device. The full audit trail is on a computer." This list is
+the on-device log, not `ledger_audit_events`. Newest first, grouped
+Today / Yesterday / `Jun 18, 2026`. Chips: All, Deals, Cash, Sign-ins,
+Settings, Staff, matched from the action words already on the log.
+Each row's title is the action, full width. The subtitle is the time
+and the person (`3:02 pm · A. Singh`). A sign-in reads "A. Singh
+signed in", using the person named in the row, not a separate "By"
+column. Search matches the plain name, the detail, the person, and
+any reference. A dotted internal code is shown as plain words
+(`transaction.post` is "Deal posted"). The desktop audit reads this
+same log and is unchanged. Role gates are unchanged: a cashier does
+not get Vault, and does get Audit trail.
 
 ### Mapping the rest
 
@@ -583,11 +599,10 @@ Same component. Not built in this change.
 | Store | none | Installed / Add | One row per app, on/off, no prices | none |
 | Assistant | none | none | Chat. A Beta tag | Ask, in place of the sticky button |
 
-Assistant's backend does not ship in this build. `window.claude` is
-never assigned; `window.claude.complete` is only checked, and the
-existing screen throws offline when it is missing. The Assistant row
-stays on More, because that is the list a person already sees. It is
-not drawn with this template until that function exists.
+Assistant stays off More. It is a front-end mock with no model API.
+`openApp('assistant')` also returns on a phone unless
+`window.claude.complete` exists, so the store and any other caller
+cannot raise the desktop chat. The desktop dock is unchanged.
 
 Branches stays off More (one shop). Texts stays off More until SMS is
 set up; that screen is not this template's job.

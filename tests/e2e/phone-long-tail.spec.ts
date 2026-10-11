@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger, ledger } from "./fixtures";
+import { phoneSweep } from "./helpers/phone-sweep";
 
 const shotDir = process.env.LONGTAIL_SHOTS || "";
 const WIDTHS = [360, 390] as const;
@@ -139,11 +140,18 @@ test("audit trail lists and searches at 360 and 390", async ({ page }) => {
     await expect(trail).not.toContainText("transaction.post");
     /* Signing in writes a row, so the newest line is that sign-in.
        The seeded deals stay underneath it. */
+    await expect(trail.getByText("Actions on this device. The full audit trail is on a computer.")).toBeVisible();
     const titles = await trail.locator(".phone-row-title").allTextContents();
-    const signed = titles.indexOf("Signed in as");
+    const signed = titles.indexOf("A. Singh signed in");
     const posted = titles.indexOf("Transaction posted");
     expect(signed).toBeGreaterThanOrEqual(0);
     expect(posted).toBeGreaterThan(signed);
+    await expect(trail.getByText("Signed in as")).toHaveCount(0);
+    await expect(trail.getByText("2026-06-18")).toHaveCount(0);
+    await expect(trail.getByText("Jun 18, 2026")).toBeVisible();
+    await expect(trail.locator(".phone-row").first()).toContainText(/\d{1,2}:\d{2} (am|pm)/);
+    await expect(trail).not.toContainText(" PM");
+    await expect(trail).not.toContainText(" p.m.");
     await shot(page, `longtail_audit_${width}`);
     await trail.getByLabel("Find an action, name or number").fill("Costa");
     await expect(trail.locator(".phone-row").first()).toContainText("Costa");
@@ -151,7 +159,9 @@ test("audit trail lists and searches at 360 and 390", async ({ page }) => {
     await trail.getByLabel("Find an action, name or number").fill("no-such-entry-zz");
     await expect(trail.getByText("Nothing matches that search.")).toBeVisible();
     await expect(trail.locator(".phone-row")).toHaveCount(0);
+    await trail.getByLabel("Find an action, name or number").fill("");
   }
+  await phoneSweep(page, { roots: ['.longtail[data-app="audit"]'] });
 });
 
 test("a teller sees the audit trail and not the vault", async ({ page }) => {
@@ -161,6 +171,7 @@ test("a teller sees the audit trail and not the vault", async ({ page }) => {
     await page.locator('#phonebar [data-phone-app="more"]').click();
     const labels = await page.locator("#phone-more .phone-more-name").allTextContents();
     expect(labels).toContain("Audit trail");
+    expect(labels).not.toContain("Assistant");
     expect(labels).not.toContain("Vault");
     expect(labels).not.toContain("Reports");
     expect(labels).not.toContain("Dashboard");
@@ -173,6 +184,23 @@ test("a teller sees the audit trail and not the vault", async ({ page }) => {
     await expect(trail.getByRole("button", { name: "Give out a float" })).toHaveCount(0);
     await expect(trail).not.toContainText("transaction.post");
   }
+});
+
+test("assistant cannot be opened on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expect(page.locator("#phone-more")).toBeVisible();
+  await expect(page.locator('#phone-more [data-phone-app="assistant"]')).toHaveCount(0);
+  await page.getByLabel("Search apps").fill("assistant");
+  await expect(page.locator('#phone-more [data-phone-app="assistant"]')).toHaveCount(0);
+  await expect(page.getByText("No matches")).toBeVisible();
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await openMore(page, "store");
+  const card = page.locator(".st-card").filter({ hasText: "AI Assistant" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Open" }).click();
+  await expect(page.locator('.win[data-app="assistant"]')).toHaveCount(0);
 });
 
 test.describe("vault on a phone", () => {
@@ -248,6 +276,7 @@ test.describe("vault on a phone", () => {
       expect(after - before).toBeCloseTo(1, 2);
       await expect(page.getByText("Open the vault with a starting count first.")).toHaveCount(0);
     }
+    await phoneSweep(page, { roots: ['.longtail[data-app="vault"]'] });
   });
 
   test("a float from an unopened vault is refused at 360 and 390", async ({ page }) => {
@@ -281,17 +310,12 @@ test.describe("vault on a phone", () => {
         const screen = page.locator('.longtail[data-app="vault"]');
         await expect(screen.getByText("This vault has no opening position on the ledger, so there is nothing it can say the safe holds.")).toBeVisible();
         await expect(screen.getByRole("button", { name: "Put the vault on the ledger" })).toBeVisible();
+        await expect(screen.getByRole("button", { name: "Give out a float" })).toHaveCount(0);
         await shot(page, `longtail_empty_${width}`);
-        await screen.getByRole("button", { name: "Give out a float" }).click();
-        const sheet = page.getByRole("dialog", { name: "Give out a float" });
-        await sheet.getByRole("button", { name: /A till/ }).click();
-        await sheet.getByLabel("CAD amount").fill("1.00");
-        await sheet.getByRole("button", { name: /Give float to / }).dblclick();
-        await expect(sheet.getByText("Open the vault with a starting count first.")).toBeVisible({ timeout: 20_000 });
         expect(await book.till()).toEqual(before);
         await expect(page.getByRole("status").filter({ hasText: "Float given to" })).toHaveCount(0);
-        await sheet.getByRole("button", { name: "Cancel" }).click();
       }
+      await phoneSweep(page, { roots: ['.longtail[data-app="vault"]'] });
     } finally {
       await putTheVaultBack(page, saved);
     }

@@ -3124,7 +3124,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .longtail .phone-seg button {
     flex: 1;
-    min-height: 36px;
+    min-height: 44px;
     border: 0;
     border-radius: 8px;
     background: transparent;
