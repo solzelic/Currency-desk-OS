@@ -5039,27 +5039,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   });
 })();
 
-/* ---- os-src/phone/summary-list.jsx ---- */
-/* SummaryList — read-only facts the screen already has.
-   Label and value. No fields, no save. A row with no value is
-   left out, so a missing figure is absent rather than a blank. */
-(function () {
-  function SummaryList({
-    rows
-  }) {
-    const shown = (rows || []).filter(row => row && row.label && row.value);
-    if (!shown.length) return null;
-    return /*#__PURE__*/React.createElement("dl", {
-      className: "phone-summary"
-    }, shown.map(row => /*#__PURE__*/React.createElement("div", {
-      key: row.label
-    }, /*#__PURE__*/React.createElement("dt", null, row.label), /*#__PURE__*/React.createElement("dd", null, row.value))));
-  }
-  window.CDOS = Object.assign(window.CDOS || {}, {
-    SummaryList
-  });
-})();
-
 /* ---- os-src/cdos-settings.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Settings
