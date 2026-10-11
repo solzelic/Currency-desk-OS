@@ -73,6 +73,18 @@ describe("public marketing claims", () => {
     expect(result.out).toMatch(/real shop/);
   });
 
+  it("flags a zero-width space inside real shops", () => {
+    const result = probe("real&#8203;shops");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real shop/);
+  });
+
+  it("flags a soft hyphen inside real shops", () => {
+    const result = probe("real&shy;shops");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real shop/);
+  });
+
   it("flags a soft hyphen inside OFAC", () => {
     const result = probe("O&shy;FAC");
     expect(result.ok).toBe(false);

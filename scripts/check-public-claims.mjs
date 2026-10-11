@@ -3,7 +3,9 @@
    not make. Tags are stripped, entities decoded, whitespace collapsed
    and the text lowercased before a match, so a tag, a line break or
    a non-breaking space cannot hide a phrase. A soft hyphen or a
-   zero-width character is deleted, so it cannot split a word. */
+   zero-width character is read twice: deleted, so it cannot split a
+   word, and replaced with a space, so it cannot hide a gap. A phrase
+   on either reading fails. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -78,9 +80,6 @@ function normalize(html, invisible) {
   return text;
 }
 
-/* Invisible characters are deleted, so a soft hyphen cannot split a
-   banned word. The spaced copy is only there to tell a split word
-   from the same word written normally. */
 export function visibleText(html) {
   return normalize(html, "");
 }
@@ -99,13 +98,7 @@ function nearby(text, needle, other, span) {
   return hits;
 }
 
-export function findClaims(html) {
-  const text = visibleText(html);
-  const spaced = normalize(html, " ");
-  const problems = [];
-  /* "sanc&shy;tions" joins to "sanctions". A page that writes the
-     word normally is left alone. */
-  if (text.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
+function claimsIn(text, problems) {
   for (const [re, label] of phrases) {
     if (re.test(text)) problems.push(label);
     re.lastIndex = 0;
@@ -125,7 +118,18 @@ export function findClaims(html) {
   for (const hit of nearby(text, "str", "live", 80)) {
     problems.push(`STR next to Live (${hit})`);
   }
-  return problems;
+}
+
+export function findClaims(html) {
+  const text = visibleText(html);
+  const spaced = normalize(html, " ");
+  const problems = [];
+  /* "sanc&shy;tions" joins to "sanctions" only when the mark is
+     deleted. A page that writes the word normally is left alone. */
+  if (text.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
+  claimsIn(text, problems);
+  if (spaced !== text) claimsIn(spaced, problems);
+  return [...new Set(problems)];
 }
 
 export function checkFiles(rels, read = (rel) => readFileSync(path.join(root, rel), "utf8")) {

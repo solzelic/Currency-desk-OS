@@ -452,9 +452,11 @@ authenticated narrative dashboard.
 **2026-10-11**, public site claims, fourth pass. The onboarding
 line about a rate board no longer says plenty of shops run on it.
 It says you can run on that alone and add a site whenever you want
-one. The claims check deletes zero-width characters and soft hyphens
-before it matches, and it rejects "UN list", "United Nations list",
-and "best protection". `check:parse` and `check:sanctions` both stay.
+one. The claims check reads each page twice, once with zero-width
+characters and soft hyphens deleted and once with them turned into
+spaces, and a banned phrase on either reading fails. It also rejects
+"UN list", "United Nations list", and "best protection". `check:parse`
+and `check:sanctions` both stay.
 
 **2026-10-11**, public site claims, third pass. The onboarding
 agreement does not say client verification is billed. The site does not
