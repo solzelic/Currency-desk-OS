@@ -455,6 +455,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, sixth pass. The mobile
+hero strip says "Sample rates" above the figures, in the strip
+itself. The desktop hero card is titled "Sample rates", with no
+green status dot and no clock. The black ticker starts with a
+fixed "Sample rates" tag that does not scroll.
+
 **2026-10-11**, public site claims, fifth pass. The mobile
 hero rates are labelled Sample. They do not move, and the strip
 does not show a clock or a pulsing dot. The public pages do not

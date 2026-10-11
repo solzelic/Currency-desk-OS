@@ -118,12 +118,12 @@
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 760px; height: 760px; transform: translate(-50%,-50%); border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(29,107,69,0.05) 0 1.5px, transparent 1.5px 11px); opacity: 0.5; animation: cdSpin 150s linear infinite;"></div>
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; transform: translate(-50%,-50%); border: 1px dashed rgba(23,20,15,0.1); border-radius: 50%;"></div>
 
-        <div style="position: absolute; top: 50%; left: 50%; width: 430px; transform: translate(-50%,-50%); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 0 50px 100px -34px rgba(23,20,15,0.6), 0 0 0 1px var(--line); animation: cdFloat 9s ease-in-out infinite;">
+        <div data-hero-rates="card" style="position: absolute; top: 50%; left: 50%; width: 430px; transform: translate(-50%,-50%); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 0 50px 100px -34px rgba(23,20,15,0.6), 0 0 0 1px var(--line); animation: cdFloat 9s ease-in-out infinite;">
           <div style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
           <div style="padding: 20px 22px 22px;">
-            <div style="display: flex; align-items: baseline; justify-content: space-between;"><div style="font-family: var(--serif); font-size: 25px; line-height: 1;">Today's Rates</div><span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green-deep);"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 1.9s infinite;"></span>{{ heroClock }}</span></div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between;"><div style="font-family: var(--serif); font-size: 25px; line-height: 1; color: var(--ink);">Sample rates</div></div>
             <sc-for list="{{ heroRows }}" as="r" hint-placeholder-count="5">
-              <div style="display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--hair);"><span style="flex: 1; display: inline-flex; align-items: center; gap: 9px;">{{ r.flag }}<b style="font-family: var(--m); font-size: 13px;">{{ r.code }}</b></span><span style="font-family: var(--m); font-size: 13px; color: var(--mute);">{{ r.buy }}</span><span key="{{ r.tickKey }}" style="font-family: var(--m); font-size: 13px; color: var(--green); font-weight: 600; animation: cdFlip 0.5s ease;">{{ r.sell }}</span></div>
+              <div style="display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--hair);"><span style="flex: 1; display: inline-flex; align-items: center; gap: 9px;">{{ r.flag }}<b style="font-family: var(--m); font-size: 13px;">{{ r.code }}</b></span><span style="font-family: var(--m); font-size: 13px; color: var(--mute);">{{ r.buy }}</span><span style="font-family: var(--m); font-size: 13px; color: var(--green); font-weight: 600;">{{ r.sell }}</span></div>
             </sc-for>
           </div>
         </div>
@@ -145,10 +145,13 @@
       </div>
     </div>
 
-    <div style="position: relative; z-index: 1; background: var(--ink); overflow: hidden;">
-      <div style="display: flex; width: max-content; animation: cdTick 28s linear infinite; padding: 11px 0;">
-        <div style="display: flex; gap: 32px; padding-right: 32px; font-family: var(--m); font-size: 12px; color: #E7E0D2;">{{ tickerA }}</div>
-        <div style="display: flex; gap: 32px; padding-right: 32px; font-family: var(--m); font-size: 12px; color: #E7E0D2;">{{ tickerB }}</div>
+    <div data-hero-rates="ticker" style="position: relative; z-index: 1; display: flex; align-items: stretch; background: var(--ink); overflow: hidden;">
+      <div style="flex: none; display: flex; align-items: center; padding: 0 16px; background: var(--ink); border-right: 1px solid rgba(255,255,255,0.16); font-family: var(--m); font-size: 11px; line-height: 1.2; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Sample rates</div>
+      <div style="flex: 1; min-width: 0; overflow: hidden;">
+        <div style="display: flex; width: max-content; animation: cdTick 28s linear infinite; padding: 11px 0;">
+          <div style="display: flex; gap: 32px; padding-right: 32px; font-family: var(--m); font-size: 12px; color: #E7E0D2;">{{ tickerA }}</div>
+          <div style="display: flex; gap: 32px; padding-right: 32px; font-family: var(--m); font-size: 12px; color: #E7E0D2;">{{ tickerB }}</div>
+        </div>
       </div>
     </div>
 
@@ -1257,16 +1260,13 @@ class Component extends DCLogic {
     const annual = s.term === 'annual';
     const mny = (n) => '$' + Math.round(n).toLocaleString('en-CA');
     const fmt = (x) => x >= 100 ? x.toFixed(2) : x.toFixed(4);
-    const jitter = (s.tick % 2 === 0) ? 1 : -1;
 
     const heroRows = this.RATES.map((r, i) => {
       const sp = 0.02 + i * 0.002;
-      const wobble = 1 + (jitter * (i % 2 ? 0.0004 : -0.0003));
-      return { code: r.code, name: r.name, flag: this.flag(this.CC[r.code], 24), buy: fmt(r.mid * (1 - sp)), sell: fmt(r.mid * (1 + sp) * wobble), tickKey: 'k' + r.code + s.tick };
+      return { code: r.code, name: r.name, flag: this.flag(this.CC[r.code], 24), buy: fmt(r.mid * (1 - sp)), sell: fmt(r.mid * (1 + sp)), tickKey: 'k' + r.code };
     });
-    const tickerRows = heroRows.concat(this.TICKER_EXTRA.map((r, i) => {
-      const wob = 1 + (((s.tick + i) % 5) - 2) * 0.0006;
-      const v = r.mid * 1.02 * wob;
+    const tickerRows = heroRows.concat(this.TICKER_EXTRA.map((r) => {
+      const v = r.mid * 1.02;
       return { code: r.code, sell: v >= 100 ? v.toFixed(2) : v.toFixed(4) };
     }));
     const till = s.till;
