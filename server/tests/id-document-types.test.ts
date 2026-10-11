@@ -21,6 +21,27 @@ describe("the identity document catalogue", () => {
     expect(health).toMatchObject({ photo: false, noExpiryAllowed: false, accepted: false });
   });
 
+  it("does not treat a citizenship certificate as a photo ID", () => {
+    for (const name of ["Citizenship Card", "Citizenship certificate (2012 or later, no photo)"]) {
+      const row = ID_DOCUMENT_TYPES.find((item) => item.name === name);
+      expect(row).toMatchObject({ photo: false, noExpiryAllowed: false, accepted: true });
+    }
+  });
+
+  it("requires an expiry on a Secure Certificate of Indian Status", () => {
+    const row = ID_DOCUMENT_TYPES.find((item) => item.name === "Secure Certificate of Indian Status");
+    expect(row).toMatchObject({ photo: true, noExpiryAllowed: false, accepted: true });
+  });
+
+  it("leaves the laminated Certificate of Indian Status unlisted", () => {
+    expect(ID_DOCUMENT_TYPES.some((row) => row.name === "Certificate of Indian Status")).toBe(false);
+  });
+
+  it("accepts the US spelling of a driver's licence and still requires an expiry", () => {
+    const row = ID_DOCUMENT_TYPES.find((item) => item.name === "Driver's License");
+    expect(row).toMatchObject({ photo: true, noExpiryAllowed: false, accepted: true });
+  });
+
   it("requires an expiry on a PR card", () => {
     for (const name of ["PR Card", "Permanent Resident Card"]) {
       const row = ID_DOCUMENT_TYPES.find((item) => item.name === name);

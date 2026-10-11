@@ -469,8 +469,14 @@ whitespace and invisible characters are stripped, and an expiry on
 or after the branch's business date. A blank expiry counts only
 for `Canadian citizenship card (pre-2012)`, the one row in
 `server/src/ledger/id-document-types.mjs` whose flag says so. A
-past date on that type is still expired. Health cards are never
-accepted. A non-photo document does not identify the client. An
+past date on that type is still expired. The generic citizenship
+card, and `Citizenship certificate (2012 or later, no photo)`, are
+not photo ID: IRCC has issued a paper certificate with no
+photograph since February 2012. A Secure Certificate of Indian
+Status is a photo ID and needs an expiry. The laminated Certificate
+of Indian Status is not listed, so it is not a photo ID. Health
+cards are never accepted. A non-photo document does not identify
+the client. An
 expired photo ID beside a current non-photo document is Missing
 ID, reason "A current photo ID is needed". The primary document is
 only what is shown. Dual process and a credit file are not

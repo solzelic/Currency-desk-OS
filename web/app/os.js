@@ -22661,7 +22661,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship certificate (2012 or later, no photo)', 'Secure Certificate of Indian Status', 'Health Card', 'Permanent Resident Card'];
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];

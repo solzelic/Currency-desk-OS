@@ -97,7 +97,12 @@ the desk's business date in the branch's time zone. A blank or
 missing `expires_on` counts only when that type's own
 `noExpiryAllowed` flag is set. The only such type is `Canadian
 citizenship card (pre-2012)`. A date before the business date does
-not count, on that type or any other. A health card is never
+not count, on that type or any other. `Citizenship Card` and
+`Citizenship certificate (2012 or later, no photo)` are not photo
+ID. A Secure Certificate of Indian Status is a photo ID and needs
+an expiry. The laminated Certificate of Indian Status is not in
+the catalogue. `Driver's License` is the US spelling of a driver's
+licence and needs an expiry. A health card is never
 accepted. A non-photo document, including a birth certificate, is
 not ID on file. An expired photo ID beside a current non-photo
 document is Missing ID, reason "A current photo ID is needed".
