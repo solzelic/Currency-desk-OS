@@ -2406,10 +2406,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-top: 6px !important;
     padding-bottom: 6px !important;
   }
-  .till-scope-note > .flex-1,
-  .till-scope-note > .flex-1 * {
-    white-space: normal !important;
-  }
+  /* One line. Two lines hid a denomination at 360. The inner
+     bold and span do not make their own boxes, or a nowrap line
+     reports them past the screen even when the note is clipped. */
   .till-scope-note > .flex-1 {
     flex: 1 1 0%;
     width: auto;
@@ -2417,8 +2416,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: 100%;
     overflow: hidden;
     display: block;
-    max-height: 2.8em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     line-height: 1.35;
+  }
+  .till-scope-note > .flex-1 > b,
+  .till-scope-note > .flex-1 > span {
+    display: contents;
   }
   .till-sessionline {
     max-width: 100%;
