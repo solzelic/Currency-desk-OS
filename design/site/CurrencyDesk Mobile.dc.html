@@ -21,8 +21,11 @@
     [data-hscroll]::-webkit-scrollbar { display: none; }
     @keyframes cdLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.5); } 70% { box-shadow: 0 0 0 7px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
     @keyframes cdFlip { from { opacity: 0.4; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
-    @keyframes cdRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; } }
+    @keyframes cdRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+      [data-feat-caption], [data-feat-body] { animation: none !important; opacity: 1 !important; transform: none !important; }
+    }
   </style>
   <meta name="ext-resource-dependency" content="../photos/rate-board-storefront.jpg">
   <meta name="ext-resource-dependency" content="../photos/sms-storefront.jpg">
@@ -106,9 +109,9 @@
         <sc-for list="{{ featLayers }}" as="l" hint-placeholder-count="9">
           <img src="{{ l.src }}" alt="{{ l.title }}" loading="lazy" style="{{ l.style }}">
         </sc-for>
-        <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 46%, rgba(14,12,9,0.86) 100%); pointer-events: none;"></div>
-        <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; pointer-events: none;">
-          <div key="{{ featKey }}" style="animation: cdRise 0.45s cubic-bezier(0.2,0.8,0.2,1);">
+        <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 3; background: linear-gradient(180deg, transparent 40%, rgba(14,12,9,0.42) 62%, rgba(14,12,9,0.82) 84%, rgba(14,12,9,0.92) 100%); pointer-events: none;"></div>
+        <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; z-index: 4; pointer-events: none;">
+          <div data-feat-caption="true" key="{{ featKey }}" style="opacity: 1; animation: cdRise 360ms cubic-bezier(0.2,0.8,0.2,1) both;">
             <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #7fe3ab; font-weight: 600;">{{ featKicker }}</div>
             <div style="font-family: var(--serif); font-size: 30px; line-height: 1.05; letter-spacing: -0.015em; color: #FBF9F4; margin-top: 6px;">{{ featTitle }}</div>
           </div>
@@ -116,7 +119,7 @@
       </div>
 
       <div style="padding: 16px 20px 0; min-height: 74px;">
-        <p key="{{ featKey }}" style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 0; animation: cdRise 0.45s cubic-bezier(0.2,0.8,0.2,1);">{{ featBody }}</p>
+        <p data-feat-body="true" key="{{ featKey }}" style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 0; opacity: 1; animation: cdRise 360ms cubic-bezier(0.2,0.8,0.2,1) both;">{{ featBody }}</p>
       </div>
     </div>
 
