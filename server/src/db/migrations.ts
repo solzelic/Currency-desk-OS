@@ -58,8 +58,8 @@ export async function runMigrations(
     throw new Error("Duplicate migration identifier.");
   await pool.query("CREATE TABLE IF NOT EXISTS schema_migrations (migration_id text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())");
   // One read of the whole table. A per-id SELECT was a round trip per
-  // file (35 on main). The decision is unchanged: a different checksum
-  // still refuses to boot, a missing row still applies below.
+  // file (37 on main, including 039 and 040). The decision is unchanged:
+  // a different checksum still refuses to boot, a missing row still applies below.
   const applied = await pool.query<{ migration_id: string; checksum: string }>(
     "SELECT migration_id, checksum FROM schema_migrations",
   );
