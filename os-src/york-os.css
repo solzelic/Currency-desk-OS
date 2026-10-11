@@ -2580,7 +2580,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 }
 
 /* Phones, as the Head of Design measures them. The round + is not
-   part of this shell. Wider than 600px the desktop menu plus stays. */
+   part of this shell. Wider than 600px the desktop menu plus stays.
+   A screen with a StickyAction does not grow a floating New
+   transaction button either. */
 @media (max-width: 600px) {
   #phone-fab, .phone-fab-row { display: none !important; }
 }
@@ -3087,5 +3089,49 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      header. That sits under 4.5:1. Same ink as the stat labels. */
   .cd-tx-record-sub {
     color: var(--color-text-muted, #6B6760) !important;
+  }
+}
+
+/* Clients on a phone. The shell draws the search, the chips, the
+   rows, and Add client. These rules only make a client row a full
+   tap and let the existing file fill the sheet. Desktop is outside
+   this query. */
+@media (max-width: 430px) {
+  #desktop .win:has(.phone-clients) > .win-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
+    padding-bottom: var(--phone-dock-h) !important;
+  }
+  .phone-clients.phone-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .phone-clients .phone-client-row { min-height: 84px; }
+  .phone-ini {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    flex: none;
+    background: var(--brand-primary-soft, color-mix(in srgb, #3C3B78 10%, #fff));
+    color: var(--brand-primary, #3C3B78);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  /* The file and the add flow stay the existing screens. On a phone
+     they fill the sheet above the bar instead of sitting in a card. */
+  .fixed.inset-0:has(.client-file),
+  .fixed.inset-0:has(.add-contact-sheet) {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  .fixed.inset-0 > .client-file,
+  .fixed.inset-0 > .add-contact-sheet {
+    max-width: none !important;
+    max-height: none !important;
+    height: 100% !important;
+    border-radius: 0 !important;
   }
 }

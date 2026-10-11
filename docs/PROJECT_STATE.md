@@ -198,6 +198,23 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and stays disabled, and the ledger heading still shows. The ID
   row, the discard question, and the phone footer are not on that
   dialog.
+- **Phone Clients.** At 430px and under, Clients is a list a cashier
+  can search before anything else. Chips are All, Missing ID, Expired
+  ID, and Identified. A row is at least 84px and the whole row opens
+  the file. The row says the name, the last deal (not a lifetime
+  total), and the ID standing in words: Missing ID, Expired, or
+  Identified. That standing is read from the document on file — type,
+  number, and expiry — and a stored “verified” word is ignored,
+  because ID checks are not connected. The one primary button is Add
+  client. There is no centre plus in the tab bar and no floating New
+  transaction on this screen. An amount goes through `formatPhoneMoney`
+  and reads with its currency code last (`1,765.05 CAD`). A figure the book
+  cannot answer is absent. Empty, loading, and a failed load are said
+  in words, and a failed load does not fill the list with names this
+  browser happens to have. Tapping a row opens the existing client
+  file full screen. Add client opens the existing add flow full
+  screen. Wider than 430px, Clients is the desktop list it already
+  was, including New contact.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -706,6 +723,13 @@ the phone. The desktop dock still has all three.
 `--color-surface`. The title and the first filter chip start 16px
 in, and the chip row keeps 16px after the last chip with a fade on
 the right.
+
+**2026-10-11**, phone Clients. At 430px and under, the Clients window is
+the shared phone column: search, then chips, then rows. ID standing
+is Missing ID, Expired, or Identified, from the document on file.
+Add client is the StickyAction. Amounts go through `formatPhoneMoney`.
+The client file and the add flow are the existing screens, full
+screen. Wider than 430px, the Clients window is unchanged.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

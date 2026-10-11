@@ -147,7 +147,7 @@ is not load-bearing.
 
 - API/business logic → `server/src/<domain>/` (routes registered in `app.ts`)
 - Schema → a **new** migration (never edit an old one)
-- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`. Phone screens use `os-src/cdos-phone.jsx`. Shared phone time, date, and money formatters are `os-src/phone/format.js` (`docs/PHONE_SHELL.md`)
+- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`. A phone screen uses the shell in `os-src/cdos-phone.jsx` (`docs/PHONE_SHELL.md`) and keeps its own file. Shared phone time, date, and money formatters are `os-src/phone/format.js`.
 - Marketing/site content → `design/site/`, then `npm run build:site`
 - Storefront → `YorkFX/`
 - Tests beside their layer: `server/tests/` or `tests/e2e/<behaviour>.spec.ts`

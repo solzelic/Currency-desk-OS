@@ -1351,7 +1351,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [kind, setKind] = useState('individual');
     const dupe = name.trim() && existing.includes(name.trim());
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 8100 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full p-5" style={{ maxWidth: 380, background: CD.panel, borderRadius: 14, boxShadow: '0 24px 60px -16px var(--cd-scrim)' }}>
+      <div onClick={e => e.stopPropagation()} className="add-contact-sheet w-full p-5" style={{ maxWidth: 380, background: CD.panel, borderRadius: 14, boxShadow: '0 24px 60px -16px var(--cd-scrim)' }}>
         <div className="flex items-center justify-between mb-3"><div className="text-[15px] font-semibold" style={{ color: CD.ink }}>New contact</div><button onClick={onClose} style={{ color: CD.mute }}><Ic n="x" s={16} /></button></div>
         <div className="inline-flex w-full mb-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{['individual', 'corporate'].map(k => <button key={k} onClick={() => setKind(k)} className="flex-1 px-3 py-2 text-sm capitalize" style={{ background: kind === k ? CD.ink : 'transparent', color: kind === k ? 'var(--cd-on-ink)' : CD.mute }}>{k}</button>)}</div>
         <EditField label={kind === 'corporate' ? 'Legal / business name' : 'Full name'}><input autoFocus value={name} onChange={e => setName(e.target.value)} className={inCls} style={inSty} placeholder={kind === 'corporate' ? 'Acme Imports Ltd.' : 'Jane Doe'} onKeyDown={e => { if (e.key === 'Enter' && name.trim() && !dupe) onCreate(name.trim(), kind); }} /></EditField>
@@ -1367,6 +1367,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const canEdit = can('canEditKYC');
     const canExport = can('canExport');
     const store = useClientRecords();
+    const phone = window.CDOS.usePhoneWidth();
     const [saveErr, setSaveErr] = useState('');
 
     /* Pull the desk's customer files from the server and lay them over
@@ -1470,6 +1471,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const quickRec = quick ? (clients[quick] || {}) : null;
     const profileRec = profile ? (clients[profile] || {}) : null;
     const FILTERS = [['all', 'All', counts.all], ['individual', 'People', counts.individual], ['corporate', 'Businesses', counts.corporate], ['verified', 'Verified', counts.verified], ['attention', 'Needs attention', counts.attention]];
+
+    /* Phone is a different tree. The desktop return below is the one a
+       wide window has always painted. */
+    if (phone) {
+      return (
+        <>
+          <window.CDOS.PhoneClients rows={rows} clients={clients} canEdit={canEdit} store={store} reload={reload} saveErr={saveErr} onOpen={(name) => { setQuick(null); setHighlightTx(null); setProfile(name); }} onAdd={() => setAdding(true)} />
+          {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
+          {adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow
+            ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={async (n) => { setAdding(false); try { await reload(true); } catch (e) { setSaveErr((e && e.message) || 'CurrencyDesk could not refresh the client list.'); } setProfile(n); }} />
+            : <Portal><NewContact existing={Object.keys(clients)} onCreate={createContact} onClose={() => setAdding(false)} /></Portal>)}
+        </>
+      );
+    }
 
     return (<div className="flex flex-col" style={{ height: '100%' }}>
       {/* toolbar */}

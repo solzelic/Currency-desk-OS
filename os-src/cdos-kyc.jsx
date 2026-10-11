@@ -713,7 +713,7 @@
     const dm = check && check.result ? decisionMeta(check.result.decision) : null;
 
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} className="add-contact-sheet w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         <div className="flex items-start gap-3 px-5 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="userplus" s={18} c="var(--cd-on-ink)" /></span>
           <div className="flex-1 min-w-0"><div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Add a contact</div><div className="text-[11.5px]" style={{ color: CD.mute }}>Persona is not connected yet.</div></div>
