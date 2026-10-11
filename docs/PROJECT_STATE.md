@@ -455,6 +455,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, ninth pass. The pricing
+point says mid-market rates are refreshed regularly. The server
+pulls them on `RATES_SYNC_MINUTES`, 60 minutes unless that is set
+otherwise, so the page does not say hourly. The Australia cards on
+the homepage and the mobile page no longer carry an SMR line.
+Australia stays marked Mid 2027.
+
 **2026-10-11**, public site claims, eighth pass. Unicode
 dashes fold to an ASCII hyphen before the two readings. A
 regulator deadline is kept only on the compliance page and the
