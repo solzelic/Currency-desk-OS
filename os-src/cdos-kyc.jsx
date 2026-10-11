@@ -214,6 +214,9 @@
 
   function setProvider(name) { PROVIDER = (name || 'Persona').trim() || 'Persona'; try { localStorage.setItem(PKEY, PROVIDER); } catch (e) {} listeners.forEach(l => l()); }
   const getProvider = () => PROVIDER;
+  /* The chooser names Persona. Nothing is sent. The phone sheet hides
+     the paid verify while this is false. */
+  const personaConnected = () => false;
 
   function createCheck({ subject, kind, template, channel, contact, by }) {
     const t = tmpl(template);
@@ -522,7 +525,7 @@
     const BLUE = '#2B50E2';
     const c = force ? CD.flag : BLUE;
     const cta = NUDGE_CTA[tier];
-    return (<div className="flex items-start gap-2.5 p-3 mb-2" style={{ background: force ? CD.flagSoft : 'rgba(43,80,226,.07)', border: `1px solid ${force ? CD.flag : 'rgba(43,80,226,.32)'}`, borderRadius: 11 }}>
+    return (<div className="cd-tx-nudge flex items-start gap-2.5 p-3 mb-2" style={{ background: force ? CD.flagSoft : 'rgba(43,80,226,.07)', border: `1px solid ${force ? CD.flag : 'rgba(43,80,226,.32)'}`, borderRadius: 11 }}>
       <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cd-paper)' }}><Ic n={force ? 'alert' : cta.ic} s={15} c={c} /></span>
       <div className="flex-1 min-w-0">
         <div className="text-[12.5px] font-semibold" style={{ color: force ? CD.flag : BLUE }}>{title}</div>
@@ -869,5 +872,5 @@
   // tiny spinner keyframes (once)
   if (!document.getElementById('kyc-spin-kf')) { const st = document.createElement('style'); st.id = 'kyc-spin-kf'; st.textContent = '@keyframes kycspin{to{transform:rotate(360deg)}}.kyc-spin{animation:kycspin .8s linear infinite}'; document.head.appendChild(st); }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, setContactSink, setProvider, getProvider, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
+  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, setContactSink, setProvider, getProvider, personaConnected, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
 })();

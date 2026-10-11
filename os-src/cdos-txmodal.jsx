@@ -45,6 +45,17 @@
     return per == null ? null : n * per;
   }
   const shownRate = (r) => (r > 0 && isFinite(r)) ? num(r) : 'Rate unavailable';
+  const formatPhoneRate = (r) => (r > 0 && isFinite(r)) ? Number(r).toFixed(4) : 'Rate unavailable';
+  const phoneMoney = (n, ccy) => {
+    const fn = window.CDOS.formatPhoneMoney;
+    return typeof fn === 'function' ? fn(n, ccy) : (num(n) + (ccy ? ' ' + ccy : ''));
+  };
+  const phoneDay = (iso) => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const parts = String(iso).split('-');
+    return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
+  };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
@@ -197,12 +208,12 @@
     </>);
   }
 
-  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus }) {
+  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus, mark }) {
     return (
       <div className="cd-money flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
         <CcyPicker value={ccy} onChange={onCcy} disabled={!onCcy} />
         {readOnly
-          ? <div className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
+          ? <div className={'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : '')} style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
           : <input value={value} onChange={e => onChange(e.target.value)} inputMode="decimal" autoFocus={autoFocus} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontSize: big ? 22 : 16 }} />}
       </div>
     );
@@ -232,7 +243,7 @@
                 there. On a phone it is the icon's slot in the one row. */}
             <span className="cd-tx-customer-icon"><Ic n="search" s={15} c={CD.mute} /></span>
             <input value={query} onFocus={() => setOpen(true)} onBlur={() => { requestAnimationFrame(() => { if (wrap.current && wrap.current.contains(document.activeElement)) return; setOpen(false); }); }} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
-            {query && <button type="button" onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
+            {query && <button type="button" className="cd-tx-clear" aria-label="Clear customer" onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
@@ -251,6 +262,7 @@
 
   /* ---------- known-customer snapshot ---------- */
   function CustomerCard({ name, rec, live, settings }) {
+    const phone = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
@@ -289,16 +301,16 @@
           <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
-          <CCstat label={`Last ${s.winDays}d`} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
+          <CCstat label="ID on file" sentence={phone} value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
+          <CCstat label={phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`} sentence={phone} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
       </div>
     );
   }
-  function CCstat({ label, value, sub, tone, divider }) {
+  function CCstat({ label, value, sub, tone, divider, sentence }) {
     return (<div className="px-3 py-2.5" style={{ borderLeft: divider ? `1px solid ${CD.lineSoft}` : 'none' }}>
-      <div className="text-[9.5px] uppercase tracking-wider" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div>
+      <div className={'text-[9.5px] tracking-wider' + (sentence ? ' cd-tx-stat-label' : ' uppercase')} style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div>
       <div className="text-[13px] font-semibold leading-tight mt-0.5 truncate" style={{ color: tone || CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {sub && <div className="text-[9.5px] mt-0.5 truncate" style={{ color: CD.faint }}>{sub}</div>}
     </div>);
@@ -326,18 +338,22 @@
   }
 
   /* ---------- checklist row ---------- */
-  function Check({ ok, warn, label, sub }) {
-    const tone = ok ? CD.green : warn ? CD.amber : CD.faint;
-    const ic = ok ? 'checkcircle' : warn ? 'alert' : 'circle';
+  function Check({ ok, warn, label, sub, action, mark, onActivate }) {
+    const copy = (
+      <>
+        <div className="text-[12.5px] leading-tight" style={{ color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ok ? 500 : 400 }}>{label}</div>
+        {sub && <div className="text-[11px] mt-0.5 leading-snug" style={{ color: warn ? CD.amber : CD.faint }}>{sub}</div>}
+        {action}
+      </>
+    );
     return (
-      <div className="flex items-start gap-2 py-1.5">
+      <div className={'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')}>
         <span className="flex-none grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', border: ok ? 'none' : `1.5px solid ${warn ? CD.amber : CD.line}`, background: ok ? CD.green : 'transparent', marginTop: 1 }}>
           {ok ? <Ic n="check" s={11} c="var(--cd-on-ink)" /> : warn ? <Ic n="alert" s={11} c={CD.amber} /> : null}
         </span>
-        <div className="min-w-0">
-          <div className="text-[12.5px] leading-tight" style={{ color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ok ? 500 : 400 }}>{label}</div>
-          {sub && <div className="text-[11px] mt-0.5 leading-snug" style={{ color: warn ? CD.amber : CD.faint }}>{sub}</div>}
-        </div>
+        {onActivate
+          ? <button type="button" onClick={onActivate} className="cd-tx-check-go min-w-0 flex-1">{copy}</button>
+          : <div className="min-w-0 flex-1">{copy}</div>}
       </div>
     );
   }
@@ -364,15 +380,23 @@
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
     const phoneSheet = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+    const smsOn = !!(window.CDOS.smsConfigured && window.CDOS.smsConfigured());
+    const personaOn = !!(window.CDOS.KYC && window.CDOS.KYC.personaConnected && window.CDOS.KYC.personaConnected());
+    const [missKey, setMissKey] = useState('');
+    const [touched, setTouched] = useState({});
+    const markTouched = (k) => setTouched(t => (t[k] ? t : { ...t, [k]: true }));
+    const openBorder = (k, filled) => (!phoneSheet || touched[k]) && !filled ? CD.flag : CD.line;
+    const rateShown = (r) => phoneSheet ? formatPhoneRate(r) : shownRate(r);
     const selectedChip = useRef(null);
     useEffect(() => {
       if (!phoneSheet || !selectedChip.current) return;
       const chip = selectedChip.current;
       const row = chip.parentElement;
       if (!row) return;
+      const gutter = 16;
       const left = chip.offsetLeft;
       const right = left + chip.offsetWidth;
-      if (left < row.scrollLeft) row.scrollLeft = left;
+      if (left - gutter < row.scrollLeft) row.scrollLeft = Math.max(0, left - gutter);
       else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
     }, [phoneSheet, type]);
     const purposePh = phoneSheet ? 'e.g. vacation, invoice' : 'e.g. vacation funds, invoice settlement';
@@ -682,7 +706,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? `Their ID is ${kyc} — fix on the client file` : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file`) : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -698,7 +722,7 @@
     const aeCdd = aeV2 && isExchange && !unpriced && (inCadEquiv >= 35000 || (TH != null && TH > 0 && inCadEquiv >= TH));
     if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd)) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
-      reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
+      reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: phoneSheet ? 'Purpose and source of funds' : 'Ledger facts captured', sub: !serverFactsOk ? (phoneSheet ? 'Needed for this amount' : 'Purpose and source of funds are required for an authoritative post') : null });
     }
     if (needOverride) reqs.push({ key: 'mgn', ok: marginAck && marginReason.trim(), warn: true, label: 'Below-floor margin — needs a reason', sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below' });
 
@@ -706,6 +730,22 @@
     const allGreen = hardReqs.every(r => r.ok);
     const canSave = amtN > 0 && allGreen;
     const remaining = hardReqs.filter(r => !r.ok).length;
+    const stepsLabel = `${remaining} ${remaining === 1 ? 'step' : 'steps'} left`;
+    const missField = !missKey ? '' : missKey === 'id' ? (customer ? 'id' : 'cust') : (missKey === 'cap' || missKey === 'server-facts') ? 'facts' : missKey;
+    const showMissing = () => {
+      const first = hardReqs.find(r => !r.ok);
+      if (!first) return;
+      setMissKey(first.key);
+      const field = first.key === 'id' ? (customer ? 'id' : 'cust') : (first.key === 'cap' || first.key === 'server-facts') ? 'facts' : first.key;
+      const el = document.querySelector('.cd-tx [data-req-field="' + field + '"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    };
+    const focusFacts = () => {
+      const card = document.querySelector('.cd-tx [data-req-field="facts"]');
+      if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const purpose = document.querySelector('.cd-tx .cd-tx-purpose');
+      if (purpose && purpose.focus) purpose.focus();
+    };
 
     // ---- actions ----
     const resetPricing = () => { setLock(null); setOverride(false); setManualRate(''); };
@@ -739,7 +779,7 @@
     const applyTq = () => applyTqWith(tqIn);
     const clearTq = () => { setTq(null); setLock(null); setTqErr(''); setTqOpen(false); };
     // hand-pricing usually means the customer is showing a texted quote — offer the ref box
-    useEffect(() => { if (override && !tq) setTqOpen(true); }, [override]);
+    useEffect(() => { if (override && !tq && (!phoneSheet || smsOn)) setTqOpen(true); }, [override, phoneSheet, smsOn, tq]);
     // a ref handed over by the Texts app (Start transaction) — apply on mount
     useEffect(() => { const p = window.__cdosTqPrefill; if (p) { window.__cdosTqPrefill = null; applyTqWith(String(p)); } }, []);
 
@@ -1003,8 +1043,8 @@
 
     // present-quote payload (exchange + send)
     const presentQ = isSend
-      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${shownRate(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${shownRate(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${rateShown(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${rateShown(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -1012,7 +1052,7 @@
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {TODAY}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="cd-tx-quiet text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneSheet ? phoneDay(TODAY) : TODAY}</div></div></div>
             <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
@@ -1040,7 +1080,9 @@
             {/* LEFT — the form */}
             <div className="cd-tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
+              <div data-req-field="cust" className={missField === 'cust' ? 'cd-tx-missing' : undefined}>
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
+              </div>
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
                 <div data-testid="serbia-receipt" className="space-y-2">
                   <label data-testid="serbia-suspicion" className="flex items-start gap-2 text-[12px]" style={{ color: CD.ink }}>
@@ -1073,14 +1115,14 @@
                   the name resolves to no record with a scan on it. */}
               {customer && window.CDOS.ClientIdViewer &&
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
-              {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge &&
+              {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) &&
                 React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
               {/* Phone only, and display:none at a desk width so the 1280
                   dialog does not move. This is not an ID form. It opens
                   the client file's identity editor, which writes the
                   document — type, number, and expiry — on the server. */}
               {idRequired && String(customer || '').trim() && !idOk && (
-                <div className="cd-tx-id-need">
+                <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
                   <span className="cd-tx-id-need-label">ID needed for this amount</span>
                   <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
                 </div>
@@ -1088,7 +1130,7 @@
               {idRequired && idOk && (
                 <div className="cd-tx-id-need">
                   <Ic n="checkcircle" s={14} c={CD.green} />
-                  <span className="cd-tx-id-need-label">{(rec && rec.idType) || 'ID'} on file{rec && rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''}</span>
+                  <span className="cd-tx-id-need-label">{(rec && rec.idType) || 'ID'} on file{rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}</span>
                 </div>
               )}
 
@@ -1096,21 +1138,24 @@
               {isExchange && (
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <Lbl>Customer pays in</Lbl>
+                  <div data-req-field="amt" className={missField === 'amt' ? 'cd-tx-missing' : undefined}>
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
+                  </div>
                   <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
-                    <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
-                    <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {shownRate(rateN)} {outCcy}</span>
-                    <button onClick={swap} title="Swap" className="cd-tx-hit p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
+                    <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
+                    <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {rateShown(rateN)} {outCcy}</span>
+                    <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
-                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
+                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : rateShown(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? (phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate)) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                    {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="cd-tx-hit tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
-                      : <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#8A4B2F', fontFamily: 'Space Mono, monospace' }}><Ic n="smartphone" s={12} c="#8A4B2F" />Priced by {tq.ref}</span>}
+                    {tq
+                      ? <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#8A4B2F', fontFamily: 'Space Mono, monospace' }}><Ic n="smartphone" s={12} c="#8A4B2F" />Priced by {tq.ref}</span>
+                      : (!phoneSheet || smsOn) && <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="cd-tx-hit tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>}
                     <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(num(pricing.deskRate)); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="cd-tx-hit flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
                   </div>
                 </div>
@@ -1156,7 +1201,7 @@
                   <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                     <Lbl>Customer pays ({home})</Lbl>
                     <Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus />
-                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 {home} = {shownRate(rateN)} {payoutCcy}</div>
+                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> 1 {home} = {rateShown(rateN)} {payoutCcy}</div>
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
                     <Money value={out.amt ? num(out.amt) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1231,11 +1276,11 @@
 
               {/* reportable capture — shown for every type at/over the line */}
               {single && (
-                <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
+                <div data-req-field="facts" className={'p-3.5 space-y-2.5' + (missField === 'facts' ? ' cd-tx-missing' : '')} style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onBlur={() => markTouched('purpose')} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('purpose', !!purpose.trim()) }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onBlur={() => markTouched('source')} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('source', !!cap.source.trim()) }} /></div>
                   <div><Lbl>Acting for someone else?</Lbl>
                     <div className="cd-tx-pair flex items-center gap-2">
                       <div className="inline-flex flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{[['no', 'No'], ['yes', 'Yes']].map(([v, l], i) => { const on = (cap.thirdParty ? 'yes' : 'no') === v; return <button key={v} onClick={() => setCap(s => ({ ...s, thirdParty: v === 'yes' }))} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none' }}>{l}</button>; })}</div>
@@ -1246,11 +1291,11 @@
               )}
 
               {serverBacked && isExchange && !single && (
-                <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                  <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
-                  <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                <div data-req-field="facts" className={'p-3.5 space-y-2.5' + (missField === 'facts' ? ' cd-tx-missing' : '')} style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+                  <div className="cd-tx-facts-intro flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
+                  <div className="cd-tx-facts-intro text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onBlur={() => markTouched('purpose')} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('purpose', !!purpose.trim()) }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onBlur={() => markTouched('source')} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('source', !!cap.source.trim()) }} /></div>
                 </div>
               )}
 
@@ -1273,20 +1318,20 @@
                 {/* deal ticket */}
                 <div className="cd-tx-ticket" style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
                   <div className="flex items-center justify-between" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)', paddingBottom: 10 }}>
-                    <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
+                    <span className="cd-tx-kicker" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
                     <Ic n={meta.icon} s={14} c="var(--cd-on-ink-soft)" />
                   </div>
                   <div style={{ padding: '12px 0' }}>
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer gives' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'}</div>
-                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? inCcy : isReceive ? out.ccy : home}</span></div>
+                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(amtN > 0 ? (isExchange || isCheque || isReceive ? amtN : amtN + feeN) : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : <>{amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? inCcy : isReceive ? out.ccy : home}</span></>}</div>
                   </div>
                   {(isExchange || isSend || isCheque) && <div className="flex items-center gap-2 py-1" style={{ color: 'var(--cd-on-ink-faint)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><Ic n="arrowdown" s={13} c="var(--cd-on-ink-soft)" /><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
                   <div style={{ paddingTop: 8 }}>
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
-                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></div>
+                    <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
                   </div>
                   <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${shownRate(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                    <span className="cd-tx-kicker">{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                     <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                   </div>
                 </div>
@@ -1294,7 +1339,7 @@
                 {/* margin chip (exchange/send only) */}
                 {(isExchange || isSend) && amtN > 0 && (
                   <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-panel)', border: `1px solid ${belowFloor ? CD.flag : CD.line}`, borderRadius: 10 }}>
-                    <span className="text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> MARGIN</span>
+                    <span className="cd-tx-kicker text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> {phoneSheet ? 'Margin' : 'MARGIN'}</span>
                     <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{fmt(profitCad, home)} · {marginPct.toFixed(2)}%</span>
                   </div>
                 )}
@@ -1302,10 +1347,10 @@
                 {/* the checklist */}
                 <div className="px-3.5 py-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
-                    <span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? 'READY' : `${remaining} LEFT`}</span>
+                    <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
+                    <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}
@@ -1332,10 +1377,14 @@
                     Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
-                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
-                    <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
-                  </button>
-                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
+                  {phoneSheet && !allGreen
+                    ? <button type="button" onClick={showMissing} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}><Ic n="lock" s={15} c="currentColor" /> {stepsLabel}</button>
+                    : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
+                        <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
+                      </button>}
+                </> : phoneSheet && !allGreen
+                  ? <button type="button" onClick={showMissing} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>{stepsLabel}</button>
+                  : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
                 <button onClick={onClose} className="cd-tx-cancel w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>
