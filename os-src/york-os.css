@@ -1690,17 +1690,34 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
 /* New transaction is a 940px dialog with a 320px ticket beside the
    fields. Under 600px that rail leaves the customer and the amount
-   about 20px wide. One scroll holds the type chips and the fields.
-   The post button sticks to the bottom of that scroll, with enough
-   padding under the checklist that the last field can sit above it.
-   16px text is the size a phone will focus without zooming the page.
-   600px and wider, including the 1280 desk, is outside this query,
-   so the dialog there is unchanged. */
+   about 20px wide. The dialog becomes a full-screen sheet, one scroll
+   holds the type chips and the fields, and the post button sticks to
+   the bottom of that scroll. 16px text is the size a phone will focus
+   without zooming the page. 600px and wider, including the 1280 desk,
+   is outside this query, so the dialog there is unchanged.
+   --page-gutter, --color-border, --gray-900, and --control-h-sm are
+   not in this repo yet. The literals below are those tokens. tokens.css
+   lands in a later PR. */
 @media (max-width: 599px) {
   .cd-tx, .cd-tx * { box-sizing: border-box; }
-  .cd-tx {
+  /* The 430px rule caps every inset dialog at 100vw - 16px. This
+     sheet is the later, more specific rule, so it fills the phone. */
+  .cd-tx-overlay {
+    padding: 0 !important;
+  }
+  .cd-tx-overlay.fixed.inset-0 > .cd-tx {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
     overflow: hidden !important;
-    max-width: 100%;
+    /* Notch only. The home-indicator inset is on the footer, so the
+       two safe areas are not added together. */
+    padding-top: env(safe-area-inset-top);
   }
   .cd-tx-head {
     min-width: 0;
@@ -1709,10 +1726,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-head > div:first-child {
     min-width: 0;
   }
-  /* The type tiles used to stay pinned and take about a third of
-     the screen. They are one row of chips inside the scroll, so they
-     leave with the fields. The icon is dropped so the short name can
-     wrap inside the chip instead of being cut down to a few letters. */
+  /* The type tiles used to stay pinned. They are one scrolling row
+     of pills inside the form scroll, so they leave with the fields.
+     36px is the chip; the ::before is the 44px hit area. */
   .cd-tx-scroll {
     display: block;
     flex: 1 1 auto;
@@ -1721,36 +1737,79 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow-y: auto;
   }
   .cd-tx-types-bar {
-    position: static;
-    padding: 8px 8px;
+    position: relative;
+    padding: 0 !important;
+  }
+  .cd-tx-types-bar::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    background: linear-gradient(to right, transparent, var(--cd-panel));
+    pointer-events: none;
   }
   .cd-tx-blurb { display: none; }
   .cd-tx-types {
     display: flex !important;
     flex-wrap: nowrap;
-    gap: 4px;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    /* 16px stands in for --page-gutter. */
+    padding: 8px var(--page-gutter, 16px) 12px;
     grid-template-columns: none !important;
   }
+  .cd-tx-types::-webkit-scrollbar { display: none; }
   .cd-tx-types button {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 44px;
-    height: auto;
-    flex-direction: column;
+    position: relative;
+    flex: 0 0 auto;
+    /* 36px stands in for --control-h-sm. */
+    height: 36px;
+    min-height: 36px;
+    padding: 0 14px !important;
+    flex-direction: row;
+    align-items: center;
     justify-content: center;
     gap: 0;
-    padding: 4px 0;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    border-radius: 999px !important;
+    /* --line stands in for --color-border. */
+    border: 1px solid var(--color-border, var(--line)) !important;
+    background: var(--cd-panel) !important;
+    color: var(--cd-ink, #0a0a0a) !important;
+    font-size: 13px !important;
+    line-height: 16px !important;
+    font-weight: 500 !important;
+  }
+  .cd-tx-types button::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  .cd-tx-types button.is-on {
+    /* #1A1917 stands in for --gray-900. */
+    background: var(--gray-900, #1A1917) !important;
+    color: #fff !important;
+    border: none !important;
   }
   .cd-tx-types button svg { display: none; }
   .cd-tx-types button span {
-    min-width: 0;
-    max-width: 100%;
+    white-space: nowrap;
     overflow: visible;
     text-overflow: clip;
-    white-space: normal;
     text-align: center;
-    line-height: 1.15;
-    font-size: 10px;
+    font-size: 13px !important;
+    line-height: 16px !important;
+    font-weight: 500 !important;
+    color: inherit !important;
   }
   .cd-tx-body {
     flex-direction: column !important;
@@ -1802,6 +1861,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 16px;
     min-height: 44px;
     max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* Icon, name, and clear were wrapping onto three lines because
      every flex row was allowed to wrap and the input was width 100%.
@@ -1884,30 +1946,29 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 0 !important;
     overflow: visible !important;
   }
-  /* Quote, the primary action, and Cancel. The primary stays 44px.
-     The other two are shorter so the three rows fit in 160px. */
+  /* Quote, then the primary. The X in the header closes the sheet,
+     so Cancel is not on the phone. 48px is the control height. */
   .cd-tx-actions {
     position: sticky;
     bottom: 0;
     z-index: 5;
     flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     background: var(--cd-panel);
-    padding: 6px 10px 4px !important;
-    max-height: 160px;
-    box-shadow: 0 -8px 0 var(--cd-panel);
+    /* 12px plus the home-indicator inset. The sheet is not padded
+       at the bottom, so this inset is applied once. */
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important;
+    border-top: 1px solid var(--color-border, var(--line)) !important;
+    box-shadow: none;
   }
-  .cd-tx-actions > * + * { margin-top: 4px !important; }
-  .cd-tx-actions button {
-    min-height: 36px !important;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+  .cd-tx-actions > * { margin-top: 0 !important; }
+  .cd-tx-actions > button {
+    height: 48px !important;
+    min-height: 48px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
   }
-  .cd-tx-actions .cd-tx-go {
-    min-height: 44px !important;
-  }
-  .cd-tx-actions > button:last-child {
-    min-height: 28px !important;
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-  }
+  .cd-tx-cancel { display: none !important; }
 }

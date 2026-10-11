@@ -61,6 +61,9 @@ async function horizontalProblems(page: Page): Promise<string[]> {
       if (style.display === "none" || style.visibility === "hidden") continue;
       const rect = el.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) continue;
+      /* The type chips are a horizontal scroller. A chip past the
+         right edge is the next one, not a page overflow. */
+      if (el.closest(".cd-tx-types")) continue;
       if (rect.right > limit || rect.left < -1) {
         problems.push(el.tagName.toLowerCase() + " right=" + Math.round(rect.right));
       }
@@ -121,13 +124,42 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(await typeButtons.count()).toBe(6);
     const typeBoxes = await typeButtons.evaluateAll((els) => els.map((el) => {
       const r = el.getBoundingClientRect();
-      return { top: r.top, width: r.width, text: (el.textContent || "").trim(), clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1 };
+      const label = el.querySelector("span") || el;
+      /* The 44px hit area sticks out of the 36px pill. The name is
+         what must not be cut off. */
+      return { top: r.top, width: r.width, text: (el.textContent || "").trim(), clipped: label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1 };
     }));
     expect(Math.max(...typeBoxes.map((b) => b.top)) - Math.min(...typeBoxes.map((b) => b.top)), `type chips on one row at ${width}`).toBeLessThanOrEqual(4);
     expect(Math.min(...typeBoxes.map((b) => b.width)), `type chip width at ${width}`).toBeGreaterThanOrEqual(40);
     expect(typeBoxes.filter((b) => b.clipped).map((b) => b.text), `type names clipped at ${width}`).toEqual([]);
+    const chipRow = await page.locator(".cd-tx-types").evaluate((el) => {
+      const style = getComputedStyle(el);
+      const selected = el.querySelector(".is-on");
+      const row = el.getBoundingClientRect();
+      const chip = selected instanceof HTMLElement ? selected.getBoundingClientRect() : null;
+      return {
+        overflowX: style.overflowX,
+        snap: style.scrollSnapType,
+        wrap: style.flexWrap,
+        scrolls: el.scrollWidth > el.clientWidth + 1,
+        selectedInView: !!chip && chip.left >= row.left - 1 && chip.right <= row.right + 1,
+      };
+    });
+    expect(chipRow.overflowX, `chip row scrolls at ${width}`).toBe("auto");
+    /* Chrome serializes the proximity default as "x". "x mandatory"
+       would be a different snap. */
+    expect(chipRow.snap === "x" || chipRow.snap === "x proximity", `chip snap at ${width}: ${chipRow.snap}`).toBe(true);
+    expect(chipRow.wrap, `chip row nowrap at ${width}`).toBe("nowrap");
+    expect(chipRow.scrolls, `chip row overflows at ${width}`).toBe(true);
+    expect(chipRow.selectedInView, `selected chip in view at ${width}`).toBe(true);
     const typePos = await page.locator(".cd-tx-types-bar").evaluate((el) => getComputedStyle(el).position);
     expect(typePos, `type bar pinned at ${width}`).not.toBe("sticky");
+    const sheet = await boxOf(page, ".cd-tx");
+    expect(sheet.x, `sheet left at ${width}`).toBeLessThanOrEqual(1);
+    expect(sheet.y, `sheet top at ${width}`).toBeLessThanOrEqual(1);
+    expect(sheet.width, `sheet width at ${width}`).toBeGreaterThanOrEqual(width - 1);
+    expect(sheet.height, `sheet height at ${width}`).toBeGreaterThanOrEqual(843);
+    await expect(page.locator(".cd-tx").getByRole("button", { name: /^Cancel$/ })).toHaveCount(0);
 
     const form = await boxOf(page, ".cd-tx-form");
     const rail = await boxOf(page, ".cd-tx-rail");
@@ -159,7 +191,10 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     if (hasLedger) {
       await page.locator(".cd-tx-purpose").scrollIntoViewIfNeeded();
       await expect(page.locator(".cd-tx-purpose")).toBeVisible();
+      await expect(page.locator(".cd-tx-purpose")).toHaveAttribute("placeholder", "e.g. vacation, invoice");
+      await expect(page.locator(".cd-tx-source")).toHaveAttribute("placeholder", "e.g. salary, savings");
     }
+    await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Add a note");
     await expectWideFields(page);
     expect(await horizontalProblems(page), `amount and ID at ${width}`).toEqual([]);
 
@@ -204,4 +239,6 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(rail.width).toBeLessThan(340);
   expect(rail.x).toBeGreaterThanOrEqual(form.x + form.width - 2);
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
+  await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
+  await expect(page.locator(".cd-tx-cancel")).toBeVisible();
 });

@@ -31987,7 +31987,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     useState,
     useMemo,
     useRef,
-    useEffect
+    useEffect,
+    useSyncExternalStore
   } = React;
   const {
     CD,
@@ -33230,6 +33231,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   /* =====================================================================
      MAIN
   ===================================================================== */
+  /* Phone sheet is under 600px only. The desk placeholder strings stay
+     the long ones, so a 1280 screenshot does not move. */
+  function subscribePhoneSheet(onChange) {
+    const query = window.matchMedia('(max-width: 599px)');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }
+  function phoneSheetNow() {
+    return window.matchMedia('(max-width: 599px)').matches;
+  }
   function TxModal({
     rows,
     clients,
@@ -33258,6 +33269,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, [clients, live]);
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
+    const phoneSheet = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+    const selectedChip = useRef(null);
+    useEffect(() => {
+      if (!phoneSheet || !selectedChip.current) return;
+      const chip = selectedChip.current;
+      const row = chip.parentElement;
+      if (!row) return;
+      const left = chip.offsetLeft;
+      const right = left + chip.offsetWidth;
+      if (left < row.scrollLeft) row.scrollLeft = left;else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
+    }, [phoneSheet, type]);
+    const purposePh = phoneSheet ? 'e.g. vacation, invoice' : 'e.g. vacation funds, invoice settlement';
+    const sourcePh = phoneSheet ? 'e.g. salary, savings' : 'e.g. employment income, savings';
+    const notePh = phoneSheet ? 'Add a note' : 'Anything worth keeping on the record…';
 
     /* ---- the key that says "this attempt, and no other" ----
         The idempotency key used to be built from `ref` — mkRef(TODAY,
@@ -34219,7 +34244,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
-      className: "fixed inset-0 flex items-center justify-center p-4",
+      className: "cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: addFlow || quickChk ? 8000 : 9200
@@ -34295,8 +34320,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const m = TYPE_META[t];
       return /*#__PURE__*/React.createElement("button", {
         key: t,
+        ref: on ? selectedChip : null,
         onClick: () => setType(t),
-        className: "flex flex-col items-center gap-1.5 py-2.5 px-1",
+        className: "flex flex-col items-center gap-1.5 py-2.5 px-1" + (on ? " is-on" : ""),
         style: {
           border: `1px solid ${on ? CD.ink : CD.line}`,
           background: on ? CD.ink : 'var(--cd-panel)',
@@ -35105,7 +35131,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "This deal is \u2265 ", limit.label, ". Capture now while the customer is here \u2014 it pre-fills the filing."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: purposePh,
       className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35117,7 +35143,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: sourcePh,
       className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35185,7 +35211,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Required for server posting and the permanent audit trail."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Purpose of transaction"), /*#__PURE__*/React.createElement("input", {
       value: purpose,
       onChange: e => setPurpose(e.target.value),
-      placeholder: "e.g. vacation funds, invoice settlement",
+      placeholder: purposePh,
       className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35197,7 +35223,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...s,
         source: e.target.value
       })),
-      placeholder: "e.g. employment income, savings",
+      placeholder: sourcePh,
       className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
@@ -35246,7 +35272,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Note (optional)"), /*#__PURE__*/React.createElement("input", {
       value: memo,
       onChange: e => setMemo(e.target.value),
-      placeholder: "Anything worth keeping on the record\u2026",
+      placeholder: notePh,
       className: "cd-tx-note w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
     }))), /*#__PURE__*/React.createElement("div", {
@@ -35493,7 +35519,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
-      className: "w-full py-2 text-[12px]",
+      className: "cd-tx-cancel w-full py-2 text-[12px]",
       style: {
         color: CD.mute
       }

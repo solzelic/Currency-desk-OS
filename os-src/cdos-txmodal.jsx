@@ -9,7 +9,7 @@
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useSyncExternalStore } = React;
   const {
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
@@ -346,6 +346,17 @@
   /* =====================================================================
      MAIN
   ===================================================================== */
+  /* Phone sheet is under 600px only. The desk placeholder strings stay
+     the long ones, so a 1280 screenshot does not move. */
+  function subscribePhoneSheet(onChange) {
+    const query = window.matchMedia('(max-width: 599px)');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }
+  function phoneSheetNow() {
+    return window.matchMedia('(max-width: 599px)').matches;
+  }
+
   function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
     const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
@@ -353,6 +364,21 @@
 
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
+    const phoneSheet = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+    const selectedChip = useRef(null);
+    useEffect(() => {
+      if (!phoneSheet || !selectedChip.current) return;
+      const chip = selectedChip.current;
+      const row = chip.parentElement;
+      if (!row) return;
+      const left = chip.offsetLeft;
+      const right = left + chip.offsetWidth;
+      if (left < row.scrollLeft) row.scrollLeft = left;
+      else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
+    }, [phoneSheet, type]);
+    const purposePh = phoneSheet ? 'e.g. vacation, invoice' : 'e.g. vacation funds, invoice settlement';
+    const sourcePh = phoneSheet ? 'e.g. salary, savings' : 'e.g. employment income, savings';
+    const notePh = phoneSheet ? 'Add a note' : 'Anything worth keeping on the record…';
 
     /* ---- the key that says "this attempt, and no other" ----
 
@@ -912,7 +938,7 @@
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
-      <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk) ? undefined : onClose}>
+      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk) ? undefined : onClose}>
         <div onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -928,7 +954,7 @@
           <div className="cd-tx-types-bar flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <div className="cd-tx-types grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (
-                <button key={t} onClick={() => setType(t)} className="flex flex-col items-center gap-1.5 py-2.5 px-1" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
+                <button key={t} ref={on ? selectedChip : null} onClick={() => setType(t)} className={"flex flex-col items-center gap-1.5 py-2.5 px-1" + (on ? " is-on" : "")} style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
                   <Ic n={m.icon} s={18} c={on ? 'var(--cd-on-ink)' : CD.mute} />
                   <span className="text-[11px] font-medium leading-tight text-center" style={{ color: on ? 'var(--cd-on-ink)' : CD.ink }}>{m.short}</span>
                 </button>); })}
@@ -1141,8 +1167,8 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                   <div><Lbl>Acting for someone else?</Lbl>
                     <div className="cd-tx-pair flex items-center gap-2">
                       <div className="inline-flex flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{[['no', 'No'], ['yes', 'Yes']].map(([v, l], i) => { const on = (cap.thirdParty ? 'yes' : 'no') === v; return <button key={v} onClick={() => setCap(s => ({ ...s, thirdParty: v === 'yes' }))} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none' }}>{l}</button>; })}</div>
@@ -1156,8 +1182,8 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                 </div>
               )}
 
@@ -1171,7 +1197,7 @@
               )}
 
               {/* note */}
-              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder="Anything worth keeping on the record…" className="cd-tx-note w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
+              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder={notePh} className="cd-tx-note w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
             </div>
 
             {/* RIGHT — ticket + checklist */}
@@ -1243,7 +1269,7 @@
                     <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                   </button>
                 </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
-                <button onClick={onClose} className="w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
+                <button onClick={onClose} className="cd-tx-cancel w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>
           </div>
