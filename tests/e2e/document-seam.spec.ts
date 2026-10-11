@@ -647,6 +647,7 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
       const expected = calendarDate(at, timeZone);
       let previous: string | null = null;
       let needsClose = false;
+      let transactionId: string | null = null;
       await page.route("**/*", async (route) => {
         const headers = { ...route.request().headers(), "x-cd-now": at.toISOString() };
         await route.continue({ headers });
@@ -674,6 +675,7 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
         const key = `midnight-${timeZone}-${Date.now()}`;
         const deal = await postOneDeal(page, key);
         expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
+        transactionId = deal.transactionId ?? null;
 
         const till = await book(page).session();
         expect(till.session.businessDate, "the session's business date").toBe(expected);
@@ -712,6 +714,20 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
           await page.screenshot({ path: "/opt/cursor/artifacts/signoff-after-390.png" });
         }
       } finally {
+        /* The deal is stamped at the test clock, which is in the future.
+           Left standing, it sits inside an unbounded summary and outside
+           every later test's "today", and those two stop agreeing. */
+        if (transactionId) {
+          const reversed = await page.evaluate(async (id) => {
+            const answer = await fetch(`/api/ledger/transactions/${id}/reversal`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ idempotencyKey: `midnight-rev-${id}`, reason: "Seam test" }),
+            });
+            return answer.ok ? "ok" : `${answer.status} ${await answer.text()}`;
+          }, transactionId);
+          if (reversed !== "ok") throw new Error(`the midnight deal was not reversed: ${reversed}`);
+        }
         if (needsClose) {
           const closed = await countExactlyAndClose(page, `midnight-done-${timeZone}-${Date.now()}`);
           if (!closed.ok) throw new Error(`the midnight session stayed open: ${closed.why}`);
