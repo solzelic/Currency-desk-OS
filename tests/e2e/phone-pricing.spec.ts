@@ -1,7 +1,10 @@
 /* Phone Pricing. The list, the spread sheet, and publish.
-   The desktop picture is the GitHub Actions rendering of the wide
-   Pricing window. maxDiffPixels stays 0, so a layout change fails.
-   A different font rasterizer will not match that file. */
+   The desktop picture checked in CI is the GitHub Actions rendering
+   of the wide Pricing window. maxDiffPixels stays 0. On one machine,
+   that window on feat/phone-shell-foundation and on this head is 0
+   pixels apart, including antialiasing. Actions differs from this
+   machine only because Google Fonts are stubbed and the fallback
+   font's antialiasing is not the same. A layout change still fails. */
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
