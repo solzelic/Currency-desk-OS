@@ -40,7 +40,8 @@
     justify-content: space-between;
     gap: 12px;
     box-sizing: border-box;
-    padding: 4px 16px 12px;
+    /* 16px under the top bar. 12px before the next element. */
+    padding: var(--space-4) 16px var(--space-3);
   }
   .phone-title h1 {
     margin: 0;
@@ -52,6 +53,18 @@
     margin: 4px 0 0;
     font: var(--text-small);
     color: var(--color-text-muted, #6B6760);
+  }
+  /* The 12px is the title's own padding. The scroll under a title
+     does not add a top pad. A search or chip row that is the next
+     element does not add a top margin. */
+  .phone-title + .phone-scroll,
+  .phone-title + .phone-banner + .phone-scroll { padding-top: 0; }
+  .phone-title + .phone-banner > .phone-search,
+  .phone-title + .phone-scroll > .phone-search:first-child,
+  .phone-title + .phone-banner + .phone-scroll > .phone-search:first-child,
+  .phone-title + .phone-scroll > .phone-chips:first-child,
+  .phone-title + .phone-banner + .phone-scroll > .phone-chips:first-child {
+    margin-top: 0;
   }
 
   .phone-search {

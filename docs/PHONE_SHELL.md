@@ -108,8 +108,14 @@ header stays 56px tall at 360 and at 390.
 
 `title` string. `subtitle` optional string. `action` optional node.
 
-The title block is padded 16px on each side. The heading itself starts
-at least 16px in from the screen edge.
+The title block uses `padding-top: var(--space-4)` (16px), so the
+heading starts 16px under the top bar. Side padding is 16px. The
+heading starts at least 16px in from the screen edge. The block keeps
+`var(--space-3)` (12px) before the next element, which is search or
+the chip row on a screen that leads with those. That 12px is the
+title's own bottom padding. The scroll under a title does not add a
+top pad, and a search or chip row that is the next element does not
+add a top margin.
 
 ### SummaryCards
 

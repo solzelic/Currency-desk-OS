@@ -98,7 +98,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
   text. The phone screen paints the flat surface token. The big title
-  and the first filter chip sit 16px in from the screen edge, and the
+  starts 16px under the top bar and 16px in from the screen edge, and
+  it keeps 12px before the next element (search or the chip row). The
+  first filter chip sits 16px in, and the
   chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
   desktop ledger is unchanged. The bar is five
@@ -538,6 +540,11 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone title. The title starts 16px under the top bar
+(`padding-top: var(--space-4)`). It keeps 12px before the next
+element. A search or chip row that follows the title does not add
+its own top margin.
 
 **2026-10-11**, phone task sheets. Under 430px a task sheet covers the
 tab bar, with its own footer and a 44px close. A confirm stays a

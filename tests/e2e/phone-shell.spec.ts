@@ -241,6 +241,39 @@ test("the title and the first chip sit in from the edge", async ({ page }) => {
   }
 });
 
+/* The title used to sit flush under the top bar. 16px is the title's
+   top padding. 12px is what it keeps before the next element. */
+test("the title sits 16px under the top bar at 360", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  await expect(page.locator(".phone-ledger .phone-title h1")).toBeVisible();
+  const gap = await page.evaluate(() => {
+    const head = document.querySelector(".phone-head");
+    const title = document.querySelector(".phone-ledger .phone-title");
+    const heading = title && title.querySelector("h1");
+    const scroll = title && title.parentElement && title.parentElement.querySelector(":scope > .phone-scroll");
+    const next = scroll && scroll.firstElementChild;
+    if (!head || !title || !heading || !next) return null;
+    const titleBox = title.getBoundingClientRect();
+    const style = getComputedStyle(title);
+    const padBottom = parseFloat(style.paddingBottom);
+    return {
+      underBar: heading.getBoundingClientRect().top - head.getBoundingClientRect().bottom,
+      afterTitle: next.getBoundingClientRect().top - (titleBox.bottom - padBottom),
+      padTop: parseFloat(style.paddingTop),
+      padBottom,
+      next: next.className,
+    };
+  });
+  expect(gap).not.toBeNull();
+  expect(gap!.padTop).toBe(16);
+  expect(gap!.padBottom).toBe(12);
+  expect(gap!.underBar).toBe(16);
+  expect(gap!.afterTitle).toBe(12);
+});
+
 /* A long station and till name used to wrap "open" or "closed"
    onto a second line at 360, so the header grew. The desk name is
    what gets cut. The status stays whole. */
