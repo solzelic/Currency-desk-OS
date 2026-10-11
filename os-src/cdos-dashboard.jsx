@@ -275,7 +275,11 @@
     const X = useMemo(() => {
       const J = (k, d) => { try { const r = JSON.parse(localStorage.getItem(k) || 'null'); return r == null ? d : r; } catch (e) { return d; } };
       const P = window.CDOS, comp = P._compliance;
-      const transfers = J('cdos_transfers_v1', []), cheques = J('cdos_cheques_v1', []), beneficiaries = J('cdos_beneficiaries_v1', []);
+      const transfers = J('cdos_transfers_v1', []), cheques = J('cdos_cheques_v1', []);
+      /* The Transfers card may still show its demonstration pipeline.
+         The compliance count on this card must not: those wires are not
+         reports the desk owes. */
+      const filedTransfers = (P._transfers && P._transfers.bookTransfers) ? P._transfers.bookTransfers(transfers) : transfers;
       const tInProg = transfers.filter(t => t.status !== 'paid' && t.status !== 'cancelled').length;
       const tHold = transfers.filter(t => t.status === 'hold').length;
       const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)), 0);
@@ -292,11 +296,9 @@
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
-      let sanc = 0;
-      if (comp) { Object.keys(clients || {}).forEach(n => { if (comp.screen(n).status !== 'clear') sanc++; }); beneficiaries.forEach(b => { if (comp.screen(b.name).status !== 'clear') sanc++; }); }
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? { threshold: limit.amount } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
-      return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, sanc, agg, eftr, regime, limit };
+      const eftr = limit.amount == null ? null : filedTransfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : (homeOf(t.recvAmt, homeCcy()) || 0)) >= limit.amount).length;
+      return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
     const hour = new Date().getHours();
@@ -491,14 +493,14 @@
                 </button>
               ))}
             </div>
-            <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc + X.sanc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc + X.sanc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc + X.sanc) > 0 ? `${D.rptOpen + D.kyc + X.sanc} item(s) need attention` : 'Book is clean — all clear'}</div>
-            <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
-              {[['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
-                <button key={l} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+            <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc) > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
+            <div className="cd-tile-frame"><div className="cd-honest-tiles mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
+              {[['Sanctions', 'Not connected', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
+                <button key={l} data-testid={l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
+                  <div style={{ fontSize: typeof v === 'number' ? 18 : 13, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{v}</div>
                   <div style={{ fontSize: 9.5, color: T.steel }}>{l}</div>
                 </button>))}
-            </div>
+            </div></div>
           </Card>
 
           {/* TRANSFERS */}

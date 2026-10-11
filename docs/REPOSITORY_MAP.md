@@ -118,6 +118,7 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 
 ```bash
 npm run check:parse                     # every browser script parses
+npm run check:sanctions                 # banned-name variants, then the built web/app/os.js
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
 TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 22 Postgres invariant suites
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
@@ -127,6 +128,8 @@ Use a **fresh disposable database per full run** — suites intentionally leave
 ledger state behind. Without `SEAM_DATABASE_URL` the e2e server has no ledger
 and 13 of 17 specs skip; CI runs the full suite with an ephemeral Postgres
 (`.github/workflows/browser.yml`, `browser-seam` job) and fails if a seam spec skips.
+`browser-validate` runs `npm run check:sanctions` after the OS build, so the
+committed `web/app/os.js` cannot name a sanctions list.
 `tests/e2e/a-day-at-the-desk.spec.ts` is the deployment gate. It trades on
 its own till (opened through the product's add-till route) so file order
 is not load-bearing.

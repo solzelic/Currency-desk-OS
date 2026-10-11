@@ -477,11 +477,14 @@
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(window.CDOS.wallClock()); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
 
-  // The highest verification a contact has actually PAID FOR through the provider.
-  // Reads the KYC check history — never inferred from typed-in ID fields.
-  //   plus   → Verified Plus  (ID + biometric + deep DB)
-  //   verify → Verified       (ID authenticated + screened)
-  //   quick  → Screened       (name/DOB watchlist screen — NOT identity verification)
+  // Highest approved check on file for this name, read from the KYC
+  // history, never from typed-in ID fields. Nothing here approves a
+  // check: the store is wiped on load and resolve() leaves the decision
+  // at not_run. These branches still return a tier if an approved check
+  // is already on the file.
+  //   plus   → Verified Plus
+  //   verify → Verified
+  //   quick  → Screened
   function kycTier(name) {
     if (!name) return null;
     try {
@@ -493,9 +496,11 @@
     } catch (e) {}
     return null;
   }
-  // Badge ladder:  Missing ID → ID on hand → Screened → Verified → Verified Plus.
-  // "ID on hand" is a NEUTRAL state: the desk holds an ID but has not run a provider
-  // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
+  // Badge ladder: Missing ID → ID on hand → Screened → Verified → Verified Plus.
+  // With no approved check, the badge is the ID the desk is holding
+  // (Missing ID, ID expired, ID expiring, or ID on hand).
+  // Screened, Verified, and Verified Plus are returned only when kycTier
+  // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
     /* Has this document expired? A question about the calendar, so the
@@ -503,10 +508,10 @@
        the page loaded, which on a desk left open overnight went on saying
        an ID expiring at midnight was still valid. */
     const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // provider-verified identity — the only true KYC states
+    // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // watchlist screen only — clean name, but identity NOT verified under FINTRAC
+    // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
@@ -734,12 +739,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     setTimeout(() => { w.focus(); w.print(); }, 400);
   }
 
+  /* Sample beneficiaries (Maria Carter, Rohan Miller, Lin Wei) share the
+     store with people a teller actually added. A client file lists only
+     the latter. */
+  function bookBeneficiaries(list) {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : (list || []);
+  }
+
   /* ---------- QUICK CARD (single click) ---------- */
   function QuickCard({ name, rec, rows, flags, settings, me, canEdit, beneficiaries, corridors, setField, onUpload, onExpand, onOpenLedger, onClose }) {
     const st = clientStats(rows, name);
     const [stat, col, bg] = kycStatus(rec, settings, name);
     const corp = rec.kind === 'corporate';
-    const myBens = (beneficiaries || []).filter(b => b.sender === name);
+    const myBens = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} onDoubleClick={onExpand} className="w-full" style={{ maxWidth: 420, background: CD.panel, borderRadius: 16, boxShadow: '0 24px 60px -16px var(--cd-scrim)', overflow: 'hidden' }}>
         <div className="p-5" style={{ background: 'var(--cd-paper-soft)', borderBottom: `1px solid ${CD.line}` }}>
@@ -784,7 +797,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   function ClientBeneficiaries({ name, beneficiaries, setBeneficiaries, corridors, canEdit, log }) {
     const Tx = window.CDOS._transfers || {};
     const [edit, setEdit] = useState(null);   // 'new' | beneficiary object
-    const mine = (beneficiaries || []).filter(b => b.sender === name);
+    const mine = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     const corOf = (id) => (corridors || []).find(c => c.id === id) || {};
     const first = (name || '').split(/\s+/)[0];
     const save = (b) => { setBeneficiaries(list => { const ex = list.find(x => x.id === b.id); return ex ? list.map(x => x.id === b.id ? b : x) : [b, ...list]; }); setEdit(null); log && log('Beneficiary saved', `${b.name} · for ${name}`); };
@@ -1166,9 +1179,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const addr = fullAddr(rec);
 
     return (<div className="fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         {/* header */}
-        <div className="flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="client-file-head flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <div className="relative flex-none">
             <Avatar rec={rec} name={name} size={64} />
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
@@ -1183,7 +1196,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               {(corp ? rec.jurisdiction : rec.occupation) && <span className="flex items-center gap-1.5"><Ic n={corp ? 'mappin' : 'briefcase'} s={12} c={CD.faint} /> {corp ? rec.jurisdiction : rec.occupation}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-none">
+          <div className="client-file-actions flex items-center gap-2 flex-none">
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
             {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
             <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
@@ -1228,7 +1241,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="flex items-center gap-2.5"><span className="grid place-items-center flex-none" style={{ width: 32, height: 32, borderRadius: 9, background: CD.lineSoft }}><Ic n="shield" s={16} c={CD.mute} /></span><div><div className="flex items-center gap-1.5"><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Risk rating</div><window.CDOS.InfoTip title="Risk rating" body="Your own read on how much scrutiny a client needs. Setting it puts your judgment on the file — proof to examiners you run an active, risk-based program. It sharpens what the desk recommends, but never replaces the checks themselves: you still verify ID and file the reports required by law. You do your part — CurrencyDesk does the rest." lines={[{k:'Low · Normal',v:'standard handling'},{k:'Medium',v:'a closer watch'},{k:'High',v:'auto-deepens the ID check'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Your own compliance rating for this profile.</div></div></div>
             <div className="inline-flex items-stretch flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, overflow: 'hidden', opacity: canEdit ? 1 : 0.65 }}>{RISK.map((r, i) => { const on = normalizeRisk(rec.risk) === r; const tn = riskTone(r); return <button key={r} type="button" disabled={!canEdit} onClick={() => set('risk', r)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ background: on ? tn.bg : 'transparent', color: on ? tn.c : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', cursor: canEdit ? 'pointer' : 'default' }}><span style={{ width: 6, height: 6, borderRadius: 999, background: tn.c, flex: 'none' }} />{r}</button>; })}</div>
           </div>
-          {/* identity verification — partner KYC / sanctions screening (compliance) */}
+          {/* identity section — Persona is not connected */}
           {/* A refused scan has to say so. The whole reason the ceiling
               exists is that oversized images used to be accepted and then
               silently lost when the desk's state would not save. */}

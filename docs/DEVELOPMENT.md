@@ -17,6 +17,7 @@ npm run dev:prototype        # http://127.0.0.1:8787 — site at /, OS at /app, 
 npm ci                       # repo root
 npm run build                # regenerate web/ from the design + OS sources
 npm run check:parse          # every browser script parses
+npm run check:sanctions      # banned-name variants, then the built web/app/os.js
 
 cd server && npm run typecheck && npm test          # embedded PGlite suite
 TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the Postgres invariant suites

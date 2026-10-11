@@ -1,0 +1,46 @@
+/* Each spelling that used to slip past /\bOFAC\b/, and the ordinary
+   words that must keep passing. Run with: node --test tests/sanctions-phrases.test.mjs
+   ============================================================ */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { bannedNameHits, bannedBundleHits } from "../scripts/check-sanctions-phrases.mjs";
+
+const flagged = [
+  ["Ofac", "OFAC"],
+  ["OFACs", "OFAC"],
+  ["O.F.A.C.", "OFAC"],
+  ["U.N.", "UN"],
+  ["OSFI's", "OSFI"],
+];
+
+for (const [text, name] of flagged) {
+  test(`flags ${text}`, () => {
+    const hits = bannedNameHits(text);
+    assert.ok(hits.some((hit) => hit.name === name), JSON.stringify(hits));
+  });
+}
+
+for (const text of ["unit", "under"]) {
+  test(`allows ${text}`, () => {
+    assert.deepEqual(bannedNameHits(text), []);
+  });
+}
+
+test("flags the other spellings the seam used to miss", () => {
+  for (const text of ["ofac list", "OFAC-listed", "OSFIs", "O.S.F.I.", "WEI LIN", "UN sanctions", "u.n. list"]) {
+    assert.notDeepEqual(bannedNameHits(text), [], text);
+  }
+  assert.ok(bannedNameHits("OFAC\u00A0list").some((hit) => hit.name === "OFAC"));
+});
+
+test("allows words that merely contain those letters", () => {
+  for (const text of ["unit", "under", "UNIT PRICE", "UNDER REVIEW", "until", "function", "country", "Fund", "Lin Wei", "undefined", "run", "const un = !net", "un-patched"]) {
+    assert.deepEqual(bannedNameHits(text), [], text);
+  }
+});
+
+test("the bundle scan flags a planted phrase and leaves the sample beneficiary", () => {
+  assert.ok(bannedBundleHits("screened against a list").some((hit) => hit.name === "screened against"));
+  assert.ok(bannedBundleHits("1 Sanctions hits").some((hit) => hit.name === "Sanctions hits"));
+  assert.deepEqual(bannedBundleHits("Lin Wei is a sample beneficiary. Check the unit under the counter."), []);
+});

@@ -8,6 +8,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, hasLedger, landOnDesktop, rendered, codeFor, logSize } from "./fixtures";
+import { bannedNameHits } from "../../scripts/check-sanctions-phrases.mjs";
 import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
@@ -93,35 +94,46 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).toMatch(/does not file to the AMLC/i);
   expect(words).toMatch(/not summed/i);
 
-  /* No list is loaded. The copy still states the screening duty. */
-  expect(words).toMatch(/No sanctions list is loaded/);
-  expect(words).toMatch(/UNSC Consolidated List/);
+  /* Screening is not connected on this desk either. The copy still
+     states the owner's duty. It does not name a sanctions list, it
+     does not show the sample names, and it does not show a count. */
+  expect(words).toMatch(/Sanctions screening is not connected yet/);
   expect(words).toMatch(/ATC list/);
   expect(words).toMatch(/freeze without delay/);
   expect(words).toMatch(/tell the AMLC the same day/);
   expect(words).toMatch(/file an STR/);
   expect(words).toMatch(/outside the desk/);
-  expect(words).toMatch(/Not on this desk/);
-  expect(words).not.toMatch(/OFAC/);
-  expect(words).not.toMatch(/OSFI/);
+  expect(words).toMatch(/Not connected/);
+  expect(words).not.toMatch(/No sanctions list is loaded/);
+  expect(words).not.toMatch(/Not on this desk/);
+  expect(bannedNameHits(words)).toEqual([]);
 
   await page.locator('[data-app="compliance"]').click();
-  const screening = page.getByTestId("philippines-screening");
+  const screening = page.getByTestId("sanctions-not-connected");
   await expect(screening).toBeVisible();
   const screeningWords = await screening.innerText();
-  expect(screeningWords).toMatch(/No sanctions list is loaded/);
-  expect(screeningWords).toMatch(/UNSC Consolidated List/);
+  expect(screeningWords).toMatch(/Sanctions screening is not connected yet/);
   expect(screeningWords).toMatch(/ATC list/);
+  expect(bannedNameHits(screeningWords)).toEqual([]);
   expect(screeningWords).toMatch(/freeze without delay/);
   expect(screeningWords).toMatch(/tell the AMLC the same day/);
   expect(screeningWords).toMatch(/file an STR/);
   expect(screeningWords).toMatch(/outside the desk/);
   await expect(page.getByText(/Every client and beneficiary screened against OFAC/i)).toHaveCount(0);
 
-  const tile = page.getByTestId("philippines-screening-tile");
+  const tile = page.getByTestId("sanctions-screening-tile");
   await expect(tile).toBeVisible();
-  await expect(tile).toContainText("0");
-  await expect(tile).toContainText("No list loaded");
+  await expect(tile).toContainText("Not connected");
+  await expect(tile).not.toContainText("0");
+
+  await page.locator('[data-app="dashboard"]').click();
+  const dashboard = page.locator(".win.show.active");
+  await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
+  const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
+  await expect(dashTile).toContainText("Not connected");
+  expect(await dashTile.innerText()).not.toMatch(/\d/);
+
+  await page.locator('[data-app="compliance"]').click();
 
   await page.locator("button.fld-tab").filter({ hasText: /Not filed/ }).click();
   await expect(page.getByText("The desk does not file. The owner files in the AMLC portal. A single deal over the line is flagged. Deals in one banking day are not summed.")).toBeVisible();

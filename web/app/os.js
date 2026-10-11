@@ -7418,13 +7418,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Verification provider ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Verification provider",
-          body: "The partner that runs ID, biometric and database checks. Swap it anytime \u2014 all verifications route through whichever provider is selected here."
+          body: "Persona is not connected yet. No background check or ID verification is sent."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, "Routes every KYC check through this partner"))), /*#__PURE__*/React.createElement("div", {
+        }, "Persona is not connected yet. No check is sent."))), /*#__PURE__*/React.createElement("div", {
           className: "relative flex items-center"
         }, /*#__PURE__*/React.createElement("select", {
           value: cur,
@@ -7452,11 +7452,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           c: CD.mute
         }))));
       })(), (() => {
-        const k = window.CDOS.KYC && window.CDOS.KYC.summary ? window.CDOS.KYC.summary() : {
-          monthCount: 0,
-          monthSpend: 0
-        };
-        const prov = settings.kycProvider || (window.CDOS.KYC && window.CDOS.KYC.getProvider ? window.CDOS.KYC.getProvider() : 'Persona');
         return /*#__PURE__*/React.createElement("div", {
           className: "flex items-center justify-between p-3 mb-4",
           style: {
@@ -7483,28 +7478,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.ink
           }
-        }, "Identity verifications \xB7 ", prov, " ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
-          title: "Pay-as-you-go",
-          body: "KYC background checks and ID verifications are billed per check to the card on file and added to your next invoice \u2014 on top of your subscription."
+        }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+          title: "Identity verifications",
+          body: "Persona is not connected yet. No background check is sent and nothing is charged."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, k.monthCount, " this month \xB7 charged per check"))), /*#__PURE__*/React.createElement("div", {
+        }, "Persona is not connected yet. Nothing is charged."))), /*#__PURE__*/React.createElement("div", {
           className: "text-right"
         }, /*#__PURE__*/React.createElement("div", {
-          className: "text-xl font-bold",
+          className: "text-[13px] font-semibold",
           style: {
-            color: CD.ink,
-            fontFamily: 'Space Mono, monospace'
+            color: CD.mute
           }
-        }, fmt(k.monthSpend, 'CAD')), /*#__PURE__*/React.createElement("div", {
-          className: "text-[10.5px]",
-          style: {
-            color: CD.faint
-          }
-        }, "this period")));
+        }, "Not connected")));
       })(), /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
@@ -10257,7 +10246,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.mute
           }
-        }, fmt(r.threshold, r.currency), " \xB7 ", r.aggHours, "h rule \xB7 ", r.largeCode, "/", r.wireCode, "/", r.strCode, " \xB7 ", r.watchlists.join('/')));
+        }, fmt(r.threshold, r.currency), " \xB7 ", r.aggHours, "h rule \xB7 ", r.largeCode, "/", r.wireCode, "/", r.strCode));
       })), !paused && !isOwner && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2",
         style: {
@@ -10362,21 +10351,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, [1, 7, 14, 30].map(d => /*#__PURE__*/React.createElement("option", {
         key: d,
         value: d
-      }, d, " days")))), window.CDOS._compliance.sanctionsListShips(pack) ? /*#__PURE__*/React.createElement(Row, {
-        title: "Sanctions / watchlist screening",
-        desc: "Match every client & beneficiary against OFAC / UN / OSFI in the Compliance desk. Turning this off empties the Screening queue \u2014 most regulators expect it on."
-      }, /*#__PURE__*/React.createElement(Sw, {
-        on: settings.screenSanctions !== false,
-        click: () => set('screenSanctions', !(settings.screenSanctions !== false), `Sanctions screening · ${settings.screenSanctions !== false ? 'off' : 'on'}`)
-      })) : /*#__PURE__*/React.createElement(Row, {
-        title: "Sanctions / watchlist screening",
-        desc: window.CDOS._compliance.PH_SCREENING_NOTE
+      }, d, " days")))), window.CDOS._compliance && window.CDOS._compliance.sanctionsListShips(pack) ? /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions screening",
+        desc: "Names are matched against the list this pack loaded."
       }, /*#__PURE__*/React.createElement("span", {
         className: "text-[12px] px-2.5 py-1.5",
         style: {
           color: CD.mute
         }
-      }, "Not on this desk")), /*#__PURE__*/React.createElement("div", {
+      }, "List loaded")) : /*#__PURE__*/React.createElement(Row, {
+        title: "Sanctions screening",
+        desc: window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack) || "Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px] px-2.5 py-1.5",
+        "data-testid": "sanctions-screening-gap",
+        style: {
+          color: CD.mute
+        }
+      }, "Not connected")), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -10398,7 +10390,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           maxWidth: 520
         }
-      }, "Drives the recommendation nudge on every client's file and inside New Transaction \u2014 the same engine, everywhere it appears."), /*#__PURE__*/React.createElement("div", {
+      }, "Persona is not connected yet. No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one."), /*#__PURE__*/React.createElement("div", {
         className: "p-3 mb-3",
         style: {
           background: 'var(--cd-panel)',
@@ -10411,7 +10403,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         escalate: escalateHighRisk
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Suggest a quick re-screen after",
-        desc: "A dismissible Quick-check nudge appears once this many days have passed since the last screening."
+        desc: "Persona is not connected yet, so this reminder does not screen a list. It only appears inside New Transaction after this many days."
       }, /*#__PURE__*/React.createElement("select", {
         value: recheckDays,
         onChange: e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`),
@@ -10513,11 +10505,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
-      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack."))));
+      }, "Compliance"), " desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack."))));
     })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "coins",
       title: "Rates & fees",
@@ -11914,8 +11906,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const P = window.CDOS,
         comp = P._compliance;
       const transfers = J('cdos_transfers_v1', []),
-        cheques = J('cdos_cheques_v1', []),
-        beneficiaries = J('cdos_beneficiaries_v1', []);
+        cheques = J('cdos_cheques_v1', []);
+      /* The Transfers card may still show its demonstration pipeline.
+         The compliance count on this card must not: those wires are not
+         reports the desk owes. */
+      const filedTransfers = P._transfers && P._transfers.bookTransfers ? P._transfers.bookTransfers(transfers) : transfers;
       const tInProg = transfers.filter(t => t.status !== 'paid' && t.status !== 'cancelled').length;
       const tHold = transfers.filter(t => t.status === 'hold').length;
       const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0), 0);
@@ -11934,19 +11929,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
-      let sanc = 0;
-      if (comp) {
-        Object.keys(clients || {}).forEach(n => {
-          if (comp.screen(n).status !== 'clear') sanc++;
-        });
-        beneficiaries.forEach(b => {
-          if (comp.screen(b.name).status !== 'clear') sanc++;
-        });
-      }
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
         threshold: limit.amount
       } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
+      const eftr = limit.amount == null ? null : filedTransfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
       return {
         tInProg,
         tHold,
@@ -11956,7 +11942,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         chLoss,
         vaultTotals,
         vaultTracked,
-        sanc,
         agg,
         eftr,
         regime,
@@ -12659,21 +12644,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "mt-2.5",
       style: {
         fontSize: 10.5,
-        color: D.rptOpen + D.kyc + X.sanc > 0 ? T.oxblood : T.green,
+        color: D.rptOpen + D.kyc > 0 ? T.oxblood : T.green,
         display: 'flex',
         alignItems: 'center',
         gap: 6
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: D.rptOpen + D.kyc + X.sanc > 0 ? 'alert' : 'checkcircle',
+      n: D.rptOpen + D.kyc > 0 ? 'alert' : 'checkcircle',
       s: 12
-    }), " ", D.rptOpen + D.kyc + X.sanc > 0 ? `${D.rptOpen + D.kyc + X.sanc} item(s) need attention` : 'Book is clean — all clear'), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-3 gap-2 mt-2.5 pt-2.5",
+    }), " ", D.rptOpen + D.kyc > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'), /*#__PURE__*/React.createElement("div", {
+      className: "cd-tile-frame"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-honest-tiles mt-2.5 pt-2.5",
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', X.sanc, X.sanc > 0 ? T.oxblood : T.green], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Sanctions', 'Not connected', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
+      "data-testid": l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined,
       onClick: () => onOpenApp && onOpenApp('compliance'),
       className: "text-left",
       style: {
@@ -12684,17 +12672,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 18,
+        fontSize: typeof v === 'number' ? 18 : 13,
         fontWeight: 800,
         color: col,
-        fontVariantNumeric: 'tabular-nums'
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.2
       }
     }, v), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 9.5,
         color: T.steel
       }
-    }, l))))), /*#__PURE__*/React.createElement(Card, {
+    }, l)))))), /*#__PURE__*/React.createElement(Card, {
       title: "Transfers",
       action: onOpenApp && /*#__PURE__*/React.createElement("button", {
         onClick: () => onOpenApp('transfers'),
@@ -22697,11 +22686,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     return a;
   };
 
-  // The highest verification a contact has actually PAID FOR through the provider.
-  // Reads the KYC check history — never inferred from typed-in ID fields.
-  //   plus   → Verified Plus  (ID + biometric + deep DB)
-  //   verify → Verified       (ID authenticated + screened)
-  //   quick  → Screened       (name/DOB watchlist screen — NOT identity verification)
+  // Highest approved check on file for this name, read from the KYC
+  // history, never from typed-in ID fields. Nothing here approves a
+  // check: the store is wiped on load and resolve() leaves the decision
+  // at not_run. These branches still return a tier if an approved check
+  // is already on the file.
+  //   plus   → Verified Plus
+  //   verify → Verified
+  //   quick  → Screened
   function kycTier(name) {
     if (!name) return null;
     try {
@@ -22713,9 +22705,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     } catch (e) {}
     return null;
   }
-  // Badge ladder:  Missing ID → ID on hand → Screened → Verified → Verified Plus.
-  // "ID on hand" is a NEUTRAL state: the desk holds an ID but has not run a provider
-  // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
+  // Badge ladder: Missing ID → ID on hand → Screened → Verified → Verified Plus.
+  // With no approved check, the badge is the ID the desk is holding
+  // (Missing ID, ID expired, ID expiring, or ID on hand).
+  // Screened, Verified, and Verified Plus are returned only when kycTier
+  // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
     /* Has this document expired? A question about the calendar, so the
@@ -22723,10 +22717,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        the page loaded, which on a desk left open overnight went on saying
        an ID expiring at midnight was still valid. */
     const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // provider-verified identity — the only true KYC states
+    // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // watchlist screen only — clean name, but identity NOT verified under FINTRAC
+    // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
@@ -23469,6 +23463,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, 400);
   }
 
+  /* Sample beneficiaries (Maria Carter, Rohan Miller, Lin Wei) share the
+     store with people a teller actually added. A client file lists only
+     the latter. */
+  function bookBeneficiaries(list) {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : list || [];
+  }
+
   /* ---------- QUICK CARD (single click) ---------- */
   function QuickCard({
     name,
@@ -23489,7 +23491,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const st = clientStats(rows, name);
     const [stat, col, bg] = kycStatus(rec, settings, name);
     const corp = rec.kind === 'corporate';
-    const myBens = (beneficiaries || []).filter(b => b.sender === name);
+    const myBens = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -23762,7 +23764,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     const Tx = window.CDOS._transfers || {};
     const [edit, setEdit] = useState(null); // 'new' | beneficiary object
-    const mine = (beneficiaries || []).filter(b => b.sender === name);
+    const mine = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     const corOf = id => (corridors || []).find(c => c.id === id) || {};
     const first = (name || '').split(/\s+/)[0];
     const save = b => {
@@ -24683,7 +24685,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       onClick: onClose
     }, /*#__PURE__*/React.createElement("div", {
       onClick: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "client-file w-full flex flex-col",
       style: {
         maxWidth: 880,
         height: '92%',
@@ -24693,7 +24695,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-4 px-6 py-5 flex-none",
+      className: "client-file-head flex items-start gap-4 px-6 py-5 flex-none",
       style: {
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
@@ -24802,7 +24804,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       s: 12,
       c: CD.faint
     }), " ", corp ? rec.jurisdiction : rec.occupation))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
+      className: "client-file-actions flex items-center gap-2 flex-none"
     }, canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setEdit(e => !e),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium",
@@ -36036,6 +36038,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return def();
     }
   };
+  /* The four wires and three beneficiaries above are a demonstration
+     pipeline for the Transfers desk. A real transfer id is `t` plus
+     Date.now(), and a real beneficiary id is `b` plus Date.now(), so
+     these exact ids are only the sample. Compliance must not file them
+     or list them as people a customer sends money to — the same rule as
+     the demonstration cheques on a ledger desk. */
+  const DEMONSTRATION_TRANSFER_IDS = {
+    t1: 1,
+    t2: 1,
+    t3: 1,
+    t4: 1
+  };
+  const DEMONSTRATION_BENEFICIARY_IDS = {
+    b1: 1,
+    b2: 1,
+    b3: 1
+  };
+  const bookTransfers = list => (list || []).filter(t => t && !DEMONSTRATION_TRANSFER_IDS[t.id]);
+  const bookBeneficiaries = list => (list || []).filter(b => b && !DEMONSTRATION_BENEFICIARY_IDS[b.id]);
 
   /* ===================== shared atoms ===================== */
   const inputSty = {
@@ -37475,6 +37496,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       CKEY,
       TKEY,
       load,
+      bookTransfers,
+      bookBeneficiaries,
       FLOW,
       STATUS,
       statusLabel,
@@ -40847,9 +40870,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
        slot into ONE engine: threshold, base currency, the rolling-
        aggregation window, report codes, terminology and the fileable
        format all come from the active pack. computeFlags reads it too.
-     • Sanctions / watchlist screening — OFAC / UN / OSFI name screening
-       on every client AND beneficiary, with fuzzy matching (token-set +
-       edit-distance) so reordered and near-miss names still surface.
+     • Sanctions screening is not connected. No pack ships a list,
+       and the desk does not match names. The owner checks the
+       official lists themselves.
      • Rolling-24h aggregation BY RULE — same person, cash-in inside the
        pack's window ≥ threshold ⇒ a single reportable aggregate. No
        manual "watching" tag.
@@ -41130,7 +41153,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       strCode: 'STR',
       strLabel: 'Suspicious Transaction Report',
       fileFormat: 'FWR JSON batch',
-      watchlists: ['OSFI', 'UN', 'OFAC']
+      watchlists: []
     },
     FINCEN: {
       id: 'FINCEN',
@@ -41148,7 +41171,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       strCode: 'SAR',
       strLabel: 'Suspicious Activity Report',
       fileFormat: 'BSA E-Filing XML',
-      watchlists: ['OFAC', 'UN']
+      watchlists: []
     }
   };
   /* The engine's view of the rules in force, which every screen reads.
@@ -41281,180 +41304,52 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     return r;
   }
 
-  /* ===================== SANCTIONS / WATCHLISTS ===================== */
-  // fictional, illustrative list entries across the three sources. Two are
-  // tuned to demonstrate fuzzy matching against the seed book.
-  // These names are not the UN Security Council Consolidated List.
-  const WATCHLISTS = [{
-    id: 'w1',
-    name: 'Wei Lin',
-    list: 'OFAC',
-    program: 'NPWMD',
-    country: 'CN',
-    type: 'individual',
-    dob: '1979-02-11'
-  }, {
-    id: 'w2',
-    name: 'Aram Lawson',
-    list: 'OSFI',
-    program: 'Terrorism (Criminal Code)',
-    country: 'CA',
-    type: 'individual',
-    dob: '1984-09-03'
-  }, {
-    id: 'w3',
-    name: 'Viktor Anatolievich Kozlov',
-    list: 'OFAC',
-    program: 'RUSSIA-EO14024',
-    country: 'RU',
-    type: 'individual'
-  }, {
-    id: 'w4',
-    name: 'Crescent Holdings FZE',
-    list: 'UN',
-    program: 'ISIL (Da’esh) & Al-Qaida',
-    country: 'AE',
-    type: 'entity'
-  }, {
-    id: 'w5',
-    name: 'Mohammed Al-Rashid',
-    list: 'UN',
-    program: 'ISIL (Da’esh) & Al-Qaida',
-    country: 'SY',
-    type: 'individual'
-  }, {
-    id: 'w6',
-    name: 'Banco del Sur Internacional',
-    list: 'OFAC',
-    program: 'SDNT',
-    country: 'MX',
-    type: 'entity'
-  }, {
-    id: 'w7',
-    name: 'Olena Petrova',
-    list: 'OSFI',
-    program: 'Russia (SEMA)',
-    country: 'RU',
-    type: 'individual'
-  }, {
-    id: 'w8',
-    name: 'Zhang Industrial Group',
-    list: 'OFAC',
-    program: 'NPWMD',
-    country: 'CN',
-    type: 'entity'
-  }, {
-    id: 'w9',
-    name: 'Ibrahim Suleiman',
-    list: 'UN',
-    program: 'Somalia & Eritrea',
-    country: 'SO',
-    type: 'individual'
-  }, {
-    id: 'w10',
-    name: 'Pyongyang Trading Co.',
-    list: 'OFAC',
-    program: 'DPRK',
-    country: 'KP',
-    type: 'entity'
-  }];
-  const LIST_TONE = {
-    OFAC: {
-      c: '#1d4ed8',
-      bg: '#dbe5fb'
-    },
-    UN: {
-      c: '#0e7490',
-      bg: '#cfeaf0'
-    },
-    OSFI: {
-      c: CD.flag,
-      bg: CD.flagSoft
-    }
+  /* ===================== SANCTIONS / WATCHLISTS =====================
+     No list is loaded. A sample of ten names used to stand in for
+     official sanctions lists, and a Canada desk showed those names
+     as hits. They were fiction. The screen says screening is not
+     connected. It does not name a list, it does not show a count,
+     and it does not present a seeded subject as a result.
+      sanctionsListShips is false for every pack, including the
+     Philippines (pack-ph-v1), Singapore (pack-sg-v1) and Hong Kong
+     (pack-hk-v1). `pack` is read so a later feed can return true for
+     one id without each screen growing its own pack check. */
+  const WATCHLISTS = [];
+  const NOT_CONNECTED = "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
+  /* The duty those three packs already state, after the sentence above.
+     The sentence does not name a sanctions list. */
+  const PACK_DUTY = {
+    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties, including against the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.',
+    'pack-sg-v1': 'Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.',
+    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the local sanctions ordinances (Cap. 537 and Cap. 575). The owner does this outside the desk. This screen does not match names.'
   };
-
-  /* Does this pack ship a sanctions list the desk can match against?
-      The names above are sample entries. True means the desk still
-     shows that sample queue. It does not mean a real list is loaded.
-     A Philippines desk must not present those names as a screen
-     against the UN list. BSP Circular 1182 still requires that
-     owner to screen, so the screens that read this flag say the
-     duty instead of hiding it. Every other pack keeps the queue
-     it already shows.
-      One function, not a pack id written on each screen. A column on
-     the pack would be a migration for a fact this file already knows. */
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);
-    return id !== 'pack-ph-v1';
+    if (id === 'pack-ph-v1' || id === 'pack-sg-v1' || id === 'pack-hk-v1') return false;
+    /* Canada and the other packs used to show the sample. They do not. */
+    return false;
   }
-  const PH_SCREENING_NOTE = 'No sanctions list is loaded. Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.';
-  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  const tokens = s => norm(s).split(' ').filter(Boolean);
-  function lev(a, b) {
-    const m = a.length,
-      n = b.length;
-    if (!m) return n;
-    if (!n) return m;
-    const d = Array.from({
-      length: m + 1
-    }, (_, i) => [i, ...Array(n).fill(0)]);
-    for (let j = 0; j <= n; j++) d[0][j] = j;
-    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    return d[m][n];
+  function screeningNote(pack) {
+    const id = pack && (pack.packId || pack.id);
+    const duty = id && PACK_DUTY[id];
+    return duty ? NOT_CONNECTED + ' ' + duty : NOT_CONNECTED;
   }
-  function matchScore(a, b) {
-    const na = norm(a),
-      nb = norm(b);
-    if (!na || !nb) return 0;
-    if (na === nb) return 1;
-    const ta = tokens(a).sort().join(' '),
-      tb = tokens(b).sort().join(' ');
-    if (ta === tb) return 0.95; // same tokens, reordered
-    const ratio = 1 - lev(na, nb) / Math.max(na.length, nb.length);
-    // token overlap (Jaccard) as a floor for partial matches
-    const sa = new Set(tokens(a)),
-      sb = new Set(tokens(b));
-    const inter = [...sa].filter(x => sb.has(x)).length,
-      uni = new Set([...sa, ...sb]).size;
-    const jac = uni ? inter / uni : 0;
-    return Math.max(ratio, jac * 0.9);
-  }
-  // screen one name against the lists → { status, hits[] }
-  function screen(name) {
-    const hits = [];
-    WATCHLISTS.forEach(w => {
-      const s = matchScore(name, w.name);
-      if (s >= 0.82) hits.push({
-        w,
-        score: s
-      });
-    });
-    hits.sort((a, b) => b.score - a.score);
-    const top = hits[0];
-    const status = !top ? 'clear' : top.score >= 0.99 ? 'hit' : 'review';
+  /* Nothing to match. Callers that used to treat "clear" as a finished
+     screen must read sanctionsListShips first. "unavailable" is not a hit
+     and it is not a clear. */
+  function screen() {
     return {
-      status,
-      hits
+      status: 'unavailable',
+      hits: []
     };
   }
+  const LIST_TONE = {};
   const STAT = {
-    clear: {
-      t: 'Clear',
-      c: CD.green,
-      bg: CD.greenSoft,
-      icon: 'checkcircle'
-    },
-    review: {
-      t: 'Possible match',
-      c: CD.amber,
-      bg: CD.amberSoft,
-      icon: 'alert'
-    },
-    hit: {
-      t: 'Confirmed hit',
-      c: CD.flag,
-      bg: CD.flagSoft,
-      icon: 'ban'
+    unavailable: {
+      t: 'Not connected',
+      c: CD.mute,
+      bg: CD.lineSoft,
+      icon: 'shield'
     }
   };
 
@@ -41711,7 +41606,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       WATCHLISTS,
       LIST_TONE,
       screen,
-      matchScore,
       STAT,
       aggClusters,
       aggClustersEFT,
@@ -41723,7 +41617,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       dt,
       setFingerprint,
       sanctionsListShips,
-      PH_SCREENING_NOTE
+      screeningNote,
+      NOT_CONNECTED
     },
     getRegime,
     jurisdictionViolations,
@@ -43122,10 +43017,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const {
     REGIMES,
     getRegime,
-    WATCHLISTS,
-    LIST_TONE,
-    screen,
-    STAT,
+    screeningNote,
     aggClusters,
     aggClustersEFT,
     aggClustersVc,
@@ -43147,12 +43039,22 @@ ${(filing.map || []).map(blockHTML).join('')}
       return {};
     }
   };
+  /* Demonstration wires (t1–t4) live in the same store as a transfer the
+     desk actually created. Filings, aggregation and the header count read
+     through here, so the sample never becomes a report. */
   const loadTransfers = () => {
+    let all = [];
     try {
-      return JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
+      all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
     } catch (e) {
       return [];
     }
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookTransfers;
+    return book ? book(all) : all;
+  };
+  const bookBeneficiaries = list => {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : list || [];
   };
 
   /* ===================== WHERE A FILED REPORT LIVES =====================
@@ -43412,7 +43314,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
     });
     // EFTR 24h aggregates (wires) — same engine, different trigger
-    aggClustersEFT(transfers, beneficiaries, regime, settings).forEach(c => out.push({
+    aggClustersEFT(transfers, bookBeneficiaries(beneficiaries), regime, settings).forEach(c => out.push({
       id: c.id,
       groupId: c.groupId,
       kind: c.kind,
@@ -43463,109 +43365,16 @@ ${(filing.map || []).map(blockHTML).join('')}
     const total = (o.refs || []).length;
     return `${o.coveredRefs.length} of these ${total} ${total === 1 ? 'was' : 'were'} already filed under ${acks.join(' · ') || 'an earlier report'} · ${o.newRefs.length} still need${o.newRefs.length === 1 ? 's' : ''} filing`;
   }
-  function Pill({
-    s,
-    small
-  }) {
-    const c = STAT[s] || STAT.clear;
-    return /*#__PURE__*/React.createElement("span", {
-      className: "inline-flex items-center gap-1.5 font-semibold",
-      style: {
-        background: c.bg,
-        color: c.c,
-        borderRadius: 999,
-        fontSize: small ? 10 : 11,
-        padding: small ? '2px 8px' : '3px 10px'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: c.icon,
-      s: small ? 10 : 12,
-      c: c.c
-    }), c.t);
-  }
-  function ListTag({
-    list
-  }) {
-    const t = LIST_TONE[list] || {
-      c: CD.mute,
-      bg: CD.lineSoft
-    };
-    return /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5 font-semibold",
-      style: {
-        background: t.bg,
-        color: t.c,
-        borderRadius: 4,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, list);
-  }
 
-  /* ===================== SCREENING ===================== */
-  function Screening({
-    clients,
-    setClients,
-    beneficiaries,
-    me,
-    settings,
-    onOpenSettings
-  }) {
-    const [q, setQ] = useState('');
-    const [only, setOnly] = useState('flagged');
-    const [picker, setPicker] = useState(false);
-    const [verify, setVerify] = useState(null); // { name, kind, rec }
-    const KYC = window.CDOS.KYC;
-    const kycStats = KYC ? KYC.summary() : {
-      monthCount: 0,
-      monthSpend: 0
-    };
-    const subjects = useMemo(() => {
-      const out = [];
-      Object.keys(clients || {}).forEach(name => out.push({
-        name,
-        kind: clients[name].kind === 'corporate' ? 'Business' : 'Client',
-        ref: name
-      }));
-      (beneficiaries || []).forEach(b => out.push({
-        name: b.name,
-        kind: 'Beneficiary',
-        ref: 'of ' + b.sender
-      }));
-      return out.map(s => ({
-        ...s,
-        ...screen(s.name)
-      }));
-    }, [clients, beneficiaries]);
-    const counts = useMemo(() => ({
-      all: subjects.length,
-      hit: subjects.filter(s => s.status === 'hit').length,
-      review: subjects.filter(s => s.status === 'review').length,
-      clear: subjects.filter(s => s.status === 'clear').length
-    }), [subjects]);
-    const shown = subjects.filter(s => (only === 'flagged' ? s.status !== 'clear' : only === 'all' ? true : s.status === only) && (!q || s.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (b.hits[0] ? b.hits[0].score : 0) - (a.hits[0] ? a.hits[0].score : 0));
-
-    /* No list loaded. The queue below matches sample names, not the
-       UN Security Council list, so it stays off this desk. The note
-       is the owner's duty under BSP Circular 1182. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    if (!C.sanctionsListShips(packNow)) return /*#__PURE__*/React.createElement("div", {
+  /* ===================== SCREENING =====================
+     There is no list, so there is no queue. A count of "clear" would
+     say the desk had screened and found nothing. */
+  function Screening() {
+    const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
+    const note = screeningNote(pack);
+    return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
-      "data-testid": "philippines-screening"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
-      className: "mt-1 text-[12px] max-w-xl",
-      style: {
-        color: CD.mute
-      }
-    }, C.PH_SCREENING_NOTE));
-
-    // Settings → Compliance · sanctions screening switch gates the whole queue
-    if (settings && settings.screenSanctions === false) return /*#__PURE__*/React.createElement("div", {
-      className: "p-4"
+      "data-testid": "sanctions-not-connected"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col items-center justify-center text-center py-16 px-6",
       style: {
@@ -43589,247 +43398,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Sanctions screening is switched off"), /*#__PURE__*/React.createElement("div", {
-      className: "mt-1 text-[12px] max-w-sm",
-      style: {
-        color: CD.mute
-      }
-    }, "No client or beneficiary names are being matched against the OFAC / UN / OSFI lists. Most regulators expect this to stay on."), /*#__PURE__*/React.createElement("button", {
-      onClick: () => onOpenSettings && onOpenSettings(),
-      className: "mt-4 flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold",
-      style: {
-        background: CD.ink,
-        color: 'var(--cd-on-ink)',
-        borderRadius: 8
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "gear",
-      s: 14,
-      c: "var(--cd-on-ink)"
-    }), " Turn on in Settings")));
-    return /*#__PURE__*/React.createElement("div", {
-      className: "p-4"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start justify-between mb-3 gap-2"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-semibold flex items-center gap-1.5",
-      style: {
-        color: CD.ink
-      }
-    }, "Sanctions & watchlist screening ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
-      title: "Sanctions screening",
-      body: "Every client and beneficiary name is matched against government watchlists. A hit (or possible match) must be reviewed before you transact with them.",
-      lines: [{
-        k: 'OFAC',
-        v: 'US Treasury sanctions list'
-      }, {
-        k: 'UN',
-        v: 'United Nations consolidated list'
-      }, {
-        k: 'OSFI',
-        v: 'Canada’s terrorist-financing list'
-      }]
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "Every client and beneficiary screened against OFAC, UN and OSFI lists.")), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-3 py-2",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 15,
-      c: CD.mute
-    }), /*#__PURE__*/React.createElement("input", {
-      value: q,
-      onChange: e => setQ(e.target.value),
-      placeholder: "Search name\u2026",
-      className: "outline-none text-sm bg-transparent",
-      style: {
-        width: 130
-      }
-    })), KYC && /*#__PURE__*/React.createElement("button", {
-      onClick: () => setPicker(true),
-      className: "flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none",
-      style: {
-        background: CD.ink,
-        borderRadius: 8
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 15,
-      c: "var(--cd-on-ink)"
-    }), " New KYC check"))), KYC && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 mb-3 px-3 py-2",
-      style: {
-        background: CD.brassSoft,
-        border: `1px solid color-mix(in srgb, ${CD.brass} 20%, transparent)`,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 14,
-      c: CD.brass
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[11.5px]",
-      style: {
-        color: 'var(--cd-brass-text)'
-      }
-    }, "Run a background check or ID verification on any subject through ", /*#__PURE__*/React.createElement("b", null, "Persona"), " \u2014 results attach to the contact and the History log."), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto text-[11px] font-semibold flex-none",
-      style: {
-        color: 'var(--cd-brass-text)',
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, kycStats.monthCount, " this month \xB7 $", kycStats.monthSpend.toFixed(2))), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-4 gap-2 mb-3"
-    }, [['Subjects', counts.all, CD.ink], ['Confirmed hits', counts.hit, CD.flag], ['Possible matches', counts.review, CD.amber], ['Clear', counts.clear, CD.green]].map(([l, v, c], i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "p-3",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${i && v ? c : CD.line}`,
-        borderRadius: 10
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, l), /*#__PURE__*/React.createElement("div", {
-      className: "text-xl font-bold",
-      style: {
-        color: c,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }, v)))), /*#__PURE__*/React.createElement("div", {
-      className: "flex gap-1.5 mb-3"
-    }, [['flagged', 'Needs review'], ['hit', 'Hits'], ['review', 'Possible'], ['clear', 'Clear'], ['all', 'All']].map(([id, l]) => /*#__PURE__*/React.createElement("button", {
-      key: id,
-      onClick: () => setOnly(id),
-      className: "px-3 py-1.5 text-[12px] font-medium",
-      style: {
-        borderRadius: 8,
-        border: `1px solid ${only === id ? 'transparent' : CD.line}`,
-        background: only === id ? CD.ink : 'transparent',
-        color: only === id ? 'var(--cd-on-ink)' : CD.mute
-      }
-    }, l))), /*#__PURE__*/React.createElement("div", {
-      className: "space-y-2"
-    }, shown.map((s, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "p-3",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${s.status === 'hit' ? CD.flag : CD.line}`,
-        borderRadius: 11
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center flex-none",
-      style: {
-        width: 34,
-        height: 34,
-        borderRadius: '50%',
-        background: CD.lineSoft
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: s.kind === 'Business' ? 'building' : s.kind === 'Beneficiary' ? 'send' : 'users',
-      s: 16,
-      c: CD.mute
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[13px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, s.name), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, s.kind, " \xB7 ", s.ref))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2"
-    }, /*#__PURE__*/React.createElement(Pill, {
-      s: s.status
-    }), KYC && /*#__PURE__*/React.createElement("button", {
-      onClick: () => setVerify({
-        name: s.name,
-        kind: s.kind === 'Business' ? 'corporate' : 'individual',
-        rec: clients && clients[s.name] || {}
-      }),
-      title: `Send ${s.name} for KYC verification`,
-      className: "flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-medium flex-none",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 7,
-        color: CD.ink,
-        background: CD.panel
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 12,
-      c: CD.mute
-    }), " Verify"))), s.hits.length > 0 && /*#__PURE__*/React.createElement("div", {
-      className: "mt-2 pt-2 space-y-1",
-      style: {
-        borderTop: `1px solid ${CD.lineSoft}`
-      }
-    }, s.hits.slice(0, 2).map((h, j) => /*#__PURE__*/React.createElement("div", {
-      key: j,
-      className: "flex items-center justify-between text-[11.5px]"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1.5",
-      style: {
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(ListTag, {
-      list: h.w.list
-    }), " ", h.w.name, " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.faint
-      }
-    }, "\xB7 ", h.w.program, " \xB7 ", h.w.country)), /*#__PURE__*/React.createElement("span", {
+    }, "Sanctions screening"), /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[13px] leading-relaxed",
       style: {
         color: CD.mute,
-        fontFamily: 'Space Mono, monospace'
+        maxWidth: 460
       }
-    }, Math.round(h.score * 100), "% match")))))), !shown.length && /*#__PURE__*/React.createElement("div", {
-      className: "text-center py-12",
-      style: {
-        border: `1px dashed ${CD.line}`,
-        borderRadius: 12,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "shield",
-      s: 24,
-      c: CD.green
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "mt-2 text-[13px]"
-    }, "No subjects need review \u2014 all clear."))), picker && KYC && /*#__PURE__*/React.createElement(KYC.PickerModal, {
-      clients: clients,
-      setClients: setClients,
-      beneficiaries: beneficiaries,
-      by: me && me.name,
-      onClose: () => setPicker(false)
-    }), verify && KYC && /*#__PURE__*/React.createElement(KYC.SendModal, {
-      subject: verify.name,
-      kind: verify.kind,
-      rec: verify.rec,
-      by: me && me.name,
-      onClose: () => setVerify(null)
-    }));
+    }, note)));
   }
 
   /* A country pack with no large-cash figure is not the international
@@ -43857,7 +43432,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     onOpenTransfers
   }) {
     const regime = getRegime(settings);
-    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), beneficiaries, regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -45599,19 +45174,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
     };
 
-    // header counts
-    const screenFlagged = useMemo(() => {
-      if (settings && settings.screenSanctions === false) return 0;
-      let n = 0;
-      Object.keys(clients || {}).forEach(name => {
-        if (screen(name).status !== 'clear') n++;
-      });
-      (beneficiaries || []).forEach(b => {
-        if (screen(b.name).status !== 'clear') n++;
-      });
-      return n;
-    }, [clients, beneficiaries, settings]);
-    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
+    /* No list, so the Screening tile is words and the tab has no badge.
+       A number here, including zero, used to read as a hit count. */
+    const philippines = regime.id === 'pack-ph-v1';
+    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
     const strN = useMemo(() => {
       const flags = computeFlags(rows, clients, settings);
@@ -45622,14 +45188,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-
-    /* A hit count from the sample names would say this desk screened
-       someone. When no list ships, the tile stays at zero. Filings
-       still use `philippines` and are not part of this flag. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    const listShips = C.sanctionsListShips(packNow);
-    const philippines = regime.id === 'pack-ph-v1';
-    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -45669,13 +45228,15 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute
       }
     }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-3 gap-2 mt-3"
-    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber], ['Screening', listShips ? screenFlagged : 0, listShips ? 'Sanctions hits' : 'No list loaded', 'screening', CD.flag]].map(([l, v, sub, go, warn]) => {
-      const bad = v > 0;
-      const col = bad ? warn : CD.green;
+      className: "cd-tile-frame"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-honest-tiles mt-3"
+    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
+      const bad = numeric && v > 0;
+      const col = numeric ? bad ? warn : CD.green : CD.mute;
       return /*#__PURE__*/React.createElement("button", {
         key: l,
-        "data-testid": l === 'Screening' && !listShips ? 'philippines-screening-tile' : undefined,
+        "data-testid": l === 'Screening' ? 'sanctions-screening-tile' : undefined,
         onClick: () => setTab(go),
         className: "text-left px-3 py-2.5",
         style: {
@@ -45710,7 +45271,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: col,
           fontVariantNumeric: 'tabular-nums',
-          fontSize: 24,
+          fontSize: numeric ? 24 : 15,
           lineHeight: 1.15
         }
       }, v), /*#__PURE__*/React.createElement("div", {
@@ -45719,7 +45280,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: CD.mute
         }
       }, sub));
-    })), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
         '--ft': '#6B2E54',
@@ -45815,20 +45376,18 @@ ${(filing.map || []).map(blockHTML).join('')}
 /* ---- os-src/cdos-kyc.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — KYC / identity verification
-   A paid, partner-powered verification rail. The desk sends a
-   subject (client, business or beneficiary) off to the verification
-   provider (Persona) for ID + biometric + database checks. Each
-   verification is billed to the exchange house's account — this is
-   a revenue line for CurrencyDesk.
+   Persona is not connected. This module does not send a subject
+   to a provider, does not bill a check, and does not read a list.
+   Anything already stored under the KYC key is wiped on load.
+   resolve() leaves the decision at not_run unless screen() returns
+   hit, review, or clear, and screen() returns unavailable, so a
+   check is not approved and is not written to report History.
 
    One self-contained module, used in two places:
      • Clients ▸ contact profile  → SubjectPanel at the bottom
      • Compliance ▸ Screening      → PickerModal + per-row Verify
 
-   Lifecycle is time-based so it survives reloads: a sent check sits
-   in "processing" until its dueMs, then reconciles to a result that
-   is consistent with the live sanctions screening. Completed checks
-   are written to the universal report History.
+   The chooser still lists three tiers. None of them runs.
    ============================================================ */
 (function () {
   const {
@@ -45923,20 +45482,17 @@ ${(filing.map || []).map(blockHTML).join('')}
     return h.toString(36).toUpperCase().padStart(5, '0').slice(-5);
   };
 
-  // Three tiers, each a real check that bills every time it runs — the desk is
-  // meant to run one on (nearly) every transaction. NONE smart-skip: even a
-  // fully verified customer can be re-screened with a Quick check at the counter.
-  //   • Quick check ($3.99) — name + DOB screened against sanctions / PEP / watchlists.
-  //     No document authentication; instant. This is NOT identity verification —
-  //     it confirms the name is clean, not that the ID is genuine.
-  //   • Verified ($6.99) — government ID document authentication + the same
-  //     sanctions & PEP screening. This is what earns the "Verified" badge.
-  //   • Verified Plus ($14.99) — fresh ID, biometric selfie / liveness match and a
-  //     deep database inquiry (adverse media, ongoing monitoring). Always runs fresh.
+  // The chooser still lists three tiers. Persona is not connected, so
+  // none of them is sent, none of them is billed, and none of them
+  // earns a badge. resolve() does not approve a check while screen()
+  // returns unavailable.
+  //   • quick  — name and date of birth only. No list is read.
+  //   • verify — does not authenticate an ID.
+  //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
-    tagline: 'Smart-routed: our own file is checked first, then name & DOB re-screened against sanctions, PEP & watchlists — the cheapest compliant path',
+    tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.',
     price: 3.99,
     channel: 'instant',
     icon: 'search',
@@ -45947,7 +45503,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'verify',
     label: 'Verified',
-    tagline: 'Government ID authentication + sanctions & PEP screening',
+    tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.',
     price: 6.99,
     channel: 'link',
     icon: 'id',
@@ -45958,7 +45514,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'plus',
     label: 'Verified Plus',
-    tagline: 'Fresh ID, biometric selfie & deep database inquiry — always runs',
+    tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.',
     price: 14.99,
     channel: 'link',
     icon: 'shield',
@@ -45994,6 +45550,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     } catch (e) {}
     listeners.forEach(l => l());
   };
+  /* Every check this key has ever held was written here, and this file
+     has never sent one to a provider. Leaving them on screen shows a
+     verification, an ID read, or a sanctions result that did not happen. */
+  if (STORE && Object.keys(STORE).length) {
+    STORE = {};
+    persist();
+  }
   const useStore = () => {
     const [, force] = useState(0);
     useEffect(() => {
@@ -46046,13 +45609,17 @@ ${(filing.map || []).map(blockHTML).join('')}
     };
   }
 
-  // a sent check resolves to a result consistent with live sanctions screening
+  // A sent check used to copy a hit off the sample watchlist. That list
+  // is gone, so a check does not report a sanctions result.
   function resolve(check) {
     const t = tmpl(check.template);
     const sc = screenOf(check.subject);
-    let decision = 'approved',
-      database = t.db ? 'clear' : 'n/a',
-      pep = 'None found';
+    let decision = 'not_run',
+      database = t.db ? 'not checked' : 'n/a',
+      pep = 'Not checked';
+    /* "clear" would say a list was checked. unavailable means it was not.
+       An address, a date of birth, or a document number is not invented
+       from the name. Persona is not connected, so nothing is read off an ID. */
     if (t.db) {
       if (sc.status === 'hit') {
         decision = 'review';
@@ -46062,16 +45629,19 @@ ${(filing.map || []).map(blockHTML).join('')}
         decision = 'review';
         database = 'possible';
         pep = 'Possible PEP / adverse media';
+      } else if (sc.status === 'clear') {
+        decision = 'approved';
+        database = 'clear';
+        pep = 'None found';
       }
     }
     return {
       decision,
-      // the provider reads these off the ID and returns them so we can complete the contact.
-      // On a records match we already hold the ID, so nothing new is extracted.
-      extracted: t.idv && !check.matchedOnFile ? extractIdentity(check.subject) : null,
-      idCheck: t.idv ? 'pass' : 'n/a',
+      sanctionsChecked: sc.status === 'clear' || sc.status === 'hit' || sc.status === 'review',
+      extracted: null,
+      idCheck: 'not checked',
       matchedOnFile: !!check.matchedOnFile,
-      biometric: t.bio ? 'pass' : 'n/a',
+      biometric: 'not checked',
       database,
       pep,
       watchlist: (sc.hits || []).slice(0, 3).map(h => ({
@@ -46080,7 +45650,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         program: h.w.program,
         score: Math.round(h.score * 100)
       })),
-      reportRef: 'PSA-' + refHash(check.id + check.requestedAt),
+      reportRef: decision === 'not_run' ? '' : 'PSA-' + refHash(check.id + check.requestedAt),
       completedAt: stampNow()
     };
   }
@@ -46089,6 +45659,11 @@ ${(filing.map || []).map(blockHTML).join('')}
     c: CD.green,
     bg: CD.greenSoft,
     icon: 'checkcircle'
+  } : d === 'not_run' ? {
+    label: 'Not connected',
+    c: CD.mute,
+    bg: CD.lineSoft,
+    icon: 'shield'
   } : d === 'declined' ? {
     label: 'Declined',
     c: CD.flag,
@@ -46116,6 +45691,8 @@ ${(filing.map || []).map(blockHTML).join('')}
   function logToHistory(check) {
     try {
       const r = check.result;
+      /* A check that did not run is not a KYC record. */
+      if (!r || r.decision === 'not_run') return;
       const dm = decisionMeta(r.decision);
       let hist = [];
       try {
@@ -46156,13 +45733,11 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
   function reconcile() {
     let changed = false;
-    const now = Date.now();
     Object.values(STORE).forEach(c => {
-      if (c.status === 'processing' && now >= c.dueMs) {
-        c.status = 'completed';
-        c.result = resolve(c);
-        logToHistory(c);
-        if (contactSink && c.result.extracted) contactSink(c.subject, c.result.extracted, c.result.completedAt);
+      /* An in-flight check was never sent. Completing it would invent a
+         result and write it onto the client. Drop it. */
+      if (c.status === 'processing') {
+        delete STORE[c.id];
         changed = true;
       }
     });
@@ -46210,42 +45785,25 @@ ${(filing.map || []).map(blockHTML).join('')}
     contact,
     by
   }) {
-    const now = Date.now();
-    const id = 'kyc_' + now.toString(36) + Math.random().toString(36).slice(2, 5);
     const t = tmpl(template);
-    // smart skip: a "Verify" on someone we already hold a verified ID for clears instantly
-    // with no provider inquiry — the margin is ours. Presented as an ordinary verification.
-    const matchedOnFile = !!(t.smart && onFileVerified(subject));
-    const ch = matchedOnFile ? 'instant' : channel || t.channel;
-    const check = {
-      id,
+    /* Persona is not connected. Storing a check would let a later paint
+       read it as a verification that happened. Nothing is written. */
+    return {
+      id: null,
       subject,
       kind: kind || 'individual',
       template,
       templateLabel: t.label,
-      price: net(t.price),
-      channel: ch,
-      contact: contact || (matchedOnFile ? {
-        via: 'instant'
-      } : {}),
+      price: 0,
+      channel: channel || 'none',
+      contact: contact || {},
       by: by || 'Desk',
       requestedAt: stampNow(),
-      ms: now,
-      dueMs: now + (DURATION[ch] || 8000),
-      matchedOnFile,
-      status: matchedOnFile ? 'completed' : 'processing',
-      result: null
+      ms: Date.now(),
+      status: 'not_connected',
+      result: null,
+      notConnected: true
     };
-    if (matchedOnFile) {
-      check.result = resolve(check);
-      logToHistory(check);
-    }
-    STORE = {
-      ...STORE,
-      [id]: check
-    };
-    persist();
-    return check;
   }
   const checksFor = name => Object.values(STORE).filter(c => c.subject === name).sort((a, b) => b.ms - a.ms);
   function summary() {
@@ -46288,7 +45846,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       '>': '&gt;'
     })[m]);
     const rowChk = (l, v) => `<tr><td style="color:${P.mute};font-size:12.5px;padding:6px 0;width:48%;">${esc(l)}</td><td style="font-size:12.5px;padding:6px 0;font-family:'Space Mono',monospace;color:${P.ink};text-transform:capitalize;">${esc(v)}</td></tr>`;
-    const wl = (r.watchlist || []).length ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">${r.watchlist.map(h => `<tr><td style="font-size:12px;padding:5px 0;border-bottom:1px solid ${P.soft};">${esc(h.name)} <span style="color:${P.mute};">· ${esc(h.list)} · ${esc(h.program || '')}</span></td><td style="font-size:12px;text-align:right;font-family:'Space Mono',monospace;color:${P.mute};">${h.score}%</td></tr>`).join('')}</table>` : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">No database matches returned.</div>`;
+    const wl = (r.watchlist || []).length ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">${r.watchlist.map(h => `<tr><td style="font-size:12px;padding:5px 0;border-bottom:1px solid ${P.soft};">${esc(h.name)} <span style="color:${P.mute};">· ${esc(h.list)} · ${esc(h.program || '')}</span></td><td style="font-size:12px;text-align:right;font-family:'Space Mono',monospace;color:${P.mute};">${h.score}%</td></tr>`).join('')}</table>` : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">${r.sanctionsChecked === false ? "Sanctions screening is not connected yet. Check clients against your government's official lists yourself." : 'No database matches returned.'}</div>`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KYC ${esc(r.reportRef || '')}</title>
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
       <style>*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:40px 46px;color:${P.ink};}@page{margin:14mm;}</style></head>
@@ -46339,7 +45897,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           via: 'in_person'
         },
         missing: needScan,
-        label: 'Run now · bill',
+        label: 'Not connected',
         needScan
       };
     }
@@ -46355,7 +45913,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       channel: 'link',
       contact: ct,
       missing: via === 'email' ? !ct.email : !ct.phone,
-      label: 'Send link · bill'
+      label: 'Not connected'
     };
   }
 
@@ -46887,7 +46445,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 11,
       c: CD.mute
-    }), " Encrypted \xB7 logged & audit-ready \xB7 billed to your account")), /*#__PURE__*/React.createElement("button", {
+    }), " Persona is not connected yet. No check is sent.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -46930,13 +46488,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "You'll be billed"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[20px] font-bold leading-none",
+    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold leading-none",
       style: {
-        color: CD.ink,
-        fontVariantNumeric: 'tabular-nums'
+        color: CD.mute
       }
-    }, money(net(tmpl(tplId).price)))), /*#__PURE__*/React.createElement("button", {
+    }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "px-3.5 py-2.5 text-sm font-medium",
       style: {
@@ -46960,7 +46517,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: "var(--cd-on-ink)"
     }), " ", del.label))) :
     /*#__PURE__*/
-    /* SENT confirmation */
+    /* Nothing was sent. The button used to claim a check was running. */
     React.createElement("div", {
       className: "px-6 py-8 text-center"
     }, /*#__PURE__*/React.createElement("span", {
@@ -46969,44 +46526,28 @@ ${(filing.map || []).map(blockHTML).join('')}
         width: 54,
         height: 54,
         borderRadius: '50%',
-        background: CD.greenSoft
+        background: CD.lineSoft
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: "check",
+      n: "shield",
       s: 26,
-      c: CD.green
+      c: CD.mute
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[16px] font-semibold",
       style: {
         color: CD.ink
       }
-    }, sent.channel === 'instant' ? 'Verification started' : 'Verification link sent'), /*#__PURE__*/React.createElement("div", {
+    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
         maxWidth: 360
       }
-    }, sent.channel === 'instant' ? /*#__PURE__*/React.createElement(React.Fragment, null, "Database screening for ", /*#__PURE__*/React.createElement("b", {
+    }, "No check was sent for ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, subject), " is running now \u2014 a result lands in moments.") : /*#__PURE__*/React.createElement(React.Fragment, null, "A secure ", sent.contact.via === 'email' ? 'email' : 'text', " went to ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, sent.contact.email || sent.contact.phone), ". You'll see the result here the moment ", subject, " completes it.")), /*#__PURE__*/React.createElement("div", {
-      className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 999,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 13,
-      c: CD.mute
-    }), " ", tmpl(sent.template).label, " \xB7 ", money(sent.price), " billed"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    }, subject), ". Nothing was read off an ID, nothing was screened, and nothing was charged."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "mt-5 px-5 py-2.5 text-sm font-semibold text-white",
       style: {
@@ -47105,15 +46646,16 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
 
   /* ====================================================================
-     VERIFICATION NUDGE — the occasional “run a quick check” recommendation.
-     Two levels:
-       • reco  (dismissible) — it has been ≥ recheckDays (default 180) since the
-         last provider check, or the subject has never been screened. A gentle
-         prompt to run a $3.99 Quick check so the file stays current.
-       • force (not dismissible) — the ID on file has EXPIRED. Pushes a full
-         re-verify. This is the forcing function.
-     Shown on the contact profile and inside the New-Transaction modal. Returns
-     null on a healthy, recently-checked file, so it never nags without cause.
+     VERIFICATION NUDGE — shown on the contact profile and inside the
+     New Transaction modal.
+     Two levels. Both look at the ID on the file and at approved checks.
+     The KYC store is wiped on load and resolve() does not approve a
+     check, so a file this desk just opened has no last check.
+       • reco  (dismissible) — the house recheck window has passed, or
+         there is no approved full check on the file.
+       • force (not dismissible) — the ID on file has expired, or house
+         policy stops a large deal.
+     Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) {
     return Math.floor((Date.now() - ms) / 86400000);
@@ -47295,17 +46837,9 @@ ${(filing.map || []).map(blockHTML).join('')}
     settings
   }) {
     useStore();
-    const [send, setSend] = useState(false);
-    const [sendTpl, setSendTpl] = useState('verify');
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
-    // ONLY a completed ‘verify’ or ‘plus’ inquiry counts as identity-verified.
-    // A ‘quick’ watchlist screen is screening, not KYC — it shows as “Screened”.
-    const approvedTiers = checks.filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved').map(c => c.template);
-    const isVerPlus = approvedTiers.includes('plus');
-    const isVer = isVerPlus || approvedTiers.includes('verify');
-    const isScreened = approvedTiers.includes('quick');
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -47330,23 +46864,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, [checks.map(c => c.id + c.status).join(',')]);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
+      "data-testid": "client-identity",
       style: {
         background: CD.panel,
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(VerificationNudge, {
-      name: name,
-      rec: rec,
-      settings: settings,
-      onRun: tpl => {
-        setSendTpl(tpl);
-        setSend(true);
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between gap-2 mb-3"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5"
+      className: "flex items-center gap-2.5 mb-3"
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center",
       style: {
@@ -47366,69 +46891,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: `A paid background & ID check run through ${PROVIDER} — separate from the ID you hold on file. A Quick check screens the name against sanctions / PEP lists (screening, not identity verification); Verified authenticates the ID; Verified Plus adds a biometric selfie and deep database inquiry.`,
-      example: "Quick check ($3.99) \xB7 Verified ($6.99) \xB7 Verified Plus ($14.99)"
-    }), " ", isVer ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1",
-      style: {
-        background: CD.greenSoft,
-        color: CD.green,
-        borderRadius: 5
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "checkcircle",
-      s: 11,
-      c: CD.green
-    }), " ", isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified') : isScreened ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1",
-      style: {
-        background: CD.amberSoft,
-        color: CD.amber,
-        borderRadius: 5
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 11,
-      c: CD.amber
-    }), " Screened only") : null), /*#__PURE__*/React.createElement("div", {
+      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
+    })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
+      "data-testid": "persona-not-connected",
       style: {
         color: CD.mute
       }
-    }, "Background & ID checks via ", PROVIDER))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
-    }, isVer && /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        setSendTpl('quick');
-        setSend(true);
-      },
-      title: "Re-screen name & DOB against sanctions / PEP lists",
-      className: "flex items-center gap-1.5 px-2.5 py-2 text-[12.5px] font-semibold flex-none",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        color: CD.ink,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 14,
-      c: CD.mute
-    }), " Quick check \xB7 $3.99"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        setSendTpl('verify');
-        setSend(true);
-      },
-      className: "flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none",
-      style: {
-        background: CD.ink,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "send",
-      s: 14,
-      c: "var(--cd-on-ink)"
-    }), " ", isVer ? 'Re-verify' : 'Verify identity'))), latest && latest.status === 'completed' && (() => {
+    }, "Persona is not connected yet."))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -47469,7 +46939,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, r.reportRef)), /*#__PURE__*/React.createElement("div", {
         className: "grid grid-cols-4 gap-2"
-      }, cell('Document', r.idCheck), cell('Biometric', r.biometric), cell('Database', r.database), cell('PEP', r.pep === 'None found' ? 'clear' : 'flag')), r.watchlist.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, cell('Document', r.idCheck), cell('Biometric', r.biometric), cell('Database', r.database), cell('PEP', r.pep === 'None found' ? 'clear' : r.pep === 'Not checked' || r.database === 'not checked' ? 'not checked' : 'flag')), r.watchlist.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mt-2 pt-2 text-[11.5px]",
         style: {
           borderTop: `1px solid ${CD.lineSoft}`,
@@ -47496,14 +46966,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "No verifications yet. Send ", name.split(/\s+/)[0], " off for a background check or ID verification \u2014 it attaches here automatically."), send && /*#__PURE__*/React.createElement(SendModal, {
-      subject: name,
-      kind: kind,
-      rec: rec,
-      by: by,
-      initialTpl: sendTpl,
-      onClose: () => setSend(false)
-    }));
+    }, "No verifications on file. Persona is not connected yet."));
   }
 
   /* ====================================================================
@@ -47662,43 +47125,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       if (onDone) onDone(nm);
       onClose();
     };
-    // create the contact, fire the chosen verification, then watch it complete
+    /* The choose step's button used to start a check, wait, and then write
+       an invented address and ID number onto the contact as "Pulled from
+       the ID". Persona is not connected, so the contact is saved and that
+       is all. */
     const startCheck = () => {
-      const nm = name.trim();
-      if (!nm) return;
-      const del = deliveryFor({
-        tplId,
-        mode,
-        via,
-        email,
-        phone,
-        hasId: !!photo,
-        subject: nm
-      });
-      if (del.missing) return;
-      if (setClients) setClients(c => ({
-        ...c,
-        [nm]: {
-          ...(c[nm] || {}),
-          kind,
-          phone: phone.trim(),
-          email: email.trim() || c[nm] && c[nm].email || '',
-          photo: photo || c[nm] && c[nm].photo || null,
-          risk: c[nm] && c[nm].risk || houseRisk(),
-          createdAt: c[nm] && c[nm].createdAt || new Date().toISOString().slice(0, 10)
-        }
-      }));
-      publishContact(nm);
-      const chk = createCheck({
-        subject: nm,
-        kind,
-        template: tplId,
-        channel: del.channel,
-        contact: del.contact,
-        by
-      });
-      setCheckId(chk.id);
-      setStep('verifying');
+      saveManual();
     };
 
     // when the verification finishes, fold the extracted identity into the contact
@@ -47796,12 +47228,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Add a verified contact"), /*#__PURE__*/React.createElement("div", {
+    }, "Add a contact"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px]",
       style: {
         color: CD.mute
       }
-    }, "Scan ID, add details, verify \xB7 via ", PROVIDER)), /*#__PURE__*/React.createElement("button", {
+    }, "Persona is not connected yet.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -47846,7 +47278,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Capture the customer's government ID. ", PROVIDER, " reads the name, address, date of birth and ID details straight off the document."), photo ? /*#__PURE__*/React.createElement("div", {
+    }, "Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",
       style: {
         borderRadius: 12,
@@ -47948,7 +47380,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Just the basics to create the contact \u2014 ", PROVIDER, " fills in the rest from the ID."), /*#__PURE__*/React.createElement("div", {
+    }, "Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex mb-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -48027,7 +47459,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "send",
       s: 11,
       c: CD.faint
-    }), " Next you'll pick the verification and send it to their phone or email.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
+    }), " Persona is not connected yet. Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
       subject: name.trim() || 'this contact',
       hasId: !!photo,
       verified: false,
@@ -48068,13 +47500,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, check && check.channel === 'records' ? `Confirming ${name.trim()} from your records…` : check && check.channel === 'link' ? `Verification link sent to ${name.trim()}` : `Verifying ${name.trim()} with ${PROVIDER}…`), /*#__PURE__*/React.createElement("div", {
+    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
         maxWidth: 360
       }
-    }, check && check.channel === 'records' ? `Already verified on file — confirming instantly with no ${PROVIDER} inquiry.` : check && check.channel === 'link' ? `They'll photograph their ID and take a selfie on their device. This screen updates the moment they finish — you can close it and check back.` : `Sending the scanned ID to ${PROVIDER} and screening sanctions, PEP and adverse-media databases. This usually takes a few seconds.`), /*#__PURE__*/React.createElement("div", {
+    }, "This desk does not send the ID out, and it does not screen a sanctions list."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
       style: {
         background: CD.panel,
@@ -48086,7 +47518,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 13,
       c: CD.mute
-    }), " ", tmpl(tplId).label, " \xB7 ", money(net(tmpl(tplId).price)), " billed")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }), " Not connected")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2.5 mb-3"
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center flex-none",
@@ -48127,7 +47559,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 12,
       c: CD.faint
-    }), " Pulled from the ID"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
+    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       className: "flex items-center justify-between py-1.5 text-[12.5px]",
       style: {
@@ -48225,13 +47657,12 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.faint
         }
-      }, "You'll be billed"), /*#__PURE__*/React.createElement("div", {
-        className: "text-[20px] font-bold leading-none",
+      }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] font-semibold leading-none",
         style: {
-          color: CD.ink,
-          fontVariantNumeric: 'tabular-nums'
+          color: CD.mute
         }
-      }, money(net(tmpl(tplId).price)))), /*#__PURE__*/React.createElement("button", {
+      }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
         onClick: () => setStep('details'),
         className: "px-3.5 py-2.5 text-sm font-medium",
         style: {
@@ -49041,7 +48472,7 @@ ${snap}`;
     loan: 'Amortised loan and payment calculator.',
     assistant: 'AI desk assistant trained on your live numbers.',
     reports: 'One-touch reports: summary, FINTRAC, revenue, register.',
-    compliance: 'Sanctions screening, 24h aggregation, fileable submissions and pluggable jurisdiction packs.',
+    compliance: 'Aggregation, fileable submissions and jurisdiction packs. Sanctions screening is not connected yet.',
     tagged: 'Bookmarked transactions flagged for follow-up.',
     settings: 'Permissions, compliance rules and ticker tape.'
   };
@@ -55107,8 +54538,8 @@ ${snap}`;
     tpl: {
       quote: '{desk}: {amount} {ccy} = ${total} CAD at {rate}. This is our live counter rate. Reply Y and we’ll hold it for {mins} min — N to pass.',
       hold: 'Done — {rate} is held for you until {time}. Your ref is {ref} — give it at the counter. Bring one piece of government photo ID.',
-      verify: 'Want to skip the wait? Verify your ID before you arrive: {link}',
-      ready: 'You’re verified. Give ref {ref} at the counter — your rate stays locked until {time}.',
+      verify: 'Persona is not connected yet. No identity check is sent.',
+      ready: 'Give ref {ref} at the counter — your rate stays locked until {time}.',
       nudge: 'Heads up — your held rate (ref {ref}) expires in 10 minutes.',
       closed: 'No problem. Today’s rates are always live at {site} — text back any time.',
       pickup: '{desk}: your order {ref} is ready for pickup at 128 Yonge St. We’re open until 6 pm today.',
@@ -55231,7 +54662,7 @@ ${snap}`;
       rate: 0.0248,
       total: 1984,
       holdUntil: n + 6 * 60000,
-      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Want to skip the wait? Verify your ID before you arrive: desk.cd/v/tq-1042'), sys('ID verified via secure link · Persona'), out(`You’re verified. Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
+      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Persona is not connected yet. No identity check is sent.'), sys('Persona is not connected yet. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
     }, {
       id: 'r6',
       ref: 'TQ-1041',
@@ -55327,7 +54758,7 @@ ${snap}`;
       kind: 'System',
       dir: 'sys',
       to: '+1 416 555 0158',
-      detail: 'ID verified via secure link · Persona'
+      detail: 'Persona is not connected yet. No identity check was sent.'
     }, {
       t: n - 69 * m,
       kind: 'Hold',
@@ -56375,7 +55806,7 @@ ${snap}`;
         onClick: () => acts.verify(r.id),
         className: "px-3 py-1.5 text-[12px]",
         style: dashBtn
-      }, "\u25B8 Simulate ID verified"), onStartTx && /*#__PURE__*/React.createElement("button", {
+      }, "\u25B8 Mark ready (no check sent)"), onStartTx && /*#__PURE__*/React.createElement("button", {
         onClick: () => {
           onClose();
           onStartTx(r.ref);
@@ -56400,7 +55831,7 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "ID verified \u2014 key ", /*#__PURE__*/React.createElement("b", {
+    }, "Persona is not connected yet. Key ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono'
       }
@@ -56656,7 +56087,7 @@ ${snap}`;
     const preview = useMemo(() => {
       const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))];
       if (tg.verifyStep) {
-        msgs.push(out(render(tg.tpl.verify, ctx)), sys('ID verified via secure link · Persona'), out(render(tg.tpl.ready, ctx)));
+        msgs.push(out(render(tg.tpl.verify, ctx)), sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctx)));
       }
       if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx)));
       return msgs;
@@ -56723,7 +56154,7 @@ ${snap}`;
       n: "3",
       title: "ID verify invite",
       trigKind: "auto",
-      trig: "rides along with the hold \u2014 Persona link, billed per check",
+      trig: "Persona is not connected yet. This step does not send a check.",
       on: tg.verifyStep,
       toggle: /*#__PURE__*/React.createElement(Toggle, {
         small: true,
@@ -56741,7 +56172,7 @@ ${snap}`;
       n: "4",
       title: "Ready confirmation",
       trigKind: "auto",
-      trig: "their ID clears",
+      trig: "Persona is not connected yet. This does not clear an ID.",
       on: tg.verifyStep
     }, /*#__PURE__*/React.createElement(MsgEditor, {
       v: tg.tpl.ready,
@@ -57990,7 +57421,7 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. ID verify checks bill separately (Persona).")), /*#__PURE__*/React.createElement("div", {
+    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. Persona is not connected yet. No identity check is billed.")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] px-1",
       style: {
         color: CD.faint
@@ -58163,7 +57594,7 @@ ${snap}`;
         upd(id, r => ({
           ...r,
           status: 'verified',
-          thread: [...r.thread, sys('ID verified via secure link · Persona'), out(render(tg.tpl.ready, ctxFor(r)))]
+          thread: [...r.thread, sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))]
         }));
         bump(1);
         if (r0) {
