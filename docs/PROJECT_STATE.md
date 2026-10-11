@@ -477,6 +477,27 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, thirteenth pass. The
+SMR terrorism-financing deadline is allowed only as that whole
+clause, on the compliance page and the FAQ. A longer sentence
+does not borrow it, and the clause fails on the homepage. A
+hyphenated live-rates, a dash entity, and en, em, and hair
+spaces cannot hide a timing claim. 2-hour, within the hour,
+next-day, reply today, and a board that moves with the market
+fail. The contact page still says a reply within one business
+day, so that phrase is not banned.
+
+**2026-10-11**, public site claims, twelfth pass. The
+claims check allows a regulator clause only when that clause is
+the whole clause, and only when the clause itself contains a
+banned pattern. The kept clause is the Australia SMR terrorism
+financing deadline. US CTR and SAR phrases are not on the list.
+A tag inside a word, an unquoted meta value, a hyphen entity, a
+thin space, and a fullwidth dash cannot hide a phrase. 48-hour,
+less than an hour, overnight, every second, always current, and
+plenty of shops fail. The publish step no longer says the board
+is always current. The legal page says early access once.
+
 **2026-10-11**, public site claims, eleventh pass. The
 onboarding greeting says the desk is set up. The homepage and the
 mobile page say available in Canada, early access, where they used
