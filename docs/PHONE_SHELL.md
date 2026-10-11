@@ -234,7 +234,9 @@ the button will not go.
 
 ### EmptyState
 
-`title`, `message`. `actionLabel` and `onAction` optional.
+`title`, `message`. `actionLabel` and `onAction` optional. `icon`
+optional: an `Ic` name or a node, drawn above the title. Callers
+that pass no icon are unchanged.
 
 ### LoadingState
 
@@ -464,7 +466,7 @@ pixels alone.
 
 Screen PRs add these in their own files. Do not build them here.
 
-ChoiceTiles, AmountField, SummaryList, StepHeader.
+ChoiceTiles, AmountField, StepHeader.
 
 ## Shared pieces
 
@@ -480,7 +482,7 @@ to `document.body`, so that hide covers a node outside the window.
 
 `os-src/phone/nav-row.jsx`. One row, at least 56px, and the whole row
 is the target. `icon` is an `Ic` name or a node. `title` and `detail`
-are the two lines. `value` and `valueTone` (`warn`) are a short status.
+are the two lines, and the detail starts on the title’s left edge. `value` and `valueTone` (`warn`) are a short status.
 `badge` and `badgeTone` (`pos`, `neutral`, `warn`) replace the value.
 `onClick` makes the row a button. `danger` is the red sign-out row and
 has no chevron. `switchOn` draws the toggle and sets `role="switch"`
@@ -516,6 +518,12 @@ parent decides what four digits means. Delete removes one digit.
 `busy` replaces the dots with “Saving...” and locks the keys.
 `locked` locks them too. `passwordMode` replaces the keypad with a
 password field and Next. `data-pin-step` is the step number.
+
+### SummaryList
+
+`os-src/phone/summary-list.jsx`. Read-only. `rows` is
+`{ label, value }`. A row with an empty value is omitted. It is
+not a form and it does not save.
 
 ### Toast
 

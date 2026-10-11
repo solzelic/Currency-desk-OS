@@ -346,6 +346,16 @@
 
   .phone-empty,
   .phone-error { padding: 28px 8px; text-align: center; }
+  .phone-empty-ico {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 12px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: var(--gray-100, #EFEDE8);
+    color: var(--gray-900, #161513);
+  }
   .phone-empty h2,
   .phone-error p {
     margin: 0;
@@ -633,6 +643,7 @@
   }
   .nrow { grid-template-columns: auto minmax(0, 1fr) auto auto; min-height: 56px; }
   .nrow.static { cursor: default; }
+  .nrow .tx { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
   .me { grid-template-columns: auto minmax(0, 1fr) auto; min-height: 76px; }
   .nrow .ic {
     width: 36px;
@@ -646,7 +657,7 @@
   .nrow .t, .me .t { display: block; font-weight: 600; }
   .nrow .t { font-size: 16px; line-height: 24px; }
   .me .t { font-size: 17px; line-height: 24px; }
-  .nrow .d, .me .d { display: block; font-size: 12px; line-height: 16px; color: #6B6760; }
+  .nrow .d, .me .d { display: block; margin: 0; padding: 0; font-size: 12px; line-height: 16px; color: #6B6760; }
   .nrow .v { font-size: 14px; line-height: 20px; color: #6B6760; white-space: nowrap; }
   .nrow .v.is-warn { color: #8A5300; font-weight: 600; }
   .nrow .cv, .me .cv { color: #6B6760; display: grid; }
@@ -658,9 +669,15 @@
     color: #fff;
     display: grid;
     place-items: center;
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
     font-size: 16px;
     line-height: 24px;
     font-weight: 600;
+    letter-spacing: 0;
+  }
+  .phone-head .mb-acct-av {
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    letter-spacing: 0;
   }
   .nrow.danger .t { color: #B42318; }
   .nrow.danger .ic { background: #FDECEA; color: #B42318; }
@@ -832,4 +849,34 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pin-dots.shake { animation: none; }
+}
+
+/* SummaryList. Read-only label and value. Not a form. */
+@media (max-width: 430px) {
+  .phone-summary {
+    margin: 0 0 8px;
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: var(--radius-lg, 14px);
+    overflow: hidden;
+  }
+  .phone-summary > div {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border, #E2DFD8);
+  }
+  .phone-summary > div:last-child { border-bottom: 0; }
+  .phone-summary dt {
+    margin: 0;
+    font: var(--text-caption);
+    color: var(--color-text-muted, #6B6760);
+  }
+  .phone-summary dd {
+    margin: 0;
+    font: var(--text-small);
+    color: var(--gray-900, #161513);
+  }
 }

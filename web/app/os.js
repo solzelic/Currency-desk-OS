@@ -4747,7 +4747,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement("span", {
       className: "t"
     }, title), detail ? /*#__PURE__*/React.createElement("span", {
-      className: "d wrap"
+      className: "d"
     }, detail) : null), badge ? /*#__PURE__*/React.createElement("span", {
       className: 'badge ' + (badgeTone || 'neutral')
     }, badge) : /*#__PURE__*/React.createElement("span", {
@@ -5029,6 +5029,27 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Toast
+  });
+})();
+
+/* ---- os-src/phone/summary-list.jsx ---- */
+/* SummaryList — read-only facts the screen already has.
+   Label and value. No fields, no save. A row with no value is
+   left out, so a missing figure is absent rather than a blank. */
+(function () {
+  function SummaryList({
+    rows
+  }) {
+    const shown = (rows || []).filter(row => row && row.label && row.value);
+    if (!shown.length) return null;
+    return /*#__PURE__*/React.createElement("dl", {
+      className: "phone-summary"
+    }, shown.map(row => /*#__PURE__*/React.createElement("div", {
+      key: row.label
+    }, /*#__PURE__*/React.createElement("dt", null, row.label), /*#__PURE__*/React.createElement("dd", null, row.value))));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    SummaryList
   });
 })();
 
@@ -62899,11 +62920,19 @@ window.CDOS_PERSIST = (function () {
     title,
     message,
     actionLabel,
-    onAction
+    onAction,
+    icon
   }) {
+    const mark = typeof icon === 'string' ? /*#__PURE__*/React.createElement(Ic, {
+      n: icon,
+      s: 28
+    }) : icon;
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-empty"
-    }, /*#__PURE__*/React.createElement("h2", null, title), message ? /*#__PURE__*/React.createElement("p", null, message) : null, actionLabel && onAction ? /*#__PURE__*/React.createElement("button", {
+    }, mark ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-empty-ico",
+      "aria-hidden": "true"
+    }, mark) : null, /*#__PURE__*/React.createElement("h2", null, title), message ? /*#__PURE__*/React.createElement("p", null, message) : null, actionLabel && onAction ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-text-btn",
       onClick: onAction

@@ -19,7 +19,7 @@
         <span className="ic" aria-hidden="true">{typeof icon === 'string' ? <Ic n={icon} s={20} /> : icon}</span>
         <span className="tx">
           <span className="t">{title}</span>
-          {detail ? <span className="d wrap">{detail}</span> : null}
+          {detail ? <span className="d">{detail}</span> : null}
         </span>
         {badge
           ? <span className={'badge ' + (badgeTone || 'neutral')}>{badge}</span>

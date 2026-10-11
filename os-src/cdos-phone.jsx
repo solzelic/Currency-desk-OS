@@ -229,9 +229,11 @@
     );
   }
 
-  function EmptyState({ title, message, actionLabel, onAction }) {
+  function EmptyState({ title, message, actionLabel, onAction, icon }) {
+    const mark = typeof icon === 'string' ? <Ic n={icon} s={28} /> : icon;
     return (
       <div className="phone-empty">
+        {mark ? <span className="phone-empty-ico" aria-hidden="true">{mark}</span> : null}
         <h2>{title}</h2>
         {message ? <p>{message}</p> : null}
         {actionLabel && onAction ? <button type="button" className="phone-text-btn" onClick={onAction}>{actionLabel}</button> : null}
