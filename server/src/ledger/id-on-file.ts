@@ -1,5 +1,13 @@
 import type pg from "pg";
 import { branchBusinessDate } from "./canada-rules.js";
+import {
+  currentNonPhotoSql,
+  currentPhotoSql,
+  expiredPhotoSql,
+  idDocumentTypeJoinSql,
+  nonPhotoSql,
+  photoMissingExpirySql,
+} from "./id-document-types.mjs";
 
 /* The sentence a teller or an owner sees. One wording, so a 422 from
    the route and a thrown error say the same thing. Matches the client
@@ -92,6 +100,7 @@ export const ID_NO_EXPIRY_REASON = "ID has no expiry date";
 export const ID_NO_NUMBER_REASON = "No ID number";
 export const ID_TYPE_NOT_STATED_REASON = "ID type not stated";
 export const ID_NO_ID_REASON = "No ID on file";
+export const ID_PHOTO_NEEDED_REASON = "A current photo ID is needed";
 
 function standing(
   status: IdStanding["status"],
@@ -102,15 +111,16 @@ function standing(
   return { status, label, detail: sentence, reason: sentence, tone };
 }
 
-/* The finer word the document query returns. The gate folds the
-   four missing words into `missing`. The response keeps them, so
-   the screen can say which one. */
+/* The finer word the document query returns. The gate folds every
+   word other than identified and expired into `missing`. The
+   response keeps them, so the screen can say which one. */
 export type IdVerdict =
   | "identified"
   | "expired"
   | "no_expiry"
   | "no_number"
   | "type_not_stated"
+  | "photo_needed"
   | "no_id";
 
 export function standingForVerdict(verdict: string): IdStanding {
@@ -124,6 +134,7 @@ export function standingForVerdict(verdict: string): IdStanding {
     verdict === "no_expiry" ? ID_NO_EXPIRY_REASON
     : verdict === "no_number" ? ID_NO_NUMBER_REASON
     : verdict === "type_not_stated" ? ID_TYPE_NOT_STATED_REASON
+    : verdict === "photo_needed" ? ID_PHOTO_NEEDED_REASON
     : ID_NO_ID_REASON;
   return standing("missing", "Missing ID", sentence, "warning");
 }
@@ -154,25 +165,27 @@ function strippedNumber(column: string): string {
 
 /* A document the standing will read. A real type is present and is
    not "Not stated". The number has survived the strip. is_primary
-   is not here. It chooses which document is shown. */
-function countedDocument(where: string): string {
+   is not here. It chooses which document is shown. The type catalogue
+   is joined so a photo ID and the no-expiry flag come from one list. */
+function countedDocument(where: string, extra: string): string {
   return `SELECT 1 FROM desk_client_identity_documents d
+    ${idDocumentTypeJoinSql()}
     WHERE ${where}
       AND coalesce(btrim(d.doc_type), '') <> ''
       AND lower(btrim(d.doc_type)) <> 'not stated'
-      AND length(${strippedNumber("d.doc_number")}) > 0`;
+      AND length(${strippedNumber("d.doc_number")}) > 0
+      AND (${extra})`;
 }
 
-/* The same order displayIdStanding uses after it has looked at
-   every document. A current document wins. A dated document that
-   is before the business date wins over a blank expiry. A blank
-   expiry then wins over a missing number, which wins over a type
-   that was not stated. Anything else is no ID on file.
-
-   The business-date placeholder is on the first two legs. A blank
-   expiry is NULL, so it fails both comparisons and lands on
-   no_expiry. `businessDateParam` is a bound placeholder, never a
-   date spliced in from the request. */
+/* Identified is one current government-issued photo ID. Current
+   means the expiry is on or after the business date, or the type's
+   own no-expiry flag is set and the expiry is blank. A past date
+   does not qualify, including on that type. A health card is not a
+   photo ID. A non-photo document is not a photo ID. An expired
+   photo ID beside a current non-photo document is not Identified
+   and it is not Expired: dual process is not a method this book
+   can record. The business-date placeholder is bound, never a date
+   spliced in from the request. */
 export function documentVerdictSql(
   clientIdExpr: string,
   tenantExpr: string,
@@ -183,19 +196,18 @@ export function documentVerdictSql(
     `d.client_id = ${clientIdExpr}
         AND d.tenant_id = ${tenantExpr}
         AND d.legal_entity_id = ${entityExpr}`;
-  const counted = countedDocument(where);
+  const date = `${businessDateParam}::date`;
   return `CASE
     WHEN EXISTS (
-      ${counted}
-        AND d.expires_on >= ${businessDateParam}::date
+      ${countedDocument(where, currentPhotoSql(date))}
     ) THEN 'identified'
     WHEN EXISTS (
-      ${counted}
-        AND d.expires_on < ${businessDateParam}::date
+      ${countedDocument(where, expiredPhotoSql(date))}
+    ) AND NOT EXISTS (
+      ${countedDocument(where, currentNonPhotoSql(date))}
     ) THEN 'expired'
     WHEN EXISTS (
-      ${counted}
-        AND d.expires_on IS NULL
+      ${countedDocument(where, photoMissingExpirySql())}
     ) THEN 'no_expiry'
     WHEN EXISTS (
       SELECT 1 FROM desk_client_identity_documents d
@@ -215,12 +227,15 @@ export function documentVerdictSql(
            )
          )
     ) THEN 'type_not_stated'
+    WHEN EXISTS (
+      ${countedDocument(where, nonPhotoSql())}
+    ) THEN 'photo_needed'
     ELSE 'no_id'
   END`;
 }
 
-/* The posting word. identified is verified. The four missing
-   verdicts are missing. */
+/* The posting word. identified is verified. Every other verdict
+   is missing. */
 export function documentStandingSql(
   clientIdExpr: string,
   tenantExpr: string,

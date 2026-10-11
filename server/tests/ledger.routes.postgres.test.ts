@@ -14,6 +14,7 @@ import {
   ID_NO_EXPIRY_REASON,
   ID_NO_ID_REASON,
   ID_NO_NUMBER_REASON,
+  ID_PHOTO_NEEDED_REASON,
   ID_STATUS_NOT_CLIENT_MESSAGE,
   ID_TYPE_NOT_STATED_REASON,
 } from "../src/ledger/id-on-file.js";
@@ -1212,6 +1213,136 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     const refused = await exchange(cookies, await counterId(old.clientId), "3000.00", "blank-beside-expired");
     expect(refused.statusCode, refused.body).toBe(422);
     expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("treats a non-photo document on its own as missing ID", async () => {
+    const cookies = await cookie();
+    /* A birth certificate is a secondary paper. It is not a
+       government-issued photo ID, so the file is not Identified. */
+    const client = await openClient(cookies, "Birth certificate only");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Birth certificate",
+      docNumber: "BC-1",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "secondary-only");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("treats an expired photo ID beside a current non-photo document as missing ID", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Expired photo and certificate");
+    await fileDocument(cookies, client.clientId, {
+      docType: "Passport",
+      docNumber: "PRI-OLD",
+      expiresOn: "2001-01-01",
+      isPrimary: true,
+    });
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Birth certificate",
+      docNumber: "BC-NOW",
+      expiresOn: "2031-05-01",
+      isPrimary: false,
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "expired-photo-current-secondary");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("never accepts a health card as ID on file", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Health card only");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Health Card",
+      docNumber: "HC-1",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "health-card-only");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("treats a pre-2012 citizenship card with no expiry as ID on file", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Citizenship card");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Canadian citizenship card (pre-2012)",
+      docNumber: "CIT-1",
+      expiresOn: null,
+    });
+    expect(filed.idStanding).toEqual({
+      status: "identified",
+      label: "Identified",
+      detail: ID_IDENTIFIED_REASON,
+      reason: ID_IDENTIFIED_REASON,
+      tone: "ok",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "citizenship-no-expiry");
+    expect(posted.statusCode, posted.body).toBe(201);
+  });
+
+  it("treats a PR card with no expiry as missing ID", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "PR card blank");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "PR Card",
+      docNumber: "PR-1",
+      expiresOn: null,
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_NO_EXPIRY_REASON,
+      reason: ID_NO_EXPIRY_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "pr-no-expiry");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("does not treat a past expiry on the no-expiry type as current", async () => {
+    const cookies = await cookie();
+    /* The flag allows a blank expiry. A date that is already past
+       is still past. The type is not a blanket pass. */
+    const client = await openClient(cookies, "Citizenship dated");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Canadian citizenship card (pre-2012)",
+      docNumber: "CIT-OLD",
+      expiresOn: "2001-01-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "expired",
+      label: "Expired",
+      detail: ID_EXPIRED_REASON,
+      reason: ID_EXPIRED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "citizenship-past");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
   });
 
   it("uses the branch's business date, not UTC, across midnight", async () => {

@@ -69,18 +69,20 @@ entity has tills; every one of them points at the same person.
 
 The posting gate does not read `ledger_customers.id_status`. ID on file
 is one rule, computed on the server from
-`desk_client_identity_documents`: a real type (not empty and not
-"Not stated"), a number that survives stripping whitespace and
-invisible characters, and an expiry on or after the branch's business
-date. A blank or missing expiry does not count. The primary document is what
-the desk shows (`displayedDocument`); it is not what decides the
-standing. The client response carries `idStanding` as
-`{ status, label, detail, reason, tone }`. `status` is
-`identified`, `expired`, or `missing`. `detail` and `reason` are
-the same sentence, copied from `displayIdStanding` ("ID has no
-expiry date", "No ID number", "ID type not stated", "No ID on
-file", or the Identified and Expired sentences). The two copies
-have to stay the same. `POST` and `PUT /api/ledger/customers` refuse
+`desk_client_identity_documents`: one current government-issued photo
+ID, with a number that survives stripping whitespace and invisible
+characters, and an expiry on or after the branch's business date. A
+blank expiry counts only for `Canadian citizenship card (pre-2012)`.
+A health card is never accepted. A non-photo document is not ID on
+file. The primary document is what the desk shows
+(`displayedDocument`); it is not what decides the standing. The client
+response carries `idStanding` as `{ status, label, detail, reason,
+tone }`. `status` is `identified`, `expired`, or `missing`. `detail`
+and `reason` are the same sentence, copied from `displayIdStanding`
+("ID has no expiry date", "No ID number", "ID type not stated",
+"No ID on file", "A current photo ID is needed", or the Identified
+and Expired sentences). The two copies have to stay the same.
+`POST` and `PUT /api/ledger/customers` refuse
 a standing sent on the body, and accept `clientId` so the till's
 customer points at this file. See `docs/LEDGER_POSTING_API.md`.
 
