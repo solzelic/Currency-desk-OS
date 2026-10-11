@@ -101,8 +101,12 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
+    /* Expired only when the expiry calendar date is before the branch's
+       calendar date. The same day is still current. The UTC date is
+       already tomorrow on a Toronto evening, which is how a valid ID
+       was refused on its last day. */
     var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
+      : record.idExpiry && window.CDOS.calendarBefore(record.idExpiry, window.CDOS.branchCalendarDate()) ? "expired"
       : "verified";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };

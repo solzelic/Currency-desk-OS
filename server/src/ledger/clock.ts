@@ -11,6 +11,13 @@ export function now(): Date {
   return clock.getStore() ?? new Date();
 }
 
+/** Run `fn` as if `at` were the current instant. Tests use this to stand
+    on a calendar date. Production does not. */
+export function withNow<T>(at: Date, fn: () => T): T {
+  if (Number.isNaN(at.getTime())) throw new Error("withNow needs a real instant");
+  return clock.run(at, fn);
+}
+
 function testInstant(header: string | string[] | undefined): Date | null {
   if (process.env.CD_TEST_CLOCK !== "1") return null;
   if (header == null || header === "") return null;

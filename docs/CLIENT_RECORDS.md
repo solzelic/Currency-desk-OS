@@ -193,8 +193,10 @@ one that drives the desk's KYC standing.
 `verification_status` is derived from the documents, not typed:
 
 - no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
-- otherwise → `identified`
+- the primary document's expiry is a calendar date before today's calendar date in the branch time zone → `expired`
+- otherwise, including an expiry equal to that calendar date, → `identified`
+
+The two dates are YYYY-MM-DD. The comparison does not parse the expiry with `new Date` or `toISOString`, and it does not use the database session's `current_date`. A desk whose server clock is UTC, or whose browser is not, was marking a passport expired on the last day it was valid.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of

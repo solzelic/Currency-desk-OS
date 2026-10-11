@@ -344,6 +344,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
     } catch (e) { /* no session, no server, or not signed in: the clock stands in */ }
     return businessDate();
@@ -361,6 +362,52 @@
     return { from: start.toISOString(), to: end.toISOString() };
   }
   const TODAY = wallClock();
+  /* An ID expiry is a calendar date. It stays current through that
+     day in the branch's zone. The session's trading day is a different
+     question — a till opened yesterday is still on yesterday after
+     midnight — and the UTC date is a third, wrong one. `new Date` of
+     a YYYY-MM-DD string is UTC midnight, which is already the previous
+     evening in Toronto and the next morning's display in Jerusalem. */
+  const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function calendarDate(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(at);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    const year = pick('year'), month = pick('month'), day = pick('day');
+    if (!year || !month || !day) throw new Error('The branch time zone could not be read.');
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  let _branchTimeZone = null;
+  const setBranchTimeZone = (zone) => { _branchTimeZone = zone ? String(zone) : null; return _branchTimeZone; };
+  const branchCalendarDate = (at) => {
+    const when = at instanceof Date ? at : new Date();
+    if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
+    if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
+    return when.toLocaleDateString('en-CA');
+  };
+  const readCalendarDate = (value) => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) throw new Error('expiry is not a date');
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${month}-${day}`;
+    }
+    const match = CALENDAR_DATE.exec(String(value == null ? '' : value).slice(0, 10));
+    if (!match) throw new Error('expiry is not a calendar date');
+    return match[0];
+  };
+  const calendarBefore = (left, right) => readCalendarDate(left) < readCalendarDate(right);
+  /* Day count from the year, month and day fields. Date.UTC here is
+     the arithmetic, not a conversion of the expiry into an instant. */
+  const calendarDaysUntil = (expiry, on) => {
+    const from = readCalendarDate(on).split('-').map(Number);
+    const to = readCalendarDate(expiry).split('-').map(Number);
+    return Math.round((Date.UTC(to[0], to[1] - 1, to[2]) - Date.UTC(from[0], from[1] - 1, from[2])) / 86400000);
+  };
 
   /* ============================================================
      THE REPORTING LINE — one number, in the desk's own money
@@ -1286,6 +1333,7 @@
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
+    setBranchTimeZone, branchCalendarDate, calendarBefore, calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,

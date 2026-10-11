@@ -302,6 +302,7 @@
           const session = (answer && answer.session) || null;
           const day = (answer && answer.day) || null;
           setTillDay({ loading: false, session, day, counts: (answer && answer.latestCounts) || {}, error: '' });
+          if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
           if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
           if (!day || !day.from || !day.to) {
             setDayBook({

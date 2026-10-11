@@ -44,6 +44,25 @@ export function readDateOnly(value: unknown): string {
   return match[0];
 }
 
+/** True when calendar date `left` is before `right`. The same day is not
+    before. Both sides are YYYY-MM-DD. A Date contributes its calendar
+    fields, and a string contributes its date prefix. Nothing here is
+    parsed as a UTC instant. */
+export function calendarBefore(left: unknown, right: unknown): boolean {
+  return readDateOnly(left) < readDateOnly(right);
+}
+
+/** Whole days from `on` until `expiry`. Zero on the expiry date, negative
+    after it. The count uses the year, month and day fields. It does not
+    convert either date through a time zone. */
+export function calendarDaysUntil(expiry: unknown, on: unknown): number {
+  const [fromYear, fromMonth, fromDay] = readDateOnly(on).split("-").map(Number);
+  const [toYear, toMonth, toDay] = readDateOnly(expiry).split("-").map(Number);
+  const ms =
+    Date.UTC(toYear!, toMonth! - 1, toDay!) - Date.UTC(fromYear!, fromMonth! - 1, fromDay!);
+  return Math.round(ms / 86_400_000);
+}
+
 function zoneOffsetMs(at: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

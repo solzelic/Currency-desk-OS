@@ -53,7 +53,8 @@
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
-import { civilDate, civilToday } from "../civil-date.js";
+import { businessDate, calendarBefore, readDateOnly } from "../ledger/business-date.js";
+import { now as clockNow } from "../ledger/clock.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 
@@ -599,7 +600,7 @@ export class ClientRecordService {
         clientId,
         `${input.docType.trim()}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -652,7 +653,7 @@ export class ClientRecordService {
         clientId,
         `${documentId} · changed: ${names.join(", ") || "scan"}`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -676,7 +677,7 @@ export class ClientRecordService {
         clientId,
         `${removed.rows[0]!.doc_type} removed`,
       );
-      await this.refreshVerification(client, clientId);
+      await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -1061,9 +1062,11 @@ export class ClientRecordService {
        desk's own status column says, and a primary document past its
        expiry is "expired" — the two states the posting gate actually
        acts on, computed from the documents rather than from a field
-       somebody forgot to update. */
-    const expiry = civilDate(row.primary_expiry);
-    const expired = expiry != null && expiry < civilToday();
+       somebody forgot to update. The expiry and today are both
+       YYYY-MM-DD in the branch zone. The same calendar day is still
+       current. */
+    const on = await this.branchCalendarDate(client, actor);
+    const expired = row.primary_expiry != null && calendarBefore(row.primary_expiry, on);
     const status: VerificationStatus =
       row.numbered === 0
         ? "unverified"
@@ -1156,7 +1159,27 @@ export class ClientRecordService {
    * it away either. The three states this DOES own are the ones that
    * follow mechanically from what the desk is holding.
    */
-  private async refreshVerification(client: pg.PoolClient, clientId: string) {
+  /** Today's calendar date in this branch's zone. The database session's
+   *  `current_date` is the server's zone, which is already tomorrow in
+   *  Toronto for the hours after UTC midnight. */
+  private async branchCalendarDate(client: pg.PoolClient, actor: LedgerActor): Promise<string> {
+    const result = await client.query(
+      `SELECT timezone FROM branches
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
+      [actor.tenantId, actor.legalEntityId, actor.branchId],
+    );
+    const zone = result.rows[0]?.timezone;
+    if (typeof zone !== "string" || zone.trim() === "") {
+      throw new LedgerError(
+        "BRANCH_TIMEZONE_UNSET",
+        "This branch has no time zone, so an ID expiry cannot be compared to a business date.",
+      );
+    }
+    return businessDate(clockNow(), zone);
+  }
+
+  private async refreshVerification(client: pg.PoolClient, actor: LedgerActor, clientId: string) {
+    const on = await this.branchCalendarDate(client, actor);
     await client.query(
       `UPDATE desk_clients c
           SET verification_status = CASE
@@ -1167,12 +1190,12 @@ export class ClientRecordService {
             WHEN EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
                WHERE d.client_id=c.client_id AND d.is_primary
-                 AND d.expires_on IS NOT NULL AND d.expires_on < current_date
+                 AND d.expires_on IS NOT NULL AND d.expires_on < $2::date
             ) THEN 'expired'
             ELSE 'identified'
           END
         WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
-      [clientId],
+      [clientId, on],
     );
   }
 
@@ -1276,7 +1299,8 @@ const blank = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-const isoDate = (value: unknown) => civilDate(value);
+const isoDate = (value: unknown) =>
+  value == null || value === "" ? null : readDateOnly(value);
 
 function clientJson(
   row: Record<string, unknown>,

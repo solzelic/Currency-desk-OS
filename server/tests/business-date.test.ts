@@ -9,6 +9,8 @@
 import { describe, expect, it } from "vitest";
 import {
   businessDate,
+  calendarBefore,
+  calendarDaysUntil,
   readDateOnly,
   signOffWindow,
   zonedMidnight,
@@ -51,6 +53,46 @@ describe("readDateOnly", () => {
   it("refuses a value that is not a date", () => {
     expect(() => readDateOnly("yesterday")).toThrow(/not a date/);
     expect(() => readDateOnly(new Date(NaN))).toThrow(/not a date/);
+  });
+});
+
+describe("an ID expiry compared to the branch calendar date", () => {
+  it("is still current on the day it expires", () => {
+    expect(calendarBefore("2026-10-11", "2026-10-11")).toBe(false);
+    expect(calendarDaysUntil("2026-10-11", "2026-10-11")).toBe(0);
+    expect(calendarBefore("2026-10-10", "2026-10-11")).toBe(true);
+    expect(calendarBefore("2026-10-12", "2026-10-11")).toBe(false);
+  });
+
+  it("stays current on a Toronto evening after UTC has rolled to the next day", () => {
+    const at = new Date("2026-10-11T23:30:00-04:00");
+    const on = businessDate(at, "America/Toronto");
+    expect(on).toBe("2026-10-11");
+    expect(at.toISOString().slice(0, 10)).toBe("2026-10-12");
+    expect(calendarBefore("2026-10-11", on)).toBe(false);
+    expect(calendarBefore("2026-10-10", on)).toBe(true);
+  });
+
+  it("is still current just after midnight in Jerusalem on the expiry date", () => {
+    const at = new Date("2026-10-12T00:30:00+03:00");
+    const on = businessDate(at, "Asia/Jerusalem");
+    expect(on).toBe("2026-10-12");
+    expect(at.toISOString().slice(0, 10)).toBe("2026-10-11");
+    expect(calendarBefore("2026-10-12", on)).toBe(false);
+    expect(calendarBefore("2026-10-11", on)).toBe(true);
+  });
+
+  it("reads a stored DATE from its calendar fields, not the UTC shift", () => {
+    const stored = new Date(2026, 9, 11);
+    expect(readDateOnly(stored)).toBe("2026-10-11");
+    expect(calendarBefore(stored, "2026-10-11")).toBe(false);
+    const utc = stored.toISOString().slice(0, 10);
+    if (utc !== "2026-10-11") expect(readDateOnly(stored)).not.toBe(utc);
+  });
+
+  it("refuses a value that is not a calendar date", () => {
+    expect(() => calendarBefore("yesterday", "2026-10-11")).toThrow(/not a date/);
+    expect(() => calendarDaysUntil("", "2026-10-11")).toThrow(/not a date/);
   });
 });
 

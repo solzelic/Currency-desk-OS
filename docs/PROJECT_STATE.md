@@ -64,6 +64,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
+| Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
 
@@ -571,6 +572,12 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-11**, identity expiry. An ID is current through the end of its expiry
+date in the branch time zone. That date and today are compared as
+YYYY-MM-DD. A UTC conversion was marking the last valid day expired
+and, where the process zone is ahead of UTC, printing the expiry as
+the day before.
 
 **2026-10-11**, sign-off business date. The sheet's trading day is the
 open till session's business date in the branch time zone, and the
