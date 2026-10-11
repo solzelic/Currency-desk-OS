@@ -83,12 +83,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Sign-in and the station picker stay on the screen. The window
   dots stay 12px, so the title stays readable.
 - **New transaction on a phone.** Under 600px the dialog is one
-  column. The deal ticket sits under the fields, and the post
-  button stays at the bottom. Customer, the amounts, the rate, and
-  the required fields are the full width of the form and at least
-  44px tall. The text in those fields is 16px, so the phone does
-  not zoom in when a cashier taps one. At 1280 the dialog is the
-  same two columns.
+  column. The type names are one row and scroll away with the fields. The customer
+  search is one row: icon, name, clear. The suggestion list closes
+  when focus leaves it. Identification (ID type and ID number) is
+  on the form when the deal needs it. The deal ticket follows the
+  fields in the same scroll, and the post button sticks to the
+  bottom without covering the last field. Customer, the amounts,
+  the rate, and the required fields are the full width of the form
+  and at least 44px tall. The text in those fields is 16px, so the
+  phone does not zoom in when a cashier taps one. At 1280 the
+  dialog is the same two columns, and the identification block is
+  not on that dialog.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -457,10 +462,12 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-11**, New transaction on a phone. Under 600px the form is one
-column. The 320px ticket no longer sits beside the fields, so a
-customer name and an amount can be typed. The post button stays at
-the bottom of the dialog. Wider than 600px, including 1280, the
-dialog is unchanged.
+column. The customer row is icon, name, and clear on one line. The
+suggestion list closes when the amount is focused. ID type and ID
+number are on the form when the deal needs identification. The type
+names are one row and scroll away with the fields, and the post
+button does not cover the last field. Wider than 600px, including
+1280, the dialog is unchanged.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

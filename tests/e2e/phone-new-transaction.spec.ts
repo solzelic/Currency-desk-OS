@@ -83,8 +83,12 @@ async function horizontalProblems(page: Page): Promise<string[]> {
 }
 
 async function expectWideFields(page: Page): Promise<void> {
+  const customer = await boxOf(page, ".cd-tx-customer");
+  expect(customer.width, "customer field").toBeGreaterThanOrEqual(200);
+  expect(customer.height, "customer field").toBeGreaterThanOrEqual(44);
+  const name = await boxOf(page, ".cd-tx-customer input");
+  expect(name.width, "customer name").toBeGreaterThanOrEqual(200);
   const selectors = [
-    ".cd-tx-customer input",
     ".cd-money input",
     ".cd-money .flex-1",
     ".cd-tx-rate",
@@ -113,6 +117,18 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await dismissTour(page);
     await openNewTransaction(page);
 
+    const typeButtons = page.locator(".cd-tx-types button");
+    expect(await typeButtons.count()).toBe(6);
+    const typeBoxes = await typeButtons.evaluateAll((els) => els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top, width: r.width, text: (el.textContent || "").trim(), clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1 };
+    }));
+    expect(Math.max(...typeBoxes.map((b) => b.top)) - Math.min(...typeBoxes.map((b) => b.top)), `type chips on one row at ${width}`).toBeLessThanOrEqual(4);
+    expect(Math.min(...typeBoxes.map((b) => b.width)), `type chip width at ${width}`).toBeGreaterThanOrEqual(40);
+    expect(typeBoxes.filter((b) => b.clipped).map((b) => b.text), `type names clipped at ${width}`).toEqual([]);
+    const typePos = await page.locator(".cd-tx-types-bar").evaluate((el) => getComputedStyle(el).position);
+    expect(typePos, `type bar pinned at ${width}`).not.toBe("sticky");
+
     const form = await boxOf(page, ".cd-tx-form");
     const rail = await boxOf(page, ".cd-tx-rail");
     expect(rail.y, `rail beside the form at ${width}`).toBeGreaterThanOrEqual(form.y + form.height - 2);
@@ -120,8 +136,20 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expectWideFields(page);
     expect(await horizontalProblems(page), `open at ${width}`).toEqual([]);
 
-    await page.locator(".cd-tx-customer input").fill("Mei Chen");
+    const customer = page.locator(".cd-tx-customer");
+    await customer.locator("input").fill("Mei Chen");
+    await expect(page.locator(".cd-tx-suggest")).toBeVisible();
+    const icon = await boxOf(page, ".cd-tx-customer svg");
+    const name = await boxOf(page, ".cd-tx-customer input");
+    const clear = await boxOf(page, ".cd-tx-customer button");
+    const tops = [icon.y, name.y, clear.y];
+    expect(Math.max(...tops) - Math.min(...tops), `customer row at ${width}`).toBeLessThanOrEqual(4);
+    const row = await customer.boundingBox();
+    expect(row!.height, `customer field height at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(row!.height, `customer field height at ${width}`).toBeLessThanOrEqual(52);
+
     await page.locator(".cd-money input").first().click();
+    await expect(page.locator(".cd-tx-suggest")).toBeHidden();
     expect(await horizontalProblems(page), `customer at ${width}`).toEqual([]);
 
     await page.locator(".cd-money input").first().fill("3000");
@@ -142,6 +170,24 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(button!.y).toBeGreaterThanOrEqual(0);
     expect(button!.y + button!.height).toBeLessThanOrEqual(844);
     expect(button!.height).toBeGreaterThanOrEqual(44);
+    const footer = await boxOf(page, ".cd-tx-actions");
+    expect(footer.height, `footer at ${width}`).toBeLessThanOrEqual(160);
+
+    /* Scroll to the end of the phone dialog. The note is the last
+       field. It has to sit fully above the sticky post bar, not
+       underneath it. */
+    await page.locator(".cd-tx-scroll").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    const note = await boxOf(page, ".cd-tx-note");
+    const bar = await boxOf(page, ".cd-tx-actions");
+    const scroll = await boxOf(page, ".cd-tx-scroll");
+    expect(note.y, `note top at ${width}`).toBeGreaterThanOrEqual(scroll.y - 1);
+    expect(note.y + note.height, `note above the footer at ${width}`).toBeLessThanOrEqual(bar.y + 1);
+    expect(note.height, `note fully shown at ${width}`).toBeGreaterThanOrEqual(44);
+    const types = await boxOf(page, ".cd-tx-types-bar");
+    expect(types.y + types.height, `type chips scrolled away at ${width}`).toBeLessThanOrEqual(scroll.y + 1);
+    const ticket = await boxOf(page, ".cd-tx-ticket");
+    expect(ticket.y, `ticket top at ${width}`).toBeGreaterThanOrEqual(scroll.y - 1);
+    expect(ticket.y + ticket.height, `ticket above the footer at ${width}`).toBeLessThanOrEqual(bar.y + 1);
     expect(await horizontalProblems(page), `action at ${width}`).toEqual([]);
   }
 });

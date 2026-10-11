@@ -32738,12 +32738,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
+    /* A tap on the amount used to leave this list open, because only a
+       mousedown outside the box closed it, and the list then sat on top
+       of the amount. Focus leaving the box closes it too: blur, a pick,
+       or the amount field taking focus. */
     useEffect(() => {
-      const h = e => {
+      const closeIfOutside = e => {
         if (wrap.current && !wrap.current.contains(e.target)) setOpen(false);
       };
-      document.addEventListener('mousedown', h);
-      return () => document.removeEventListener('mousedown', h);
+      document.addEventListener('mousedown', closeIfOutside);
+      document.addEventListener('focusin', closeIfOutside);
+      return () => {
+        document.removeEventListener('mousedown', closeIfOutside);
+        document.removeEventListener('focusin', closeIfOutside);
+      };
     }, []);
     const shown = names.filter(n => n.toLowerCase().includes((query || '').toLowerCase()));
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
@@ -32754,13 +32762,21 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-customer flex items-center gap-2 px-2.5 py-2",
       style: inSty
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-customer-icon"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "search",
       s: 15,
       c: CD.mute
-    }), /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("input", {
       value: query,
       onFocus: () => setOpen(true),
+      onBlur: () => {
+        requestAnimationFrame(() => {
+          if (wrap.current && wrap.current.contains(document.activeElement)) return;
+          setOpen(false);
+        });
+      },
       onChange: e => {
         setQuery(e.target.value);
         setOpen(true);
@@ -32768,6 +32784,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       placeholder: "Type a name\u2026",
       className: "w-full outline-none text-sm bg-transparent"
     }), query && /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: () => {
         onClear();
         setOpen(false);
@@ -32777,7 +32794,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 14,
       c: CD.mute
     }))), open && /*#__PURE__*/React.createElement("div", {
-      className: "absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto",
+      className: "cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto",
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
@@ -34261,7 +34278,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 18,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none px-5 pt-3.5 pb-3",
+      className: "cd-tx-scroll"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-types-bar flex-none px-5 pt-3.5 pb-3",
       style: {
         borderBottom: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
@@ -34296,7 +34315,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       }, m.short));
     })), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-2.5 flex items-center gap-1.5",
+      className: "cd-tx-blurb text-[12px] mt-2.5 flex items-center gap-1.5",
       style: {
         color: CD.mute
       }
@@ -34405,7 +34424,59 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       amountCad: inCadEquiv,
       idRequired: idRequired && kyc !== 'ok',
       onRun: tpl => setQuickChk(tpl)
-    }), isExchange && /*#__PURE__*/React.createElement("div", {
+    }), idRequired && String(customer || '').trim() && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-id p-3.5 space-y-2.5",
+      style: {
+        background: 'var(--cd-panel)',
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-1.5"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 14,
+      c: CD.ink
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Identification")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "ID type"), /*#__PURE__*/React.createElement("select", {
+      className: "cd-tx-id-type w-full text-sm px-2.5 py-2 outline-none",
+      value: rec && rec.idType || '',
+      onChange: e => {
+        const idType = e.target.value;
+        setClients(c => ({
+          ...c,
+          [customer]: {
+            ...(c[customer] || {}),
+            idType
+          }
+        }));
+      },
+      style: inSty
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Choose an ID type"), ID_TYPES.map(o => /*#__PURE__*/React.createElement("option", {
+      key: o,
+      value: o
+    }, o)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "ID number"), /*#__PURE__*/React.createElement("input", {
+      className: "cd-tx-id-num w-full text-sm px-2.5 py-2 outline-none",
+      value: rec && rec.idNum || '',
+      onChange: e => {
+        const idNum = e.target.value;
+        setClients(c => ({
+          ...c,
+          [customer]: {
+            ...(c[customer] || {}),
+            idNum
+          }
+        }));
+      },
+      placeholder: "Document number",
+      style: inSty
+    }))), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
@@ -35176,7 +35247,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: memo,
       onChange: e => setMemo(e.target.value),
       placeholder: "Anything worth keeping on the record\u2026",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
+      className: "cd-tx-note w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
     }))), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rail flex-none flex flex-col",
@@ -35187,6 +35258,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rail-scroll flex-1 overflow-auto p-4 space-y-3"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-ticket",
       style: {
         background: CD.ink,
         borderRadius: 12,
@@ -35397,7 +35469,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, serverError), /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
       disabled: !canSave || serverBusy,
-      className: "w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
         background: !canSave || serverBusy ? CD.line : CD.ink,
@@ -35414,7 +35486,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       label: allGreen ? 'Record transaction' : `${remaining} to complete`,
       doneLabel: "Recorded",
       title: "Post this transaction to the ledger",
-      className: "w-full justify-center",
+      className: "cd-tx-go w-full justify-center",
       style: {
         padding: '0.65rem 1rem',
         fontSize: 14
@@ -35425,7 +35497,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, "Cancel"))))), present && /*#__PURE__*/React.createElement(PresentQuote, {
+    }, "Cancel")))))), present && /*#__PURE__*/React.createElement(PresentQuote, {
       q: presentQ,
       onClose: () => setPresent(false)
     }), addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, {

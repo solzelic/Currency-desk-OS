@@ -213,19 +213,30 @@
   function CustomerPicker({ label, hint, value, query, setQuery, onPick, names, clients, onAddNew, onClear, idRequired }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
-    useEffect(() => { const h = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
+    /* A tap on the amount used to leave this list open, because only a
+       mousedown outside the box closed it, and the list then sat on top
+       of the amount. Focus leaving the box closes it too: blur, a pick,
+       or the amount field taking focus. */
+    useEffect(() => {
+      const closeIfOutside = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+      document.addEventListener('mousedown', closeIfOutside);
+      document.addEventListener('focusin', closeIfOutside);
+      return () => { document.removeEventListener('mousedown', closeIfOutside); document.removeEventListener('focusin', closeIfOutside); };
+    }, []);
     const shown = names.filter(n => n.toLowerCase().includes((query || '').toLowerCase()));
     return (
       <div>
         <Lbl hint={hint}>{label}</Lbl>
         <div ref={wrap} className="relative">
           <div className="cd-tx-customer flex items-center gap-2 px-2.5 py-2" style={inSty}>
-            <Ic n="search" s={15} c={CD.mute} />
-            <input value={query} onFocus={() => setOpen(true)} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
-            {query && <button onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
+            {/* display:contents on the desk, so this span is not a box
+                there. On a phone it is the icon's slot in the one row. */}
+            <span className="cd-tx-customer-icon"><Ic n="search" s={15} c={CD.mute} /></span>
+            <input value={query} onFocus={() => setOpen(true)} onBlur={() => { requestAnimationFrame(() => { if (wrap.current && wrap.current.contains(document.activeElement)) return; setOpen(false); }); }} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
+            {query && <button type="button" onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
           </div>
           {open && (
-            <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
+            <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
               {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
@@ -909,8 +920,12 @@
             <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
-          {/* type selector */}
-          <div className="flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+          {/* type selector. cd-tx-scroll is display:contents on a desk,
+              so this bar stays a full-width row above the two columns.
+              On a phone the scroll owns the bar, and the bar moves off
+              with the fields instead of staying pinned. */}
+          <div className="cd-tx-scroll">
+          <div className="cd-tx-types-bar flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <div className="cd-tx-types grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (
                 <button key={t} onClick={() => setType(t)} className="flex flex-col items-center gap-1.5 py-2.5 px-1" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
@@ -918,7 +933,7 @@
                   <span className="text-[11px] font-medium leading-tight text-center" style={{ color: on ? 'var(--cd-on-ink)' : CD.ink }}>{m.short}</span>
                 </button>); })}
             </div>
-            <div className="text-[12px] mt-2.5 flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n={meta.icon} s={13} c={CD.mute} /> {meta.blurb}</div>
+            <div className="cd-tx-blurb text-[12px] mt-2.5 flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n={meta.icon} s={13} c={CD.mute} /> {meta.blurb}</div>
           </div>
 
           {/* body: form | rail.
@@ -964,6 +979,25 @@
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge &&
                 React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+              {/* The checklist already asks for an identified customer.
+                  These two fields are how a phone records the type and
+                  the number without leaving the ticket. The block is
+                  display:none at 600px and wider, so the 1280 dialog
+                  stays the same height. */}
+              {idRequired && String(customer || '').trim() && (
+                <div className="cd-tx-id p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+                  <div className="flex items-center gap-1.5"><Ic n="id" s={14} c={CD.ink} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Identification</span></div>
+                  <div><Lbl>ID type</Lbl>
+                    <select className="cd-tx-id-type w-full text-sm px-2.5 py-2 outline-none" value={(rec && rec.idType) || ''} onChange={e => { const idType = e.target.value; setClients(c => ({ ...c, [customer]: { ...(c[customer] || {}), idType } })); }} style={inSty}>
+                      <option value="">Choose an ID type</option>
+                      {ID_TYPES.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div><Lbl>ID number</Lbl>
+                    <input className="cd-tx-id-num w-full text-sm px-2.5 py-2 outline-none" value={(rec && rec.idNum) || ''} onChange={e => { const idNum = e.target.value; setClients(c => ({ ...c, [customer]: { ...(c[customer] || {}), idNum } })); }} placeholder="Document number" style={inSty} />
+                  </div>
+                </div>
+              )}
 
               {/* ---------------- EXCHANGE ---------------- */}
               {isExchange && (
@@ -1137,14 +1171,14 @@
               )}
 
               {/* note */}
-              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder="Anything worth keeping on the record…" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
+              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder="Anything worth keeping on the record…" className="cd-tx-note w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
             </div>
 
             {/* RIGHT — ticket + checklist */}
             <div className="cd-tx-rail flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
               <div className="cd-tx-rail-scroll flex-1 overflow-auto p-4 space-y-3">
                 {/* deal ticket */}
-                <div style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
+                <div className="cd-tx-ticket" style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
                   <div className="flex items-center justify-between" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)', paddingBottom: 10 }}>
                     <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
                     <Ic n={meta.icon} s={14} c="var(--cd-on-ink-soft)" />
@@ -1205,13 +1239,14 @@
                     Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
-                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
+                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
                     <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                   </button>
-                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
+                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
                 <button onClick={onClose} className="w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>
+          </div>
           </div>
         </div>
         {present && <PresentQuote q={presentQ} onClose={() => setPresent(false)} />}

@@ -1681,13 +1681,21 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-honest-tiles { grid-template-columns: 1fr; }
 }
 
+/* The phone scroll wrapper and the identification block generate no
+   box at a desk width. display:contents lets the type bar and the
+   two-column body stay direct flex children of the dialog. */
+.cd-tx-scroll { display: contents; }
+.cd-tx-customer-icon { display: contents; }
+.cd-tx-id { display: none; }
+
 /* New transaction is a 940px dialog with a 320px ticket beside the
    fields. Under 600px that rail leaves the customer and the amount
-   about 20px wide. Stack the rail under the form, and let the rail
-   shrink so the post button stays at the bottom of the dialog.
-   The fields go full width. 16px text is the size a phone will focus
-   without zooming the page. 600px and wider, including the 1280 desk,
-   is outside this query, so the dialog there is unchanged. */
+   about 20px wide. One scroll holds the type chips and the fields.
+   The post button sticks to the bottom of that scroll, with enough
+   padding under the checklist that the last field can sit above it.
+   16px text is the size a phone will focus without zooming the page.
+   600px and wider, including the 1280 desk, is outside this query,
+   so the dialog there is unchanged. */
 @media (max-width: 599px) {
   .cd-tx, .cd-tx * { box-sizing: border-box; }
   .cd-tx {
@@ -1701,37 +1709,66 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-head > div:first-child {
     min-width: 0;
   }
-  /* Six type buttons in one row force the grid wider than a phone.
-     minmax(0, 1fr) is what lets a column shrink. Three across keeps
-     each label on the button. */
+  /* The type tiles used to stay pinned and take about a third of
+     the screen. They are one row of chips inside the scroll, so they
+     leave with the fields. The icon is dropped so the short name can
+     wrap inside the chip instead of being cut down to a few letters. */
+  .cd-tx-scroll {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .cd-tx-types-bar {
+    position: static;
+    padding: 8px 8px;
+  }
+  .cd-tx-blurb { display: none; }
   .cd-tx-types {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    display: flex !important;
+    flex-wrap: nowrap;
+    gap: 4px;
+    grid-template-columns: none !important;
   }
   .cd-tx-types button {
+    flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
+    height: auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    padding: 4px 0;
   }
+  .cd-tx-types button svg { display: none; }
   .cd-tx-types button span {
+    min-width: 0;
     max-width: 100%;
-    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.15;
+    font-size: 10px;
   }
   .cd-tx-body {
     flex-direction: column !important;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
   .cd-tx-form {
-    flex: 1 1 auto !important;
+    flex: none !important;
     width: 100% !important;
     max-width: 100%;
+    height: auto !important;
     min-height: 0 !important;
     min-width: 0 !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
+    overflow: visible !important;
     border-right: 0 !important;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 0 !important;
   }
-  .cd-tx-form .flex,
+  .cd-tx-form .flex:not(.cd-tx-customer),
   .cd-tx-person {
     flex-wrap: wrap;
     max-width: 100%;
@@ -1766,8 +1803,47 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 44px;
     max-width: 100%;
   }
+  /* Icon, name, and clear were wrapping onto three lines because
+     every flex row was allowed to wrap and the input was width 100%.
+     One row, about 48px. The icon is 15px and the input is 22px, and
+     centering them puts their tops within 4px. */
+  .cd-tx-id { display: block; }
   .cd-tx-customer {
-    min-height: 44px;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .cd-tx-customer-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+  .cd-tx-form .cd-tx-customer input {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 22px !important;
+    min-height: 0 !important;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 16px;
+  }
+  .cd-tx-customer > button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px !important;
+    min-height: 0 !important;
+    padding: 0;
   }
   /* The currency code sat in the same row as the amount and took the
      width the cashier needs. It takes the row above. flex-basis 100%
@@ -1794,26 +1870,44 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: 100%;
     min-height: 44px;
   }
-  /* The ticket stays under the fields. It may scroll. The post
-     button is the footer of this column, so it stays on screen
-     while the form above it scrolls. */
+  /* The ticket follows the fields in the same scroll. It is not a
+     second pane, so it cannot sit on top of the note. */
   .cd-tx-rail {
-    flex: 0 1 auto !important;
+    flex: none !important;
     width: 100% !important;
     max-width: 100%;
-    max-height: 42%;
+    max-height: none !important;
     min-height: 0;
   }
   .cd-tx-rail-scroll {
-    flex: 1 1 auto !important;
+    flex: none !important;
     min-height: 0 !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
+    overflow: visible !important;
   }
+  /* Quote, the primary action, and Cancel. The primary stays 44px.
+     The other two are shorter so the three rows fit in 160px. */
   .cd-tx-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
     flex: none;
+    background: var(--cd-panel);
+    padding: 6px 10px 4px !important;
+    max-height: 160px;
+    box-shadow: 0 -8px 0 var(--cd-panel);
   }
+  .cd-tx-actions > * + * { margin-top: 4px !important; }
   .cd-tx-actions button {
-    min-height: 44px;
+    min-height: 36px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+  .cd-tx-actions .cd-tx-go {
+    min-height: 44px !important;
+  }
+  .cd-tx-actions > button:last-child {
+    min-height: 28px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
   }
 }
