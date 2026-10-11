@@ -89,7 +89,6 @@ import {
   type AcceptedIdTypes,
 } from "./accepted-id-types.js";
 import {
-  HEALTH_CARD_KEYS,
   HEALTH_CARD_REFUSAL,
   isHealthCardType,
   noLongerAcceptedSentence,
@@ -105,6 +104,7 @@ import {
   standingForVerdict,
   type ClientIdFile,
 } from "../ledger/id-on-file.js";
+import { displayDocumentType } from "../ledger/id-document-types.mjs";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -609,6 +609,12 @@ export class ClientRecordService {
         [clientId, ...entityScope(actor)],
       );
       if (!owned.rowCount) throw notFound();
+      /* A health card is not an identity document. Refuse the write
+         before any row changes. A card already stored is not touched
+         by this check. */
+      if (isHealthCardType(input.docType)) {
+        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+      }
       const documentId = `doc_${randomUUID()}`;
       /* Exactly one document drives the desk's KYC standing. The old
          shape let a top-level "primary" ID and an array entry both claim
@@ -841,7 +847,7 @@ export class ClientRecordService {
       return {
         clientId,
         documentId,
-        docType: row.doc_type as string,
+        docType: displayDocumentType(row.doc_type),
         contentType: row.content_type as string,
         byteSize: row.byte_size as number,
         sha256: row.sha256 as string,
@@ -1391,7 +1397,7 @@ function documentJson(
 ) {
   const out: Record<string, unknown> = {
     documentId: document.document_id,
-    docType: document.doc_type,
+    docType: displayDocumentType(document.doc_type),
   };
   if (!isHealthCardType(document.doc_type)) out.docNumber = document.doc_number ?? null;
   out.issuingJurisdiction = document.issuing_jurisdiction ?? null;

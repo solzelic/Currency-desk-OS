@@ -103,7 +103,11 @@ ID. A Secure Certificate of Indian Status is a photo ID and needs
 an expiry. The laminated Certificate of Indian Status is not in
 the catalogue. `Driver's License` is the US spelling of a driver's
 licence and needs an expiry. A health card is never
-accepted. A non-photo document, including a birth certificate, is
+accepted. Creating one, or changing a document's type to one, is
+422 "Health cards can't be used as ID. Record a current photo ID."
+A health card already stored is left as it is and is still
+returned. A stored `Citizenship Card` is returned as `Citizenship
+certificate (2012 or later, no photo)`. A non-photo document, including a birth certificate, is
 not ID on file. An expired photo ID beside a current non-photo
 document is Missing ID, reason "A current photo ID is needed".
 The primary flag only chooses which document is shown. A current

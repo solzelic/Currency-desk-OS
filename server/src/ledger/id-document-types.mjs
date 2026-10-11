@@ -84,3 +84,24 @@ export function currentNonPhotoSql(dateExpr) {
 export function nonPhotoSql() {
   return `NOT (id_document_type.photo IS TRUE AND id_document_type.accepted IS TRUE)`;
 }
+
+export const HEALTH_CARD_REFUSAL =
+  "Health cards can't be used as ID. Record a current photo ID.";
+
+export const CITIZENSHIP_CERTIFICATE_LABEL =
+  "Citizenship certificate (2012 or later, no photo)";
+
+/* A new document may not be filed under this name. A row already
+   stored is left as it is and is still readable. */
+export function isHealthCardType(value) {
+  return String(value ?? "").trim().toLowerCase() === "health card";
+}
+
+/* The name the desk shows. The stored type is not rewritten. The
+   generic citizenship card is the paper certificate IRCC has issued
+   since February 2012. */
+export function displayDocumentType(value) {
+  const stored = value == null ? "" : String(value);
+  if (stored.trim().toLowerCase() === "citizenship card") return CITIZENSHIP_CERTIFICATE_LABEL;
+  return stored;
+}

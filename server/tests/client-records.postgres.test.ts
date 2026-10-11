@@ -469,10 +469,10 @@ postgres("the desk's customer file, on the server", () => {
     /* A document with no scan says so rather than returning nothing that
        looks like an empty picture. */
     const typedOnly = await records.addDocument(TILL_1, clientId, {
-      docType: "Citizenship Card",
+      docType: "Passport",
       docNumber: "C-1",
     });
-    const bare = typedOnly.documents.find((d) => d.docType === "Citizenship Card")!;
+    const bare = typedOnly.documents.find((d) => d.docType === "Passport")!;
     await expect(
       records.revealDocumentScan(TILL_1, clientId, bare.documentId as string),
     ).rejects.toMatchObject({ code: "SCAN_NOT_ON_FILE" });
