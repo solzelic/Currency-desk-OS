@@ -805,6 +805,10 @@
           v = k === "checked" ? false : "";
         }
         props[k] = v;
+        if ((k === "data-cd-src" || k === "data-cd-href") && typeof v === "string" && v && v.indexOf("{{") < 0) {
+          props[k === "data-cd-src" ? "src" : "href"] = v;
+          delete props[k];
+        }
       }
       if (pseudoClasses.length) {
         props.className = [props.className, ...pseudoClasses].filter(Boolean).join(" ");

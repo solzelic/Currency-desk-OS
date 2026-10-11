@@ -97,6 +97,24 @@ window.claimedCount.then(function (d) {
     @keyframes cdNudge { 0%, 72%, 100% { transform: translateX(0); } 84% { transform: translateX(4px); } }
     @keyframes cdStageIn { from { opacity: 0.3; transform: scale(1.04); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; } }
+    /* Below 860px the centre links are hidden, but the row is still
+       three columns and the wordmark will not shrink, so "Get early
+       access" is drawn past the right edge of a 390px window. Collapse
+       the empty middle column, let the brand shrink, and keep the
+       button at its own width. Under 420px the wordmark itself is the
+       overflow, so the mark stays and the word goes. */
+    @media (max-width: 860px) {
+      /* The centre links are display:none here, so they are not a grid
+         item. Two tracks, not three: a zero middle track would swallow
+         the buttons and let them spill past the window. */
+      [data-nav-row] { padding: 0 12px !important; column-gap: 8px !important; grid-template-columns: minmax(0, 1fr) auto !important; }
+      [data-nav-brand] { min-width: 0; overflow: hidden; gap: 8px !important; }
+      [data-nav-actions] { gap: 10px !important; flex: none; }
+      [data-nav-cta] { flex: none; overflow: visible !important; }
+    }
+    @media (max-width: 420px) {
+      [data-nav-word] { display: none !important; }
+    }
   </style>
   <meta name="ext-resource-dependency" content="/web/photos/rate-board-storefront.jpg">
   <meta name="ext-resource-dependency" content="/web/photos/sms-storefront.jpg">
@@ -124,19 +142,19 @@ window.claimedCount.then(function (d) {
 
   <!-- ================= NAV ================= -->
   <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.8); border-bottom: 1px solid var(--line);">
-    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
-      <a href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
+    <div data-nav-row="true" style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
+      <a data-nav-brand="true" href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
         <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
-        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+        <span data-nav-word="true" style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
       </a>
       <div style="justify-self: center; display: none; gap: 30px; align-items: center; height: 100%;" data-nav-links="true">
         <a href="#product" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Product</a>
         <a href="#compliance" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Compliance</a>
         <a href="#pricing" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Pricing</a>
       </div>
-      <div style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
+      <div data-nav-actions="true" style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
         <a href="/login" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 700; color: var(--ink); transition: color 0.25s ease;" style-hover="color: var(--green);">Sign in</a>
-        <a href="/signup" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
+        <a data-nav-cta="true" href="/signup" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
       </div>
     </div>
   </div>
@@ -275,7 +293,7 @@ window.claimedCount.then(function (d) {
         <div style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
           <sc-for list="{{ features }}" as="f" hint-placeholder-count="9">
             <div style="{{ f.layerStyle }}">
-              <image-slot id="{{ f.slot }}" src="{{ f.src }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
+              <image-slot id="{{ f.slot }}" data-cd-src="{{ f.src }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
               <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 38%, rgba(23,20,15,0.4));"></div>
               <div style="position: absolute; left: 22px; bottom: 22px; width: 300px; max-width: calc(100% - 44px); background: rgba(251,249,244,0.97); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; padding: 15px 17px; box-shadow: 0 22px 46px -20px rgba(23,20,15,0.6);">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">{{ f.kicker }}</span><span style="{{ f.chipStyle }}">{{ f.chip }}</span></div>
@@ -330,7 +348,7 @@ window.claimedCount.then(function (d) {
             <sc-for list="{{ panels }}" as="p" hint-placeholder-count="5">
               <div style="{{ p.layerStyle }}">
                 <sc-if value="{{ p.hasImg }}" hint-placeholder-val="{{ false }}">
-                  <img src="{{ p.src }}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;" />
+                  <img data-cd-src="{{ p.src }}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;" />
                 </sc-if>
                 <sc-if value="{{ p.noImg }}" hint-placeholder-val="{{ true }}">
                   <image-slot id="{{ p.slot }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ p.ph }}"></image-slot>
@@ -403,7 +421,7 @@ window.claimedCount.then(function (d) {
         <div style="{{ textColStyle }}">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Compliance · On the record</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.015em; margin: 9px 0 0; color: var(--ink); text-wrap: pretty;">The desk knows the rules, so you can focus on the transaction.</h2>
-          <p style="margin: 14px 0 0; font-size: 15.5px; line-height: 1.6; color: var(--mute); max-width: 470px;">Your regulator's rulebook loads first — thresholds watched, reports prepared, every record kept in one place. You quote the rate; the desk keeps the file. <a href="{{ jurLink }}" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);" style-hover="color: var(--green-deep); border-bottom-color: var(--green);">See more details</a></p>
+          <p style="margin: 14px 0 0; font-size: 15.5px; line-height: 1.6; color: var(--mute); max-width: 470px;">Your regulator's rulebook loads first — thresholds watched, reports prepared, every record kept in one place. You quote the rate; the desk keeps the file. <a data-cd-href="{{ jurLink }}" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);" style-hover="color: var(--green-deep); border-bottom-color: var(--green);">See more details</a></p>
         </div>
 
         <div style="min-width: 0; display: flex; flex-direction: column;">

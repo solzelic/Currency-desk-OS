@@ -165,7 +165,7 @@ window.claimedCount.then(function (d) {
     <div data-feat-card="true" style="position: relative; margin-top: 16px; touch-action: pan-y;">
       <div style="position: relative; aspect-ratio: 4/3; background: #0E0C09; overflow: hidden;">
         <sc-for list="{{ featLayers }}" as="l" hint-placeholder-count="9">
-          <img src="{{ l.src }}" alt="{{ l.title }}" loading="lazy" style="{{ l.style }}">
+          <img data-cd-src="{{ l.src }}" alt="{{ l.title }}" loading="lazy" style="{{ l.style }}">
         </sc-for>
         <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 3; background: linear-gradient(180deg, transparent 40%, rgba(14,12,9,0.42) 62%, rgba(14,12,9,0.82) 84%, rgba(14,12,9,0.92) 100%); pointer-events: none;"></div>
         <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; z-index: 4; pointer-events: none;">
