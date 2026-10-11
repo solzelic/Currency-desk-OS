@@ -93,7 +93,14 @@ non-colour signal). `unread` boolean — the bell dot renders only when this
 is true. `onBell` opens the real alerts surface (Compliance). `avatar` is
 a node; the desk passes the existing account button.
 
-The shop name is `.phone-shop`. The till line is a sibling, `.phone-till`.
+The shop name is `.phone-shop-name`, one line. A long name ends in
+an ellipsis.
+
+The till line is a sibling, `.phone-till`, and it is one line. The
+station and the till name (`.phone-till-where`) shrink with an
+ellipsis. `Till open` and `Till closed` stay whole, in
+`.phone-till-state`, at the end of the line. The header stays 56px
+tall at 360 and at 390.
 
 ### Title
 

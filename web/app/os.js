@@ -61935,6 +61935,23 @@ window.CDOS_PERSIST = (function () {
       }
     });
   }
+
+  /* Station and till name are what get cut. The status is the
+     last segment and stays whole, so "Till open" never wraps. */
+  function deskLine(desk) {
+    const parts = String(desk || '').trim().split(/\s*·\s*/).map(part => part.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last === 'Till open' || last === 'Till closed') {
+      return {
+        parts: parts.slice(0, -1),
+        status: last
+      };
+    }
+    return {
+      parts,
+      status: ''
+    };
+  }
   function PhoneTopBar({
     shop,
     desk,
@@ -61943,6 +61960,7 @@ window.CDOS_PERSIST = (function () {
     onBell,
     avatar
   }) {
+    const line = deskLine(desk);
     return /*#__PURE__*/React.createElement("header", {
       className: "phone-head"
     }, /*#__PURE__*/React.createElement("div", {
@@ -61956,7 +61974,18 @@ window.CDOS_PERSIST = (function () {
       className: 'phone-till' + (tillOpen ? '' : ' is-closed')
     }, /*#__PURE__*/React.createElement("i", {
       className: "phone-till-dot"
-    }), /*#__PURE__*/React.createElement("span", null, desk)), /*#__PURE__*/React.createElement("button", {
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-line"
+    }, line.parts.map((part, i) => /*#__PURE__*/React.createElement("span", {
+      key: i,
+      className: "phone-till-part"
+    }, i > 0 ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-sep"
+    }, " \xB7 ") : null, /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-where"
+    }, part))), line.status ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-state"
+    }, line.parts.length ? ' · ' : '', line.status) : null)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-bell",
       "aria-label": unread ? 'Alerts' : 'No alerts',

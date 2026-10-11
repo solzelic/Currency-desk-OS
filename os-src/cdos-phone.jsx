@@ -58,13 +58,33 @@
     return <span className="phone-tab-ico" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
+  /* Station and till name are what get cut. The status is the
+     last segment and stays whole, so "Till open" never wraps. */
+  function deskLine(desk) {
+    const parts = String(desk || '').trim().split(/\s*·\s*/).map((part) => part.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last === 'Till open' || last === 'Till closed') {
+      return { parts: parts.slice(0, -1), status: last };
+    }
+    return { parts, status: '' };
+  }
+
   function PhoneTopBar({ shop, desk, tillOpen, unread, onBell, avatar }) {
+    const line = deskLine(desk);
     return (
       <header className="phone-head">
         <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shop}</span></div>
         <div className={'phone-till' + (tillOpen ? '' : ' is-closed')}>
           <i className="phone-till-dot" />
-          <span>{desk}</span>
+          <span className="phone-till-line">
+            {line.parts.map((part, i) => (
+              <span key={i} className="phone-till-part">
+                {i > 0 ? <span className="phone-till-sep"> · </span> : null}
+                <span className="phone-till-where">{part}</span>
+              </span>
+            ))}
+            {line.status ? <span className="phone-till-state">{line.parts.length ? ' · ' : ''}{line.status}</span> : null}
+          </span>
         </div>
         <button type="button" className="phone-bell" aria-label={unread ? 'Alerts' : 'No alerts'} onClick={onBell}>
           {svg('<path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9"/><path d="M10 20a2 2 0 0 0 4 0"/>')}

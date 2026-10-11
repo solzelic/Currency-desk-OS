@@ -241,6 +241,96 @@ test("the title and the first chip sit in from the edge", async ({ page }) => {
   }
 });
 
+/* A long station and till name used to wrap "open" onto a second
+   line at 360, so the header grew. The status stays whole. */
+async function seedLongDesk(page: Page): Promise<void> {
+  await page.context().clearCookies();
+  await page.goto("/app");
+  await page.waitForFunction(() => {
+    const stations = window.CDOS && window.CDOS._stations;
+    return !!(stations && stations.defaultBranches && stations.SKEY);
+  });
+  await page.evaluate(() => {
+    const stations = window.CDOS._stations;
+    const branches = stations.defaultBranches();
+    const branch = branches.find((item) => item.id === "b01") || branches[0];
+    const till = (branch.tills || []).find((item) => item.teller === "A. Singh") || (branch.tills || [])[0];
+    branch.name = "Front Desk 01";
+    till.name = "Wholesale desk";
+    sessionStorage.setItem("phone-top-seed", JSON.stringify({
+      skey: stations.SKEY,
+      branches,
+      station: { branchId: branch.id, tillId: till.id },
+      operatingName: "York Currency Exchange on Adelaide Street West",
+    }));
+  });
+  await page.addInitScript(() => {
+    const raw = sessionStorage.getItem("phone-top-seed");
+    if (!raw) return;
+    const seed = JSON.parse(raw);
+    localStorage.setItem(seed.skey, JSON.stringify(seed.branches));
+    localStorage.setItem("cdos_station_v1", JSON.stringify(seed.station));
+    const settings = JSON.parse(localStorage.getItem("cdos_settings") || "{}");
+    settings.operatingName = seed.operatingName;
+    localStorage.setItem("cdos_settings", JSON.stringify(settings));
+  });
+  await signInAtDesk(page, "a.singh");
+  await dismissTour(page);
+}
+
+async function topBarMeasure(page: Page) {
+  return page.locator(".phone-head").evaluate((head) => {
+    const shop = head.querySelector(".phone-shop-name");
+    const line = head.querySelector(".phone-till-line");
+    const state = head.querySelector(".phone-till-state");
+    const bell = head.querySelector(".phone-bell");
+    const wheres = [...head.querySelectorAll(".phone-till-where")];
+    if (!(shop instanceof HTMLElement) || !(line instanceof HTMLElement) || !(state instanceof HTMLElement) || !(bell instanceof HTMLElement)) {
+      return null;
+    }
+    const headBox = head.getBoundingClientRect();
+    const stateBox = state.getBoundingClientRect();
+    const bellBox = bell.getBoundingClientRect();
+    const lineBox = line.getBoundingClientRect();
+    return {
+      height: Math.round(headBox.height),
+      shopLines: shop.getClientRects().length,
+      shopClipped: shop.scrollWidth > shop.clientWidth + 1,
+      lineLines: line.getClientRects().length,
+      lineClipped: line.scrollWidth > line.clientWidth + 1,
+      middle: wheres.map((el) => el.textContent || "").join(" · "),
+      middleClipped: wheres.some((el) => el instanceof HTMLElement && el.scrollWidth > el.clientWidth + 1),
+      status: (state.textContent || "").replace(/^\s*·\s*/, ""),
+      statusWhole: state.scrollWidth <= state.clientWidth + 1 && stateBox.right <= bellBox.left + 1 && stateBox.right <= lineBox.right + 1,
+    };
+  });
+}
+
+test("the top bar is the same height at 360 and 390 with a long desk name", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedLongDesk(page);
+  await expect(page.locator(".phone-head")).toBeVisible();
+  const at360 = await topBarMeasure(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const at390 = await topBarMeasure(page);
+  expect(at360).not.toBeNull();
+  expect(at390).not.toBeNull();
+  expect(at360!.height).toBe(at390!.height);
+  expect(at360!.height).toBe(56);
+  expect(at360!.shopLines).toBe(1);
+  expect(at390!.shopLines).toBe(1);
+  expect(at360!.shopClipped).toBe(true);
+  expect(at360!.lineLines).toBe(1);
+  expect(at390!.lineLines).toBe(1);
+  expect(at360!.middle).toContain("Front Desk 01");
+  expect(at360!.middle).toContain("Wholesale desk");
+  expect(at360!.status).toBe("Till open");
+  expect(at390!.status).toBe("Till open");
+  expect(at360!.statusWhole).toBe(true);
+  expect(at390!.statusWhole).toBe(true);
+  expect(at360!.middleClipped).toBe(true);
+});
+
 test("Ledger passes the phone sweep", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");

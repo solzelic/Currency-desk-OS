@@ -536,6 +536,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, phone top bar. The shop name is one line and ends in
+an ellipsis. The till line is one line: the station and the till
+name shrink, and "Till open" or "Till closed" stays whole at the
+end. The header is the same height at 360 and at 390.
+
 **2026-10-11**, phone seam locators. Inactive windows stay in the
 document. Seam tests open an app from `#appbar` and read the open
 window (`.win.show.active`), including the till's currency chips.
