@@ -77,7 +77,7 @@
       {reportableOpen > 0 && <div className="flex items-center gap-2 px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}><Ic n="shield" s={14} c={CD.flag} /><span className="text-[12px]">{reportableOpen} open transfer{reportableOpen === 1 ? '' : 's'} ≥ {reportingLimit(settings).label} — file the cross-border EFT report before month-end.</span></div>}
 
       <div className="flex flex-wrap gap-1.5 mb-3">
-        {FILTERS.map(([id, label, n]) => <button key={id} onClick={() => setFilter(id)} className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" style={{ borderRadius: 8, border: `1px solid ${filter === id ? 'transparent' : CD.line}`, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute }}>{label}{n > 0 && <span className="text-[10px] px-1 py-0.5" style={{ background: filter === id ? 'var(--cd-on-ink-faint)' : CD.lineSoft, borderRadius: 4, fontFamily: 'Space Mono' }}>{n}</span>}</button>)}
+        {FILTERS.map(([id, label, n]) => <button key={id} onClick={() => setFilter(id)} data-filter-chip="" className={"flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" + (filter === id ? " is-on" : "")} style={{ borderRadius: 8, border: `1px solid ${filter === id ? 'transparent' : CD.line}`, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute }}>{label}{n > 0 && <span className="text-[10px] px-1 py-0.5" style={{ background: filter === id ? 'var(--cd-on-ink-faint)' : CD.lineSoft, borderRadius: 4, fontFamily: 'Space Mono' }}>{n}</span>}</button>)}
       </div>
 
       <div className="space-y-2">

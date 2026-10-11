@@ -1491,7 +1491,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.lineSoft}` }}>
         {FILTERS.map(([id, label, n]) => (
-          <button key={id} onClick={() => setFilter(id)} className="text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
+          <button key={id} onClick={() => setFilter(id)} data-filter-chip="" className={"text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" + (filter === id ? " is-on" : "")} style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
             {label}<span style={{ opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
           </button>
         ))}

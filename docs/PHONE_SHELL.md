@@ -71,13 +71,15 @@ Every phone window root (`.win`) sets `data-app` to the app id, including
 a duplicate window (`ledger~2` is still `ledger`). `Phone.Screen` sets it
 too. Inside that root, `--brand-primary` is that app's accent.
 
-On a phone, a legacy button whose fill is `var(--cd-ink)` paints with
-`--brand-primary`. That is the Ledger **New transaction** button, the
-Clients **New contact** button, a selected legacy chip such as **All**,
-and the same ink fill in other apps. `FilterChips` is not one of those.
-A selected `FilterChips` chip stays `--gray-900` with white text. The
-rule lives in `os-src/phone-shell.css` and only applies at
-`max-width: 430px`, so the desktop keeps the near-black ink.
+On a phone, a legacy primary button whose fill is `var(--cd-ink)` and
+whose label is semibold white paints with `--brand-primary`. That is
+the Ledger **New transaction** button, the Clients **New contact**
+button, and the same kind of button in other apps. A selected filter
+chip does not. Legacy chips marked `data-filter-chip` and `FilterChips`
+both use `--gray-900` with white text, in every app. The selected
+bottom tab and the other accents named in the design system still use
+`--brand-primary`. The rule lives in `os-src/phone-shell.css` and only
+applies at `max-width: 430px`, so the desktop keeps the near-black ink.
 
 ## Components
 
@@ -113,13 +115,14 @@ for the input's accessible name. One row, 48px. The clear button calls
 
 `chips` array of `{ id, label, count? }`. `value` is the selected id.
 `onChange(id)`. One scrolling line, snap, no scrollbar. The chip face is
-36px inside a 44px hit. Selected is `--gray-900` with white text, not the
-app accent. That is deliberate: legacy selected chips take the accent,
-and `FilterChips` does not. The row fades at the right edge.
+36px inside a 44px hit. Selected is `--gray-900` with white text, in
+every app. Legacy selected chips use the same fill. The row fades at
+the right edge.
 
 ### ListRow
 
-`title` string. `subtitle` optional. `amount` optional (already formatted).
+`title` string. `subtitle` optional. `note` optional (a reference line,
+mono 12px). `amount` optional (already formatted).
 `meta` optional. `leading` optional node. `badge` optional
 `{ label, tone }` where `tone` is `buy`, `sell`, `warn`, `pos`, `neg`, or
 `neutral`. The badge text is the status; the colour repeats it.
@@ -241,7 +244,7 @@ await phoneSweep(page, {
 this screen. An exception names the rule (`hit`, `size`, `contrast`,
 `time`, or `date`), a reason, and a text substring or a CSS selector.
 An exception that matches nothing fails the sweep. The shell runs this
-on More, the phone header, and the tab bar.
+on More and on the phone ledger, each with the phone header and the tab bar.
 
 ## Adopting the shell
 
@@ -267,8 +270,11 @@ Screen PRs add these in their own files. Do not build them here.
 NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast, ChoiceTiles,
 AmountField, SummaryList, StepHeader.
 
-The proof screen in this change is More. The ledger list is not wrapped,
-because that screen is larger than this shell and the desk tests still
-use its Records, Compliance, and in-page New transaction button. The
-ledger adopts the shell in its own PR, and that PR replaces the in-page
-New transaction with a `StickyAction` rather than floating a second one.
+More is one proof screen. The ledger is the other. Under 430px the
+ledger window is a `Phone.Screen`: title, Records and Compliance,
+summary cards, search, type select, `FilterChips`, `ListRow`s grouped
+by day, and a sticky **New transaction**. Amounts use
+`formatPhoneMoney`. Times are 12-hour. The figures are the ledger's
+own rows; an empty book says so. The desktop ledger is the same tree
+it was: the in-page New transaction, the table, and the folder tabs.
+Records and Compliance stay on both.

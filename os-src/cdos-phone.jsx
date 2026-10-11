@@ -139,9 +139,9 @@
     );
   }
 
-  function ListRow({ title, subtitle, amount, meta, leading, badge, chevron, onClick, danger, className, appId, disabled }) {
+  function ListRow({ title, subtitle, note, amount, meta, leading, badge, chevron, onClick, danger, className, appId, disabled }) {
     const Tag = onClick ? 'button' : 'div';
-    const cls = ['phone-row', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
+    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
     const tone = badge && badge.tone ? badge.tone : 'neutral';
     return (
       <Tag
@@ -155,6 +155,7 @@
         <span className="phone-row-main">
           <span className={appId ? 'phone-more-name' : 'phone-row-title'}>{title}</span>
           {subtitle ? <span className="phone-row-sub">{subtitle}</span> : null}
+          {note ? <span className="phone-row-note">{note}</span> : null}
         </span>
         {(amount || meta || badge) ? (
           <span className="phone-row-end">
