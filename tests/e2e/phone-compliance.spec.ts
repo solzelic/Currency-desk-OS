@@ -133,14 +133,8 @@ test("desktop Compliance is unchanged at 1280", async ({ page }) => {
   await expect(page.getByTestId("compliance-phone-home")).toHaveCount(0);
   await expect(page.getByTestId("sanctions-screening-tile")).toContainText("Not connected");
   await expect(page.locator("#phonebar")).toBeHidden();
-  /* Captured on this machine from the desktop Compliance window before
-     the phone home. maxDiffPixels 0 is the local gate: a wide window
-     does not move. The shared CI baselines belong to the phone-shell
-     foundation; this screen does not add one. */
-  await expect(page.locator(".win.show.active")).toHaveScreenshot("compliance-desktop-1280.png", {
-    maxDiffPixels: 0,
-    animations: "disabled",
-  });
+  /* The 1280 picture of this window is tests/e2e/desktop-unchanged.spec.ts.
+     That spec is the foundation's. This screen does not keep a copy. */
 });
 
 test("owner and teller phone homes stay honest", async ({ page }) => {
