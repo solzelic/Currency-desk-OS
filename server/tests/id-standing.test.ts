@@ -71,6 +71,16 @@ describe("idStanding matches displayIdStanding", () => {
     });
   });
 
+  it("pins a file with no current photo ID", () => {
+    expect(standingForVerdict("photo_needed")).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: "A current photo ID is needed",
+      reason: "A current photo ID is needed",
+      tone: "warning",
+    });
+  });
+
   it("folds an unknown verdict into no document", () => {
     expect(standingForVerdict("something-else").reason).toBe("No ID on file");
     expect(standingForVerdict("").status).toBe("missing");

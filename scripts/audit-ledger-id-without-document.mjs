@@ -3,18 +3,20 @@
    ID on file.
 
    The posting gate does not trust ledger_customers.id_status. A row
-   that says verified and has no current typed identity document is
-   treated as no ID on file. This script lists those rows so an owner
-   can see them. It does not update them.
+   that says verified and has no current government-issued photo ID
+   is treated as no ID on file. This script lists those rows so an
+   owner can see them. It does not update them.
 
-   The predicates are the same ones as documentStandingSql in
-   server/src/ledger/id-on-file.ts: a real type (not empty, not
-   "Not stated"), a number that is still non-empty after whitespace
-   and invisible characters are stripped, and an expiry on or after
-   the branch's business date. A blank or missing expiry does not
-   count, so a stored-verified row whose only paper has no date is
-   listed. The primary flag is not consulted. The business date is the
-   calendar date in the branch's time zone, not UTC current_date.
+   Qualifying paper is the same predicate as the identified leg in
+   server/src/ledger/id-on-file.ts, using the type catalogue in
+   server/src/ledger/id-document-types.mjs. A real type, a number
+   that survives the strip, and either an expiry on or after the
+   branch's business date or a blank expiry on the one type whose
+   flag allows it. A health card does not qualify. A non-photo
+   document does not qualify. A blank expiry on any other photo ID
+   does not qualify. The primary flag is not consulted. The business
+   date is the calendar date in the branch's time zone, not UTC
+   current_date.
 
    Usage (do not point this at a database you are not allowed to read):
 
@@ -26,6 +28,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentPhotoSql, idDocumentTypeJoinSql } from "../server/src/ledger/id-document-types.mjs";
 
 const requireFromServer = createRequire(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "server", "package.json"),
@@ -54,15 +57,14 @@ try {
           lc.client_id IS NULL
           OR NOT EXISTS (
             SELECT 1 FROM desk_client_identity_documents d
+            ${idDocumentTypeJoinSql()}
              WHERE d.client_id = lc.client_id
                AND d.tenant_id = lc.tenant_id
                AND d.legal_entity_id = lc.legal_entity_id
                AND coalesce(btrim(d.doc_type), '') <> ''
                AND lower(btrim(d.doc_type)) <> 'not stated'
                AND length(regexp_replace(coalesce(d.doc_number, ''), $1, '', 'g')) > 0
-               AND d.expires_on >= (
-                 CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(btrim(b.timezone), ''), 'America/Toronto')
-               )::date
+               AND ${currentPhotoSql(`CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(btrim(b.timezone), ''), 'America/Toronto')`)}
           )
         )
       ORDER BY lc.tenant_id, lc.customer_id`,
@@ -70,9 +72,9 @@ try {
   );
   await client.query("ROLLBACK");
   if (!found.rowCount) {
-    console.log("No ledger customer is stored as verified without a current typed identity document.");
+    console.log("No ledger customer is stored as verified without a current photo ID.");
   } else {
-    console.log(`${found.rowCount} ledger customer(s) stored as verified without a current typed identity document.`);
+    console.log(`${found.rowCount} ledger customer(s) stored as verified without a current photo ID.`);
     console.log("The posting gate treats these as no ID on file. Nothing was changed.");
     for (const row of found.rows) {
       console.log(`${row.customer_id}\t${row.tenant_id}\t${row.legal_entity_id}`);

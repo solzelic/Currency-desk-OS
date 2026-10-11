@@ -87,20 +87,24 @@ Teller and owner are the same caller. A new customer is stored as
 
 The value the API returns, and the value a deal is judged against, is
 derived from the identity documents on the linked client. One rule,
-computed only on the server: ID on file means at least one document
-with a real type (not empty and not "Not stated"), a number that is
-still non-empty after every whitespace and invisible character is
-stripped (NBSP, zero-width space, and the rest of that set), and an
-expiry on or after the desk's business date in the branch's time
-zone. A blank or missing `expires_on` does not count. That document
-is not on file, and it is not treated as expired either. The file
-is `missing` when nothing filed has a real expiry, and `expired`
-when at least one document is dated before the business date and
-none is dated on or after it. A current document wins over an
-expired one. The primary flag only chooses which document is
-shown. It does not decide the standing: a current secondary
-document is ID on file when the primary is expired, blank-dated,
-or "Not stated".
+computed only on the server: ID on file means one current
+government-issued photo ID. The type is in
+`server/src/ledger/id-document-types.mjs` with `photo` and
+`accepted` set, the number is still non-empty after every
+whitespace and invisible character is stripped (NBSP, zero-width
+space, and the rest of that set), and the expiry is on or after
+the desk's business date in the branch's time zone. A blank or
+missing `expires_on` counts only when that type's own
+`noExpiryAllowed` flag is set. The only such type is `Canadian
+citizenship card (pre-2012)`. A date before the business date does
+not count, on that type or any other. A health card is never
+accepted. A non-photo document, including a birth certificate, is
+not ID on file. An expired photo ID beside a current non-photo
+document is Missing ID, reason "A current photo ID is needed".
+The primary flag only chooses which document is shown. A current
+photo ID that is not primary is still ID on file. Dual process and
+a credit-file method are not supported: the document has no
+category and no source, so those methods cannot be recorded.
 
 `POST /api/ledger/customers` accepts `clientId`. The client must
 belong to this tenant and legal entity. If this workspace already
@@ -118,15 +122,18 @@ for a document. `status` is `identified`, `expired`, or `missing`.
 `label` is `Identified`, `Expired`, or `Missing ID`. `detail` and
 `reason` are the same sentence, and that sentence is copied from
 `displayIdStanding`. The two copies have to stay the same. In this
-order once every document has been read: a current document is
+order once every document has been read: a current photo ID is
 "An identity document with a number is on file, and it has not
-expired."; otherwise a dated document before the business date is
-"An identity document on this file is past its expiry. The till
-will not treat this customer as identified."; otherwise a blank or
-missing expiry is "ID has no expiry date"; otherwise a number that
-does not survive the strip is "No ID number"; otherwise a type that
-is empty or "Not stated" is "ID type not stated"; otherwise "No ID
-on file". `tone` is `ok` only for Identified, and `warning`
+expired."; otherwise an expired photo ID, when no current non-photo
+document is filed, is "An identity document on this file is past
+its expiry. The till will not treat this customer as identified.";
+otherwise a blank or missing expiry on a photo ID that is not the
+allow-listed type is "ID has no expiry date"; otherwise a number
+that does not survive the strip is "No ID number"; otherwise a type
+that is empty or "Not stated" is "ID type not stated"; otherwise a
+health card or any other non-photo paper is "A current photo ID is
+needed"; otherwise "No ID on file". `tone` is `ok` only for
+Identified, and `warning`
 otherwise. The helper's provider path, label `Verified`, is not
 returned here.
 `idStatus` on the ledger customer remains the gate's word

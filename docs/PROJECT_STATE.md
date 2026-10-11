@@ -463,28 +463,34 @@ flag, or the same claim nested under identity or KYC is refused with
 missing. An update does not rewrite the column. The till sync sends
 the client id. A ledger row that already points at that client is
 the one returned, so the deal posts against the file the documents
-are on. ID on file is one server rule: at least one document with a
-real type (not empty and not "Not stated"), a number that is still
-non-empty after whitespace and invisible characters are stripped,
-and an expiry on or after the branch's business date. A blank
-or missing expiry does not count: that document is not on file.
-The file is missing when no document has a real expiry, and
-expired when at least one document is dated before the business
-date and none is dated on or after it. The primary document is
-only what is shown.
-Client and ledger customer responses carry `idStanding`
+are on. ID on file is one server rule: one current government-issued
+photo ID. The type, a number that is still non-empty after
+whitespace and invisible characters are stripped, and an expiry on
+or after the branch's business date. A blank expiry counts only
+for `Canadian citizenship card (pre-2012)`, the one row in
+`server/src/ledger/id-document-types.mjs` whose flag says so. A
+past date on that type is still expired. Health cards are never
+accepted. A non-photo document does not identify the client. An
+expired photo ID beside a current non-photo document is Missing
+ID, reason "A current photo ID is needed". The primary document is
+only what is shown. Dual process and a credit file are not
+methods this book can record: a document has no category and no
+source. Client and ledger customer responses carry `idStanding`
 (`{ status, label, detail, reason, tone }`) and `displayedDocument`.
 `status` is `identified`, `expired`, or `missing`. The label is
 Identified, Expired, or Missing ID. `detail` and `reason` are the
-same sentence, copied from `displayIdStanding`: "An identity
-document with a number is on file, and it has not expired.", "An
-identity document on this file is past its expiry. The till will
-not treat this customer as identified.", "ID has no expiry date",
-"No ID number", "ID type not stated", or "No ID on file". A current
-document wins, then a dated expiry, then a blank expiry, then a
-missing number, then a type that was not stated. A deal
-that needs ID and does not have it is refused with "ID needed for
-this amount. Record the customer's ID." A row already stored as
+same sentence, and those sentences stay in sync with
+`displayIdStanding`: "An identity document with a number is on
+file, and it has not expired.", "An identity document on this file
+is past its expiry. The till will not treat this customer as
+identified.", "ID has no expiry date", "No ID number", "ID type
+not stated", "No ID on file", or "A current photo ID is needed".
+A current photo ID wins, then an expired photo ID when no current
+non-photo document is filed, then a blank expiry on a photo ID
+that is not the allow-listed type, then a missing number, then a
+type that was not stated, then any other paper. A deal that needs
+ID and does not have it is refused with "ID needed for this
+amount. Record the customer's ID." A row already stored as
 verified with no such document is left as it is and is not ID on
 file. `scripts/audit-ledger-id-without-document.mjs` lists those
 rows and does not change them.
