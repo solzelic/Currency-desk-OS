@@ -76,6 +76,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   shows the shop name, whether the till is open, and the profile
   button. With no shop logo set, that header has no placeholder box.
   A bottom bar opens Rates, Ledger, Clients, Till, and More.
+  The active window is solid. Any window that is not the active one
+  is not shown, so the app behind does not read through the cards.
   An unselected tab is #6B6760, 12px on a 16px line, weight 500.
   The selected tab is that app's colour at weight 700, with a 32px
   marker along the top of the tab. The bar is 64px, white, with a
@@ -499,7 +501,8 @@ profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
 Till, More. More is the other apps that role can open. There is no
 floating +. New transaction stays on the ledger. The window title
 bar is hidden; the app fills that space and scrolls under the
-56px header and the 64px bar. In-app tabs stay. A ledger record
+56px header and the 64px bar. The active window is solid, and a
+window that is not active is not shown. In-app tabs stay. A ledger record
 has its own Back, because that was the one action that lived only
 in the title bar. The bar includes the iPhone safe area.
 The Cash Drawer header stacks down the screen instead of collapsing

@@ -1852,6 +1852,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 100% !important;
     max-height: 100% !important;
   }
+  /* The window glass is 44% white, so the app behind shows through
+     the gaps. A phone has one window: that one is solid, and the
+     others are not on the screen. */
+  #desktop .win:not(.active) {
+    display: none;
+    visibility: hidden;
+  }
+  #desktop .win.active,
+  #desktop .win.active .win-body {
+    background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-cdtheme="dark"] #desktop .win.active,
+  html[data-cdtheme="dark"] #desktop .win.active .win-body {
+    background: rgb(30, 29, 26);
+  }
 
   #phone-more {
     display: flex;
