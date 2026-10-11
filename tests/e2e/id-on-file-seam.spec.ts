@@ -102,7 +102,11 @@ async function pickCustomer(page: Page, form: ReturnType<Page["locator"]>, name:
   const box = form.getByPlaceholder("Type a name…");
   await box.click();
   await box.fill(name);
-  const option = form.getByRole("button", { name: new RegExp(name) });
+  /* The typed name also sits inside "Add new client …", and a
+     substring match clicks that instead of the file. The customer's
+     own row is the button whose name starts with the name. */
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const option = form.getByRole("button", { name: new RegExp(`^${escaped}\\b`) });
   await expect(option).toBeVisible();
   await option.click();
 }
@@ -125,10 +129,13 @@ test("an identified client posts 3000 CAD, and a client with no ID is told to re
   await form.getByPlaceholder("e.g. vacation funds, invoice settlement").fill("Travel");
   await form.getByPlaceholder("e.g. employment income, savings").fill("Salary");
   await expect(form.getByText("READY")).toBeVisible();
-  const before = await page.evaluate(async () => {
+  /* An array, not a Set: the value comes back across the browser
+     boundary, and a Set does not survive that. */
+  const beforeIds = await page.evaluate(async () => {
     const body = await fetch("/api/ledger/transactions?limit=200").then((r) => r.json());
-    return new Set(((body.transactions || []) as { transactionId: string }[]).map((row) => row.transactionId));
+    return ((body.transactions || []) as { transactionId: string }[]).map((row) => row.transactionId);
   });
+  const before = new Set(beforeIds);
   await form.getByRole("button", { name: "Get server quote" }).click();
   const post = form.getByRole("button", { name: "Post frozen quote" });
   await expect(post).toBeEnabled({ timeout: 20_000 });
