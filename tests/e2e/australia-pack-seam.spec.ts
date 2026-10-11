@@ -43,7 +43,7 @@ async function openAustralia(page: Page) {
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return pack && pack.packId;
   }), { timeout: 20_000 }).toBe("pack-au-v2");
-  await page.getByText(/^Compliance$/).first().click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   const win = page.locator(".win.show.active");
   await expect(win.getByText("Compliance").first()).toBeVisible();
   return win;
@@ -111,7 +111,7 @@ test("a new Australian desk shows IVTS and a single-transaction TTR, and opt-in 
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return pack && pack.packId;
   }), { timeout: 20_000 }).toBe("pack-au-v1");
-  await page.getByText(/^Compliance$/).first().click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   const again = page.locator(".win.show.active");
   await again.locator("button.fld-tab").filter({ hasText: /Jurisdiction/ }).click();
   await again.getByRole("button", { name: "Switch to the current AUSTRAC rules" }).click();
@@ -132,7 +132,7 @@ test("a new Australian desk shows IVTS and a single-transaction TTR, and opt-in 
   await page.reload();
   await landOnDesktop(page);
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
-  await page.getByText(/^Compliance$/).first().click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   const after = page.locator(".win.show.active");
   await after.locator("button.fld-tab").filter({ hasText: /Jurisdiction/ }).click();
   await expect(after.getByText("IVTS").first()).toBeVisible();

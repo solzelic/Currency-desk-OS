@@ -12,7 +12,7 @@ test("the Tagged screen opens", async ({ page }) => {
   });
 
   await signInAtDesk(page);
-  const dock = page.locator('[data-app="tagged"]');
+  const dock = page.locator('#appbar [data-app="tagged"]');
   await dock.scrollIntoViewIfNeeded();
   await dock.click();
 

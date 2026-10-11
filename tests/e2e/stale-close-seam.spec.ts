@@ -49,7 +49,7 @@ async function press(locator: Locator) {
 
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  const tab = page.getByRole("button", { name }).first();
+  const tab = page.locator(".win.show.active").getByRole("button", { name }).first();
   try {
     await clickWhenStable(tab);
   } catch {
@@ -61,8 +61,8 @@ async function clickDrawerTab(page: Page, name: RegExp) {
 }
 
 async function saveDrawerCount(page: Page) {
-  await press(page.getByRole("button", { name: /Save count/i }).first());
-  await expect(page.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  await press(page.locator(".win.show.active").getByRole("button", { name: /Save count/i }).first());
+  await expect(page.locator(".win.show.active").getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -123,6 +123,9 @@ async function openTill(page: Page) {
 
 async function countTheBook(page: Page, balances: Record<string, string>) {
   await clickDrawerTab(page, /Cash drawer/i);
+  /* The phone ledger's summary buttons also say "CAD", and that
+     window stays in the document after you leave it. The chip that
+     counts is the open drawer's till chip. */
   const drawer = page.locator(".win.show.active");
   for (const [ccy, amount] of Object.entries(balances)) {
     await press(drawer.locator(`button.till-chip:has-text("${ccy}")`).first());
@@ -154,8 +157,9 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).first());
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
+  const drawer = page.locator(".win.show.active");
+  await press(drawer.getByRole("button", { name: /Close day & lock book/i }).first());
+  await press(drawer.getByRole("button", { name: /Close day & lock book/i }).last());
 }
 
 test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {

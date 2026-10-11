@@ -37,13 +37,16 @@ async function drawerChip(page: Page) {
 async function settleCashDrawerChrome(page: Page) {
   await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/server balances live/i)).toBeVisible();
-  const scroller = page.locator(".win-body .overflow-auto").first();
+  /* Inactive windows stay in the document. On a phone they are not
+     shown, so the first tab bar in the document can be a hidden one.
+     The bar on screen is the open window. */
+  const scroller = page.locator(".win.show.active .win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {
       el.scrollTop = 0;
     });
   }
-  const tabBar = page.locator(".win-body .fld-bar").first();
+  const tabBar = page.locator(".win.show.active .win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);
 }
@@ -59,15 +62,15 @@ async function clickWhenStable(locator: Locator) {
 
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  await clickWhenStable(page.getByRole("button", { name }).first());
+  await clickWhenStable(page.locator(".win.show.active").getByRole("button", { name }).first());
 }
 
 async function saveDrawerCount(page: Page) {
-  await page.getByRole("button", { name: /Save count/i }).first().click();
+  await page.locator(".win.show.active").getByRole("button", { name: /Save count/i }).first().click();
   /* Save is a server round-trip. The button goes Saving… → Saved and the
      header tally updates; clicking Reconcile during that reflow is the
      flake. */
-  await expect(page.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  await expect(page.locator(".win.show.active").getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -142,28 +145,33 @@ test("closing writes the counted figure back, and refuses to guess one", async (
      a real variance exists. The close must stay blocked: the uncounted
      currency has no figure, and substituting one overwrites real cash. */
   const [firstCcy, ...rest] = currencies;
-  await page.locator(`button:has-text("${firstCcy}")`).first().click();
-  await page.getByRole("button", { name: /Enter total/i }).first().click();
+  const drawer = page.locator(".win.show.active");
+  /* A currency chip is the till's own chip. A document-wide
+     "CAD" button can be a summary control in a hidden window. */
+  await drawer.locator(`button.till-chip:has-text("${firstCcy}")`).first().click();
+  await drawer.getByRole("button", { name: /Enter total/i }).first().click();
   const short = Number(before[firstCcy!]) - 5;
-  await page.locator('input[placeholder="0.00"]').first().fill(String(short));
+  await drawer.locator('input[placeholder="0.00"]').first().fill(String(short));
   await saveDrawerCount(page);
 
   await clickDrawerTab(page, /Reconcile & close/i);
-  const closeButton = page.getByRole("button", { name: /Close day & lock book/i }).first();
+  const closeButton = page.locator(".win.show.active").getByRole("button", { name: /Close day & lock book/i }).first();
   await expect(closeButton).toBeDisabled();
   await expect(page.getByText(/Count all \d+ drawers? before closing/)).toBeVisible();
 
   // now count the rest honestly, and close
   await clickDrawerTab(page, /Cash drawer/i);
+  const counting = page.locator(".win.show.active");
   for (const ccy of rest) {
-    await page.locator(`button:has-text("${ccy}")`).first().click();
-    await page.getByRole("button", { name: /Enter total/i }).first().click();
-    await page.locator('input[placeholder="0.00"]').first().fill(String(Number(before[ccy]!)));
+    await counting.locator(`button.till-chip:has-text("${ccy}")`).first().click();
+    await counting.getByRole("button", { name: /Enter total/i }).first().click();
+    await counting.locator('input[placeholder="0.00"]').first().fill(String(Number(before[ccy]!)));
   }
   await saveDrawerCount(page);
   await clickDrawerTab(page, /Reconcile & close/i);
-  await page.getByRole("button", { name: /Close day & lock book/i }).first().click();
-  await page.getByRole("button", { name: /Close day & lock book/i }).last().click();
+  const closing = page.locator(".win.show.active");
+  await closing.getByRole("button", { name: /Close day & lock book/i }).first().click();
+  await closing.getByRole("button", { name: /Close day & lock book/i }).last().click();
 
   await expect
     .poll(async () => (await book.session())?.status, { timeout: 20_000 })

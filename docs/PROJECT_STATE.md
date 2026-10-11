@@ -536,6 +536,10 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, phone seam locators. Inactive windows stay in the
+document. Seam tests open an app from `#appbar` and read the open
+window (`.win.show.active`), including the till's currency chips.
+
 **2026-10-11**, phone More. Texts is on the phone list only when
 `smsConfigured` is true — the same Twilio check `sendSms` uses.
 Branches and the AI Assistant are front-end mocks and stay off

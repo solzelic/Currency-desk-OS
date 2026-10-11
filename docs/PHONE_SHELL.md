@@ -228,6 +228,17 @@ under "On the bottom bar". The browse list has no search footer. A query
 shows "Search looks at app names and what each app does." Nothing matches
 is an empty state. There is no "Example data" badge. That tag is mockups only.
 
+## Seam locators
+
+An inactive window stays in the document. At 430px and under it is not
+shown. The window carries the same `data-app` as its dock button.
+
+A seam test opens an app with `#appbar [data-app="…"]`. It reads and
+presses the screen through `.win.show.active`. A drawer count uses
+`.win.show.active button.till-chip`. A document-wide `[data-app]`
+click matches the dock and the open window. A document-wide currency
+chip can be a button in a window that is no longer on screen.
+
 ## Phone sweep
 
 Every phone screen PR imports `tests/e2e/helpers/phone-sweep.ts` and runs

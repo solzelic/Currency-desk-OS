@@ -58,7 +58,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   });
   expect(packId).toMatch(/^pack-ca-v/);
 
-  await page.locator('[data-app="compliance"]').click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   const compliance = page.locator(".win.show.active");
   await expect(compliance.getByText("Compliance").first()).toBeVisible();
   expectHonestScreening(await compliance.innerText());
@@ -75,7 +75,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await expect(compliance.getByText("Lin Wei")).toHaveCount(0);
   await expect(compliance.getByText("TR-260617-019")).toHaveCount(0);
 
-  await page.locator('[data-app="dashboard"]').click();
+  await page.locator('#appbar [data-app="dashboard"]').click();
   const dashboard = page.locator(".win.show.active");
   await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
   const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
@@ -87,7 +87,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   expect(wireLines[0]).toBe("0");
   expect(await dashboard.innerText()).not.toMatch(/Brooke Lawson|Lin Wei|TR-260617-019/);
 
-  await page.locator('[data-app="settings"]').click();
+  await page.locator('#appbar [data-app="settings"]').click();
   await page
     .locator('div[style*="width: 212px"]')
     .getByText(/Compliance & jurisdiction/i)
@@ -98,7 +98,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   expectHonestScreening(await settings.innerText());
   await expect(settings.getByTestId("sanctions-screening-gap")).toContainText("Not connected");
 
-  await page.locator('[data-app="clients"]').click();
+  await page.locator('#appbar [data-app="clients"]').click();
   const clients = page.locator(".win.show.active");
   await clients.getByRole("button", { name: "New contact" }).click();
   await page.getByRole("button", { name: "Skip — add ID later" }).click();
@@ -131,7 +131,7 @@ test("a teller sees the same not-connected screening state", async ({ page }) =>
   });
   expect(role).toBe("teller");
 
-  await page.locator('[data-app="compliance"]').click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   const compliance = page.locator(".win.show.active");
   await expect(compliance.getByText("Compliance").first()).toBeVisible();
   await compliance.locator(".fld-tab", { hasText: "Screening" }).click();

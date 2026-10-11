@@ -202,10 +202,11 @@ test("switching tills moves the ledger, and the count lands on the till the scre
     await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 20_000 });
   }
 
-  await page.locator('button:has-text("CAD")').first().click();
-  await page.getByRole("button", { name: /Enter total/i }).first().click();
-  await page.locator('input[placeholder="0.00"]').first().fill(COUNTED);
-  await page.getByRole("button", { name: /Save count/i }).first().click();
+  const drawer = page.locator(".win.show.active");
+  await drawer.locator('button.till-chip:has-text("CAD")').first().click();
+  await drawer.getByRole("button", { name: /Enter total/i }).first().click();
+  await drawer.locator('input[placeholder="0.00"]').first().fill(COUNTED);
+  await drawer.getByRole("button", { name: /Save count/i }).first().click();
 
   /* THE ASSERTION THIS FILE EXISTS FOR. Ask PostgreSQL, not the screen:
      which till holds a count of this amount, and who took it. */

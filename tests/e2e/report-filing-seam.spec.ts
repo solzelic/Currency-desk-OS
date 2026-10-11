@@ -123,12 +123,14 @@ async function seedTheAggregate(page: Page) {
 }
 
 async function openCompliance(page: Page) {
-  await page.getByText(/^Compliance$/).first().click();
+  await page.locator('#appbar [data-app="compliance"]').click();
   await rendered(page, /Sanctions screening is not connected yet/i);
 }
 
+/* Folder tabs live in every open window. The one on screen is the
+   active window. A hidden window's tab is still in the document. */
 const tab = (page: Page, name: RegExp) =>
-  page.locator("button.fld-tab").filter({ hasText: name }).first();
+  page.locator(".win.show.active button.fld-tab").filter({ hasText: name }).first();
 
 /* The aggregation card for one subject. Anchored on the card's own title
    rather than on its text, because the subject's name also appears on the
