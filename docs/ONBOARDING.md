@@ -84,9 +84,11 @@ What it changes, and nothing else:
 
 ## Verification: email now, phone later
 
-The design confirms a mobile by text. There is no SMS provider, so the code
-goes to the owner's **email** — the address the invite already reached and
-the thing they sign in with.
+The design confirms a mobile by text. The SMS transport is
+`server/src/sms.ts`. Until the Twilio variables are set it logs the text
+and returns `simulated`, so the code goes to the owner's **email** — the
+address the invite already reached and the thing they sign in with.
+What is still missing is `docs/INTEGRATIONS_READINESS.md`.
 
 One constant is the whole switch:
 

@@ -71,6 +71,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Persona, Twilio, and Stripe are mapped and not plug-in-the-key.**
+  Persona has no server client: the desk completes an ID check on a
+  timer. Twilio sends only when its account variables are set, and
+  otherwise logs the text. Stripe Checkout and the signed webhook
+  already run when the secrets and price ids are set; with no key the
+  admin prints zero. The gap list, the owner steps in each dashboard,
+  and the ordered jobs are `docs/INTEGRATIONS_READINESS.md`. No keys
+  were added.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. The menu bar keeps
   the icon buttons and drops the wordmark, the clock, and the account
@@ -417,6 +426,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, Integration readiness. Persona, Twilio, and Stripe are
+written up in `docs/INTEGRATIONS_READINESS.md`. Persona is a browser
+timer. Twilio is a real `fetch` that stays simulated until
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and a from-address are set.
+Stripe's hosted checkout and signed webhook are already in the server;
+an unconfigured admin still shows `$0.00`. No product path changed.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
