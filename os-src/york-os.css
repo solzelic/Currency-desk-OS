@@ -3089,3 +3089,184 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760) !important;
   }
 }
+
+/* Phone till. Desktop never mounts .till-phone, and these rules
+   are inside the phone width anyway. The footer is fixed on the
+   bar: the column scrolls underneath it, and there is no gap and
+   no second primary button. */
+@media (max-width: 430px) {
+  .till-phone-host.till-screen {
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden !important;
+    height: 100%;
+    box-sizing: border-box;
+    padding-bottom: var(--phone-bar-h);
+    background: var(--color-bg, #F7F6F3);
+  }
+  .till-phone.phone-shell { flex: 1 1 auto; min-height: 0; background: transparent; }
+  .till-phone .phone-title { padding: 0 0 2px; }
+  .till-phone .phone-title h1 { font-size: 20px; line-height: 24px; }
+  .till-phone .phone-scroll { padding-top: 2px; padding-bottom: 8px; }
+  .till-phone-sec { margin: 0; }
+  .till-phone-sec h2 { font-size: 15px; line-height: 20px; }
+  .till-phone-sec .till-phone-link { min-height: 28px; }
+  .till-phone-scroll { padding: 4px 16px 0; }
+  .till-phone-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .till-phone-title h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 700; }
+  .till-phone-link {
+    border: 0; background: transparent; color: var(--cd-ink, #111);
+    font-weight: 600; font-size: 14px; min-height: 44px; padding: 0 4px;
+  }
+  .till-phone-seg {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    background: var(--cd-chip, #f1f0ec); border-radius: 10px; padding: 4px; margin: 2px 0 6px;
+  }
+  .till-phone-seg button {
+    min-height: 36px; border: 0; border-radius: 8px; background: transparent;
+    font-weight: 600; font-size: 14px; color: var(--cd-mute, #555);
+  }
+  .till-phone-seg button.is-on { background: var(--cd-panel, #fff); color: var(--cd-ink, #111); }
+  .till-phone-card {
+    background: var(--cd-panel, #fff); border: 1px solid var(--cd-line, rgba(10,10,10,.14));
+    border-radius: 14px; padding: 6px 8px; margin-bottom: 4px;
+  }
+  .till-phone-k { font-size: 12px; line-height: 16px; color: var(--cd-mute, #555); }
+  .till-phone-amount, .till-phone-counted {
+    font-variant-numeric: tabular-nums; font-weight: 700; color: var(--cd-ink, #111);
+  }
+  .till-phone-amount { font-size: 22px; line-height: 26px; }
+  .till-phone-counted { font-size: 20px; line-height: 26px; }
+  .till-phone-meta, .till-phone-who { font-size: 12px; line-height: 16px; color: var(--cd-mute, #555); margin-top: 2px; }
+  .till-phone-who { color: var(--cd-ink, #111); font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .till-phone-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .till-phone-actions button {
+    min-height: 44px; width: 100%; box-sizing: border-box; border-radius: 10px;
+    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); background: var(--cd-panel, #fff);
+    font-weight: 600; font-size: 14px; padding: 0 4px;
+  }
+  .till-phone-till {
+    margin: 0; min-height: 44px; border: 0; background: transparent; flex: none;
+    font-weight: 700; padding: 0; color: var(--cd-ink, #111);
+  }
+  .till-phone-chips {
+    display: flex; gap: 8px; overflow-x: auto; max-width: 100%;
+    margin: 0 -16px 4px; padding: 0 16px 2px;
+  }
+  .till-phone .till-chip {
+    flex: none; height: 44px; min-width: 64px; padding: 0 12px; border-radius: 10px;
+    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); background: var(--cd-panel, #fff);
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-weight: 700; font-size: 14px;
+  }
+  .till-phone .till-chip i {
+    width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box;
+    border: 1.5px solid var(--cd-mute, #888);
+  }
+  .till-phone .till-chip.is-on { background: var(--cd-ink, #111); color: var(--cd-on-ink, #fff); border-color: var(--cd-ink, #111); }
+  .till-phone .till-chip.is-on i { border-color: #fff; }
+  .till-phone .till-chip.is-done i { background: currentColor; }
+  .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .till-phone-sec h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 650; }
+  .till-phone .till-den-row {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center; gap: 8px; min-height: 48px;
+    border-bottom: 1px solid var(--cd-line, rgba(10,10,10,.14));
+  }
+  .till-den-face, .till-den-sub { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .till-den-sub { text-align: right; color: var(--cd-mute, #555); min-width: 72px; }
+  .till-stepper {
+    display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; height: 48px;
+    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); border-radius: 10px; overflow: hidden;
+  }
+  .till-phone .till-step {
+    width: 48px; height: 48px; border: 0; background: var(--cd-chip, #f1f0ec);
+    font-size: 22px; line-height: 1;
+  }
+  .till-den-qty {
+    width: 100%; height: 48px; border: 0; margin: 0; padding: 0 8px;
+    text-align: right; font-size: 20px; font-weight: 650; background: transparent;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  .till-den-qty::-webkit-inner-spin-button,
+  .till-den-qty::-webkit-outer-spin-button {
+    -webkit-appearance: none; appearance: none; display: none; margin: 0;
+  }
+  .till-phone-total { display: block; margin: 8px 0; }
+  .till-phone-total input {
+    width: 100%; box-sizing: border-box; min-height: 48px; text-align: right;
+    font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); border-radius: 10px; padding: 0 12px;
+    -moz-appearance: textfield; appearance: textfield;
+  }
+  .till-phone .till-count-foot {
+    position: relative !important;
+    bottom: auto !important;
+    margin: 0 !important;
+    z-index: 30;
+    display: block;
+    padding: 0 !important;
+    box-sizing: border-box;
+    background: var(--color-bg, #F7F6F3) !important;
+    border-top: 0;
+  }
+  .till-phone .till-foot-sum { padding: 4px 16px 0; }
+  .till-phone .phone-sticky { padding: 6px 16px 8px; }
+  .till-phone .phone-sticky-why { margin-top: 4px; }
+  .till-foot-sum { flex: 1 1 auto; min-width: 0; }
+  .till-foot-exp {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+    font-size: 13px; line-height: 18px; color: var(--cd-mute, #555);
+  }
+  .till-foot-exp > span { white-space: nowrap; }
+  .till-diff { font-weight: 700; color: var(--cd-ink, #111); }
+  .till-phone .till-save {
+    flex: none; min-height: 48px; padding: 0 16px; border: 0; border-radius: 12px;
+    background: var(--cd-ink, #17140F); color: var(--cd-on-ink, #fff);
+    font-weight: 700; font-size: 16px;
+  }
+  .till-phone .till-save:disabled { opacity: 0.45; }
+  .till-wake, .till-error {
+    margin: 8px 16px 0; padding: 12px 14px; border-radius: 14px;
+    display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 20px;
+  }
+  .till-wake { background: #E8F0FB; border: 1px solid #C9DAF2; }
+  .till-error { background: #FDECEA; border: 1px solid #F3B8B2; flex-direction: row; align-items: center; }
+  .till-error button { margin-left: auto; min-height: 44px; border: 0; background: transparent; font-weight: 700; }
+  .till-phone-empty { text-align: center; padding: 28px 12px; }
+  .till-phone-empty h2 { margin: 0 0 8px; font-size: 20px; line-height: 28px; }
+  .till-phone-empty p, .till-phone-note { font-size: 14px; line-height: 20px; color: var(--cd-mute, #555); }
+  .till-phone-recon {
+    display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline;
+    padding: 10px 0; border-bottom: 1px solid var(--cd-line, rgba(10,10,10,.14));
+    width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-top: 0;
+  }
+  .till-skel { display: block; height: 12px; border-radius: 6px; background: #EFEDE8; }
+  .till-skel-lg { height: 28px; width: 55%; }
+  .till-skel-md { width: 80%; }
+  .till-skel-row .till-skel { width: 40%; }
+  .till-sheet {
+    position: fixed; inset: 0; z-index: 640;
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .till-sheet-scrim { position: absolute; inset: 0; border: 0; background: rgba(22, 21, 19, 0.46); }
+  .till-sheet-panel {
+    position: relative; background: var(--cd-panel, #fff);
+    border-radius: 14px 14px 0 0; max-height: 70vh; overflow: auto;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  .till-sheet-title { font-size: 17px; font-weight: 700; padding: 8px 0; }
+  .till-sheet-row {
+    width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; border: 0; border-top: 1px solid var(--cd-line, rgba(10,10,10,.14));
+    background: transparent; text-align: left; font-weight: 600;
+  }
+  .till-sheet .till-save { width: 100%; margin-top: 12px; }
+  /* The footer is fixed over the column, and the column runs under
+     the bar. The pad is that covered band, so the last note can
+     scroll clear of the footer. */
+  .till-phone .till-scroll-pad {
+    height: calc(var(--till-panel-h, 96px) + var(--phone-bar-h) + 32px) !important;
+  }
+}

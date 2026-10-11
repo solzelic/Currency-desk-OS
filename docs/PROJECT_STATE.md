@@ -133,16 +133,23 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. The desktop
   resize grip is hidden. The rate board leads with its currency rows,
-  already drawn. The cash-drawer count keeps its currency chips and
-  Save count on screen. The whole Cash drawer scrolls as one column,
-  so the header, the session line, and the hand-off scroll away and
-  the denomination rows use that room. The count panel stays a solid
-  sticky panel pinned directly above the bottom bar, with nothing
-  drawn behind it. The list ends with room for that panel, the
-  bar, and 16px, so the last denomination can scroll clear of the
-  panel. An uncounted drawer says "Not counted"
-  rather than a lone dash — the ledger amount stays on the "In drawer"
-  pill, because a zero would claim the drawer was counted empty.
+  already drawn. The cash drawer on a phone is one column. One currency is counted
+  at a time. The chips scroll sideways. A count is typed in a large
+  right-aligned field, with no spinner arrows. Amounts read
+  "1,765.05 CAD" through `formatPhoneMoney` — the currency code follows
+  the number, and a figure the ledger did not return is left out
+  rather than shown as zero. The footer sits on the bottom bar:
+  what was counted, the expected amount (hidden until Show, while
+  a blind count is on), the difference in words, and one button,
+  Save count or Close till. There is no round + on this screen.
+  Move cash, Vault, and Hand off are one row of equal buttons.
+  Switching till opens a sheet from the bottom of the screen.
+  A slow first load shows a skeleton, then "Waking the server" if
+  it is still going after a few seconds. A till with no open
+  session says so and offers Open the till. An empty denomination
+  line is a dash, not zero. The footer says "Not counted yet"
+  until a count is entered. Wider than 430px, the desktop drawer
+  is unchanged.
   The ledger search is one line, with its help mark in that line.
   The compliance header stacks Screening, Reportable, and Structuring.
   Screening reads Not connected. Wider than 430px, the desk is
@@ -594,6 +601,15 @@ officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
 
+**2026-10-11**, phone till. At 430px and under, the cash drawer is the
+phone count inside `Phone.Screen`: one currency, sideways chips,
+large count fields, and one `StickyAction` on the bar. The till
+switch is a sheet from the bottom. Amounts use `formatPhoneMoney`
+(`1,765.05 CAD`). There is no round + on the till. A missing ledger
+figure stays absent. Loading, a refused save, and a till that is
+not open each say so. Wider than 430px the desktop drawer is the
+same drawer.
+
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked
 out and captured twice in that job. The sign-in card in that render
@@ -742,12 +758,9 @@ header. A phone shows no desktop window chrome: no traffic lights,
 title bar, top icon menu, logo or store row, dashed Your logo box, or
 resize grip. With no shop logo set, the phone header is the shop name.
 The till line keeps its open or closed mark: an 8px #157A3E dot
-with a 2px white ring while the session is open. On the cash
-drawer the whole column scrolls, and the count panel is a solid
-sticky panel pinned to the bar. More uses the colour of the app it opened, or the ink when
+with a 2px white ring while the session is open. The cash drawer is described in the phone till note above. More uses the colour of the app it opened, or the ink when
 More itself is showing. Wider than 430px, the desk is unchanged. Rate rows lead the
-rate board. The drawer count keeps its chips and Save count in view,
-and says "Not counted" until a currency is counted. The ledger search
+rate board. The ledger search
 stays one line. Screening reads Not connected. This sits on the phone
 layout that landed with the desk-fits-a-phone change.
 

@@ -285,8 +285,8 @@ async function countGeometry(page: Page): Promise<{
   pad: number;
 }> {
   return page.evaluate(() => {
-    const screen = document.querySelector(".till-screen");
-    const foot = document.querySelector(".till-count-foot");
+    const screen = document.querySelector(".till-phone .phone-scroll") || document.querySelector(".till-screen");
+    const foot = document.querySelector(".till-phone .till-count-foot") || document.querySelector(".till-count-foot");
     const dock = document.getElementById("phone-dock");
     const pad = document.querySelector(".till-scroll-pad");
     const rows = [...document.querySelectorAll(".till-den-row")];
@@ -319,8 +319,8 @@ async function countGeometry(page: Page): Promise<{
 
 async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: number }> {
   return page.evaluate(() => {
-    const screen = document.querySelector(".till-screen");
-    const foot = document.querySelector(".till-count-foot");
+    const screen = document.querySelector(".till-phone .phone-scroll") || document.querySelector(".till-screen");
+    const foot = document.querySelector(".till-phone .till-count-foot") || document.querySelector(".till-count-foot");
     const rows = [...document.querySelectorAll(".till-den-row")];
     if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement)) {
       return { placed: -1, blocked: rows.length };
@@ -474,8 +474,9 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
     await settled(page);
     await expectNoDesktopChrome(page);
   }
-  await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reconcile & close", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cash drawer" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Count" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Reconcile and close" })).toBeVisible();
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await settled(page);
   await expectNoDesktopChrome(page);

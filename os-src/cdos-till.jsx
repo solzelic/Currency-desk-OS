@@ -823,6 +823,7 @@
     const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    const phoneLayout = window.CDOS.usePhoneWidth();
 
     /* The phone count panel covers the bottom of the scrolling
        column. Its height is the pad that lets the last denomination
@@ -857,7 +858,105 @@
         phone.removeEventListener('change', apply);
         clear();
       };
-    }, [tab]);
+    }, [tab, phoneLayout, serverBalances, serverSession && serverSession.status]);
+
+    if (phoneLayout && window.CDOS.PhoneTill) {
+      const PhoneTillView = window.CDOS.PhoneTill;
+      const primary = serverBalances ? serverCcys : [];
+      const currencies = primary.concat(CCYS.filter(c => primary.indexOf(c) === -1));
+      const phoneTillRec = ((_ab && _ab.tills) || []).find(t => t.id === (station && station.tillId));
+      const drawerTotal = serverBacked
+        ? (serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null)
+        : (phoneTillRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(phoneTillRec) : null);
+      const missing = recon.filter(r => r.counted == null).map(r => r.c);
+      const closeReason = !serverBalancesReady
+        ? (serverBalanceError || 'Waiting for the ledger')
+        : !sessionOpen
+          ? 'Open the till before closing it'
+          : !recon.length
+            ? 'This till has no ledger balances yet'
+            : ('Count ' + missing.join(', ') + ' before closing. The close writes your count back as the balance.');
+      return (
+        <PhoneTillView
+          rootRef={tillRootRef}
+          tab={tab}
+          setTab={setTab}
+          ccy={ccy}
+          setCcy={setCcy}
+          currencies={currencies}
+          denoms={(DEN[ccy] || []).map((d, i) => ({ v: d[0], t: d[1], i }))}
+          counts={counts}
+          setCount={setCount}
+          quick={quick}
+          setQuick={setQuick}
+          stamp={stampCount}
+          ccyMode={ccyMode}
+          setMode={setMode}
+          isCounted={isCounted}
+          ccyTotal={ccyTotal}
+          expectedOf={expectedOf}
+          revealExp={revealExp}
+          toggleReveal={toggleReveal}
+          blind={blind}
+          onSave={saveSnapshot}
+          saved={saved}
+          busy={tillBusy}
+          sessionOpen={sessionOpen}
+          sessionClosed={sessionClosed}
+          serverBacked={serverBacked}
+          serverSession={serverSession}
+          balances={serverBalances}
+          error={sessionErr || serverBalanceError}
+          onRetry={() => {
+            setSessionErr('');
+            const run = refreshTill();
+            if (run && run.catch) run.catch(error => setServerBalanceError((error && error.message) || 'Server balances unavailable'));
+          }}
+          sessionNumber={serverSession ? serverSession.sessionNumber : null}
+          openedAt={serverSession && serverSession.openedAt ? new Date(serverSession.openedAt).getTime() : null}
+          countedN={countedN}
+          reconCount={recon.length}
+          recon={recon}
+          current={current}
+          roster={roster}
+          drawerTotal={drawerTotal}
+          homeCcy={homeCcy}
+          tillName={(ledgerTill && ledgerTill.tillId) || (activeOption && activeOption.name) || stationTill || ''}
+          tills={tillOptions}
+          onPickTill={pickTill}
+          canMove={!!onMoveCash}
+          onMove={() => onMoveCash && onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })}
+          onVault={() => onOpenVault && onOpenVault()}
+          onHandoff={() => setHandoffOpen(true)}
+          onOpen={openTill}
+          onNext={startNextSession}
+          opening={opening}
+          canClose={canCloseDay}
+          closeBlocked={closeBlocked}
+          closeReason={closeReason}
+          closing={closing}
+          onClose={clickClose}
+          confirmClose={confirmClose}
+          setConfirmClose={setConfirmClose}
+          onConfirmClose={confirmAndClose}
+          histKeys={histKeys}
+          history={history}
+          onHistory={setViewDay}
+        >
+          {handoffOpen && <HandoffModal tillId={tillId} tillName={tillNm} current={current} roster={roster} me={me} requireCount={requireCount} expected={CCYS.map(c => ({ ccy: c, units: expectedOf(c) })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy)} onClose={() => setHandoffOpen(false)} onDone={doHandoff} />}
+          {pendingTill && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && (() => {
+            const opt = tillOptions.find(o => o.key === pendingTill);
+            return opt ? React.createElement(window.CDOS._stations.ConfirmStationModal, {
+              branch: { name: (onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab && _ab.name) },
+              till: { name: opt.name, operator: opt.occupant },
+              me,
+              onClose: () => setPendingTill(null),
+              onConfirm: confirmPickTill,
+            }) : null;
+          })()}
+        </PhoneTillView>
+      );
+    }
 
     return (<div ref={tillRootRef} className="till-screen flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}

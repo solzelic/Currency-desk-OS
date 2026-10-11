@@ -1,0 +1,239 @@
+/* Phone cash drawer. At 360 and 390 the count is one column: chips,
+   denomination fields with no spinner, a footer on the bar, and the
+   till switch as a bottom sheet. At 1280 the drawer is the desktop
+   drawer. Save count posts once when tapped twice. */
+import type { Page } from "@playwright/test";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
+
+const PHONE = [
+  { width: 360, height: 780 },
+  { width: 390, height: 844 },
+] as const;
+
+async function dismissTour(page: Page): Promise<void> {
+  const skip = page.locator(".cdos-tour-skip");
+  for (let i = 0; i < 15; i++) {
+    if (await skip.isVisible()) {
+      await skip.click();
+      break;
+    }
+    await page.waitForTimeout(200);
+  }
+}
+
+async function settled(page: Page): Promise<void> {
+  await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+}
+
+async function atDesk(page: Page, staffId = "a.singh"): Promise<void> {
+  await page.context().clearCookies();
+  await page.goto("/app");
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await signInAtDesk(page, staffId);
+  await dismissTour(page);
+  await settled(page);
+}
+
+async function openPhoneTill(page: Page): Promise<void> {
+  await page.locator('#phonebar [data-phone-app="till"]').click();
+  await dismissTour(page);
+  await settled(page);
+  await expect(page.locator(".till-phone")).toBeVisible();
+}
+
+async function tillOpen(page: Page): Promise<void> {
+  const opened = await page.evaluate(async () => {
+    const seeded = await fetch("/api/ledger/opening-balances", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ balances: { CAD: "25000.00", USD: "12000.00", EUR: "7000.00", GBP: "3500.00" } }),
+    });
+    if (seeded.status !== 201 && seeded.status !== 409) return `balances ${seeded.status}`;
+    const probe = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
+    if (!probe.ok) return `session ${probe.status}`;
+    const body = await probe.json();
+    if (body.session && body.session.status === "open") return "open";
+    const res = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+    if (res.ok || res.status === 409) return "open";
+    return `${res.status}`;
+  });
+  expect(opened, "the till did not open").toBe("open");
+  const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
+  await page.reload();
+  await landOnDesktop(page);
+  await sync;
+  await dismissTour(page);
+  await settled(page);
+}
+
+test("a phone shows the count, with no spinner and no plus", async ({ page }) => {
+  test.setTimeout(120_000);
+  for (const size of PHONE) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await atDesk(page);
+    if (hasLedger) await tillOpen(page);
+    await openPhoneTill(page);
+    await expect(page.locator("#phone-fab")).toHaveCount(0);
+    await expect(page.locator(".till-phone")).not.toContainText("New transaction");
+    await expect(page.locator(".till-den-qty").first()).toBeVisible();
+    const rows = await page.locator(".till-den-row").evaluateAll((els) => {
+      const foot = document.querySelector(".till-count-foot");
+      const panel = foot ? foot.getBoundingClientRect().top : 0;
+      return els.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.height > 8 && r.bottom <= panel + 0.5 && r.top >= 0;
+      }).length;
+    });
+    expect(rows, size.width + " rows above the footer").toBeGreaterThanOrEqual(3);
+    const fields = await page.locator(".till-den-qty").evaluateAll((els) => els.map((el) => {
+      const style = getComputedStyle(el);
+      return {
+        type: el.getAttribute("type"),
+        mode: el.getAttribute("inputmode"),
+        align: style.textAlign,
+        appearance: style.appearance,
+      };
+    }));
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.every((f) => f.type === "text")).toBe(true);
+    expect(fields.every((f) => f.mode === "decimal")).toBe(true);
+    expect(fields.every((f) => f.align === "right")).toBe(true);
+    expect(fields.every((f) => f.appearance === "textfield" || f.appearance === "none")).toBe(true);
+    await expect(page.locator(".till-phone").getByRole("spinbutton")).toHaveCount(0);
+    const moves = await page.getByRole("button", { name: "Move cash" }).boundingBox();
+    const vault = await page.getByRole("button", { name: "Vault" }).boundingBox();
+    expect(moves && vault && Math.abs(moves.width - vault.width)).toBeLessThanOrEqual(1);
+    const dock = await page.locator("#phone-dock").boundingBox();
+    const foot = await page.locator(".till-count-foot").boundingBox();
+    expect(dock && foot && Math.abs(dock.y - (foot.y + foot.height))).toBeLessThanOrEqual(1);
+    await expect(page.locator(".till-phone")).not.toContainText("$");
+  }
+});
+
+test("the difference is in words, and a double tap saves once", async ({ page }) => {
+  test.skip(!hasLedger, "needs the ledger");
+  test.setTimeout(120_000);
+  for (const size of PHONE) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await atDesk(page);
+    await tillOpen(page);
+    await openPhoneTill(page);
+    const notes = page.getByRole("button", { name: "Count notes" });
+    if (await notes.isVisible()) await notes.click();
+    const field = page.locator(".till-den-qty").first();
+    await field.evaluate((el) => {
+      const screen = el.closest(".till-screen");
+      const foot = document.querySelector(".till-count-foot");
+      if (!(screen instanceof HTMLElement) || !foot) return;
+      const limit = foot.getBoundingClientRect().top;
+      const r = el.getBoundingClientRect();
+      if (r.bottom > limit - 8) screen.scrollTop += r.bottom - limit + 16;
+    });
+    await field.fill("1");
+    const show = page.getByRole("button", { name: "Show expected amount" });
+    if (await show.isVisible()) await show.click();
+    await expect(page.locator(".till-diff").first()).toHaveText(/(over|short|Matches the book)/);
+    await expect(page.locator(".till-phone-counted")).toContainText(/\d\.\d{2} [A-Z]{3}/);
+    if (size.width !== 390) continue;
+    let posts = 0;
+    const countPosts = (req: { method: () => string; url: () => string }) => {
+      if (req.method() === "POST" && req.url().includes("/api/ledger/till-counts")) posts += 1;
+    };
+    page.on("request", countPosts);
+    await page.locator(".phone-sticky-btn").evaluate((el) => {
+      (el as HTMLButtonElement).click();
+      (el as HTMLButtonElement).click();
+    });
+    await expect.poll(() => posts, { timeout: 10_000 }).toBe(1);
+    page.off("request", countPosts);
+  }
+});
+
+test("the till switch is a bottom sheet", async ({ page }) => {
+  for (const size of PHONE) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await atDesk(page);
+    if (hasLedger) await tillOpen(page);
+    await openPhoneTill(page);
+    await page.locator(".till-phone-till").click();
+    const sheet = page.locator(".till-sheet");
+    await expect(sheet).toBeVisible();
+    const box = await sheet.locator(".till-sheet-panel").evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const host = el.closest(".till-sheet");
+      return {
+        position: host ? getComputedStyle(host).position : "",
+        bottom: Math.round(r.bottom),
+        height: window.innerHeight,
+        top: r.top,
+      };
+    });
+    expect(box.position).toBe("fixed");
+    expect(Math.abs(box.bottom - box.height)).toBeLessThanOrEqual(1);
+    expect(box.top).toBeGreaterThan(40);
+    await page.getByRole("button", { name: "Close till list" }).click();
+    await expect(sheet).toBeHidden();
+  }
+});
+
+test("loading and no open till are honest", async ({ page }) => {
+  test.skip(!hasLedger, "needs the ledger");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await page.route("**/api/ledger/till-balances", async (route) => {
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue();
+  });
+  await page.route("**/api/ledger/till-session", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.continue();
+  });
+  await openPhoneTill(page);
+  await expect(page.locator(".till-wake")).toContainText("Waking the server", { timeout: 8000 });
+  await page.unroute("**/api/ledger/till-balances");
+  await page.unroute("**/api/ledger/till-session");
+
+  await page.route("**/api/ledger/till-session", (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ session: null, latestCounts: {} }) });
+  });
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await settled(page);
+  await openPhoneTill(page);
+  await expect(page.locator(".phone-empty")).toContainText("This till is not open");
+  await expect(page.locator(".till-phone")).not.toContainText("$");
+  await expect(page.getByRole("button", { name: "Open the till" })).toBeVisible();
+});
+
+test("desktop till is the desktop till at 1280", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await atDesk(page);
+  await page.locator('#appbar [data-app="till"]').click();
+  await dismissTour(page);
+  await settled(page);
+  await expect(page.locator(".till-phone")).toHaveCount(0);
+  await expect(page.locator(".till-sheet")).toHaveCount(0);
+  await expect(page.locator("#phonebar")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Cash drawer" }).first()).toBeVisible();
+  /* A saved count comes back as a total, which is the desktop drawer.
+     Denomination steppers, when they are on screen, stay 26×28. */
+  const steps = page.locator(".till-step");
+  if (await steps.count()) {
+    const step = await steps.first().boundingBox();
+    expect(step && Math.round(step.width)).toBe(26);
+    expect(step && Math.round(step.height)).toBe(28);
+  }
+  await expect(page.locator(".till-screen input[type='number']").first()).toBeVisible();
+});

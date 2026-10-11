@@ -14438,6 +14438,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    const phoneLayout = window.CDOS.usePhoneWidth();
 
     /* The phone count panel covers the bottom of the scrolling
        column. Its height is the pad that lets the last denomination
@@ -14475,7 +14476,117 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         phone.removeEventListener('change', apply);
         clear();
       };
-    }, [tab]);
+    }, [tab, phoneLayout, serverBalances, serverSession && serverSession.status]);
+    if (phoneLayout && window.CDOS.PhoneTill) {
+      const PhoneTillView = window.CDOS.PhoneTill;
+      const primary = serverBalances ? serverCcys : [];
+      const currencies = primary.concat(CCYS.filter(c => primary.indexOf(c) === -1));
+      const phoneTillRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
+      const drawerTotal = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : phoneTillRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(phoneTillRec) : null;
+      const missing = recon.filter(r => r.counted == null).map(r => r.c);
+      const closeReason = !serverBalancesReady ? serverBalanceError || 'Waiting for the ledger' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : 'Count ' + missing.join(', ') + ' before closing. The close writes your count back as the balance.';
+      return /*#__PURE__*/React.createElement(PhoneTillView, {
+        rootRef: tillRootRef,
+        tab: tab,
+        setTab: setTab,
+        ccy: ccy,
+        setCcy: setCcy,
+        currencies: currencies,
+        denoms: (DEN[ccy] || []).map((d, i) => ({
+          v: d[0],
+          t: d[1],
+          i
+        })),
+        counts: counts,
+        setCount: setCount,
+        quick: quick,
+        setQuick: setQuick,
+        stamp: stampCount,
+        ccyMode: ccyMode,
+        setMode: setMode,
+        isCounted: isCounted,
+        ccyTotal: ccyTotal,
+        expectedOf: expectedOf,
+        revealExp: revealExp,
+        toggleReveal: toggleReveal,
+        blind: blind,
+        onSave: saveSnapshot,
+        saved: saved,
+        busy: tillBusy,
+        sessionOpen: sessionOpen,
+        sessionClosed: sessionClosed,
+        serverBacked: serverBacked,
+        serverSession: serverSession,
+        balances: serverBalances,
+        error: sessionErr || serverBalanceError,
+        onRetry: () => {
+          setSessionErr('');
+          const run = refreshTill();
+          if (run && run.catch) run.catch(error => setServerBalanceError(error && error.message || 'Server balances unavailable'));
+        },
+        sessionNumber: serverSession ? serverSession.sessionNumber : null,
+        openedAt: serverSession && serverSession.openedAt ? new Date(serverSession.openedAt).getTime() : null,
+        countedN: countedN,
+        reconCount: recon.length,
+        recon: recon,
+        current: current,
+        roster: roster,
+        drawerTotal: drawerTotal,
+        homeCcy: homeCcy,
+        tillName: ledgerTill && ledgerTill.tillId || activeOption && activeOption.name || stationTill || '',
+        tills: tillOptions,
+        onPickTill: pickTill,
+        canMove: !!onMoveCash,
+        onMove: () => onMoveCash && onMoveCash({
+          kind: 'issue',
+          bId: _ab && _ab.id,
+          tId: station && station.tillId
+        }),
+        onVault: () => onOpenVault && onOpenVault(),
+        onHandoff: () => setHandoffOpen(true),
+        onOpen: openTill,
+        onNext: startNextSession,
+        opening: opening,
+        canClose: canCloseDay,
+        closeBlocked: closeBlocked,
+        closeReason: closeReason,
+        closing: closing,
+        onClose: clickClose,
+        confirmClose: confirmClose,
+        setConfirmClose: setConfirmClose,
+        onConfirmClose: confirmAndClose,
+        histKeys: histKeys,
+        history: history,
+        onHistory: setViewDay
+      }, handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
+        tillId: tillId,
+        tillName: tillNm,
+        current: current,
+        roster: roster,
+        me: me,
+        requireCount: requireCount,
+        expected: CCYS.map(c => ({
+          ccy: c,
+          units: expectedOf(c)
+        })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy),
+        onClose: () => setHandoffOpen(false),
+        onDone: doHandoff
+      }), pendingTill && window.CDOS._stations && window.CDOS._stations.ConfirmStationModal && (() => {
+        const opt = tillOptions.find(o => o.key === pendingTill);
+        return opt ? React.createElement(window.CDOS._stations.ConfirmStationModal, {
+          branch: {
+            name: onLedgerTills && ledgerTill && ledgerTill.branchName || _ab && _ab.name
+          },
+          till: {
+            name: opt.name,
+            operator: opt.occupant
+          },
+          me,
+          onClose: () => setPendingTill(null),
+          onConfirm: confirmPickTill
+        }) : null;
+      })());
+    }
     return /*#__PURE__*/React.createElement("div", {
       ref: tillRootRef,
       className: "till-screen flex flex-col",
@@ -63056,6 +63167,389 @@ window.CDOS_PERSIST = (function () {
     formatPhoneDate,
     formatPhoneListGroup,
     Phone
+  });
+})();
+
+/* ---- os-src/cdos-till-phone.jsx ---- */
+/* ============================================================
+   Phone cash drawer. At 430px and under, TillDrawer renders this
+   instead of the desktop drawer. Wider than that, this file is
+   loaded and not mounted, so the desktop drawer is untouched.
+
+   One currency at a time. The footer is the only primary action
+   (Save count, or Close till). There is no round + on this screen.
+   Amounts go through window.CDOS.phoneMoney, which the phone shell
+   owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
+   A figure the ledger did not return is left out, not shown as 0.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect
+  } = React;
+
+  /* The phone shell owns this. Empty string means the figure is absent. */
+  function money(amount, currency) {
+    if (amount == null || currency == null || currency === '') return null;
+    const said = window.CDOS.formatPhoneMoney(amount, currency);
+    return said || null;
+  }
+  function usePhoneWidth() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => window.matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+
+  /* Slow first fetch: skeleton after 300ms, the cold-start banner after 3s. */
+  function useWait(loading) {
+    const [skel, setSkel] = useState(false);
+    const [slow, setSlow] = useState(false);
+    useEffect(() => {
+      if (!loading) {
+        setSkel(false);
+        setSlow(false);
+        return undefined;
+      }
+      const a = setTimeout(() => setSkel(true), 300);
+      const b = setTimeout(() => setSlow(true), 3000);
+      return () => {
+        clearTimeout(a);
+        clearTimeout(b);
+      };
+    }, [loading]);
+    return {
+      skel,
+      slow
+    };
+  }
+  function clock12(ms) {
+    if (!ms) return '';
+    return new Date(ms).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+
+  /* The ledger stores a staff id. The roster is how that id is spelled
+     for a person. No roster match keeps the id. It does not invent one. */
+  function operatorOf(current, roster) {
+    if (!current || !current.operator || current.operator === '—') return null;
+    const id = String(current.operator).toLowerCase();
+    const hit = (roster || []).find(s => String(s.staffId || '').toLowerCase() === id || String(s.name || '').toLowerCase() === id);
+    return {
+      name: hit ? hit.name : current.operator,
+      since: current.since || null
+    };
+  }
+  function faceOf(v, ccy) {
+    const n = v >= 1 && Number.isInteger(v) ? String(v) : Number(v).toFixed(2);
+    return n + ' ' + ccy;
+  }
+
+  /* Counted minus expected, in words. No figure until both exist. */
+  function diffWords(ccy, counted, expected) {
+    if (counted == null || expected == null) return '';
+    const v = Math.round((Number(counted) - Number(expected)) * 100) / 100;
+    if (Math.abs(v) < 0.005) return 'Matches the book';
+    const said = money(Math.abs(v), ccy);
+    if (!said) return '';
+    return said + (v > 0 ? ' over' : ' short');
+  }
+  function QtyRow({
+    d,
+    ccy,
+    counts,
+    setCount
+  }) {
+    const raw = (counts[ccy] || {})[d.i];
+    const shown = raw == null || raw === '' ? '' : String(raw);
+    const n = parseInt(shown, 10);
+    const have = Number.isFinite(n) ? n : 0;
+    const sub = d.v * have;
+    const face = faceOf(d.v, ccy);
+    const line = shown === '' || !sub ? null : money(sub, ccy);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "till-den-row"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-den-face"
+    }, face), /*#__PURE__*/React.createElement("div", {
+      className: "till-stepper"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-step",
+      "aria-label": 'Remove one ' + face,
+      onClick: () => {
+        if (shown === '') return;
+        setCount(ccy, d.i, String(Math.max(0, have - 1)));
+      }
+    }, "\u2212"), /*#__PURE__*/React.createElement("input", {
+      className: "till-den-qty",
+      type: "text",
+      inputMode: "decimal",
+      autoComplete: "off",
+      enterKeyHint: "done",
+      "aria-label": face + ' count',
+      value: shown,
+      onChange: e => setCount(ccy, d.i, e.target.value.replace(/[^0-9]/g, ''))
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-step",
+      "aria-label": 'Add one ' + face,
+      onClick: () => setCount(ccy, d.i, String(have + 1))
+    }, "+")), /*#__PURE__*/React.createElement("span", {
+      className: "till-den-sub"
+    }, line || '—'));
+  }
+  function PhoneTill(p) {
+    const [sheet, setSheet] = useState(false);
+    const loading = !!(p.serverBacked && p.balances == null && !p.error);
+    const wait = useWait(loading);
+    const who = operatorOf(p.current, p.roster);
+    const counted = p.isCounted(p.ccy);
+    const total = counted ? p.ccyTotal(p.ccy) : null;
+    const expected = p.expectedOf(p.ccy);
+    const showExpected = !p.blind || !!p.revealExp[p.ccy];
+    const words = showExpected && counted ? diffWords(p.ccy, total, expected) : '';
+    const open = !!p.sessionOpen;
+    const noSession = !!(p.serverBacked && p.balances != null && !p.error && !p.serverSession);
+    const closed = !!p.sessionClosed;
+    const mode = p.ccyMode(p.ccy);
+    const denoms = p.denoms || [];
+    const amount = (n, ccy) => n == null || !ccy ? null : money(n, ccy);
+    const footLabel = p.tab === 'reconcile' ? p.closing ? 'Closing…' : 'Close till' : p.saved ? 'Saved' : p.busy === 'count' ? 'Saving…' : 'Save count';
+    const footDisabled = p.tab === 'reconcile' ? !p.canClose || p.closing || p.closeBlocked : !open || !counted || p.saved || p.busy === 'count';
+    const onFoot = () => {
+      if (footDisabled) return;
+      if (p.tab === 'reconcile') p.onClose();else p.onSave();
+    };
+    const Phone = window.CDOS.Phone;
+    const saveWhy = p.tab === 'reconcile' ? p.closeBlocked ? p.closeReason : '' : !open ? 'Open the till before saving a count' : !counted ? 'Enter a count first' : '';
+    const sticky = p.tab === 'history' ? /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot"
+    }, /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: "Back to count",
+      onClick: () => p.setTab('count')
+    })) : noSession || closed ? /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot"
+    }, /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: p.busy === 'open' || p.opening ? 'Opening…' : closed ? 'Open next session' : 'Open the till',
+      disabled: !!p.busy || p.opening,
+      disabledReason: p.busy || p.opening ? 'Opening the till' : '',
+      onClick: closed ? p.onNext : p.onOpen
+    })) : /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-foot-sum"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-counted"
+    }, total == null ? p.ccy + ' not counted yet' : money(total, p.ccy)), /*#__PURE__*/React.createElement("div", {
+      className: "till-foot-exp"
+    }, /*#__PURE__*/React.createElement("span", null, showExpected ? 'Expected: ' + (expected == null ? '—' : money(expected, p.ccy)) : 'Expected: Hidden'), words ? /*#__PURE__*/React.createElement("span", {
+      className: "till-diff"
+    }, words) : null, p.blind && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-link",
+      "aria-label": showExpected ? 'Hide expected amount' : 'Show expected amount',
+      onClick: () => p.toggleReveal(p.ccy)
+    }, showExpected ? 'Hide' : 'Show'))), /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: footLabel,
+      disabled: footDisabled,
+      disabledReason: saveWhy,
+      onClick: onFoot
+    }));
+    return /*#__PURE__*/React.createElement("div", {
+      ref: p.rootRef,
+      className: "till-screen till-phone-host",
+      "data-tour": "till",
+      "data-phone-till": loading ? 'loading' : noSession || closed ? 'empty' : p.tab
+    }, /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "till",
+      className: "till-phone",
+      title: "Cash drawer",
+      action: /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "till-phone-link",
+        onClick: () => p.setTab('history')
+      }, "History"),
+      banner: wait.slow ? /*#__PURE__*/React.createElement("div", {
+        className: "till-wake",
+        role: "status"
+      }, /*#__PURE__*/React.createElement("b", null, "Waking the server"), /*#__PURE__*/React.createElement("span", null, "This can take up to a minute. Keep this screen open.")) : null,
+      sticky: sticky
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-seg",
+      role: "tablist"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "tab",
+      "aria-selected": p.tab === 'count',
+      className: p.tab === 'count' ? 'is-on' : '',
+      onClick: () => p.setTab('count')
+    }, "Count"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "tab",
+      "aria-selected": p.tab === 'reconcile',
+      className: p.tab === 'reconcile' ? 'is-on' : '',
+      onClick: () => p.setTab('reconcile')
+    }, "Reconcile and close")), p.error ? /*#__PURE__*/React.createElement(Phone.ErrorState, {
+      message: p.error,
+      onRetry: p.onRetry
+    }) : null, loading && wait.skel ? /*#__PURE__*/React.createElement(Phone.LoadingState, {
+      rows: 3,
+      label: "Loading the till"
+    }) : null, loading && wait.skel && Array.from({
+      length: 10
+    }, (_, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "till-den-row till-skel-row"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-skel"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "till-skel"
+    }))), !loading && (noSession || closed) && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: closed ? 'This till is closed' : 'This till is not open',
+      message: closed ? 'The book is locked. Open the next session to count again.' : 'Open it to count the drawer. A count, a cash move, and a deal all record against that session.'
+    }), !loading && !noSession && !closed && p.tab !== 'history' && /*#__PURE__*/React.createElement("section", {
+      className: "till-phone-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-amount"
+    }, amount(p.drawerTotal, p.homeCcy) || '—'), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-meta"
+    }, 'In drawer · ', p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' · ' + (clock12(p.openedAt) || '—') : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted'), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-who"
+    }, /*#__PURE__*/React.createElement("span", null, who ? 'On the drawer: ' + who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), p.tillName ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-till",
+      onClick: () => setSheet(true)
+    }, p.tillName) : null), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: p.onMove,
+      disabled: !p.canMove
+    }, "Move cash"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: p.onVault
+    }, "Vault"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: p.onHandoff
+    }, "Hand off"))), !loading && !noSession && !closed && p.tab === 'count' && !(wait.skel && loading) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.FilterChips, {
+      chips: p.currencies.map(c => ({
+        id: c,
+        label: p.isCounted(c) ? c + ' counted' : c
+      })),
+      value: p.ccy,
+      onChange: p.setCcy
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-sec",
+      "data-tour": "till-count"
+    }, /*#__PURE__*/React.createElement("h2", null, "Count ", p.ccy), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-link",
+      onClick: () => p.setMode(m => ({
+        ...m,
+        [p.ccy]: mode === 'total' ? 'denom' : 'total'
+      }))
+    }, mode === 'total' ? 'Count notes' : 'Enter total instead')), mode === 'total' && /*#__PURE__*/React.createElement("label", {
+      className: "till-phone-total"
+    }, /*#__PURE__*/React.createElement("span", null, p.ccy), /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      inputMode: "decimal",
+      autoComplete: "off",
+      "aria-label": p.ccy + ' total',
+      value: p.quick[p.ccy] ?? '',
+      onChange: e => {
+        p.setQuick(o => ({
+          ...o,
+          [p.ccy]: e.target.value.replace(/[^0-9.]/g, '')
+        }));
+        p.stamp(p.ccy);
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-list"
+    }, denoms.map(d => /*#__PURE__*/React.createElement(QtyRow, {
+      key: d.i,
+      d: d,
+      ccy: p.ccy,
+      counts: p.counts,
+      setCount: p.setCount
+    })))), !loading && !noSession && !closed && p.tab === 'reconcile' && /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-list"
+    }, p.recon.map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.c,
+      className: "till-phone-recon"
+    }, /*#__PURE__*/React.createElement("b", null, r.c), /*#__PURE__*/React.createElement("span", null, r.counted == null ? 'Not counted yet' : money(r.counted, r.c)), /*#__PURE__*/React.createElement("span", null, 'Expected ' + (r.expected == null ? '—' : money(r.expected, r.c))), /*#__PURE__*/React.createElement("span", {
+      className: "till-diff"
+    }, diffWords(r.c, r.counted, r.expected)))), p.closeBlocked && /*#__PURE__*/React.createElement("p", {
+      className: "till-phone-note"
+    }, p.closeReason)), p.tab === 'history' && /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-list"
+    }, !(p.histKeys || []).length && /*#__PURE__*/React.createElement("p", {
+      className: "till-phone-note"
+    }, "No counts saved on this till."), (p.histKeys || []).slice(0, 12).map(k => /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      key: k,
+      className: "till-phone-recon",
+      onClick: () => p.onHistory(k)
+    }, /*#__PURE__*/React.createElement("b", null, k), /*#__PURE__*/React.createElement("span", null, p.history[k] && p.history[k].by)))), /*#__PURE__*/React.createElement("div", {
+      className: "till-scroll-pad"
+    })), sheet && /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet",
+      role: "dialog",
+      "aria-label": "Switch till"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-sheet-scrim",
+      "aria-label": "Close till list",
+      onClick: () => setSheet(false)
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-panel"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-title"
+    }, "Which till?"), (p.tills || []).map(o => /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      key: o.key,
+      className: "till-sheet-row",
+      onClick: () => {
+        setSheet(false);
+        p.onPickTill(o.key);
+      }
+    }, /*#__PURE__*/React.createElement("span", null, o.name), /*#__PURE__*/React.createElement("span", null, o.on ? 'This till' : o.occupant || o.note || ''))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet",
+      role: "dialog",
+      "aria-label": "Close the till"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-sheet-scrim",
+      "aria-label": "Back to count",
+      onClick: () => p.setConfirmClose(false)
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-panel"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-title"
+    }, "Close the till"), /*#__PURE__*/React.createElement("p", {
+      className: "till-phone-note"
+    }, "The close writes each counted figure back as the till balance."), p.recon.map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.c,
+      className: "till-phone-recon"
+    }, /*#__PURE__*/React.createElement("b", null, r.c), /*#__PURE__*/React.createElement("span", null, r.counted == null ? 'Not counted yet' : money(r.counted, r.c)), /*#__PURE__*/React.createElement("span", {
+      className: "till-diff"
+    }, diffWords(r.c, r.counted, r.expected) || (r.expected == null ? '—' : 'Expected ' + money(r.expected, r.c))))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-save",
+      onClick: p.onConfirmClose
+    }, "Close till"))), p.children);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneTill,
+    usePhoneWidth
   });
 })();
 
