@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { BASELINE_NOTICE } from "../src/ledger/jurisdiction.js";
+import { clearTypedId, fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -385,6 +386,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await fileTypedId(pool, gbp.customerId);
     const verified = await cheque(gbp, "1.00", "gbp-stale-verified");
     expect(verified.statusCode, verified.body).toBe(201);
     const staleStamp = (
@@ -400,6 +402,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await clearTypedId(pool, gbp.customerId);
     const missing = await cheque(gbp, "1.00", "gbp-missing");
     expect(missing.statusCode, missing.body).toBe(422);
     expect(missing.json().code).toBe("COMPLIANCE_BLOCKED");
@@ -461,6 +464,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await fileTypedId(pool, gbp.customerId);
     const underReport = await send(gbp, "7999.99", "gbp-rpt-under", {
       purpose: "",
       sourceOfFunds: "",
@@ -502,6 +506,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await clearTypedId(pool, gbp.customerId);
     const staleId = await cheque(gbp, "1.00", "gbp-stale-id-2");
     expect(staleId.statusCode, staleId.body).toBe(422);
     expect(staleId.json().code).toBe("COMPLIANCE_BLOCKED");

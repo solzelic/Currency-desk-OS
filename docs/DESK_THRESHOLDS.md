@@ -204,9 +204,14 @@ answer:
 This is a pack that is installed and states no line. A desk with no
 country pack does not land here: it trades under the baseline, as above.
 
-- **A verified customer trades.** They satisfy every possible value of a
-  line nobody can state. There is nothing to be unsure about, and a
-  misconfigured pack does not close the shop.
+- **A customer with ID on file trades.** They satisfy every possible
+  value of a line nobody can state. ID on file is the server's
+  `idStanding` of `on_file`: at least one identity document with a
+  real type, a real number, and an expiry that has not passed in the
+  branch's time zone (no expiry counts as not expired). It is not
+  the word stored in `ledger_customers.id_status`, and it is not
+  decided by which document is primary. There is nothing to be
+  unsure about, and a misconfigured pack does not close the shop.
 - **An unverified customer is refused**, in words that name the real
   problem — that the desk has no identification threshold — rather than in
   words that read as a failure by the person at the counter. "We could not

@@ -67,6 +67,18 @@ workspace-scoped because the posting path is. It gained one column,
 second customer concept. One client has as many counter records as the
 entity has tills; every one of them points at the same person.
 
+The posting gate does not read `ledger_customers.id_status`. ID on file
+is one rule, computed on the server from
+`desk_client_identity_documents`: a real type (not empty and not
+"Not stated"), a number that survives stripping whitespace and
+invisible characters, and an expiry on or after the branch's business
+date. No expiry counts as not expired. The primary document is what
+the desk shows (`displayedDocument`); it is not what decides the
+standing. The client response carries `idStanding` (`on_file`,
+`missing`, `expired`). `POST` and `PUT /api/ledger/customers` refuse
+a standing sent on the body, and accept `clientId` so the till's
+customer points at this file. See `docs/LEDGER_POSTING_API.md`.
+
 ## Identifying and signal
 
 Every field is on one of two sides of a line, and the split is
@@ -187,14 +199,22 @@ different days. The old shape had a "primary" ID as loose fields
 (`idType`, `idNum`, `idIssued`, `idExpiry`) beside an `ids[]` array, so
 the first document was structurally different from every other one and
 every screen had to special-case it. Now exactly one row per client
-carries `is_primary`, enforced by a partial unique index, and it is the
-one that drives the desk's KYC standing.
+carries `is_primary`, enforced by a partial unique index. That row is
+the document the desk shows. It does not decide whether the customer
+is identified.
 
-`verification_status` is derived from the documents, not typed:
+`verification_status` is derived from the same document rule the
+posting gate uses, not typed and not from the primary row alone:
 
-- no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
-- otherwise → `identified`
+- no document with a real type (not empty and not "Not stated") and a
+  number that is still non-empty after whitespace and invisible
+  characters are stripped → `unverified`
+- such documents exist, and every one of them expired before the
+  branch's business date → `expired`
+- otherwise → `identified` (a null expiry counts as not expired)
+
+The primary flag is not in that predicate. A current secondary
+document is `identified` when the primary is expired or absent.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of

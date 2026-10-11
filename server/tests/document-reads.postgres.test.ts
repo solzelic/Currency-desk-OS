@@ -25,6 +25,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -84,6 +85,7 @@ async function reset(homeCurrency = "CAD", packId = "pack-ca-v1") {
     "INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')",
     scope.slice(0, 4),
   );
+  await fileTypedId(pool, "customer-demo");
   await pool.query(
     `INSERT INTO ledger_till_sessions
       (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,

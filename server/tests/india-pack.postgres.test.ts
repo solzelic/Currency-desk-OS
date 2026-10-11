@@ -6,6 +6,7 @@ import Decimal from "decimal.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { requireIdentification, type LedgerActor } from "../src/ledger/service.js";
+import { ID_NEEDED_MESSAGE } from "../src/ledger/id-on-file.js";
 import { readDeskThresholds } from "../src/ledger/thresholds.js";
 import { resolvePack } from "../src/ledger/jurisdiction.js";
 import { indiaSaleCashBlocked } from "../src/ledger/india-pack.js";
@@ -194,13 +195,13 @@ postgres("India pack against real PostgreSQL", () => {
           kind: "exchange",
           cash: true,
         }),
-      ).rejects.toThrow(/blocked posting/);
+      ).rejects.toThrow(ID_NEEDED_MESSAGE);
       await expect(
         requireIdentification(client, who, pack, new Decimal("1.00"), "unverified", {
           kind: "remittance_send",
           cash: true,
         }),
-      ).rejects.toThrow(/blocked posting/);
+      ).rejects.toThrow(ID_NEEDED_MESSAGE);
       await expect(
         requireIdentification(client, who, pack, new Decimal("1.00"), "verified", {
           kind: "remittance_send",

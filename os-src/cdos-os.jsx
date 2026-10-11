@@ -1764,7 +1764,7 @@
       setWins(ws => { const meta = APPMETA.ledger; const n = ws.length; const box = fitBox(80 + (n % 6) * 30, 64 + (n % 6) * 26, meta.w, meta.h); return [...ws, { id, ...box, z: ++zTop.current, min: false }]; });
     };
     // open the Clients/KYC app straight to a client's full profile
-    const openClientProfile = (name, txRef) => { setClientToOpen({ name, txRef: txRef || null, n: Date.now() }); openApp('clients'); };
+    const openClientProfile = (name, txRef, opts) => { setClientToOpen({ name, txRef: txRef || null, recordId: !!(opts && opts.recordId), n: Date.now() }); openApp('clients'); };
     const openTransaction = (id) => { setTxToOpen({ id, n: Date.now() }); openApp('ledger'); };
     const openSettingsTab = (t) => { setSettingsJump({ t, n: Date.now() }); openApp('settings'); };
     const openLedgerRefs = (refs, label) => { setLedgerFocus({ refs, label, n: Date.now() }); openApp('ledger'); };

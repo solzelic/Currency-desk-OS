@@ -24,6 +24,7 @@ import {
   type ComplianceStamp,
 } from "./compliance-gate.js";
 import { holdSerbiaSuspicion, SERBIA_SUSPICION_HELD, serbiaExchangeFacts } from "./serbia.js";
+import { derivedIdStatus, ID_NEEDED_MESSAGE } from "./id-on-file.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
   INDIA_PACK_ID,
@@ -282,7 +283,7 @@ export async function requireIdentification(
         "COMPLIANCE_BLOCKED",
         duty.failClosed
           ? "This desk's European Union rules are incomplete, so it cannot tell whether this customer needs to be identified."
-          : "Authoritative compliance policy blocked posting.",
+          : ID_NEEDED_MESSAGE,
       );
     }
     if (duty.cdd && (!(deal.purpose ?? "").trim() || !(deal.sourceOfFunds ?? "").trim())) {
@@ -319,7 +320,7 @@ export async function requireIdentification(
     if (idStatus !== "verified" && (packHit || deskHit)) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired };
@@ -346,7 +347,7 @@ export async function requireIdentification(
     if (judged.block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return {
@@ -366,7 +367,7 @@ export async function requireIdentification(
       if (indiaIdentificationRequired(amountHome, deal.kind, desk)) {
         throw new LedgerError(
           "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
+          ID_NEEDED_MESSAGE,
         );
       }
     }
@@ -386,7 +387,7 @@ export async function requireIdentification(
       if (identificationBlocks(amountHome, row, desk)) {
         throw new LedgerError(
           "COMPLIANCE_BLOCKED",
-          "Authoritative compliance policy blocked posting.",
+          ID_NEEDED_MESSAGE,
         );
       }
     }
@@ -400,7 +401,7 @@ export async function requireIdentification(
     if (priced.block || (desk !== null && amountHome.gte(desk))) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -421,7 +422,7 @@ export async function requireIdentification(
     if (block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -443,7 +444,7 @@ export async function requireIdentification(
     if (block) {
       throw new LedgerError(
         "COMPLIANCE_BLOCKED",
-        "Authoritative compliance policy blocked posting.",
+        ID_NEEDED_MESSAGE,
       );
     }
     return { ...stamp, identificationRequired: false };
@@ -476,7 +477,7 @@ export async function requireIdentification(
   if (idStatus !== "verified" && (packHit || deskHit)) {
     throw new LedgerError(
       "COMPLIANCE_BLOCKED",
-      "Authoritative compliance policy blocked posting.",
+      ID_NEEDED_MESSAGE,
     );
   }
   return { ...stamp, identificationRequired: packHit || deskHit };
@@ -826,12 +827,19 @@ export class LedgerService {
         purpose: quote.purpose,
         sourceOfFunds: quote.sourceOfFunds,
       });
+      const idStatus = await derivedIdStatus(
+        client,
+        quote.customerId,
+        actor.tenantId,
+        actor.legalEntityId,
+        actor.branchId,
+      );
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         phValue ? phValue.pesos : inputHome,
-        customer.rows[0].id_status,
+        idStatus,
         {
           kind: "exchange",
           cash: true,
@@ -856,7 +864,7 @@ export class LedgerService {
           kind: "exchange",
           cash: true,
           customerName: String(customer.rows[0].name ?? ""),
-          idStatus: customer.rows[0].id_status,
+          idStatus,
           rate: fixed(rate, 12),
         },
         compliance.identificationRequired,
@@ -1378,12 +1386,19 @@ export class LedgerService {
         purpose: request.purpose,
         sourceOfFunds: request.sourceOfFunds,
       });
+      const idStatus = await derivedIdStatus(
+        client,
+        request.customerId,
+        actor.tenantId,
+        actor.legalEntityId,
+        actor.branchId,
+      );
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         phValue ? phValue.pesos : inputHome,
-        customer.rows[0].id_status,
+        idStatus,
         {
           kind: "exchange",
           cash: true,
@@ -1408,7 +1423,7 @@ export class LedgerService {
           kind: "exchange",
           cash: true,
           customerName: String(customer.rows[0].name ?? ""),
-          idStatus: customer.rows[0].id_status,
+          idStatus,
           rate: fixed(rate, 12),
         },
         compliance.identificationRequired,

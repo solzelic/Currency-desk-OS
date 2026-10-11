@@ -13,8 +13,8 @@ created by the Quote Service and posted through frozen quote terms.
 | `GET` | `/api/health` | none | Readiness: 200 if a trivial database read succeeds, 503 `{ ok: false, error: "database" }` if it does not. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
-| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |
-| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates a customer in the active workspace. |
+| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. ID status is not a field of the body. |
+| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates name and risk in the active workspace. ID status is not a field of the body. |
 | `GET` | `/api/ledger/till-balances` | session cookie + `ledger:view` | Returns authoritative balances for the active till. |
 | `POST` | `/api/ledger/opening-balances` | manager/supervisor + `till:initialize` | Sets opening balances exactly once, before ledger activity. |
 | `GET` | `/api/ledger/transactions?limit=100` | session cookie + `ledger:view` | Returns newest authoritative transactions and reversal state. |
@@ -64,7 +64,7 @@ intentional rather than inferred.
 `SCOPE_DENIED` is returned when a valid session is outside tenant, legal
 entity, branch, workspace, or till scope. `AUTHORIZATION_DENIED` is returned
 when the authenticated staff role lacks the named permission.
-`INVALID_REQUEST`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
+`INVALID_REQUEST`, `ID_STATUS_NOT_CLIENT_SET`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
 `INSUFFICIENT_TILL_LIQUIDITY`, `RATE_NOT_AVAILABLE`,
 `IDEMPOTENCY_IN_PROGRESS`, `TRANSACTION_NOT_FOUND`, `REVERSAL_NOT_ALLOWED`,
 `REVERSAL_ALREADY_EXISTS`, `CUSTOMER_EXTERNAL_REF_CONFLICT`,
@@ -78,8 +78,52 @@ See [server/README.md](../server/README.md) for isolated PostgreSQL startup, mig
 
 ## Limitations
 
-No live KYC provider is connected, so `idStatus` is still a staff-attested
-record. Opening balances are initialization, not an adjustment mechanism;
+No live KYC provider is connected. `POST` and `PUT /api/ledger/customers`
+do not accept an ID standing. A body that carries `idStatus`, `id_status`,
+`kycStatus`, `kyc_status`, a `verified` flag, or the same claim nested
+under `identity`, `kyc`, or `id` is **422** `ID_STATUS_NOT_CLIENT_SET`.
+Teller and owner are the same caller. A new customer is stored as
+`missing`. An update does not rewrite `ledger_customers.id_status`.
+
+The value the API returns, and the value a deal is judged against, is
+derived from the identity documents on the linked client. One rule,
+computed only on the server: ID on file means at least one document
+with a real type (not empty and not "Not stated"), a number that is
+still non-empty after every whitespace and invisible character is
+stripped (NBSP, zero-width space, and the rest of that set), and an
+expiry on or after the desk's business date in the branch's time
+zone. No expiry counts as not expired — a null `expires_on` has
+never taken the expired leg, and the product does not keep a list of
+document types that never expire. The primary flag only chooses
+which document is shown. It does not decide the standing: a current
+secondary document is ID on file when the primary is expired or
+"Not stated".
+
+`POST /api/ledger/customers` accepts `clientId`. The client must
+belong to this tenant and legal entity. If this workspace already
+has a ledger customer for that client, that row is the one returned
+(name and risk updated, standing still derived). Otherwise the
+upsert stores `client_id` when the row does not already point at a
+different client. The till sends this. An `os:<slug>` row with no
+client id cannot see the documents, and a large deal is refused.
+
+The client record and the ledger customer both return `idStanding`
+(`on_file`, `missing`, or `expired`) and `displayedDocument` (the
+primary document, or the earliest document when none is primary).
+`idStatus` on the ledger customer remains the gate's word
+(`verified`, `expired`, `missing`); `on_file` is `verified`.
+
+A deal that needs identification and does not have it is
+`COMPLIANCE_BLOCKED` with the message "ID needed for this amount.
+Record the customer's ID." Other compliance refusals keep their own
+sentences. An approved provider document would be a row in the same
+table; none is connected. A customer already stored as `verified`
+with no qualifying document is left in the table and is not ID on
+file. A read-only list of those rows is
+`scripts/audit-ledger-id-without-document.mjs`. The business date
+there is the branch zone's calendar date, not UTC `current_date`.
+
+Opening balances are initialization, not an adjustment mechanism;
 after activity begins, differences must use a future counted-reconciliation
 workflow. (This table documents the core posting surface; the full ledger
 API has grown well beyond it — routes register in

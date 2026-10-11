@@ -158,7 +158,6 @@ async function postOneDeal(page: Page, key: string) {
           externalRef: "doc-seam",
           name: "Document Seam",
           risk: "normal",
-          idStatus: "verified",
         }),
       }).then((r) => r.json());
       customerId = made.customerId;
