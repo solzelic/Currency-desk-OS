@@ -418,6 +418,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, Signed-out desk. `/login` and `/app` ask `/api/auth/me` once.
+They do not call the ledger, and they do not call the rate board,
+until a server session exists. A public storefront still polls its
+board with no session.
+
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
 and keeps it until the day is closed or the count is cleared, so a

@@ -1006,30 +1006,50 @@
      Deliberately NOT a hard dependency: a screen renders immediately with
      the wall-clock date and no threshold, and reportingLimit() reports "—"
      until the pack is known. A dash for half a second beats a Canadian
-     10,000 on a UAE desk forever. */
+     10,000 on a UAE desk forever.
+
+     These three reads need a server session. The lock screen mounts this
+     hook too — hooks run before the stage return — and asking the ledger
+     while signed out only produces 401s. noteSession is the one place that
+     says a session exists. A demo sign-in, which never gets a server user,
+     does not call it, so the book stays quiet. */
+  let _session = false;
+  function noteSession(on) {
+    const next = !!on;
+    if (next === _session) return _session;
+    _session = next;
+    window.dispatchEvent(new CustomEvent('cdos-session', { detail: { signedIn: _session } }));
+    return _session;
+  }
   function useDeskFacts() {
     const [version, setVersion] = React.useState(0);
     React.useEffect(() => {
       let live = true;
       const bump = () => { if (live) setVersion(v => v + 1); };
+      const load = () => {
+        if (!_session) return;
+        Promise.all([
+          refreshJurisdiction(),
+          /* The desk's own lines, alongside the pack that proposes them. A
+             screen that had the pack but not the override would print the
+             regulator's 10,000 at a desk that had deliberately moved to
+             7,500 — the exact class of disagreement this hook exists to
+             stop, so the two arrive together or the version does not move. */
+          refreshDeskThresholds(),
+          refreshBusinessDate(),
+        ]).then(bump, bump);
+      };
       window.addEventListener('cdos-jurisdiction', bump);
       window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
-      Promise.all([
-        refreshJurisdiction(),
-        /* The desk's own lines, alongside the pack that proposes them. A
-           screen that had the pack but not the override would print the
-           regulator's 10,000 at a desk that had deliberately moved to
-           7,500 — the exact class of disagreement this hook exists to
-           stop, so the two arrive together or the version does not move. */
-        refreshDeskThresholds(),
-        refreshBusinessDate(),
-      ]).then(bump, bump);
+      window.addEventListener('cdos-session', load);
+      load();
       return () => {
         live = false;
         window.removeEventListener('cdos-jurisdiction', bump);
         window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
+        window.removeEventListener('cdos-session', load);
       };
     }, []);
     return version;
@@ -1270,7 +1290,7 @@
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
-    deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,
+    deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts, noteSession,
     rulesNotice, rulesMissing, baselineNotice,
     deskCurrencies, deskCurrencyList, deskTrades, currencyPlaces,
     /* the desk's own lines, as the ledger resolved them against the pack */

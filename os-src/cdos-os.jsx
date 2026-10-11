@@ -1536,8 +1536,15 @@
       let alive = true;
       const relock = () => {
         if (!alive) return;
+        /* The cookie is gone, so the book has to stop asking. noteSession
+           is a no-op when we were already signed out, which is the boot
+           case: one 401, and no ledger calls follow it. */
+        if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(false);
         setStage(cur => (cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock'));
       };
+      /* Coming back to the tab only checks that the session is still there.
+         It does not resume. Resuming on focus would pull a desk that was
+         left on the lock screen back into the desktop. */
       const check = () => {
         if (typeof fetch !== 'function') return;
         fetch('/api/auth/me', { credentials: 'same-origin' })
@@ -1552,15 +1559,28 @@
          who had just typed a password was being asked for it again, for an
          account thirty seconds old. That is where the loop was breaking.
 
-         Only ever on the way IN. The relock check above still owns going the
+         One request does both jobs. A second /api/auth/me on the same boot
+         was only there to relock, and the lock screen has nothing to relock
+         from. A 401 still drops to the lock. A user still resumes, and only
+         from the lock screen.
+
+         Only ever on the way IN. The focus check above still owns going the
          other way, so an expired session drops to the lock screen exactly as
          before, and a desk left open does not resume itself. */
-      const resume = () => {
+      const boot = () => {
         if (typeof fetch !== 'function') return;
         fetch('/api/auth/me', { credentials: 'same-origin' })
-          .then(r => (r.ok ? r.json() : null))
+          .then(r => {
+            if (r.status === 401) { relock(); return null; }
+            return r.ok ? r.json() : null;
+          })
           .then(async (d) => {
             if (!alive || !d || !d.user) return;
+            /* A restored desktop is not on the lock screen, so the return
+               below would skip the resume. The session is still real, and
+               the screens already mounted need the pack and the trading day.
+               Say so before that return. */
+            if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
             /* Never yank somebody out of a screen they are mid-way through.
                Read the live stage rather than the one this effect closed over
                on mount — by the time the request comes back they may have
@@ -1580,13 +1600,12 @@
           })
           .catch(() => {});
       };
-      resume();
+      boot();
       const onFocus = () => { if (document.visibilityState === 'visible') check(); };
       const onMessage = (e) => {
         if (e.origin !== window.location.origin) return;
         if (e.data && e.data.type === 'cdos:session-expired') relock();
       };
-      check();
       document.addEventListener('visibilitychange', onFocus);
       window.addEventListener('message', onMessage);
       return () => {
@@ -2122,6 +2141,9 @@
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
       try { window.CDOS_PERSIST.end(); } catch (e) {}
+      /* Sign-out does not pass through relock, so the book has to be told
+         here or the next screen keeps reading a session that just ended. */
+      if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(false);
       hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
       setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.operator === me.name ? { ...t, operator: '' } : t) })));
@@ -2147,12 +2169,16 @@
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
+        /* A temporary password is still a server session. A demo sign-in
+           has no server user and must not open the book. */
+        if (srvUser && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
         setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage('setpass');
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
+        if (srvUser && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
         setUser(rec.code || rec.name); setAuthRec(rec);
         await hydrateTenant(); routeAfterAuth(rec);
       }}
@@ -2165,7 +2191,9 @@
       const u = (newDesk && newDesk.user) || {};
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
-      srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null); setUser(rec.code); setAuthRec(rec);
+      srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null);
+      if (u && u.tenantId && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
+      setUser(rec.code); setAuthRec(rec);
       await hydrateTenant(); routeAfterAuth(rec);
     }} />;
     if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={async () => { setPwTemp(null); await hydrateTenant(); routeAfterAuth(authRec); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
