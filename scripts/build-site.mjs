@@ -44,7 +44,7 @@ const SITE_ORIGIN = "https://www.currencydeskos.com";
 const PAGES = {
   "CurrencyDesk Site":         { out: "index.html",  route: "/",  home: true,
     title: "CurrencyDesk — more trades, less paperwork",
-    description: "One desk for the whole shop: live rates, till and ledger, and clients. Canada is the only Live country.",
+    description: "One desk for the whole shop: the rate board, till and ledger, and clients. Canada is the only Live country.",
   },
   "CurrencyDesk Mobile":       { out: "mobile.html", route: "/m", home: true, noindex: true,
     title: "CurrencyDesk — more trades, less paperwork",

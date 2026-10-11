@@ -455,6 +455,70 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, eleventh pass. The
+onboarding greeting says the desk is set up. The homepage and the
+mobile page say available in Canada, early access, where they used
+to say live in Canada. The Live and Not live country labels stay.
+
+**2026-10-11**, public site claims, tenth pass. The homepage
+says a rate board built from market rates, and the setup step says
+mid-market rates. The legal page says the service is in early access
+in Canada. Onboarding says you are ready to trade once the desk is
+set up. The homepage button says See a demo. The FAQ no longer says
+the software is handling live money, or that a market is going live.
+The early-access question asks when you want to start. Onboarding no
+longer says the public page goes live, that rates are pushed live, or
+that someone calls after you go live. The claims check rejects
+handling real work, see it live, and live board. Live rate board
+stays the plan name.
+
+**2026-10-11**, public site claims, ninth pass. The pricing
+point says mid-market rates are refreshed regularly. The server
+pulls them on `RATES_SYNC_MINUTES`, 60 minutes unless that is set
+otherwise, so the page does not say hourly. The Australia cards on
+the homepage and the mobile page no longer carry an SMR line.
+Australia stays marked Mid 2027.
+
+**2026-10-11**, public site claims, eighth pass. Unicode
+dashes fold to an ASCII hyphen before the two readings. A
+regulator deadline is kept only on the compliance page and the
+FAQ, and only when it is one of the deadlines those pages cite,
+each starting with the report name. A report name later in the
+sentence does not keep a different deadline. The checker also
+rejects 48h, Nh, N hrs, under N hours, and replying today. The
+homepage description names the rate board. The site feature says
+buy and sell rates are published from the desk. The onboarding
+preview says Board preview (sample), with no pulsing dot. Contact
+asks for a note and does not time the reply. The Rates plan keeps
+the name Live rate board, and the checker allows that exact phrase.
+
+**2026-10-11**, public site claims, seventh pass. The desktop
+footer has no clock. The public rate board says it is a sample, and
+its figures do not move. The onboarding landing has no clock and no
+LIVE pill. Its ticker starts with a fixed "Sample rates" tag. The
+FAQ does not say owners stop using their old books within a
+fortnight. The claims check also rejects an N-minute compound,
+same-day, a fortnight, within N hours, in N hours, 24/7, real-time,
+and live rates. A regulator deadline that names SMR, STR, SAR, TTR,
+CTR, or IVTS may still say within N hours.
+
+**2026-10-11**, public site claims, sixth pass. The mobile
+hero strip says "Sample rates" above the figures, in the strip
+itself. The desktop hero card is titled "Sample rates", with no
+green status dot and no clock. The black ticker starts with a
+fixed "Sample rates" tag that does not scroll.
+
+**2026-10-11**, public site claims, fifth pass. The mobile
+hero rates are labelled Sample. They do not move, and the strip
+does not show a clock or a pulsing dot. The public pages do not
+give a measured time for a visit, a reply, or setting a desk up.
+The claims check rejects "in seconds", "in N seconds", "in N
+minutes", a minutes duration, "N seconds", "same afternoon",
+"same day", "about a week", and "within a week", on both readings
+of a soft hyphen or a zero-width character. Onboarding says
+"Encrypted connection", and that Stripe checkout is not connected
+yet. The mobile copilot card is tagged Planned.
+
 **2026-10-11**, public site claims, fourth pass. The onboarding
 line about a rate board no longer says plenty of shops run on it.
 It says you can run on that alone and add a site whenever you want
