@@ -66,8 +66,11 @@ test("desktop Compliance is unchanged at 1280", async ({ page }) => {
   await expect(page.getByTestId("sanctions-screening-tile")).toContainText("Not connected");
   await expect(page.locator("#phonebar")).toBeHidden();
   /* Captured from the desktop Compliance window before this phone home.
-     maxDiffPixels 0 is the gate: a wide window does not move. */
-  await expect(page.locator(".win.show.active")).toHaveScreenshot("compliance-desktop-1280.png", {
+     maxDiffPixels 0 is the gate: a wide window does not move.
+     GitHub draws Archivo differently from this machine, by the same
+     amount on both retries, so CI compares its own baseline. */
+  const shot = process.env.CI ? "compliance-desktop-1280-ci.png" : "compliance-desktop-1280.png";
+  await expect(page.locator(".win.show.active")).toHaveScreenshot(shot, {
     maxDiffPixels: 0,
     animations: "disabled",
   });
