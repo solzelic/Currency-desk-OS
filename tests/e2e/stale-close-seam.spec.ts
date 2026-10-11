@@ -16,13 +16,13 @@ const MESSAGE = "Money moved since you counted. Count again.";
 async function settleCashDrawerChrome(page: Page) {
   await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/server balances live/i)).toBeVisible();
-  const scroller = page.locator(".win-body .overflow-auto").first();
+  const scroller = page.locator(".win.show.active .win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {
       el.scrollTop = 0;
     });
   }
-  const tabBar = page.locator(".win-body .fld-bar").first();
+  const tabBar = page.locator(".win.show.active .win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);
 }
