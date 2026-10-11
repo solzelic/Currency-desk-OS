@@ -813,7 +813,7 @@
           </div>
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
-        <div className="grid grid-cols-3 gap-2 mt-3">
+        <div className="cd-tile-frame"><div className="cd-honest-tiles mt-3">
           {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], listShips ? ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag, true] : ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
             <button key={l} data-testid={l === 'Screening' && !listShips ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
@@ -821,7 +821,7 @@
               <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: numeric ? 24 : 15, lineHeight: 1.15 }}>{v}</div>
               <div className="text-[10.5px]" style={{ color: CD.mute }}>{sub}</div>
             </button>); })}
-        </div>
+        </div></div>
         <div className="fld-bar" style={{ '--ft': '#6B2E54', margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic, badge]) => (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>

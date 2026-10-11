@@ -7418,13 +7418,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Verification provider ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Verification provider",
-          body: "The partner that runs ID, biometric and database checks. Swap it anytime \u2014 all verifications route through whichever provider is selected here."
+          body: "Persona is not connected yet. No background check or ID verification is sent."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, "Routes every KYC check through this partner"))), /*#__PURE__*/React.createElement("div", {
+        }, "Persona is not connected yet. No check is sent."))), /*#__PURE__*/React.createElement("div", {
           className: "relative flex items-center"
         }, /*#__PURE__*/React.createElement("select", {
           value: cur,
@@ -7452,11 +7452,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           c: CD.mute
         }))));
       })(), (() => {
-        const k = window.CDOS.KYC && window.CDOS.KYC.summary ? window.CDOS.KYC.summary() : {
-          monthCount: 0,
-          monthSpend: 0
-        };
-        const prov = settings.kycProvider || (window.CDOS.KYC && window.CDOS.KYC.getProvider ? window.CDOS.KYC.getProvider() : 'Persona');
         return /*#__PURE__*/React.createElement("div", {
           className: "flex items-center justify-between p-3 mb-4",
           style: {
@@ -7483,28 +7478,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.ink
           }
-        }, "Identity verifications \xB7 ", prov, " ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
-          title: "Pay-as-you-go",
-          body: "KYC background checks and ID verifications are billed per check to the card on file and added to your next invoice \u2014 on top of your subscription."
+        }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+          title: "Identity verifications",
+          body: "Persona is not connected yet. No background check is sent and nothing is charged."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, k.monthCount, " this month \xB7 charged per check"))), /*#__PURE__*/React.createElement("div", {
+        }, "Persona is not connected yet. Nothing is charged."))), /*#__PURE__*/React.createElement("div", {
           className: "text-right"
         }, /*#__PURE__*/React.createElement("div", {
-          className: "text-xl font-bold",
+          className: "text-[13px] font-semibold",
           style: {
-            color: CD.ink,
-            fontFamily: 'Space Mono, monospace'
+            color: CD.mute
           }
-        }, fmt(k.monthSpend, 'CAD')), /*#__PURE__*/React.createElement("div", {
-          className: "text-[10.5px]",
-          style: {
-            color: CD.faint
-          }
-        }, "this period")));
+        }, "Not connected")));
       })(), /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
@@ -10401,7 +10390,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           maxWidth: 520
         }
-      }, "Drives the recommendation nudge on every client's file and inside New Transaction \u2014 the same engine, everywhere it appears."), /*#__PURE__*/React.createElement("div", {
+      }, "Persona is not connected yet. No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one."), /*#__PURE__*/React.createElement("div", {
         className: "p-3 mb-3",
         style: {
           background: 'var(--cd-panel)',
@@ -10414,7 +10403,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         escalate: escalateHighRisk
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Suggest a quick re-screen after",
-        desc: "A dismissible Quick-check nudge appears once this many days have passed since the last screening."
+        desc: "Persona is not connected yet, so this reminder does not screen a list. It only appears inside New Transaction after this many days."
       }, /*#__PURE__*/React.createElement("select", {
         value: recheckDays,
         onChange: e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`),
@@ -10516,11 +10505,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "shield",
         s: 13,
         c: CD.mute
-      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger, the verification nudge on every client & counter, and the ", /*#__PURE__*/React.createElement("b", {
+      }), /*#__PURE__*/React.createElement("span", null, pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : /*#__PURE__*/React.createElement(React.Fragment, null, "These rules drive the live flags in the Ledger and the ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink
         }
-      }, "Compliance"), " desk \u2014 screening, 24-hour aggregation and fileable submissions all follow the active pack."))));
+      }, "Compliance"), " desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack."))));
     })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "coins",
       title: "Rates & fees",
@@ -12676,7 +12665,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: D.rptOpen + D.kyc > 0 ? 'alert' : 'checkcircle',
       s: 12
     }), " ", D.rptOpen + D.kyc > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-3 gap-2 mt-2.5 pt-2.5",
+      className: "cd-tile-frame"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-honest-tiles mt-2.5 pt-2.5",
       style: {
         borderTop: `1px solid ${T.hair}`
       }
@@ -12704,7 +12695,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 9.5,
         color: T.steel
       }
-    }, l))))), /*#__PURE__*/React.createElement(Card, {
+    }, l)))))), /*#__PURE__*/React.createElement(Card, {
       title: "Transfers",
       action: onOpenApp && /*#__PURE__*/React.createElement("button", {
         onClick: () => onOpenApp('transfers'),
@@ -24693,7 +24684,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       onClick: onClose
     }, /*#__PURE__*/React.createElement("div", {
       onClick: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "client-file w-full flex flex-col",
       style: {
         maxWidth: 880,
         height: '92%',
@@ -24703,7 +24694,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-4 px-6 py-5 flex-none",
+      className: "client-file-head flex items-start gap-4 px-6 py-5 flex-none",
       style: {
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
@@ -24812,7 +24803,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       s: 12,
       c: CD.faint
     }), " ", corp ? rec.jurisdiction : rec.occupation))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
+      className: "client-file-actions flex items-center gap-2 flex-none"
     }, canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setEdit(e => !e),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium",
@@ -45206,7 +45197,9 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute
       }
     }, regime.threshold == null ? noLargeCashCopy(regime) : /*#__PURE__*/React.createElement(React.Fragment, null, regime.flag, " ", regime.authority, " \xB7 ", fmt(regime.threshold, regime.currency), " threshold"))))), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-3 gap-2 mt-3"
+      className: "cd-tile-frame"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-honest-tiles mt-3"
     }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], listShips ? ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag, true] : ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
       const bad = numeric && v > 0;
       const col = numeric ? bad ? warn : CD.green : CD.mute;
@@ -45256,7 +45249,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: CD.mute
         }
       }, sub));
-    })), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
         '--ft': '#6B2E54',
@@ -45463,7 +45456,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   // Three tiers, each a real check that bills every time it runs — the desk is
   // meant to run one on (nearly) every transaction. NONE smart-skip: even a
   // fully verified customer can be re-screened with a Quick check at the counter.
-  //   • Quick check ($3.99) — name + DOB screened against sanctions / PEP / watchlists.
+  //   • Quick check ($3.99) — a name and date of birth. Persona is not connected, so this does not screen a list.
   //     No document authentication; instant. This is NOT identity verification —
   //     it confirms the name is clean, not that the ID is genuine.
   //   • Verified ($6.99) — government ID document authentication + the same
@@ -45473,7 +45466,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
-    tagline: 'Smart-routed: our own file is checked first, then name & DOB re-screened against sanctions, PEP & watchlists — the cheapest compliant path',
+    tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.',
     price: 3.99,
     channel: 'instant',
     icon: 'search',
@@ -45484,7 +45477,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'verify',
     label: 'Verified',
-    tagline: 'Government ID authentication + sanctions & PEP screening',
+    tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.',
     price: 6.99,
     channel: 'link',
     icon: 'id',
@@ -45495,7 +45488,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'plus',
     label: 'Verified Plus',
-    tagline: 'Fresh ID, biometric selfie & deep database inquiry — always runs',
+    tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.',
     price: 14.99,
     channel: 'link',
     icon: 'shield',
@@ -45882,7 +45875,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           via: 'in_person'
         },
         missing: needScan,
-        label: 'Run now · bill',
+        label: 'Not connected',
         needScan
       };
     }
@@ -45898,7 +45891,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       channel: 'link',
       contact: ct,
       missing: via === 'email' ? !ct.email : !ct.phone,
-      label: 'Send link · bill'
+      label: 'Not connected'
     };
   }
 
@@ -46473,13 +46466,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "You'll be billed"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[20px] font-bold leading-none",
+    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold leading-none",
       style: {
-        color: CD.ink,
-        fontVariantNumeric: 'tabular-nums'
+        color: CD.mute
       }
-    }, money(net(tmpl(tplId).price)))), /*#__PURE__*/React.createElement("button", {
+    }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "px-3.5 py-2.5 text-sm font-medium",
       style: {
@@ -46838,17 +46830,9 @@ ${(filing.map || []).map(blockHTML).join('')}
     settings
   }) {
     useStore();
-    const [send, setSend] = useState(false);
-    const [sendTpl, setSendTpl] = useState('verify');
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
-    // ONLY a completed ‘verify’ or ‘plus’ inquiry counts as identity-verified.
-    // A ‘quick’ watchlist screen is screening, not KYC — it shows as “Screened”.
-    const approvedTiers = checks.filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved').map(c => c.template);
-    const isVerPlus = approvedTiers.includes('plus');
-    const isVer = isVerPlus || approvedTiers.includes('verify');
-    const isScreened = approvedTiers.includes('quick');
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -46873,23 +46857,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, [checks.map(c => c.id + c.status).join(',')]);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
+      "data-testid": "client-identity",
       style: {
         background: CD.panel,
         border: `1px solid ${CD.line}`,
         borderRadius: 12
       }
-    }, /*#__PURE__*/React.createElement(VerificationNudge, {
-      name: name,
-      rec: rec,
-      settings: settings,
-      onRun: tpl => {
-        setSendTpl(tpl);
-        setSend(true);
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between gap-2 mb-3"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5"
+      className: "flex items-center gap-2.5 mb-3"
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center",
       style: {
@@ -46909,69 +46884,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: `A paid background and ID check run through ${PROVIDER}, separate from the ID you hold on file. Sanctions screening is not connected yet. Verified authenticates the ID. Verified Plus adds a biometric selfie and a database inquiry.`,
-      example: "Quick check ($3.99) \xB7 Verified ($6.99) \xB7 Verified Plus ($14.99)"
-    }), " ", isVer ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1",
-      style: {
-        background: CD.greenSoft,
-        color: CD.green,
-        borderRadius: 5
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "checkcircle",
-      s: 11,
-      c: CD.green
-    }), " ", isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified') : isScreened ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1",
-      style: {
-        background: CD.amberSoft,
-        color: CD.amber,
-        borderRadius: 5
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 11,
-      c: CD.amber
-    }), " Screened only") : null), /*#__PURE__*/React.createElement("div", {
+      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
+    })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
+      "data-testid": "persona-not-connected",
       style: {
         color: CD.mute
       }
-    }, "Background & ID checks via ", PROVIDER))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-none"
-    }, isVer && /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        setSendTpl('quick');
-        setSend(true);
-      },
-      title: "Re-screen name & DOB against sanctions / PEP lists",
-      className: "flex items-center gap-1.5 px-2.5 py-2 text-[12.5px] font-semibold flex-none",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        color: CD.ink,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 14,
-      c: CD.mute
-    }), " Quick check \xB7 $3.99"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        setSendTpl('verify');
-        setSend(true);
-      },
-      className: "flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none",
-      style: {
-        background: CD.ink,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "send",
-      s: 14,
-      c: "var(--cd-on-ink)"
-    }), " ", isVer ? 'Re-verify' : 'Verify identity'))), latest && latest.status === 'completed' && (() => {
+    }, "Persona is not connected yet."))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -47012,7 +46932,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, r.reportRef)), /*#__PURE__*/React.createElement("div", {
         className: "grid grid-cols-4 gap-2"
-      }, cell('Document', r.idCheck), cell('Biometric', r.biometric), cell('Database', r.database), cell('PEP', r.pep === 'None found' ? 'clear' : 'flag')), r.watchlist.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, cell('Document', r.idCheck), cell('Biometric', r.biometric), cell('Database', r.database), cell('PEP', r.pep === 'None found' ? 'clear' : r.pep === 'Not checked' || r.database === 'not checked' ? 'not checked' : 'flag')), r.watchlist.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mt-2 pt-2 text-[11.5px]",
         style: {
           borderTop: `1px solid ${CD.lineSoft}`,
@@ -47039,14 +46959,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "No verifications yet. Send ", name.split(/\s+/)[0], " off for a background check or ID verification \u2014 it attaches here automatically."), send && /*#__PURE__*/React.createElement(SendModal, {
-      subject: name,
-      kind: kind,
-      rec: rec,
-      by: by,
-      initialTpl: sendTpl,
-      onClose: () => setSend(false)
-    }));
+    }, "No verifications on file. Persona is not connected yet."));
   }
 
   /* ====================================================================
@@ -47339,12 +47252,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Add a verified contact"), /*#__PURE__*/React.createElement("div", {
+    }, "Add a contact"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px]",
       style: {
         color: CD.mute
       }
-    }, "Scan ID, add details, verify \xB7 via ", PROVIDER)), /*#__PURE__*/React.createElement("button", {
+    }, "Persona is not connected yet.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -47389,7 +47302,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Capture the customer's government ID. ", PROVIDER, " reads the name, address, date of birth and ID details straight off the document."), photo ? /*#__PURE__*/React.createElement("div", {
+    }, "Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",
       style: {
         borderRadius: 12,
@@ -47491,7 +47404,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Just the basics to create the contact \u2014 ", PROVIDER, " fills in the rest from the ID."), /*#__PURE__*/React.createElement("div", {
+    }, "Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex mb-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -47570,7 +47483,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "send",
       s: 11,
       c: CD.faint
-    }), " Next you'll pick the verification and send it to their phone or email.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
+    }), " Persona is not connected yet. Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
       subject: name.trim() || 'this contact',
       hasId: !!photo,
       verified: false,
@@ -47611,13 +47524,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, check && check.channel === 'records' ? `Confirming ${name.trim()} from your records…` : check && check.channel === 'link' ? `Verification link sent to ${name.trim()}` : `Verifying ${name.trim()} with ${PROVIDER}…`), /*#__PURE__*/React.createElement("div", {
+    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
         maxWidth: 360
       }
-    }, check && check.channel === 'records' ? `Already verified on file — confirming instantly with no ${PROVIDER} inquiry.` : check && check.channel === 'link' ? `They'll photograph their ID and take a selfie on their device. This screen updates the moment they finish — you can close it and check back.` : `Sending the scanned ID to ${PROVIDER} and screening sanctions, PEP and adverse-media databases. This usually takes a few seconds.`), /*#__PURE__*/React.createElement("div", {
+    }, "This desk does not send the ID out, and it does not screen a sanctions list."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
       style: {
         background: CD.panel,
@@ -47629,7 +47542,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 13,
       c: CD.mute
-    }), " ", tmpl(tplId).label, " \xB7 ", money(net(tmpl(tplId).price)), " billed")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }), " Not connected")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2.5 mb-3"
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center flex-none",
@@ -47768,13 +47681,12 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.faint
         }
-      }, "You'll be billed"), /*#__PURE__*/React.createElement("div", {
-        className: "text-[20px] font-bold leading-none",
+      }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] font-semibold leading-none",
         style: {
-          color: CD.ink,
-          fontVariantNumeric: 'tabular-nums'
+          color: CD.mute
         }
-      }, money(net(tmpl(tplId).price)))), /*#__PURE__*/React.createElement("button", {
+      }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
         onClick: () => setStep('details'),
         className: "px-3.5 py-2.5 text-sm font-medium",
         style: {
@@ -54650,8 +54562,8 @@ ${snap}`;
     tpl: {
       quote: '{desk}: {amount} {ccy} = ${total} CAD at {rate}. This is our live counter rate. Reply Y and we’ll hold it for {mins} min — N to pass.',
       hold: 'Done — {rate} is held for you until {time}. Your ref is {ref} — give it at the counter. Bring one piece of government photo ID.',
-      verify: 'Want to skip the wait? Verify your ID before you arrive: {link}',
-      ready: 'You’re verified. Give ref {ref} at the counter — your rate stays locked until {time}.',
+      verify: 'Persona is not connected yet. No identity check is sent.',
+      ready: 'Give ref {ref} at the counter — your rate stays locked until {time}.',
       nudge: 'Heads up — your held rate (ref {ref}) expires in 10 minutes.',
       closed: 'No problem. Today’s rates are always live at {site} — text back any time.',
       pickup: '{desk}: your order {ref} is ready for pickup at 128 Yonge St. We’re open until 6 pm today.',
@@ -54774,7 +54686,7 @@ ${snap}`;
       rate: 0.0248,
       total: 1984,
       holdUntil: n + 6 * 60000,
-      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Want to skip the wait? Verify your ID before you arrive: desk.cd/v/tq-1042'), sys('ID verified via secure link · Persona'), out(`You’re verified. Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
+      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Persona is not connected yet. No identity check is sent.'), sys('Persona is not connected yet. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
     }, {
       id: 'r6',
       ref: 'TQ-1041',
@@ -54870,7 +54782,7 @@ ${snap}`;
       kind: 'System',
       dir: 'sys',
       to: '+1 416 555 0158',
-      detail: 'ID verified via secure link · Persona'
+      detail: 'Persona is not connected yet. No identity check was sent.'
     }, {
       t: n - 69 * m,
       kind: 'Hold',
@@ -55918,7 +55830,7 @@ ${snap}`;
         onClick: () => acts.verify(r.id),
         className: "px-3 py-1.5 text-[12px]",
         style: dashBtn
-      }, "\u25B8 Simulate ID verified"), onStartTx && /*#__PURE__*/React.createElement("button", {
+      }, "\u25B8 Mark ready (no check sent)"), onStartTx && /*#__PURE__*/React.createElement("button", {
         onClick: () => {
           onClose();
           onStartTx(r.ref);
@@ -55943,7 +55855,7 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "ID verified \u2014 key ", /*#__PURE__*/React.createElement("b", {
+    }, "Persona is not connected yet. Key ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono'
       }
@@ -56199,7 +56111,7 @@ ${snap}`;
     const preview = useMemo(() => {
       const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))];
       if (tg.verifyStep) {
-        msgs.push(out(render(tg.tpl.verify, ctx)), sys('ID verified via secure link · Persona'), out(render(tg.tpl.ready, ctx)));
+        msgs.push(out(render(tg.tpl.verify, ctx)), sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctx)));
       }
       if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx)));
       return msgs;
@@ -56266,7 +56178,7 @@ ${snap}`;
       n: "3",
       title: "ID verify invite",
       trigKind: "auto",
-      trig: "rides along with the hold \u2014 Persona link, billed per check",
+      trig: "Persona is not connected yet. This step does not send a check.",
       on: tg.verifyStep,
       toggle: /*#__PURE__*/React.createElement(Toggle, {
         small: true,
@@ -56284,7 +56196,7 @@ ${snap}`;
       n: "4",
       title: "Ready confirmation",
       trigKind: "auto",
-      trig: "their ID clears",
+      trig: "Persona is not connected yet. This does not clear an ID.",
       on: tg.verifyStep
     }, /*#__PURE__*/React.createElement(MsgEditor, {
       v: tg.tpl.ready,
@@ -57533,7 +57445,7 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. ID verify checks bill separately (Persona).")), /*#__PURE__*/React.createElement("div", {
+    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. Persona is not connected yet. No identity check is billed.")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] px-1",
       style: {
         color: CD.faint
@@ -57706,7 +57618,7 @@ ${snap}`;
         upd(id, r => ({
           ...r,
           status: 'verified',
-          thread: [...r.thread, sys('ID verified via secure link · Persona'), out(render(tg.tpl.ready, ctxFor(r)))]
+          thread: [...r.thread, sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))]
         }));
         bump(1);
         if (r0) {

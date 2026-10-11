@@ -495,13 +495,13 @@
               ))}
             </div>
             <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc) > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
-            <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
+            <div className="cd-tile-frame"><div className="cd-honest-tiles mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
               {[['Sanctions', X.listShips ? X.sanc : 'Not connected', X.listShips ? (X.sanc > 0 ? T.oxblood : T.green) : T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
                 <button key={l} data-testid={l === 'Sanctions' && !X.listShips ? 'dashboard-sanctions-tile' : undefined} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
                   <div style={{ fontSize: typeof v === 'number' ? 18 : 13, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{v}</div>
                   <div style={{ fontSize: 9.5, color: T.steel }}>{l}</div>
                 </button>))}
-            </div>
+            </div></div>
           </Card>
 
           {/* TRANSFERS */}

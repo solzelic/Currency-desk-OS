@@ -62,4 +62,20 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   expect(settingsWords).not.toMatch(/OFAC/);
   expect(settingsWords).not.toMatch(/OSFI/);
   await expect(settings.getByTestId("sanctions-screening-gap")).toContainText("Not connected");
+
+  await page.locator('[data-app="clients"]').click();
+  const clients = page.locator(".win.show.active");
+  await clients.getByRole("button", { name: "New contact" }).click();
+  await clients.getByPlaceholder("Jane Doe").fill("Ada Chen");
+  await clients.getByRole("button", { name: "Create contact" }).click();
+  const file = page.getByTestId("client-identity");
+  await expect(file).toBeVisible();
+  await expect(file.getByTestId("persona-not-connected")).toHaveText("Persona is not connected yet.");
+  await expect(file.getByText(/Background & ID checks via/i)).toHaveCount(0);
+  await expect(file.getByText(/screened against/i)).toHaveCount(0);
+  await expect(file.getByText(/Verify identity/i)).toHaveCount(0);
+  const fileWords = await file.innerText();
+  expect(fileWords).not.toMatch(/OFAC/);
+  expect(fileWords).not.toMatch(/OSFI/);
+  expect(fileWords).not.toMatch(/Sanctions hits/);
 });

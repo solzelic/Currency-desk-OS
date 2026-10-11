@@ -54,7 +54,7 @@
   // Three tiers, each a real check that bills every time it runs — the desk is
   // meant to run one on (nearly) every transaction. NONE smart-skip: even a
   // fully verified customer can be re-screened with a Quick check at the counter.
-  //   • Quick check ($3.99) — name + DOB screened against sanctions / PEP / watchlists.
+  //   • Quick check ($3.99) — a name and date of birth. Persona is not connected, so this does not screen a list.
   //     No document authentication; instant. This is NOT identity verification —
   //     it confirms the name is clean, not that the ID is genuine.
   //   • Verified ($6.99) — government ID document authentication + the same
@@ -62,9 +62,9 @@
   //   • Verified Plus ($14.99) — fresh ID, biometric selfie / liveness match and a
   //     deep database inquiry (adverse media, ongoing monitoring). Always runs fresh.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Smart-routed: our own file is checked first, then name & DOB re-screened against sanctions, PEP & watchlists — the cheapest compliant path', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Government ID authentication + sanctions & PEP screening', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Fresh ID, biometric selfie & deep database inquiry — always runs', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };
@@ -276,9 +276,9 @@
   function deliveryFor({ tplId, mode, via, email, phone, hasId, subject }) {
     const t = tmpl(tplId);
     const m = mode || (hasId ? 'inperson' : 'link');
-    if (m === 'inperson') { const needScan = t.idv && !hasId; return { kind: 'inperson', channel: 'instant', contact: { via: 'in_person' }, missing: needScan, label: 'Run now · bill', needScan }; }
+    if (m === 'inperson') { const needScan = t.idv && !hasId; return { kind: 'inperson', channel: 'instant', contact: { via: 'in_person' }, missing: needScan, label: 'Not connected', needScan }; }
     const ct = via === 'email' ? { via: 'email', email: (email || '').trim() } : { via: 'sms', phone: (phone || '').trim() };
-    return { kind: 'link', channel: 'link', contact: ct, missing: via === 'email' ? !ct.email : !ct.phone, label: 'Send link · bill' };
+    return { kind: 'link', channel: 'link', contact: ct, missing: via === 'email' ? !ct.email : !ct.phone, label: 'Not connected' };
   }
 
   /* ---- reusable ID capture: upload or live-camera, self-contained (portalled overlay) ---- */
@@ -422,7 +422,7 @@
 
           {/* footer — the bill + send */}
           <div className="flex items-center gap-3 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
-            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>You'll be billed</div><div className="text-[20px] font-bold leading-none" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money(net(tmpl(tplId).price))}</div></div>
+            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
             <button onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Cancel</button>
             <button onClick={send} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : KYC_BLUE, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer', boxShadow: del.missing ? 'none' : '0 6px 18px rgba(43,80,226,.32)' }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> {del.label}</button>
           </div>
@@ -545,17 +545,9 @@
      ==================================================================== */
   function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
     useStore();
-    const [send, setSend] = useState(false);
-    const [sendTpl, setSendTpl] = useState('verify');
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
-    // ONLY a completed ‘verify’ or ‘plus’ inquiry counts as identity-verified.
-    // A ‘quick’ watchlist screen is screening, not KYC — it shows as “Screened”.
-    const approvedTiers = checks.filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved').map(c => c.template);
-    const isVerPlus = approvedTiers.includes('plus');
-    const isVer = isVerPlus || approvedTiers.includes('verify');
-    const isScreened = approvedTiers.includes('quick');
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -570,19 +562,12 @@
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
 
-    return (<div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-      <VerificationNudge name={name} rec={rec} settings={settings} onRun={(tpl) => { setSendTpl(tpl); setSend(true); }} />
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2.5">
-          <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
-          <div>
-            <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={`A paid background and ID check run through ${PROVIDER}, separate from the ID you hold on file. Sanctions screening is not connected yet. Verified authenticates the ID. Verified Plus adds a biometric selfie and a database inquiry.`} example="Quick check ($3.99) · Verified ($6.99) · Verified Plus ($14.99)" /> {isVer ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 5 }}><Ic n="checkcircle" s={11} c={CD.green} /> {isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified'}</span> : isScreened ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 5 }}><Ic n="search" s={11} c={CD.amber} /> Screened only</span> : null}</div>
-            <div className="text-[11px]" style={{ color: CD.mute }}>Background & ID checks via {PROVIDER}</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-none">
-          {isVer && <button onClick={() => { setSendTpl('quick'); setSend(true); }} title="Re-screen name & DOB against sanctions / PEP lists" className="flex items-center gap-1.5 px-2.5 py-2 text-[12.5px] font-semibold flex-none" style={{ background: CD.panel, border: `1px solid ${CD.line}`, color: CD.ink, borderRadius: 9 }}><Ic n="search" s={14} c={CD.mute} /> Quick check · $3.99</button>}
-          <button onClick={() => { setSendTpl('verify'); setSend(true); }} className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-semibold text-white flex-none" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {isVer ? 'Re-verify' : 'Verify identity'}</button>
+    return (<div className="p-4" data-testid="client-identity" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
+        <div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself." /></div>
+          <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
         </div>
       </div>
 
@@ -591,15 +576,13 @@
         <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[12.5px] font-medium capitalize" style={{ color: v === 'pass' ? CD.green : (v === 'hit' || v === 'possible') ? CD.flag : CD.ink }}>{v}</div></div>); return (
         <div className="mb-3 p-3" style={{ background: CD.paper, border: `1px solid ${dm.c}33`, borderRadius: 11 }}>
           <div className="flex items-center gap-2 mb-2.5"><Ic n={dm.icon} s={16} c={dm.c} /><span className="text-[13px] font-semibold" style={{ color: dm.c }}>{dm.label}</span><span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{r.reportRef}</span></div>
-          <div className="grid grid-cols-4 gap-2">{cell('Document', r.idCheck)}{cell('Biometric', r.biometric)}{cell('Database', r.database)}{cell('PEP', r.pep === 'None found' ? 'clear' : 'flag')}</div>
+          <div className="grid grid-cols-4 gap-2">{cell('Document', r.idCheck)}{cell('Biometric', r.biometric)}{cell('Database', r.database)}{cell('PEP', r.pep === 'None found' ? 'clear' : (r.pep === 'Not checked' || r.database === 'not checked') ? 'not checked' : 'flag')}</div>
           {r.watchlist.length > 0 && <div className="mt-2 pt-2 text-[11.5px]" style={{ borderTop: `1px solid ${CD.lineSoft}`, color: CD.flag }}>{r.watchlist.length} database match{r.watchlist.length === 1 ? '' : 'es'} — {r.watchlist.map(h => h.name).join(', ')}</div>}
           {r.extracted && <div className="mt-2 pt-2 flex items-center gap-1.5 text-[11px]" style={{ borderTop: `1px solid ${CD.lineSoft}`, color: CD.mute }}><Ic n="checkcircle" s={12} c={CD.green} /> ID details, address &amp; date of birth auto-filled onto this contact.</div>}
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications yet. Send {name.split(/\s+/)[0]} off for a background check or ID verification — it attaches here automatically.</div>}
-
-      {send && <SendModal subject={name} kind={kind} rec={rec} by={by} initialTpl={sendTpl} onClose={() => setSend(false)} />}
+        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications on file. Persona is not connected yet.</div>}
     </div>);
   }
 
@@ -740,14 +723,14 @@
       <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         <div className="flex items-start gap-3 px-5 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="userplus" s={18} c="var(--cd-on-ink)" /></span>
-          <div className="flex-1 min-w-0"><div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Add a verified contact</div><div className="text-[11.5px]" style={{ color: CD.mute }}>Scan ID, add details, verify · via {PROVIDER}</div></div>
+          <div className="flex-1 min-w-0"><div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Add a contact</div><div className="text-[11.5px]" style={{ color: CD.mute }}>Persona is not connected yet.</div></div>
           <button onClick={onClose} className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
         </div>
         <div className="flex items-center gap-3 px-5 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.line}` }}><Step n={1} label="Scan ID" /><span style={{ flex: 1, height: 1, background: CD.line }} /><Step n={2} label="Details" /><span style={{ flex: 1, height: 1, background: CD.line }} /><Step n={3} label="Verify" /></div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
           {step === 'id' && (<div>
-            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Capture the customer's government ID. {PROVIDER} reads the name, address, date of birth and ID details straight off the document.</div>
+            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document.</div>
             {photo ? (
               <div className="relative" style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${CD.line}` }}>
                 <img src={photo} alt="ID" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
@@ -762,23 +745,23 @@
           </div>)}
 
           {step === 'details' && (<div>
-            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Just the basics to create the contact — {PROVIDER} fills in the rest from the ID.</div>
+            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in.</div>
             <div className="inline-flex mb-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{['individual', 'corporate'].map(k => <button key={k} onClick={() => setKind(k)} className="px-3.5 py-2 text-[12.5px]" style={{ background: kind === k ? CD.ink : 'transparent', color: kind === k ? 'var(--cd-on-ink)' : CD.mute }}>{k === 'corporate' ? 'Business' : 'Person'}</button>)}</div>
             <label className="block mb-3"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>{kind === 'corporate' ? 'Business name' : 'Full name'}</div><input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder={kind === 'corporate' ? 'Acme Imports Ltd.' : 'Jane Doe'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }} /></label>
             <div className="grid grid-cols-2 gap-3">
               <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Phone number</div><input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(416) 555-0100" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)', fontFamily: 'Space Mono, monospace' }} /></label>
               <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Email</div><input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@email.com" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }} /></label>
             </div>
-            <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Next you'll pick the verification and send it to their phone or email.</div>
+            <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Persona is not connected yet. Saving the contact does not send a check.</div>
           </div>)}
 
           {step === 'choose' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
 
           {step === 'verifying' && (<div className="text-center py-8">
             <span className="grid place-items-center mx-auto mb-4" style={{ width: 56, height: 56, borderRadius: '50%', background: CD.brassSoft }}><span className="kyc-spin" style={{ width: 24, height: 24, border: `3px solid ${CD.brass}`, borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} /></span>
-            <div className="text-[15px] font-semibold" style={{ color: CD.ink }}>{check && check.channel === 'records' ? `Confirming ${name.trim()} from your records…` : check && check.channel === 'link' ? `Verification link sent to ${name.trim()}` : `Verifying ${name.trim()} with ${PROVIDER}…`}</div>
-            <div className="text-[12.5px] mt-1 mx-auto" style={{ color: CD.mute, maxWidth: 360 }}>{check && check.channel === 'records' ? `Already verified on file — confirming instantly with no ${PROVIDER} inquiry.` : check && check.channel === 'link' ? `They'll photograph their ID and take a selfie on their device. This screen updates the moment they finish — you can close it and check back.` : `Sending the scanned ID to ${PROVIDER} and screening sanctions, PEP and adverse-media databases. This usually takes a few seconds.`}</div>
-            <div className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute }}><Ic n="id" s={13} c={CD.mute} /> {tmpl(tplId).label} · {money(net(tmpl(tplId).price))} billed</div>
+            <div className="text-[15px] font-semibold" style={{ color: CD.ink }}>Persona is not connected yet.</div>
+            <div className="text-[12.5px] mt-1 mx-auto" style={{ color: CD.mute, maxWidth: 360 }}>This desk does not send the ID out, and it does not screen a sanctions list.</div>
+            <div className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute }}><Ic n="id" s={13} c={CD.mute} /> Not connected</div>
           </div>)}
 
           {step === 'done' && (<div>
@@ -810,7 +793,7 @@
             <button onClick={() => setStep('choose')} disabled={!name.trim()} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: name.trim() ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
           </>)}
           {step === 'choose' && (() => { const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: name.trim() }); return (<>
-            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>You'll be billed</div><div className="text-[20px] font-bold leading-none" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money(net(tmpl(tplId).price))}</div></div>
+            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
             <button onClick={() => setStep('details')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
             <button onClick={startCheck} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer' }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {del.label}</button>
           </>); })()}
