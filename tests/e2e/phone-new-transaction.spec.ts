@@ -300,7 +300,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       transform: "none",
     });
     const receive = await page.locator(".cd-tx-receive").evaluate((el) => getComputedStyle(el).color);
-    expect(receive, `receive field at ${width}`).toBe("rgb(10, 10, 10)");
+    expect(receive, `receive field at ${width}`).toBe("rgb(17, 17, 17)");
     const ticketGet = await page.locator(".cd-tx-ticket-get").evaluate((el) => getComputedStyle(el).color);
     expect(ticketGet, `ticket receive at ${width}`).toBe("rgb(255, 255, 255)");
     const kicker = await page.locator(".cd-tx-kicker").first().evaluate((el) => {
