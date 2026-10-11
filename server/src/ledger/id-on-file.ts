@@ -67,13 +67,19 @@ export type DerivedIdStatus = "verified" | "expired" | "missing";
 
 /* The words the client file and the ledger customer both return.
    The posting gate still uses verified | expired | missing. The
-   screen does not: it shows this object as it arrives. The label
-   and the reason are the same sentences displayIdStanding uses,
-   so a desk that prefers the server's object says the same thing
-   the helper would have said. `tone` is what that helper uses to
-   decide whether the checklist is clear. */
+   screen does not: it shows this object as it arrives.
+
+   The shape and the sentences are copied from displayIdStanding in
+   os-src/cdos-backend.js. status is the short word. detail and
+   reason are the same sentence. A desk that returns this object
+   unchanged says what that helper would have said. The two copies
+   have to stay the same; server/tests/id-standing.test.ts pins
+   every sentence. The helper's "Verified" object is the provider
+   path. This server does not emit it. */
 export type IdStanding = {
+  status: "identified" | "expired" | "missing";
   label: "Identified" | "Expired" | "Missing ID";
+  detail: string;
   reason: string;
   tone: "ok" | "warning";
 };
@@ -86,6 +92,15 @@ export const ID_NO_EXPIRY_REASON = "ID has no expiry date";
 export const ID_NO_NUMBER_REASON = "No ID number";
 export const ID_TYPE_NOT_STATED_REASON = "ID type not stated";
 export const ID_NO_ID_REASON = "No ID on file";
+
+function standing(
+  status: IdStanding["status"],
+  label: IdStanding["label"],
+  sentence: string,
+  tone: IdStanding["tone"],
+): IdStanding {
+  return { status, label, detail: sentence, reason: sentence, tone };
+}
 
 /* The finer word the document query returns. The gate folds the
    four missing words into `missing`. The response keeps them, so
@@ -100,17 +115,17 @@ export type IdVerdict =
 
 export function standingForVerdict(verdict: string): IdStanding {
   if (verdict === "identified") {
-    return { label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" };
+    return standing("identified", "Identified", ID_IDENTIFIED_REASON, "ok");
   }
   if (verdict === "expired") {
-    return { label: "Expired", reason: ID_EXPIRED_REASON, tone: "warning" };
+    return standing("expired", "Expired", ID_EXPIRED_REASON, "warning");
   }
-  const reason =
+  const sentence =
     verdict === "no_expiry" ? ID_NO_EXPIRY_REASON
     : verdict === "no_number" ? ID_NO_NUMBER_REASON
     : verdict === "type_not_stated" ? ID_TYPE_NOT_STATED_REASON
     : ID_NO_ID_REASON;
-  return { label: "Missing ID", reason, tone: "warning" };
+  return standing("missing", "Missing ID", sentence, "warning");
 }
 
 export function verdictToGate(verdict: string): DerivedIdStatus {

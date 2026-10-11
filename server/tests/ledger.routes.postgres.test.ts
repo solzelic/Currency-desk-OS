@@ -900,7 +900,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       (customer: { customerId: string }) => customer.customerId === customerId,
     );
     expect(row.idStatus).toBe("verified");
-    expect(row.idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(row.idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
 
     const posted = await app.inject({
       method: "POST",
@@ -1037,7 +1037,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         expiresOn: "2001-01-01",
         isPrimary: false,
       });
-      expect(filed.idStanding).toEqual({ label: "Expired", reason: ID_EXPIRED_REASON, tone: "warning" });
+      expect(filed.idStanding).toEqual({ status: "expired", label: "Expired", detail: ID_EXPIRED_REASON, reason: ID_EXPIRED_REASON, tone: "warning" });
       const posted = await exchange(cookies, await counterId(client.clientId), amount, `exp-${amount}`);
       expect(posted.statusCode, posted.body).toBe(422);
       expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1051,7 +1051,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         docNumber: `NS-${amount}`,
         expiresOn: "2031-05-01",
       });
-      expect(filed.idStanding).toEqual({ label: "Missing ID", reason: ID_TYPE_NOT_STATED_REASON, tone: "warning" });
+      expect(filed.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_TYPE_NOT_STATED_REASON, reason: ID_TYPE_NOT_STATED_REASON, tone: "warning" });
       const posted = await exchange(cookies, await counterId(client.clientId), amount, `ns-${amount}`);
       expect(posted.statusCode, posted.body).toBe(422);
       expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1065,7 +1065,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         docNumber: "\u200B\u200B",
         expiresOn: "2031-05-01",
       });
-      expect(filed.idStanding).toEqual({ label: "Missing ID", reason: ID_NO_NUMBER_REASON, tone: "warning" });
+      expect(filed.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_NUMBER_REASON, reason: ID_NO_NUMBER_REASON, tone: "warning" });
       const posted = await exchange(cookies, await counterId(client.clientId), amount, `zw-${amount}`);
       expect(posted.statusCode, posted.body).toBe(422);
       expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1090,7 +1090,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     const row = listed.json().customers.find(
       (customer: { customerId: string }) => customer.customerId === customerId,
     );
-    expect(row.idStanding).toEqual({ label: "Missing ID", reason: ID_NO_NUMBER_REASON, tone: "warning" });
+    expect(row.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_NUMBER_REASON, reason: ID_NO_NUMBER_REASON, tone: "warning" });
     for (const amount of ["3000.00", "10500.00"]) {
       const posted = await exchange(cookies, customerId, amount, `nbsp-${amount}`);
       expect(posted.statusCode, posted.body).toBe(422);
@@ -1107,7 +1107,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       expiresOn: "2031-05-01",
       isPrimary: false,
     });
-    expect(filed.idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(filed.idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
     expect(filed).toMatchObject({
       displayedDocument: { docType: "Passport", docNumber: "SEC-1", isPrimary: false },
     });
@@ -1120,7 +1120,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       docNumber: "   ",
       expiresOn: "2031-05-01",
     });
-    expect(empty.idStanding).toEqual({ label: "Missing ID", reason: ID_NO_NUMBER_REASON, tone: "warning" });
+    expect(empty.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_NUMBER_REASON, reason: ID_NO_NUMBER_REASON, tone: "warning" });
     const refused = await exchange(cookies, await counterId(blank.clientId), "3000.00", "blank-number");
     expect(refused.statusCode, refused.body).toBe(422);
   });
@@ -1140,7 +1140,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       expiresOn: "2031-05-01",
       isPrimary: false,
     });
-    expect(filed.idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(filed.idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
     expect(filed.displayedDocument).toMatchObject({ docType: "Passport", isPrimary: true });
     const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "primary-expired-secondary-current");
     expect(posted.statusCode, posted.body).toBe(201);
@@ -1156,7 +1156,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       docNumber: "NO-EXP",
       expiresOn: null,
     });
-    expect(filed.idStanding).toEqual({ label: "Missing ID", reason: ID_NO_EXPIRY_REASON, tone: "warning" });
+    expect(filed.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_EXPIRY_REASON, reason: ID_NO_EXPIRY_REASON, tone: "warning" });
     const posted = await exchange(cookies, await counterId(missing.clientId), "3000.00", "no-expiry");
     expect(posted.statusCode, posted.body).toBe(422);
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1167,7 +1167,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       docNumber: "BLANK-EXP",
       expiresOn: "",
     });
-    expect(cleared.idStanding).toEqual({ label: "Missing ID", reason: ID_NO_EXPIRY_REASON, tone: "warning" });
+    expect(cleared.idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_EXPIRY_REASON, reason: ID_NO_EXPIRY_REASON, tone: "warning" });
     const refused = await exchange(cookies, await counterId(blank.clientId), "3000.00", "blank-expiry");
     expect(refused.statusCode, refused.body).toBe(422);
     expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1190,7 +1190,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       expiresOn: "2031-05-01",
       isPrimary: false,
     });
-    expect(filed.idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(filed.idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
     expect(filed.displayedDocument).toMatchObject({ docType: "Passport", isPrimary: true });
     const posted = await exchange(cookies, await counterId(current.clientId), "3000.00", "blank-beside-current");
     expect(posted.statusCode, posted.body).toBe(201);
@@ -1208,7 +1208,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       expiresOn: "2001-01-01",
       isPrimary: false,
     });
-    expect(expired.idStanding).toEqual({ label: "Expired", reason: ID_EXPIRED_REASON, tone: "warning" });
+    expect(expired.idStanding).toEqual({ status: "expired", label: "Expired", detail: ID_EXPIRED_REASON, reason: ID_EXPIRED_REASON, tone: "warning" });
     const refused = await exchange(cookies, await counterId(old.clientId), "3000.00", "blank-beside-expired");
     expect(refused.statusCode, refused.body).toBe(422);
     expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1268,7 +1268,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       docNumber: "P7712345",
       expiresOn: "2031-05-01",
     });
-    expect(filed.idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(filed.idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
     const unlinked = await app.inject({
       method: "POST",
       url: "/api/ledger/customers",
@@ -1276,7 +1276,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: { externalRef: "os:nadia-passport", name: "Nadia Passport", risk: "normal" },
     });
     expect(unlinked.statusCode, unlinked.body).toBe(201);
-    expect(unlinked.json().idStanding).toEqual({ label: "Missing ID", reason: ID_NO_ID_REASON, tone: "warning" });
+    expect(unlinked.json().idStanding).toEqual({ status: "missing", label: "Missing ID", detail: ID_NO_ID_REASON, reason: ID_NO_ID_REASON, tone: "warning" });
     const refused = await exchange(cookies, unlinked.json().customerId, "3000.00", "nadia-unlinked");
     expect(refused.statusCode, refused.body).toBe(422);
     expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
@@ -1293,7 +1293,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       },
     });
     expect(linked.statusCode, linked.body).toBe(201);
-    expect(linked.json().idStanding).toEqual({ label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" });
+    expect(linked.json().idStanding).toEqual({ status: "identified", label: "Identified", detail: ID_IDENTIFIED_REASON, reason: ID_IDENTIFIED_REASON, tone: "ok" });
     expect(linked.json().clientId).toBe(client.clientId);
     const posted = await exchange(cookies, linked.json().customerId, "3000.00", "nadia-linked");
     expect(posted.statusCode, posted.body).toBe(201);
