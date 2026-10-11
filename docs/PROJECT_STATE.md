@@ -161,13 +161,41 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   screen for the whole sheet, including while the amount is focused
   and while the keyboard is open. The X is 44px. If the ticket has
   anything entered, the X asks "Discard this deal?" before it closes.
-  Swap, Override, and Text quote are 44px targets. Customer, the
-  amounts, the rate, and the required fields are the full width of
-  the form and at least 44px tall. The text in those fields is 16px, so the phone
-  does not zoom in when a cashier taps one. A long value ends in an
-  ellipsis. At 1280 the dialog is the same two columns as main. The
-  ID row, the discard question, and the phone footer are not on
-  that dialog.
+  Swap and Override are 44px targets, and the swap control is 44×44
+  on the rate line. The customer clear control is 44px. Text quote
+  is hidden unless SMS is configured, and the $6.99 verify nudge is
+  hidden while Persona is off. An incomplete deal says "N steps
+  left" and stays tappable; tapping it scrolls to the first missing
+  item and marks it. The checklist says "ID not recorded yet" and
+  offers Record the ID. Rates show four decimals. Ticket amounts
+  include the currency code. The amount the customer receives is
+  the text colour in the field and white on the dark ticket. Green
+  stays on the margin. Purpose and source of funds stay in the ordinary
+  border until the cashier leaves an empty field. The "Authoritative
+  ledger record" heading is hidden; the two fields stay, because
+  the server still requires them. The checklist names them "Purpose
+  and source of funds" with "Needed for this amount", and tapping
+  that line is a 44px target, and tapping it scrolls to the fields
+  and focuses the first. Before you post, the Ready count, the
+  date, and the rate line use the phone ink #6B6760. The buy
+  and sell badge reads "We buy" or "We sell", blue on pale blue and
+  purple on pale purple. Exchange, Margin, Before you post, the
+  steps-left count, and the rate line are 13px sans, sentence case.
+  Mono stays on references. A date reads
+  like "Oct 11, 2026", including the header and an ID expiry. The
+  amount field keeps what was typed. The customer stats read "ID on file"
+  and "Last {n} days". The type row keeps a 16px inset and fades the pills
+  at the right edge. Record the ID is one column, so the ID type is
+  not cut off. Its subtitle is "Type, number and expiry". Customer,
+  the amounts, the rate, and the required fields are the full width of
+  the form and at least 44px tall. The
+  text in those fields is 16px, so the phone does not zoom in when
+  a cashier taps one. A long value ends in an ellipsis. At 1280 the
+  dialog is the same two columns as before this phone work. Text
+  quote still shows, an incomplete deal still says "N to complete"
+  and stays disabled, and the ledger heading still shows. The ID
+  row, the discard question, and the phone footer are not on that
+  dialog.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -744,6 +772,30 @@ server starts at midnight in the branch time zone. Screening is not
 connected. Texting is not connected. The site does not claim encryption
 at rest, and it does not claim data is held in the region where the desk
 operates. Subscription prices printed on the site are unchanged.
+
+**2026-10-11**, New transaction on a phone, follow-up. Under 600px
+an incomplete deal says "N steps left" and stays tappable. Tapping
+it marks the first missing item. The checklist says "ID not
+recorded yet". Text quote is hidden unless SMS is configured, and
+the verify nudge is hidden while Persona is off. Rates show four
+decimals. Ticket amounts include the currency code. The amount
+the customer receives is the text colour in the field and white
+on the ticket. The badge reads "We sell" or "We buy" in the sell
+and buy colours. Exchange, Margin, Before you post, and the rate
+line are sentence case in the sans face. The checklist says
+"Purpose and source of funds" and "Needed for this amount", and
+tapping it scrolls to those fields. That target is 44px. Before
+you post, Ready, the date, and the rate line use #6B6760. The
+customer stats read "ID on file" and "Last {n} days". Purpose and
+source borders turn red only after an empty field is left. The
+ledger-record heading is hidden. The type row keeps a 16px inset
+and fades at the right edge. Record the ID is one column, and its subtitle is "Type, number and expiry".
+A date reads like "Oct 11, 2026". The amount field keeps the digits
+that were typed. Recording
+an ID for a customer who already has a file posts the document on
+that file. Wider than 600px, including 1280, the dialog is unchanged:
+Text quote shows, and an incomplete deal still says "N to complete"
+and stays disabled.
 
 **2026-10-11**, New transaction on a phone. Under 600px the form is a
 full-screen sheet and one column. The type names are a horizontal

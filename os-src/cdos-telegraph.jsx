@@ -742,5 +742,9 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Telegraph, TextsSettings });
+  /* A painted desk number is not a carrier. SMS delivery is not
+     connected, so the phone sheet does not offer Text quote. */
+  function smsConfigured() { return false; }
+
+  window.CDOS = Object.assign(window.CDOS || {}, { Telegraph, TextsSettings, smsConfigured });
 })();

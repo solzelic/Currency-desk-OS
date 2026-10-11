@@ -1697,7 +1697,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="id" s={18} c="var(--cd-on-ink)" /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Record the ID</div>
-                <div className="text-[11.5px] truncate" style={{ color: CD.mute }}>{name} · type, number, and expiry go on their file</div>
+                <div className="cd-tx-record-sub min-w-0" style={{ color: CD.mute }}>
+                  <div className="cd-tx-record-sub-long text-[11.5px] truncate">{name} · type, number, and expiry go on their file</div>
+                  <div className="cd-tx-record-sub-short text-[11.5px]">Type, number and expiry</div>
+                </div>
               </div>
               <button type="button" onClick={onClose} aria-label="Back to the deal" className="phone-task-close grid place-items-center flex-none" style={{ width: 44, height: 44, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
             </div>
