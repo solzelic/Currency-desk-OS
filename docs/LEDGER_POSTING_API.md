@@ -92,12 +92,15 @@ with a real type (not empty and not "Not stated"), a number that is
 still non-empty after every whitespace and invisible character is
 stripped (NBSP, zero-width space, and the rest of that set), and an
 expiry on or after the desk's business date in the branch's time
-zone. No expiry counts as not expired — a null `expires_on` has
-never taken the expired leg, and the product does not keep a list of
-document types that never expire. The primary flag only chooses
-which document is shown. It does not decide the standing: a current
-secondary document is ID on file when the primary is expired or
-"Not stated".
+zone. A blank or missing `expires_on` does not count. That document
+is not on file, and it is not treated as expired either. The file
+is `missing` when nothing filed has a real expiry, and `expired`
+when at least one document is dated before the business date and
+none is dated on or after it. A current document wins over an
+expired one. The primary flag only chooses which document is
+shown. It does not decide the standing: a current secondary
+document is ID on file when the primary is expired, blank-dated,
+or "Not stated".
 
 `POST /api/ledger/customers` accepts `clientId`. The client must
 belong to this tenant and legal entity. If this workspace already

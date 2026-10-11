@@ -93,31 +93,38 @@ function strippedNumber(column: string): string {
 }
 
 /* One document counts when it has a real type, a number that is
-   still non-empty after the strip above, and an expiry on or after
-   the business date — or no expiry at all.
+   still non-empty after the strip above, and an expiry that is a
+   real date. A blank or missing expiry does not count. It is not
+   on file, and it is not an expired document either: the same skip
+   a desk makes when the expiry field is empty.
 
-   No expiry counts as not expired. That is the rule the gate already
-   had: a null expires_on did not take the expired leg. A type that
-   never expires is not listed separately, because the product has
-   never required one.
+   `current` asks for that date on or after the business date.
+   Otherwise the predicate asks for a date before it. NULL fails
+   both comparisons, so a cleared expiry cannot satisfy either.
+   The date placeholder is referenced on both legs. Dropping the
+   comparison drops the bind, and the query fails closed.
 
-   is_primary is not in this predicate. It chooses which document is
-   shown. A current secondary document is ID on file even when the
-   primary is expired, "Not stated", or absent. */
+   is_primary is not in this predicate. It chooses which document
+   is shown. Every other document still counts. A current secondary
+   document is ID on file even when the primary is expired, blank,
+   "Not stated", or absent. */
 function qualifyingDocument(where: string, businessDateParam: string, current: boolean): string {
   const expiry = current
-    ? `AND (d.expires_on IS NULL OR d.expires_on >= ${businessDateParam}::date)`
-    : "";
+    ? `d.expires_on >= ${businessDateParam}::date`
+    : `d.expires_on < ${businessDateParam}::date`;
   return `SELECT 1 FROM desk_client_identity_documents d
     WHERE ${where}
       AND coalesce(btrim(d.doc_type), '') <> ''
       AND lower(btrim(d.doc_type)) <> 'not stated'
       AND length(${strippedNumber("d.doc_number")}) > 0
-      ${expiry}`;
+      AND ${expiry}`;
 }
 
-/* Standing of the documents on one client. `businessDateParam` is a
-   bound placeholder (`$4`), never a date spliced in from the request. */
+/* Standing of every document on one client. A current document wins.
+   Dated documents that are all before the business date are expired.
+   Anything else — nothing filed, or only a blank expiry — is missing.
+   `businessDateParam` is a bound placeholder (`$4`), never a date
+   spliced in from the request. */
 export function documentStandingSql(
   clientIdExpr: string,
   tenantExpr: string,
@@ -129,13 +136,13 @@ export function documentStandingSql(
         AND d.tenant_id = ${tenantExpr}
         AND d.legal_entity_id = ${entityExpr}`;
   return `CASE
-    WHEN NOT EXISTS (
-      ${qualifyingDocument(where, businessDateParam, false)}
-    ) THEN 'missing'
-    WHEN NOT EXISTS (
+    WHEN EXISTS (
       ${qualifyingDocument(where, businessDateParam, true)}
+    ) THEN 'verified'
+    WHEN EXISTS (
+      ${qualifyingDocument(where, businessDateParam, false)}
     ) THEN 'expired'
-    ELSE 'verified'
+    ELSE 'missing'
   END`;
 }
 

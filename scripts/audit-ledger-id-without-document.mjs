@@ -11,8 +11,9 @@
    server/src/ledger/id-on-file.ts: a real type (not empty, not
    "Not stated"), a number that is still non-empty after whitespace
    and invisible characters are stripped, and an expiry on or after
-   the branch's business date (no expiry counts as not expired).
-   The primary flag is not consulted. The business date is the
+   the branch's business date. A blank or missing expiry does not
+   count, so a stored-verified row whose only paper has no date is
+   listed. The primary flag is not consulted. The business date is the
    calendar date in the branch's time zone, not UTC current_date.
 
    Usage (do not point this at a database you are not allowed to read):
@@ -59,12 +60,9 @@ try {
                AND coalesce(btrim(d.doc_type), '') <> ''
                AND lower(btrim(d.doc_type)) <> 'not stated'
                AND length(regexp_replace(coalesce(d.doc_number, ''), $1, '', 'g')) > 0
-               AND (
-                 d.expires_on IS NULL
-                 OR d.expires_on >= (
-                   CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(btrim(b.timezone), ''), 'America/Toronto')
-                 )::date
-               )
+               AND d.expires_on >= (
+                 CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(btrim(b.timezone), ''), 'America/Toronto')
+               )::date
           )
         )
       ORDER BY lc.tenant_id, lc.customer_id`,

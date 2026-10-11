@@ -757,8 +757,12 @@ the one returned, so the deal posts against the file the documents
 are on. ID on file is one server rule: at least one document with a
 real type (not empty and not "Not stated"), a number that is still
 non-empty after whitespace and invisible characters are stripped,
-and an expiry on or after the branch's business date. No expiry
-counts as not expired. The primary document is only what is shown.
+and an expiry on or after the branch's business date. A blank
+or missing expiry does not count: that document is not on file.
+The file is missing when no document has a real expiry, and
+expired when at least one document is dated before the business
+date and none is dated on or after it. The primary document is
+only what is shown.
 Client and ledger customer responses carry `idStanding`
 (`on_file`, `missing`, `expired`) and `displayedDocument`. A deal
 that needs ID and does not have it is refused with "ID needed for

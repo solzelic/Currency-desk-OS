@@ -26434,9 +26434,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const idLine = window.CDOS.identificationLimit(settings);
       const reportLine = window.CDOS.reportingLimit(settings);
       const standing = {
-        on_file: ['ID on file', 'At least one identity document has a type, a number, and has not expired. The primary document is the one shown.'],
-        missing: ['Not identified', 'No identity document with a real type and a number is on this file.'],
-        expired: ['ID expired', 'Every identity document with a type and a number is past its expiry. The till will not treat this customer as identified.']
+        on_file: ['ID on file', 'At least one identity document has a type, a number, and an expiry on or after the business date. The primary document is the one shown.'],
+        missing: ['Not identified', 'No identity document on this file has a type, a number, and an expiry. A blank expiry is not on file.'],
+        expired: ['ID expired', 'Every dated identity document is past its expiry. A blank expiry is not a current document. The till will not treat this customer as identified.']
       }[rec.idStanding];
       const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
       const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
