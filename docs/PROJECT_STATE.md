@@ -449,6 +449,17 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims. The marketing pages no longer say the
+product screens for OFAC or any sanctions list, that an EFTR or an STR
+is Live, that Serbia records are deleted on a schedule, that a text is
+delivered, that a report is ready or filed for the desk, or that a
+number of desks have been claimed. Canada remains the only Live country.
+A large cash worksheet can be prepared from the book and is not sent.
+Screening is not connected. Texting is not connected. The desk is hosted
+on Render in the United States. The database is Neon. The site does not
+claim encryption at rest, and it does not claim data is held in the
+region where the desk operates. Prices printed on the site are unchanged.
+
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
 and keeps it until the day is closed or the count is cleared, so a

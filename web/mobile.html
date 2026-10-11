@@ -4,50 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js":"/web/vendor/react.production.min.js","https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js":"/web/vendor/react-dom.production.min.js"};</script>
-<script>
-window.claimedCount = fetch('/api/site/early-access')
-  .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-  .catch(function (e) { console.error('[early-access] count unavailable:', e); return null; });
-window.claimedCount.then(function (d) {
-  if (!d) return;
-  // the progress bars are drawn at a fixed width, and one of them ANIMATES to
-  // that width — so the real figure has to reach the keyframe too, which it
-  // does through the custom property the keyframe now ends on
-  var pct = Math.min(100, Math.round((d.claimed / (d.cap || 100)) * 100)) + '%';
-  var apply = function () {
-    var fill = function (attr, value) {
-      var nodes = document.querySelectorAll('[' + attr + ']');
-      // only write when it differs, or the observer below sees its own edits
-      for (var i = 0; i < nodes.length; i++) {
-        if (nodes[i].textContent !== String(value)) nodes[i].textContent = String(value);
-      }
-    };
-    fill('data-cd-claimed', d.claimed);
-    fill('data-cd-cap', d.cap);
-    var bars = document.querySelectorAll('[data-cd-bar]');
-    for (var i = 0; i < bars.length; i++) {
-      if (bars[i].style.getPropertyValue('--cd-fill') === pct) continue;
-      bars[i].style.setProperty('--cd-fill', pct);
-      bars[i].style.width = pct;
-    }
-  };
-  /* These numbers sit inside dc-runtime components, which re-render and put
-     the design's own 64 back. Rather than teach each design about the count,
-     write it again whenever the page changes underneath us.
-
-     This script runs in the head, so the fetch can land before there is a
-     body to watch — wait for one, or the observer throws and takes the
-     count down with it. */
-  var start = function () {
-    apply();
-    if (typeof MutationObserver === 'function' && document.body) {
-      new MutationObserver(apply).observe(document.body, { childList: true, subtree: true, characterData: true });
-    }
-  };
-  if (document.body) start();
-  else document.addEventListener('DOMContentLoaded', start);
-});
-</script>
 <script src="/web/support.js"></script>
 <title>CurrencyDesk — more trades, less paperwork</title>
 <meta name="description" content="One desk for the whole shop — rates, till, ledger, clients and compliance.">
@@ -144,7 +100,7 @@ window.claimedCount.then(function (d) {
       <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px;">
         <a href="#pricing" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: rgba(251,249,244,0.72);">See pricing</a>
         <span style="width: 3px; height: 3px; border-radius: 50%; background: rgba(251,249,244,0.3);"></span>
-        <span style="font-family: var(--m); font-size: 10.5px; color: rgba(251,249,244,0.48);"><span data-cd-claimed>64</span> of <span data-cd-cap>100</span> desks claimed</span>
+        <span style="font-family: var(--m); font-size: 10.5px; color: rgba(251,249,244,0.48);">Early access is open</span>
       </div>
     </div>
   </div>
@@ -195,8 +151,8 @@ window.claimedCount.then(function (d) {
 
   <div id="compliance" style="scroll-margin-top: 58px; background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 40px 20px;">
     <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green); font-weight: 600;">Compliance</div>
-    <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.04; letter-spacing: -0.018em; margin: 12px 0 0;">The desk knows the rules.</h2>
-    <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 14px 0 0;">Your regulator's rulebook loads first — thresholds watched, reports prepared, every record kept in one place. <a href="/compliance" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);">See more details</a></p>
+    <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.04; letter-spacing: -0.018em; margin: 12px 0 0;">The rules, as they stand.</h2>
+    <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 14px 0 0;">Your regulator's rulebook is listed. Cash thresholds are watched from the book. The desk does not send a report. <a href="/compliance" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);">See more details</a></p>
 
     <div data-hscroll="true" style="display: flex; gap: 8px; margin: 20px -20px 0; padding: 0 20px 4px; overflow-x: auto; scrollbar-width: none;">
       <sc-for list="{{ jurs }}" as="j" hint-placeholder-count="6">
@@ -294,10 +250,7 @@ window.claimedCount.then(function (d) {
         <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.02; letter-spacing: -0.02em; margin: 12px 0 0;">Become a Founding Operator.</h2>
         <p style="font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,0.88); margin: 12px 0 0;">Reserve your workspace and lock founding pricing. Ninety seconds — no card, no commitment.</p>
         <a href="/signup" style="display: flex; align-items: center; justify-content: center; gap: 9px; height: 52px; margin-top: 20px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;">Get early access<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
-        <div style="display: flex; align-items: center; gap: 10px; margin-top: 14px;">
-          <div style="flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 999px; overflow: hidden;"><div data-cd-bar style="height: 100%; width: 64%; background: #fff; border-radius: 999px;"></div></div>
-          <span style="font-family: var(--m); font-size: 10.5px; color: rgba(255,255,255,0.84);"><b style="color: #fff;" data-cd-claimed>64</b> / <span data-cd-cap>100</span> claimed</span>
-        </div>
+        <div style="margin-top: 14px; font-family: var(--m); font-size: 10.5px; color: rgba(255,255,255,0.84);">Early access is open</div>
       </div>
     </div>
   </div>
@@ -335,11 +288,11 @@ class Component extends DCLogic {
 
   FEATURES = [
     { src: '/web/photos/rate-board-storefront.jpg', kicker: 'Rates', title: 'Your board, everywhere', body: 'Set your spread once. The desk prices every deal after that, and your window, your counter and your website all move together.' },
-    { src: '/web/photos/sms-storefront.jpg', kicker: 'Messaging', title: 'Bring them back', body: 'Tell a customer their money is ready from the shop number, not a personal phone — and watch them walk back in.' },
+    { src: '/web/photos/sms-storefront.jpg', kicker: 'Messaging', title: 'Texting is not connected', body: 'The desk does not send a message from a shop number.' },
     { src: '/web/photos/till-float.jpg', kicker: 'Cash', title: 'Close in four minutes', body: 'Till, float and ledger already agree when you lock the door. No counting twice, no arguing with the drawer.' },
     { src: '/web/photos/kyc-counter.jpg', kicker: 'Clients', title: 'Take their ID once', body: 'Every visit after that is a two-minute deal, because their file and verification are already on the desk.' },
-    { src: '/web/photos/compliance-institution.jpg', kicker: 'Compliance', title: 'The rules, carried', body: 'Thresholds watched as tickets are written, and the report arrives already populated. You review and send.' },
-    { src: '/web/photos/reports-ledger.jpg', kicker: 'Reports', title: 'Any report, already written', body: 'Profit and loss, margin by currency, or one client’s history — pulled from the records every deal already writes.' },
+    { src: '/web/photos/compliance-institution.jpg', kicker: 'Compliance', title: 'The rules, carried', body: 'Thresholds watched from the book. A worksheet can be prepared. The desk does not send it.' },
+    { src: '/web/photos/reports-ledger.jpg', kicker: 'Reports', title: 'Figures from the book', body: 'Takings and margin from deals already written. The desk does not write a regulator report on request.' },
     { src: '/web/photos/cheque-cashing.jpg', kicker: 'Cheques', title: 'Fee and hold, worked out', body: 'Cash a cheque and the desk logs it — payer, amount, fee and hold, all filed against the client.' },
     { src: '/web/photos/vault-count.jpg', kicker: 'Vault', title: 'Know what is in the safe', body: 'Every count signed and timed, so you always know the position and who was last in it.' },
     { src: '/web/photos/ai-copilot-guilloche.jpg', kicker: 'Copilot', title: 'Ask your business', body: 'Which currency earned this month? Which teller is fastest? Ask in plain words and get a straight answer.' }
@@ -347,19 +300,19 @@ class Component extends DCLogic {
 
   JURS = [
     { name: 'Canada', tag: 'FINTRAC', live: true, status: 'live', rules: [
-      { name: 'Large cash', spec: 'LCTR · CA$10,000', tag: 'Prepared' },
-      { name: 'Fund transfer', spec: 'EFTR · CA$10,000', tag: 'Prepared' },
-      { name: 'Suspicious', spec: 'STR · any amount', tag: 'Flagged' },
-      { name: 'Records', spec: 'Retained 5 years', tag: 'Kept' } ] },
+      { name: 'Large cash', spec: 'LCTR worksheet, not sent', tag: 'Prepared' },
+      { name: 'Fund transfer', spec: 'In the pack, not from the book', tag: 'In the pack' },
+      { name: 'Suspicious', spec: 'Not drafted or sent', tag: 'In the pack' },
+      { name: 'Records', spec: 'Kept 5 years. Nothing is deleted', tag: 'Kept' } ] },
     { name: 'Serbia', tag: 'APML', live: false, status: 'Available', rules: [
       { name: 'Exchange ID', spec: '5,000 EUR, NBS rate', tag: 'Assisted' },
       { name: 'Cash report', spec: '15,000 EUR to APML', tag: 'Prepared' },
       { name: 'Suspicion', spec: 'Teller can save a draft', tag: 'Assisted' },
-      { name: 'Records', spec: '5 years, then delete', tag: 'Kept' } ] },
+      { name: 'Records', spec: '5 years. Nothing is deleted', tag: 'Kept' } ] },
     { name: 'United States', tag: 'FinCEN', live: false, status: 'Early 2027', rules: [
       { name: 'Currency report', spec: 'CTR · $10,000', tag: 'Planned' },
       { name: 'Suspicious', spec: 'SAR · $2,000', tag: 'Planned' },
-      { name: 'Sanctions', spec: 'OFAC screening', tag: 'Planned' } ] },
+      { name: 'Sanctions', spec: 'Screening is not connected', tag: 'Planned' } ] },
     { name: 'United Kingdom', tag: 'HMRC', live: false, status: 'Mid 2027', rules: [
       { name: 'Occasional transaction', spec: '£12,000 or more', tag: 'Planned' },
       { name: 'Transfer of funds', spec: 'More than £800', tag: 'Planned' },
@@ -380,7 +333,7 @@ class Component extends DCLogic {
 
   PLANS = [
     { name: 'Rates', mo: 299, popular: false, desc: 'Live rate board and pricing tools for a shop that just needs great numbers.',
-      features: ['Live rate board', 'Per-currency spreads', 'Publish to your website', 'Client texting'] },
+      features: ['Live rate board', 'Per-currency spreads', 'Publish to your website'] },
     { name: 'Full System', mo: 599, popular: true, desc: 'The whole desk — every application, one price, your entire team.',
       features: ['Everything in Rates', 'Every application on the desk', 'Ledger, till & float', 'Clients & KYC', 'Compliance & reports'] },
     { name: 'AI Bundle', mo: 749, popular: false, desc: 'The full desk plus the copilot that watches your numbers.',
@@ -389,10 +342,10 @@ class Component extends DCLogic {
 
   PROOF = [
     { n: 'More', h: 'Customers who find you', t: 'Your rates are on the web where people search, not only on the wall.' },
-    { n: 'More', h: 'Repeat business', t: 'One text brings a client back when their currency is ready.' },
+    { n: 'More', h: 'Repeat business', t: 'Texting is not connected, so a text does not bring a client back.' },
     { n: 'More', h: 'Margin kept', t: 'Every ticket prices at your spread — never eyeballed, never given away.' },
     { n: 'Less', h: 'Time on the books', t: 'The day closes with till, ledger and drawer already agreeing.' },
-    { n: 'Less', h: 'Filing to chase', t: 'Thresholds watched and reports drafted as the deal is written.' },
+    { n: 'Less', h: 'Filing to chase', t: 'Cash thresholds are watched. The desk does not draft a regulator report as the deal is written.' },
     { n: 'Less', h: 'Training to do', t: 'A new teller runs their first deal alone, in the first ten minutes.' }
   ];
 
