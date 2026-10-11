@@ -3102,53 +3102,44 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 100%;
     box-sizing: border-box;
     padding-bottom: var(--phone-bar-h);
-    background: var(--color-bg, #F7F6F3);
+    background: transparent;
   }
   .till-phone.phone-shell { flex: 1 1 auto; min-height: 0; background: transparent; }
-  .till-phone .phone-title { padding: 0 0 2px; }
-  .till-phone .phone-title h1 { font-size: 20px; line-height: 24px; }
-  .till-phone .phone-scroll { padding-top: 2px; padding-bottom: 8px; }
+  .till-phone .phone-scroll { padding-bottom: 8px; }
+  .till-phone .phone-seg { margin-bottom: 8px; }
+  .till-phone .phone-chips { margin-bottom: 4px; }
   .till-phone-sec { margin: 0; }
-  .till-phone-sec h2 { font-size: 15px; line-height: 20px; }
-  .till-phone-sec .till-phone-link { min-height: 28px; }
   .till-phone-scroll { padding: 4px 16px 0; }
   .till-phone-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .till-phone-title h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 700; }
   .till-phone-link {
     border: 0; background: transparent; color: var(--cd-ink, #111);
-    font-weight: 600; font-size: 14px; min-height: 44px; padding: 0 4px;
+    font-weight: 600; font-size: 14px; min-height: 44px; min-width: 44px; padding: 0 8px;
   }
-  .till-phone-seg {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
-    background: var(--cd-chip, #f1f0ec); border-radius: 10px; padding: 3px; margin: 0 0 4px;
-  }
-  .till-phone-seg button {
-    min-height: 32px; border: 0; border-radius: 8px; background: transparent;
-    font-weight: 600; font-size: 14px; color: var(--cd-mute, #555);
-  }
-  .till-phone-seg button.is-on { background: var(--cd-panel, #fff); color: var(--cd-ink, #111); }
   .till-phone-card {
-    background: var(--cd-panel, #fff); border: 1px solid var(--cd-line, rgba(10,10,10,.14));
-    border-radius: 14px; padding: 4px 8px 6px; margin-bottom: 4px;
+    background: #fff; border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: 14px; padding: 4px 12px 8px; margin-bottom: 4px;
   }
+  .till-phone-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
   .till-phone-k { font-size: 12px; line-height: 16px; color: var(--cd-mute, #555); }
   .till-phone-amount, .till-phone-counted {
     font-variant-numeric: tabular-nums; font-weight: 700; color: var(--cd-ink, #111);
   }
   .till-phone-amount { font-size: 22px; line-height: 26px; }
   .till-phone-counted { font-size: 20px; line-height: 26px; }
-  .till-phone-meta, .till-phone-who { font-size: 12px; line-height: 16px; color: var(--cd-mute, #555); margin-top: 2px; }
+  .till-phone-meta, .till-phone-who { font-size: 12px; line-height: 16px; color: var(--gray-700, #3D3A35); margin-top: 2px; }
   .till-phone-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .till-phone-who { color: var(--cd-ink, #111); font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
-  .till-phone-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .till-phone-who { color: var(--gray-900, #161513); }
+  .till-phone-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
   .till-phone-actions button {
-    min-height: 36px; width: 100%; box-sizing: border-box; border-radius: 10px;
-    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); background: var(--cd-panel, #fff);
-    font-weight: 600; font-size: 13px; padding: 0 4px;
+    min-height: 44px; width: 100%; box-sizing: border-box; border-radius: 10px;
+    border: 1px solid var(--color-border, #E2DFD8); background: #fff;
+    font-weight: 600; font-size: 13px; padding: 0 4px; color: var(--gray-900, #161513);
   }
+  .till-phone-actions button:disabled { color: var(--gray-500, #6B6760); }
   .till-phone-till {
-    margin: 0; min-height: 28px; border: 0; background: transparent; flex: none;
-    font-weight: 700; padding: 0; color: var(--cd-ink, #111);
+    margin: 0; min-height: 44px; min-width: 44px; border: 0; background: transparent; flex: none;
+    font-weight: 700; padding: 0 8px; color: var(--gray-900, #161513);
   }
   .till-phone-chips {
     display: flex; gap: 8px; overflow-x: auto; max-width: 100%;
@@ -3167,28 +3158,34 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone .till-chip.is-on { background: var(--cd-ink, #111); color: var(--cd-on-ink, #fff); border-color: var(--cd-ink, #111); }
   .till-phone .till-chip.is-on i { border-color: #fff; }
   .till-phone .till-chip.is-done i { background: currentColor; }
-  .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
   .till-phone-sec h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 650; }
+  .till-phone-group { margin: 12px 0 4px; font-size: 13px; line-height: 16px; font-weight: 700; color: var(--gray-900, #161513); }
   .till-phone .till-den-row {
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center; gap: 8px; min-height: 48px;
-    border-bottom: 1px solid var(--cd-line, rgba(10,10,10,.14));
+    align-items: center; gap: 8px; min-height: 44px;
+    border-bottom: 1px solid var(--color-border, #E2DFD8);
   }
-  .till-den-face, .till-den-sub { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-  .till-den-sub { text-align: right; color: var(--cd-mute, #555); min-width: 72px; }
+  .till-den-face, .till-den-sub { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; white-space: nowrap; color: var(--gray-900, #161513); }
+  .till-den-sub { text-align: right; color: var(--gray-700, #3D3A35); min-width: 72px; }
   .till-stepper {
-    display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; height: 48px;
-    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); border-radius: 10px; overflow: hidden;
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; height: 44px;
+    border: 1px solid var(--color-border, #E2DFD8); border-radius: 10px; overflow: hidden;
   }
   .till-phone .till-step {
-    width: 48px; height: 48px; border: 0; background: var(--cd-chip, #f1f0ec);
-    font-size: 22px; line-height: 1;
+    width: 44px; height: 44px; border: 0; background: var(--gray-100, #EFEDE8);
+    font-size: 22px; line-height: 1; color: var(--gray-900, #161513);
   }
   .till-den-qty {
-    width: 100%; height: 48px; border: 0; margin: 0; padding: 0 8px;
-    text-align: right; font-size: 20px; font-weight: 650; background: transparent;
-    font-variant-numeric: tabular-nums;
+    width: 100%; height: 44px; border: 0; margin: 0; padding: 0 8px;
+    text-align: right; font-size: 20px; font-weight: 650; background: #fff;
+    font-variant-numeric: tabular-nums; color: var(--gray-900, #161513);
     -moz-appearance: textfield; appearance: textfield;
+  }
+  .till-phone .till-den-qty:focus {
+    outline: 2px solid var(--color-focus, #1E5AA8);
+    outline-offset: -2px;
+    background: var(--color-info-bg, #E8F0FB);
   }
   .till-den-qty::-webkit-inner-spin-button,
   .till-den-qty::-webkit-outer-spin-button {
@@ -3209,9 +3206,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: block;
     padding: 0 !important;
     box-sizing: border-box;
-    background: var(--color-bg, #F7F6F3) !important;
+    background: transparent !important;
     border-top: 0;
   }
+  .till-phone .phone-sticky { background: #fff; }
+  .till-phone .till-recon-row .phone-row-sub,
+  .till-phone .till-recon-row .phone-row-note { white-space: normal; }
   .till-phone .till-foot-sum { padding: 4px 16px 0; }
   .till-phone .phone-sticky { padding: 6px 16px 8px; }
   .till-phone .phone-sticky-why { margin-top: 4px; }
@@ -3238,11 +3238,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone-empty { text-align: center; padding: 28px 12px; }
   .till-phone-empty h2 { margin: 0 0 8px; font-size: 20px; line-height: 28px; }
   .till-phone-empty p, .till-phone-note { font-size: 14px; line-height: 20px; color: var(--cd-mute, #555); }
-  .till-phone-recon {
-    display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline;
-    padding: 10px 0; border-bottom: 1px solid var(--cd-line, rgba(10,10,10,.14));
-    width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-top: 0;
+  .till-sheet-line {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 10px 0; border-top: 1px solid var(--color-border, #E2DFD8);
   }
+  .till-sheet-line b { font-size: 16px; line-height: 20px; color: var(--gray-900, #161513); }
+  .till-sheet-line span { font-size: 13px; line-height: 18px; color: var(--gray-700, #3D3A35); }
   .till-skel { display: block; height: 12px; border-radius: 6px; background: #EFEDE8; }
   .till-skel-lg { height: 28px; width: 55%; }
   .till-skel-md { width: 80%; }
@@ -3257,11 +3258,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 14px 14px 0 0; max-height: 70vh; overflow: auto;
     padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   }
-  .till-sheet-title { font-size: 17px; font-weight: 700; padding: 8px 0; }
+  .till-sheet-title { font-size: 17px; font-weight: 700; padding: 8px 0; color: var(--gray-900, #161513); }
   .till-sheet-row {
     width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; border: 0; border-top: 1px solid var(--cd-line, rgba(10,10,10,.14));
-    background: transparent; text-align: left; font-weight: 600;
+    gap: 8px; border: 0; border-top: 1px solid var(--color-border, #E2DFD8);
+    background: transparent; text-align: left; font-weight: 600; font-size: 14px;
+    color: var(--gray-900, #161513);
   }
   .till-sheet .till-save { width: 100%; margin-top: 12px; }
   /* The footer is fixed over the column, and the column runs under

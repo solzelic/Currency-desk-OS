@@ -5,8 +5,10 @@
    The screen has to show the refusal and read the book again,
    and the deal has to still be in the drawer.
    ============================================================ */
+import fs from "fs";
 import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
+import { phoneSweep } from "./helpers/phone-sweep";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -236,6 +238,13 @@ test("the stale-close refusal is readable on a phone", async ({ page }, testInfo
 
   await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: testInfo.outputPath("stale-close-390.png") });
+  fs.mkdirSync("/opt/cursor/artifacts/pr116", { recursive: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "/opt/cursor/artifacts/pr116/stale_390.png" });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expect(page.getByText(MESSAGE)).toBeVisible();
+  await page.screenshot({ path: "/opt/cursor/artifacts/pr116/stale_360.png" });
+  await phoneSweep(page, { roots: [".till-phone", ".phone-head", "#phone-dock"] });
 });
 
 test("a refresh in the middle of a count still closes against the mark it started on", async ({ page }) => {

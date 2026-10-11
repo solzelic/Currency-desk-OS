@@ -1,9 +1,14 @@
 /* Phone cash drawer. At 360 and 390 the count is one column: chips,
    denomination fields with no spinner, a footer on the bar, and the
-   till switch as a bottom sheet. At 1280 the drawer is the desktop
-   drawer. Save count posts once when tapped twice. */
+   till switch as a bottom sheet. Reconcile is a list. At 1280 the
+   drawer is the desktop drawer. Save count posts once when tapped twice. */
+import fs from "fs";
 import type { Page } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
+import { phoneSweep } from "./helpers/phone-sweep";
+
+const SHOTS = "/opt/cursor/artifacts/pr116";
+const SWEEP = [".till-phone", ".phone-head", "#phone-dock"];
 
 const PHONE = [
   { width: 360, height: 780 },
@@ -85,15 +90,25 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     await expect(page.locator("#phone-fab")).toHaveCount(0);
     await expect(page.locator(".till-phone")).not.toContainText("New transaction");
     await expect(page.locator(".till-den-qty").first()).toBeVisible();
-    const rows = await page.locator(".till-den-row").evaluateAll((els) => {
-      const foot = document.querySelector(".till-count-foot");
-      const panel = foot ? foot.getBoundingClientRect().top : 0;
+    /* A row in the DOM above the window, or clipped by the scrollport,
+       is not on screen. Measure the scroll viewport and the footer. */
+    const rows = await page.locator(".till-phone .till-den-row").evaluateAll((els) => {
+      const screen = document.querySelector(".till-phone .phone-scroll");
+      const foot = document.querySelector(".till-phone .till-count-foot");
+      if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement)) return -1;
+      const view = screen.getBoundingClientRect();
+      const panel = foot.getBoundingClientRect();
       return els.filter((el) => {
         const r = el.getBoundingClientRect();
-        return r.height > 8 && r.bottom <= panel + 0.5 && r.top >= 0;
+        return r.height > 8
+          && r.top >= view.top - 0.5
+          && r.bottom <= panel.top + 0.5
+          && r.bottom <= view.bottom + 0.5
+          && r.left >= view.left - 1
+          && r.right <= view.right + 1;
       }).length;
     });
-    expect(rows, size.width + " rows above the footer").toBeGreaterThanOrEqual(3);
+    expect(rows, size.width + " rows inside the count viewport").toBeGreaterThanOrEqual(3);
     const fields = await page.locator(".till-den-qty").evaluateAll((els) => els.map((el) => {
       const style = getComputedStyle(el);
       return {
@@ -215,6 +230,113 @@ test("loading and no open till are honest", async ({ page }) => {
   await expect(page.locator(".phone-empty")).toContainText("This till is not open");
   await expect(page.locator(".till-phone")).not.toContainText("$");
   await expect(page.getByRole("button", { name: "Open the till" })).toBeVisible();
+  await phoneSweep(page, { roots: SWEEP });
+
+  await page.unroute("**/api/ledger/till-session");
+  await page.route("**/api/ledger/till-balances", (route) => route.fulfill({
+    status: 500,
+    contentType: "application/json",
+    body: JSON.stringify({ message: "The till book did not load." }),
+  }));
+  await page.route("**/api/ledger/till-session", (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "The till book did not load." }),
+    });
+  });
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await settled(page);
+  await openPhoneTill(page);
+  await expect(page.locator(".phone-error")).toContainText("The till book did not load.");
+  await expect(page.locator(".till-den-row")).toHaveCount(0);
+  await phoneSweep(page, { roots: SWEEP });
+  await page.unroute("**/api/ledger/till-balances");
+  await page.unroute("**/api/ledger/till-session");
+});
+
+async function shotBoth(page: Page, name: string, prepare?: () => Promise<void>): Promise<void> {
+  fs.mkdirSync(SHOTS, { recursive: true });
+  for (const size of PHONE) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    if (prepare) await prepare();
+    await page.screenshot({ path: `${SHOTS}/${name}_${size.width}.png` });
+  }
+}
+
+async function scrollIntoPhoneView(page: Page, selector: string): Promise<void> {
+  await page.evaluate((sel) => {
+    const screen = document.querySelector(".till-phone .phone-scroll");
+    const el = document.querySelector(sel);
+    if (!(screen instanceof HTMLElement) || !el) return;
+    const view = screen.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    screen.scrollTop += r.top - view.top - 8;
+  }, selector);
+}
+
+test("count, coins, the till sheet, reconcile, and hand off pass the phone sweep", async ({ page }) => {
+  test.skip(!hasLedger, "needs the ledger");
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await tillOpen(page);
+  await openPhoneTill(page);
+
+  await shotBoth(page, "count");
+  await phoneSweep(page, { roots: SWEEP });
+
+  await shotBoth(page, "coins", async () => {
+    await scrollIntoPhoneView(page, ".till-phone-group");
+  });
+  const coinInView = await page.locator("[data-till-coin]").first().evaluate((el) => {
+    const screen = document.querySelector(".till-phone .phone-scroll");
+    const foot = document.querySelector(".till-phone .till-count-foot");
+    if (!(screen instanceof HTMLElement) || !(foot instanceof HTMLElement)) return false;
+    const view = screen.getBoundingClientRect();
+    const panel = foot.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return r.height > 8 && r.top >= view.top - 0.5 && r.bottom <= panel.top + 0.5 && r.bottom <= view.bottom + 0.5;
+  });
+  expect(coinInView, "a coin row inside the viewport").toBe(true);
+  await phoneSweep(page, { roots: SWEEP });
+
+  await shotBoth(page, "focus", async () => {
+    await scrollIntoPhoneView(page, ".till-den-qty");
+    await page.locator(".till-den-qty").first().focus();
+  });
+
+  await page.locator(".till-phone-till").click();
+  await expect(page.locator(".till-sheet")).toBeVisible();
+  await shotBoth(page, "switch");
+  await phoneSweep(page, { roots: [".till-sheet"] });
+  await page.getByRole("button", { name: "Close till list" }).click();
+
+  await page.locator(".till-den-qty").first().fill("1");
+  await page.locator(".phone-sticky-btn").click();
+  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible({ timeout: 15_000 });
+  await shotBoth(page, "saved");
+
+  await page.getByRole("tab", { name: "Reconcile and close" }).click();
+  const cad = page.locator(".till-recon-row", { hasText: "CAD" }).first();
+  await expect(cad).toContainText(/Expected /);
+  await expect(cad).toContainText(/Counted [\d,]+(\.\d+)? CAD|Not counted yet/);
+  await expect(cad).toContainText(/Matches the book|CAD over|CAD short|Not counted yet/);
+  await expect(page.locator(".phone-sticky-btn")).toHaveText("Close the till");
+  await expect(page.locator(".till-phone")).not.toContainText("$");
+  await shotBoth(page, "reconcile");
+  await phoneSweep(page, { roots: SWEEP });
+
+  await page.getByRole("tab", { name: "Count" }).click();
+  await page.getByRole("button", { name: "Hand off" }).click();
+  await expect(page.getByRole("heading", { name: "Open this on a computer" })).toBeVisible();
+  await expect(page.getByText("Hand off the drawer")).toHaveCount(0);
+  await expect(page.getByText("local note")).toBeVisible();
+  await shotBoth(page, "handoff");
+  await phoneSweep(page, { roots: SWEEP });
 });
 
 test("desktop till is the desktop till at 1280", async ({ page }) => {
@@ -236,4 +358,6 @@ test("desktop till is the desktop till at 1280", async ({ page }) => {
     expect(step && Math.round(step.height)).toBe(28);
   }
   await expect(page.locator(".till-screen input[type='number']").first()).toBeVisible();
+  fs.mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: `${SHOTS}/desktop_1280.png` });
 });

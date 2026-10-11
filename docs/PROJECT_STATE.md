@@ -604,13 +604,17 @@ exists and nobody holds it. Granting it is a later decision.
 **2026-10-11**, phone till. At 430px and under, the cash drawer is the
 phone count inside `Phone.Screen`: one currency, sideways chips,
 large count fields, and one `StickyAction` on the bar. The count
-opens on the notes; a saved total stays in the footer until the
-cashier asks to enter a total. The till
-switch is a sheet from the bottom. Amounts use `formatPhoneMoney`
-(`1,765.05 CAD`). There is no round + on the till. A missing ledger
-figure stays absent. Loading, a refused save, and a till that is
-not open each say so. Wider than 430px the desktop drawer is the
-same drawer.
+opens on the notes; coins are further down that list. A saved total
+stays in the footer until the cashier asks to enter a total.
+Reconcile and close is a list of currencies — expected, counted,
+and the difference in words with the code — and one sticky
+Close the till. The till switch is a sheet from the bottom.
+Hand off, Move cash, and Vault are desktop panels; on a phone each
+says Open this on a computer and does not open the panel. Amounts
+use `formatPhoneMoney` (`1,765.05 CAD`). There is no round + on the
+till. A missing ledger figure stays absent. Loading, a refused
+save, a stale close, and a till that is not open each say so.
+Wider than 430px the desktop drawer is the same drawer.
 
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked
