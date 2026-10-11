@@ -2,7 +2,7 @@
    money formatter is loaded. A wide window keeps the desktop Compliance
    window, pixel for pixel. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 async function dismissTour(page: Page): Promise<void> {
@@ -49,6 +49,74 @@ async function shot(page: Page, name: string): Promise<void> {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 780 });
     await page.screenshot({ path: `test-results/compliance_${name}_${width}.png`, fullPage: false });
   }
+}
+
+/* Screenshot fixture only. These deals live in this browser's local row
+   store for one test. They are not posted, not seeded, and not the
+   Yorkville demo book. Canada leaves a deal already at 10,000 as its
+   own filing, and it adds two or more under-line cash deals in the
+   same static day into one 24-hour report. Same-day under-line deals
+   are also the split-deal watch. */
+function screenshotDeals(day: string) {
+  const cash = (id: string, ref: string, time: string, customer: string, inAmt: number) => ({
+    id,
+    ref,
+    date: day,
+    time,
+    customer,
+    beneficiary: "",
+    type: "Currency Exchange",
+    inCcy: "CAD",
+    inAmt,
+    outCcy: "USD",
+    outAmt: 1,
+    status: "posted",
+    filed: false,
+    ackStr: false,
+    voidReason: "",
+    voidBy: "",
+    voidAt: "",
+  });
+  const passport = (idNum: string) => ({ idType: "Passport", idNum, idExpiry: "2030-06-01" });
+  return {
+    rows: [
+      cash("fx-filing", "LT-FILING-10000", "09:10", "Amina Farah", 10000),
+      cash("fx-split-a", "LT-SPLIT-A", "10:15", "Noah Pell", 3200),
+      cash("fx-split-b", "LT-SPLIT-B", "13:40", "Noah Pell", 3400),
+      cash("fx-split-c", "LT-SPLIT-C", "17:05", "Noah Pell", 3600),
+      cash("fx-agg-a", "LT-AGG-A", "11:05", "Leah Cho", 5500),
+      cash("fx-agg-b", "LT-AGG-B", "16:30", "Leah Cho", 4800),
+      cash("fx-missing", "LT-MISSING-ID", "14:20", "Sam Idris", 4000),
+    ],
+    clients: {
+      "Amina Farah": passport("P100001"),
+      "Noah Pell": passport("P200002"),
+      "Leah Cho": passport("P300003"),
+    },
+  };
+}
+
+async function installScreenshotFixtures(page: Page): Promise<{ day: string; label: string }> {
+  const stamp = await page.evaluate(() => {
+    const day = window.CDOS.businessDate();
+    const [y, m, d] = String(day).slice(0, 10).split("-").map(Number);
+    const label = new Date(y, m - 1, d).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    return { day: String(day).slice(0, 10), label };
+  });
+  const book = screenshotDeals(stamp.day);
+  await page.evaluate((payload) => {
+    localStorage.setItem("cdos_rows_v1", JSON.stringify(payload.rows));
+    localStorage.setItem("cdos_clients_v1", JSON.stringify(payload.clients));
+  }, book);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+  return stamp;
 }
 
 async function openCompliance(page: Page): Promise<void> {
@@ -244,4 +312,84 @@ test("each phone detail is a list, and the filing form stays on a computer", asy
   await expect(screening).toContainText("No list provider is connected yet");
   expect(await screening.innerText()).not.toMatch(/\d/);
   await shot(page, "not_connected");
+});
+
+test("fixture deals fill the phone details and one deal drill", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  const stamp = await installScreenshotFixtures(page);
+  await openCompliance(page);
+  const shell = page.locator('[data-phone-shell][data-app="compliance"]');
+  const home = shell.getByTestId("compliance-phone-home");
+  await expect(home).toHaveAttribute("data-state", "ready");
+
+  const openDetail = async (name: RegExp, testId: string, heading: string) => {
+    await home.getByRole("button", { name }).click();
+    const detail = shell.getByTestId(testId);
+    await expect(detail).toBeVisible();
+    await expect(shell.locator("h1")).toHaveText(heading);
+    await expect(shell.locator(".fld-tab")).toHaveCount(0);
+    await expect(shell.getByText("Open worksheet")).toHaveCount(0);
+    expect(await shell.innerText()).not.toMatch(/\$/);
+    expect(await shell.innerText()).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    await expect(shell.locator(".phone-sticky-btn")).toHaveCount(0);
+    await expect(page.locator("#phone-fab")).toHaveCount(0);
+    await sweepCompliance(page);
+    return detail;
+  };
+
+  const filings = await openDetail(/Reportable/, "compliance-detail-filings", "What you would file");
+  await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText("10,000.00 CAD");
+  await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText(stamp.label);
+  await expect(filings.getByRole("button", { name: /Leah Cho/ })).toContainText("10,300.00 CAD");
+  await expect(filings.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
+  await expect(filings).toContainText("You file");
+  await shot(page, "detail_filings_filled");
+  await shell.getByRole("button", { name: "Compliance", exact: true }).click();
+  await expect(home).toBeVisible();
+
+  const splits = await openDetail(/Structuring/, "compliance-detail-structuring", "Possible split deals");
+  await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("3 just-under deals");
+  await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
+  await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("Warnings only");
+  await expect(splits.getByRole("button", { name: /Leah Cho/ })).toContainText("2 just-under deals");
+  await shot(page, "detail_structuring_filled");
+  await splits.getByRole("button", { name: /Noah Pell/ }).click();
+  const deals = shell.getByTestId("compliance-detail-deals");
+  await expect(deals).toBeVisible();
+  await expect(shell.locator("h1")).toHaveText("Noah Pell");
+  await expect(deals).toContainText("3,200.00 CAD");
+  await expect(deals).toContainText("3,400.00 CAD");
+  await expect(deals).toContainText("3,600.00 CAD");
+  await expect(deals).toContainText("10:15 AM");
+  await expect(deals).toContainText("1:40 PM");
+  await expect(deals).toContainText("5:05 PM");
+  await expect(deals).toContainText(stamp.label);
+  expect(await shell.innerText()).not.toMatch(/\$/);
+  await expect(shell.locator(".fld-tab")).toHaveCount(0);
+  await sweepCompliance(page);
+  await shot(page, "detail_deals");
+  await shell.getByRole("button", { name: "Compliance", exact: true }).click();
+  await expect(shell.getByTestId("compliance-detail-structuring")).toBeVisible();
+  await shell.getByRole("button", { name: "Compliance", exact: true }).click();
+  await expect(home).toBeVisible();
+
+  await home.getByRole("tab", { name: /aggregation/ }).click();
+  const aggregate = await openDetail(/Large cash/, "compliance-detail-aggregation", "24h aggregation");
+  await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("2 cash-ins");
+  await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("10,300.00 CAD");
+  await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("12:00 AM");
+  await expect(aggregate.getByRole("button", { name: /Noah Pell/ })).toContainText("3 cash-ins");
+  await expect(aggregate.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
+  await shot(page, "detail_aggregation_filled");
+  await shell.getByRole("button", { name: "Compliance", exact: true }).click();
+  await expect(home).toBeVisible();
+
+  await home.getByRole("tab", { name: /aggregation/ }).click();
+  const missing = await openDetail(/Clients missing ID/, "compliance-detail-missing", "Clients missing ID");
+  await expect(missing.getByRole("button", { name: /Sam Idris/ })).toContainText("missing ID");
+  await expect(missing).not.toContainText("Amina Farah");
+  await expect(missing).not.toContainText("Noah Pell");
+  await expect(missing).not.toContainText("Leah Cho");
+  await shot(page, "detail_missing_filled");
 });
