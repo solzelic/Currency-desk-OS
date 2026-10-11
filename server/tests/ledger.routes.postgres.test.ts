@@ -363,6 +363,16 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       },
     });
     expect(deniedMove.statusCode).toBe(403);
+    /* The float names the vault. A vault with no opening count is refused,
+       so this case states one first. The movement is still the thing under
+       test: one key, one credit to the drawer, one debit to the safe. */
+    const openedVault = await app.inject({
+      method: "POST",
+      url: "/api/ledger/vault/opening-position",
+      cookies: manager,
+      payload: { balances: { CAD: "1000.00" } },
+    });
+    expect(openedVault.statusCode).toBe(201);
     const movePayload = {
       idempotencyKey: "move-1",
       direction: "in",
@@ -380,6 +390,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     });
     expect(moved.statusCode).toBe(201);
     expect(moved.json().balances.CAD).toBe("25100.00");
+    expect(moved.json().vaultBalances.CAD).toBe("900.00");
     const replayedMove = await app.inject({
       method: "POST",
       url: "/api/ledger/till-movements",
@@ -387,6 +398,15 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: movePayload,
     });
     expect(replayedMove.json().balances.CAD).toBe("25100.00");
+    expect(replayedMove.json().vaultBalances.CAD).toBe("900.00");
+
+    const countedAgainst = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-balances",
+      cookies: manager,
+    });
+    expect(countedAgainst.statusCode).toBe(200);
+    const balanceGeneration = countedAgainst.json().balanceGeneration;
 
     const incomplete = await app.inject({
       method: "POST",
@@ -396,6 +416,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         idempotencyKey: "close-incomplete",
         counts: { CAD: "25100.00" },
         note: "Incomplete",
+        balanceGeneration,
       },
     });
     expect(incomplete.statusCode).toBe(422);
@@ -414,6 +435,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           GBP: "3500.00",
         },
         note: "Variance close",
+        balanceGeneration,
       },
     });
     expect(closed.statusCode).toBe(200);
@@ -630,7 +652,11 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       });
       expect(second.statusCode).toBe(200);
       // a drawer of its own: same branch, its own till, none of till-01's money
-      expect(second.json()).toEqual({ tillId: "till-02", balances: {} });
+      expect(second.json()).toEqual({
+        tillId: "till-02",
+        balances: {},
+        balanceGeneration: "0",
+      });
 
       const quoteBody = {
         customerId: "customer-demo",

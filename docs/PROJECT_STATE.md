@@ -71,6 +71,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **The desk fits a phone.** At 430px wide and under, a window fills
+  the desk instead of floating as a desktop panel. The menu bar keeps
+  the icon buttons and drops the wordmark, the clock, and the account
+  name. A window header puts the title on one line and the buttons
+  on the next row, wrapping. A card that holds a table scrolls
+  sideways, and the right edge fades. Folder tabs and the module
+  tab bar scroll the same way, with that fade, and the module bar
+  still ends before the store and ID buttons. Rounded clips, photos,
+  and bars stay clipped. Settings stacks its list above the form.
+  Sign-in and the station picker stay on the screen. The window
+  dots stay 12px, so the title stays readable.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -351,8 +362,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   overwritten on a later boot. `DEMO_POPULATE=1` posts a small already-
   saved history through the real quote / ledger / client-record
   services (CAD↔USD/EUR), only when `tnt-yorkfx` still has
-  `siteSlug=yorkfx`. Login is `/login` → `/app`, not `/admin`. How to
-  run it: `docs/DEMO_DESK.md`.
+  `siteSlug=yorkfx`. It also states a vault opening position (CAD
+  40,000, USD 20,000, EUR 10,000, GBP 5,000) once, so a float comes
+  out of the safe. A book that already has its history and has never
+  stated a vault position still gets that count. A later boot does
+  not add it again once the safe has been counted. Login
+  is `/login` → `/app`, not `/admin`. How to run it: `docs/DEMO_DESK.md`.
 
 - **PR #30** — caller-safe lead dossier (growth pipeline). Still open.
   Not merge-ready: conflicts with `main` (`docs/HANDOFF_GROWTH_PIPELINE.md`
@@ -403,10 +418,72 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-10**, Till close. A close names the mark the count was taken
+against. The screen pins that mark when the first figure is entered
+and keeps it until the day is closed or the count is cleared, so a
+refresh in the middle of the count cannot close against a newer
+drawer. If a deal or any other movement has changed the drawer since
+that mark, the close is refused with "Money moved since you counted.
+Count again." The old figures are not written back. A tab that posts
+a close with no mark is told "The desk was updated. Reload, then
+count again." A close of a drawer that has not moved still lands.
+The mark is migration `040_till_balance_generation`. `039` is on main;
+this file follows it.
+
+**2026-10-10**, Vault float. Taking cash from a vault that has no opening
+count is refused. The till is not credited, and nothing is subtracted
+from a figure the book does not have. The message is "Open the vault
+with a starting count first." Cash that arrives from a bank still posts.
+The York FX demo states a vault opening, so a float on that desk comes
+out of the safe.
+
+**2026-10-10**, Demo vault. York FX populate states a vault opening
+position once. A float of 500.00 CAD takes 500.00 out of that safe
+and puts it in the drawer. A second populate leaves the safe where
+the float left it. A desk that already has its history, and has
+never stated a vault position, still gets this count: populate does
+not return before that opening.
+
+**2026-10-10**, Cash moves. An opened Move cash form, an issue-to-till form
+(one key per currency), and a wholesale delivery form each keep one
+idempotency key until that movement finishes, including a retry and a
+second tap. Two requests that arrive together under that key replay
+the one movement. A known key whose amount, currency, direction, or
+the rest of the movement differs is refused, and nothing else moves.
+A new form is a new movement.
+
+**2026-10-10**, Cheque cashing. An opened cheque form keeps one idempotency
+key until that cashing finishes, including a retry and a second tap.
+The server also refuses a second live cheque at the same branch with
+the same number and payer, and the same bank when both sides stored
+one. A missing bank matches. A different bank is different paper. A
+cheque that has cleared, been returned, or been reversed can be cashed
+again. Migration 039. A book that already holds two live copies still
+boots: the older copy stays held and is left out of the unique index
+(`paper_guard` false). The newest copy is the row the index watches.
+
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without
 declaring it. The screen opens. Its flags refresh when the
 trading day or the pack arrives, the same way the ledger does.
+
+**2026-10-08**, phone layout. At 430px wide and under, windows fill the
+desk. The menu bar keeps its buttons. A window header puts the title
+on one line and the buttons on the next row. A card that holds a
+table scrolls sideways, and so do the folder tabs; the right edge
+fades so the cut is a scroll, not a clipped word. Rounded clips,
+photos, and bars stay clipped. Settings stacks its list above the
+form. The phone-width check opens sign-in, the Rate Board, Ledger,
+Clients, Cash Drawer, Compliance, and Settings at 390px and at 360px.
+A control cut off by overflow:hidden fails that check. Only a box
+you can scroll counts as contained. A window title that meets a
+window dot, or a module tab that meets the store or ID button, fails
+that check too. The dots stay 12px. The tab bar ends before those
+buttons. That check caught the menu clock still showing (it pushed
+the power button off the screen), the window resize handle past the
+edge, the Settings rail leaving the form a sliver, the 44px dots
+covering the title, and the store and ID buttons covering the Ledger
+tab. Those are fixed here. Tagged is not part of this change.
 
 **2026-10-07**, Philippines pack. A new desk in the Philippines opens
 on `pack-ph-v1`, in PHP. An existing desk is not moved. Money changing

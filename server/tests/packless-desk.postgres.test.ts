@@ -439,9 +439,13 @@ postgres("a desk with no country pack uses the baseline", () => {
         `CREATE TEMP TABLE tmp_chq AS SELECT * FROM ledger_cheques WHERE cheque_id=$1`,
         [chequeId],
       );
+      /* A different number. This row is an older cashing the fixture
+         invents so it can be cleared after the pack is gone. It is not
+         a second live copy of cheque 2002. */
       await client.query(
         `UPDATE tmp_chq
             SET cheque_id='chq-unstamped', cheque_ref='CHQ-UNSTAMPED',
+                cheque_number='2002-unstamped',
                 cashing_transaction_id='tx-unstamped', settlement_transaction_id=NULL`,
       );
       await client.query(`INSERT INTO ledger_cheques SELECT * FROM tmp_chq`);

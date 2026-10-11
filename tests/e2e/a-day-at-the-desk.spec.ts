@@ -320,7 +320,8 @@ test("night — the drawer is counted and the books balance", async ({ page }) =
      day. This is the arithmetic a shop owner does on paper at closing,
      and if the two disagree the desk cannot be trusted with a day's
      takings whatever else is green. */
-  const held = await book.balances();
+  const heldResponse = await api.get("/api/ledger/till-balances");
+  const held = heldResponse.balances ?? {};
   expect(
     Number(held.CAD),
     "the ledger's drawer and the day's arithmetic have parted company",
@@ -328,7 +329,8 @@ test("night — the drawer is counted and the books balance", async ({ page }) =
 
   /* Counted in every currency the drawer holds — the close refuses to run
      otherwise, because a substituted figure at this moment overwrites
-     real money. */
+     real money. The generation is the drawer those figures were counted
+     against. */
   const counts: Record<string, string> = {};
   for (const [code, amount] of Object.entries(held)) {
     counts[code] = String(amount);
@@ -339,6 +341,7 @@ test("night — the drawer is counted and the books balance", async ({ page }) =
     {
       idempotencyKey: `day-close-${Date.now()}`,
       counts,
+      balanceGeneration: heldResponse.balanceGeneration,
       note: "End of day",
     },
   );

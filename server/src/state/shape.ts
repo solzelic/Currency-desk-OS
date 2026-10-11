@@ -139,6 +139,7 @@ export const CATALOGUE: readonly KeyShape[] = [
   { key: "cdos_beneficiaries_v1", kind: "record", what: "Who money was sent to — the other half of a remittance record" },
   { key: "cdos_till_history_v2", kind: "record", what: "Till counts and closes — the reconciliation evidence", promoteTo: "desk_till_counts" },
   { key: "cdos_till_counts", kind: "record", what: "The count in progress" },
+  { key: "cdos_till_count_generation", kind: "record", what: "The drawer mark this count started against, kept until close or clear" },
   { key: "cdos_till_handoffs_v1", kind: "record", what: "Cash handed from one operator to another" },
   { key: "cdos_till_lastcount_v1", kind: "record", what: "When the till was last counted, and by whom" },
   { key: "cdos_till_counted_at", kind: "record", what: "Timestamp of the last count" },
