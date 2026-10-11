@@ -86,7 +86,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   window-title dot, no top icon menu, no logo or store row, no
   dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
   More uses the colour of the app it
-  opened. When More itself is showing, that colour is #17140F. More is a grouped
+  opened, or #17140F when More itself is showing. More is a grouped
   list — Money, Checks, Numbers, Tools, Shop setup — of the other
   apps that role can already open. Each row is that app's coloured
   icon and a one-line purpose. Texts stays off the phone list unless
