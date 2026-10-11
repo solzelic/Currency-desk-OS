@@ -246,7 +246,13 @@
     return (
       <Phone.Screen app="settings" className="phone-computer">
         <Back label="Settings" onClick={onBack} />
-        {SummaryList && rows.length ? <SummaryList rows={rows} /> : null}
+        {rows.length ? (SummaryList ? <SummaryList rows={rows} /> : (
+          <div className="phq-kv">
+            {rows.map((row) => (
+              <div key={row.label}><span>{row.label}</span><b>{row.value}</b></div>
+            ))}
+          </div>
+        )) : null}
         <Phone.EmptyState icon={monitor} title="Change this on a computer" message="Use a computer to change this." />
       </Phone.Screen>
     );

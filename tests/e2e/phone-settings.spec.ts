@@ -90,7 +90,7 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await expect(root.getByText("Use a computer to change this.")).toBeVisible();
     await expect(root.getByText("York Currency Exchange")).toBeVisible();
     await expect(root.getByText(/120 Adelaide/)).toBeVisible();
-    await expect(root.locator(".phone-summary")).toBeVisible();
+    await expect(root.locator(".phq-kv")).toBeVisible();
     await expect(page.locator(".sheet")).toHaveCount(0);
     await expect(page.locator(".settings-shell")).toBeHidden();
     await page.screenshot({ path: shot(`settings_computer-section_${width}.png`) });
@@ -106,7 +106,7 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await search.fill("billing");
     await root.getByRole("button", { name: /Billing and plan/ }).click();
     await expect(root.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
-    await expect(root.locator(".phone-summary")).toHaveCount(0);
+    await expect(root.locator(".phq-kv")).toHaveCount(0);
     await root.getByRole("button", { name: "Settings", exact: true }).click();
     await search.fill("texts");
     await expect(root.getByText(/Nothing matches “texts”/)).toBeVisible();

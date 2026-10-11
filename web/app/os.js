@@ -5677,9 +5677,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(Back, {
       label: "Settings",
       onClick: onBack
-    }), SummaryList && rows.length ? /*#__PURE__*/React.createElement(SummaryList, {
+    }), rows.length ? SummaryList ? /*#__PURE__*/React.createElement(SummaryList, {
       rows: rows
-    }) : null, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "phq-kv"
+    }, rows.map(row => /*#__PURE__*/React.createElement("div", {
+      key: row.label
+    }, /*#__PURE__*/React.createElement("span", null, row.label), /*#__PURE__*/React.createElement("b", null, row.value)))) : null, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       icon: monitor,
       title: "Change this on a computer",
       message: "Use a computer to change this."

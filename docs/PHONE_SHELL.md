@@ -574,9 +574,9 @@ is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
 `os-src/phone/settings.jsx` is the Settings screen. Shop and app
 sections open inside `Phone.Screen`. Shop details shows the name,
-address, and hours the screen already has, in `SummaryList`, then
-`EmptyState`: a monitor icon, “Change this on a computer”, and one
-sentence. Other sections are that empty state only. The desktop
+address, and hours the screen already has as read-only rows. When
+`SummaryList` is loaded, it draws those rows. Then `EmptyState`:
+a monitor icon, “Change this on a computer”, and one sentence. Other sections are that empty state only. The desktop
 form is not opened. PIN before a void is a sentence, not a switch.
 The void gate reads `settings.pinOnVoid` and `employee.requirePin`,
 and this screen does not write either.
