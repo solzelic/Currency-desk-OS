@@ -457,6 +457,15 @@ writeFileSync(path.join(OUT, "support.js"), patchRuntime(readFileSync(path.join(
    Asserted line by line: a re-export that changes any of this fails
    the build instead of quietly dropping the fix.
    --------------------------------------------------------------- */
+/* The browser fetches <img src> and follows <a href> while it is
+   still parsing, before the design runtime substitutes {{ bindings }}.
+   "{{ p.src }}" is then a request for a file that is not there. Park
+   the binding on data-cd-src / data-cd-href. The runtime patch above
+   copies it back onto src or href once the value is a real URL. */
+function deferTemplateUrls(html) {
+  return html.replace(/\b(src|href)="([^"]*\{\{[^"]*)"/g, 'data-cd-$1="$2"');
+}
+
 function patchRuntime(js) {
   const edits = [
     // remember the state we are replacing
@@ -468,6 +477,15 @@ function patchRuntime(js) {
     [
       '            this.logic.componentDidUpdate(prevProps);\n',
       '            this.logic.componentDidUpdate(prevProps, this.__prevLogicState || this.logic.state);\n',
+    ],
+    /* A template URL is parked on data-cd-src / data-cd-href so the
+       browser does not fetch "{{ p.src }}" while parsing the HTML,
+       before this runtime has substituted the binding. Promote it to
+       the real attribute only once the value is a URL. An empty value
+       and a value that still contains {{ stay parked. */
+    [
+      '        if ((k === "value" || k === "checked") && v === void 0) {\n          v = k === "checked" ? false : "";\n        }\n        props[k] = v;\n',
+      '        if ((k === "value" || k === "checked") && v === void 0) {\n          v = k === "checked" ? false : "";\n        }\n        props[k] = v;\n        if ((k === "data-cd-src" || k === "data-cd-href") && typeof v === "string" && v && v.indexOf("{{") < 0) {\n          props[k === "data-cd-src" ? "src" : "href"] = v;\n          delete props[k];\n        }\n',
     ],
   ];
   for (const [from, to] of edits) {
@@ -538,6 +556,11 @@ for (const name of present) {
     `<meta name="theme-color" content="#E7E3DA">\n` +
     `<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(FAVICON)}">\n`;
   html = html.replace("</head>", head + "</head>");
+
+  /* Do this last, after routes and asset paths are rewritten, so the
+     only src/href values left with {{ are bindings the runtime fills
+     in. The parser fetches those during HTML parse, which 404s. */
+  html = deferTemplateUrls(html);
 
   writeFileSync(path.join(OUT, page.out), html);
   built.push(`${page.out.padEnd(16)} ${page.route}`);

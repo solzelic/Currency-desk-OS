@@ -418,6 +418,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, Public front page. Served HTML no longer puts a `{{ }}`
+binding in `src` or `href`, so the browser does not request a file
+named `{{ p.src }}`. The website panel loads `/web/assets/site-web-*.jpg`.
+On the desktop page at 390px and at 360px the header "Get early access"
+button sits inside the window. The marketing sentences are unchanged.
+
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
 and keeps it until the day is closed or the count is cleared, so a
