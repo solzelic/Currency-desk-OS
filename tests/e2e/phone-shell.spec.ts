@@ -1,6 +1,6 @@
 /* Phone shell. More, the shared money formatter, and the five-tab bar. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const PHONE = { width: 390, height: 844 };
@@ -378,4 +378,88 @@ test("sign out asks first and the sticky action clears the last row", async ({ p
   await sticky.getByRole("button", { name: "Sign out" }).click();
   await expect(page.locator("#lock")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+/* The day starts open in this browser, then the server can say it
+   is shut. Open it before clicking New transaction, or the click
+   lands on a button that disables mid-press. */
+async function tillOpen(page: Page): Promise<void> {
+  const opened = await page.evaluate(async () => {
+    const probe = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
+    if (probe.status === 404) return "no-ledger";
+    const body = await probe.json().catch(() => ({}));
+    if (body.session && body.session.status === "open") return "open";
+    const res = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+    if (res.ok || res.status === 409) return "open";
+    return `${res.status} ${await res.text()}`;
+  });
+  if (opened === "no-ledger") return;
+  expect(opened, "the till did not open").toBe("open");
+  const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
+  await page.reload();
+  await landOnDesktop(page);
+  await sync;
+  await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+}
+
+test("a task sheet covers the tab bar", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await tillOpen(page);
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  const open = page.getByRole("button", { name: "New transaction", exact: true });
+  await expect(open).toBeEnabled();
+  await open.click();
+  const sheet = page.locator(".phone-task-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText("New transaction", { exact: true })).toBeVisible();
+  const close = sheet.locator(".phone-task-close");
+  const closeBox = await close.boundingBox();
+  expect(closeBox, "close").toBeTruthy();
+  expect(Math.round(closeBox!.width)).toBe(44);
+  expect(Math.round(closeBox!.height)).toBe(44);
+  const place = await page.locator(".phone-task-go").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const panel = document.querySelector(".phone-task-sheet");
+    const dock = document.getElementById("phone-dock");
+    const panelBox = panel ? panel.getBoundingClientRect() : null;
+    const dockBox = dock ? dock.getBoundingClientRect() : null;
+    return {
+      hit: !!(hit && el.contains(hit)),
+      dock: !!(hit && hit.closest("#phone-dock")),
+      sheetTop: panelBox ? panelBox.top : 99,
+      sheetBottom: panelBox ? panelBox.bottom : 0,
+      dockTop: dockBox ? dockBox.top : 0,
+      height: window.innerHeight,
+    };
+  });
+  expect(place.hit, "main button is the element at its centre").toBe(true);
+  expect(place.dock, "main button is not the bar").toBe(false);
+  expect(place.sheetTop, "sheet").toBeLessThanOrEqual(1);
+  expect(place.sheetBottom, "sheet covers the bar").toBeGreaterThanOrEqual(place.height - 2);
+  expect(place.sheetBottom, "sheet crosses the bar").toBeGreaterThan(place.dockTop + 8);
+
+  await page.locator(".cd-tx-customer input").fill("Ada");
+  await close.click();
+  const confirm = page.locator(".phone-confirm-sheet");
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toHaveAttribute("aria-label", "Discard this deal?");
+  const confirmPlace = await confirm.evaluate((el) => {
+    const card = el.getBoundingClientRect();
+    const dock = document.getElementById("phone-dock");
+    const dockBox = dock ? dock.getBoundingClientRect() : null;
+    return {
+      cardBottom: card.bottom,
+      dockTop: dockBox ? dockBox.top : 0,
+    };
+  });
+  expect(confirmPlace.cardBottom, "confirm stays above the bar").toBeLessThanOrEqual(confirmPlace.dockTop + 1);
 });

@@ -181,13 +181,13 @@
     const toBox = kind === 'issue' ? { tag: 'TO · TILL', icon: 'wallet', iconBg: CD.ink, picker: tillPick }
       : kind === 'return' ? { tag: 'TO · VAULT', icon: 'vaultsafe', iconBg: CD.brass, picker: vaultStatic }
       : { tag: 'TO · VAULT', icon: 'vaultsafe', iconBg: CD.brass, picker: vaultPickTo };
-    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9300 }} onMouseDown={onClose}>
-      <div onMouseDown={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 530, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
+    return (<Portal><div className="phone-task fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9300 }} onMouseDown={onClose}>
+      <div onMouseDown={e => e.stopPropagation()} className="phone-task-sheet w-full" style={{ maxWidth: 530, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
+        <div className="phone-task-head flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
           <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="swap" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Move cash</div><div className="text-[11px]" style={{ color: CD.mute }}>One rail · every move debits one box and credits another</div></div></div>
-          <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
+          <button onClick={onClose} aria-label="Close" className="phone-task-close p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
-        <div className="px-5 py-4">
+        <div className="phone-task-body px-5 py-4">
           {/* what kind of move */}
           <div className="grid grid-cols-3 gap-1.5 mb-3">
             {KINDS.map(([id, label, ic, sub]) => { const on = kind === id; return (
@@ -218,11 +218,11 @@
           {short && <div className="text-[11px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}>{kind === 'return' ? 'That till' : 'That vault'} only holds {num(avail)} {ccy} — it can't go negative.</div>}
           {moveErr && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mt-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{moveErr} <b>Nothing moved.</b></span></div>}
         </div>
-        <div className="flex items-center justify-between gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+        <div className="phone-task-foot flex items-center justify-between gap-2 px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <span className="text-[11px] min-w-0 truncate" style={{ color: amt > 0 && !short && !sameV ? CD.mute : CD.faint, fontFamily: 'Space Mono, monospace' }}>{amt > 0 && !short && !sameV ? `${fromLabel} → ${toLabel} · ${fmt(cadOf(amt, ccy), homeCcy())}` : 'Recorded to History with your name on it'}</span>
           <div className="flex items-center gap-2 flex-none">
             <button onClick={onClose} className="px-3.5 py-2 text-sm" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Cancel</button>
-            <button onClick={submit} disabled={!valid || posting} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: valid ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: !valid ? 'not-allowed' : posting ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {posting ? 'Recording…' : kind === 'issue' ? 'Issue float' : kind === 'return' ? 'Return to vault' : 'Run cash'}</button>
+            <button onClick={submit} disabled={!valid || posting} className="phone-task-go flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: valid ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: !valid ? 'not-allowed' : posting ? 'wait' : 'pointer' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {posting ? 'Recording…' : kind === 'issue' ? 'Issue float' : kind === 'return' ? 'Return to vault' : 'Run cash'}</button>
           </div>
         </div>
       </div>

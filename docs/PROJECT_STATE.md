@@ -117,9 +117,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   form. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
-  above the bottom bar. The New transaction sheet is the exception:
-  it fills the phone and covers the bar, and the post button stays
-  on the sheet. The Cash Drawer header stacks: the title
+  above the bottom bar. A task sheet fills the phone and covers the
+  bar, with its own footer and a 44px close. That is New transaction,
+  Record the ID, Give out a float, Cash a cheque, Send money, and a
+  FullScreenSheet. A small confirm stays a bottom sheet above the
+  bar. Discard this deal? is that sheet. Sign out asks with the
+  sticky button, also above the bar. The Cash Drawer header stacks: the title
   and the till on one line, the status under that, the amount, then
   Move cash and Vault. Its tabs scroll, with a fade where the last
   one continues. A ledger reference and a client name stay on one
@@ -535,6 +538,10 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone task sheets. Under 430px a task sheet covers the
+tab bar, with its own footer and a 44px close. A confirm stays a
+bottom sheet above the bar. The classes live on the shell.
 
 **2026-10-11**, desktop baselines. One spec captures the 1280 window
 of every desktop app and the sign-in screen, at `maxDiffPixels: 0`.

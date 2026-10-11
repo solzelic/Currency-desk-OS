@@ -198,6 +198,44 @@
     );
   }
 
+  /* A task covers the tab bar. The footer belongs to the sheet.
+     The close control is 44px. ConfirmSheet is the small
+     question that stays above the bar. */
+  function TaskSheet({ title, subtitle, onClose, actionLabel, onAction, actionDisabled, children }) {
+    return (
+      <div className="phone-task fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
+        <div role="dialog" aria-label={title} className="phone-task-sheet w-full flex flex-col" style={{ maxWidth: 520, maxHeight: 'calc(100vh - 32px)', background: 'var(--cd-paper, #fff)', borderRadius: 16, overflow: 'hidden' }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="phone-task-head flex items-center justify-between gap-2 px-4 py-2">
+            <div className="min-w-0">
+              <div className="font-semibold leading-tight" style={{ color: 'var(--color-text, #161513)' }}>{title}</div>
+              {subtitle ? <div className="text-[11px] truncate" style={{ color: 'var(--color-text-muted, #6B6760)' }}>{subtitle}</div> : null}
+            </div>
+            <button type="button" className="phone-task-close" aria-label="Close" onClick={onClose}><Ic n="x" s={18} /></button>
+          </div>
+          <div className="phone-task-body px-4 py-3">{children}</div>
+          {actionLabel ? (
+            <div className="phone-task-foot px-4 py-3">
+              <button type="button" className="phone-task-go w-full font-semibold" disabled={!!actionDisabled} onClick={onAction}>{actionLabel}</button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function ConfirmSheet({ title, message, confirmLabel, onConfirm, cancelLabel, onCancel }) {
+    return (
+      <div className="phone-confirm" style={{ background: 'var(--cd-scrim)' }} onMouseDown={onCancel}>
+        <div role="dialog" aria-label={title} className="phone-confirm-sheet" style={{ background: 'var(--cd-panel, #fff)', borderRadius: '16px 16px 0 0', padding: '20px 16px 16px' }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="phone-confirm-title">{title}</div>
+          {message ? <div className="phone-confirm-copy">{message}</div> : null}
+          <button type="button" className="phone-confirm-yes" onClick={onConfirm}>{confirmLabel}</button>
+          <button type="button" className="phone-confirm-no" onClick={onCancel}>{cancelLabel || 'Keep editing'}</button>
+        </div>
+      </div>
+    );
+  }
+
   function StickyAction({ label, onClick, disabled, disabledReason }) {
     return (
       <div className="phone-sticky">
@@ -366,6 +404,8 @@
     ListRow,
     ListSection,
     StickyAction,
+    TaskSheet,
+    ConfirmSheet,
     EmptyState,
     LoadingState,
     ErrorState,

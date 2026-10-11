@@ -22,6 +22,7 @@ the same layout on every screen, in plain words.
   New transaction button.
 - Phone rules apply only at `max-width: 430px`. Wider than that, the desk
   is the desktop desk.
+- A task sheet covers the tab bar. A confirm stays a bottom sheet above it.
 
 ## Money
 
@@ -280,6 +281,33 @@ this screen. An exception names the rule (`hit`, `size`, `contrast`,
 An exception that matches nothing fails the sweep. The shell runs this
 on More and on the phone ledger, each with the phone header and the tab bar.
 
+## Task sheets
+
+Under 430px a task is the whole phone. It covers the tab bar, keeps
+its own sticky footer, and closes with a 44px control. The class is
+`.phone-task` on the overlay and `.phone-task-sheet` on the panel.
+`.phone-task-close` is the 44px close. `.phone-task-foot` is the
+footer. `.phone-task-go` is the main button, and it has to be the
+element under its own centre.
+
+`Phone.TaskSheet` is that structure. Props: `title`, `subtitle`,
+`onClose`, `actionLabel`, `onAction`, `actionDisabled`, `children`.
+New transaction, Record the ID, Move cash (Give out a float is
+Issue float), Cash a cheque, and New transfer use the classes.
+Send money and Cash a cheque inside New transaction are that same
+sheet. A FullScreenSheet is a task sheet too. FullScreenSheet itself
+is not in this foundation. A screen that has one uses `Phone.TaskSheet`.
+
+A small confirm stays above the bar. `.phone-confirm` is the scrim,
+ending at the top of `#phone-dock`. `.phone-confirm-sheet` is the
+card. `Phone.ConfirmSheet` takes `title`, `message`, `confirmLabel`,
+`onConfirm`, `cancelLabel`, `onCancel`. Discard this deal? uses it.
+Sign out asks with the sticky button on More, which is also above
+the bar. Neither is a task sheet.
+
+Wider than 430px the classes do nothing. The desktop dialogs stay
+the dialogs they were.
+
 ## Desktop baselines
 
 `tests/e2e/desktop-unchanged.spec.ts` is the one desktop picture for the
@@ -319,6 +347,9 @@ pixels alone.
 8. Run `phoneSweep` on the screen at 360 and 390. See Phone sweep above.
 9. Do not update `tests/e2e/desktop-unchanged.spec.ts-snapshots/`.
    A failure there means the desktop changed. See Desktop baselines.
+10. A task dialog uses `Phone.TaskSheet` (or the `.phone-task` classes).
+    It covers the tab bar. A confirm uses `Phone.ConfirmSheet` and
+    stays above the bar.
 
 ## Not in this foundation
 
@@ -326,6 +357,9 @@ Screen PRs add these in their own files. Do not build them here.
 
 NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast, ChoiceTiles,
 AmountField, SummaryList, StepHeader.
+
+FullScreenSheet is one of those. When a screen builds it, the sheet
+is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,

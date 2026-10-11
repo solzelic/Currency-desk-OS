@@ -19672,7 +19672,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       picker: vaultPickTo
     };
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
-      className: "fixed inset-0 flex items-center justify-center p-4",
+      className: "phone-task fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: 9300
@@ -19680,7 +19680,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onMouseDown: onClose
     }, /*#__PURE__*/React.createElement("div", {
       onMouseDown: e => e.stopPropagation(),
-      className: "w-full",
+      className: "phone-task-sheet w-full",
       style: {
         maxWidth: 530,
         background: CD.paper,
@@ -19689,7 +19689,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         boxShadow: '0 24px 60px var(--cd-scrim)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between px-5 py-4",
+      className: "phone-task-head flex items-center justify-between px-5 py-4",
       style: {
         borderBottom: `1px solid ${CD.line}`
       }
@@ -19719,13 +19719,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "One rail \xB7 every move debits one box and credits another"))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
-      className: "p-1.5"
+      "aria-label": "Close",
+      className: "phone-task-close p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "px-5 py-4"
+      className: "phone-task-body px-5 py-4"
     }, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-1.5 mb-3"
     }, KINDS.map(([id, label, ic, sub]) => {
@@ -19867,7 +19868,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 13,
       c: CD.flag
     }), /*#__PURE__*/React.createElement("span", null, moveErr, " ", /*#__PURE__*/React.createElement("b", null, "Nothing moved.")))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between gap-2 px-5 py-3.5",
+      className: "phone-task-foot flex items-center justify-between gap-2 px-5 py-3.5",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
@@ -19891,7 +19892,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
       onClick: submit,
       disabled: !valid || posting,
-      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+      className: "phone-task-go flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: valid ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
@@ -26168,7 +26169,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     };
     const shown = phase === 'edit' ? Object.assign({}, file, draft) : file;
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-record fixed inset-0 flex items-center justify-center p-4",
+      className: "phone-task cd-tx-record fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: 9400
@@ -26178,7 +26179,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       role: "dialog",
       "aria-label": "Record the ID",
       onMouseDown: e => e.stopPropagation(),
-      className: "cd-tx-record-card w-full flex flex-col",
+      className: "phone-task-sheet cd-tx-record-card w-full flex flex-col",
       style: {
         maxWidth: 520,
         maxHeight: '92%',
@@ -26221,7 +26222,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       type: "button",
       onClick: onClose,
       "aria-label": "Back to the deal",
-      className: "grid place-items-center flex-none",
+      className: "phone-task-close grid place-items-center flex-none",
       style: {
         width: 44,
         height: 44,
@@ -26232,7 +26233,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "x",
       s: 18
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto px-5 py-4"
+      className: "phone-task-body flex-1 overflow-auto px-5 py-4"
     }, phase === 'loading' && /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] py-6 text-center",
       style: {
@@ -26258,7 +26259,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.flag
       }
     }, err)), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-5 py-3.5 flex-none",
+      className: "phone-task-foot flex items-center gap-2 px-5 py-3.5 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: CD.panel
@@ -26279,7 +26280,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       type: "button",
       onClick: save,
       disabled: !ready || leaving || phase !== 'edit',
-      className: "px-4 py-2.5 text-sm font-semibold",
+      className: "phone-task-go px-4 py-2.5 text-sm font-semibold",
       style: {
         background: ready && !leaving && phase === 'edit' ? CD.ink : CD.lineSoft,
         color: ready && !leaving && phase === 'edit' ? 'var(--cd-on-ink)' : CD.faint,
@@ -34944,7 +34945,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
+      className: "phone-task cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: addFlow || quickChk || recordId ? 8000 : 9200
@@ -34953,7 +34954,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       ref: sheetRef,
       onMouseDown: e => e.stopPropagation(),
-      className: "cd-tx w-full flex flex-col",
+      className: "phone-task-sheet cd-tx w-full flex flex-col",
       style: {
         maxWidth: 940,
         maxHeight: 'calc(100vh - 32px)',
@@ -34997,7 +34998,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       type: "button",
       onClick: requestClose,
       "aria-label": "Close",
-      className: "cd-tx-x p-1.5",
+      className: "phone-task-close cd-tx-x p-1.5",
       style: {
         borderRadius: 8
       }
@@ -36115,7 +36116,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
     }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-actions flex-none p-3 space-y-2",
+      className: "phone-task-foot cd-tx-actions flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
@@ -36162,7 +36163,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, serverError), /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
       disabled: !canSave || serverBusy,
-      className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      className: "phone-task-go cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
         background: !canSave || serverBusy ? CD.line : CD.ink,
@@ -36179,7 +36180,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       label: allGreen ? 'Record transaction' : `${remaining} to complete`,
       doneLabel: "Recorded",
       title: "Post this transaction to the ledger",
-      className: "cd-tx-go w-full justify-center",
+      className: "phone-task-go cd-tx-go w-full justify-center",
       style: {
         padding: '0.65rem 1rem',
         fontSize: 14
@@ -36191,7 +36192,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute
       }
     }, "Cancel"))))), discardAsk && /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-discard",
+      className: "phone-confirm cd-tx-discard",
       onMouseDown: e => {
         e.stopPropagation();
         setDiscardAsk(false);
@@ -36200,7 +36201,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       role: "dialog",
       "aria-label": "Discard this deal?",
       onMouseDown: e => e.stopPropagation(),
-      className: "cd-tx-discard-sheet"
+      className: "phone-confirm-sheet cd-tx-discard-sheet"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[15px] font-semibold",
       style: {
@@ -37561,7 +37562,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       log && log('Beneficiary saved', `${b.name} · ${b.partner}`);
     };
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
-      className: "fixed inset-0 flex items-center justify-center p-4",
+      className: "phone-task fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: 9200
@@ -37569,7 +37570,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onMouseDown: onClose
     }, /*#__PURE__*/React.createElement("div", {
       onMouseDown: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "phone-task-sheet w-full flex flex-col",
       style: {
         maxWidth: 560,
         maxHeight: 'calc(100vh - 32px)',
@@ -37579,7 +37580,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         boxShadow: '0 24px 60px var(--cd-scrim)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between px-5 py-4",
+      className: "phone-task-head flex-none flex items-center justify-between px-5 py-4",
       style: {
         borderBottom: `1px solid ${CD.line}`
       }
@@ -37609,13 +37610,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, "Teller ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
-      className: "p-1.5"
+      "aria-label": "Close",
+      className: "phone-task-close p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto px-5 py-4 space-y-4"
+      className: "phone-task-body flex-1 overflow-auto px-5 py-4 space-y-4"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex gap-1.5"
     }, [['send', 'Send out', 'arrowup'], ['receive', 'Receive in', 'arrowdown']].map(([d, l, ic]) => /*#__PURE__*/React.createElement("button", {
@@ -37969,7 +37971,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: inputCls,
       style: inputSty
     })))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
+      className: "phone-task-foot flex-none flex items-center justify-between gap-3 px-5 py-4",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
@@ -37987,7 +37989,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, ben ? ben.name : direction === 'receive' ? senderName : 'beneficiary')) : 'Enter an amount to begin'), /*#__PURE__*/React.createElement("button", {
       onClick: create,
       disabled: !canSave || busy,
-      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+      className: "phone-task-go flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
@@ -40394,7 +40396,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }
     };
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
-      className: "fixed inset-0 flex items-center justify-center p-4",
+      className: "phone-task fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
         zIndex: 9200
@@ -40402,7 +40404,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       onMouseDown: onClose
     }, /*#__PURE__*/React.createElement("div", {
       onMouseDown: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "phone-task-sheet w-full flex flex-col",
       style: {
         maxWidth: 560,
         maxHeight: 'calc(100vh - 32px)',
@@ -40412,7 +40414,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         boxShadow: '0 24px 60px var(--cd-scrim)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between px-5 py-4",
+      className: "phone-task-head flex-none flex items-center justify-between px-5 py-4",
       style: {
         borderBottom: `1px solid ${CD.line}`
       }
@@ -40442,13 +40444,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }
     }, "Teller ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
-      className: "p-1.5"
+      "aria-label": "Close",
+      className: "phone-task-close p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto px-5 py-4 space-y-4"
+      className: "phone-task-body flex-1 overflow-auto px-5 py-4 space-y-4"
     }, /*#__PURE__*/React.createElement(Field, {
       label: "Customer (presenting the cheque)"
     }, /*#__PURE__*/React.createElement("input", {
@@ -40701,7 +40704,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       },
       role: "alert"
     }, err), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
+      className: "phone-task-foot flex-none flex items-center justify-between gap-3 px-5 py-4",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
@@ -40723,7 +40726,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }, fmt(fee, homeCcy()))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
       onClick: save,
       disabled: !canSave || busy,
-      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+      className: "phone-task-go flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
@@ -62142,6 +62145,109 @@ window.CDOS_PERSIST = (function () {
       className: "phone-list"
     }, children));
   }
+
+  /* A task covers the tab bar. The footer belongs to the sheet.
+     The close control is 44px. ConfirmSheet is the small
+     question that stays above the bar. */
+  function TaskSheet({
+    title,
+    subtitle,
+    onClose,
+    actionLabel,
+    onAction,
+    actionDisabled,
+    children
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-task fixed inset-0 flex items-center justify-center p-4",
+      style: {
+        background: 'var(--cd-scrim)',
+        zIndex: 9200
+      },
+      onMouseDown: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": title,
+      className: "phone-task-sheet w-full flex flex-col",
+      style: {
+        maxWidth: 520,
+        maxHeight: 'calc(100vh - 32px)',
+        background: 'var(--cd-paper, #fff)',
+        borderRadius: 16,
+        overflow: 'hidden'
+      },
+      onMouseDown: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-head flex items-center justify-between gap-2 px-4 py-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "font-semibold leading-tight",
+      style: {
+        color: 'var(--color-text, #161513)'
+      }
+    }, title), subtitle ? /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] truncate",
+      style: {
+        color: 'var(--color-text-muted, #6B6760)'
+      }
+    }, subtitle) : null), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-task-close",
+      "aria-label": "Close",
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 18
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-body px-4 py-3"
+    }, children), actionLabel ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-foot px-4 py-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-task-go w-full font-semibold",
+      disabled: !!actionDisabled,
+      onClick: onAction
+    }, actionLabel)) : null));
+  }
+  function ConfirmSheet({
+    title,
+    message,
+    confirmLabel,
+    onConfirm,
+    cancelLabel,
+    onCancel
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-confirm",
+      style: {
+        background: 'var(--cd-scrim)'
+      },
+      onMouseDown: onCancel
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": title,
+      className: "phone-confirm-sheet",
+      style: {
+        background: 'var(--cd-panel, #fff)',
+        borderRadius: '16px 16px 0 0',
+        padding: '20px 16px 16px'
+      },
+      onMouseDown: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-confirm-title"
+    }, title), message ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-confirm-copy"
+    }, message) : null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-confirm-yes",
+      onClick: onConfirm
+    }, confirmLabel), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-confirm-no",
+      onClick: onCancel
+    }, cancelLabel || 'Keep editing')));
+  }
   function StickyAction({
     label,
     onClick,
@@ -62493,6 +62599,8 @@ window.CDOS_PERSIST = (function () {
     ListRow,
     ListSection,
     StickyAction,
+    TaskSheet,
+    ConfirmSheet,
     EmptyState,
     LoadingState,
     ErrorState,

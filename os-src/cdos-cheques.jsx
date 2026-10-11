@@ -271,13 +271,13 @@
       }
     };
 
-    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
-      <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
-        <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
+    return (<Portal><div className="phone-task fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
+      <div onMouseDown={e => e.stopPropagation()} className="phone-task-sheet w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
+        <div className="phone-task-head flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
           <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {TODAY}</div></div></div>
-          <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
+          <button onClick={onClose} aria-label="Close" className="phone-task-close p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
-        <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+        <div className="phone-task-body flex-1 overflow-auto px-5 py-4 space-y-4">
           {/* customer */}
           <Field label="Customer (presenting the cheque)">
             <input value={customer} onChange={e => setCustomer(e.target.value)} list="chq-clients" placeholder="Type a name…" className={inputCls} style={inputSty} />
@@ -341,9 +341,9 @@
             reason — the drawer is short, the till is closed, the customer
             needs identifying, the cheque is in the wrong currency. */}
         {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
-        <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+        <div className="phone-task-foot flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
           <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
-          <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+          <button onClick={save} disabled={!canSave || busy} className="phone-task-go flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
         </div>
       </div>
     </div></Portal>);

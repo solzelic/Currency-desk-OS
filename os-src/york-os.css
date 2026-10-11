@@ -2582,9 +2582,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 @media (max-width: 599px) {
   .cd-tx, .cd-tx * { box-sizing: border-box; }
   /* The 430px rule lifts every other dialog above the bottom bar.
-     This sheet fills the phone and covers the bar. The post button
-     is in the sheet, so it is not under the bar. The overlay is
-     already above the bar (z-index 9200; the bar is 520). */
+     .phone-task is the shell class that covers the bar. This sheet
+     uses it. The post button is in the sheet, so it is not under
+     the bar. The overlay is already above the bar (z-index 9200;
+     the bar is 520). */
   .cd-tx-overlay.fixed.inset-0,
   .cd-tx-record.fixed.inset-0 {
     bottom: 0 !important;

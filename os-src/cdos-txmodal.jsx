@@ -1008,12 +1008,12 @@
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
-      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk || recordId) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk || recordId) ? undefined : requestClose}>
-        <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div className="phone-task cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk || recordId) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk || recordId) ? undefined : requestClose}>
+        <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="phone-task-sheet cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {TODAY}</div></div></div>
-            <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
+            <button type="button" onClick={requestClose} aria-label="Close" className="phone-task-close cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
           {/* type selector. cd-tx-scroll is display:contents on a desk,
@@ -1318,7 +1318,7 @@
               </div>
 
               {/* rail footer actions */}
-              <div className="cd-tx-actions flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+              <div className="phone-task-foot cd-tx-actions flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
                 {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
                 {/* A refusal from the ledger, wherever it came from. The
                     exchange path has its own copy inside the branch
@@ -1332,18 +1332,18 @@
                     Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
-                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
+                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="phone-task-go cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
                     <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                   </button>
-                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
+                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="phone-task-go cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
                 <button onClick={onClose} className="cd-tx-cancel w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>
           </div>
           </div>
           {discardAsk && (
-            <div className="cd-tx-discard" onMouseDown={e => { e.stopPropagation(); setDiscardAsk(false); }}>
-              <div role="dialog" aria-label="Discard this deal?" onMouseDown={e => e.stopPropagation()} className="cd-tx-discard-sheet">
+            <div className="phone-confirm cd-tx-discard" onMouseDown={e => { e.stopPropagation(); setDiscardAsk(false); }}>
+              <div role="dialog" aria-label="Discard this deal?" onMouseDown={e => e.stopPropagation()} className="phone-confirm-sheet cd-tx-discard-sheet">
                 <div className="text-[15px] font-semibold" style={{ color: CD.ink }}>Discard this deal?</div>
                 <div className="text-[12.5px] mt-1" style={{ color: CD.mute }}>What you entered on this ticket will be lost.</div>
                 <div className="flex flex-col gap-2 mt-4">
