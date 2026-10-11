@@ -99,6 +99,9 @@ The shop name is `.phone-shop`. The till line is a sibling, `.phone-till`.
 
 `title` string. `subtitle` optional string. `action` optional node.
 
+The title block is padded 16px on each side. The heading itself starts
+at least 16px in from the screen edge.
+
 ### SummaryCards
 
 `cards` array of `{ id?, label, value, caption?, onClick? }`. `columns` is
@@ -116,8 +119,10 @@ for the input's accessible name. One row, 48px. The clear button calls
 `chips` array of `{ id, label, count? }`. `value` is the selected id.
 `onChange(id)`. One scrolling line, snap, no scrollbar. The chip face is
 36px inside a 44px hit. Selected is `--gray-900` with white text, in
-every app. Legacy selected chips use the same fill. The row fades at
-the right edge.
+every app. Legacy selected chips use the same fill. The first chip
+starts 16px in from the screen edge. The row keeps 16px after the
+last chip. The right edge fades. Scroll-snap does not pull the first
+chip back to the edge.
 
 ### ListRow
 
@@ -164,7 +169,9 @@ the button will not go.
 `action` optional, forwarded to Title. `top` optional node. `banner` optional
 node, pinned above the scroll. `tabs` optional node. `sticky` optional node.
 `children`. `className` optional.
-`data-phone-shell` is always set. Scroll padding keeps the last row above
+`data-phone-shell` is always set. The screen paints `--color-surface`
+with no background image, so the desktop window's radial does not
+show through the title. Scroll padding keeps the last row above
 the sticky action and the tab bar.
 
 ### TabIcon

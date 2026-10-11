@@ -10,9 +10,17 @@
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
-    background: transparent;
+    /* The desktop window is glass, so its radial shows through a
+       transparent shell, including behind the title. A phone screen
+       is the flat surface token. */
+    background-color: var(--color-surface, #fff);
+    background-image: none;
     color: var(--color-text, #161513);
     font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+  }
+  html[data-cdtheme="dark"] .phone-shell {
+    background-color: rgb(30, 29, 26);
+    background-image: none;
   }
   #phone-more > .phone-shell { flex: 1; min-height: 0; }
 
@@ -31,6 +39,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
+    box-sizing: border-box;
     padding: 4px 16px 12px;
   }
   .phone-title h1 {
@@ -86,18 +95,34 @@
     cursor: pointer;
   }
 
+  /* The row bleeds to the screen edge so the fade sits on the edge.
+     Padding is not a snap target, so scroll-snap used to park the
+     first chip at x=0. The spacers are real flex items and do not
+     snap: 16px before the first chip, 16px after the last. */
   .phone-chips {
     display: flex;
     gap: 8px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+    scroll-padding-left: 16px;
+    scroll-padding-right: 16px;
     scrollbar-width: none;
     margin: 4px -16px 8px;
-    padding: 0 28px 0 16px;
+    padding: 0;
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
     mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
   }
   .phone-chips::-webkit-scrollbar { display: none; }
+  .phone-chips::before,
+  .phone-chips::after {
+    content: "";
+    flex: 0 0 16px;
+    width: 16px;
+    height: 1px;
+    scroll-snap-align: none;
+  }
+  .phone-chips::before { margin-right: -8px; }
+  .phone-chips::after { margin-left: -8px; }
   .phone-chip {
     flex: none;
     scroll-snap-align: start;

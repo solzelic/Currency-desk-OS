@@ -96,7 +96,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and show the currency code (`docs/PHONE_SHELL.md`). Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
-  text. Under 430px the ledger is the phone shell: title, summary cards,
+  text. The phone screen paints the flat surface token. The big title
+  and the first filter chip sit 16px in from the screen edge, and the
+  chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
   desktop ledger is unchanged. The bar is five
   tabs and has no centre plus. There is no
@@ -532,6 +534,11 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone screen inset. The shared screen paints
+`--color-surface`. The title and the first filter chip start 16px
+in, and the chip row keeps 16px after the last chip with a fade on
+the right.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

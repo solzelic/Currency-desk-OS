@@ -193,6 +193,39 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   })).toEqual({ bg: "rgb(10, 10, 10)", media: false, width: 1280 });
 });
 
+test("the title and the first chip sit in from the edge", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  await expect(page.locator(".phone-ledger .phone-title h1")).toBeVisible();
+  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    const box = await page.evaluate(() => {
+      const title = document.querySelector(".phone-ledger .phone-title h1");
+      const chip = document.querySelector(".phone-ledger .phone-chip");
+      const shell = document.querySelector(".phone-ledger [data-phone-shell]");
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--color-surface)";
+      document.body.appendChild(probe);
+      const surface = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const paint = shell ? getComputedStyle(shell) : null;
+      return {
+        title: title ? title.getBoundingClientRect().left : -1,
+        chip: chip ? chip.getBoundingClientRect().left : -1,
+        bg: paint ? paint.backgroundColor : "",
+        image: paint ? paint.backgroundImage : "",
+        surface,
+      };
+    });
+    expect(box.title, `${size.width} title`).toBeGreaterThanOrEqual(16);
+    expect(box.chip, `${size.width} chip`).toBeGreaterThanOrEqual(16);
+    expect(box.image, `${size.width} flat`).toBe("none");
+    expect(box.bg, `${size.width} surface`).toBe(box.surface);
+  }
+});
+
 test("Ledger passes the phone sweep", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");
