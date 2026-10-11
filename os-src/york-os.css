@@ -3205,6 +3205,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 16px;
     font-weight: 600;
   }
+  .phone-crow input::placeholder,
+  .phone-field input::placeholder {
+    color: #6B6760;
+    opacity: 1;
+  }
   .phone-crow { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 12px; margin-bottom: 8px; }
   .phone-crow b { font-size: 16px; }
   .phone-crow input { margin-top: 0; text-align: right; font-variant-numeric: tabular-nums; }

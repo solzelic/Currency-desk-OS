@@ -276,6 +276,11 @@ test.describe("vault on a phone", () => {
       expect(after - before).toBeCloseTo(1, 2);
       await expect(page.getByText("Open the vault with a starting count first.")).toHaveCount(0);
     }
+    /* A double tap can land the second click on Give out a float after
+       the sheet has closed, which opens a fresh sheet. Close it so the
+       sweep is the vault, not that leftover step. */
+    const leftover = page.getByRole("dialog", { name: "Give out a float" });
+    if (await leftover.isVisible()) await leftover.getByRole("button", { name: "Cancel" }).click();
     await phoneSweep(page, { roots: ['.longtail[data-app="vault"]'] });
   });
 
