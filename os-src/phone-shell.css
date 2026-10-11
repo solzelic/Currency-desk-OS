@@ -31,7 +31,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding: 4px 0 12px;
+    padding: 4px 16px 12px;
   }
   .phone-title h1 {
     margin: 0;
@@ -206,6 +206,16 @@
     line-height: 20px;
     color: var(--gray-900, #161513);
   }
+  .phone-row.has-note { min-height: 76px; align-items: flex-start; }
+  .phone-row-note {
+    font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--color-text-muted, #6B6760);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .phone-row-sub,
   .phone-row-meta {
     min-width: 0;
@@ -341,16 +351,87 @@
     opacity: 1;
   }
 
-  /* Legacy fills that use the desk ink. On a phone they take the app
-     accent from data-app. FilterChips never use --cd-ink; a selected
-     one stays --gray-900. This query does not apply on the desktop,
-     so the same inline ink stays near-black there.
-     The semicolon keeps --cd-ink-soft from matching. */
-  .win[data-app] button[style*="background: var(--cd-ink);"],
-  .win[data-app] button[style*="background:var(--cd-ink);"],
-  .win[data-app] button[style*="background-color: var(--cd-ink);"],
-  .win[data-app] button[style*="background-color:var(--cd-ink);"] {
+  /* Primary buttons whose fill is the desk ink. On a phone they take
+     the app accent. Selected filter chips do not: they stay gray-900.
+     The semicolon keeps --cd-ink-soft from matching. Desktop width
+     never enters this query, so the same ink stays near-black there. */
+  .win[data-app] button.font-semibold.text-white[style*="background: var(--cd-ink);"]:not([data-filter-chip]),
+  .win[data-app] button.font-semibold.text-white[style*="background:var(--cd-ink);"]:not([data-filter-chip]),
+  .win[data-app] button.font-semibold.text-white[style*="background-color: var(--cd-ink);"]:not([data-filter-chip]),
+  .win[data-app] button.font-semibold.text-white[style*="background-color:var(--cd-ink);"]:not([data-filter-chip]) {
     background-color: var(--brand-primary) !important;
     border-color: var(--brand-primary) !important;
+  }
+  .win[data-app] [data-filter-chip].is-on {
+    background-color: var(--gray-900, #161513) !important;
+    border-color: var(--gray-900, #161513) !important;
+    color: #fff !important;
+  }
+
+  .phone-secondary {
+    flex: none;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: var(--radius-md, 10px);
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+    color: var(--gray-900, #161513);
+    font: var(--text-label);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .phone-seg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: 44px;
+    margin: 0 0 16px;
+    padding: 0;
+    background: var(--gray-100, #EFEDE8);
+    border-radius: var(--radius-md, 10px);
+  }
+  .phone-seg-btn {
+    height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--gray-700, #3D3A35);
+    background: transparent;
+    cursor: pointer;
+  }
+  .phone-seg-btn.on {
+    background: #fff;
+    color: var(--brand-primary, #161513);
+    box-shadow: var(--shadow-sm);
+  }
+  .phone-type {
+    height: 44px;
+    width: 100%;
+    margin: 0 0 8px;
+    padding: 0 12px;
+    border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: var(--radius-pill, 999px);
+    background: #fff;
+    color: var(--gray-900, #161513);
+    font-size: 14px;
+  }
+  .phone-ledger { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .phone-ledger > .phone-shell { flex: 1 1 auto; min-height: 0; }
+  .phone-day-note {
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-md, 10px);
+    background: var(--gray-900, #161513);
+    color: #fff;
+    font-size: 13px;
+    line-height: 18px;
   }
 }

@@ -25775,7 +25775,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, FILTERS.map(([id, label, n]) => /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setFilter(id),
-      className: "text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5",
+      "data-filter-chip": "",
+      className: "text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" + (filter === id ? " is-on" : ""),
       style: {
         borderRadius: 999,
         background: filter === id ? CD.ink : 'transparent',
@@ -27046,7 +27047,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick,
-      className: "flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium",
+      "data-filter-chip": "",
+      className: "flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" + (on ? " is-on" : ""),
       style: {
         background: on ? bg || CD.ink : 'transparent',
         color: on ? c || 'var(--cd-on-ink)' : CD.mute,
@@ -27054,6 +27056,38 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderRadius: 8
       }
     }, children);
+  }
+  function usePhoneLayout() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+  function phoneClock(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/\b(am|pm)\b/i.test(text)) return text;
+    const m = text.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    let h = Number(m[1]);
+    if (h > 23) return '';
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + m[2] + ' ' + ap;
+  }
+  function phoneDay(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return 'Records';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const label = months[Number(m[2]) - 1] + ' ' + Number(m[3]);
+    if (iso === businessDate()) return 'Today, ' + label;
+    return label + ', ' + m[1];
   }
   function FlagTag({
     kind,
@@ -31021,6 +31055,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
        the flags below re-derive against the real threshold rather than
        against the "—" this screen paints for its first half second. */
     const deskFacts = useDeskFacts();
+    const phoneLayout = usePhoneLayout();
     const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
     const [q, setQ] = useState('');
     const [tf, setTf] = useState('All');
@@ -31422,6 +31457,240 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       log(x.tagged ? 'Tag removed' : 'Transaction tagged', `${x.ref} · follow-up`);
     };
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
+    const Phone = window.CDOS.Phone;
+    if (phoneLayout && Phone) {
+      const home = homeCcy();
+      const money = (amount, code) => amount === '' || amount == null || !code || !window.CDOS.formatPhoneMoney ? '' : window.CDOS.formatPhoneMoney(amount, code);
+      const groups = [];
+      const byDay = {};
+      filtered.forEach(row => {
+        const key = row.date || '';
+        if (!byDay[key]) {
+          byDay[key] = {
+            key,
+            rows: []
+          };
+          groups.push(byDay[key]);
+        }
+        byDay[key].rows.push(row);
+      });
+      const volumeText = !stats.n || stats.vol == null || !home ? '—' : money(stats.vol, home) || '—';
+      const feesText = !stats.n || stats.fees == null || !home ? '—' : money(stats.fees, home) || '—';
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-ledger"
+      }, /*#__PURE__*/React.createElement(Phone.Screen, {
+        app: "ledger",
+        title: "Ledger",
+        action: can('canExport') ? /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "phone-secondary",
+          onClick: genReport
+        }, "Generate report") : null,
+        sticky: section === 'records' ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+          label: "New transaction",
+          onClick: openNew,
+          disabled: !!dayClosed,
+          disabledReason: dayClosed ? 'The trading day is closed. Reopen the till to post.' : ''
+        }) : null
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-seg",
+        role: "tablist"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: 'phone-seg-btn' + (section === 'records' ? ' on' : ''),
+        onClick: () => setSection('records')
+      }, "Records"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": "Compliance",
+        className: 'phone-seg-btn' + (section === 'compliance' ? ' on' : ''),
+        onClick: () => setSection('compliance')
+      }, "Compliance", compCount > 0 ? /*#__PURE__*/React.createElement("span", {
+        "aria-hidden": "true"
+      }, ' ' + compCount) : null)), section === 'compliance' ? /*#__PURE__*/React.createElement(LedgerCompliance, {
+        rows: rows,
+        flags: flags,
+        settings: settings,
+        clients: clients,
+        me: me,
+        setRows: setRows,
+        log: log,
+        onOpenDetail: setDetailId,
+        onOpenRecordsWindow: openLedgerForRefs,
+        onOpenClient: (n, ref) => {
+          openClientProfile ? openClientProfile(n, ref) : openLedgerForClient && openLedgerForClient(n);
+        },
+        onOpenFocus: (refs, label) => {
+          setSection('records');
+          setFocusRefs(refs);
+          setFocusLabel(label || '');
+        },
+        onOpenCompliance: onOpenCompliance,
+        onOpenAccount: openLedgerForClient,
+        onFileLCTR: onFileLCTR
+      }) : /*#__PURE__*/React.createElement(React.Fragment, null, dayClosed ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-day-note"
+      }, "The trading day is closed. The book is read-only.") : null, /*#__PURE__*/React.createElement(Phone.SummaryCards, {
+        columns: 2,
+        cards: [{
+          id: 'records',
+          label: 'Records',
+          value: String(stats.n),
+          caption: rangeLabel
+        }, {
+          id: 'volume',
+          label: 'Pay-in volume',
+          value: volumeText,
+          caption: !stats.n ? 'Nothing posted' : stats.unvalued ? stats.unvalued + ' not in this total' : 'View breakdown',
+          onClick: stats.n ? () => setBreakdown('volume') : undefined
+        }, {
+          id: 'fees',
+          label: 'Fees collected',
+          value: feesText,
+          caption: stats.n ? 'View earnings' : 'Nothing posted',
+          onClick: stats.n ? () => setBreakdown('fees') : undefined
+        }, {
+          id: 'rpt',
+          label: 'Reportable',
+          value: stats.openRpt > 0 ? String(stats.openRpt) : stats.rpt > 0 ? 'Filed' : '0',
+          caption: stats.rpt > 0 ? stats.openRpt > 0 ? 'Open' : 'All filed' : 'Nothing to file',
+          onClick: () => setViewToggle('RPT')
+        }]
+      }), /*#__PURE__*/React.createElement(Phone.Search, {
+        value: q,
+        onChange: value => {
+          setQ(value);
+          if (value) setFocusRefs(null);
+        },
+        placeholder: "Search name, ref or amount",
+        label: "Search name, ref or amount"
+      }), /*#__PURE__*/React.createElement("select", {
+        className: "phone-type",
+        "aria-label": "All types",
+        value: tf,
+        onChange: e => setTf(e.target.value)
+      }, /*#__PURE__*/React.createElement("option", {
+        value: "All"
+      }, "All types"), TYPES.map(t => /*#__PURE__*/React.createElement("option", {
+        key: t,
+        value: t
+      }, t))), /*#__PURE__*/React.createElement(Phone.FilterChips, {
+        value: view,
+        onChange: id => {
+          setFocusRefs(null);
+          setView(id);
+        },
+        chips: [{
+          id: 'open',
+          label: 'All posted'
+        }, {
+          id: 'RPT',
+          label: 'Reportable',
+          count: stats.openRpt > 0 ? stats.openRpt : undefined
+        }, {
+          id: 'STR',
+          label: 'Structuring',
+          count: stats.str > 0 ? stats.str : undefined
+        }, {
+          id: 'ID',
+          label: 'ID issues'
+        }, {
+          id: 'tagged',
+          label: 'Tagged',
+          count: stats.tagged > 0 ? stats.tagged : undefined
+        }, {
+          id: 'void',
+          label: 'Voided'
+        }]
+      }), client ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-secondary",
+        onClick: () => setClient(null)
+      }, 'Viewing ' + client + '. Show everyone') : null, focusRefs && focusRefs.length > 0 ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-secondary",
+        onClick: () => setFocusRefs(null)
+      }, focusRefs.length + ' matching records. Clear') : null, groups.length === 0 ? /*#__PURE__*/React.createElement(Phone.EmptyState, {
+        title: "No records",
+        message: q ? 'Nothing matches that search.' : 'Nothing posted in this range.'
+      }) : groups.map(g => {
+        const posted = g.rows.filter(r => r.status !== 'void');
+        const feeSum = posted.reduce((s, r) => s + (+r.fee || 0), 0);
+        const feeBit = home && posted.length ? money(feeSum, home) : '';
+        return /*#__PURE__*/React.createElement(Phone.ListSection, {
+          key: g.key || 'day',
+          title: phoneDay(g.key),
+          meta: g.rows.length + (g.rows.length === 1 ? ' record' : ' records') + (feeBit ? ' · ' + feeBit + ' fees' : '')
+        }, g.rows.map(row => {
+          const paid = money(row.inAmt, row.inCcy);
+          const out = row.outAmt === '' || row.outAmt == null ? '' : money(row.outAmt, row.outCcy);
+          const fee = home ? money(row.fee, home) : '';
+          const when = phoneClock(row.time);
+          const tone = row.status === 'void' ? 'neg' : /sell/i.test(row.type || '') ? 'sell' : /buy/i.test(row.type || '') ? 'buy' : 'neutral';
+          return /*#__PURE__*/React.createElement(Phone.ListRow, {
+            key: row.id,
+            title: row.customer || 'Walk-in',
+            subtitle: [paid ? 'Paid ' + paid : '', when].filter(Boolean).join(' · '),
+            note: row.ref || '',
+            amount: out,
+            meta: fee ? 'Fee ' + fee : '',
+            badge: row.status === 'void' ? {
+              label: 'Void',
+              tone: 'neg'
+            } : row.type ? {
+              label: row.type,
+              tone
+            } : null,
+            onClick: () => setDetailId(row.id)
+          });
+        }));
+      }))), modal && /*#__PURE__*/React.createElement(Portal, null, React.createElement(window.CDOS && window.CDOS.TxModal || TxModal, {
+        rows,
+        clients,
+        setClients,
+        setRows,
+        settings,
+        me,
+        log,
+        prefillClient: client,
+        rateVersion,
+        cheques,
+        setCheques,
+        chequeSchedule,
+        onOpenCheques,
+        serverBacked,
+        onServerPosted: refreshServerLedger,
+        onClose: () => setModal(false),
+        onDone: id => {
+          setModal(false);
+          setView('open');
+          setDetailId(id);
+        }
+      })), detail && /*#__PURE__*/React.createElement(TxDetail, {
+        key: detail.id,
+        row: detail,
+        flag: flags[detail.id] || {},
+        settings,
+        me,
+        can,
+        log,
+        setRows,
+        clients,
+        serverBacked,
+        onServerReversed: refreshServerLedger,
+        onClose: () => setDetailId(null),
+        onReceipt: openReceipt,
+        onFileLCTR: onFileLCTR,
+        onOpenClient: (n, ref) => {
+          setDetailId(null);
+          openClientProfile ? openClientProfile(n, ref) : openLedgerForClient && openLedgerForClient(n);
+        }
+      }), breakdown && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(BreakdownModal, {
+        rows: rows.filter(r => inRange(r.date)),
+        client: client,
+        focus: breakdown,
+        onClose: () => setBreakdown(null)
+      })));
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -38257,7 +38526,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, FILTERS.map(([id, label, n]) => /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setFilter(id),
-      className: "flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium",
+      "data-filter-chip": "",
+      className: "flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" + (filter === id ? " is-on" : ""),
       style: {
         borderRadius: 8,
         border: `1px solid ${filter === id ? 'transparent' : CD.line}`,
@@ -61784,6 +62054,7 @@ window.CDOS_PERSIST = (function () {
   function ListRow({
     title,
     subtitle,
+    note,
     amount,
     meta,
     leading,
@@ -61796,7 +62067,7 @@ window.CDOS_PERSIST = (function () {
     disabled
   }) {
     const Tag = onClick ? 'button' : 'div';
-    const cls = ['phone-row', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
+    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
     const tone = badge && badge.tone ? badge.tone : 'neutral';
     return /*#__PURE__*/React.createElement(Tag, {
       type: onClick ? 'button' : undefined,
@@ -61810,7 +62081,9 @@ window.CDOS_PERSIST = (function () {
       className: appId ? 'phone-more-name' : 'phone-row-title'
     }, title), subtitle ? /*#__PURE__*/React.createElement("span", {
       className: "phone-row-sub"
-    }, subtitle) : null), amount || meta || badge ? /*#__PURE__*/React.createElement("span", {
+    }, subtitle) : null, note ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-row-note"
+    }, note) : null), amount || meta || badge ? /*#__PURE__*/React.createElement("span", {
       className: "phone-row-end"
     }, badge && badge.label ? /*#__PURE__*/React.createElement("span", {
       className: 'phone-badge tone-' + tone

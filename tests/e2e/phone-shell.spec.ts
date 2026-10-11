@@ -117,6 +117,7 @@ const ACCENT: Record<string, string> = {
   clients: "rgb(60, 59, 120)",
   transfers: "rgb(31, 114, 105)",
 };
+const CHIP = "rgb(22, 21, 19)";
 
 async function accentOf(page: Page, app: string, label: string): Promise<{ appAttr: string | null; button: string; brand: string; chip: string | null }> {
   return page.evaluate(({ app, label }) => {
@@ -138,7 +139,13 @@ async function accentOf(page: Page, app: string, label: string): Promise<{ appAt
       ? buttons.map((el) => getComputedStyle(el).backgroundColor).join("|")
       : "missing button";
     const chipEl = [...win.querySelectorAll("button")].find((el) => visible(el) && /^All\b/.test((el.innerText || "").trim()));
-    const chip = chipEl ? getComputedStyle(chipEl).backgroundColor : null;
+    let chip = null;
+    if (chipEl) {
+      const buttonBg = getComputedStyle(chipEl).backgroundColor;
+      const face = chipEl.querySelector(":scope > span");
+      const faceBg = face ? getComputedStyle(face).backgroundColor : buttonBg;
+      chip = buttonBg === "rgba(0, 0, 0, 0)" || buttonBg === "transparent" ? faceBg : buttonBg;
+    }
     return { appAttr: win.getAttribute("data-app"), button, brand, chip };
   }, { app, label });
 }
@@ -153,6 +160,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   expect(ledger.appAttr).toBe("ledger");
   expect(ledger.brand).toBe(ACCENT.ledger);
   expect(ledger.button.split("|")).toEqual([ACCENT.ledger]);
+  expect(ledger.chip).toBe(CHIP);
 
   await page.locator('#phonebar [data-phone-app="clients"]').click();
   await dismissTour(page);
@@ -160,7 +168,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   expect(clients.appAttr).toBe("clients");
   expect(clients.brand).toBe(ACCENT.clients);
   expect(clients.button.split("|")).toEqual([ACCENT.clients]);
-  expect(clients.chip).toBe(ACCENT.clients);
+  expect(clients.chip).toBe(CHIP);
 
   await page.locator('#phonebar [data-phone-app="more"]').click();
   await page.locator('#phone-more [data-phone-app="transfers"]').click();
@@ -185,6 +193,18 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   })).toEqual({ bg: "rgb(10, 10, 10)", media: false, width: 1280 });
 });
 
+test("Ledger passes the phone sweep", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  await expect(page.locator(".phone-ledger")).toBeVisible();
+  await expect(page.getByRole("button", { name: "New transaction", exact: true })).toBeVisible();
+  await phoneSweep(page, {
+    roots: [".phone-ledger", ".phone-head", "#phone-dock"],
+  });
+});
+
 test("More passes the phone sweep", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");
@@ -199,9 +219,9 @@ test("sign out asks first and the sticky action clears the last row", async ({ p
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");
   await page.locator('#phonebar [data-phone-app="more"]').click();
-  await expect(page.locator(".phone-sticky")).toHaveCount(0);
+  await expect(page.locator("#phone-more .phone-sticky")).toHaveCount(0);
   await page.locator("#phone-more .phone-session-row.is-danger").click();
-  const sticky = page.locator(".phone-sticky");
+  const sticky = page.locator("#phone-more .phone-sticky");
   await expect(sticky).toBeVisible();
   await expect(sticky.getByRole("button", { name: "Sign out" })).toBeVisible();
   const overlap = await page.evaluate(() => {

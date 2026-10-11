@@ -95,7 +95,39 @@
     </div>);
   }
   function Chip({ on, onClick, c, bg, children }) {
-    return (<button onClick={onClick} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" style={{ background: on ? (bg || CD.ink) : 'transparent', color: on ? (c || 'var(--cd-on-ink)') : CD.mute, border: `1px solid ${on ? 'transparent' : CD.line}`, borderRadius: 8 }}>{children}</button>);
+    return (<button onClick={onClick} data-filter-chip="" className={"flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" + (on ? " is-on" : "")} style={{ background: on ? (bg || CD.ink) : 'transparent', color: on ? (c || 'var(--cd-on-ink)') : CD.mute, border: `1px solid ${on ? 'transparent' : CD.line}`, borderRadius: 8 }}>{children}</button>);
+  }
+  function usePhoneLayout() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+  function phoneClock(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/\b(am|pm)\b/i.test(text)) return text;
+    const m = text.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    let h = Number(m[1]);
+    if (h > 23) return '';
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + m[2] + ' ' + ap;
+  }
+  function phoneDay(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return 'Records';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const label = months[Number(m[2]) - 1] + ' ' + Number(m[3]);
+    if (iso === businessDate()) return 'Today, ' + label;
+    return label + ', ' + m[1];
   }
   function FlagTag({ kind, filed, ack, onClick, title }) {
     const map = {
@@ -1413,6 +1445,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
        the flags below re-derive against the real threshold rather than
        against the "—" this screen paints for its first half second. */
     const deskFacts = useDeskFacts();
+    const phoneLayout = usePhoneLayout();
     const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
     const [q, setQ] = useState('');
     const [tf, setTf] = useState('All');
@@ -1654,6 +1687,93 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const setViewToggle = (v) => { setFocusRefs(null); setView(cur => cur === v ? 'open' : v); };
     const toggleTag = (x) => { setRows(rs => rs.map(r => r.id === x.id ? { ...r, tagged: !r.tagged, tagInfo: r.tagged ? null : { by: me.name, at: stamp(), note: '' } } : r)); log(x.tagged ? 'Tag removed' : 'Transaction tagged', `${x.ref} · follow-up`); };
     const COLS = [['', null], ['Ref', 'ref'], ['Date', 'date'], ['Customer', 'customer'], ['Type', 'type'], ['Pay-in', 'payin'], ['Pay-out', 'payout'], ['Fee', 'fee'], ['Flags', 'flags']];
+
+    const Phone = window.CDOS.Phone;
+    if (phoneLayout && Phone) {
+      const home = homeCcy();
+      const money = (amount, code) => (amount === '' || amount == null || !code || !window.CDOS.formatPhoneMoney) ? '' : window.CDOS.formatPhoneMoney(amount, code);
+      const groups = [];
+      const byDay = {};
+      filtered.forEach((row) => {
+        const key = row.date || '';
+        if (!byDay[key]) { byDay[key] = { key, rows: [] }; groups.push(byDay[key]); }
+        byDay[key].rows.push(row);
+      });
+      const volumeText = (!stats.n || stats.vol == null || !home) ? '—' : (money(stats.vol, home) || '—');
+      const feesText = (!stats.n || stats.fees == null || !home) ? '—' : (money(stats.fees, home) || '—');
+      return (
+        <div className="phone-ledger">
+          <Phone.Screen
+            app="ledger"
+            title="Ledger"
+            action={can('canExport') ? <button type="button" className="phone-secondary" onClick={genReport}>Generate report</button> : null}
+            sticky={section === 'records' ? <Phone.StickyAction label="New transaction" onClick={openNew} disabled={!!dayClosed} disabledReason={dayClosed ? 'The trading day is closed. Reopen the till to post.' : ''} /> : null}
+          >
+            <div className="phone-seg" role="tablist">
+              <button type="button" className={'phone-seg-btn' + (section === 'records' ? ' on' : '')} onClick={() => setSection('records')}>Records</button>
+              <button type="button" aria-label="Compliance" className={'phone-seg-btn' + (section === 'compliance' ? ' on' : '')} onClick={() => setSection('compliance')}>Compliance{compCount > 0 ? <span aria-hidden="true">{' ' + compCount}</span> : null}</button>
+            </div>
+            {section === 'compliance'
+              ? <LedgerCompliance rows={rows} flags={flags} settings={settings} clients={clients} me={me} setRows={setRows} log={log} onOpenDetail={setDetailId} onOpenRecordsWindow={openLedgerForRefs} onOpenClient={(n, ref) => { openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} onOpenFocus={(refs, label) => { setSection('records'); setFocusRefs(refs); setFocusLabel(label || ''); }} onOpenCompliance={onOpenCompliance} onOpenAccount={openLedgerForClient} onFileLCTR={onFileLCTR} />
+              : (<>
+                {dayClosed ? <p className="phone-day-note">The trading day is closed. The book is read-only.</p> : null}
+                <Phone.SummaryCards columns={2} cards={[
+                  { id: 'records', label: 'Records', value: String(stats.n), caption: rangeLabel },
+                  { id: 'volume', label: 'Pay-in volume', value: volumeText, caption: !stats.n ? 'Nothing posted' : (stats.unvalued ? stats.unvalued + ' not in this total' : 'View breakdown'), onClick: stats.n ? () => setBreakdown('volume') : undefined },
+                  { id: 'fees', label: 'Fees collected', value: feesText, caption: stats.n ? 'View earnings' : 'Nothing posted', onClick: stats.n ? () => setBreakdown('fees') : undefined },
+                  { id: 'rpt', label: 'Reportable', value: stats.openRpt > 0 ? String(stats.openRpt) : (stats.rpt > 0 ? 'Filed' : '0'), caption: stats.rpt > 0 ? (stats.openRpt > 0 ? 'Open' : 'All filed') : 'Nothing to file', onClick: () => setViewToggle('RPT') },
+                ]} />
+                <Phone.Search value={q} onChange={(value) => { setQ(value); if (value) setFocusRefs(null); }} placeholder="Search name, ref or amount" label="Search name, ref or amount" />
+                <select className="phone-type" aria-label="All types" value={tf} onChange={(e) => setTf(e.target.value)}>
+                  <option value="All">All types</option>
+                  {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <Phone.FilterChips value={view} onChange={(id) => { setFocusRefs(null); setView(id); }} chips={[
+                  { id: 'open', label: 'All posted' },
+                  { id: 'RPT', label: 'Reportable', count: stats.openRpt > 0 ? stats.openRpt : undefined },
+                  { id: 'STR', label: 'Structuring', count: stats.str > 0 ? stats.str : undefined },
+                  { id: 'ID', label: 'ID issues' },
+                  { id: 'tagged', label: 'Tagged', count: stats.tagged > 0 ? stats.tagged : undefined },
+                  { id: 'void', label: 'Voided' },
+                ]} />
+                {client ? <button type="button" className="phone-secondary" onClick={() => setClient(null)}>{'Viewing ' + client + '. Show everyone'}</button> : null}
+                {focusRefs && focusRefs.length > 0 ? <button type="button" className="phone-secondary" onClick={() => setFocusRefs(null)}>{focusRefs.length + ' matching records. Clear'}</button> : null}
+                {groups.length === 0 ? <Phone.EmptyState title="No records" message={q ? 'Nothing matches that search.' : 'Nothing posted in this range.'} /> : groups.map((g) => {
+                  const posted = g.rows.filter((r) => r.status !== 'void');
+                  const feeSum = posted.reduce((s, r) => s + (+r.fee || 0), 0);
+                  const feeBit = home && posted.length ? money(feeSum, home) : '';
+                  return (
+                    <Phone.ListSection key={g.key || 'day'} title={phoneDay(g.key)} meta={g.rows.length + (g.rows.length === 1 ? ' record' : ' records') + (feeBit ? ' · ' + feeBit + ' fees' : '')}>
+                      {g.rows.map((row) => {
+                        const paid = money(row.inAmt, row.inCcy);
+                        const out = (row.outAmt === '' || row.outAmt == null) ? '' : money(row.outAmt, row.outCcy);
+                        const fee = home ? money(row.fee, home) : '';
+                        const when = phoneClock(row.time);
+                        const tone = row.status === 'void' ? 'neg' : (/sell/i.test(row.type || '') ? 'sell' : (/buy/i.test(row.type || '') ? 'buy' : 'neutral'));
+                        return (
+                          <Phone.ListRow
+                            key={row.id}
+                            title={row.customer || 'Walk-in'}
+                            subtitle={[paid ? 'Paid ' + paid : '', when].filter(Boolean).join(' · ')}
+                            note={row.ref || ''}
+                            amount={out}
+                            meta={fee ? 'Fee ' + fee : ''}
+                            badge={row.status === 'void' ? { label: 'Void', tone: 'neg' } : (row.type ? { label: row.type, tone } : null)}
+                            onClick={() => setDetailId(row.id)}
+                          />
+                        );
+                      })}
+                    </Phone.ListSection>
+                  );
+                })}
+              </>)}
+          </Phone.Screen>
+          {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
+          {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={openReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
+          {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
+        </div>
+      );
+    }
 
     return (<div className="flex flex-col" style={{ height: '100%', position: 'relative', background: CD.paper, overflow: 'hidden' }}>
       <div className="fld-bar fld-pinned">
