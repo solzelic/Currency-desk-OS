@@ -76,7 +76,7 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await knownPin(page);
     const root = await openSettings(page);
     await expect(root.getByText("PIN and sign-in")).toBeVisible();
-    await expect(root.getByText("This shop (owner only)")).toBeVisible();
+    await expect(root.getByText("This shop. Change on a computer")).toBeVisible();
     await expect(root.getByRole("button", { name: /Shop details/ })).toBeVisible();
     await expect(root.getByText("Other apps (owner only)")).toBeVisible();
     await expect(root.getByText("Example data")).toHaveCount(0);
@@ -86,13 +86,15 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await page.screenshot({ path: shot(`settings_list-owner_${width}.png`) });
 
     await root.getByRole("button", { name: /Shop details/ }).click();
-    const section = page.getByRole("dialog");
-    await expect(section.getByRole("heading", { name: "Shop details" })).toBeVisible();
-    await expect(section.getByText("Open on a computer to change this.")).toBeVisible();
-    await expect(page.locator(".phone-legacy-bar")).toHaveCount(0);
+    await expect(root.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
+    await expect(root.getByText("Use a computer to change this.")).toBeVisible();
+    await expect(root.getByText("York Currency Exchange")).toBeVisible();
+    await expect(root.getByText(/120 Adelaide/)).toBeVisible();
+    await expect(root.locator(".phone-summary")).toBeVisible();
+    await expect(page.locator(".sheet")).toHaveCount(0);
     await expect(page.locator(".settings-shell")).toBeHidden();
     await page.screenshot({ path: shot(`settings_computer-section_${width}.png`) });
-    await section.getByRole("button", { name: "Close without changing" }).click();
+    await root.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(root.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 
     const search = root.getByLabel("Search settings");
@@ -102,7 +104,10 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await expect(root.getByText("PIN and sign-in")).toBeVisible();
 
     await search.fill("billing");
-    await expect(root.getByText("Open on a computer to change this.")).toBeVisible();
+    await root.getByRole("button", { name: /Billing and plan/ }).click();
+    await expect(root.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
+    await expect(root.locator(".phone-summary")).toHaveCount(0);
+    await root.getByRole("button", { name: "Settings", exact: true }).click();
     await search.fill("texts");
     await expect(root.getByText(/Nothing matches “texts”/)).toBeVisible();
     await search.fill("receipt");
@@ -225,7 +230,7 @@ test("a teller sees only their own settings", async ({ page }) => {
     await expect(root.getByRole("button", { name: "Notifications" })).toBeVisible();
     await expect(root.getByText("Shop settings are managed by the owner.")).toBeVisible();
     await expect(root.locator('[data-phone-row="signout"]')).toBeVisible();
-    await expect(root.getByText("This shop (owner only)")).toHaveCount(0);
+    await expect(root.getByText("This shop. Change on a computer")).toHaveCount(0);
     await expect(root.getByText("Shop details")).toHaveCount(0);
     await expect(root.getByText("Other apps (owner only)")).toHaveCount(0);
     await page.screenshot({ path: shot(`settings_list-teller_${width}.png`) });
@@ -248,6 +253,13 @@ test("settings passes the phone sweep", async ({ page }) => {
   await page.getByRole("button", { name: /my PIN/ }).click();
   await expect(page.locator(".sheet")).toBeVisible();
   await phoneSweep(page, { roots: [".sheet"] });
+  await page.getByRole("button", { name: "Close without changing" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /Shop details/ }).click();
+  await expect(page.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
+  await phoneSweep(page, {
+    roots: ["[data-phone-settings]", ".phone-head", "#phone-dock"],
+  });
 });
 
 test("desktop settings is the rail, with a 0-pixel phone diff", async ({ page }) => {

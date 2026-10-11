@@ -573,11 +573,13 @@ FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
 `os-src/phone/settings.jsx` is the Settings screen. Shop and app
-rows tell the owner to change them on a computer. The desktop form
-fails the phone sweep, so it is not opened in a sheet. PIN before a
-void is a sentence, not a switch. The void gate reads
-`settings.pinOnVoid` and `employee.requirePin`, and this screen
-does not write either.
+sections open inside `Phone.Screen`. Shop details shows the name,
+address, and hours the screen already has, in `SummaryList`, then
+`EmptyState`: a monitor icon, “Change this on a computer”, and one
+sentence. Other sections are that empty state only. The desktop
+form is not opened. PIN before a void is a sentence, not a switch.
+The void gate reads `settings.pinOnVoid` and `employee.requirePin`,
+and this screen does not write either.
 
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,

@@ -132,8 +132,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   photos, and bars stay clipped. Settings on a phone is a list:
   search, the person’s own row, PIN and sign-in, notifications,
   and sign out. An owner also sees the shop and the other apps,
-  and each of those says to change it on a computer. The desktop
-  form does not fit a phone, so it is not opened in a sheet. PIN
+  and the section caption says to change them on a computer. Shop
+  details shows the name, address, and hours already on the desk,
+  then says to change them on a computer. The desktop form is not
+  opened. PIN
   before a void is a sentence, not a switch: the void gate reads
   the shop flag and that person's require PIN, and this screen
   does not write either.
@@ -671,9 +673,12 @@ button. It leaves after 4 seconds. `role="status"`.
 
 **2026-10-12**, phone Settings. Under 430px, Settings is a list. Search, the
 person’s row, PIN and sign-in, notifications, and sign out are on
-it. An owner also sees the shop and the other apps. Those rows
-say to change them on a computer: the desktop form fails a phone
-sweep (targets under 44px, type under 12px, contrast under 4.5:1).
+it. An owner also sees the shop and the other apps. The section
+caption says to change them on a computer. Shop details shows the
+name, address, and hours already on the desk, read-only, then an
+empty state with a monitor icon. The desktop form fails a phone
+sweep (targets under 44px, type under 12px, contrast under 4.5:1),
+so it is not opened.
 A cashier sees their own rows and sign out. Texts, receipts,
 billing, the ticker, and the role matrix are not phone screens.
 A PIN is four digits on a keypad, and the fourth digit of the last

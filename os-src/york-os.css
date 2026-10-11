@@ -3100,6 +3100,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .phone-settings { display: none; }
 
 @media (max-width: 430px) {
+  .phone-settings:has(.phone-computer) {
+    padding: 0;
+    background: var(--color-bg, #F7F6F3);
+  }
+  .phone-computer { min-height: 100%; background: var(--color-bg, #F7F6F3); }
   .phone-settings {
     --brand-primary: #17140F;
     --gray-50: #F7F6F3;

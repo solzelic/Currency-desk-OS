@@ -1022,6 +1022,7 @@
         canSys={canSys} me={me} settings={settings} setSettings={setSettings}
         shopName={settings.operatingName || settings.bizName || 'this shop'}
         tillOpen={!!tillOpen} onLeave={onLeave} onSignOut={onSignOut} log={log}
+        hours={hoursList}
       />}
     </div>
     <div className="flex settings-shell" style={{ height: '100%' }}>

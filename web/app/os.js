@@ -5290,8 +5290,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
    Desktop Settings is the rail beside this; the stylesheet hides
    that rail under 430px and hides this list above it.
 
-   Shop and app rows say to change them on a computer. The desktop
-   form does not fit a phone, so it is not opened here. Texts, receipts,
+   Shop and app rows open a read-only note. The desktop form does
+   not fit a phone, so it is not opened here. Texts, receipts,
    billing, the ticker, and the role matrix are not phone screens:
    search can name the computer ones, and says so. */
 (function () {
@@ -5308,8 +5308,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     FullScreenSheet,
     Toast
   } = window.CDOS;
-  const SHOP = [['business', 'Shop details', 'Name, address, phone', 'building', 'logo msb name address phone business profile'], ['locations', 'Staff and tills', 'Who works which till', 'users', 'branch till teller station locations'], ['rates', 'Rates and fees', 'Your margin and fees', 'percent', 'spread margin fee rate'], ['till', 'Cash drawer', 'How the drawer is counted', 'wallet', 'count denomination variance blind drawer'], ['clients', 'Clients and ID', 'When to ask for ID', 'id', 'kyc risk id expiry client'], ['compliance', 'Compliance rules', 'Country rules and limits', 'shield', 'threshold jurisdiction reporting country'], ['ledger', 'Ledger', 'Deal defaults, import a spreadsheet', 'scroll', 'import csv excel duplicate']];
-  const APPS = [['vault', 'Vault', 'Stock floors and reserves', 'building', 'cash floor reserve stock'], ['transfers', 'Transfers', 'Reporting line and defaults', 'globe', 'remittance corridor beneficiary'], ['cheques', 'Cheques', 'How long cheque cash is at risk', 'receipt', 'cheque check clearing hold']];
+  const SHOP = [['business', 'Shop details', 'Name, address, phone', 'building', 'logo msb name address phone business profile'], ['locations', 'Staff and tills', 'Who works which till', 'users', 'branch till teller station locations'], ['rates', 'Rates and fees', 'Your margin and fees', 'percent', 'spread margin fee rate'], ['till', 'Cash drawer', 'How the drawer is counted', 'wallet', 'count denomination variance blind drawer'], ['clients', 'Clients and ID', 'When to ask for ID', 'id', 'kyc risk id expiry client'], ['compliance', 'Compliance rules', 'Country rules and limits', 'shield', 'threshold jurisdiction reporting country'], ['ledger', 'Ledger', 'Deal defaults', 'scroll', 'import csv excel duplicate']];
+  const APPS = [['vault', 'Vault', 'Stock floors and reserves', 'building', 'cash floor reserve stock'], ['transfers', 'Transfers', 'Reporting line and defaults', 'globe', 'remittance corridor beneficiary'], ['cheques', 'Cheques', 'How long a cheque is held', 'receipt', 'cheque check clearing hold']];
   /* Not drawn as rows. Search still finds them, and says to use a computer.
      Texts and receipts are absent until they are live, so they are not here. */
   const COMPUTER = [['employees', 'Employees', 'staff team seats accounts'], ['localization', 'Localization', 'currency timezone date time format'], ['billing', 'Billing and plan', 'plan subscription invoice payment'], ['payment', 'Payment methods', 'card visa mastercard'], ['tagged', 'Tagged rules', 'auto tag follow-up review'], ['ticker', 'Ticker tape', 'tape scroll speed flags'], ['permissions', 'Role presets', 'roles presets teller handoff permissions matrix']];
@@ -5624,6 +5624,67 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onClick: save
     }, busy ? 'Saving...' : 'Save')));
   }
+  function shopFacts(settings, hours) {
+    const name = settings.operatingName || settings.bizName || '';
+    const address = [settings.bizAddress, [settings.bizCity, settings.bizRegion, settings.bizPostal].filter(Boolean).join(' '), settings.bizCountry].filter(Boolean).join(', ');
+    const hourText = (Array.isArray(hours) ? hours : []).filter(row => row && String(row.days || '').trim() && String(row.hours || '').trim()).map(row => String(row.days).trim() + ' ' + String(row.hours).trim()).join(', ');
+    const rows = [];
+    if (name) rows.push({
+      label: 'Name',
+      value: name
+    });
+    if (address) rows.push({
+      label: 'Address',
+      value: address
+    });
+    if (hourText) rows.push({
+      label: 'Hours',
+      value: hourText
+    });
+    return rows;
+  }
+  function ComputerNote({
+    section,
+    settings,
+    hours,
+    onBack
+  }) {
+    const Phone = window.CDOS.Phone;
+    const SummaryList = window.CDOS.SummaryList;
+    const rows = section.id === 'business' ? shopFacts(settings, hours) : [];
+    const monitor = /*#__PURE__*/React.createElement("svg", {
+      width: "28",
+      height: "28",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.8",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: "3",
+      y: "4",
+      width: "18",
+      height: "12",
+      rx: "2"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M8 20h8M12 16v4"
+    }));
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "settings",
+      className: "phone-computer"
+    }, /*#__PURE__*/React.createElement(Back, {
+      label: "Settings",
+      onClick: onBack
+    }), SummaryList && rows.length ? /*#__PURE__*/React.createElement(SummaryList, {
+      rows: rows
+    }) : null, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      icon: monitor,
+      title: "Change this on a computer",
+      message: "Use a computer to change this."
+    }));
+  }
   function PhoneSettings({
     canSys,
     me,
@@ -5633,7 +5694,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     tillOpen,
     onLeave,
     onSignOut,
-    log
+    log,
+    hours
   }) {
     const [screen, setScreen] = useState('list');
     const [q, setQ] = useState('');
@@ -5714,27 +5776,29 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       title: 'Notifications',
       onClick: () => setScreen('notes')
     }].filter(Boolean);
-    const onComputer = 'Open on a computer to change this.';
+    const openComputer = (id, title) => setComputer({
+      id,
+      title
+    });
     const shop = canSys ? SHOP.filter(r => hit(r[1], r[4])).map(r => ({
       id: r[0],
       icon: r[3],
       title: r[1],
-      detail: onComputer,
-      onClick: () => setComputer(r[1])
+      detail: r[2],
+      onClick: () => openComputer(r[0], r[1])
     })) : [];
     const apps = canSys ? APPS.filter(r => hit(r[1], r[4])).map(r => ({
       id: r[0],
       icon: r[3],
       title: r[1],
-      detail: onComputer,
-      onClick: () => setComputer(r[1])
+      detail: r[2],
+      onClick: () => openComputer(r[0], r[1])
     })) : [];
     const computerRows = query ? COMPUTER.filter(r => hit(r[1], r[2])).map(r => ({
       id: r[0],
       icon: 'info',
       title: r[1],
-      detail: 'Open on a computer to change this.',
-      onClick: () => setComputer(r[1])
+      onClick: () => openComputer(r[0], r[1])
     })) : [];
     const showOut = hit('Sign out', 'log out leave');
     const showMe = hit(me.name || '', 'profile my details account ' + (me.role || ''));
@@ -5749,7 +5813,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: r.id,
       rowId: r.id
     }, r))))) : null;
-    return /*#__PURE__*/React.createElement("div", null, screen === 'list' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Back, {
+    return /*#__PURE__*/React.createElement("div", null, screen === 'list' && computer && /*#__PURE__*/React.createElement(ComputerNote, {
+      section: computer,
+      settings: settings,
+      hours: hours,
+      onBack: () => setComputer(null)
+    }), screen === 'list' && !computer && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Back, {
       label: "More",
       onClick: onLeave
     }), /*#__PURE__*/React.createElement("h1", {
@@ -5787,7 +5856,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       name: me.name,
       detail: (me.role || 'Staff') + ' · My details',
       onClick: () => setScreen('profile')
-    })) : null, group('You', you), group('This shop (owner only)', shop), group('Other apps (owner only)', apps), group('On a computer', computerRows), !canSys && !query ? /*#__PURE__*/React.createElement("p", {
+    })) : null, group('You', you), group('This shop. Change on a computer', shop), group('Other apps. Change on a computer', apps), group('On a computer', computerRows), !canSys && !query ? /*#__PURE__*/React.createElement("p", {
       className: "phone-note"
     }, "Shop settings are managed by the owner.") : null, nothing ? /*#__PURE__*/React.createElement("div", {
       className: "phone-empty"
@@ -5941,14 +6010,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "button",
       className: "phone-btn secondary",
       onClick: () => setSignOut(false)
-    }, "Stay signed in"))), computer && /*#__PURE__*/React.createElement(FullScreenSheet, {
-      title: computer,
-      onClose: () => setComputer(null)
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "phone-form"
-    }, /*#__PURE__*/React.createElement("p", {
-      className: "phone-sub"
-    }, "Open on a computer to change this."))), /*#__PURE__*/React.createElement(Toast, {
+    }, "Stay signed in"))), /*#__PURE__*/React.createElement(Toast, {
       text: toast,
       onDone: () => setToast('')
     }));
@@ -7947,7 +8009,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       tillOpen: !!tillOpen,
       onLeave: onLeave,
       onSignOut: onSignOut,
-      log: log
+      log: log,
+      hours: hoursList
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex settings-shell",
       style: {

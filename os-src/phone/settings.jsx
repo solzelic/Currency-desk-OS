@@ -2,8 +2,8 @@
    Desktop Settings is the rail beside this; the stylesheet hides
    that rail under 430px and hides this list above it.
 
-   Shop and app rows say to change them on a computer. The desktop
-   form does not fit a phone, so it is not opened here. Texts, receipts,
+   Shop and app rows open a read-only note. The desktop form does
+   not fit a phone, so it is not opened here. Texts, receipts,
    billing, the ticker, and the role matrix are not phone screens:
    search can name the computer ones, and says so. */
 (function () {
@@ -17,12 +17,12 @@
     ['till', 'Cash drawer', 'How the drawer is counted', 'wallet', 'count denomination variance blind drawer'],
     ['clients', 'Clients and ID', 'When to ask for ID', 'id', 'kyc risk id expiry client'],
     ['compliance', 'Compliance rules', 'Country rules and limits', 'shield', 'threshold jurisdiction reporting country'],
-    ['ledger', 'Ledger', 'Deal defaults, import a spreadsheet', 'scroll', 'import csv excel duplicate'],
+    ['ledger', 'Ledger', 'Deal defaults', 'scroll', 'import csv excel duplicate'],
   ];
   const APPS = [
     ['vault', 'Vault', 'Stock floors and reserves', 'building', 'cash floor reserve stock'],
     ['transfers', 'Transfers', 'Reporting line and defaults', 'globe', 'remittance corridor beneficiary'],
-    ['cheques', 'Cheques', 'How long cheque cash is at risk', 'receipt', 'cheque check clearing hold'],
+    ['cheques', 'Cheques', 'How long a cheque is held', 'receipt', 'cheque check clearing hold'],
   ];
   /* Not drawn as rows. Search still finds them, and says to use a computer.
      Texts and receipts are absent until they are live, so they are not here. */
@@ -219,7 +219,40 @@
     );
   }
 
-  function PhoneSettings({ canSys, me, settings, setSettings, shopName, tillOpen, onLeave, onSignOut, log }) {
+  function shopFacts(settings, hours) {
+    const name = settings.operatingName || settings.bizName || '';
+    const address = [settings.bizAddress, [settings.bizCity, settings.bizRegion, settings.bizPostal].filter(Boolean).join(' '), settings.bizCountry].filter(Boolean).join(', ');
+    const hourText = (Array.isArray(hours) ? hours : [])
+      .filter((row) => row && String(row.days || '').trim() && String(row.hours || '').trim())
+      .map((row) => String(row.days).trim() + ' ' + String(row.hours).trim())
+      .join(', ');
+    const rows = [];
+    if (name) rows.push({ label: 'Name', value: name });
+    if (address) rows.push({ label: 'Address', value: address });
+    if (hourText) rows.push({ label: 'Hours', value: hourText });
+    return rows;
+  }
+
+  function ComputerNote({ section, settings, hours, onBack }) {
+    const Phone = window.CDOS.Phone;
+    const SummaryList = window.CDOS.SummaryList;
+    const rows = section.id === 'business' ? shopFacts(settings, hours) : [];
+    const monitor = (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M8 20h8M12 16v4" />
+      </svg>
+    );
+    return (
+      <Phone.Screen app="settings" className="phone-computer">
+        <Back label="Settings" onClick={onBack} />
+        {SummaryList && rows.length ? <SummaryList rows={rows} /> : null}
+        <Phone.EmptyState icon={monitor} title="Change this on a computer" message="Use a computer to change this." />
+      </Phone.Screen>
+    );
+  }
+
+  function PhoneSettings({ canSys, me, settings, setSettings, shopName, tillOpen, onLeave, onSignOut, log, hours }) {
     const [screen, setScreen] = useState('list');
     const [q, setQ] = useState('');
     const [pinState, setPinState] = useState('loading');
@@ -278,10 +311,10 @@
       hit('PIN and sign-in', 'pin password security void') && { id: 'pin', icon: 'lock', title: 'PIN and sign-in', value: pinState === 'ready' ? pinValue : '', valueTone: mustChange ? 'warn' : '', onClick: () => setScreen('pin') },
       hit('Notifications', 'alerts compliance summary') && { id: 'notes', icon: bell, title: 'Notifications', onClick: () => setScreen('notes') },
     ].filter(Boolean);
-    const onComputer = 'Open on a computer to change this.';
-    const shop = canSys ? SHOP.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: onComputer, onClick: () => setComputer(r[1]) })) : [];
-    const apps = canSys ? APPS.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: onComputer, onClick: () => setComputer(r[1]) })) : [];
-    const computerRows = query ? COMPUTER.filter((r) => hit(r[1], r[2])).map((r) => ({ id: r[0], icon: 'info', title: r[1], detail: 'Open on a computer to change this.', onClick: () => setComputer(r[1]) })) : [];
+    const openComputer = (id, title) => setComputer({ id, title });
+    const shop = canSys ? SHOP.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: r[2], onClick: () => openComputer(r[0], r[1]) })) : [];
+    const apps = canSys ? APPS.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: r[2], onClick: () => openComputer(r[0], r[1]) })) : [];
+    const computerRows = query ? COMPUTER.filter((r) => hit(r[1], r[2])).map((r) => ({ id: r[0], icon: 'info', title: r[1], onClick: () => openComputer(r[0], r[1]) })) : [];
     const showOut = hit('Sign out', 'log out leave');
     const showMe = hit(me.name || '', 'profile my details account ' + (me.role || ''));
     const nothing = query && !showMe && !you.length && !shop.length && !apps.length && !computerRows.length && !showOut;
@@ -295,7 +328,11 @@
 
     return (
       <div>
-        {screen === 'list' && (
+        {screen === 'list' && computer && (
+          <ComputerNote section={computer} settings={settings} hours={hours} onBack={() => setComputer(null)} />
+        )}
+
+        {screen === 'list' && !computer && (
           <div>
             <Back label="More" onClick={onLeave} />
             <h1 className="phone-h1">Settings</h1>
@@ -318,8 +355,8 @@
               <div>
                 {showMe ? <section className="phone-list"><ProfileRow initials={initials(me.name)} name={me.name} detail={(me.role || 'Staff') + ' · My details'} onClick={() => setScreen('profile')} /></section> : null}
                 {group('You', you)}
-                {group('This shop (owner only)', shop)}
-                {group('Other apps (owner only)', apps)}
+                {group('This shop. Change on a computer', shop)}
+                {group('Other apps. Change on a computer', apps)}
                 {group('On a computer', computerRows)}
                 {!canSys && !query ? <p className="phone-note">Shop settings are managed by the owner.</p> : null}
                 {nothing ? (
@@ -406,11 +443,6 @@
               <button type="button" className="phone-btn danger" onClick={() => { if (onSignOut) onSignOut(); }}>Sign out</button>
               <button type="button" className="phone-btn secondary" onClick={() => setSignOut(false)}>Stay signed in</button>
             </div>
-          </FullScreenSheet>
-        )}
-        {computer && (
-          <FullScreenSheet title={computer} onClose={() => setComputer(null)}>
-            <div className="phone-form"><p className="phone-sub">Open on a computer to change this.</p></div>
           </FullScreenSheet>
         )}
         <Toast text={toast} onDone={() => setToast('')} />
