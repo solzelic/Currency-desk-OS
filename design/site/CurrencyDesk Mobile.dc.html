@@ -196,7 +196,6 @@
         <div style="{{ p.wrap }}">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
             <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--faint);">{{ p.name }}</span>
-            <sc-if value="{{ p.popular }}" hint-placeholder-val="{{ false }}"><span style="font-family: var(--m); font-size: 8.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #fff; background: var(--green); padding: 4px 10px; border-radius: 999px;">Most chosen</span></sc-if>
           </div>
           <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 12px;">
             <span style="font-family: var(--serif); font-size: 42px; letter-spacing: -0.025em; line-height: 1;">{{ p.price }}</span>
@@ -210,7 +209,7 @@
         </div>
       </sc-for>
     </div>
-    <p style="font-size: 12.5px; line-height: 1.55; color: var(--faint); margin: 16px 0 0;">ID verification is coming and is not billed yet. A planned price is listed from $3.99. <a href="CurrencyDesk Compliance.dc.html#kyc" style="color: var(--green); font-weight: 600;">See KYC pricing</a></p>
+    <p style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 16px 0 0;">Planned price: from $3.99 a check. Nothing is charged today. <a href="CurrencyDesk Compliance.dc.html#kyc" style="color: var(--green); font-weight: 600;">See client checks</a></p>
   </div>
 
   <div style="padding: 40px 20px;">
@@ -276,8 +275,8 @@ class Component extends DCLogic {
   FEATURES = [
     { src: '../photos/rate-board-storefront.jpg', kicker: 'Rates', title: 'Your board, everywhere', body: 'Set your spread once. The desk prices every deal after that, and your window, your counter and your website all move together.' },
     { src: '../photos/sms-storefront.jpg', kicker: 'Messaging', title: 'Texting is not connected', body: 'The desk does not send a message from a shop number.' },
-    { src: '../photos/till-float.jpg', kicker: 'Cash', title: 'Close in four minutes', body: 'Till, float and ledger already agree when you lock the door. No counting twice, no arguing with the drawer.' },
-    { src: '../photos/kyc-counter.jpg', kicker: 'Clients', title: 'Take their ID once', body: 'Every visit after that is a two-minute deal, because their file and verification are already on the desk.' },
+    { src: '../photos/till-float.jpg', kicker: 'Cash', title: 'Close the day', body: 'Till, float and ledger already agree when you lock the door. No counting twice, no arguing with the drawer.' },
+    { src: '../photos/kyc-counter.jpg', kicker: 'Clients', title: 'Take their ID once', body: 'Every visit after that reuses the file already on the desk.' },
     { src: '../photos/compliance-institution.jpg', kicker: 'Compliance', title: 'The rules, carried', body: 'Thresholds watched from the book. A worksheet can be prepared. The desk does not send it.' },
     { src: '../photos/reports-ledger.jpg', kicker: 'Reports', title: 'Figures from the book', body: 'Takings and margin from deals already written. The desk does not write a regulator report on request.' },
     { src: '../photos/cheque-cashing.jpg', kicker: 'Cheques', title: 'Fee and hold, worked out', body: 'Cash a cheque and the desk logs it — payer, amount, fee and hold, all filed against the client.' },
@@ -321,7 +320,7 @@ class Component extends DCLogic {
   PLANS = [
     { name: 'Rates', mo: 299, popular: false, desc: 'Live rate board and pricing tools for a shop that just needs great numbers.',
       features: ['Live rate board', 'Per-currency spreads', 'Publish to your website'] },
-    { name: 'Full System', mo: 599, popular: true, desc: 'The whole desk — every application, one price, your entire team.',
+    { name: 'Full System', mo: 599, popular: false, desc: 'The whole desk. Every application, one price, your entire team.',
       features: ['Everything in Rates', 'Every application on the desk', 'Ledger, till & float', 'Clients & KYC', 'Compliance & reports'] },
     { name: 'AI Bundle', mo: 749, popular: false, desc: 'The full desk plus the copilot that watches your numbers.',
       features: ['Everything in Full System', 'AI assistant', 'New features first', 'Exclusive partner deals', 'Priority support'] }

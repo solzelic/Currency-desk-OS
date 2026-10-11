@@ -21,26 +21,38 @@ const files = [
 
 const phrases = [
   [/ofac/, "OFAC"],
+  [/un sanctions/, "UN sanctions"],
+  [/\bosfi\b/, "OSFI"],
   [/desks claimed/, "desks claimed"],
   [/report ready/, "Report ready"],
   [/then deleted/, "then deleted"],
   [/encrypted at rest/, "encrypted at rest"],
   [/encryption at rest/, "encryption at rest"],
   [/in the region you operate/, "in the region you operate"],
-  [/real shops/, "real shops"],
+  [/real shops?/, "real shop"],
   [/billed per file/, "billed per file"],
+  [/billed separately/, "billed separately"],
   [/identity verification/, "identity verification"],
   [/error monitoring/, "error monitoring"],
   [/measured at the counter/, "measured at the counter"],
   [/first shop/, "first shop"],
+  [/screened against/, "screened against"],
+  [/most popular/, "most popular"],
+  [/most chosen/, "most chosen"],
 ];
 
 export function visibleText(html) {
   let text = String(html);
-  text = text.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
-  text = text.replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+  const decodeNumeric = (value) =>
+    value
+      .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+  text = decodeNumeric(text);
   const named = {
     nbsp: " ",
+    shy: " ",
+    zwnj: " ",
+    zwj: " ",
     amp: "&",
     lt: "<",
     gt: ">",
@@ -50,11 +62,15 @@ export function visibleText(html) {
   text = text.replace(/&([a-z]+);/gi, (all, name) =>
     Object.prototype.hasOwnProperty.call(named, name.toLowerCase()) ? named[name.toLowerCase()] : all,
   );
-  /* A second pass catches &amp;nbsp; once it has become &nbsp;. */
-  text = text.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
-  text = text.replace(/&nbsp;/gi, " ");
+  /* A second pass catches &amp;nbsp; and &amp;shy; once the amp is decoded. */
+  text = decodeNumeric(text);
+  text = text.replace(/&(?:nbsp|shy);/gi, " ");
+  /* Invisible breaks and the soft hyphen, so a split word still matches. */
+  text = text.replace(/[\u200B-\u200D\u2060\u00AD]/g, " ");
   text = text.replace(/<[^>]*>/g, " ");
   text = text.replace(/\s+/g, " ").trim().toLowerCase();
+  /* O.F.A.C. and U.N. become ofac and un before the phrase match. */
+  text = text.replace(/(?:[a-z]\.){2,}[a-z]?/g, (match) => match.replace(/\./g, ""));
   return text;
 }
 
@@ -78,6 +94,15 @@ export function findClaims(html) {
   for (const [re, label] of phrases) {
     if (re.test(text)) problems.push(label);
     re.lastIndex = 0;
+  }
+  /* "sanctions screening is not connected" is the honest sentence.
+     Any other "sanctions screening" is a claim that a screen exists. */
+  const screening = /sanctions screening/g;
+  let screeningMatch;
+  while ((screeningMatch = screening.exec(text))) {
+    const after = text.slice(screeningMatch.index + screeningMatch[0].length);
+    if (/^\s*is not connected/.test(after)) continue;
+    problems.push("sanctions screening");
   }
   for (const hit of nearby(text, "eftr", "live", 80)) {
     problems.push(`EFTR next to Live (${hit})`);

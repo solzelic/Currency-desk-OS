@@ -227,8 +227,8 @@
 
       <div data-reveal="0" style="flex: none; max-width: 720px; width: 712px; height: 240px">
         <div style="display: inline-flex; align-items: center; gap: 9px; font-family: var(--m); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600; background: var(--brass-soft); border: 1px solid rgba(169,121,28,0.25); border-radius: 999px; padding: 6px 14px;">Add-on · Client KYC</div>
-        <h2 style="font-family: var(--serif); font-weight: 400; font-size: 50px; line-height: 1.0; letter-spacing: -0.018em; margin: 15px 0 0; text-wrap: pretty;">Two minutes on their phone. Yours for a year.</h2>
-        <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 12px 0 0; max-width: 660px;">Verification runs from the deal screen, and every check is matched against the CurrencyDesk network before you commit.</p>
+        <h2 style="font-family: var(--serif); font-weight: 400; font-size: 50px; line-height: 1.0; letter-spacing: -0.018em; margin: 15px 0 0; text-wrap: pretty;">Client checks are not live yet.</h2>
+        <p style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 12px 0 0; max-width: 660px;">Planned price: from $3.99 a check. Nothing is charged today.</p>
       </div><div style="display: grid; grid-template-columns: minmax(0, 0.68fr) minmax(0, 1.32fr); gap: 38px; margin-top: 24px; align-items: start;">
 
         <div data-reveal="0.06" style="display: flex; flex-direction: column;">
@@ -255,20 +255,15 @@
 
         <div data-reveal="0.12" style="display: flex; flex-direction: column;">
           <div style="flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 14px;">
-            <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Pricing · per completed check</div>
+            <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Not connected yet</div>
             <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.04em; color: var(--faint);">{{ autoHint }}</span>
           </div>
 
           <div style="flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
             <sc-for list="{{ kycTiers }}" as="t" hint-placeholder-count="3">
               <button type="button" onClick="{{ t.onClick }}" style="{{ t.wrap }}">
-                <span style="display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; height: 34px;">
+                <span style="display: flex; align-items: flex-start; justify-content: space-between; gap: 7px;">
                   <span style="{{ t.nameStyle }}">{{ t.name }}</span>
-                  <span style="{{ t.ribbonStyle }}">{{ t.ribbon }}</span>
-                </span>
-                <span style="display: flex; align-items: baseline; gap: 5px; margin-top: 9px;">
-                  <span style="{{ t.priceStyle }}">{{ t.price }}</span>
-                  <span style="font-family: var(--m); font-size: 9.5px; color: var(--faint); white-space: nowrap;">{{ t.unit }}</span>
                 </span>
                 <span style="display: block; font-size: 11.5px; color: var(--mute); line-height: 1.4; margin-top: 8px; min-height: 32px;">{{ t.oneLiner }}</span>
                 <span style="{{ t.barTrack }}"><span data-bar="{{ t.i }}" style="{{ t.barFill }}"></span></span>
@@ -280,7 +275,6 @@
             <div style="flex: none; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
               <div style="display: flex; align-items: baseline; gap: 10px;">
                 <b style="font-size: 17px; font-weight: 800;">{{ detailName }}</b>
-                <span style="font-family: var(--m); font-size: 10.5px; color: var(--faint);">{{ detailPrice }}</span>
               </div>
               <span style="{{ detailBadgeStyle }}">{{ detailBadge }}</span>
             </div>
@@ -299,7 +293,6 @@
             </div>
           </div>
 
-          <p style="flex: none; font-size: 10.5px; line-height: 1.5; color: var(--faint); margin: 10px 0 0;"><b style="font-weight: 600; color: var(--mute);">How $3.99 stays $3.99:</b> the price is listed. Verification and screening are not connected, so this charge is not taken. All prices in USD.</p>
         </div>
       </div>
     </div>
@@ -416,7 +409,7 @@ class Component extends DCLogic {
         {name:'SAR, Suspicious Activity Report', spec:'Listed in the pack. The desk does not draft or file it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'MSB registration and renewal', spec:'A licence number can be typed. Renewals are not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'Travel Rule', spec:'Listed in the pack. Originator and beneficiary details are not captured for a filing.', tag:'Planned', cat:'transfer', when:'On transfer'},
-        {name:'Sanctions screening', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'Listed in the pack. Nothing is removed on a schedule.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'hmrc', tag:'HMRC', country:'United Kingdom', regulator:'His Majesty\u2019s Revenue & Customs', status:'Coming soon', kind:'soon', color:'#A9791C', soft:'rgba(169,121,28,0.13)', official:'https://www.gov.uk/government/organisations/hm-revenue-customs', updated:'11 Jul 2026', retention:'5 years',
@@ -442,7 +435,7 @@ class Component extends DCLogic {
         {name:'Full customer due diligence', spec:'Occasional transaction at or above €10,000.', tag:'Planned', cat:'threshold', when:'At the till'},
         {name:'Transfer of funds', spec:'Customer due diligence at or above €1,000.', tag:'Planned', cat:'transfer', when:'On transfer'},
         {name:'STR to your national FIU', spec:'Any amount, including an attempt. No EU large-cash report.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Sanctions screening', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'After the relationship ends, or after the occasional transaction.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'austrac', tag:'AUSTRAC', country:'Australia', regulator:'Australian Transaction Reports & Analysis Centre', status:'Coming soon', kind:'soon', color:'#C2452D', soft:'rgba(194,69,45,0.1)', official:'https://www.austrac.gov.au', updated:'7 Oct 2026', retention:'7 years',
@@ -479,7 +472,7 @@ class Component extends DCLogic {
       rules:[
         {name:'STR via goAML', spec:'Listed in the pack. The desk does not send it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Exchange identification', spec:'AED 3,500 or more on one deal. No cash threshold report.', tag:'Planned', cat:'threshold', when:'At the till'},
-        {name:'Sanctions screening', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'AML/CFT program', spec:'Maintained to the CBUAE rulebook.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
@@ -505,7 +498,7 @@ class Component extends DCLogic {
         {name:'Payment services licence', spec:'Listed in the pack. A licence class is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'STR to the STRO', spec:'Listed in the pack. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Transfer information', spec:'Originator and beneficiary data on transfers.', tag:'Planned', cat:'transfer', when:'On transfer'},
-        {name:'Sanctions screening', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'c-ed', tag:'C&ED', country:'Hong Kong', regulator:'Customs & Excise Department', status:'Coming soon', kind:'soon', color:'#4A6B2F', soft:'rgba(74,107,47,0.1)', official:'https://www.customs.gov.hk', updated:'23 May 2026', retention:'Per AMLO',
@@ -517,7 +510,7 @@ class Component extends DCLogic {
         {name:'MSO licence', spec:'Listed in the pack. A licence is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'STR to the JFIU', spec:'Listed in the pack. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Occasional transaction CDD', spec:'Due diligence at HK$120,000.', tag:'Planned', cat:'threshold', when:'At the till'},
-        {name:'Sanctions screening', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'Record retention', spec:'Kept in line with the AMLO.', tag:'Planned', cat:'records', when:'After the deal'}
       ] }
   ];
@@ -562,22 +555,22 @@ class Component extends DCLogic {
     });
   }
   TIERS = [
-    { name:'Re-screen', ribbon:'', price:'$3.99', unit:'/ re-screen', color:'#5C554C', soft:'rgba(23,20,15,0.06)',
-      oneLiner:'Listed price. Not connected.',
+    { name:'Re-screen', color:'#5C554C', soft:'rgba(23,20,15,0.06)',
+      oneLiner:'Not connected.',
       badge:'Not connected', badgeOn:false,
-      blurb:'Listed price for a later check. Verification and screening are not connected yet. Paying this does not re-run a list.',
-      includes:['Verification is not connected','Screening is not connected','No list is loaded','The price is listed only'],
+      blurb:'Verification and screening are not connected yet. Nothing is charged today.',
+      includes:['Verification is not connected','Screening is not connected','No list is loaded','Nothing is charged today'],
       persona:'returning clients already on file', cta:'See early access' },
-    { name:'Verified', ribbon:'Most popular', price:'$8.99', unit:'/ verification', color:'#1D6B45', soft:'var(--green-soft)',
-      oneLiner:'Listed price. Not connected.',
+    { name:'Verified', color:'#1D6B45', soft:'var(--green-soft)',
+      oneLiner:'Not connected.',
       badge:'Not connected', badgeOn:false,
-      blurb:'Listed price. The desk does not scan an ID, authenticate a document, or screen a list.',
+      blurb:'The desk does not scan an ID, authenticate a document, or screen a list. Nothing is charged today.',
       includes:['No document scan','No database check','Screening is not connected','Nothing is filed'],
       persona:'every new client at the counter', cta:'See early access' },
-    { name:'Verified Plus', ribbon:'Best protection', price:'$14.99', unit:'/ deep file', color:'#A9791C', soft:'var(--brass-soft)',
-      oneLiner:'Listed price. Not connected.',
+    { name:'Verified Plus', color:'#A9791C', soft:'var(--brass-soft)',
+      oneLiner:'Not connected.',
       badge:'Not connected', badgeOn:false,
-      blurb:'Listed price. No face match, no adverse media, and no enhanced report is produced.',
+      blurb:'No face match, no adverse media, and no enhanced report is produced. Nothing is charged today.',
       includes:['No liveness check','No adverse media','No contact-risk check','No report is produced'],
       persona:'high-value deals and higher-risk clients', cta:'See early access' }
   ];
@@ -678,7 +671,7 @@ class Component extends DCLogic {
       ],
       autoHint: this.state.auto ? 'Auto-advancing · click to hold' : 'Click a tier for detail',
       detailName: this.TIERS[this.state.tier].name,
-      detailPrice: this.TIERS[this.state.tier].price + ' ' + this.TIERS[this.state.tier].unit,
+      detailPrice: '',
       detailBlurb: this.TIERS[this.state.tier].blurb,
       detailPersona: this.TIERS[this.state.tier].persona,
       detailCta: this.TIERS[this.state.tier].cta,
@@ -694,14 +687,12 @@ class Component extends DCLogic {
       kycTiers: this.TIERS.map((t, i) => {
         const on = i === this.state.tier;
         return {
-          name: t.name, ribbon: t.ribbon, price: t.price, unit: t.unit, oneLiner: t.oneLiner,
+          name: t.name, oneLiner: t.oneLiner,
           i: i, onClick: () => this.pickTier(i),
           wrap: 'appearance:none;font:inherit;color:inherit;cursor:pointer;text-align:left;display:flex;flex-direction:column;border-radius:14px;padding:12px 14px 14px;box-sizing:border-box;transition:background .25s,border-color .25s,box-shadow .25s,transform .25s;' + (on ? 'background:var(--panel);border:1.5px solid ' + t.color + ';box-shadow:0 18px 34px -26px ' + t.color + ';transform:translateY(-2px);' : 'background:rgba(251,249,244,0.55);border:1px solid var(--line);'),
           nameStyle: 'font-size:13.5px;font-weight:800;line-height:1.2;color:' + (on ? t.color : 'var(--ink)') + ';',
-          priceStyle: 'font-family:var(--serif);font-size:27px;line-height:1;color:' + (on ? t.color : 'var(--ink)') + ';',
           barTrack: 'display:block;height:2px;border-radius:2px;margin-top:11px;overflow:hidden;background:' + (on && this.state.auto ? 'rgba(23,20,15,0.1)' : 'transparent') + ';',
-          barFill: 'display:block;height:100%;width:0%;border-radius:2px;background:' + t.color + ';',
-          ribbonStyle: t.ribbon ? 'font-family:var(--m);font-size:8px;letter-spacing:0.07em;text-transform:uppercase;font-weight:600;border-radius:999px;padding:3px 8px;white-space:nowrap;' + (on ? 'color:#fff;background:' + t.color + ';' : 'color:' + t.color + ';background:' + t.soft + ';') : 'display:none;'
+          barFill: 'display:block;height:100%;width:0%;border-radius:2px;background:' + t.color + ';'
         };
       }),
       kycLadder: [

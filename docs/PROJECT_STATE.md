@@ -449,6 +449,16 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, third pass. The onboarding
+agreement does not say client verification is billed. The site does not
+name a most-chosen or most-popular plan, and it does not give a measured
+time for closing the day or for a repeat deal. Per-tier KYC prices are
+off the public pages. One planned price remains: from $3.99 a check,
+and nothing is charged today. The claims check also rejects dotted
+acronyms, OSFI, a singular real shop, invisible splits, "screened
+against", and "sanctions screening" except the sentence that it is not
+connected.
+
 **2026-10-11**, public site claims, second pass. There are no shops on
 the product yet. Canada is the only live country. Serbia, India and the
 Philippines are marked not live, and their rule tags no longer say they

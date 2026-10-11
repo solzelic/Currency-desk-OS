@@ -48,4 +48,75 @@ describe("public marketing claims", () => {
     const result = probe("STRUCTURING stays on the worksheet");
     expect(result.ok).toBe(true);
   });
+
+  it("flags a dotted OFAC", () => {
+    const result = probe("O.F.A.C. list");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/OFAC/);
+  });
+
+  it("flags a dotted U.N. sanctions list", () => {
+    const result = probe("U.N. sanctions list");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/UN sanctions/);
+  });
+
+  it("flags OSFI", () => {
+    const result = probe("checked with OSFI");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/OSFI/);
+  });
+
+  it("flags a singular real shop", () => {
+    const result = probe("a real shop");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real shop/);
+  });
+
+  it("flags a zero-width space inside real shops", () => {
+    const result = probe("real&#8203;shops");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real shop/);
+  });
+
+  it("flags a soft hyphen inside real shops", () => {
+    const result = probe("real&shy;shops");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real shop/);
+  });
+
+  it("flags sanctions screening when it is not the honest negation", () => {
+    const result = probe("sanctions screening included");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/sanctions screening/);
+  });
+
+  it("allows the honest sentence that sanctions screening is not connected", () => {
+    const result = probe("Sanctions screening is not connected");
+    expect(result.ok).toBe(true);
+  });
+
+  it("flags screened against", () => {
+    const result = probe("screened against a list");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/screened against/);
+  });
+
+  it("flags most popular", () => {
+    const result = probe("Most popular");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/most popular/);
+  });
+
+  it("flags most chosen", () => {
+    const result = probe("Most chosen");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/most chosen/);
+  });
+
+  it("flags billed separately", () => {
+    const result = probe("billed separately per file");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/billed separately/);
+  });
 });
