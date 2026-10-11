@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "//sentry": "@sentry/node is PINNED EXACTLY (11.6.0, no caret). Engineering standards §6.5: a third-party runtime dependency is pinned, and the reason is stated here. A caret would let a later install change which errors are sent and what the scrubber removes, without a review. The SDK is not loaded unless SENTRY_DSN is set.",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:prototype": "STATIC_DIR=.. STATIC_INDEX='CurrencyDesk OS.html' tsx watch src/index.ts",
@@ -21,6 +22,7 @@
     "@electric-sql/pglite": "^0.2.17",
     "@fastify/cookie": "^11.0.2",
     "@fastify/static": "^10.1.0",
+    "@sentry/node": "11.6.0",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.2.1",
