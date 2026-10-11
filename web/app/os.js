@@ -33399,12 +33399,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         gridTemplateColumns: '1fr 1fr 1fr'
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
-      label: phone ? 'ID ON FILE' : 'ID on file',
+      label: "ID on file",
+      sentence: phone,
       value: idMissing ? '—' : rec.idType || 'ID',
       sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
-      label: phone ? `LAST ${s.winDays}D` : `Last ${s.winDays}d`,
+      label: phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`,
+      sentence: phone,
       value: s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome()),
       sub: s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range',
       tone: over ? CD.flag : near ? CD.amber : CD.ink,
@@ -33422,7 +33424,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     value,
     sub,
     tone,
-    divider
+    divider,
+    sentence
   }) {
     return /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5",
@@ -33430,7 +33433,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderLeft: divider ? `1px solid ${CD.lineSoft}` : 'none'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[9.5px] uppercase tracking-wider",
+      className: 'text-[9.5px] tracking-wider' + (sentence ? ' cd-tx-stat-label' : ' uppercase'),
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
@@ -34788,7 +34791,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, "New transaction"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "cd-tx-quiet text-[11px]",
       style: {
         color: CD.mute
       }
@@ -35004,7 +35007,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontFamily: 'Space Mono, monospace'
       }
     }, pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
-      className: "cd-tx-kicker text-[11px]",
+      className: "cd-tx-kicker cd-tx-quiet text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
@@ -35905,13 +35908,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between mb-1"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "cd-tx-kicker text-[10px] uppercase tracking-wider font-semibold",
+      className: "cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Before you post"), /*#__PURE__*/React.createElement("span", {
-      className: "cd-tx-kicker text-[10px] px-1.5 py-0.5",
+      className: "cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5",
       style: {
         borderRadius: 999,
         background: allGreen ? CD.greenSoft : CD.lineSoft,

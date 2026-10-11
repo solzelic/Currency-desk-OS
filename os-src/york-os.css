@@ -2969,8 +2969,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     text-transform: none !important;
   }
   .cd-tx-check-go {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
     border: 0;
@@ -2979,5 +2983,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font: inherit;
     text-align: left;
     cursor: pointer;
+  }
+  /* --tab-inactive is #6B6760, the phone bar's ink. It clears 4.5:1
+     on the white panel and on the green wash behind Ready. */
+  .cd-tx-quiet {
+    color: var(--tab-inactive, #6B6760) !important;
+  }
+  .cd-tx-stat-label {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
   }
 }

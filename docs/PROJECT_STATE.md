@@ -153,14 +153,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   ledger record" heading is hidden; the two fields stay, because
   the server still requires them. The checklist names them "Purpose
   and source of funds" with "Needed for this amount", and tapping
-  that line scrolls to the fields and focuses the first. The buy
+  that line is a 44px target, and tapping it scrolls to the fields
+  and focuses the first. Before you post, the Ready count, the
+  date, and the rate line use the phone ink #6B6760. The buy
   and sell badge reads "We buy" or "We sell", blue on pale blue and
   purple on pale purple. Exchange, Margin, Before you post, the
   steps-left count, and the rate line are 13px sans, sentence case.
   Mono stays on references. A date reads
   like "Oct 11, 2026", including the header and an ID expiry. The
-  amount field keeps what was typed. The customer stats read ID ON FILE
-  and LAST {n}D. The type row keeps a 16px inset and fades the pills
+  amount field keeps what was typed. The customer stats read "ID on file"
+  and "Last {n} days". The type row keeps a 16px inset and fades the pills
   at the right edge. Record the ID is one column, so the ID type is
   not cut off. Its subtitle is "Type, number and expiry". Customer,
   the amounts, the rate, and the required fields are the full width of
@@ -713,7 +715,9 @@ on the ticket. The badge reads "We sell" or "We buy" in the sell
 and buy colours. Exchange, Margin, Before you post, and the rate
 line are sentence case in the sans face. The checklist says
 "Purpose and source of funds" and "Needed for this amount", and
-tapping it scrolls to those fields. Purpose and
+tapping it scrolls to those fields. That target is 44px. Before
+you post, Ready, the date, and the rate line use #6B6760. The
+customer stats read "ID on file" and "Last {n} days". Purpose and
 source borders turn red only after an empty field is left. The
 ledger-record heading is hidden. The type row keeps a 16px inset
 and fades at the right edge. Record the ID is one column, and its subtitle is "Type, number and expiry".

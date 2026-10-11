@@ -283,6 +283,8 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       const intro = await page.locator(".cd-tx-facts-intro").first().evaluate((el) => getComputedStyle(el).display);
       expect(intro, `ledger intro hidden at ${width}`).toBe("none");
     }
+    await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
+    await expect(page.getByText("$6.99")).toHaveCount(0);
     await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
     await expect(page.locator(".cd-tx-rate-line")).toContainText(/\d\.\d{4}/);
@@ -299,6 +301,23 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       weight: "600",
       transform: "none",
     });
+    await page.locator(".cd-tx-swap").scrollIntoViewIfNeeded();
+    await page.locator(".cd-tx-swap").click();
+    await expect(page.locator(".cd-tx-side")).toContainText(/We buy [A-Z]{3}/);
+    const buyPaint = await page.locator(".cd-tx-side").evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { color: s.color, bg: s.backgroundColor };
+    });
+    expect(buyPaint, `buy badge at ${width}`).toEqual({
+      color: "rgb(30, 90, 168)",
+      bg: "rgb(232, 240, 251)",
+    });
+    expect(buyPaint.color, `buy badge is not the sell colour at ${width}`).not.toBe("rgb(122, 62, 150)");
+    await page.locator(".cd-tx-swap").click();
+    await expect(page.locator(".cd-tx-side")).toContainText(/We sell [A-Z]{3}/);
+    const quiet = await page.locator(".cd-tx-quiet").evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
+    expect(quiet.length, `quiet lines at ${width}`).toBeGreaterThan(0);
+    expect(quiet.every((c) => c === "rgb(107, 103, 96)"), `quiet ink at ${width}: ${quiet.join(", ")}`).toBe(true);
     const receive = await page.locator(".cd-tx-receive").evaluate((el) => getComputedStyle(el).color);
     expect(receive, `receive field at ${width}`).toBe("rgb(17, 17, 17)");
     const ticketGet = await page.locator(".cd-tx-ticket-get").evaluate((el) => getComputedStyle(el).color);
@@ -313,6 +332,8 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     if (hasLedger) {
       const jump = page.getByRole("button", { name: /Purpose and source of funds/ });
       await expect(jump).toContainText("Needed for this amount");
+      const jumpBox = await jump.boundingBox();
+      expect(jumpBox!.height, `purpose jump at ${width}`).toBeGreaterThanOrEqual(44);
       await page.locator(".cd-tx-scroll").evaluate((el) => { el.scrollTop = el.scrollHeight; });
       await jump.scrollIntoViewIfNeeded();
       const before = await page.locator(".cd-tx-scroll").evaluate((el) => el.scrollTop);
@@ -338,9 +359,18 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     const action = page.locator(".cd-tx-actions").getByRole("button", { name: /steps? left|to complete|server quote|Record transaction|Post frozen/i });
     await expect(action).toBeVisible();
     await expect(action).toBeEnabled();
-    await expect(action).toHaveText(/\d+ steps? left/);
+    await expect(action).toHaveText(hasLedger ? "2 steps left" : "1 step left");
+    await page.locator(".cd-tx-scroll").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    const beforeSteps = await page.locator(".cd-tx-scroll").evaluate((el) => el.scrollTop);
     await action.click();
-    await expect(page.locator(".cd-tx-missing").first()).toBeVisible();
+    const afterSteps = await page.locator(".cd-tx-scroll").evaluate((el) => el.scrollTop);
+    expect(afterSteps, `steps left scrolls to the first missing item at ${width}`).toBeLessThan(beforeSteps);
+    const missing = page.locator(".cd-tx-missing").first();
+    await expect(missing).toBeVisible();
+    const missBox = await missing.boundingBox();
+    const stepView = page.viewportSize();
+    expect(missBox!.y, "missing item top").toBeGreaterThanOrEqual(0);
+    expect(missBox!.y + missBox!.height, "missing item bottom").toBeLessThanOrEqual(stepView!.height);
     const button = await action.boundingBox();
     expect(button, "post button").toBeTruthy();
     expect(button!.y).toBeGreaterThanOrEqual(0);
@@ -433,8 +463,9 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
-  await expect(page.locator(".cd-tx-stats")).toContainText("ID ON FILE");
-  await expect(page.locator(".cd-tx-stats")).toContainText(/LAST \d+D/);
+  await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
+  await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
+  expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");
   await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");
   const document = await page.evaluate(async (who) => {
     const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
