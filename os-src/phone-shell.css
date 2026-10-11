@@ -659,6 +659,31 @@
     color: var(--gray-700);
     font-weight: 600;
   }
+  .phq-amt-fee {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    margin: 4px 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--brand-primary, var(--brand-green));
+    font: var(--text-small);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .phq-amt-fee:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .phq-amt-note {
+    display: block;
+    margin: 4px 0 0;
+    color: var(--color-text-muted);
+    font: var(--text-small);
+  }
 }
 
 /* Shared pieces: NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast.

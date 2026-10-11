@@ -549,7 +549,19 @@ Two columns. Each tile is at least 56px. The selected tile uses
 `os-src/phone/AmountField.jsx`. `label`, `value`, `onChange(string)`,
 `currency`. The currency is text beside the number, not a picker. The
 cashier types the amount. The field does not format it. Focus uses
-`--color-focus`.
+`--color-focus`. The number uses `inputMode="decimal"`.
+
+`feeLabel` (string) and `onFee` (function) are optional. When `onFee`
+is passed, a fee line sits under the number and is a button at least
+44px tall. Its text is `feeLabel`, and the tap calls `onFee`. The
+wrapper is a `div` in that case, so the button tap does not also focus
+the number. `feeLabel` without `onFee` is the same line as text, not a
+control. Leave both off and the field stays a label around the number,
+which is what Cheques does.
+
+`autoFocus` (boolean) is optional. When true, the number is focused as
+it appears, which opens the numeric keypad. Leave it off and the keypad
+stays closed until the cashier taps the number.
 
 ### StepHeader
 

@@ -5101,21 +5101,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 /* ---- os-src/phone/AmountField.jsx ---- */
 /* AmountField. A large number the cashier types, with the currency
    code beside it as text. The field does not format the number.
-   See docs/PHONE_SHELL.md.
+   feeLabel and onFee are optional. Together they draw a fee line
+   under the number; onFee makes that line a button. autoFocus
+   focuses the number so the keypad opens. Leave them off and the
+   field is the plain amount. See docs/PHONE_SHELL.md.
 
-   label, value, onChange(string), currency */
+   label, value, onChange(string), currency
+   feeLabel?, onFee?, autoFocus? */
 (function () {
   function AmountField({
     label,
     value,
     onChange,
-    currency
+    currency,
+    feeLabel,
+    onFee,
+    autoFocus
   }) {
-    return /*#__PURE__*/React.createElement("label", {
-      className: "phq-amt"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "phq-amt-k"
-    }, label), /*#__PURE__*/React.createElement("span", {
+    const number = /*#__PURE__*/React.createElement("span", {
       className: "phq-amt-v"
     }, /*#__PURE__*/React.createElement("input", {
       className: "phq-amt-n",
@@ -5124,12 +5127,35 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       placeholder: "0.00",
       "aria-label": label,
       value: value,
+      autoFocus: autoFocus ? true : undefined,
       onChange: function (e) {
         onChange && onChange(e.target.value);
       }
     }), /*#__PURE__*/React.createElement("span", {
       className: "phq-amt-c"
-    }, currency)));
+    }, currency));
+    const fee = onFee ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phq-amt-fee",
+      onClick: onFee
+    }, feeLabel) : feeLabel ? /*#__PURE__*/React.createElement("span", {
+      className: "phq-amt-note"
+    }, feeLabel) : null;
+    /* A button cannot sit inside the label, or the tap focuses the
+       number as well. Without onFee the wrapper stays a label, which
+       is what Cheques already uses. */
+    if (onFee) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phq-amt"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "phq-amt-k"
+      }, label), number, fee);
+    }
+    return /*#__PURE__*/React.createElement("label", {
+      className: "phq-amt"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "phq-amt-k"
+    }, label), number, fee);
   }
   window.CDOS = window.CDOS || {};
   window.CDOS.AmountField = AmountField;
