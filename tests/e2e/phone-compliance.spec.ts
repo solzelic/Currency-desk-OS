@@ -409,10 +409,10 @@ test("fixture deals fill the phone details and one deal drill", async ({ page })
   await expect(deals).toContainText("3,200.00 CAD");
   await expect(deals).toContainText("3,400.00 CAD");
   await expect(deals).toContainText("3,600.00 CAD");
-  await expect(deals).toContainText("10:15 am");
-  await expect(deals).toContainText("1:40 pm");
-  await expect(deals).toContainText("5:05 pm");
-  expect(await deals.innerText()).not.toMatch(/\bAM\b|\bPM\b/);
+  await expect(deals).toContainText("10:15 AM");
+  await expect(deals).toContainText("1:40 PM");
+  await expect(deals).toContainText("5:05 PM");
+  expect(await deals.innerText()).not.toMatch(/\b(?:am|pm)\b/);
   expect(await shell.innerText()).not.toMatch(/\$/);
   await expect(shell.locator(".fld-tab")).toHaveCount(0);
   await sweepCompliance(page);

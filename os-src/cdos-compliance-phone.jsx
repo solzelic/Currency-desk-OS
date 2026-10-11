@@ -93,7 +93,7 @@
 
   /* A row date is "Today", "Yesterday", or "Oct 9" in the current
      year. A deal heading keeps the calendar day: "Today, Oct 11".
-     Times are 12-hour with a lower-case am or pm: "10:15 am". formatPhoneDate and
+     Times are 12-hour, with AM or PM: "10:15 AM". formatPhoneDate and
      formatPhoneTime win when the shell provides them. */
   function asDate(value) {
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
@@ -156,7 +156,7 @@
     const shared = window.CDOS.formatPhoneTime;
     if (typeof shared === 'function') {
       const text = shared(value);
-      if (text) return text;
+      if (text) return String(text).replace(/\b(am|pm)\b/gi, (mark) => mark.toUpperCase());
     }
     const date = value instanceof Date ? asDate(value) : null;
     let hour = null;
@@ -171,7 +171,7 @@
       minute = Number(match[2]);
       if (hour > 23 || minute > 59) return '';
     }
-    const suffix = hour >= 12 ? 'pm' : 'am';
+    const suffix = hour >= 12 ? 'PM' : 'AM';
     const face = hour % 12 || 12;
     return face + ':' + (minute < 10 ? '0' : '') + minute + ' ' + suffix;
   }

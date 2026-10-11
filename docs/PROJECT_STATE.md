@@ -149,7 +149,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   cards, and Screening or the 24-hour rule. Amounts use formatPhoneMoney,
   so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
   used. A recent day reads Today or Yesterday, and a day in the current
-  year reads like Oct 9, with no year. Times are 12-hour and lowercase.
+  year reads like Oct 9, with no year. Times are 12-hour with AM or PM.
   One client's deals sit under a date heading, and a flagged set shows
   how many deals and the total. A selected
   filter chip is gray-900. Only the sticky primary button takes the
@@ -699,7 +699,7 @@ bottom sheet above the bar. The classes live on the shell.
 **2026-10-11**, phone Compliance copy and dates. The shared till line
 keeps a space on each side of the dot. The phone avatar uses the UI
 font. A row date is Today, Yesterday, or a month and day with no
-year, and it is not cut off at 360. Times are 12-hour and lowercase.
+year, and it is not cut off at 360. Times are 12-hour with AM or PM.
 The list is titled "24-hour rule". A client's flagged deals show the
 running total once, under one date heading, and the warning sentence
 once.
