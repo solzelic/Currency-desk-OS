@@ -192,6 +192,7 @@ export const CATALOGUE: readonly KeyShape[] = [
   { key: "cdos_kyc_partner_rate", kind: "preference", what: "The partner rate shown for KYC checks" },
   { key: "yorkfx_rates_v1", kind: "preference", what: "The rate board on screen — the priced record is cdos_locked_book" },
   { key: "yorkfx_rates_locked", kind: "preference", what: "Whether the board is held" },
+  { key: "yorkfx_rates_locked_at", kind: "preference", what: "When the board was held, so a phone can name the time" },
   { key: "yorkfx_board_order", kind: "preference", what: "Currency order on the board" },
   { key: "yorkfx_rate_provider", kind: "preference", what: "Which rate source is selected" },
   /* Per person, not per desk: the value is a map of staff id →

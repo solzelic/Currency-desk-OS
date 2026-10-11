@@ -17,6 +17,24 @@ import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
+/* The employee tour opens on the till. On a phone the card has
+   nowhere else to sit, so it covers Move cash and the click waits
+   out the test. Skip is the same control the other phone specs use.
+   The refusal under it is what this test is here to read. */
+async function dismissTour(page: Page): Promise<void> {
+  const skip = page.locator(".cdos-tour-skip");
+  /* isVisible answers this instant. A missing Skip button is false,
+     not an error, so there is nothing to catch. A throw is a broken
+     page and the check should fail on it. */
+  for (let i = 0; i < 15; i++) {
+    if (await skip.isVisible()) {
+      await skip.click();
+      return;
+    }
+    await page.waitForTimeout(200);
+  }
+}
+
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
 const { Pool } = requireFromServer("pg") as {
   Pool: new (config: { connectionString: string }) => {
@@ -107,6 +125,7 @@ test("the unopened-vault refusal is readable on a phone", async ({ page }, testI
     /* The menu label "Cash Drawer" is hidden with the menu. The
        bottom bar's Till tab is the way into the drawer. */
     await page.locator('#phonebar [data-phone-app="till"]').click();
+    await dismissTour(page);
     const openTill = page.getByRole("button", { name: /Open the till/i }).first();
     /* isVisible answers this instant. A till that is already open
        has no button, which is false, not an error. A throw is a
