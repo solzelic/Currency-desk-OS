@@ -1479,11 +1479,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
        little air. */
     margin-right: 112px;
   }
-  /* #appbar:not(.editing) is more specific than #appbar, so a mask
-     reset on #appbar alone left the right-edge fade in place. */
+  /* The desktop fade starts 104px in, which is the old padding under
+     the store and ID buttons. On a phone the bar already ends before
+     those buttons, so that fade covered the last tab. A short fade
+     on this shorter bar is the scroll cue, and it does not reach
+     the buttons. */
   #appbar:not(.editing) {
-    -webkit-mask-image: none;
-    mask-image: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .app-btn { min-height: 44px; padding: 0 12px; margin: 4px 2px; gap: 8px; }
   .app-btn .al { font-size: 12px; letter-spacing: 0.04em; }
@@ -1533,8 +1536,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .win-body .overflow-hidden:has(table) {
     overflow-x: auto;
     max-width: 100%;
+    /* The card scrolls. A hard edge reads as the columns being cut
+       off, so the right side fades. */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
   }
   .win-body .overflow-hidden:has(table) table { min-width: 520px; }
+  /* A reference such as CD-261011-18284a was wrapping onto three
+     lines inside a narrow column. One line, and the card scrolls. */
+  .win-body .overflow-hidden:has(table) :is(th, td) { white-space: nowrap; }
   /* Settings is a 212px rail beside the panel. On a phone that rail
      leaves the account form a sliver, and the theme drawing (drawn
      at a desktop offset) sticks out of the screen. Stack them. */
@@ -1546,9 +1556,87 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-bottom: 1px solid var(--line);
   }
   .settings-shell > .flex-1 { max-width: none !important; min-width: 0; }
-  .fld-bar { padding-left: 8px; padding-right: 8px; }
+  .fld-bar {
+    min-width: 0;
+    max-width: 100%;
+    padding-left: 8px;
+    padding-right: 8px;
+    /* Inline negative margins pull the bar past the window, and a
+       bar as wide as its labels gets clipped with a word cut in half.
+       Stay in the window, scroll, and fade the edge that continues. */
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
   .fld-tab { min-height: 44px; font-size: 13px; padding: 10px 18px 10px 12px; }
+  /* A title beside a row of buttons shrinks to nothing: the buttons
+     are flex-none, so the words stack one per line for hundreds of
+     pixels and the buttons run off the right. The title takes the
+     row. The buttons take the next one, and wrap. */
+  [data-tour="till"] > .flex {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 8px;
+  }
+  [data-tour="till"] > .flex > .min-w-0 {
+    flex: 1 1 calc(100% - 44px);
+    width: calc(100% - 44px);
+    min-width: calc(100% - 44px);
+    max-width: calc(100% - 44px);
+  }
+  [data-tour="till"] > .flex > .ml-auto {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  [data-tour="till"] > .flex > .ml-auto > * {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  /* Search plus New KYC is the same squeeze. Stack them full width. */
+  .win-body .flex.items-start.justify-between {
+    flex-direction: column;
+    align-items: stretch;
+    row-gap: 8px;
+  }
+  .win-body .flex.items-start.justify-between > .flex-none,
+  .win-body .flex.items-start.justify-between > .min-w-0 {
+    width: 100%;
+    max-width: 100% !important;
+    flex: 1 1 auto;
+  }
+  .win-body .flex.items-start.justify-between > .flex {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 100%;
+  }
+  .win-body .flex.items-start.justify-between input {
+    width: 100% !important;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  /* Clients: search and New contact. Ledger: the search field. */
+  [data-tour="clients"] { flex-wrap: wrap; row-gap: 8px; }
+  [data-tour="clients"] > .flex-1,
+  [data-tour="clients"] > .flex-none {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .win-body .min-w-\[240px\] {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0 !important;
+  }
   .ln-kpis { grid-template-columns: 1fr; }
+  /* Four stat tiles in a row leave "Possible matches" one word wide. */
+  .win-body .grid.grid-cols-4 { grid-template-columns: 1fr 1fr; }
   .ln-headline-val { font-size: 26px; }
   .cdos-tour-card { max-width: calc(100vw - 16px); box-sizing: border-box; }
   .cdos-tour-next, .cdos-tour-skip { min-height: 44px; }

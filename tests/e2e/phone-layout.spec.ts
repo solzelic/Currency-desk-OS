@@ -4,8 +4,9 @@
    Tagged is a separate fix and is not opened here.
 
    overflow:hidden cuts the content off. It is not a place to scroll.
-   Only overflow auto or scroll counts as containment, and only when
-   that box itself sits inside the screen. A button, link, input, or
+   A sideways scroll contains what sticks out, and only when that
+   box itself sits inside the screen. A vertical list is overflow
+   auto too, and that does not count. A button, link, input, or
    select that sticks out of a hidden ancestor is still cut off, so
    the check fails.
 
@@ -50,8 +51,12 @@ async function overflowPast(page: Page): Promise<string[]> {
           cutOff = true;
           if (isControl) clipped = true;
         }
+        /* overflow:auto is also what a vertical list uses. That does
+           not make a button stuck out the right a sideways scroll.
+           Only a box that actually scrolls sideways contains it. */
         const scrolls = parent.overflowX === "auto" || parent.overflowX === "scroll";
-        if (!cutOff && scrolls && box.right <= limit) {
+        const scrollsSideways = scrolls && node.scrollWidth > node.clientWidth + 1;
+        if (!cutOff && scrollsSideways && box.right <= limit) {
           contained = true;
           break;
         }
