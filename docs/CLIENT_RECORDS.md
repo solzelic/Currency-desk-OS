@@ -72,7 +72,7 @@ is one rule, computed on the server from
 `desk_client_identity_documents`: a real type (not empty and not
 "Not stated"), a number that survives stripping whitespace and
 invisible characters, and an expiry on or after the branch's business
-date. No expiry counts as not expired. The primary document is what
+date. A blank or missing expiry does not count. The primary document is what
 the desk shows (`displayedDocument`); it is not what decides the
 standing. The client response carries `idStanding` (`on_file`,
 `missing`, `expired`). `POST` and `PUT /api/ledger/customers` refuse
@@ -206,15 +206,18 @@ is identified.
 `verification_status` is derived from the same document rule the
 posting gate uses, not typed and not from the primary row alone:
 
-- no document with a real type (not empty and not "Not stated") and a
+- no document with a real type (not empty and not "Not stated"), a
   number that is still non-empty after whitespace and invisible
-  characters are stripped → `unverified`
-- such documents exist, and every one of them expired before the
-  branch's business date → `expired`
-- otherwise → `identified` (a null expiry counts as not expired)
+  characters are stripped, and an expiry date → `unverified`. A
+  blank or missing expiry is this case when it is the only paper
+- at least one such document is dated before the branch's business
+  date, and none is dated on or after it → `expired`
+- at least one such document is dated on or after that business
+  date → `identified`
 
 The primary flag is not in that predicate. A current secondary
-document is `identified` when the primary is expired or absent.
+document is `identified` when the primary is expired, blank-dated,
+or absent.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of

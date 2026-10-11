@@ -942,9 +942,9 @@
           </div>
 
           {/* body: form | rail */}
-          <div className="flex-1 min-h-0 flex">
+          <div className="tx-body flex-1 min-h-0 flex">
             {/* LEFT — the form */}
-            <div className="flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
+            <div className="tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
@@ -1158,7 +1158,7 @@
             </div>
 
             {/* RIGHT — ticket + checklist */}
-            <div className="flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
+            <div className="tx-rail flex-none flex flex-col">
               <div className="flex-1 overflow-auto p-4 space-y-3">
                 {/* deal ticket */}
                 <div style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>

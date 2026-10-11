@@ -1082,17 +1082,72 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(posted.statusCode, posted.body).toBe(201);
   });
 
-  it("counts a document with no expiry as not expired", async () => {
+  it("counts a blank or missing expiry as missing ID", async () => {
     const cookies = await cookie();
-    const client = await openClient(cookies, "No expiry");
-    const filed = await fileDocument(cookies, client.clientId, {
+    /* Null and a cleared field are the same stored date. Neither is
+       on file. A deal at the identification line is refused. */
+    const missing = await openClient(cookies, "No expiry");
+    const filed = await fileDocument(cookies, missing.clientId, {
       docType: "Passport",
       docNumber: "NO-EXP",
       expiresOn: null,
     });
+    expect(filed.idStanding).toBe("missing");
+    const posted = await exchange(cookies, await counterId(missing.clientId), "3000.00", "no-expiry");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+
+    const blank = await openClient(cookies, "Blank expiry");
+    const cleared = await fileDocument(cookies, blank.clientId, {
+      docType: "Passport",
+      docNumber: "BLANK-EXP",
+      expiresOn: "",
+    });
+    expect(cleared.idStanding).toBe("missing");
+    const refused = await exchange(cookies, await counterId(blank.clientId), "3000.00", "blank-expiry");
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("still reads every document when one expiry is blank", async () => {
+    const cookies = await cookie();
+    /* The blank paper is the one the desk shows. The secondary
+       document is what the standing is judged on. */
+    const current = await openClient(cookies, "Blank beside current");
+    await fileDocument(cookies, current.clientId, {
+      docType: "Passport",
+      docNumber: "BLANK-PRI",
+      expiresOn: "",
+      isPrimary: true,
+    });
+    const filed = await fileDocument(cookies, current.clientId, {
+      docType: "Driver licence",
+      docNumber: "CUR-SEC",
+      expiresOn: "2031-05-01",
+      isPrimary: false,
+    });
     expect(filed.idStanding).toBe("on_file");
-    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "no-expiry");
+    expect(filed.displayedDocument).toMatchObject({ docType: "Passport", isPrimary: true });
+    const posted = await exchange(cookies, await counterId(current.clientId), "3000.00", "blank-beside-current");
     expect(posted.statusCode, posted.body).toBe(201);
+
+    const old = await openClient(cookies, "Blank beside expired");
+    await fileDocument(cookies, old.clientId, {
+      docType: "Passport",
+      docNumber: "BLANK-OLD",
+      expiresOn: null,
+      isPrimary: true,
+    });
+    const expired = await fileDocument(cookies, old.clientId, {
+      docType: "Driver licence",
+      docNumber: "OLD-SEC",
+      expiresOn: "2001-01-01",
+      isPrimary: false,
+    });
+    expect(expired.idStanding).toBe("expired");
+    const refused = await exchange(cookies, await counterId(old.clientId), "3000.00", "blank-beside-expired");
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
   });
 
   it("uses the branch's business date, not UTC, across midnight", async () => {

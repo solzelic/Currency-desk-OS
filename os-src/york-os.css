@@ -926,6 +926,8 @@ button { font-family: inherit; }
 .win-body::-webkit-scrollbar-thumb, #appbar::-webkit-scrollbar-thumb { background: rgba(10,10,10,0.2); }
 /* app row: no persistent scrollbar — it sat under the active underline and read heavy.
    It fades in only while the pointer is over the row; wheel + drag still scroll. */
+.tx-rail { width: 320px; background: var(--cd-chip); }
+
 #appbar { scrollbar-width: none; }
 #appbar::-webkit-scrollbar { height: 0; background: transparent; }
 #appbar:hover { scrollbar-width: thin; }
@@ -1492,6 +1494,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .app-btn .al { font-size: 12px; letter-spacing: 0.04em; }
   .edge-rail { right: 6px; }
   .edge-rail .mb-op, .rail-store { width: 44px; height: 44px; }
+
+  /* The deal checklist is a 320px rail. On a phone that rail was
+     clipped off the right of the card, so the ID refusal and Record
+     ID were not on the screen. Stack it under the form and let the
+     card scroll to it. */
+  .tx-body { flex-direction: column; overflow: auto; }
+  .tx-form { flex: none; overflow: visible; }
+  .tx-rail { width: 100%; }
 
   #desktop .win {
     left: 0 !important;
