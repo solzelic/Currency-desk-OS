@@ -496,3 +496,98 @@ by day, and a sticky **New transaction**. Amounts use
 own rows; an empty book says so. The desktop ledger is the same tree
 it was: the in-page New transaction, the table, and the folder tabs.
 Records and Compliance stay on both.
+
+## Long-tail template
+
+`window.CDOS.LongTail.LongTailScreen` (`os-src/cdos-longtail.jsx`) is the
+one screen for the apps under More. It is `Phone.Screen` plus the
+components above: a title, `SummaryCards`, a segmented control when
+there are two to four sub-views (otherwise `FilterChips`), `Search`,
+the list, and one `StickyAction`. A read-only app omits the button.
+Vault and Audit trail are the first callers. Dashboard, Calculator,
+Loan calculator, Tagged, and Store should be thin callers of this
+same component. Do not build a second template.
+
+`usePhone()` is the 430px hook. Call it unconditionally, and do not
+mount the screen when it is false. Above 430px the desktop DOM is the
+one it already was.
+
+`state` is `ready`, `loading` (six skeleton rows), `empty` (one
+sentence, and `emptyAction` when there is a way forward), or `error`
+(`"<thing> did not load. Try again."`). A loading or error screen does
+not keep the previous numbers up. A missing amount is the words
+"No rate yet". Callers format money with `formatPhoneMoney` and pass
+the string in.
+
+### Props
+
+| Prop | Meaning |
+| --- | --- |
+| `app` | `data-app` on `Phone.Screen`. |
+| `title` | The app name. No "Example data" tag. |
+| `summary` | `[{ label, value, sub }]`. `value` null renders "No rate yet". |
+| `segments`, `segment`, `onSegment` | Two to four tabs. |
+| `chips`, `chip`, `onChip` | Filters when there are more than four sub-views. |
+| `search`, `onSearch`, `searchPlaceholder` | The search field. |
+| `state`, `loadingText`, `errorText`, `errorDetail`, `onRetry` | Honest states. `errorDetail` is the real message. |
+| `emptyText`, `emptyAction`, `onEmpty` | Empty. Omit `emptyAction` when there is nothing to do. |
+| `action`, `onAction` | The one button. Omit `action` on a read-only screen. |
+| `toast` | One line of feedback. |
+| `sheet` | A full-screen step, drawn by the caller. |
+| `children` | The list, only in the ready state. |
+
+### Vault
+
+Headline: cash in the vault, in the desk's currency, from
+`GET /api/ledger/position`. Tabs: Cash, Floats, Orders, Profit.
+Cash rows are ledger quantities. Worth is `marketValueHome`. No rate
+is "No rate yet". Stock uses the same bands as the desktop
+(`vaultStock`): below the floor "Running low", above the max "Too much",
+otherwise "Healthy", and no band means no badge.
+
+"Give out a float" opens one sheet. A cashier is accountability only
+(holdings do not move; the shift is the same record the desktop assigns).
+A till calls the existing `onIssueTill` path, which posts
+`/api/ledger/till-movements`. The sheet mints one idempotency key per
+currency and reuses it on a second tap, so the ledger records the
+movement once. An unopened vault is refused by that endpoint with
+"Open the vault with a starting count first."
+
+The empty unopened screen says the safe has no opening position and
+offers "Put the vault on the ledger", which is the existing opening
+dialog. The float button stays, so the refusal can still be reached.
+A tracked vault that holds nothing says so. A cashier settling a float
+still cannot see the expected figure; the phone says the count stays
+hidden until it is locked.
+
+### Audit trail
+
+Read-only. No main button. Newest first, grouped Today / Yesterday /
+the date. Chips: All, Deals, Cash, Sign-ins, Settings, Staff, matched
+from the action words already on the log. Search matches the plain
+name, the detail, the person, and any reference. A dotted internal
+code is shown as plain words (`transaction.post` is "Deal posted").
+The log is the same on-device trail the desktop reads. Role gates are
+unchanged: a cashier does not get Vault, and does get Audit trail.
+
+### Mapping the rest
+
+Same component. Not built in this change.
+
+| App | Summary card | Sub-views | Rows | Main button |
+| --- | --- | --- | --- | --- |
+| Dashboard | Total on hand, in the home currency. Second card: paid out on cheques not cleared | none (chips: Today, This week, This month) | Key numbers that open the app behind them | none |
+| Calculator | none | Add up / Convert / Margin | Result | Use in a new deal, on Convert only |
+| Loan calculator | Monthly payment | none | Inputs, then the schedule | none. Save as PDF is not offered |
+| Tagged | Count tagged | chips: Open / Done | Ledger rows with the tag reason | Mark as checked, on the detail |
+| Store | none | Installed / Add | One row per app, on/off, no prices | none |
+| Assistant | none | none | Chat. A Beta tag | Ask, in place of the sticky button |
+
+Assistant's backend does not ship in this build. `window.claude` is
+never assigned; `window.claude.complete` is only checked, and the
+existing screen throws offline when it is missing. The Assistant row
+stays on More, because that is the list a person already sees. It is
+not drawn with this template until that function exists.
+
+Branches stays off More (one shop). Texts stays off More until SMS is
+set up; that screen is not this template's job.

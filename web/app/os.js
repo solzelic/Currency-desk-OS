@@ -3494,8 +3494,10 @@
   /* ---- AUDIT TRAIL — searchable, day-grouped, append-only, with a 24h scrubber ---- */
   function Audit({
     audit,
-    settings
+    settings,
+    onOpenRef
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [q, setQ] = useState('');
     const [actionF, setActionF] = useState('all');
     const [staffF, setStaffF] = useState('all');
@@ -3633,6 +3635,14 @@
       background: CD.paper,
       color: CD.ink
     };
+    if (phone) {
+      const PhoneAudit = window.CDOS.LongTail.PhoneAudit;
+      return /*#__PURE__*/React.createElement(PhoneAudit, {
+        audit: audit,
+        settings: settings,
+        onOpenRef: onOpenRef
+      });
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "flex",
       style: {
@@ -16390,7 +16400,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      (`cashVersion` ticks on each recorded movement). `error` is rendered,
      not swallowed: a screen that fails to reach the ledger and shows its
      last figures anyway is the second book coming back. */
-  function useLedgerPosition(serverBacked, cashVersion) {
+  function useLedgerPosition(serverBacked, cashVersion, reload) {
     const [state, setState] = useState({
       loading: true,
       data: null,
@@ -16408,7 +16418,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       let live = true;
       setState(s => ({
         ...s,
-        loading: true
+        loading: true,
+        data: null
       }));
       window.CDOS.Backend.loadLedgerPosition().then(data => {
         if (live) setState({
@@ -16426,7 +16437,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return () => {
         live = false;
       };
-    }, [serverBacked, cashVersion]);
+    }, [serverBacked, cashVersion, reload]);
     return state;
   }
 
@@ -18416,6 +18427,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onClose
   }) {
     return /*#__PURE__*/React.createElement("div", {
+      className: "vault-modal",
       style: {
         position: 'absolute',
         inset: 0,
@@ -18509,7 +18521,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onOpenVaultPosition,
     cashVersion
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [tab, setTab] = useState('position');
+    const [reload, setReload] = useState(0);
     const [shifts, setShifts] = useState(loadShifts);
     const [ordering, setOrdering] = useState(null); // null | { ccy?, units?, order? }
     const [notifOpen, setNotifOpen] = useState(false);
@@ -18530,7 +18544,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       data: position,
       loading: posLoading,
       error: posError
-    } = useLedgerPosition(serverBacked, cashVersion);
+    } = useLedgerPosition(serverBacked, cashVersion, reload);
     const ledgerRows = vaultRowsOf(position);
     const onLedger = !!ledgerRows;
     useEffect(() => {
@@ -18689,6 +18703,51 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       log && log('Order cancelled', 'Pending banknote order removed');
     };
     const TABS = [['position', 'Position', 'pie'], ['shifts', 'Floats', 'users'], ['receive', 'Orders', 'arrowdown'], ['history', 'History', 'clock'], ['pnl', 'P&L', 'trendup']];
+
+    /* Phone only. The desktop return below is the screen a wide window
+       already had. Clearing `data` while a read is in flight is what
+       stops a phone from painting the previous total as if it were new. */
+    if (phone) {
+      const PhoneVault = window.CDOS.LongTail.PhoneVault;
+      const giveToPerson = (teller, opening) => {
+        const sh = {
+          id: Date.now(),
+          teller,
+          date: businessDate(),
+          openedAt: new Date().toLocaleString('en-CA', {
+            hour12: false
+          }).replace(',', ''),
+          openedBy: me.name,
+          opening: {
+            ...opening
+          },
+          status: 'open',
+          blind: true
+        };
+        setShifts(list => [sh, ...list]);
+        const total = Object.keys(opening).reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0);
+        log && log('Shift float assigned', `${teller} · ${fmtHome(total)} on the desk (accountability — holdings unchanged)`);
+      };
+      return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PhoneVault, {
+        position: position,
+        loading: posLoading,
+        error: posError,
+        onRetry: () => setReload(n => n + 1),
+        settings: settings,
+        shifts: shifts,
+        receipts: receipts,
+        summary: summary,
+        branches: branches,
+        station: station,
+        onAssignPerson: giveToPerson,
+        onIssueTill: onIssueTill,
+        onRecordOpening: serverBacked ? () => setOpeningVault(true) : null
+      }), openingVault && /*#__PURE__*/React.createElement(OpeningPositionModal, {
+        fc: DEFAULT_FC(),
+        onClose: () => setOpeningVault(false),
+        onSave: onOpenVaultPosition
+      }));
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -19151,7 +19210,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
-    Vault
+    Vault,
+    vaultStock: bandStatus
   });
 })();
 
@@ -63059,6 +63119,731 @@ window.CDOS_PERSIST = (function () {
   });
 })();
 
+/* ---- os-src/cdos-longtail.jsx ---- */
+/* ============================================================
+   Long-tail phone template.
+
+   One screen for the apps under More. It is the phone shell's
+   Screen, cards, chips, search, rows, and one sticky button.
+   Read-only apps omit the button.
+
+   Phone only. usePhone() is false above 430px, and the caller
+   does not mount this tree there. The shop header and the bottom
+   bar belong to the shell. This file is the content between them.
+
+   Amounts go through window.CDOS.formatPhoneMoney, which the
+   phone shell installs. A figure it will not format stays absent
+   and the screen says "No rate yet". Never a bare zero.
+
+   See docs/PHONE_SHELL.md.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useRef
+  } = React;
+  const QUERY = '(max-width: 430px)';
+  function usePhone() {
+    const [on, setOn] = useState(() => window.matchMedia(QUERY).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(QUERY);
+      const go = () => setOn(mq.matches);
+      go();
+      mq.addEventListener('change', go);
+      return () => mq.removeEventListener('change', go);
+    }, []);
+    return on;
+  }
+
+  /* '' from the formatter means there is no figure. A real zero is "0.00 CAD". */
+  function money(amount, code) {
+    const text = window.CDOS.formatPhoneMoney(amount, code);
+    return text || null;
+  }
+  function ccyName(code) {
+    try {
+      return new Intl.DisplayNames(['en'], {
+        type: 'currency'
+      }).of(code) || code;
+    } catch (e) {
+      /* An unknown code has no English name. The code itself is the label. */
+      return code;
+    }
+  }
+  function Segments({
+    items,
+    value,
+    onChange
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-seg",
+      role: "tablist"
+    }, items.map(s => /*#__PURE__*/React.createElement("button", {
+      key: s.id,
+      type: "button",
+      role: "tab",
+      "aria-selected": value === s.id,
+      className: value === s.id ? 'is-on' : '',
+      onClick: () => onChange(s.id)
+    }, s.label)));
+  }
+  function LongTailScreen(props) {
+    const Phone = window.CDOS.Phone;
+    const ready = props.state == null || props.state === 'ready';
+    const showAction = props.action && props.state !== 'loading' && props.state !== 'error';
+    const cards = (props.summary || []).map(card => ({
+      label: card.label,
+      value: card.value == null ? 'No rate yet' : card.value,
+      caption: card.sub
+    }));
+    const filters = ready && props.segments && props.segments.length >= 2 && props.segments.length <= 4 ? /*#__PURE__*/React.createElement(Segments, {
+      items: props.segments,
+      value: props.segment,
+      onChange: props.onSegment
+    }) : ready && props.chips ? /*#__PURE__*/React.createElement(Phone.FilterChips, {
+      chips: props.chips,
+      value: props.chip,
+      onChange: props.onChip
+    }) : null;
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: props.app,
+      className: "longtail",
+      title: props.title,
+      sticky: showAction ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+        label: props.action,
+        onClick: props.onAction
+      }) : null,
+      top: /*#__PURE__*/React.createElement(React.Fragment, null, props.toast ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-toast",
+        role: "status"
+      }, props.toast) : null, props.sheet || null)
+    }, props.state === 'loading' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+      className: "phone-note"
+    }, props.loadingText || 'Loading…'), /*#__PURE__*/React.createElement(Phone.LoadingState, {
+      rows: 6,
+      label: props.loadingText || 'Loading'
+    })), props.state === 'error' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Phone.ErrorState, {
+      message: props.errorText,
+      onRetry: props.onRetry
+    }), props.errorDetail && props.errorDetail !== props.errorText ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-error-detail"
+    }, props.errorDetail) : null), props.state === 'empty' && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: props.emptyText,
+      actionLabel: props.emptyAction,
+      onAction: props.onEmpty
+    }), ready && cards.length > 0 && /*#__PURE__*/React.createElement(Phone.SummaryCards, {
+      columns: cards.length > 1 ? 2 : 3,
+      cards: cards
+    }), filters, ready && /*#__PURE__*/React.createElement(Phone.Search, {
+      value: props.search || '',
+      onChange: props.onSearch,
+      placeholder: props.searchPlaceholder || 'Search',
+      label: props.searchPlaceholder || 'Search'
+    }), ready ? props.children : null);
+  }
+
+  /* ---- Vault ---------------------------------------------------------- */
+
+  const VAULT_TABS = [{
+    id: 'cash',
+    label: 'Cash'
+  }, {
+    id: 'floats',
+    label: 'Floats'
+  }, {
+    id: 'orders',
+    label: 'Orders'
+  }, {
+    id: 'profit',
+    label: 'Profit'
+  }];
+  function stockBadge(code, qty, settings) {
+    const fn = window.CDOS.vaultStock;
+    if (!fn) return null;
+    const band = fn(code, Number(qty), settings);
+    if (!band || band.label === 'no band') return null;
+    if (band.level === 'low') return {
+      tone: 'neg',
+      label: 'Running low'
+    };
+    if (band.level === 'high') return {
+      tone: 'warn',
+      label: 'Too much'
+    };
+    return {
+      tone: 'pos',
+      label: 'Healthy'
+    };
+  }
+  function homeOf(position) {
+    return position && position.homeCurrency || window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+  }
+  function clockLabel(date) {
+    if (!date) return '';
+    return date.toLocaleTimeString('en-CA', {
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+  function FloatSheet({
+    settings,
+    branches,
+    station,
+    position,
+    onClose,
+    onAssignPerson,
+    onIssueTill,
+    onDone
+  }) {
+    const home = homeOf(position);
+    const tracked = !!(position && position.vaultTracked);
+    const staff = settings && settings.employees && settings.employees.length ? settings.employees : window.CDOS.STAFF || [];
+    const people = staff.filter(e => e.active !== false && (e.role === 'Cashier' || e.role === 'Senior teller'));
+    const cashiers = people.filter(e => e.role === 'Cashier');
+    const branch = (branches || []).find(b => b.id === (station && station.branchId)) || (branches || [])[0];
+    const tills = branch && branch.tills || [];
+    const usual = settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length ? settings.floatCcys : Array.from(new Set([home, 'USD', 'EUR', 'GBP']));
+    const [target, setTarget] = useState('person');
+    const [teller, setTeller] = useState(cashiers.length === 1 ? cashiers[0].name : people[0] && people[0].name || '');
+    const [tillId, setTillId] = useState(station && station.tillId || tills[0] && tills[0].id || '');
+    const [codes, setCodes] = useState(usual);
+    const [amounts, setAmounts] = useState({});
+    const [err, setErr] = useState('');
+    const [issuing, setIssuing] = useState(false);
+    /* One key per currency for the life of this sheet. A second tap
+       resends the same key, and the ledger records the movement once. */
+    const keys = useRef({});
+    const busy = useRef(false);
+    const keyFor = code => {
+      if (!keys.current[code]) {
+        keys.current[code] = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      }
+      return keys.current[code];
+    };
+    const deskCodes = window.CDOS.deskCurrencyList && window.CDOS.deskCurrencyList() || usual;
+    const extra = deskCodes.filter(c => !codes.includes(c));
+    const lines = codes.map(code => {
+      const n = Number(amounts[code]);
+      if (!amounts[code] || !n) return {
+        code,
+        n: 0,
+        missing: false,
+        home: 0
+      };
+      if (code === home) return {
+        code,
+        n,
+        missing: false,
+        home: n
+      };
+      const per = window.CDOS.homePerUnit ? window.CDOS.homePerUnit(code) : 0;
+      if (!per) return {
+        code,
+        n,
+        missing: true,
+        home: null
+      };
+      return {
+        code,
+        n,
+        missing: false,
+        home: n * per
+      };
+    }).filter(l => l.n > 0);
+    const missingRate = lines.some(l => l.missing);
+    const total = missingRate ? null : lines.reduce((s, l) => s + l.home, 0);
+    const worth = lines.length === 0 ? money(0, home) : missingRate ? null : money(total, home);
+    const who = target === 'person' ? teller : ((tills.find(t => t.id === tillId) || {}).name || '').replace(/\s+—.*/, '');
+    const valid = lines.length > 0 && (target === 'person' ? !!teller : !!tillId);
+    const setAmt = (code, raw) => {
+      if (raw === '' || /^\d*\.?\d{0,2}$/.test(raw)) setAmounts(a => ({
+        ...a,
+        [code]: raw
+      }));
+    };
+    const submit = async () => {
+      if (busy.current || issuing || !valid) return;
+      busy.current = true;
+      setIssuing(true);
+      setErr('');
+      const opening = {};
+      lines.forEach(l => {
+        opening[l.code] = l.n;
+      });
+      try {
+        if (target === 'person') {
+          onAssignPerson(teller, opening);
+          onDone(teller, worth || lines.map(l => money(l.n, l.code)).filter(Boolean).join(', '));
+          return;
+        }
+        const keyMap = {};
+        lines.forEach(l => {
+          keyMap[l.code] = 'web-move:' + keyFor(l.code);
+        });
+        const result = await onIssueTill(tillId, opening, keyMap);
+        if (result && result.ok === false) {
+          setErr(result.message || 'That float was refused.');
+          return;
+        }
+        onDone(who || 'the till', worth || lines.map(l => money(l.n, l.code)).filter(Boolean).join(', '));
+      } catch (e) {
+        setErr(e && e.message || 'That float was refused.');
+      } finally {
+        busy.current = false;
+        setIssuing(false);
+      }
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet",
+      role: "dialog",
+      "aria-label": "Give out a float"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet-h"
+    }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("h2", null, "Give out a float"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sheet-x",
+      onClick: onClose
+    }, "Cancel")), /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet-b"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-label"
+    }, "Who gets it?"), /*#__PURE__*/React.createElement("div", {
+      className: "phone-tiles"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: 'phone-tile' + (target === 'person' ? ' is-on' : ''),
+      onClick: () => setTarget('person')
+    }, /*#__PURE__*/React.createElement("b", null, "A cashier"), /*#__PURE__*/React.createElement("small", null, "They answer for it at close")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: 'phone-tile' + (target === 'till' ? ' is-on' : ''),
+      onClick: () => setTarget('till')
+    }, /*#__PURE__*/React.createElement("b", null, "A till"), /*#__PURE__*/React.createElement("small", null, "Moves cash to the drawer"))), target === 'person' ? /*#__PURE__*/React.createElement("label", {
+      className: "phone-field"
+    }, "Cashier", /*#__PURE__*/React.createElement("select", {
+      value: teller,
+      onChange: e => setTeller(e.target.value),
+      "aria-label": "Cashier"
+    }, people.map(p => /*#__PURE__*/React.createElement("option", {
+      key: p.name,
+      value: p.name
+    }, p.name)))) : /*#__PURE__*/React.createElement("label", {
+      className: "phone-field"
+    }, "Till", /*#__PURE__*/React.createElement("select", {
+      value: tillId,
+      onChange: e => setTillId(e.target.value),
+      "aria-label": "Till"
+    }, tills.map(t => /*#__PURE__*/React.createElement("option", {
+      key: t.id,
+      value: t.id
+    }, t.name.replace(/\s+—.*/, ''))))), !tracked && /*#__PURE__*/React.createElement("p", {
+      className: "phone-warn",
+      role: "status"
+    }, "This vault has no opening position on the ledger yet. A float to a till is refused until the safe is counted."), /*#__PURE__*/React.createElement("div", {
+      className: "phone-label"
+    }, "Opening float"), codes.map(code => /*#__PURE__*/React.createElement("label", {
+      key: code,
+      className: "phone-crow"
+    }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("input", {
+      inputMode: "decimal",
+      value: amounts[code] || '',
+      placeholder: "0.00",
+      "aria-label": code + ' amount',
+      onChange: e => setAmt(code, e.target.value)
+    }))), extra.length > 0 && /*#__PURE__*/React.createElement("label", {
+      className: "phone-add"
+    }, /*#__PURE__*/React.createElement("select", {
+      value: "",
+      "aria-label": "Add a currency",
+      onChange: e => {
+        if (e.target.value) setCodes(list => list.concat(e.target.value));
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Add a currency"), extra.map(c => /*#__PURE__*/React.createElement("option", {
+      key: c,
+      value: c
+    }, c)))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-worth"
+    }, /*#__PURE__*/React.createElement("span", null, "Float worth"), /*#__PURE__*/React.createElement("b", null, worth == null ? 'No rate yet' : worth)), err && /*#__PURE__*/React.createElement("p", {
+      className: "phone-warn",
+      role: "alert"
+    }, err)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet-f"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sticky-btn",
+      disabled: !valid || issuing,
+      onClick: submit
+    }, issuing ? 'Giving the float…' : who ? 'Give float to ' + who : 'Give float')));
+  }
+  function PhoneVault(props) {
+    const Phone = window.CDOS.Phone;
+    const {
+      position,
+      loading,
+      error,
+      onRetry,
+      settings,
+      shifts,
+      receipts,
+      summary,
+      branches,
+      station,
+      onAssignPerson,
+      onIssueTill,
+      onRecordOpening
+    } = props;
+    const [tab, setTab] = useState('cash');
+    const [q, setQ] = useState('');
+    const [sheet, setSheet] = useState(false);
+    const [detail, setDetail] = useState(null);
+    const [toast, setToast] = useState('');
+    const [readAt, setReadAt] = useState(null);
+    useEffect(() => {
+      if (!loading && position) setReadAt(new Date());
+    }, [loading, position]);
+    useEffect(() => {
+      if (!toast) return undefined;
+      const t = setTimeout(() => setToast(''), 4000);
+      return () => clearTimeout(t);
+    }, [toast]);
+    const home = homeOf(position);
+    const rows = position && position.vaultTracked ? (position.currencies || []).filter(r => r.vault && Number(r.vault.quantity) > 0).map(r => ({
+      code: r.currency,
+      name: ccyName(r.currency),
+      qty: r.vault.quantity,
+      worth: r.vault.marketValueHome,
+      badge: stockBadge(r.currency, r.vault.quantity, settings)
+    })) : null;
+    const needle = q.trim().toLowerCase();
+    const match = text => !needle || String(text || '').toLowerCase().includes(needle);
+    let state = 'ready';
+    let emptyText = '';
+    let emptyAction = '';
+    if (loading) state = 'loading';else if (error) state = 'error';else if (!rows) {
+      state = 'empty';
+      emptyText = 'This vault has no opening position on the ledger, so there is nothing it can say the safe holds.';
+      emptyAction = 'Put the vault on the ledger';
+    }
+    const held = rows || [];
+    const shown = held.filter(r => match(r.name + ' ' + r.code));
+    const total = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
+    const when = clockLabel(readAt);
+    const summaryCard = [{
+      label: 'Cash in the vault, valued in ' + home,
+      value: total == null ? null : money(total, home),
+      sub: (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : '')
+    }];
+    const openShifts = (shifts || []).filter(s => s.status === 'open');
+    const orders = (receipts || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const profitRows = (summary && summary.data && summary.data.byCurrency || []).filter(r => r.deals > 0);
+    const realized = summary && summary.data ? summary.data.realizedPnlHome : null;
+    const worthLine = r => r.code === home ? 'home currency' : r.worth == null ? 'No rate yet' : 'worth ' + money(r.worth, home);
+    let body = null;
+    if (state === 'ready' && tab === 'cash') {
+      body = rows.length === 0 ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "This vault is on the ledger and holds nothing.") : shown.length ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, shown.map(r => /*#__PURE__*/React.createElement("div", {
+        key: r.code,
+        "data-currency": r.code
+      }, /*#__PURE__*/React.createElement(Phone.ListRow, {
+        title: r.name,
+        subtitle: worthLine(r),
+        amount: money(r.qty, r.code),
+        badge: r.badge,
+        onClick: () => setDetail(r)
+      })))) : /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "No currency matches that.");
+    } else if (state === 'ready' && tab === 'floats') {
+      const list = openShifts.filter(s => match(s.teller));
+      body = list.length ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, list.map(s => /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: s.id,
+        title: s.teller,
+        subtitle: "The count stays hidden until it is locked.",
+        amount: "Open",
+        onClick: () => setDetail({
+          shift: s
+        })
+      }))) : /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "No float is out.");
+    } else if (state === 'ready' && tab === 'orders') {
+      const list = orders.filter(o => match((o.ref || '') + ' ' + (o.ccy || '') + ' ' + (o.supplier || '')));
+      body = list.length ? /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, list.map(o => /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: o.id,
+        title: o.ccy + ' · ' + (o.status === 'pending' ? 'On order' : 'Received'),
+        subtitle: o.supplier || o.ref,
+        amount: money(o.units, o.ccy),
+        onClick: () => setDetail({
+          order: o
+        })
+      }))) : /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "No orders.");
+    } else if (state === 'ready' && tab === 'profit') {
+      if (summary && summary.loading) body = /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "Reading the book\u2026");else if (summary && summary.error) body = /*#__PURE__*/React.createElement("p", {
+        className: "phone-warn",
+        role: "alert"
+      }, summary.error);else if (!profitRows.length) body = /*#__PURE__*/React.createElement("p", {
+        className: "phone-miss"
+      }, "Nothing posted in this period.");else body = /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, profitRows.filter(r => match(r.currency)).map(r => /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: r.currency,
+        title: r.currency,
+        subtitle: r.deals + ' deal' + (r.deals === 1 ? '' : 's') + ' · realized',
+        amount: r.realizedPnlHome == null ? 'No rate yet' : money(r.realizedPnlHome, home)
+      })));
+    }
+    const detailNode = detail && /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet",
+      role: "dialog",
+      "aria-label": "Detail"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet-h"
+    }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("h2", null, "Detail"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sheet-x",
+      onClick: () => setDetail(null)
+    }, "Close")), /*#__PURE__*/React.createElement("div", {
+      className: "phone-sheet-b"
+    }, detail.shift && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+      className: "phone-label"
+    }, detail.shift.teller), /*#__PURE__*/React.createElement("p", null, "The count stays hidden until it is locked. Settle this float at the desk."), Object.keys(detail.shift.opening || {}).map(c => /*#__PURE__*/React.createElement("div", {
+      key: c,
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, c), /*#__PURE__*/React.createElement("b", null, money(detail.shift.opening[c], c))))), detail.order && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("b", null, detail.order.ccy)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Units"), /*#__PURE__*/React.createElement("b", null, money(detail.order.units, detail.order.ccy))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Status"), /*#__PURE__*/React.createElement("b", null, detail.order.status)), detail.order.ref && /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Reference"), /*#__PURE__*/React.createElement("b", null, detail.order.ref))), detail.code && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("b", null, detail.name)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "In the vault"), /*#__PURE__*/React.createElement("b", null, money(detail.qty, detail.code))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, /*#__PURE__*/React.createElement("span", null, "Worth"), /*#__PURE__*/React.createElement("b", null, detail.code === home ? 'Home currency' : detail.worth == null ? 'No rate yet' : money(detail.worth, home))))));
+    return /*#__PURE__*/React.createElement(LongTailScreen, {
+      app: "vault",
+      title: "Vault",
+      state: state,
+      loadingText: "Reading the vault off the ledger\u2026",
+      errorText: "The vault did not load. Try again.",
+      errorDetail: error,
+      onRetry: onRetry,
+      emptyText: emptyText,
+      emptyAction: emptyAction,
+      onEmpty: onRecordOpening,
+      summary: state === 'ready' ? tab === 'profit' ? [{
+        label: 'Realized profit, in ' + home,
+        value: realized == null ? null : money(realized, home),
+        sub: 'From the ledger, past 30 days'
+      }] : summaryCard : null,
+      segments: VAULT_TABS,
+      segment: tab,
+      onSegment: setTab,
+      search: q,
+      onSearch: setQ,
+      searchPlaceholder: tab === 'floats' ? 'Find a cashier' : tab === 'orders' ? 'Find an order' : 'Find a currency',
+      action: "Give out a float",
+      onAction: () => setSheet(true),
+      toast: toast,
+      sheet: /*#__PURE__*/React.createElement(React.Fragment, null, sheet && /*#__PURE__*/React.createElement(FloatSheet, {
+        settings: settings,
+        branches: branches,
+        station: station,
+        position: position,
+        onClose: () => setSheet(false),
+        onAssignPerson: onAssignPerson,
+        onIssueTill: onIssueTill,
+        onDone: (label, worthText) => {
+          setSheet(false);
+          setToast('Float given to ' + label + '. ' + worthText + '.');
+        }
+      }), detailNode)
+    }, body);
+  }
+
+  /* ---- Audit trail (read-only) --------------------------------------- */
+
+  const AUDIT_CHIPS = [{
+    id: 'all',
+    label: 'All'
+  }, {
+    id: 'deals',
+    label: 'Deals'
+  }, {
+    id: 'cash',
+    label: 'Cash'
+  }, {
+    id: 'sign',
+    label: 'Sign-ins'
+  }, {
+    id: 'settings',
+    label: 'Settings'
+  }, {
+    id: 'staff',
+    label: 'Staff'
+  }];
+  const PLAIN = {
+    'transaction.post': 'Deal posted',
+    'transaction.reverse': 'Deal reversed',
+    'vault.run': 'Vault run',
+    'compliance.jurisdiction_pack.adopt': 'Rules updated'
+  };
+  function plainAction(action) {
+    if (!action) return 'Recorded';
+    if (PLAIN[action]) return PLAIN[action];
+    /* A dotted internal code is not a name a person can read. */
+    if (/^[a-z0-9_.]+$/.test(action) && action.indexOf('.') !== -1) {
+      const last = action.split('.').pop().replace(/_/g, ' ');
+      return last.charAt(0).toUpperCase() + last.slice(1);
+    }
+    return action;
+  }
+  function auditGroup(action) {
+    const a = String(action || '').toLowerCase();
+    if (/sign/.test(a)) return 'sign';
+    if (/setting|rate|permission|threshold|rule/.test(a)) return 'settings';
+    if (/staff|kyc|employee|role/.test(a)) return 'staff';
+    if (/float|cash|vault|till|order|cheque|drawer/.test(a)) return 'cash';
+    if (/deal|transaction|posted|void|tag/.test(a)) return 'deals';
+    return 'other';
+  }
+  function localDay(date) {
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+  function PhoneAudit({
+    audit,
+    settings,
+    onOpenRef
+  }) {
+    const Phone = window.CDOS.Phone;
+    const [q, setQ] = useState('');
+    const [chip, setChip] = useState('all');
+    const [open, setOpen] = useState(null);
+    const use12 = (settings && settings.timeFormat || '12h') !== '24h';
+    const items = (audit || []).map((a, i) => {
+      const m = /(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(a.ts || '');
+      const date = m ? m[1] : String(a.ts || '').slice(0, 10);
+      const hh = m ? +m[2] : 0;
+      const mm = m ? m[3] : '00';
+      let time = m ? m[2] + ':' + mm : '';
+      if (m && use12) {
+        const ap = hh < 12 ? 'AM' : 'PM';
+        let h = hh % 12;
+        if (h === 0) h = 12;
+        time = h + ':' + mm + ' ' + ap;
+      }
+      return {
+        ...a,
+        i,
+        date,
+        time,
+        title: plainAction(a.action),
+        group: auditGroup(a.action)
+      };
+    });
+    const needle = q.trim().toLowerCase();
+    const filtered = items.filter(a => {
+      if (chip !== 'all' && a.group !== chip) return false;
+      if (!needle) return true;
+      const hay = (a.title + ' ' + a.action + ' ' + a.detail + ' ' + a.user + ' ' + a.ts).toLowerCase();
+      return hay.includes(needle);
+    });
+    const today = localDay(new Date());
+    const yestDate = new Date();
+    yestDate.setDate(yestDate.getDate() - 1);
+    const yesterday = localDay(yestDate);
+    const dayName = d => d === today ? 'Today' : d === yesterday ? 'Yesterday' : d;
+    const groups = [];
+    filtered.forEach(a => {
+      const last = groups[groups.length - 1];
+      if (!last || last.date !== a.date) groups.push({
+        date: a.date,
+        label: dayName(a.date),
+        rows: [a]
+      });else last.rows.push(a);
+    });
+    const refOf = detail => {
+      const m = /\b([A-Z]{2,4}-\d[\w-]*)/.exec(detail || '');
+      return m ? m[1] : '';
+    };
+    const state = !audit ? 'loading' : items.length === 0 ? 'empty' : 'ready';
+    return /*#__PURE__*/React.createElement(LongTailScreen, {
+      app: "audit",
+      title: "Audit trail",
+      state: state,
+      loadingText: "Reading the trail\u2026",
+      errorText: "The audit trail did not load. Try again.",
+      emptyText: "Nothing is on the trail yet.",
+      chips: AUDIT_CHIPS,
+      chip: chip,
+      onChip: setChip,
+      search: q,
+      onSearch: setQ,
+      searchPlaceholder: "Find an action, name or number",
+      sheet: open && /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet",
+        role: "dialog",
+        "aria-label": "Audit detail"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet-h"
+      }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("h2", null, open.title), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sheet-x",
+        onClick: () => setOpen(null)
+      }, "Close")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet-b"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "When"), /*#__PURE__*/React.createElement("b", null, open.ts)), /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Who"), /*#__PURE__*/React.createElement("b", null, open.user)), /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "What"), /*#__PURE__*/React.createElement("b", null, open.title)), open.detail && /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Detail"), /*#__PURE__*/React.createElement("b", null, open.detail)), refOf(open.detail) && onOpenRef && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sticky-btn",
+        onClick: () => onOpenRef([refOf(open.detail)], refOf(open.detail))
+      }, "Open ", refOf(open.detail))))
+    }, filtered.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "phone-miss"
+    }, "Nothing matches that search."), groups.map(g => /*#__PURE__*/React.createElement(Phone.ListSection, {
+      key: g.date,
+      title: g.label
+    }, g.rows.map(a => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: a.i,
+      title: a.title,
+      subtitle: a.detail || 'By ' + a.user,
+      meta: (a.time ? a.time + ' · ' : '') + 'By ' + a.user,
+      onClick: () => setOpen(a)
+    })))));
+  }
+  window.CDOS.LongTail = {
+    usePhone,
+    LongTailScreen,
+    PhoneVault,
+    PhoneAudit,
+    money
+  };
+})();
+
 /* ---- os-src/cdos-os.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -68188,7 +68973,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         case 'audit':
           return /*#__PURE__*/React.createElement(Audit, {
             audit: audit,
-            settings: settings
+            settings: settings,
+            onOpenRef: openLedgerRefs
           });
         case 'settings':
           return /*#__PURE__*/React.createElement(SettingsView, {

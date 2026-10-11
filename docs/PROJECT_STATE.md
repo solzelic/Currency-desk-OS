@@ -107,9 +107,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   search, filter chips, list rows, and a sticky New transaction. The
   desktop ledger is unchanged. The bar is five
   tabs and has no centre plus. There is no
-  floating + on a phone. New transaction stays on the ledger until
-  that screen takes a StickyAction, and
-  New contact stays where it already was. The header till dot is
+  floating + on a phone. New transaction is the ledger's sticky
+  button. New contact stays where it already was. The header till dot is
   the open session: 8px, #157A3E, with a 2px white ring. The green
   marks drawn into the Ledger and Till icons are artwork, and the
   phone tabs do not use them. The
@@ -198,6 +197,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and stays disabled, and the ledger heading still shows. The ID
   row, the discard question, and the phone footer are not on that
   dialog.
+- **Long-tail phone template.** At 430px and under, Vault and Audit
+  trail use one screen (`LongTailScreen` in `os-src/cdos-longtail.jsx`,
+  written up in `docs/PHONE_SHELL.md`): a title, one headline, sub-view
+  tabs or chips, search, a list, and one main button. Audit trail is
+  read-only, so it has no button. Amounts on that screen carry the
+  currency code. There is no "Example data" tag. Vault's "Give out a
+  float" still posts through the existing till-movement endpoint, with
+  one key per currency, and an unopened vault is still refused. The
+  opening count is the existing opening-position dialog. A cashier's
+  expected count stays hidden. Wider than 430px, Vault and Audit trail
+  render the desktop they already did.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -719,6 +729,10 @@ a session group, and search that matches what an app does.
 the phone list only when Twilio is set up. Branches and the AI
 Assistant are front-end mocks and stay off it. The ledger screen is unchanged.
 Contract: `docs/PHONE_SHELL.md`.
+
+**2026-10-11**, long-tail phone template. Vault and Audit trail, at
+430px and under, are `LongTailScreen` in `os-src/cdos-longtail.jsx`.
+Audit trail has no main button. Amounts use `formatPhoneMoney`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

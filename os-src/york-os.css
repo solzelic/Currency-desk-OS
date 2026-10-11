@@ -3089,3 +3089,140 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760) !important;
   }
 }
+
+
+/* Long-tail screens. The shell's own rules draw the column.
+   These only pin that column above the bar, and draw the
+   float step, which the shell does not include. */
+@media (max-width: 430px) {
+  #desktop .win:has(.longtail) > .win-body {
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+  }
+  .longtail.phone-shell {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
+    padding-bottom: var(--phone-dock-h);
+  }
+  .longtail .phone-stats:has(.phone-stat:only-child) { grid-template-columns: 1fr; }
+  /* The shell's .phone-seg is two columns, for the ledger.
+     Vault has four tabs, so this screen sets its own columns.
+     Scoped so the ledger control is left as the shell drew it. */
+  .longtail .phone-seg {
+    display: flex;
+    height: auto;
+    gap: 4px;
+    margin: 0 0 12px;
+    padding: 4px;
+    background: #EFEDE8;
+    border-radius: 10px;
+  }
+  .longtail .phone-seg button {
+    flex: 1;
+    min-height: 36px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #6B6760;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .longtail .phone-seg button.is-on { background: #fff; color: #17140F; }
+  .phone-note, .phone-miss { margin: 8px 0 12px; font-size: 16px; line-height: 24px; color: #3D3A35; }
+  .phone-error-detail, .phone-warn { margin: 8px 0 0; font-size: 14px; line-height: 20px; color: #B42318; text-align: center; }
+  .phone-list > div:last-child .phone-row { border-bottom: 0; }
+  .phone-toast {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: calc(var(--phone-dock-h) + 72px);
+    z-index: 7;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: #161513;
+    color: #fff;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .phone-sheet {
+    position: absolute;
+    z-index: 6;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: var(--phone-dock-h);
+    display: flex;
+    flex-direction: column;
+    background: #F7F6F3;
+    color: #17140F;
+  }
+  .phone-sheet-h {
+    display: grid;
+    grid-template-columns: 72px 1fr 72px;
+    align-items: center;
+    height: 56px;
+    background: #fff;
+    border-bottom: 1px solid #E2DFD8;
+  }
+  .phone-sheet-h h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; text-align: center; }
+  .phone-sheet-x { height: 44px; border: 0; background: transparent; color: #17140F; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .phone-sheet-b { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+  .phone-sheet-f { flex: none; padding: 8px 16px 12px; }
+  .phone-label { margin: 4px 0 8px; font-size: 13px; line-height: 16px; font-weight: 600; }
+  .phone-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .phone-tile {
+    min-height: 64px;
+    padding: 8px 12px;
+    border: 1px solid #C9C5BC;
+    border-radius: 10px;
+    background: #fff;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+  .phone-tile b { display: block; font-size: 15px; }
+  .phone-tile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: #6B6760; }
+  .phone-tile.is-on { border: 2px solid #17140F; background: #EFEDE8; padding: 7px 11px; }
+  .phone-field, .phone-add { display: block; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
+  .phone-field select, .phone-add select, .phone-crow input {
+    display: block;
+    width: 100%;
+    height: 48px;
+    margin-top: 6px;
+    padding: 0 12px;
+    border: 1px solid #C9C5BC;
+    border-radius: 10px;
+    background: #fff;
+    color: #17140F;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .phone-crow { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .phone-crow b { font-size: 16px; }
+  .phone-crow input { margin-top: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .phone-worth {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border: 1px solid #E2DFD8;
+    border-radius: 14px;
+    font-size: 16px;
+  }
+  .phone-kv { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #E2DFD8; font-size: 14px; }
+  .phone-kv span { color: #6B6760; }
+  .phone-kv b { font-weight: 600; text-align: right; }
+  /* The opening-count dialog is shared with the desktop. On a phone
+     the bottom bar covers its foot, so the scrim stops above the bar. */
+  .vault-modal { bottom: var(--phone-dock-h) !important; }
+}

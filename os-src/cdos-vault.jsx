@@ -60,7 +60,7 @@
      (`cashVersion` ticks on each recorded movement). `error` is rendered,
      not swallowed: a screen that fails to reach the ledger and shows its
      last figures anyway is the second book coming back. */
-  function useLedgerPosition(serverBacked, cashVersion) {
+  function useLedgerPosition(serverBacked, cashVersion, reload) {
     const [state, setState] = useState({ loading: true, data: null, error: '' });
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
@@ -68,12 +68,12 @@
         return;
       }
       let live = true;
-      setState(s => ({ ...s, loading: true }));
+      setState(s => ({ ...s, loading: true, data: null }));
       window.CDOS.Backend.loadLedgerPosition()
         .then(data => { if (live) setState({ loading: false, data, error: '' }); })
         .catch(error => { if (live) setState({ loading: false, data: null, error: (error && error.message) || 'The ledger could not be reached.' }); });
       return () => { live = false; };
-    }, [serverBacked, cashVersion]);
+    }, [serverBacked, cashVersion, reload]);
     return state;
   }
 
@@ -802,7 +802,7 @@
 
   /* ===================== shared modal shell ===================== */
   function Modal({ icon, title, sub, children, onClose }) {
-    return (<div style={{ position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(24,21,17,0.46)', display: 'grid', placeItems: 'center', padding: 20 }} onClick={onClose}>
+    return (<div className="vault-modal" style={{ position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(24,21,17,0.46)', display: 'grid', placeItems: 'center', padding: 20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="flex flex-col" style={{ width: 'min(560px, 100%)', maxHeight: '100%', background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
         <div className="px-5 pt-4 pb-3 flex items-start gap-3 flex-none" style={{ borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, background: CD.ink, borderRadius: 9 }}><Ic n={icon} s={16} c="var(--cd-on-ink)" /></span>
@@ -816,7 +816,9 @@
 
   /* ===================== ROOT ===================== */
   function Vault({ rows, me, log, baseline, receipts, setReceipts, settings, setSettings, branches, station, onMoveCash, onOpenBranches, moves, onOrderReceived, onIssueTill, serverBacked, vaultTracked, onOpenVaultPosition, cashVersion }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [tab, setTab] = useState('position');
+    const [reload, setReload] = useState(0);
     const [shifts, setShifts] = useState(loadShifts);
     const [ordering, setOrdering] = useState(null);   // null | { ccy?, units?, order? }
     const [notifOpen, setNotifOpen] = useState(false);
@@ -835,7 +837,7 @@
        Asking the server directly fixes both at once. What is not here is
        not shown. */
     const deskFacts = useDeskFacts();   // the trading day, from the till session
-    const { data: position, loading: posLoading, error: posError } = useLedgerPosition(serverBacked, cashVersion);
+    const { data: position, loading: posLoading, error: posError } = useLedgerPosition(serverBacked, cashVersion, reload);
     const ledgerRows = vaultRowsOf(position);
     const onLedger = !!ledgerRows;
     useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(shifts)); } catch (e) {} }, [shifts]);
@@ -907,6 +909,23 @@
     const onCancel = (id) => { setReceipts(list => (list || []).filter(o => o.id !== id)); log && log('Order cancelled', 'Pending banknote order removed'); };
 
     const TABS = [['position', 'Position', 'pie'], ['shifts', 'Floats', 'users'], ['receive', 'Orders', 'arrowdown'], ['history', 'History', 'clock'], ['pnl', 'P&L', 'trendup']];
+
+    /* Phone only. The desktop return below is the screen a wide window
+       already had. Clearing `data` while a read is in flight is what
+       stops a phone from painting the previous total as if it were new. */
+    if (phone) {
+      const PhoneVault = window.CDOS.LongTail.PhoneVault;
+      const giveToPerson = (teller, opening) => {
+        const sh = { id: Date.now(), teller, date: businessDate(), openedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), openedBy: me.name, opening: { ...opening }, status: 'open', blind: true };
+        setShifts(list => [sh, ...list]);
+        const total = Object.keys(opening).reduce((t, c) => t + cadVal(+opening[c] || 0, c), 0);
+        log && log('Shift float assigned', `${teller} · ${fmtHome(total)} on the desk (accountability — holdings unchanged)`);
+      };
+      return (<>
+        <PhoneVault position={position} loading={posLoading} error={posError} onRetry={() => setReload(n => n + 1)} settings={settings} shifts={shifts} receipts={receipts} summary={summary} branches={branches} station={station} onAssignPerson={giveToPerson} onIssueTill={onIssueTill} onRecordOpening={serverBacked ? () => setOpeningVault(true) : null} />
+        {openingVault && <OpeningPositionModal fc={DEFAULT_FC()} onClose={() => setOpeningVault(false)} onSave={onOpenVaultPosition} />}
+      </>);
+    }
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
@@ -1006,5 +1025,5 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Vault });
+  window.CDOS = Object.assign(window.CDOS || {}, { Vault, vaultStock: bandStatus });
 })();

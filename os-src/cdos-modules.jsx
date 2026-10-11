@@ -171,7 +171,8 @@
   /* ---- TILL & CASH DRAWER lives in cdos-till.jsx (Day Close folded in) ---- */
 
   /* ---- AUDIT TRAIL — searchable, day-grouped, append-only, with a 24h scrubber ---- */
-  function Audit({ audit, settings }) {
+  function Audit({ audit, settings, onOpenRef }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [q, setQ] = useState('');
     const [actionF, setActionF] = useState('all');
     const [staffF, setStaffF] = useState('all');
@@ -249,6 +250,11 @@
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
     };
     const selSty = { border: `1px solid ${CD.line}`, borderRadius: 8, background: CD.paper, color: CD.ink };
+
+    if (phone) {
+      const PhoneAudit = window.CDOS.LongTail.PhoneAudit;
+      return <PhoneAudit audit={audit} settings={settings} onOpenRef={onOpenRef} />;
+    }
 
     return (
       <div className="flex" style={{ height: '100%', background: CD.paper }}>

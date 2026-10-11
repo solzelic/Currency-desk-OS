@@ -21,7 +21,7 @@ say.
 | `server/src/` | Fastify + Drizzle backend; ledger under `server/src/ledger/` | ✅ |
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
-| `os-src/` | the OS source: domain `.jsx` screens, `cdos-phone.jsx` (phone shell), `phone/format.js` (phone time, date, and money), `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`, `tokens.css`, `phone-shell.css`. Phone contract: `docs/PHONE_SHELL.md` | ✅ |
+| `os-src/` | the OS source: domain `.jsx` screens, `cdos-phone.jsx` (phone shell), `phone/format.js` (phone time, date, and money), `cdos-longtail.jsx` (long-tail template), `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`, `tokens.css`, `phone-shell.css`. Phone contract: `docs/PHONE_SHELL.md` | ✅ |
 | `CurrencyDesk OS.html` | OS shell — lists every `os-src` script; also the production fallback when `web/app` is absent | ✅ |
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
