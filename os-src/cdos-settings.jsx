@@ -693,9 +693,6 @@
     const [exported, setExported] = useState(false);
     // nav search — filters the settings rail by label + per-tab keywords
     const [navQ, setNavQ] = useState('');
-    /* Phone only. The desktop rail never reads this. A section the
-       phone list opens is the existing panel, inside a sheet. */
-    const [phoneLegacy, setPhoneLegacy] = useState(null);
     const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({});         // employee id → { pin } | { err }
@@ -1025,15 +1022,9 @@
         canSys={canSys} me={me} settings={settings} setSettings={setSettings}
         shopName={settings.operatingName || settings.bizName || 'this shop'}
         tillOpen={!!tillOpen} onLeave={onLeave} onSignOut={onSignOut} log={log}
-        onOpenSection={(id, title) => { setTab(id); setPhoneLegacy({ id, title }); }}
       />}
     </div>
-    <div className={'flex settings-shell' + (phoneLegacy ? ' phone-legacy-open' : '')} style={{ height: '100%' }}>
-      {phoneLegacy && <div className="phone-legacy-bar">
-        <button type="button" className="phone-sheet-x" aria-label="Close" onClick={() => setPhoneLegacy(null)}><Ic n="x" s={22} /></button>
-        <h2>{phoneLegacy.title}</h2>
-        <span></span>
-      </div>}
+    <div className="flex settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
       <div className="flex-none p-3 overflow-auto settings-nav" style={{ width: 212, borderRight: `1px solid ${CD.line}`, background: 'var(--cd-paper-soft)' }}>
         <button onClick={() => setTab('account')} className="w-full flex items-center gap-2.5 p-2 mb-3" style={{ borderRadius: 11, background: tab === 'account' ? CD.ink : CD.panel, border: `1px solid ${tab === 'account' ? CD.ink : CD.line}`, textAlign: 'left' }}>

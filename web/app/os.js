@@ -5290,8 +5290,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
    Desktop Settings is the rail beside this; the stylesheet hides
    that rail under 430px and hides this list above it.
 
-   Owner sections open the existing desktop panel in a sheet. A
-   later pass draws those sections for a phone. Texts, receipts,
+   Shop and app rows say to change them on a computer. The desktop
+   form does not fit a phone, so it is not opened here. Texts, receipts,
    billing, the ticker, and the role matrix are not phone screens:
    search can name the computer ones, and says so. */
 (function () {
@@ -5423,7 +5423,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return;
       }
       if (res.status === 401) {
+        let payload = {};
+        try {
+          payload = await res.json();
+        } catch (err) {
+          payload = {};
+        }
         setDigits('');
+        /* A dead session and a wrong PIN are both 401. Saying the PIN
+           is wrong when the session has gone would send them to type
+           it again. */
+        if (payload.error === 'unauthenticated') {
+          setLocked(true);
+          setStep(hasPin ? 'current' : 'new');
+          setCur('');
+          setErr('Your session expired. Sign in again. Your PIN was not changed.');
+          return;
+        }
         if (body.password != null) {
           setStep('password');
           setErr('That’s not your sign-in password.');
@@ -5617,7 +5633,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     tillOpen,
     onLeave,
     onSignOut,
-    onOpenSection,
     log
   }) {
     const [screen, setScreen] = useState('list');
@@ -5658,6 +5673,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       };
     }, [reload]);
     const staff = settings.staff && settings.staff[me.name] || {};
+    /* Same test the void gate uses. This screen does not write either
+       flag: the shop switch and this person's require PIN are the
+       owner's, on a computer. */
+    const emp = (settings.employees || []).find(x => x.name === me.name);
+    const voidAsks = settings.pinOnVoid !== false && (!emp || emp.requirePin !== false);
     const writeStaff = (key, value) => setSettings(s => ({
       ...s,
       staff: {
@@ -5694,19 +5714,20 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       title: 'Notifications',
       onClick: () => setScreen('notes')
     }].filter(Boolean);
+    const onComputer = 'Open on a computer to change this.';
     const shop = canSys ? SHOP.filter(r => hit(r[1], r[4])).map(r => ({
       id: r[0],
       icon: r[3],
       title: r[1],
-      detail: r[2],
-      onClick: () => onOpenSection(r[0], r[1])
+      detail: onComputer,
+      onClick: () => setComputer(r[1])
     })) : [];
     const apps = canSys ? APPS.filter(r => hit(r[1], r[4])).map(r => ({
       id: r[0],
       icon: r[3],
       title: r[1],
-      detail: r[2],
-      onClick: () => onOpenSection(r[0], r[1])
+      detail: onComputer,
+      onClick: () => setComputer(r[1])
     })) : [];
     const computerRows = query ? COMPUTER.filter(r => hit(r[1], r[2])).map(r => ({
       id: r[0],
@@ -5870,10 +5891,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(NavRow, {
       icon: "shield",
       title: "PIN before a void",
-      detail: "Before you undo a deal",
-      switchOn: !!staff.pinOnVoid,
-      switchLabel: "Ask for my PIN before a void",
-      onClick: () => flip('pinOnVoid', !staff.pinOnVoid)
+      detail: voidAsks ? 'A void asks for your PIN. The owner sets this.' : 'A void does not ask for your PIN. The owner sets this.'
     })), mustChange ? /*#__PURE__*/React.createElement("p", {
       className: "phone-banner warn"
     }, "Your PIN was set by the owner. Pick your own.") : null, /*#__PURE__*/React.createElement("div", {
@@ -7309,9 +7327,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [exported, setExported] = useState(false);
     // nav search — filters the settings rail by label + per-tab keywords
     const [navQ, setNavQ] = useState('');
-    /* Phone only. The desktop rail never reads this. A section the
-       phone list opens is the existing panel, inside a sheet. */
-    const [phoneLegacy, setPhoneLegacy] = useState(null);
     const [empSel, setEmpSel] = useState(null); // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({}); // employee id → { pin } | { err }
@@ -7932,30 +7947,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       tillOpen: !!tillOpen,
       onLeave: onLeave,
       onSignOut: onSignOut,
-      log: log,
-      onOpenSection: (id, title) => {
-        setTab(id);
-        setPhoneLegacy({
-          id,
-          title
-        });
-      }
+      log: log
     })), /*#__PURE__*/React.createElement("div", {
-      className: 'flex settings-shell' + (phoneLegacy ? ' phone-legacy-open' : ''),
+      className: "flex settings-shell",
       style: {
         height: '100%'
       }
-    }, phoneLegacy && /*#__PURE__*/React.createElement("div", {
-      className: "phone-legacy-bar"
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      className: "phone-sheet-x",
-      "aria-label": "Close",
-      onClick: () => setPhoneLegacy(null)
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "x",
-      s: 22
-    })), /*#__PURE__*/React.createElement("h2", null, phoneLegacy.title), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
       className: "flex-none p-3 overflow-auto settings-nav",
       style: {
         width: 212,

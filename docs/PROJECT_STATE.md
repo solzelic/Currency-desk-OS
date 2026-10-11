@@ -132,7 +132,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   photos, and bars stay clipped. Settings on a phone is a list:
   search, the person’s own row, PIN and sign-in, notifications,
   and sign out. An owner also sees the shop and the other apps,
-  and each of those opens the current desktop section in a sheet.
+  and each of those says to change it on a computer. The desktop
+  form does not fit a phone, so it is not opened in a sheet. PIN
+  before a void is a sentence, not a switch: the void gate reads
+  the shop flag and that person's require PIN, and this screen
+  does not write either.
   A cashier sees only their own rows and sign out. Texts, receipts,
   billing, the ticker, and the role matrix stay off the phone.
   Changing a PIN is a keypad: each step moves on after the fourth
@@ -667,12 +671,17 @@ button. It leaves after 4 seconds. `role="status"`.
 
 **2026-10-12**, phone Settings. Under 430px, Settings is a list. Search, the
 person’s row, PIN and sign-in, notifications, and sign out are on
-it. An owner also sees the shop and the other apps; those rows open
-the desktop section that already exists, in a sheet. A cashier sees
-their own rows and sign out. Texts, receipts, billing, the ticker,
-and the role matrix are not phone screens. A PIN is four digits on
-a keypad, and the fourth digit of the last step saves it. Wider
-than 430px, Settings is still the rail beside the form.
+it. An owner also sees the shop and the other apps. Those rows
+say to change them on a computer: the desktop form fails a phone
+sweep (targets under 44px, type under 12px, contrast under 4.5:1).
+A cashier sees their own rows and sign out. Texts, receipts,
+billing, the ticker, and the role matrix are not phone screens.
+A PIN is four digits on a keypad, and the fourth digit of the last
+step saves it. A dead session and a lockout are named on that
+keypad. PIN before a void is a sentence. The void gate reads the
+shop flag and that person's require PIN, and the phone does not
+write either. Wider than 430px, Settings is still the rail beside
+the form.
 
 **2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
 FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are

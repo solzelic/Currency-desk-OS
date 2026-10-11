@@ -77,13 +77,23 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     const root = await openSettings(page);
     await expect(root.getByText("PIN and sign-in")).toBeVisible();
     await expect(root.getByText("This shop (owner only)")).toBeVisible();
-    await expect(root.getByText("Shop details")).toBeVisible();
+    await expect(root.getByRole("button", { name: /Shop details/ })).toBeVisible();
     await expect(root.getByText("Other apps (owner only)")).toBeVisible();
     await expect(root.getByText("Example data")).toHaveCount(0);
     for (const gone of ["Texts", "Receipts", "Billing and plan", "Ticker tape", "Role presets"]) {
       await expect(root.getByText(gone, { exact: true })).toHaveCount(0);
     }
     await page.screenshot({ path: shot(`settings_list-owner_${width}.png`) });
+
+    await root.getByRole("button", { name: /Shop details/ }).click();
+    const section = page.getByRole("dialog");
+    await expect(section.getByRole("heading", { name: "Shop details" })).toBeVisible();
+    await expect(section.getByText("Open on a computer to change this.")).toBeVisible();
+    await expect(page.locator(".phone-legacy-bar")).toHaveCount(0);
+    await expect(page.locator(".settings-shell")).toBeHidden();
+    await page.screenshot({ path: shot(`settings_computer-section_${width}.png`) });
+    await section.getByRole("button", { name: "Close without changing" }).click();
+    await expect(root.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 
     const search = root.getByLabel("Search settings");
     await search.fill("zzzz");
@@ -104,6 +114,8 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await expect(root.locator(".badge", { hasText: "PIN set" })).toBeVisible();
     await expect(root.getByText("Always on")).toBeVisible();
     await expect(root.getByRole("button", { name: "Change my PIN" })).toBeVisible();
+    await expect(root.getByText("A void asks for your PIN. The owner sets this.")).toBeVisible();
+    await expect(root.getByRole("switch")).toHaveCount(0);
     await page.screenshot({ path: shot(`settings_pin-detail_${width}.png`) });
 
     await page.getByRole("button", { name: "Change my PIN" }).click();
@@ -148,6 +160,59 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
   await page.locator('[data-phone-row="signout"]').click();
   await page.getByRole("dialog").getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.locator("#lock")).toBeVisible();
+});
+
+/* The save is intercepted. The first three steps stay on the
+   client, and the fourth digit of the last step is the POST. */
+async function routePinSave(page: Page, status: number, body: object): Promise<void> {
+  await page.route("**/api/staff/pin", async (route) => {
+    const req = route.request();
+    let path = "";
+    try { path = new URL(req.url()).pathname; } catch { path = ""; }
+    if (req.method() !== "POST" || path !== "/api/staff/pin") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  });
+}
+
+test("a dead session and a PIN lockout are named on the keypad", async ({ page }) => {
+  test.setTimeout(180_000);
+  for (const width of [360, 390]) {
+    await page.unroute("**/api/staff/pin").catch(() => undefined);
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 780 });
+    await atDesk(page, "j.masri");
+    await knownPin(page);
+    const root = await openSettings(page);
+    await root.getByText("PIN and sign-in").click();
+    await page.getByRole("button", { name: "Change my PIN" }).click();
+    await press(page, "1357");
+    await press(page, "9753");
+    await routePinSave(page, 401, { error: "unauthenticated" });
+    await press(page, "9753");
+    await expect(page.getByText("Your session expired. Sign in again. Your PIN was not changed.")).toBeVisible();
+    await expect(page.getByText("That PIN isn’t right.")).toHaveCount(0);
+    await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeDisabled();
+    await page.screenshot({ path: shot(`settings_pin-expired_${width}.png`) });
+    await page.unroute("**/api/staff/pin");
+    await page.getByRole("button", { name: "Close without changing" }).click();
+
+    await page.getByRole("button", { name: "Change my PIN" }).click();
+    await press(page, "1357");
+    await press(page, "9753");
+    await routePinSave(page, 429, { error: "locked" });
+    await press(page, "9753");
+    await expect(page.getByText("Too many wrong tries. Wait a few minutes.")).toBeVisible();
+    await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeDisabled();
+    await page.screenshot({ path: shot(`settings_pin-lockout_${width}.png`) });
+    await page.unroute("**/api/staff/pin");
+    await page.getByRole("button", { name: "Close without changing" }).click();
+  }
 });
 
 test("a teller sees only their own settings", async ({ page }) => {

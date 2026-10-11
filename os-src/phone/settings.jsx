@@ -2,8 +2,8 @@
    Desktop Settings is the rail beside this; the stylesheet hides
    that rail under 430px and hides this list above it.
 
-   Owner sections open the existing desktop panel in a sheet. A
-   later pass draws those sections for a phone. Texts, receipts,
+   Shop and app rows say to change them on a computer. The desktop
+   form does not fit a phone, so it is not opened here. Texts, receipts,
    billing, the ticker, and the role matrix are not phone screens:
    search can name the computer ones, and says so. */
 (function () {
@@ -100,7 +100,19 @@
       setBusy(false);
       if (res.ok) { onSaved(); return; }
       if (res.status === 401) {
+        let payload = {};
+        try { payload = await res.json(); } catch (err) { payload = {}; }
         setDigits('');
+        /* A dead session and a wrong PIN are both 401. Saying the PIN
+           is wrong when the session has gone would send them to type
+           it again. */
+        if (payload.error === 'unauthenticated') {
+          setLocked(true);
+          setStep(hasPin ? 'current' : 'new');
+          setCur('');
+          setErr('Your session expired. Sign in again. Your PIN was not changed.');
+          return;
+        }
         if (body.password != null) { setStep('password'); setErr('That’s not your sign-in password.'); }
         else { setStep(hasPin ? 'current' : 'new'); setCur(''); setErr('That PIN isn’t right.'); }
         return;
@@ -207,7 +219,7 @@
     );
   }
 
-  function PhoneSettings({ canSys, me, settings, setSettings, shopName, tillOpen, onLeave, onSignOut, onOpenSection, log }) {
+  function PhoneSettings({ canSys, me, settings, setSettings, shopName, tillOpen, onLeave, onSignOut, log }) {
     const [screen, setScreen] = useState('list');
     const [q, setQ] = useState('');
     const [pinState, setPinState] = useState('loading');
@@ -239,6 +251,11 @@
     }, [reload]);
 
     const staff = (settings.staff && settings.staff[me.name]) || {};
+    /* Same test the void gate uses. This screen does not write either
+       flag: the shop switch and this person's require PIN are the
+       owner's, on a computer. */
+    const emp = (settings.employees || []).find((x) => x.name === me.name);
+    const voidAsks = settings.pinOnVoid !== false && (!emp || emp.requirePin !== false);
     const writeStaff = (key, value) => setSettings((s) => ({
       ...s,
       staff: { ...(s.staff || {}), [me.name]: { ...((s.staff || {})[me.name] || {}), [key]: value } },
@@ -261,8 +278,9 @@
       hit('PIN and sign-in', 'pin password security void') && { id: 'pin', icon: 'lock', title: 'PIN and sign-in', value: pinState === 'ready' ? pinValue : '', valueTone: mustChange ? 'warn' : '', onClick: () => setScreen('pin') },
       hit('Notifications', 'alerts compliance summary') && { id: 'notes', icon: bell, title: 'Notifications', onClick: () => setScreen('notes') },
     ].filter(Boolean);
-    const shop = canSys ? SHOP.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: r[2], onClick: () => onOpenSection(r[0], r[1]) })) : [];
-    const apps = canSys ? APPS.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: r[2], onClick: () => onOpenSection(r[0], r[1]) })) : [];
+    const onComputer = 'Open on a computer to change this.';
+    const shop = canSys ? SHOP.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: onComputer, onClick: () => setComputer(r[1]) })) : [];
+    const apps = canSys ? APPS.filter((r) => hit(r[1], r[4])).map((r) => ({ id: r[0], icon: r[3], title: r[1], detail: onComputer, onClick: () => setComputer(r[1]) })) : [];
     const computerRows = query ? COMPUTER.filter((r) => hit(r[1], r[2])).map((r) => ({ id: r[0], icon: 'info', title: r[1], detail: 'Open on a computer to change this.', onClick: () => setComputer(r[1]) })) : [];
     const showOut = hit('Sign out', 'log out leave');
     const showMe = hit(me.name || '', 'profile my details account ' + (me.role || ''));
@@ -362,7 +380,7 @@
             </section>
             <div className="phone-sec">Voids</div>
             <section className="phone-list">
-              <NavRow icon="shield" title="PIN before a void" detail="Before you undo a deal" switchOn={!!staff.pinOnVoid} switchLabel="Ask for my PIN before a void" onClick={() => flip('pinOnVoid', !staff.pinOnVoid)} />
+              <NavRow icon="shield" title="PIN before a void" detail={voidAsks ? 'A void asks for your PIN. The owner sets this.' : 'A void does not ask for your PIN. The owner sets this.'} />
             </section>
             {mustChange ? <p className="phone-banner warn">Your PIN was set by the owner. Pick your own.</p> : null}
             <div className="phone-cta">

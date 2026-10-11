@@ -3094,17 +3094,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    PHONE SETTINGS
    Off at desktop width. The rail beside the form is what a wide
    window already had; this list replaces it only under 430px.
-   Sheets are portaled to the body, so they are hidden here too
-   and not only by living inside the list.
+   Shared rows, sheets, the keypad, and the toast are styled in
+   phone-shell.css. This file is only the Settings screen.
    ============================================================ */
-.phone-settings,
-.phone-legacy-bar,
-.sheet,
-.phone-toast { display: none; }
+.phone-settings { display: none; }
 
 @media (max-width: 430px) {
-  .phone-settings,
-  .sheet {
+  .phone-settings {
     --brand-primary: #17140F;
     --gray-50: #F7F6F3;
     --gray-100: #EFEDE8;
@@ -3118,6 +3114,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     --neg-bg: #FDECEA;
     --warn: #8A5300;
     --warn-bg: #FFF4DC;
+    display: block;
+    box-sizing: border-box;
+    min-height: 100%;
+    padding: 4px 16px calc(var(--phone-bar-h, 64px) + 24px);
+    background: #F7F6F3;
     color: var(--gray-900);
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
   }
@@ -3126,60 +3127,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  /* The desktop rail stays in the tree so a section can be shown
-     in a sheet. It does not paint, and it does not take a column. */
+  /* The desktop rail stays in the tree for a wide window. On a
+     phone it does not paint, and it does not take a column. */
   .settings-shell { display: none !important; }
-  .settings-shell.phone-legacy-open {
-    display: flex !important;
-    position: fixed;
-    inset: 0;
-    z-index: 640;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-    background: #F7F6F3;
-  }
-  .settings-shell.phone-legacy-open .settings-nav { display: none !important; }
-  .settings-shell.phone-legacy-open > .flex-1 {
-    max-width: none !important;
-    min-height: 0;
-    overflow: auto;
-    background: #fff;
-  }
-  .phone-legacy-bar {
-    display: grid;
-    grid-template-columns: 44px 1fr 44px;
-    align-items: center;
-    height: 56px;
-    flex: none;
-    background: #fff;
-    border-bottom: 1px solid #E2DFD8;
-  }
-  .phone-legacy-bar h2 {
-    margin: 0;
-    text-align: center;
-    font-size: 17px;
-    line-height: 24px;
-    font-weight: 600;
-  }
-  .phone-sheet-x {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    background: transparent;
-    color: var(--gray-900, #161513);
-    cursor: pointer;
-  }
 
-  .phone-settings {
-    display: block;
-    box-sizing: border-box;
-    min-height: 100%;
-    padding: 4px 16px calc(var(--phone-bar-h, 64px) + 24px);
-    background: #F7F6F3;
-  }
   .phone-back {
     display: inline-flex;
     align-items: center;
@@ -3244,116 +3195,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 14px;
     overflow: hidden;
   }
-  .nrow, .me {
-    display: grid;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 16px;
-    border: 0;
-    border-bottom: 1px solid #E2DFD8;
-    background: transparent;
-    text-align: left;
-    color: inherit;
-    cursor: pointer;
-  }
-  .phone-settings .phone-list .nrow:last-child, .phone-settings .phone-list .me:last-child { border-bottom: 0; }
-  .nrow { grid-template-columns: auto minmax(0, 1fr) auto auto; min-height: 56px; }
-  .nrow.static { cursor: default; }
-  .me { grid-template-columns: auto minmax(0, 1fr) auto; min-height: 76px; }
-  .nrow .ic {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: #EFEDE8;
-    color: #3D3A35;
-    display: grid;
-    place-items: center;
-  }
-  .nrow .t, .me .t { display: block; font-weight: 600; }
-  .nrow .t { font-size: 16px; line-height: 24px; }
-  .me .t { font-size: 17px; line-height: 24px; }
-  .nrow .d, .me .d { display: block; font-size: 12px; line-height: 16px; color: #6B6760; }
-  .nrow .v { font-size: 14px; line-height: 20px; color: #6B6760; white-space: nowrap; }
-  .nrow .v.is-warn { color: #8A5300; font-weight: 600; }
-  .nrow .cv, .me .cv { color: #6B6760; display: grid; }
-  .me .av {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: #161513;
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 600;
-  }
-  .nrow.danger .t { color: #B42318; }
-  .nrow.danger .ic { background: #FDECEA; color: #B42318; }
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    height: 20px;
-    padding: 0 6px;
-    border-radius: 6px;
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .badge.pos { background: #E7F4EC; color: #157A3E; }
-  .badge.neutral { background: #EFEDE8; color: #3D3A35; }
-  .badge.warn { background: #FFF4DC; color: #8A5300; }
-  .switch {
-    width: 51px;
-    height: 31px;
-    border-radius: 999px;
-    background: #C9C5BC;
-    position: relative;
-    flex: none;
-  }
-  .switch:after {
-    content: "";
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 27px;
-    height: 27px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(22, 21, 19, 0.06);
-  }
-  .switch.on { background: #17140F; }
-  .switch.on:after { left: 22px; }
-  .phone-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    min-height: 48px;
-    box-sizing: border-box;
-    padding: 0 16px;
-    border-radius: 10px;
-    border: 1px solid transparent;
-    font: 600 16px/24px var(--f-display, "Archivo", system-ui, sans-serif);
-    cursor: pointer;
-  }
-  .phone-btn.primary { background: #17140F; color: #fff; }
-  .phone-btn.secondary { background: #fff; color: #161513; border-color: #E2DFD8; }
-  .phone-btn.danger { background: #B42318; color: #fff; }
-  .phone-btn:disabled { opacity: 0.5; cursor: default; }
-  .phone-text {
-    border: 0;
-    background: transparent;
-    color: #17140F;
-    font: 600 14px/16px var(--f-display, "Archivo", system-ui, sans-serif);
-    min-height: 44px;
-    padding: 0 8px;
-    cursor: pointer;
-  }
+  .phone-settings .phone-list .nrow:last-child,
+  .phone-settings .phone-list .me:last-child { border-bottom: 0; }
   .phone-cta {
     position: fixed;
     left: 0;
@@ -3364,22 +3207,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     background: linear-gradient(180deg, rgba(247, 246, 243, 0), #F7F6F3 28%);
   }
   .phone-pin { padding-bottom: 72px; }
-  .phone-settings .phone-banner,
-  .sheet .phone-banner {
+  .phone-settings .phone-banner {
     margin: 12px 0;
     padding: 12px 16px;
     border-radius: 14px;
     font-size: 14px;
     line-height: 20px;
   }
-  .phone-settings .phone-banner.info,
-  .sheet .phone-banner.info { background: #E8F0FB; }
-  .phone-settings .phone-banner.warn,
-  .sheet .phone-banner.warn { background: #FFF4DC; border: 1px solid #E8B04A; }
-  .phone-settings .phone-banner.err,
-  .sheet .phone-banner.err { background: #FDECEA; border: 1px solid #F3B8B2; }
-  .phone-settings .phone-banner b,
-  .sheet .phone-banner b { display: block; font-weight: 600; }
+  .phone-settings .phone-banner.info { background: #E8F0FB; }
+  .phone-settings .phone-banner.warn { background: #FFF4DC; border: 1px solid #E8B04A; }
+  .phone-settings .phone-banner.err { background: #FDECEA; border: 1px solid #F3B8B2; }
+  .phone-settings .phone-banner b { display: block; font-weight: 600; }
   .phone-settings .phone-empty { text-align: center; padding: 32px 16px; }
   .phone-settings .phone-empty p { margin: 0 0 12px; font-size: 16px; line-height: 24px; }
   .phone-settings .phone-empty .phone-btn { width: auto; min-width: 120px; }
@@ -3403,100 +3241,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-form input:disabled { background: #EFEDE8; color: #6B6760; }
   .phone-ask { margin: 8px 0 4px; font-size: 20px; line-height: 28px; font-weight: 600; color: #161513; }
-  .sheet {
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    inset: 0;
-    z-index: 640;
-    background: #fff;
-  }
-  .sheet-h {
-    height: 56px;
-    display: grid;
-    grid-template-columns: 44px 1fr 44px;
-    align-items: center;
-    padding: 0 8px;
-    border-bottom: 1px solid #E2DFD8;
-    flex: none;
-  }
-  .sheet-h h2 { margin: 0; text-align: center; font-size: 17px; line-height: 24px; font-weight: 600; }
-  .pinpad { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .steps { display: flex; justify-content: center; gap: 8px; margin: 24px 0 16px; }
-  .steps i { width: 24px; height: 4px; border-radius: 2px; background: #E2DFD8; }
-  .steps i.on { background: #17140F; }
-  .pin-q { font-size: 20px; line-height: 28px; font-weight: 600; text-align: center; }
-  .pin-s { margin-top: 4px; font-size: 14px; line-height: 20px; color: #6B6760; text-align: center; }
-  .pin-dots { display: flex; justify-content: center; gap: 20px; margin: 24px 0 12px; }
-  .pin-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #6B6760; box-sizing: border-box; }
-  .pin-dots i.on { background: #161513; border-color: #161513; }
-  .pin-dots.shake { animation: phone-pin-shake 0.28s linear; }
-  .pin-saving { margin: 28px 0; text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; }
-  .pin-err { margin: 8px 16px; text-align: center; color: #B42318; font-size: 14px; line-height: 20px; }
-  .pin-pw { display: flex; flex-direction: column; gap: 12px; margin: 24px 16px; }
-  .pin-pw input {
-    height: 48px;
-    box-sizing: border-box;
-    padding: 0 12px;
-    border: 1px solid #E2DFD8;
-    border-radius: 10px;
-    font: 400 16px/24px var(--f-display, "Archivo", system-ui, sans-serif);
-  }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .forgot { display: flex; justify-content: center; }
-  .keypad {
-    margin-top: auto;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding: 12px 16px 24px;
-    background: #F7F6F3;
-    border-top: 1px solid #E2DFD8;
-  }
-  .keypad button {
-    height: 56px;
-    border-radius: 10px;
-    background: #fff;
-    border: 1px solid #E2DFD8;
-    font: 600 20px/28px var(--f-display, "Archivo", system-ui, sans-serif);
-    font-variant-numeric: tabular-nums;
-    box-shadow: 0 1px 2px rgba(22, 21, 19, 0.06);
-    cursor: pointer;
-  }
-  .keypad button.blank { visibility: hidden; }
-  .keypad button.del { background: transparent; border: 0; box-shadow: none; display: grid; place-items: center; }
-  .keypad button:disabled { opacity: 0.4; }
-  .phone-toast {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    position: fixed;
-    top: 12px;
-    left: 16px;
-    right: 16px;
-    z-index: 800;
-    padding: 12px 14px;
-    background: #161513;
-    color: #fff;
-    border-radius: 10px;
-    font-size: 14px;
-    line-height: 20px;
-  }
-  .phone-back:focus-visible,
-  .nrow:focus-visible,
-  .me:focus-visible,
-  .phone-btn:focus-visible,
-  .keypad button:focus-visible,
-  .phone-sheet-x:focus-visible {
+  .phone-back:focus-visible {
     outline: 2px solid #1E5AA8;
     outline-offset: 2px;
   }
-}
-@keyframes phone-pin-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-6px); }
-  75% { transform: translateX(6px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pin-dots.shake { animation: none; }
 }
