@@ -515,7 +515,7 @@ A primary button on these screens is `.phone-sticky-btn`. Its fill is
 ink (`#17140F`). The body text uses the `tokens.css` `--font-ui` stack
 (`Inter`, then the system list). The shell's 430px rule sets
 `--font-ui` to Archivo on `:root`; these screens set it back. Inter
-is loaded on the desk.
+loads only at 430px, so a wide window keeps the font it already had.
 
 The float sheet's cashier, till, and "Add a currency" controls are
 native selects. The shared full-screen picker is a separate change
