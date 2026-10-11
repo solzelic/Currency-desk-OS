@@ -679,7 +679,11 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
         expect(day.posted, "the deal is inside the session's window").toBeGreaterThan(0);
 
         await generate(page, /End-of-Day Sign-Off/);
-        await expect.poll(() => sheet(page), { timeout: 30_000 }).toContain(`Session #${till.session.sessionNumber}`);
+        /* The session number can paint before the day's totals arrive.
+           Wait for the count, which is the figure this case exists for. */
+        await expect
+          .poll(() => sheet(page), { timeout: 30_000 })
+          .toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
         const doc = await sheet(page);
         const heading = new Date(`${expected}T12:00:00Z`).toLocaleDateString("en-CA", {
           timeZone: "UTC",
@@ -689,7 +693,7 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
           year: "numeric",
         });
         expect(doc).toContain(heading);
-        expect(doc).toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
+        expect(doc).toContain(`Session #${till.session.sessionNumber}`);
         const utcHeading = new Date(`${at.toISOString().slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-CA", {
           timeZone: "UTC",
           weekday: "long",
