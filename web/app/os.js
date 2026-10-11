@@ -25978,14 +25978,25 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       let live = true;
       (async () => {
         const shared = window.CDOS.ClientRecords;
-        if (!shared || !shared.serverBacked()) {
+        if (!shared) {
           if (!live) return;
           setFile(rec || {});
           setPhase('edit');
           return;
         }
         try {
+          /* The client list is fetched when the Clients screen mounts.
+             A deal opened from the till has not mounted it, so the store
+             is still unknown and serverBacked() is false. Treating that
+             as "this desk has no server" writes the document into this
+             browser and nowhere else. Load first, then decide. */
           await shared.load(true);
+          if (!live) return;
+          if (!shared.serverBacked()) {
+            setFile(rec || {});
+            setPhase('edit');
+            return;
+          }
           let serverRec = rec && rec.clientId ? shared.byId(rec.clientId) : null;
           if (!serverRec) {
             const matches = shared.byName(name);
@@ -26045,6 +26056,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       };
       try {
         const shared = window.CDOS.ClientRecords;
+        if (shared && !shared.serverBacked()) await shared.load(true);
         if (shared && shared.serverBacked()) {
           let clientId = file && file.clientId;
           const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
