@@ -162,7 +162,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   (`pack-hk-v1`), and it is false for every other pack as well.
   Those three still add their own duty under the sentence. That
   duty does not name a sanctions list. A teller sees the same
-  not-connected screening state as the owner. No list is fetched
+  not-connected screening state as the owner, including the
+  Dashboard sanctions tile, which reads not connected and shows
+  no count. A cashier can open the Dashboard for that tile.
+  Reports, the vault, and the branch network stay off a cashier's
+  dock. The Store roadmap card for Compliance AI Pro is tagged
+  Planned. It says screening is not connected yet. It does not
+  say the screen is live. No list is fetched
   and no name is matched.
 
 - **European Union desks can open on the 2027 AMLR pack.**
@@ -509,7 +515,9 @@ screen clients and counterparties, including against the ATC list,
 freeze without delay, tell the AMLC the same day, and file an STR.
 The compliance screens do not name a sanctions list, do not show a
 hit count, and do not present a seeded subject as a screening
-result. A teller sees that same state.
+result. A teller sees that same state, on the Compliance screen
+and on the Dashboard sanctions tile. The Store card for Compliance
+AI Pro is tagged Planned and says screening is not connected yet.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

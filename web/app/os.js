@@ -48481,8 +48481,8 @@ ${snap}`;
     id: 'compliance_pro',
     title: 'Compliance AI Pro',
     icon: 'shield',
-    desc: 'Live sanctions / PEP screening and auto-LCTR filing.',
-    eta: 'Next'
+    desc: 'Sanctions and PEP screening, and automatic LCTR filing. Not connected yet.',
+    eta: 'Planned'
   }, {
     id: 'sms',
     title: 'SMS & 2FA',
@@ -65829,7 +65829,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const stationTill = _activeTill ? _activeTill.name : '';
     const permsOk = id => {
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
-      if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
+      /* A cashier does not get reports, the vault, or the branch
+         network. They do get the dashboard: that is where the sanctions
+         tile says screening is not connected, and a teller has to be
+         able to read the same tile the owner reads. */
+      if (id === 'dashboard') return can('canViewReports') || me.role === 'Cashier';
+      if (id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
