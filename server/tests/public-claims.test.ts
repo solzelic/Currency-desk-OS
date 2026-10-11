@@ -390,6 +390,23 @@ describe("public marketing claims", () => {
     expect(probe("24-hour rule").ok).toBe(true);
   });
 
+  it("allows only the exact 24-hour rule name, and flags the other hour shapes", () => {
+    expect(probe("a 24-hour setup").ok).toBe(false);
+    expect(probe("24-hour onboarding").ok).toBe(false);
+    expect(probe("24-hour rule").ok).toBe(true);
+    expect(probe("24-hour aggregation rule").ok).toBe(true);
+    expect(probe("a 48 hour setup").out).toMatch(/N hour/);
+    expect(probe("a 2 hour wait").out).toMatch(/N hour/);
+    expect(probe("a two-hour wait").out).toMatch(/two-hour/);
+    expect(probe("less than two hours").out).toMatch(/less than an hour/);
+    expect(probe("set up over-night").out).toMatch(/overnight/);
+    expect(probe("Replies today").out).toMatch(/replies today/);
+    const borrowed = "SMR within 24 hours for terrorism financing, guaranteed.";
+    expect(probe(borrowed, "web/compliance.html").ok).toBe(false);
+    expect(probe(borrowed, "web/faq.html").ok).toBe(false);
+    expect(probe("SMR within 24 hours for terrorism financing, otherwise 3 business days", "web/compliance.html").ok).toBe(true);
+  });
+
   it("flags every second beside the Live rate board name", () => {
     expect(probe("Live rate board").ok).toBe(true);
     const line = probe("Live rate board, updated every second");
