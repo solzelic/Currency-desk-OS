@@ -21,7 +21,7 @@ say.
 | `server/src/` | Fastify + Drizzle backend; ledger under `server/src/ledger/` | ✅ |
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
-| `os-src/` | the OS source: domain `.jsx` screens, `cdos-phone.jsx` (phone shell), `phone/format.js` (phone time, date, and money), `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`, `tokens.css`, `phone-shell.css`. Phone contract: `docs/PHONE_SHELL.md` | ✅ |
+| `os-src/` | the OS source: domain `.jsx` screens, `cdos-phone.jsx` (phone shell), `os-src/phone/` (format.js, NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast), `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`, `tokens.css`, `phone-shell.css`. Phone contract: `docs/PHONE_SHELL.md` | ✅ |
 | `CurrencyDesk OS.html` | OS shell — lists every `os-src` script; also the production fallback when `web/app` is absent | ✅ |
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
@@ -151,7 +151,7 @@ Jerusalem run. The desktop clock spec pins its browser zone itself.
 
 - API/business logic → `server/src/<domain>/` (routes registered in `app.ts`)
 - Schema → a **new** migration (never edit an old one)
-- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`. Phone screens use `os-src/cdos-phone.jsx`. Shared phone time, date, and money formatters are `os-src/phone/format.js` (`docs/PHONE_SHELL.md`)
+- OS screens/behaviour → `os-src/cdos-<domain>.jsx`, then `npm run build:os`. Phone screens use `os-src/cdos-phone.jsx`, `os-src/phone/format.js`, and the shared pieces in `os-src/phone/` (`docs/PHONE_SHELL.md`)
 - Marketing/site content → `design/site/`, then `npm run build:site`
 - Storefront → `YorkFX/`
 - Tests beside their layer: `server/tests/` or `tests/e2e/<behaviour>.spec.ts`
