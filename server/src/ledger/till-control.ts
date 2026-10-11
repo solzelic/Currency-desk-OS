@@ -137,7 +137,7 @@ export class TillControlService {
   ): Promise<string> {
     const result = await client.query(
       `SELECT timezone FROM branches
-        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3`,
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
       [actor.tenantId, actor.legalEntityId, actor.branchId],
     );
     const zone = result.rows[0]?.timezone;
@@ -212,7 +212,7 @@ export class TillControlService {
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workspace_id)
               workspace_id,till_id,session_id,session_number,status,
-              opened_by,opened_at,closed_by,closed_at
+              business_date,opened_by,opened_at,closed_by,closed_at
          FROM ledger_till_sessions
         WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         ORDER BY workspace_id,session_number DESC`,
