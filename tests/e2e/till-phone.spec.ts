@@ -209,6 +209,26 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await expect(page.locator(".till-coins")).toBeHidden();
     await page.locator(".till-coins-btn").click();
     await expect(page.locator(".till-coins")).toBeVisible();
+    const spins = await page.locator(".till-den-qty").evaluateAll((inputs) => inputs.map((el) => {
+      const field = getComputedStyle(el);
+      const inner = getComputedStyle(el, "::-webkit-inner-spin-button");
+      const outer = getComputedStyle(el, "::-webkit-outer-spin-button");
+      return {
+        moz: field.getPropertyValue("-moz-appearance"),
+        inner: inner.getPropertyValue("-webkit-appearance"),
+        outer: outer.getPropertyValue("-webkit-appearance"),
+        innerDisplay: inner.display,
+        outerDisplay: outer.display,
+      };
+    }));
+    expect(spins.length, "note and coin counts").toBeGreaterThan(0);
+    for (const spin of spins) {
+      expect(spin.moz).toBe("textfield");
+      expect(spin.inner).toBe("none");
+      expect(spin.outer).toBe("none");
+      expect(spin.innerDisplay).toBe("none");
+      expect(spin.outerDisplay).toBe("none");
+    }
     await page.locator(".till-coins-btn").click();
 
     await countCad(page);
@@ -223,6 +243,26 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await page.getByRole("button", { name: "Save count" }).click();
     const res = await posted;
     expect(res.ok(), await res.text()).toBeTruthy();
+    await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+    const savedPair = await page.evaluate(() => {
+      const hand = document.querySelector(".till-handoff-phone");
+      const save = document.querySelector(".till-foot .till-save");
+      const svg = save && save.querySelector("svg");
+      if (!(hand instanceof HTMLElement) || !(save instanceof HTMLElement) || !(svg instanceof SVGElement)) return null;
+      const hb = hand.getBoundingClientRect();
+      const sb = save.getBoundingClientRect();
+      return {
+        width: Math.abs(hb.width - sb.width),
+        height: Math.abs(hb.height - sb.height),
+        stroke: getComputedStyle(svg).stroke,
+        opacity: getComputedStyle(svg).opacity,
+      };
+    });
+    expect(savedPair, "Saved sits next to Hand off").not.toBeNull();
+    expect(savedPair && savedPair.width, "Saved is the same width as Hand off").toBeLessThan(1);
+    expect(savedPair && savedPair.height, "Saved is the same height as Hand off").toBeLessThan(1);
+    expect(savedPair && savedPair.stroke).toBe("rgb(255, 255, 255)");
+    expect(savedPair && savedPair.opacity).toBe("1");
     const tally = await page.evaluate(async () => {
       const r = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
       return r.json();

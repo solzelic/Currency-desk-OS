@@ -15451,9 +15451,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'background .25s ease, transform .12s ease'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: saved ? 'checkcircle' : 'checkcircle',
+      n: saved ? 'check' : 'checkcircle',
       s: 15,
-      c: "var(--cd-on-ink)"
+      c: saved ? '#ffffff' : 'var(--cd-on-ink)'
     }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count')))), /*#__PURE__*/React.createElement("div", {
       className: "till-foot-hint text-[10.5px] py-2",
       style: {

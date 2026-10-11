@@ -2321,6 +2321,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 44px !important;
     font-family: "Space Mono", monospace !important;
     font-size: 18px !important;
+    /* Note and coin counts are type=number. The native arrows
+       otherwise sit in the 25¢ field and the note fields alike. */
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .till-den-qty::-webkit-outer-spin-button,
+  .till-den-qty::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+    display: none;
   }
   .till-den-sub {
     width: auto !important;
@@ -2516,10 +2526,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin-top: 0;
   }
   .till-handoff-phone {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    min-width: 0;
     min-height: 44px;
+    margin: 0;
+    appearance: none;
     border: 1.5px solid var(--ft, #17140F);
     border-radius: 10px;
     background: #fff;
@@ -2530,13 +2545,38 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     cursor: pointer;
   }
   .till-foot .till-save {
+    box-sizing: border-box;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 44px;
     margin: 0 !important;
+    padding: 0 12px !important;
     justify-content: center;
+    appearance: none;
+    /* Same 1.5px border as Hand off, so the two grid cells share
+       an outer edge. The fill shows through the transparent border. */
+    border: 1.5px solid transparent !important;
     border-radius: 10px !important;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     font-size: 15px !important;
+  }
+  /* The saved pop scales the button and fades the icon in. On a
+     phone that reads as a wider button and a check you cannot see.
+     The saved state stays put, with a white check. */
+  .till-foot .till-save:disabled {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+  .till-foot .till-save svg {
+    stroke: #ffffff;
+    opacity: 1;
+  }
+  .till-foot .till-save:disabled svg {
+    animation: none;
+    transform: none;
+    opacity: 1;
   }
   .till-root .till-table-scroll {
     overflow-x: auto !important;

@@ -102,7 +102,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   name that does not fit on the line ellipsizes. The session clock stays
   with the word "at", so "a.m." is not left on a line by itself. Enter
   total fits inside its card, with the figure right-aligned and no
-  spinner. When the branch has another till, that till name opens the
+  spinner. Note and coin counts hide the number spinner the same way.
+  Saved is the same width as Hand off, with a white check. When the branch has another till, that till name opens the
   same switcher the desktop header uses, as a sheet on the bottom of the
   window with a dim backdrop. That control is mounted only at this width,
   so a wide window still has the one header button. A note that the
@@ -453,7 +454,8 @@ card, and Hand off / Save count stuck at the thumb, on the bottom
 bar. The round + is hidden on that screen. The notes scroll
 with the window. The who-line wraps at the dots, and a long name
 ellipsizes. The session clock stays with "at". Enter total fits
-in its card. Expected, the blurred figure, and Show stay on one line.
+in its card. Note and coin counts hide the number spinner. Saved
+matches Hand off and shows a white check. Expected, the blurred figure, and Show stay on one line.
 Another till at the branch opens from that till name as a sheet on
 the bottom of the window, through the same switch the desktop header
 uses. That control is mounted only at phone width. A multi-till note
