@@ -44,6 +44,53 @@ async function sweepCompliance(page: Page): Promise<void> {
   }
 }
 
+/* The till separator is a flex item. A normal space at its edge is
+   clipped, so the line reads "01·Till". The painted gap has to be
+   wider than the dot alone. */
+async function expectTillGaps(page: Page): Promise<void> {
+  const measured = await page.locator(".phone-till-line").evaluate((line) => {
+    const sep = line.querySelector(".phone-till-sep");
+    const state = line.querySelector(".phone-till-state");
+    const widthOf = (el: Element | null) => {
+      if (!el) return 0;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getBoundingClientRect().width;
+    };
+    const probe = document.createElement("span");
+    probe.textContent = "·";
+    probe.style.font = getComputedStyle(line).font;
+    line.appendChild(probe);
+    const dotWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    const text = (value: string | null | undefined) => (value || "").replace(/\u00A0/g, " ");
+    return {
+      sepText: text(sep && sep.textContent),
+      stateText: text(state && state.textContent).trim(),
+      sepWidth: widthOf(sep),
+      dotWidth,
+    };
+  });
+  expect(measured.sepText).toBe(" · ");
+  expect(measured.stateText).toMatch(/^Till (open|closed)$/);
+  expect(measured.sepWidth).toBeGreaterThan(measured.dotWidth * 2);
+}
+
+async function expectAvatarFont(page: Page): Promise<void> {
+  const font = await page.locator(".phone-head .mb-acct-av").evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(font.toLowerCase()).not.toMatch(/mono|plex/);
+  expect(font.toLowerCase()).toMatch(/archivo|inter/);
+}
+
+async function expectRowsFit(root: ReturnType<Page["locator"]>): Promise<void> {
+  const clipped = await root.locator(".phone-row-sub").evaluateAll((els) =>
+    els
+      .filter((el) => el instanceof HTMLElement && el.getClientRects().length > 0 && el.scrollWidth > el.clientWidth + 1)
+      .map((el) => (el.textContent || "").trim())
+  );
+  expect(clipped).toEqual([]);
+}
+
 async function shot(page: Page, name: string): Promise<void> {
   for (const width of [390, 360] as const) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 780 });
@@ -98,14 +145,11 @@ function screenshotDeals(day: string) {
 
 async function installScreenshotFixtures(page: Page): Promise<{ day: string; label: string }> {
   const stamp = await page.evaluate(() => {
-    const day = window.CDOS.businessDate();
-    const [y, m, d] = String(day).slice(0, 10).split("-").map(Number);
-    const label = new Date(y, m - 1, d).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-    return { day: String(day).slice(0, 10), label };
+    const day = String(window.CDOS.businessDate()).slice(0, 10);
+    const parts = day.split("-").map(Number);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const md = months[parts[1] - 1] + " " + parts[2];
+    return { day, row: "Today", heading: "Today, " + md };
   });
   const book = screenshotDeals(stamp.day);
   await page.evaluate((payload) => {
@@ -166,6 +210,8 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
       await expect(home.getByText("Automatic ID checks")).toBeVisible();
       await expect(home.getByRole("button", { name: "Open Clients" })).toBeVisible();
       await expect(page.locator("#phone-fab")).toHaveCount(0);
+      await expectTillGaps(page);
+      await expectAvatarFont(page);
       await expect(page.locator("#phonebar .phone-tab")).toHaveCount(5);
       const more = page.locator('#phonebar [data-phone-app="more"].is-on .lbl');
       await expect(more).toHaveCSS("color", "rgb(107, 46, 84)");
@@ -185,7 +231,7 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
         await expect(shell.locator("h1")).toHaveText("What you would file");
         await shell.getByRole("button", { name: "Compliance", exact: true }).click();
         await expect(home).toBeVisible();
-        await home.getByRole("tab", { name: /aggregation/ }).click();
+        await home.getByRole("tab", { name: "24-hour rule" }).click();
         await home.getByRole("button", { name: /Possible split deals/ }).click();
         await expect(shell.locator("h1")).toHaveText("Possible split deals");
         await shell.getByRole("button", { name: "Compliance", exact: true }).click();
@@ -288,13 +334,13 @@ test("each phone detail is a list, and the filing form stays on a computer", asy
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
 
-  await home.getByRole("tab", { name: /aggregation/ }).click();
-  await openDetail(/Large cash/, "compliance-detail-aggregation", "24h aggregation");
+  await home.getByRole("tab", { name: "24-hour rule" }).click();
+  await openDetail(/Large cash/, "compliance-detail-aggregation", "24-hour rule");
   await shot(page, "detail_aggregation");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
 
-  await home.getByRole("tab", { name: /aggregation/ }).click();
+  await home.getByRole("tab", { name: "24-hour rule" }).click();
   await openDetail(/Clients missing ID/, "compliance-detail-missing", "Clients missing ID");
   await shot(page, "detail_missing");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
@@ -334,56 +380,73 @@ test("fixture deals fill the phone details and one deal drill", async ({ page })
 
   const filings = await openDetail(/Reportable/, "compliance-detail-filings", "What you would file");
   await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText("10,000.00 CAD");
-  await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText(stamp.label);
+  await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText("Large cash");
+  await expect(filings.getByRole("button", { name: /Amina Farah/ })).toContainText(stamp.row);
   await expect(filings.getByRole("button", { name: /Leah Cho/ })).toContainText("10,300.00 CAD");
   await expect(filings.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
   await expect(filings).toContainText("You file");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expectRowsFit(filings);
   await shot(page, "detail_filings_filled");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
 
   const splits = await openDetail(/Structuring/, "compliance-detail-structuring", "Possible split deals");
-  await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("3 just-under deals");
+  await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("3 just-under");
   await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
   await expect(splits.getByRole("button", { name: /Noah Pell/ })).toContainText("Warnings only");
-  await expect(splits.getByRole("button", { name: /Leah Cho/ })).toContainText("2 just-under deals");
+  await expect(splits.getByRole("button", { name: /Leah Cho/ })).toContainText("2 just-under");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expectRowsFit(splits);
   await shot(page, "detail_structuring_filled");
   await splits.getByRole("button", { name: /Noah Pell/ }).click();
   const deals = shell.getByTestId("compliance-detail-deals");
   await expect(deals).toBeVisible();
   await expect(shell.locator("h1")).toHaveText("Noah Pell");
+  await expect(shell.locator(".phone-title p")).toHaveText("3 deals today, 10,200.00 CAD together");
+  await expect(deals.getByText("Warnings only. The desk does not stop the deal.")).toHaveCount(1);
+  await expect(deals).toContainText(stamp.heading);
   await expect(deals).toContainText("3,200.00 CAD");
   await expect(deals).toContainText("3,400.00 CAD");
   await expect(deals).toContainText("3,600.00 CAD");
-  await expect(deals).toContainText("10:15 AM");
-  await expect(deals).toContainText("1:40 PM");
-  await expect(deals).toContainText("5:05 PM");
-  await expect(deals).toContainText(stamp.label);
+  await expect(deals).toContainText("10:15 am");
+  await expect(deals).toContainText("1:40 pm");
+  await expect(deals).toContainText("5:05 pm");
+  expect(await deals.innerText()).not.toMatch(/\bAM\b|\bPM\b/);
   expect(await shell.innerText()).not.toMatch(/\$/);
   await expect(shell.locator(".fld-tab")).toHaveCount(0);
   await sweepCompliance(page);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expectRowsFit(deals);
   await shot(page, "detail_deals");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(shell.getByTestId("compliance-detail-structuring")).toBeVisible();
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
 
-  await home.getByRole("tab", { name: /aggregation/ }).click();
-  const aggregate = await openDetail(/Large cash/, "compliance-detail-aggregation", "24h aggregation");
+  await home.getByRole("tab", { name: "24-hour rule" }).click();
+  const aggregate = await openDetail(/Large cash/, "compliance-detail-aggregation", "24-hour rule");
+  await expect(shell.locator(".phone-title p")).toContainText("Cash from one client within 24 hours adds up.");
+  await expect(shell.locator(".phone-title p")).toContainText("Over 10,000.00 CAD, you file.");
+  expect(await shell.innerText()).not.toMatch(/24h|static window/i);
   await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("2 cash-ins");
   await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("10,300.00 CAD");
-  await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("12:00 AM");
+  await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("Today");
   await expect(aggregate.getByRole("button", { name: /Noah Pell/ })).toContainText("3 cash-ins");
   await expect(aggregate.getByRole("button", { name: /Noah Pell/ })).toContainText("10,200.00 CAD");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expectRowsFit(aggregate);
   await shot(page, "detail_aggregation_filled");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
 
-  await home.getByRole("tab", { name: /aggregation/ }).click();
+  await home.getByRole("tab", { name: "24-hour rule" }).click();
   const missing = await openDetail(/Clients missing ID/, "compliance-detail-missing", "Clients missing ID");
   await expect(missing.getByRole("button", { name: /Sam Idris/ })).toContainText("missing ID");
   await expect(missing).not.toContainText("Amina Farah");
   await expect(missing).not.toContainText("Noah Pell");
   await expect(missing).not.toContainText("Leah Cho");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expectRowsFit(missing);
   await shot(page, "detail_missing_filled");
 });

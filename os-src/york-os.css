@@ -1931,8 +1931,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 50%;
     background: #161513;
     color: #fff;
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
     font-size: 13px;
     font-weight: 600;
+    letter-spacing: 0;
   }
   /* The desk dark rule paints the initials with --on-ink (#131210).
      On this circle that is dark on dark, about 1:1. The phone text

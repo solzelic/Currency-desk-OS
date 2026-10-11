@@ -146,9 +146,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   The ledger search is one line, with its help mark in that line.
   Compliance on a phone is the shared phone shell. The home is a More
   control, the reporting line in plain words, Reportable and Structuring
-  cards, and Screening or the 24-hour list. Amounts use formatPhoneMoney,
+  cards, and Screening or the 24-hour rule. Amounts use formatPhoneMoney,
   so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
-  used. Dates read like Oct 11, 2026, and times are 12-hour. A selected
+  used. A recent day reads Today or Yesterday, and a day in the current
+  year reads like Oct 9, with no year. Times are 12-hour and lowercase.
+  One client's deals sit under a date heading, and a flagged set shows
+  how many deals and the total. A selected
   filter chip is gray-900. Only the sticky primary button takes the
   compliance accent. Each detail reached from the home is a phone list
   or an empty state. Screening says Not connected and shows no count.
@@ -692,6 +695,14 @@ its own top margin.
 **2026-10-11**, phone task sheets. Under 430px a task sheet covers the
 tab bar, with its own footer and a 44px close. A confirm stays a
 bottom sheet above the bar. The classes live on the shell.
+
+**2026-10-11**, phone Compliance copy and dates. The shared till line
+keeps a space on each side of the dot. The phone avatar uses the UI
+font. A row date is Today, Yesterday, or a month and day with no
+year, and it is not cut off at 360. Times are 12-hour and lowercase.
+The list is titled "24-hour rule". A client's flagged deals show the
+running total once, under one date heading, and the warning sentence
+once.
 
 **2026-10-11**, desktop baselines. One spec captures the 1280 window
 of every desktop app and the sign-in screen, at `maxDiffPixels: 0`.

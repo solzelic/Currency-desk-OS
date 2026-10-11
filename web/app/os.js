@@ -63203,7 +63203,8 @@ window.CDOS_PERSIST = (function () {
     if (regime.windowKind === 'calendar_month') return 'This month';
     if (regime.windowKind === 'banking_day') return 'Banking day';
     if (regime.aggregate === false) return 'Large cash';
-    if (regime.aggHours) return regime.aggHours + 'h aggregation';
+    /* "24-hour rule" is the allowed name. "24h" is not. */
+    if (regime.aggHours === 24) return '24-hour rule';
     return 'Aggregation';
   }
 
@@ -63224,8 +63225,10 @@ window.CDOS_PERSIST = (function () {
     return out;
   }
 
-  /* Dates read "Oct 11, 2026". Times read "2:05 PM". An ISO day or a
-     24-hour clock never reaches the screen. */
+  /* A row date is "Today", "Yesterday", or "Oct 9" in the current
+     year. A deal heading keeps the calendar day: "Today, Oct 11".
+     Times are 12-hour with a lower-case am or pm: "10:15 am". formatPhoneDate and
+     formatPhoneTime win when the shell provides them. */
   function asDate(value) {
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
     const text = String(value || '');
@@ -63238,16 +63241,49 @@ window.CDOS_PERSIST = (function () {
     }
     return null;
   }
+  function businessDay() {
+    const raw = window.CDOS.businessDate && window.CDOS.businessDate();
+    return asDate(String(raw || '').slice(0, 10));
+  }
+  function sameDay(a, b) {
+    return !!(a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate());
+  }
+  function shiftDay(date, days) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+  }
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function monthDay(date) {
+    return MONTHS[date.getMonth()] + ' ' + date.getDate();
+  }
   function phoneDate(value) {
+    const shared = window.CDOS.formatPhoneDate;
+    if (typeof shared === 'function') {
+      const text = shared(value);
+      if (text) return text;
+    }
     const date = asDate(value);
     if (!date) return '';
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    const today = businessDay();
+    if (today && sameDay(date, today)) return 'Today';
+    if (today && sameDay(date, shiftDay(today, -1))) return 'Yesterday';
+    const label = monthDay(date);
+    if (today && date.getFullYear() !== today.getFullYear()) return label + ', ' + date.getFullYear();
+    return label;
+  }
+  function phoneDateHeading(value) {
+    const date = asDate(value);
+    if (!date) return '';
+    const short = phoneDate(date);
+    const day = monthDay(date);
+    if (short === 'Today' || short === 'Yesterday') return short + ', ' + day;
+    return short;
   }
   function phoneClock(value) {
+    const shared = window.CDOS.formatPhoneTime;
+    if (typeof shared === 'function') {
+      const text = shared(value);
+      if (text) return text;
+    }
     const date = value instanceof Date ? asDate(value) : null;
     let hour = null;
     let minute = null;
@@ -63261,19 +63297,57 @@ window.CDOS_PERSIST = (function () {
       minute = Number(match[2]);
       if (hour > 23 || minute > 59) return '';
     }
-    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const suffix = hour >= 12 ? 'pm' : 'am';
     const face = hour % 12 || 12;
     return face + ':' + (minute < 10 ? '0' : '') + minute + ' ' + suffix;
   }
+  function whenPhrase(value) {
+    const label = phoneDate(value);
+    if (label === 'Today') return 'today';
+    if (label === 'Yesterday') return 'yesterday';
+    return label;
+  }
+  function togetherLine(count, whenValue, sum, currency) {
+    const n = count || 0;
+    const deals = n + ' ' + (n === 1 ? 'deal' : 'deals');
+    const when = whenPhrase(whenValue);
+    const money = sum != null && currency ? phoneMoney(sum, currency) : '';
+    if (when && money) return deals + ' ' + when + ', ' + money + ' together';
+    if (money) return deals + ', ' + money + ' together';
+    return deals;
+  }
+
+  /* One short day, so the second line fits at 360. A same-day window
+     does not repeat the clock on the row. */
   function windowWords(start, end) {
     const from = asDate(start);
     const to = asDate(end);
     if (!from) return '';
-    const left = phoneDate(from) + ', ' + phoneClock(from);
-    if (!to) return left;
-    const sameDay = from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth() && from.getDate() === to.getDate();
-    const right = sameDay ? phoneClock(to) : phoneDate(to) + ', ' + phoneClock(to);
+    if (!to || sameDay(from, to)) return phoneDate(from);
+    const left = phoneDate(from);
+    const right = phoneDate(to);
+    if (!right || left === right) return left;
     return left + ' to ' + right;
+  }
+  function groupDeals(txs, amountOf) {
+    const groups = [];
+    (txs || []).forEach((tx, index) => {
+      const title = phoneDateHeading(tx.date) || 'Deals';
+      let group = groups[groups.length - 1];
+      if (!group || group.title !== title) {
+        group = {
+          title,
+          rows: []
+        };
+        groups.push(group);
+      }
+      group.rows.push({
+        id: tx.id || tx.ref || index,
+        title: phoneClock(tx.time) || 'Deal',
+        amount: amountOf(tx)
+      });
+    });
+    return groups;
   }
   function kindWords(regime, kind) {
     if (regime && kind && kind === regime.largeCode) return 'Large cash';
@@ -63384,6 +63458,7 @@ window.CDOS_PERSIST = (function () {
       screening: 'Sanctions screening',
       missing: 'Clients missing ID'
     };
+    const hourRule = regime && regime.aggHours === 24 && regime.threshold != null && regime.currency ? 'Cash from one client within 24 hours adds up. Over ' + phoneMoney(regime.threshold, regime.currency) + ', you file.' : '';
     const viewKey = pane === 'missing' ? 'missing' : detail;
     let title = 'Compliance';
     let subtitle = sub;
@@ -63399,39 +63474,35 @@ window.CDOS_PERSIST = (function () {
       };
     } else if (drill) {
       title = drill.title;
-      subtitle = drill.note || '';
+      subtitle = drill.reason || '';
       backLabel = 'Compliance';
       back = () => setDrill(null);
     } else if (pane !== 'home') {
       title = titles[viewKey] || 'Compliance';
-      subtitle = viewKey === 'missing' ? 'ID is required on a deal and is not on the client file.' : viewKey === 'structuring' ? 'Warnings only. The desk does not stop the deal.' : viewKey === 'submissions' && reportables.length ? fileLine : viewKey === 'aggregation' && summed && clusters && clusters.length ? 'Cash in one static window. ' + fileLine : '';
+      subtitle = viewKey === 'missing' ? 'ID is required on a deal and is not on the client file.' : viewKey === 'structuring' ? 'Warnings only. The desk does not stop the deal.' : viewKey === 'submissions' && reportables.length ? fileLine : viewKey === 'aggregation' && summed && clusters && clusters.length ? hourRule || fileLine : '';
       backLabel = 'Compliance';
       back = onBack;
     }
-    const dealList = (list, note) => /*#__PURE__*/React.createElement("div", {
+    const dealList = (groups, note) => /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-detail-deals"
-    }, /*#__PURE__*/React.createElement("p", {
+    }, note ? /*#__PURE__*/React.createElement("p", {
       className: "cph-note"
-    }, note), !list.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }, note) : null, !groups.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No deals in this list",
       message: "Nothing in this list can be shown."
-    }), !!list.length && /*#__PURE__*/React.createElement(Phone.ListSection, {
-      title: "Deals"
-    }, list.map(deal => /*#__PURE__*/React.createElement(Phone.ListRow, {
+    }), groups.map(group => /*#__PURE__*/React.createElement(Phone.ListSection, {
+      key: group.title,
+      title: group.title
+    }, group.rows.map(deal => /*#__PURE__*/React.createElement(Phone.ListRow, {
       key: deal.id,
       title: deal.title,
-      subtitle: deal.subtitle,
       amount: deal.amount
-    }))));
-    const openDeals = (heading, note, txs, amountOf) => setDrill({
+    })))));
+    const openDeals = (heading, note, reason, txs, amountOf) => setDrill({
       title: heading,
       note,
-      rows: (txs || []).map((tx, index) => ({
-        id: tx.id || tx.ref || index,
-        title: phoneDate(tx.date) || 'Deal',
-        subtitle: phoneClock(tx.time),
-        amount: amountOf(tx)
-      }))
+      reason,
+      groups: groupDeals(txs, amountOf)
     });
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "compliance",
@@ -63447,7 +63518,7 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "Open this on a computer",
       message: "The filing worksheet is the regulator's form, field by field. This phone does not show that form, and this desk does not send the report."
-    })), !showComputer && drill && dealList(drill.rows, drill.note), !showComputer && !drill && pane === 'missing' && /*#__PURE__*/React.createElement("div", {
+    })), !showComputer && drill && dealList(drill.groups || [], drill.note), !showComputer && !drill && pane === 'missing' && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-detail-missing"
     }, !people.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No one is missing ID",
@@ -63501,14 +63572,14 @@ window.CDOS_PERSIST = (function () {
     }, splits.map(item => /*#__PURE__*/React.createElement(Phone.ListRow, {
       key: item.customer,
       title: item.customer,
-      subtitle: [item.txs.length + ' just-under deals', phoneDate(item.lastDate)].filter(Boolean).join(' · '),
+      subtitle: [item.txs.length + ' just-under', phoneDate(item.lastDate)].filter(Boolean).join(' · '),
       amount: item.sum != null && regime && regime.currency ? phoneMoney(item.sum, regime.currency) : '',
       badge: {
         label: 'Warnings only',
         tone: 'warn'
       },
       chevron: true,
-      onClick: () => openDeals(item.customer, 'Warnings only. The desk does not stop the deal.', item.txs, tx => {
+      onClick: () => openDeals(item.customer, 'Warnings only. The desk does not stop the deal.', togetherLine(item.txs.length, item.lastDate, item.sum, regime && regime.currency), item.txs, tx => {
         const cashIn = window.CDOS._compliance && window.CDOS._compliance.cashIn;
         const amount = cashIn ? cashIn(tx) : null;
         return amount != null && regime && regime.currency ? phoneMoney(amount, regime.currency) : '';
@@ -63533,7 +63604,7 @@ window.CDOS_PERSIST = (function () {
         tone: 'neutral'
       },
       chevron: true,
-      onClick: () => openDeals(cluster.subject || 'Large cash', fileLine, cluster.txs, tx => tx.amt != null && regime && regime.currency ? phoneMoney(tx.amt, regime.currency) : '')
+      onClick: () => openDeals(cluster.subject || 'Large cash', fileLine, '', cluster.txs, tx => tx.amt != null && regime && regime.currency ? phoneMoney(tx.amt, regime.currency) : '')
     })))), pane === 'home' && !showComputer && !drill && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-phone-home",
       "data-state": countsState,
@@ -63586,7 +63657,7 @@ window.CDOS_PERSIST = (function () {
       onClick: () => onOpen('aggregation')
     }), /*#__PURE__*/React.createElement(Phone.ListRow, {
       title: "Possible split deals",
-      subtitle: structuring ? 'Warnings only. The desk does not stop the deal.' : 'No patterns to watch',
+      subtitle: structuring ? 'Warnings only' : 'No patterns to watch',
       chevron: true,
       onClick: () => onOpen('structuring')
     }), /*#__PURE__*/React.createElement(Phone.ListRow, {
