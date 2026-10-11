@@ -218,9 +218,10 @@ test("assistant cannot be opened on a phone", async ({ page }) => {
   await expect(page.getByText("No matches")).toBeVisible();
   await page.locator('#phonebar [data-phone-app="more"]').click();
   await openMore(page, "store");
-  const card = page.locator(".st-card").filter({ hasText: "AI Assistant" });
-  await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Open" }).click();
+  const store = page.locator('.longtail[data-app="store"]');
+  await expect(store.getByRole("heading", { name: "Open this on a computer" })).toBeVisible();
+  await expect(store.getByText("Adding and removing apps is on a computer.")).toBeVisible();
+  await expect(page.locator(".st-wrap")).toHaveCount(0);
   await expect(page.locator('.win[data-app="assistant"]')).toHaveCount(0);
 });
 

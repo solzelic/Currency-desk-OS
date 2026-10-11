@@ -3189,6 +3189,20 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     cursor: pointer;
   }
   .longtail .phone-seg button.is-on { background: #fff; color: #17140F; }
+  .longtail .phone-ops { display: flex; gap: 8px; margin: 8px 0 12px; }
+  .longtail .phone-ops button {
+    flex: 1 1 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid #C9C5BC;
+    border-radius: 10px;
+    background: #fff;
+    color: #17140F;
+    font: inherit;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
   .phone-note, .phone-miss { margin: 8px 0 12px; font-size: 16px; line-height: 24px; color: #3D3A35; }
   .phone-error-detail, .phone-warn { margin: 8px 0 0; font-size: 14px; line-height: 20px; color: #B42318; text-align: center; }
   .phone-list > div:last-child .phone-row { border-bottom: 0; }
@@ -3245,7 +3259,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .phone-tile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: #6B6760; }
   .phone-tile.is-on { border: 2px solid #17140F; background: #EFEDE8; padding: 7px 11px; }
   .phone-field, .phone-add { display: block; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
-  .phone-field select, .phone-add select, .phone-crow input {
+  .phone-field select, .phone-add select, .phone-crow input, .phone-field input {
     display: block;
     width: 100%;
     height: 48px;

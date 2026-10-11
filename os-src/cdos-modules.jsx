@@ -317,7 +317,8 @@
   /* ---- SETTINGS lives in cdos-settings.jsx (full MSB configuration) ---- */
 
   /* ---- CALCULATOR — Apple-style keypad + FX convert + margin % ---- */
-  function Calc({ settings }) {
+  function Calc({ settings, onUseInDeal }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const { useEffect } = React;
     const home = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
     const FXC = (typeof CUR !== 'undefined') ? CUR.filter(c => c.code !== home).map(c => c.code) : CCY.filter(c => c !== home);
@@ -364,6 +365,10 @@
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mZone = mi > 0 && marginPct >= mTarget ? CD.green : (mi > 0 && marginPct >= mFloor ? CD.amber : (mi > 0 ? CD.flag : CD.faint));
 
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return <window.CDOS.PhoneApps.PhoneCalc settings={settings} onUseInDeal={onUseInDeal} />;
+    }
     return (<div style={{ background: CD.panel }} className="h-full flex flex-col">
       <div className="flex" style={{ borderBottom: `1px solid ${CD.line}` }}>
         {[['calc', 'Calculator'], ['fx', 'FX'], ['margin', 'Margin']].map(([m, l]) => <button key={m} onClick={() => setMode(m)} className="flex-1 py-2.5 text-[11px] uppercase tracking-wider" style={{ background: mode === m ? CD.ink : 'var(--cd-chip)', color: mode === m ? 'var(--cd-on-ink)' : CD.mute, borderRight: m !== 'margin' ? `1px solid ${CD.line}` : 0 }}>{l}</button>)}

@@ -162,6 +162,7 @@
      docs/ABSENT_FIGURES.md.
      ============================================================ */
   function Dashboard({ rows, clients, settings, me, onOpenLedger, onOpenClient, openFiltered, onOpenApp, serverBacked, cashVersion }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [posMode, setPosMode] = useState('value');
     const [range, setRange] = useState('30d');
     // the trading day and the jurisdiction pack, from the server
@@ -314,6 +315,10 @@
     const deskName = (settings && (settings.operatingName || settings.bizName)) || 'This desk';
     /* One line, used by every tile that has to explain a dash. */
     const noBook = book.error || (book.loading ? 'reading the book…' : 'nothing posted in this period');
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return <window.CDOS.PhoneApps.Computer app="dashboard" title="Dashboard" sentence="Today's totals are on a computer." />;
+    }
 
     return (<div style={{ height: '100%', overflow: 'auto', background: CD.paper }}>
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>

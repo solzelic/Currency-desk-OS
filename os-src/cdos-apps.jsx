@@ -146,6 +146,7 @@ ${snap}`;
   }
 
   function LoanCalc() {
+    const phone = window.CDOS.LongTail.usePhone();
     const [amount, setAmount] = useState('25000');
     const [rate, setRate] = useState('7.5');
     const [years, setYears] = useState('5');
@@ -171,6 +172,10 @@ ${snap}`;
     const freqLabel = (FREQ.find(f => f[0] === ppy) || ['', ''])[1].toLowerCase();
     const loanCcy = (window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy()) || 'CAD';
     const money = (v) => v.toLocaleString('en-CA', { style: 'currency', currency: loanCcy, maximumFractionDigits: 2 });
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return <window.CDOS.PhoneApps.Computer app="loan" title="Loan calculator" sentence="The payment schedule is on a computer." />;
+    }
 
     return (<div className="ln-wrap">
       <div className="ln-grid">
@@ -261,6 +266,11 @@ ${snap}`;
   }
 
   function AppStore({ installed, available, locked, plan, coming, onAdd, onRemove, onOpen, onUpgrade }) {
+    const phone = window.CDOS.LongTail.usePhone();
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return <window.CDOS.PhoneApps.Computer app="store" title="Apps" sentence="Adding and removing apps is on a computer." />;
+    }
     const planName = { basic: 'Basic', pro: 'Pro', premium: 'Premium' }[plan] || '';
     return (<div className="st-wrap">
       <div className="st-head">

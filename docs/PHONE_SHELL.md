@@ -505,9 +505,10 @@ components above: a title, `SummaryCards`, a segmented control when
 there are two to four sub-views (otherwise `FilterChips`), `Search`,
 the list, and one `StickyAction`. A read-only app omits the button.
 Vault (`os-src/cdos-phone-vault.jsx`) and Audit trail
-(`os-src/cdos-phone-audit.jsx`) are the first callers. Dashboard,
-Calculator, Loan calculator, Tagged, and Store should be thin callers
-of this same component. Do not build a second template.
+(`os-src/cdos-phone-audit.jsx`) are callers. Calculator and Tagged
+deals are callers too (`os-src/cdos-phone-apps.jsx`). Dashboard, Loan
+calculator, and Store use the empty state on a phone. Do not build a
+second template.
 
 A primary button on these screens is `.phone-sticky-btn`. Its fill is
 `var(--brand-primary)`, which `data-app` on the phone shell sets from
@@ -558,7 +559,7 @@ the string in.
 | `summary` | `[{ label, value, sub }]`. `value` null renders "No rate yet". |
 | `segments`, `segment`, `onSegment` | Two to four tabs. |
 | `chips`, `chip`, `onChip` | Filters when there are more than four sub-views. |
-| `search`, `onSearch`, `searchPlaceholder` | The search field. |
+| `search`, `onSearch`, `searchPlaceholder` | The search field. Pass `search={false}` when the screen has nothing to search, as the calculator does. |
 | `state`, `loadingText`, `errorText`, `errorDetail`, `onRetry` | Honest states. `errorDetail` is the real message. |
 | `emptyText`, `emptyBody`, `emptyAction`, `onEmpty` | Empty. `emptyText` is the title, `emptyBody` the sentence. Omit `emptyAction` when there is nothing to do. |
 | `action`, `onAction` | The one button. Omit `action` on a read-only screen. |
@@ -626,17 +627,20 @@ any reference. A dotted internal code is shown as plain words
 same log and is unchanged. Role gates are unchanged: a cashier does
 not get Vault, and does get Audit trail.
 
-### Mapping the rest
+### The other More apps
 
-Same component. Not built in this change.
+Calculator and Tagged deals are callers of `LongTailScreen`
+(`os-src/cdos-phone-apps.jsx`). Dashboard, Loan calculator, and Store
+are `Phone.EmptyState` with the title "Open this on a computer" and
+one sentence. At 430px none of them mount the desktop window.
 
 | App | Summary card | Sub-views | Rows | Main button |
 | --- | --- | --- | --- | --- |
-| Dashboard | Total on hand, in the home currency. Second card: paid out on cheques not cleared | none (chips: Today, This week, This month) | Key numbers that open the app behind them | none |
-| Calculator | none | Add up / Convert / Margin | Result | Use in a new deal, on Convert only |
-| Loan calculator | Monthly payment | none | Inputs, then the schedule | none. Save as PDF is not offered |
-| Tagged | Count tagged | chips: Open / Done | Ledger rows with the tag reason | Mark as checked, on the detail |
-| Store | none | Installed / Add | One row per app, on/off, no prices | none |
+| Dashboard | none | none | Open this on a computer. Today's totals are on a computer. | none |
+| Calculator | Result | Add up / Convert / Margin | The scratch total, or the convert and margin fields | Use in a new deal, on Convert only |
+| Loan calculator | none | none | Open this on a computer. The payment schedule is on a computer. | none |
+| Tagged | Count still open | chips: Open / Done | The tag reason, the date, the pay-in | Mark as checked, on the detail |
+| Store | none | none | Open this on a computer. Adding and removing apps is on a computer. | none |
 | Assistant | none | none | Chat. A Beta tag | Ask, in place of the sticky button |
 
 Assistant stays off More. It is a front-end mock with no model API.

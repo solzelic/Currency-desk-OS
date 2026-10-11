@@ -1977,7 +1977,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   /* =====================================================================
      TAGGED — desktop app: every transaction flagged for follow-up
   ===================================================================== */
-  function Tagged({ rows, clients, settings, onOpen }) {
+  function Tagged({ rows, clients, settings, onOpen, onCheck }) {
+    const phone = window.CDOS.LongTail.usePhone();
     /* `deskFacts` is the version number from the ledger screen, not a
        name this function can see. Naming it in the memo below without
        calling the hook threw "deskFacts is not defined" the moment
@@ -1987,6 +1988,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const deskFacts = useDeskFacts();
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     const tagged = useMemo(() => rows.filter(r => r.tagged).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows]);
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return <window.CDOS.PhoneApps.PhoneTagged rows={rows} onCheck={onCheck} />;
+    }
     return (<div className="p-4">
       <div className="flex items-center gap-2 mb-3">
         <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="taggedbookmark" s={16} c="var(--cd-on-ink)" /></span>

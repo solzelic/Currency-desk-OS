@@ -140,7 +140,7 @@
         )}
         {ready && cards.length > 0 && <Phone.SummaryCards columns={cards.length > 1 ? 2 : 3} cards={cards} />}
         {filters}
-        {ready && (
+        {ready && props.search !== false && (
           <Phone.Search value={props.search || ''} onChange={props.onSearch} placeholder={props.searchPlaceholder || 'Search'} label={props.searchPlaceholder || 'Search'} />
         )}
         {ready ? props.children : null}

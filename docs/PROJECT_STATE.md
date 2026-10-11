@@ -240,8 +240,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   built-in reorder bands stay on the desktop pill. Assistant
   stays off More. `openApp` also refuses it on a phone unless
   `window.claude.complete` exists, so no other door can raise it.
-  Wider than 430px, Vault and Audit trail render the desktop they
-  already did.
+  Calculator and Tagged deals use the same screen. Dashboard, the
+  loan calculator, and Store say to open them on a computer.
+  Wider than 430px, these apps render the desktop they already did.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other

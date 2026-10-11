@@ -3899,8 +3899,10 @@
 
   /* ---- CALCULATOR — Apple-style keypad + FX convert + margin % ---- */
   function Calc({
-    settings
+    settings,
+    onUseInDeal
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const {
       useEffect
     } = React;
@@ -4084,6 +4086,13 @@
     const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mZone = mi > 0 && marginPct >= mTarget ? CD.green : mi > 0 && marginPct >= mFloor ? CD.amber : mi > 0 ? CD.flag : CD.faint;
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.PhoneCalc, {
+        settings: settings,
+        onUseInDeal: onUseInDeal
+      });
+    }
     return /*#__PURE__*/React.createElement("div", {
       style: {
         background: CD.panel
@@ -11728,6 +11737,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     serverBacked,
     cashVersion
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
     const [posMode, setPosMode] = useState('value');
     const [range, setRange] = useState('30d');
     // the trading day and the jurisdiction pack, from the server
@@ -11997,6 +12007,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const deskName = settings && (settings.operatingName || settings.bizName) || 'This desk';
     /* One line, used by every tile that has to explain a dash. */
     const noBook = book.error || (book.loading ? 'reading the book…' : 'nothing posted in this period');
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
+        app: "dashboard",
+        title: "Dashboard",
+        sentence: "Today's totals are on a computer."
+      });
+    }
     return /*#__PURE__*/React.createElement("div", {
       style: {
         height: '100%',
@@ -32583,8 +32601,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     rows,
     clients,
     settings,
-    onOpen
+    onOpen,
+    onCheck
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
     /* `deskFacts` is the version number from the ledger screen, not a
        name this function can see. Naming it in the memo below without
        calling the hook threw "deskFacts is not defined" the moment
@@ -32594,6 +32614,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const deskFacts = useDeskFacts();
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings, deskFacts]);
     const tagged = useMemo(() => rows.filter(r => r.tagged).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows]);
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.PhoneTagged, {
+        rows: rows,
+        onCheck: onCheck
+      });
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
@@ -49361,6 +49388,7 @@ ${snap}`;
     }, suffix)));
   }
   function LoanCalc() {
+    const phone = window.CDOS.LongTail.usePhone();
     const [amount, setAmount] = useState('25000');
     const [rate, setRate] = useState('7.5');
     const [years, setYears] = useState('5');
@@ -49404,6 +49432,14 @@ ${snap}`;
       currency: loanCcy,
       maximumFractionDigits: 2
     });
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
+        app: "loan",
+        title: "Loan calculator",
+        sentence: "The payment schedule is on a computer."
+      });
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "ln-wrap"
     }, /*#__PURE__*/React.createElement("div", {
@@ -49586,6 +49622,15 @@ ${snap}`;
     onOpen,
     onUpgrade
   }) {
+    const phone = window.CDOS.LongTail.usePhone();
+    if (phone) {
+      if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
+      return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
+        app: "store",
+        title: "Apps",
+        sentence: "Adding and removing apps is on a computer."
+      });
+    }
     const planName = {
       basic: 'Basic',
       pro: 'Pro',
@@ -63307,7 +63352,7 @@ window.CDOS_PERSIST = (function () {
     }), ready && cards.length > 0 && /*#__PURE__*/React.createElement(Phone.SummaryCards, {
       columns: cards.length > 1 ? 2 : 3,
       cards: cards
-    }), filters, ready && /*#__PURE__*/React.createElement(Phone.Search, {
+    }), filters, ready && props.search !== false && /*#__PURE__*/React.createElement(Phone.Search, {
       value: props.search || '',
       onChange: props.onSearch,
       placeholder: props.searchPlaceholder || 'Search',
@@ -64030,6 +64075,333 @@ window.CDOS_PERSIST = (function () {
     })))));
   }
   window.CDOS.LongTail.PhoneAudit = PhoneAudit;
+})();
+
+/* ---- os-src/cdos-phone-apps.jsx ---- */
+/* Phone screens for the remaining More apps.
+   Calculator and Tagged are LongTailScreen. Dashboard, the loan
+   calculator, and Store say to open them on a computer. None of
+   these mount the desktop window at 430px. */
+(function () {
+  const {
+    useState
+  } = React;
+  function Computer({
+    app,
+    title,
+    sentence
+  }) {
+    const Phone = window.CDOS.Phone;
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: app,
+      className: "longtail",
+      title: title
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Open this on a computer",
+      message: sentence
+    }));
+  }
+  function scratch(n) {
+    if (!Number.isFinite(n)) return '';
+    return new Intl.NumberFormat('en-CA', {
+      maximumFractionDigits: 8
+    }).format(n);
+  }
+  function money(amount, code) {
+    const text = window.CDOS.formatPhoneMoney(amount, code);
+    return text || null;
+  }
+  function codesOf() {
+    const list = window.CDOS.deskCurrencyList && window.CDOS.deskCurrencyList();
+    return list && list.length ? list : ['CAD', 'USD', 'EUR', 'GBP'];
+  }
+
+  /* A scratch pad. The result is not a ledger figure. */
+  function PhoneCalc({
+    onUseInDeal
+  }) {
+    const Long = window.CDOS.LongTail;
+    const home = window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
+    const codes = codesOf();
+    const [mode, setMode] = useState('add');
+    const [acc, setAcc] = useState(null);
+    const [op, setOp] = useState(null);
+    const [entry, setEntry] = useState('');
+    const [shown, setShown] = useState('0');
+    const [hist, setHist] = useState([]);
+    const [amt, setAmt] = useState('100');
+    const [from, setFrom] = useState(codes.find(c => c !== home) || codes[0]);
+    const [to, setTo] = useState(home);
+    const [take, setTake] = useState('');
+    const [pay, setPay] = useState('');
+    const [mCcy, setMCcy] = useState(home);
+    const apply = next => {
+      const typed = entry === '' ? null : Number(entry);
+      if (typed != null && !Number.isFinite(typed)) return;
+      const cur = typed == null ? Number(String(shown).replace(/,/g, '')) : typed;
+      if (!Number.isFinite(cur)) return;
+      let result = cur;
+      if (op && acc != null && typed != null) {
+        if (op === '÷' && cur === 0) {
+          setShown('Cannot divide by zero');
+          setEntry('');
+          return;
+        }
+        result = op === '+' ? acc + cur : op === '−' ? acc - cur : op === '×' ? acc * cur : acc / cur;
+      }
+      const text = scratch(result);
+      if (next === '=') {
+        const label = op && typed != null ? scratch(acc) + ' ' + op + ' ' + entry : text;
+        setHist(h => [{
+          label,
+          result: text
+        }].concat(h).slice(0, 8));
+        setAcc(null);
+        setOp(null);
+        setEntry('');
+        setShown(text);
+        return;
+      }
+      setAcc(result);
+      setOp(next);
+      setShown(text);
+      setEntry('');
+    };
+    const rate = window.CDOS.crossRate ? window.CDOS.crossRate(from, to) : 0;
+    const converted = rate ? (Number(amt) || 0) * rate : null;
+    const takeN = take === '' ? null : Number(take);
+    const payN = pay === '' ? null : Number(pay);
+    const marginReady = takeN != null && payN != null && Number.isFinite(takeN) && Number.isFinite(payN);
+    const profit = marginReady ? takeN - payN : null;
+    const marginPct = marginReady && takeN !== 0 ? profit / takeN * 100 : null;
+    let summary = null;
+    let body = null;
+    if (mode === 'add') {
+      summary = [{
+        label: op ? 'Result, ' + op + ' next' : 'Result',
+        value: shown || '0',
+        sub: 'A scratch total, not the ledger'
+      }];
+      body = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "Next number", /*#__PURE__*/React.createElement("input", {
+        inputMode: "decimal",
+        value: entry,
+        "aria-label": "Next number",
+        placeholder: "0",
+        onChange: e => {
+          if (e.target.value === '' || /^-?\d*\.?\d*$/.test(e.target.value)) setEntry(e.target.value);
+        }
+      })), /*#__PURE__*/React.createElement("div", {
+        className: "phone-ops"
+      }, ['+', '−', '×', '÷', '='].map(key => /*#__PURE__*/React.createElement("button", {
+        key: key,
+        type: "button",
+        onClick: () => apply(key)
+      }, key))), hist.length > 0 && /*#__PURE__*/React.createElement("div", {
+        className: "phone-list"
+      }, hist.map((row, i) => /*#__PURE__*/React.createElement(window.CDOS.Phone.ListRow, {
+        key: i,
+        title: row.label,
+        subtitle: row.result
+      }))));
+    } else if (mode === 'convert') {
+      summary = [{
+        label: 'Result',
+        value: converted == null ? null : money(converted, to),
+        sub: rate ? '1 ' + from + ' = ' + rate + ' ' + to : 'No rate yet'
+      }];
+      body = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "Amount", /*#__PURE__*/React.createElement("input", {
+        inputMode: "decimal",
+        value: amt,
+        "aria-label": "Amount to convert",
+        onChange: e => {
+          if (e.target.value === '' || /^\d*\.?\d*$/.test(e.target.value)) setAmt(e.target.value);
+        }
+      })), /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "From", /*#__PURE__*/React.createElement("select", {
+        value: from,
+        "aria-label": "From currency",
+        onChange: e => setFrom(e.target.value)
+      }, codes.map(c => /*#__PURE__*/React.createElement("option", {
+        key: c,
+        value: c
+      }, c)))), /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "To", /*#__PURE__*/React.createElement("select", {
+        value: to,
+        "aria-label": "To currency",
+        onChange: e => setTo(e.target.value)
+      }, codes.map(c => /*#__PURE__*/React.createElement("option", {
+        key: c,
+        value: c
+      }, c)))));
+    } else {
+      summary = [{
+        label: 'Margin',
+        value: profit == null ? 'Enter both amounts' : money(profit, mCcy) || 'No rate yet',
+        sub: marginPct == null ? 'Take-in minus pay-out' : marginPct.toFixed(2) + '% of the take-in'
+      }];
+      body = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "Currency", /*#__PURE__*/React.createElement("select", {
+        value: mCcy,
+        "aria-label": "Margin currency",
+        onChange: e => setMCcy(e.target.value)
+      }, codes.map(c => /*#__PURE__*/React.createElement("option", {
+        key: c,
+        value: c
+      }, c)))), /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "We take in", /*#__PURE__*/React.createElement("input", {
+        inputMode: "decimal",
+        value: take,
+        "aria-label": "We take in",
+        placeholder: "0.00",
+        onChange: e => {
+          if (e.target.value === '' || /^\d*\.?\d*$/.test(e.target.value)) setTake(e.target.value);
+        }
+      })), /*#__PURE__*/React.createElement("label", {
+        className: "phone-field"
+      }, "We pay out", /*#__PURE__*/React.createElement("input", {
+        inputMode: "decimal",
+        value: pay,
+        "aria-label": "We pay out",
+        placeholder: "0.00",
+        onChange: e => {
+          if (e.target.value === '' || /^\d*\.?\d*$/.test(e.target.value)) setPay(e.target.value);
+        }
+      })));
+    }
+    return /*#__PURE__*/React.createElement(Long.LongTailScreen, {
+      app: "calc",
+      title: "Calculator",
+      search: false,
+      summary: summary,
+      segments: [{
+        id: 'add',
+        label: 'Add up'
+      }, {
+        id: 'convert',
+        label: 'Convert'
+      }, {
+        id: 'margin',
+        label: 'Margin'
+      }],
+      segment: mode,
+      onSegment: setMode,
+      action: mode === 'convert' ? 'Use in a new deal' : null,
+      onAction: onUseInDeal
+    }, body);
+  }
+  function rowWhen(row) {
+    const day = window.CDOS.formatPhoneDate(row.date || '');
+    const time = window.CDOS.formatPhoneTime(row.time || '');
+    return [day, time].filter(Boolean).join(', ');
+  }
+  function reasonOf(row) {
+    const info = row.tagInfo || {};
+    if (info.note) return info.note;
+    if (info.by) return 'Tagged by ' + info.by;
+    return 'Tagged for another look';
+  }
+
+  /* Open rows are still tagged. Done is what this phone marked
+     checked in this sitting. Checking uses the row's own id. */
+  function PhoneTagged({
+    rows,
+    onCheck
+  }) {
+    const Phone = window.CDOS.Phone;
+    const Long = window.CDOS.LongTail;
+    const [chip, setChip] = useState('open');
+    const [q, setQ] = useState('');
+    const [done, setDone] = useState([]);
+    const [open, setOpen] = useState(null);
+    const needle = q.trim().toLowerCase();
+    const match = row => {
+      if (!needle) return true;
+      const hay = [row.customer, row.ref, row.inCcy, row.outCcy, reasonOf(row)].join(' ').toLowerCase();
+      return hay.indexOf(needle) >= 0;
+    };
+    const openRows = (rows || []).filter(r => r.tagged).filter(match);
+    const doneRows = done.filter(match);
+    const list = chip === 'done' ? doneRows : openRows;
+    const check = row => {
+      if (onCheck) onCheck(row);
+      setDone(d => d.some(x => x.id === row.id) ? d : d.concat(row));
+      setOpen(null);
+      setChip('done');
+    };
+    return /*#__PURE__*/React.createElement(Long.LongTailScreen, {
+      app: "tagged",
+      title: "Tagged deals",
+      summary: [{
+        label: 'Tagged',
+        value: String(openRows.length),
+        sub: 'Still open'
+      }],
+      chips: [{
+        id: 'open',
+        label: 'Open',
+        count: openRows.length
+      }, {
+        id: 'done',
+        label: 'Done',
+        count: doneRows.length
+      }],
+      chip: chip,
+      onChip: setChip,
+      search: q,
+      onSearch: setQ,
+      searchPlaceholder: "Find a name or number",
+      sheet: open && /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet",
+        role: "dialog",
+        "aria-label": "Tagged deal"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet-h"
+      }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("h2", null, open.customer || 'Walk-in'), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sheet-x",
+        onClick: () => setOpen(null)
+      }, "Close")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-sheet-b"
+      }, open.ref && /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Reference"), /*#__PURE__*/React.createElement("b", null, open.ref)), /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "When"), /*#__PURE__*/React.createElement("b", null, rowWhen(open) || 'No date')), /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Why"), /*#__PURE__*/React.createElement("b", null, reasonOf(open))), open.inCcy && /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Paid in"), /*#__PURE__*/React.createElement("b", null, money(open.inAmt, open.inCcy) || 'No rate yet')), open.outCcy && /*#__PURE__*/React.createElement("div", {
+        className: "phone-kv"
+      }, /*#__PURE__*/React.createElement("span", null, "Paid out"), /*#__PURE__*/React.createElement("b", null, money(open.outAmt, open.outCcy) || 'No rate yet')), chip !== 'done' && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sticky-btn",
+        onClick: () => check(open)
+      }, "Mark as checked")))
+    }, list.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-miss"
+    }, chip === 'done' ? 'Nothing has been marked checked.' : 'No tagged deals.') : /*#__PURE__*/React.createElement("div", {
+      className: "phone-list"
+    }, list.map(row => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: row.id,
+      title: row.customer || row.ref || 'Walk-in',
+      subtitle: [reasonOf(row), rowWhen(row)].filter(Boolean).join(' · '),
+      amount: money(row.inAmt, row.inCcy),
+      onClick: () => setOpen(row)
+    }))));
+  }
+  window.CDOS.PhoneApps = {
+    Computer,
+    PhoneCalc,
+    PhoneTagged
+  };
 })();
 
 /* ---- os-src/cdos-os.jsx ---- */
@@ -69194,7 +69566,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           });
         case 'calc':
           return /*#__PURE__*/React.createElement(Calc, {
-            settings: settings
+            settings: settings,
+            onUseInDeal: quickNewDeal
           });
         case 'loan':
           return /*#__PURE__*/React.createElement(LoanCalc, null);
@@ -69242,7 +69615,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             rows,
             clients,
             settings,
-            onOpen: openTransaction
+            onOpen: openTransaction,
+            onCheck: row => {
+              setRows(rs => rs.map(r => r.id === row.id ? {
+                ...r,
+                tagged: false,
+                tagInfo: null
+              } : r));
+              log('Tag removed', (row.ref || 'Deal') + ' · marked checked');
+            }
           });
         default:
           return null;

@@ -2273,13 +2273,13 @@
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} onOpenRef={openLedgerRefs} />;
         case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
-        case 'calc': return <Calc settings={settings} />;
+        case 'calc': return <Calc settings={settings} onUseInDeal={quickNewDeal} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
         case 'reports': return <Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} openSignal={reportOpen} />;
         case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />;
         case 'store': return <AppStore installed={storeInstalled} available={storeAvailable} locked={storeLocked} plan={activePlan} coming={COMING || []} onAdd={restoreApp} onRemove={removeApp} onOpen={openApp} onUpgrade={() => openSettingsTab('billing')} />;
-        case 'tagged': return <Tagged {...{ rows, clients, settings, onOpen: openTransaction }} />;
+        case 'tagged': return <Tagged {...{ rows, clients, settings, onOpen: openTransaction, onCheck: (row) => { setRows(rs => rs.map(r => r.id === row.id ? { ...r, tagged: false, tagInfo: null } : r)); log('Tag removed', (row.ref || 'Deal') + ' · marked checked'); } }} />;
         default: return null;
       }
     }
