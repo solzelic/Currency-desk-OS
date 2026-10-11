@@ -34,6 +34,8 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { ClientRecordService } from "../src/clients/records.js";
 import { CLASSIFICATION, IDENTIFYING_FIELDS, signalView } from "../src/clients/classification.js";
+import { readDateOnly } from "../src/ledger/business-date.js";
+import { withNow } from "../src/ledger/clock.js";
 import type { LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -400,6 +402,62 @@ postgres("the desk's customer file, on the server", () => {
     const passport = withBoth.documents.find((d) => d.docType === "Passport")!;
     expect(passport.hasScan).toBe(true);
     expect(JSON.stringify(withBoth)).not.toContain("iVBORw0KGgo");
+  });
+
+  /* The expiry date is current through the end of that calendar day in
+     the branch zone. Toronto at 23:30 is still that day while UTC is
+     already the next one. Jerusalem at 00:30 is already the next day
+     while UTC is still on the previous one. Either conversion used to
+     call a last-day passport expired, or to print the day before. */
+  it("keeps an ID that expires on the branch's calendar date identified", async () => {
+    const cases = [
+      {
+        zone: "America/Toronto",
+        at: new Date("2026-10-11T23:30:00-04:00"),
+        today: "2026-10-11",
+        yesterday: "2026-10-10",
+        name: "Toronto Last Day",
+      },
+      {
+        zone: "Asia/Jerusalem",
+        at: new Date("2026-10-12T00:30:00+03:00"),
+        today: "2026-10-12",
+        yesterday: "2026-10-11",
+        name: "Jerusalem Last Day",
+      },
+    ];
+    try {
+      for (const item of cases) {
+        await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [BRANCH_MAIN, item.zone]);
+        await withNow(item.at, async () => {
+          const made = await records.create(TILL_1, { legalName: item.name });
+          const clientId = made.clientId as string;
+          const saved = await records.addDocument(TILL_1, clientId, {
+            docType: "Passport",
+            docNumber: `LD-${item.today}`,
+            expiresOn: item.today,
+          });
+          expect(saved.verificationStatus, item.zone).toBe("identified");
+          expect(saved.documents[0]!.expiresOn, `${item.zone} displayed expiry`).toBe(item.today);
+          const ledger = await pool.query(
+            "SELECT id_status FROM ledger_customers WHERE client_id=$1",
+            [clientId],
+          );
+          expect(ledger.rows[0]!.id_status, item.zone).toBe("verified");
+
+          const past = await records.create(TILL_1, { legalName: `${item.name} Past` });
+          const expired = await records.addDocument(TILL_1, past.clientId as string, {
+            docType: "Passport",
+            docNumber: `EX-${item.yesterday}`,
+            expiresOn: item.yesterday,
+          });
+          expect(expired.verificationStatus, `${item.zone} previous day`).toBe("expired");
+          expect(expired.documents[0]!.expiresOn).toBe(item.yesterday);
+        });
+      }
+    } finally {
+      await pool.query("UPDATE branches SET timezone='America/Toronto' WHERE id=$1", [BRANCH_MAIN]);
+    }
   });
 
   it("records who looked at an identity document, in the same transaction that hands it over", async () => {
@@ -777,7 +835,7 @@ postgres("migration 019, over a desk's existing blob", () => {
 
   it("carries the fields the browser held, on the right side of the line", async () => {
     const jonh = await clientNamed("Jonh Smith");
-    expect(jonh.date_of_birth.toISOString().slice(0, 10)).toBe("1979-03-04");
+    expect(readDateOnly(jonh.date_of_birth)).toBe("1979-03-04");
     expect(jonh.address_line).toBe("14 Elm Street");
     expect(jonh.city).toBe("Toronto");
     expect(jonh.region).toBe("ON");
@@ -794,7 +852,7 @@ postgres("migration 019, over a desk's existing blob", () => {
 
     const acme = await clientNamed("Acme Imports Ltd.");
     expect(acme.kind).toBe("business");
-    expect(acme.incorporation_date.toISOString().slice(0, 10)).toBe("2011-09-15");
+    expect(readDateOnly(acme.incorporation_date)).toBe("2011-09-15");
     expect(acme.nature_of_business).toBe("Import / export of goods");
     expect(acme.contact_name).toBe("Rita Alvarez");
     expect(acme.risk_rating).toBe("high");

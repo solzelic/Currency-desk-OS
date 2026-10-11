@@ -455,6 +455,7 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
     } catch (e) {/* no session, no server, or not signed in: the clock stands in */}
     return businessDate();
@@ -475,6 +476,60 @@
     };
   }
   const TODAY = wallClock();
+  /* An ID expiry is a calendar date. It stays current through that
+     day in the branch's zone. The session's trading day is a different
+     question — a till opened yesterday is still on yesterday after
+     midnight — and the UTC date is a third, wrong one. `new Date` of
+     a YYYY-MM-DD string is UTC midnight, which is already the previous
+     evening in Toronto and the next morning's display in Jerusalem. */
+  const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function calendarDate(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    const year = pick('year'),
+      month = pick('month'),
+      day = pick('day');
+    if (!year || !month || !day) throw new Error('The branch time zone could not be read.');
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  let _branchTimeZone = null;
+  const setBranchTimeZone = zone => {
+    _branchTimeZone = zone ? String(zone) : null;
+    return _branchTimeZone;
+  };
+  const branchCalendarDate = at => {
+    const when = at instanceof Date ? at : new Date();
+    if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
+    if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
+    return when.toLocaleDateString('en-CA');
+  };
+  const readCalendarDate = value => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) throw new Error('expiry is not a date');
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${month}-${day}`;
+    }
+    const match = CALENDAR_DATE.exec(String(value == null ? '' : value).slice(0, 10));
+    if (!match) throw new Error('expiry is not a calendar date');
+    return match[0];
+  };
+  const calendarBefore = (left, right) => readCalendarDate(left) < readCalendarDate(right);
+  /* Day count from the year, month and day fields. Date.UTC here is
+     the arithmetic, not a conversion of the expiry into an instant. */
+  const calendarDaysUntil = (expiry, on) => {
+    const from = readCalendarDate(on).split('-').map(Number);
+    const to = readCalendarDate(expiry).split('-').map(Number);
+    return Math.round((Date.UTC(to[0], to[1] - 1, to[2]) - Date.UTC(from[0], from[1] - 1, from[2])) / 86400000);
+  };
 
   /* ============================================================
      THE REPORTING LINE — one number, in the desk's own money
@@ -1895,6 +1950,10 @@
     setBusinessDate,
     refreshBusinessDate,
     businessDayWindow,
+    setBranchTimeZone,
+    branchCalendarDate,
+    calendarBefore,
+    calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit,
     overReportingLimit,
@@ -2032,8 +2091,12 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
+    /* Expired only when the expiry calendar date is before the branch's
+       calendar date. The same day is still current. The UTC date is
+       already tomorrow on a Toronto evening, which is how a valid ID
+       was refused on its last day. */
     var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
+      : record.idExpiry && window.CDOS.calendarBefore(record.idExpiry, window.CDOS.branchCalendarDate()) ? "expired"
       : "verified";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
@@ -13647,6 +13710,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const session = result && result.session || null;
       setServerSession(session);
       setServerDay(result && result.day || null);
+      if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
       setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
@@ -22797,11 +22861,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
+    /* Has this document expired? The expiry and today are both
+       YYYY-MM-DD in the branch zone. The same calendar day is still
+       current. A UTC Date would call it yesterday. */
+    const on = window.CDOS.branchCalendarDate();
+    const expired = rec && rec.idExpiry && window.CDOS.calendarBefore(rec.idExpiry, on);
     // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -22812,7 +22876,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
     if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
+      const days = window.CDOS.calendarDaysUntil(rec.idExpiry, on);
       if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
     }
     return ['ID on hand', CD.amber, CD.amberSoft];
@@ -49871,6 +49935,7 @@ ${snap}`;
           counts: answer && answer.latestCounts || {},
           error: ''
         });
+        if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
         if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
         if (!day || !day.from || !day.to) {
           setDayBook({

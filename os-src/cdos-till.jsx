@@ -302,6 +302,7 @@
       const session = (result && result.session) || null;
       setServerSession(session);
       setServerDay((result && result.day) || null);
+      if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
       setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);

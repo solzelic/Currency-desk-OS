@@ -189,6 +189,7 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
     const status =
       error.code === "AUTHENTICATION_REQUIRED" ? 401
+        : error.code === "BRANCH_TIMEZONE_UNSET" ? 409
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CLIENT_NOT_FOUND" ||
               error.code === "CLIENT_DOCUMENT_NOT_FOUND" ||
