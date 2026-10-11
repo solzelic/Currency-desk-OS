@@ -248,6 +248,28 @@ test("a phone has no floating plus", async ({ page }) => {
   const deal = page.locator(".fixed.inset-0");
   await expect(deal.getByText("New transaction", { exact: true })).toBeVisible();
   await expect(deal.getByRole("button", { name: "Exchange" })).toBeVisible();
+  /* Opened at this viewport. The sheet covers the bar. The post
+     button can sit in the bar's rectangle, and it has to be the
+     thing under the pointer. */
+  const place = await page.locator(".cd-tx-go").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const sheet = document.querySelector(".cd-tx");
+    const sheetBox = sheet ? sheet.getBoundingClientRect() : null;
+    return {
+      hit: !!(hit && el.contains(hit)),
+      dock: !!(hit && hit.closest("#phone-dock")),
+      bottom: box.bottom,
+      sheetTop: sheetBox ? sheetBox.top : 99,
+      sheetBottom: sheetBox ? sheetBox.bottom : 0,
+      height: window.innerHeight,
+    };
+  });
+  expect(place.hit, "post is on top").toBe(true);
+  expect(place.dock, "post under the bar").toBe(false);
+  expect(place.bottom, "post in view").toBeLessThanOrEqual(place.height + 1);
+  expect(place.sheetTop, "sheet").toBeLessThanOrEqual(1);
+  expect(place.sheetBottom, "sheet covers the bar").toBeGreaterThanOrEqual(place.height - 2);
 });
 
 /* The cash drawer is one scrolling column. On first load at least

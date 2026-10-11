@@ -100,7 +100,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   form. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
-  above the bottom bar. The Cash Drawer header stacks: the title
+  above the bottom bar. The New transaction sheet is the exception:
+  it fills the phone and covers the bar, and the post button stays
+  on the sheet. The Cash Drawer header stacks: the title
   and the till on one line, the status under that, the amount, then
   Move cash and Vault. Its tabs scroll, with a fade where the last
   one continues. A ledger reference and a client name stay on one
@@ -122,6 +124,28 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Screening reads Not connected. Wider than 430px, the desk is
   unchanged: the dots stay 12px, and the module tab bar ends before
   the store and ID buttons.
+- **New transaction on a phone.** Under 600px the dialog is a
+  full-screen sheet, one column. The type names are one scrolling
+  row of pills, and the selected pill is in view when the sheet
+  opens. That row scrolls away with the fields. The customer search
+  is one row: icon, name, clear. The suggestion list closes when
+  focus leaves it. When the customer needs identification, the sheet
+  shows one row, "ID needed for this amount", and "Record the ID".
+  That opens the client file's identity editor (type, number, issued,
+  expiry, and the scan) and saves the document on the server, then
+  returns to the deal. The phone does not keep a type and number that
+  exist only in this browser. The deal ticket follows the fields in
+  the same scroll. The quote button and the post button stay on
+  screen for the whole sheet, including while the amount is focused
+  and while the keyboard is open. The X is 44px. If the ticket has
+  anything entered, the X asks "Discard this deal?" before it closes.
+  Swap, Override, and Text quote are 44px targets. Customer, the
+  amounts, the rate, and the required fields are the full width of
+  the form and at least 44px tall. The text in those fields is 16px, so the phone
+  does not zoom in when a cashier taps one. A long value ends in an
+  ellipsis. At 1280 the dialog is the same two columns as main. The
+  ID row, the discard question, and the phone footer are not on
+  that dialog.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -499,15 +523,15 @@ authenticated narrative dashboard.
 shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
 Till, More. More is the other apps that role can open. There is no
-floating +. New transaction stays on the ledger. The window title
+floating +. New transaction stays on the ledger, and that sheet
+covers the bar. The window title
 bar is hidden; the app fills that space and scrolls under the
 56px header and the 64px bar. The active window is solid, and a
 window that is not active is not shown. In-app tabs stay. A ledger record
 has its own Back, because that was the one action that lived only
 in the title bar. The bar includes the iPhone safe area.
 The Cash Drawer header stacks down the screen instead of collapsing
-the title into a narrow column, and a new-transaction dialog stacks
-its type buttons and its quote rail the same way. A ledger reference
+the title into a narrow column. A ledger reference
 and a client name stay on one line. A wide table scrolls inside its
 card instead of breaking each column into single words. An unselected
 tab is #6B6760, 12px on a 16px line, weight 500. The selected tab is
@@ -525,6 +549,27 @@ rate board. The drawer count keeps its chips and Save count in view,
 and says "Not counted" until a currency is counted. The ledger search
 stays one line. Screening reads Not connected. This sits on the phone
 layout that landed with the desk-fits-a-phone change.
+
+**2026-10-11**, public site claims, thirteenth pass. The
+SMR terrorism-financing deadline is allowed only as that whole
+clause, on the compliance page and the FAQ. A longer sentence
+does not borrow it, and the clause fails on the homepage. A
+hyphenated live-rates, a dash entity, and en, em, and hair
+spaces cannot hide a timing claim. 2-hour, within the hour,
+next-day, reply today, and a board that moves with the market
+fail. The contact page still says a reply within one business
+day, so that phrase is not banned.
+
+**2026-10-11**, public site claims, twelfth pass. The
+claims check allows a regulator clause only when that clause is
+the whole clause, and only when the clause itself contains a
+banned pattern. The kept clause is the Australia SMR terrorism
+financing deadline. US CTR and SAR phrases are not on the list.
+A tag inside a word, an unquoted meta value, a hyphen entity, a
+thin space, and a fullwidth dash cannot hide a phrase. 48-hour,
+less than an hour, overnight, every second, always current, and
+plenty of shops fail. The publish step no longer says the board
+is always current. The legal page says early access once.
 
 **2026-10-11**, public site claims, eleventh pass. The
 onboarding greeting says the desk is set up. The homepage and the
@@ -623,6 +668,24 @@ server starts at midnight in the branch time zone. Screening is not
 connected. Texting is not connected. The site does not claim encryption
 at rest, and it does not claim data is held in the region where the desk
 operates. Subscription prices printed on the site are unchanged.
+
+**2026-10-11**, New transaction on a phone. Under 600px the form is a
+full-screen sheet and one column. The type names are a horizontal
+row of pills, with the selected pill in view on open, and that row
+scrolls away with the fields. The customer row is icon, name, and
+clear on one line. The suggestion list closes when the amount is
+focused. A deal that needs identification shows "ID needed for this
+amount" and "Record the ID", which opens the client file's identity
+editor and saves type, number, and expiry on the server, then
+returns to the deal. A type and number typed only into the browser
+is not how this sheet records an ID. The quote and the post button
+stay on screen for the whole sheet, including with the keyboard
+open, and the last field can scroll clear of them. The X is 44px.
+If anything has been entered, it asks "Discard this deal?" with
+Discard and Keep editing. Swap, Override, and Text quote are 44px
+targets. With the bottom bar on the phone, the sheet covers the
+bar, so the post button is not under it. Other dialogs still stop
+above the bar. Wider than 600px, including 1280, the dialog matches main.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

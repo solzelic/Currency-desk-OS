@@ -2491,3 +2491,398 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 @media (max-width: 600px) {
   #phone-fab, .phone-fab-row { display: none !important; }
 }
+
+/* The phone scroll wrapper generates no box at a desk width.
+   display:contents lets the type bar and the two-column body stay
+   direct flex children of the dialog. The ID row is the phone's
+   link to the client file; it is not on the desk dialog. */
+.cd-tx-scroll { display: contents; }
+.cd-tx-customer-icon { display: contents; }
+.cd-tx-id-need { display: none; }
+
+/* New transaction is a 940px dialog with a 320px ticket beside the
+   fields. Under 600px that rail leaves the customer and the amount
+   about 20px wide. The dialog becomes a full-screen sheet. One scroll
+   holds the type chips and the fields. The quote and the post button
+   are a footer of the whole sheet, pinned to the visual viewport, so
+   they stay on screen while the teller fills the deal and while the
+   keyboard is open. 16px text is the size a phone will focus without
+   zooming the page. 600px and wider, including the 1280 desk, is
+   outside this query, so the dialog there is unchanged.
+   --page-gutter, --color-border, --gray-900, and --control-h-sm are
+   not in this repo yet. The literals below are those tokens. tokens.css
+   lands in a later PR. */
+@media (max-width: 599px) {
+  .cd-tx, .cd-tx * { box-sizing: border-box; }
+  /* The 430px rule lifts every other dialog above the bottom bar.
+     This sheet fills the phone and covers the bar. The post button
+     is in the sheet, so it is not under the bar. The overlay is
+     already above the bar (z-index 9200; the bar is 520). */
+  .cd-tx-overlay.fixed.inset-0,
+  .cd-tx-record.fixed.inset-0 {
+    bottom: 0 !important;
+  }
+  /* The 430px rule caps every inset dialog at 100vw - 16px. This
+     sheet is the later, more specific rule, so it fills the phone. */
+  .cd-tx-overlay {
+    padding: 0 !important;
+  }
+  .cd-tx-overlay.fixed.inset-0 > .cd-tx {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    /* The visual viewport. --cd-tx-vvt / --cd-tx-vvh are set from
+       visualViewport so a soft keyboard shortens the sheet instead of
+       covering the footer. 100dvh is the fallback before that runs. */
+    top: var(--cd-tx-vvt, 0px) !important;
+    bottom: auto !important;
+    width: 100vw !important;
+    height: var(--cd-tx-vvh, 100dvh) !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    /* Notch only. The home-indicator inset is on the footer, so the
+       two safe areas are not added together. */
+    padding-top: env(safe-area-inset-top);
+  }
+  .cd-tx-x {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center;
+  }
+  .cd-tx-head {
+    min-width: 0;
+    gap: 8px;
+    flex-wrap: nowrap !important;
+  }
+  .cd-tx-head > div:first-child {
+    min-width: 0;
+  }
+  /* The type tiles used to stay pinned. They are one scrolling row
+     of pills inside the form scroll, so they leave with the fields.
+     36px is the chip; the ::before is the 44px hit area. */
+  .cd-tx-scroll {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* The footer is out of this scroll. The padding is its height, so
+       the note and the ticket can scroll clear of it. */
+    padding-bottom: var(--cd-tx-footer, 140px);
+  }
+  .cd-tx-types-bar {
+    position: relative;
+    padding: 0 !important;
+  }
+  .cd-tx-types-bar::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 24px;
+    background: linear-gradient(to right, transparent, var(--cd-panel));
+    pointer-events: none;
+  }
+  .cd-tx-blurb { display: none; }
+  .cd-tx-types {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    /* 16px stands in for --page-gutter. */
+    padding: 8px var(--page-gutter, 16px) 12px;
+    grid-template-columns: none !important;
+  }
+  .cd-tx-types::-webkit-scrollbar { display: none; }
+  .cd-tx-overlay .cd-tx-types button {
+    position: relative;
+    flex: 0 0 auto;
+    /* 36px stands in for --control-h-sm. The 430px dialog rule
+       would stretch these pills to 44px. The 44px hit area is the
+       ::before, and the pill stays 36px. */
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 14px !important;
+    justify-content: center !important;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    border-radius: 999px !important;
+    /* --line stands in for --color-border. */
+    border: 1px solid var(--color-border, var(--line)) !important;
+    background: var(--cd-panel) !important;
+    color: var(--cd-ink, #0a0a0a) !important;
+    font-size: 13px !important;
+    line-height: 16px !important;
+    font-weight: 500 !important;
+  }
+  .cd-tx-types button::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  .cd-tx-types button.is-on {
+    /* #1A1917 stands in for --gray-900. */
+    background: var(--gray-900, #1A1917) !important;
+    color: #fff !important;
+    border: none !important;
+  }
+  .cd-tx-types button svg { display: none; }
+  .cd-tx-types button span {
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    text-align: center;
+    font-size: 13px !important;
+    line-height: 16px !important;
+    font-weight: 500 !important;
+    color: inherit !important;
+  }
+  .cd-tx-body {
+    flex-direction: column !important;
+    min-height: 0;
+    overflow: visible;
+  }
+  .cd-tx-form {
+    flex: none !important;
+    width: 100% !important;
+    max-width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+  }
+  .cd-tx-form .flex:not(.cd-tx-customer),
+  .cd-tx-person {
+    flex-wrap: wrap;
+    max-width: 100%;
+    row-gap: 8px;
+  }
+  .cd-tx-person > .flex-1 {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+  /* Rate beside fee, and the other pairs, are under 200px once the
+     dialog is a phone wide. One column makes each of them the form. */
+  .cd-tx .grid-cols-2,
+  .cd-tx-stats {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cd-tx-stats > * + * {
+    border-left: 0 !important;
+    border-top: 1px solid var(--line);
+  }
+  .cd-tx-pair {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .cd-tx-pair > input {
+    width: 100%;
+    min-width: 0;
+  }
+  .cd-tx-form input,
+  .cd-tx-form select,
+  .cd-tx-form textarea {
+    font-size: 16px;
+    min-height: 44px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Icon, name, and clear were wrapping onto three lines because
+     every flex row was allowed to wrap and the input was width 100%.
+     One row, about 48px. The icon is 15px and the input is 22px, and
+     centering them puts their tops within 4px. */
+  .cd-tx-id-need {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    background: var(--cd-panel);
+    border: 1px solid var(--color-border, var(--line));
+    border-radius: 12px;
+  }
+  .cd-tx-id-need-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cd-ink, #0a0a0a);
+    line-height: 1.3;
+  }
+  .cd-tx-id-need-go {
+    flex: none;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 14px;
+    border-radius: 9px;
+    border: none;
+    background: var(--gray-900, #1A1917);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .cd-tx-hit {
+    position: relative;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    box-sizing: border-box;
+  }
+  .cd-tx-customer {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .cd-tx-customer-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+  .cd-tx-form .cd-tx-customer input {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 22px !important;
+    min-height: 0 !important;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 16px;
+  }
+  .cd-tx-customer > button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px !important;
+    min-height: 0 !important;
+    padding: 0;
+  }
+  /* The currency code sat in the same row as the amount and took the
+     width the cashier needs. It takes the row above. flex-basis 100%
+     is the wrap; a column flex would give the amount a zero height. */
+  .cd-money {
+    flex-wrap: wrap !important;
+    min-height: 44px;
+  }
+  .cd-money > button,
+  .cd-money > div:first-child {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 44px;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+  .cd-money > input,
+  .cd-money > .flex-1 {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 44px;
+  }
+  /* The ticket follows the fields in the same scroll. It is not a
+     second pane, so it cannot sit on top of the note. */
+  .cd-tx-rail {
+    flex: none !important;
+    width: 100% !important;
+    max-width: 100%;
+    max-height: none !important;
+    min-height: 0;
+  }
+  .cd-tx-rail-scroll {
+    flex: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  /* Quote, then the primary. Fixed to the visual viewport, not stuck
+     inside the rail, so it is on screen for the whole sheet. --cd-tx-kb
+     is the keyboard inset (0 when the keyboard is closed). The X in
+     the header closes the sheet, so Cancel is not on the phone. */
+  .cd-tx-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--cd-tx-kb, 0px);
+    z-index: 6;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--cd-panel);
+    /* 12px plus the home-indicator inset. The sheet is not padded
+       at the bottom, so this inset is applied once. */
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important;
+    border-top: 1px solid var(--color-border, var(--line)) !important;
+    box-shadow: none;
+  }
+  .cd-tx-actions > * { margin-top: 0 !important; }
+  .cd-tx-actions > button {
+    height: 48px !important;
+    min-height: 48px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .cd-tx-cancel { display: none !important; }
+  .cd-tx-discard {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    background: var(--cd-scrim);
+    display: flex;
+    align-items: flex-end;
+  }
+  .cd-tx-discard-sheet {
+    width: 100%;
+    background: var(--cd-panel);
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .cd-tx-record.fixed.inset-0 > .cd-tx-record-card {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: var(--cd-tx-vvh, 100dvh) !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+  }
+  .cd-tx-record .grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cd-tx-record input,
+  .cd-tx-record select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+}
