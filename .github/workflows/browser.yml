@@ -136,3 +136,15 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+      # The desktop-unchanged spec writes its PNGs here when they are
+      # missing, then fails until those PNGs are committed. The pictures
+      # are this runner's render. Download this artifact and commit it.
+      # Do not replace those files from a laptop.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-unchanged-baselines
+          path: tests/e2e/desktop-unchanged.spec.ts-snapshots/
+          retention-days: 14
+          if-no-files-found: ignore

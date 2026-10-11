@@ -280,6 +280,27 @@ this screen. An exception names the rule (`hit`, `size`, `contrast`,
 An exception that matches nothing fails the sweep. The shell runs this
 on More and on the phone ledger, each with the phone header and the tab bar.
 
+## Desktop baselines
+
+`tests/e2e/desktop-unchanged.spec.ts` is the one desktop picture for the
+whole desk. At 1280×800 it captures the open window of every app —
+Ledger, Clients, Rates, Till, Compliance, Reports, Settings, Pricing,
+Transfers, Cheques, Vault, and Audit trail — and the sign-in screen
+(`#lock`). The comparison is `maxDiffPixels: 0`.
+
+The PNG files in `tests/e2e/desktop-unchanged.spec.ts-snapshots/` are
+the GitHub Actions render of the foundation head. A laptop and Actions
+do not paint the fallback font the same way. The difference is thousands
+of pixels, with no layout change. Those files are downloaded from the
+`desktop-unchanged-baselines` artifact and committed. They are not
+generated on a laptop.
+
+A screen PR must never update these baselines. Do not run
+`--update-snapshots` on this spec. Do not replace a PNG to make the
+check pass. If the spec fails, the desktop window changed. That is a
+blocker. Phone work stays inside `max-width: 430px` and leaves these
+pixels alone.
+
 ## Adopting the shell
 
 1. Render inside `Phone.Screen` with `app` set to the app id. A window
@@ -296,6 +317,8 @@ on More and on the phone ledger, each with the phone header and the tab bar.
 6. A status badge has words. Do not communicate state by colour alone.
 7. Keep phone CSS inside `@media (max-width: 430px)`.
 8. Run `phoneSweep` on the screen at 360 and 390. See Phone sweep above.
+9. Do not update `tests/e2e/desktop-unchanged.spec.ts-snapshots/`.
+   A failure there means the desktop changed. See Desktop baselines.
 
 ## Not in this foundation
 

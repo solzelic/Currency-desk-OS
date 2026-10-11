@@ -536,6 +536,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, desktop baselines. One spec captures the 1280 window
+of every desktop app and the sign-in screen, at `maxDiffPixels: 0`.
+The pictures are the GitHub Actions render. A screen PR does not
+replace them. A failure means the desktop changed.
+
 **2026-10-11**, phone top bar. The shop name is one line and ends in
 an ellipsis. The till line is one line: the station and the till
 name shrink, and "Till open" or "Till closed" stays whole at the
