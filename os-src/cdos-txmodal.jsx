@@ -9,7 +9,7 @@
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useSyncExternalStore } = React;
   const {
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
@@ -75,7 +75,6 @@
   }
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
   const FLAG = { CAD: '🇨🇦', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', INR: '🇮🇳', PHP: '🇵🇭', CNY: '🇨🇳', MXN: '🇲🇽', AED: '🇦🇪' };
   const ccyLabel = (c) => (FLAG[c] ? FLAG[c] + ' ' : '') + c;
   const CCY_NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
@@ -200,7 +199,7 @@
 
   function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus }) {
     return (
-      <div className="flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
+      <div className="cd-money flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
         <CcyPicker value={ccy} onChange={onCcy} disabled={!onCcy} />
         {readOnly
           ? <div className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
@@ -213,19 +212,30 @@
   function CustomerPicker({ label, hint, value, query, setQuery, onPick, names, clients, onAddNew, onClear, idRequired }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
-    useEffect(() => { const h = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
+    /* A tap on the amount used to leave this list open, because only a
+       mousedown outside the box closed it, and the list then sat on top
+       of the amount. Focus leaving the box closes it too: blur, a pick,
+       or the amount field taking focus. */
+    useEffect(() => {
+      const closeIfOutside = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+      document.addEventListener('mousedown', closeIfOutside);
+      document.addEventListener('focusin', closeIfOutside);
+      return () => { document.removeEventListener('mousedown', closeIfOutside); document.removeEventListener('focusin', closeIfOutside); };
+    }, []);
     const shown = names.filter(n => n.toLowerCase().includes((query || '').toLowerCase()));
     return (
       <div>
         <Lbl hint={hint}>{label}</Lbl>
         <div ref={wrap} className="relative">
-          <div className="flex items-center gap-2 px-2.5 py-2" style={inSty}>
-            <Ic n="search" s={15} c={CD.mute} />
-            <input value={query} onFocus={() => setOpen(true)} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
-            {query && <button onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
+          <div className="cd-tx-customer flex items-center gap-2 px-2.5 py-2" style={inSty}>
+            {/* display:contents on the desk, so this span is not a box
+                there. On a phone it is the icon's slot in the one row. */}
+            <span className="cd-tx-customer-icon"><Ic n="search" s={15} c={CD.mute} /></span>
+            <input value={query} onFocus={() => setOpen(true)} onBlur={() => { requestAnimationFrame(() => { if (wrap.current && wrap.current.contains(document.activeElement)) return; setOpen(false); }); }} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
+            {query && <button type="button" onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
           </div>
           {open && (
-            <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
+            <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
               {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
@@ -270,7 +280,7 @@
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return (
       <div className="mt-2 overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: 'var(--cd-panel)' }}>
-        <div className="flex items-center gap-3 px-3.5 py-2.5" style={{ background: CD.lineSoft, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="cd-tx-person flex items-center gap-3 px-3.5 py-2.5" style={{ background: CD.lineSoft, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 34, height: 34, borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 13 }}>{initials}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2"><span className="font-semibold truncate" style={{ color: CD.ink }}>{name}</span>{s.count >= 3 && <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 999, fontWeight: 600 }}><Ic n="star" s={10} c="var(--cd-brass-text)" /> Regular</span>}</div>
@@ -278,7 +288,7 @@
           </div>
           <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+        <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={`Last ${s.winDays}d`} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
@@ -335,6 +345,17 @@
   /* =====================================================================
      MAIN
   ===================================================================== */
+  /* Phone sheet is under 600px only. The desk placeholder strings stay
+     the long ones, so a 1280 screenshot does not move. */
+  function subscribePhoneSheet(onChange) {
+    const query = window.matchMedia('(max-width: 599px)');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }
+  function phoneSheetNow() {
+    return window.matchMedia('(max-width: 599px)').matches;
+  }
+
   function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
     const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
@@ -342,6 +363,21 @@
 
     const [type, setType] = useState('Currency Exchange');
     const meta = TYPE_META[type];
+    const phoneSheet = useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+    const selectedChip = useRef(null);
+    useEffect(() => {
+      if (!phoneSheet || !selectedChip.current) return;
+      const chip = selectedChip.current;
+      const row = chip.parentElement;
+      if (!row) return;
+      const left = chip.offsetLeft;
+      const right = left + chip.offsetWidth;
+      if (left < row.scrollLeft) row.scrollLeft = left;
+      else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
+    }, [phoneSheet, type]);
+    const purposePh = phoneSheet ? 'e.g. vacation, invoice' : 'e.g. vacation funds, invoice settlement';
+    const sourcePh = phoneSheet ? 'e.g. salary, savings' : 'e.g. employment income, savings';
+    const notePh = phoneSheet ? 'Add a note' : 'Anything worth keeping on the record…';
 
     /* ---- the key that says "this attempt, and no other" ----
 
@@ -370,7 +406,10 @@
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false);   // launches the KYC scan-ID walk-through
+    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
+    const sheetRef = useRef(null);
 
     // exchange
     const [inCcy, setInCcy] = useState(home);
@@ -420,7 +459,75 @@
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
 
-    useEffect(() => { const h = (e) => { if (e.key === 'Escape' && !present) onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose, present]);
+    /* Anything the teller put on this ticket. Closing from the phone is
+       the X alone, so that gesture asks before it throws the ticket away.
+       An empty sheet still closes. The desk keeps the old close: Cancel
+       is still there, and this confirm is not on that dialog. */
+    const feeDefault = settings && settings.defaultFee != null ? String(settings.defaultFee) : '';
+    const dealDirty = !!(
+      String(customer || '').trim() || String(query || '').trim() || String(inAmt || '').trim()
+      || type !== 'Currency Exchange' || inCcy !== home || outCcy !== 'USD'
+      || override || tq || String(purpose || '').trim() || String(memo || '').trim()
+      || String(cap.source || '').trim() || cap.thirdParty
+      || String(benName || '').trim() || String(recvRef || '').trim()
+      || String(chequeNumber || '').trim() || String(maker || '').trim() || String(draweeBank || '').trim()
+      || chequeImage || endorsed || String(payee || '').trim() || String(biller || '').trim()
+      || String(account || '').trim() || String(fee || '') !== feeDefault
+      || marginAck || String(marginReason || '').trim()
+      || String(identityNumber || '').trim() || reportSuspicion || usdLargeNotes != null || String(usdSerials || '').trim()
+    );
+    const requestClose = () => {
+      if (phoneSheet && dealDirty) { setDiscardAsk(true); return; }
+      onClose();
+    };
+    useEffect(() => {
+      const h = (e) => {
+        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (discardAsk) { setDiscardAsk(false); return; }
+        if (phoneSheet && dealDirty) { setDiscardAsk(true); return; }
+        onClose();
+      };
+      document.addEventListener('keydown', h);
+      return () => document.removeEventListener('keydown', h);
+    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    /* The soft keyboard shrinks the visual viewport and leaves the layout
+       viewport tall, so a footer pinned to the layout bottom sits under
+       the keys. The sheet tracks the visual viewport, and the footer sits
+       on that bottom edge. */
+    useEffect(() => {
+      if (!phoneSheet) return undefined;
+      const el = sheetRef.current;
+      if (!el) return undefined;
+      const apply = () => {
+        const view = window.visualViewport;
+        const height = view ? view.height : window.innerHeight;
+        const offset = view ? view.offsetTop : 0;
+        const keyboard = Math.max(0, Math.round(window.innerHeight - height - offset));
+        el.style.setProperty('--cd-tx-vvh', Math.round(height) + 'px');
+        el.style.setProperty('--cd-tx-vvt', Math.round(offset) + 'px');
+        el.style.setProperty('--cd-tx-kb', keyboard + 'px');
+        const actions = el.querySelector('.cd-tx-actions');
+        if (actions) el.style.setProperty('--cd-tx-footer', actions.offsetHeight + 'px');
+      };
+      apply();
+      const view = window.visualViewport;
+      if (view) {
+        view.addEventListener('resize', apply);
+        view.addEventListener('scroll', apply);
+      }
+      window.addEventListener('resize', apply);
+      const actions = el.querySelector('.cd-tx-actions');
+      const observed = actions && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+      if (observed && actions) observed.observe(actions);
+      return () => {
+        if (view) {
+          view.removeEventListener('resize', apply);
+          view.removeEventListener('scroll', apply);
+        }
+        window.removeEventListener('resize', apply);
+        if (observed) observed.disconnect();
+      };
+    }, [phoneSheet, type]);
     useEffect(() => { if (!lock) return; const t = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(t); }, [lock]);
 
     const amtN = parseFloat(inAmt) || 0;
@@ -901,30 +1008,37 @@
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
-      <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk) ? undefined : onClose}>
-        <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk || recordId) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk || recordId) ? undefined : requestClose}>
+        <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
-          <div className="flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+          <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {TODAY}</div></div></div>
-            <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
+            <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
-          {/* type selector */}
-          <div className="flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+          {/* type selector. cd-tx-scroll is display:contents on a desk,
+              so this bar stays a full-width row above the two columns.
+              On a phone the scroll owns the bar, and the bar moves off
+              with the fields instead of staying pinned. */}
+          <div className="cd-tx-scroll">
+          <div className="cd-tx-types-bar flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+            <div className="cd-tx-types grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (
-                <button key={t} onClick={() => setType(t)} className="flex flex-col items-center gap-1.5 py-2.5 px-1" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
+                <button key={t} ref={on ? selectedChip : null} onClick={() => setType(t)} className={"flex flex-col items-center gap-1.5 py-2.5 px-1" + (on ? " is-on" : "")} style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
                   <Ic n={m.icon} s={18} c={on ? 'var(--cd-on-ink)' : CD.mute} />
                   <span className="text-[11px] font-medium leading-tight text-center" style={{ color: on ? 'var(--cd-on-ink)' : CD.ink }}>{m.short}</span>
                 </button>); })}
             </div>
-            <div className="text-[12px] mt-2.5 flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n={meta.icon} s={13} c={CD.mute} /> {meta.blurb}</div>
+            <div className="cd-tx-blurb text-[12px] mt-2.5 flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n={meta.icon} s={13} c={CD.mute} /> {meta.blurb}</div>
           </div>
 
-          {/* body: form | rail */}
-          <div className="flex-1 min-h-0 flex">
+          {/* body: form | rail.
+              The cd-tx-* classes are how a phone stacks this. Under 600px,
+              york-os.css puts the rail under the form. Wider than that
+              the classes do not change the row. */}
+          <div className="cd-tx-body flex-1 min-h-0 flex">
             {/* LEFT — the form */}
-            <div className="flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
+            <div className="cd-tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
@@ -961,27 +1075,43 @@
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge &&
                 React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+              {/* Phone only, and display:none at a desk width so the 1280
+                  dialog does not move. This is not an ID form. It opens
+                  the client file's identity editor, which writes the
+                  document — type, number, and expiry — on the server. */}
+              {idRequired && String(customer || '').trim() && !idOk && (
+                <div className="cd-tx-id-need">
+                  <span className="cd-tx-id-need-label">ID needed for this amount</span>
+                  <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
+                </div>
+              )}
+              {idRequired && idOk && (
+                <div className="cd-tx-id-need">
+                  <Ic n="checkcircle" s={14} c={CD.green} />
+                  <span className="cd-tx-id-need-label">{(rec && rec.idType) || 'ID'} on file{rec && rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''}</span>
+                </div>
+              )}
 
               {/* ---------------- EXCHANGE ---------------- */}
               {isExchange && (
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <Lbl>Customer pays in</Lbl>
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
-                  <div className="flex items-center justify-center gap-2 py-2">
+                  <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
                     <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
                     <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {shownRate(rateN)} {outCcy}</span>
-                    <button onClick={swap} title="Swap" className="p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
+                    <button onClick={swap} title="Swap" className="cd-tx-hit p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
-                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                    {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
+                    {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="cd-tx-hit tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
                       : <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#8A4B2F', fontFamily: 'Space Mono, monospace' }}><Ic n="smartphone" s={12} c="#8A4B2F" />Priced by {tq.ref}</span>}
-                    <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(num(pricing.deskRate)); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
+                    <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(num(pricing.deskRate)); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="cd-tx-hit flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
                   </div>
                 </div>
               )}
@@ -1104,10 +1234,10 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                   <div><Lbl>Acting for someone else?</Lbl>
-                    <div className="flex items-center gap-2">
+                    <div className="cd-tx-pair flex items-center gap-2">
                       <div className="inline-flex flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{[['no', 'No'], ['yes', 'Yes']].map(([v, l], i) => { const on = (cap.thirdParty ? 'yes' : 'no') === v; return <button key={v} onClick={() => setCap(s => ({ ...s, thirdParty: v === 'yes' }))} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none' }}>{l}</button>; })}</div>
                       {cap.thirdParty && <input value={cap.thirdPartyName} onChange={e => setCap(s => ({ ...s, thirdPartyName: e.target.value }))} placeholder="Name of that person / entity" className="flex-1 min-w-0 text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag }} />}
                     </div>
@@ -1119,8 +1249,8 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                 </div>
               )}
 
@@ -1134,14 +1264,14 @@
               )}
 
               {/* note */}
-              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder="Anything worth keeping on the record…" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
+              <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder={notePh} className="cd-tx-note w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
             </div>
 
             {/* RIGHT — ticket + checklist */}
-            <div className="flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
-              <div className="flex-1 overflow-auto p-4 space-y-3">
+            <div className="cd-tx-rail flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
+              <div className="cd-tx-rail-scroll flex-1 overflow-auto p-4 space-y-3">
                 {/* deal ticket */}
-                <div style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
+                <div className="cd-tx-ticket" style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
                   <div className="flex items-center justify-between" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)', paddingBottom: 10 }}>
                     <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
                     <Ic n={meta.icon} s={14} c="var(--cd-on-ink-soft)" />
@@ -1188,7 +1318,7 @@
               </div>
 
               {/* rail footer actions */}
-              <div className="flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+              <div className="cd-tx-actions flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
                 {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
                 {/* A refusal from the ledger, wherever it came from. The
                     exchange path has its own copy inside the branch
@@ -1202,17 +1332,31 @@
                     Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
-                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
+                  <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
                     <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                   </button>
-                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
-                <button onClick={onClose} className="w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
+                </> : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
+                <button onClick={onClose} className="cd-tx-cancel w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>
               </div>
             </div>
           </div>
+          </div>
+          {discardAsk && (
+            <div className="cd-tx-discard" onMouseDown={e => { e.stopPropagation(); setDiscardAsk(false); }}>
+              <div role="dialog" aria-label="Discard this deal?" onMouseDown={e => e.stopPropagation()} className="cd-tx-discard-sheet">
+                <div className="text-[15px] font-semibold" style={{ color: CD.ink }}>Discard this deal?</div>
+                <div className="text-[12.5px] mt-1" style={{ color: CD.mute }}>What you entered on this ticket will be lost.</div>
+                <div className="flex flex-col gap-2 mt-4">
+                  <button type="button" onClick={onClose} className="cd-tx-discard-yes w-full text-sm font-semibold" style={{ background: CD.flag, color: '#fff', borderRadius: 9, minHeight: 44 }}>Discard</button>
+                  <button type="button" onClick={() => setDiscardAsk(false)} className="w-full text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink, background: 'var(--cd-panel)', minHeight: 44 }}>Keep editing</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         {present && <PresentQuote q={presentQ} onClose={() => setPresent(false)} />}
         {addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, { initialName: (customer || query).trim(), by: me.name, setClients, requireId: idRequired, onClose: () => setAddFlow(false), onDone: (nm) => { setCustomer(nm); setQuery(nm); setAddFlow(false); } })}
+        {recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, { name: String(customer || '').trim(), rec: clients[customer] || null, setClients, log, onClose: () => setRecordId(false), onDone: () => setRecordId(false) })}
         {quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, { subject: customer, kind: (clients[customer] && clients[customer].kind) || 'individual', rec: clients[customer], by: me.name, initialTpl: quickChk, onClose: () => setQuickChk(null) })}
       </div>
     ), document.body);
