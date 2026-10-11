@@ -5,6 +5,7 @@
 import { mkdirSync } from "node:fs";
 import type { Page, Route } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger } from "./fixtures";
+import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/screenshots";
 const HEIGHT = 844;
@@ -49,6 +50,14 @@ function shot(page: Page, name: string) {
   return page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
+/** The sweep resizes. Pass one width so this test stays on that phone. */
+function sweep(page: Page, width: number) {
+  return phoneSweep(page, {
+    roots: [".phone-clients", ".phone-head", "#phone-dock"],
+    widths: [width],
+  });
+}
+
 async function fulfill(route: Route, status: number, body: unknown): Promise<void> {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -87,6 +96,7 @@ test.describe("phone clients", () => {
       await expect(page.locator("[data-phone-state]")).toHaveAttribute("data-phone-state", "loading");
       await expect(page.getByRole("status", { name: "Loading clients" })).toBeVisible();
       await expect(page.locator(".phone-skel")).toHaveCount(4);
+      await sweep(page, width);
       await shot(page, `clients_loading_${width}`);
       hold = false;
       release();
@@ -94,6 +104,7 @@ test.describe("phone clients", () => {
       await expect(page.getByRole("heading", { name: "No clients yet" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Add client" })).toBeVisible();
       await expect(page.locator(".phone-client-row")).toHaveCount(0);
+      await sweep(page, width);
       await shot(page, `clients_empty_${width}`);
 
       /* A 5xx is said out loud. Names this browser is holding stay off the list. */
@@ -111,6 +122,8 @@ test.describe("phone clients", () => {
       await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
       await expect(page.locator(".phone-client-row")).toHaveCount(0);
       await expect(page.locator(".phone-clients")).not.toContainText("Verified");
+      await sweep(page, width);
+      await shot(page, `clients_error_${width}`);
     });
 
     test(`search, chips, and ID standing at ${width}`, async ({ page }) => {
@@ -164,6 +177,36 @@ test.describe("phone clients", () => {
       const root = page.locator(".phone-clients");
       await expect(root).toBeVisible();
       await expect(page.locator("[data-phone-state]")).toHaveAttribute("data-phone-state", "list");
+      const inset = await page.evaluate(() => {
+        const title = document.querySelector(".phone-clients .phone-title h1");
+        const chip = document.querySelector(".phone-clients .phone-chip");
+        const shell = document.querySelector(".phone-clients");
+        const row = document.querySelector(".phone-client-row");
+        const name = row && row.querySelector(".phone-row-main");
+        const badge = row && row.querySelector(".phone-badge");
+        const box = (el: Element | null) => el ? el.getBoundingClientRect() : null;
+        const titleBox = box(title);
+        const chipBox = box(chip);
+        const rowBox = box(row);
+        const nameBox = box(name);
+        const badgeBox = box(badge);
+        const bg = shell ? getComputedStyle(shell).backgroundColor : "";
+        const image = shell ? getComputedStyle(shell).backgroundImage : "";
+        return {
+          title: titleBox ? Math.round(titleBox.left) : -1,
+          chip: chipBox ? Math.round(chipBox.left) : -1,
+          nameRight: nameBox && rowBox ? Math.round(rowBox.right - nameBox.right) : -1,
+          badgeBelow: badgeBox && nameBox ? badgeBox.top >= nameBox.bottom - 1 : false,
+          bg,
+          image,
+        };
+      });
+      expect(inset.title).toBeGreaterThanOrEqual(16);
+      expect(inset.chip).toBeGreaterThanOrEqual(16);
+      expect(inset.badgeBelow).toBe(true);
+      expect(inset.nameRight).toBeLessThanOrEqual(24);
+      expect(inset.image).toBe("none");
+      expect(inset.bg).toBe("rgb(255, 255, 255)");
       await root.getByLabel("Search clients").fill(tag);
       await expect(page.locator(".phone-client-row")).toHaveCount(3);
       await expect(root).not.toContainText("$");
@@ -173,6 +216,7 @@ test.describe("phone clients", () => {
       await expect(page.locator("#phonebar button")).toHaveCount(5);
       const rowHeight = await page.locator(".phone-client-row").first().evaluate((el) => el.getBoundingClientRect().height);
       expect(rowHeight).toBeGreaterThanOrEqual(84);
+      await sweep(page, width);
 
       const money = await page.evaluate(() => {
         const format = (window as unknown as { CDOS: { formatPhoneMoney: (amount: unknown, currency: unknown) => string } }).CDOS.formatPhoneMoney;
@@ -196,6 +240,7 @@ test.describe("phone clients", () => {
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row")).toContainText(names.passport);
       await expect(page.locator(".phone-client-row.id-identified .phone-badge")).toHaveText("Identified");
+      await sweep(page, width);
       await shot(page, `clients_search_${width}`);
 
       await root.getByLabel("Search clients").fill(tag);
@@ -203,9 +248,10 @@ test.describe("phone clients", () => {
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row.id-missing .phone-badge")).toHaveText("Missing ID");
       await expect(page.locator(".phone-client-row")).toContainText(names.none);
+      await sweep(page, width);
       await shot(page, `clients_filtered_${width}`);
 
-      await page.getByRole("tab", { name: /Expired ID/ }).click();
+      await page.getByRole("tab", { name: /^Expired/ }).click();
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row.id-expired .phone-badge")).toHaveText("Expired");
       await expect(page.locator(".phone-client-row")).toContainText(names.expired);

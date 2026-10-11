@@ -63367,7 +63367,7 @@ window.CDOS_PERSIST = (function () {
       count: counts.missing
     }, {
       id: "expired",
-      label: "Expired ID",
+      label: "Expired",
       count: counts.expired
     }, {
       id: "identified",

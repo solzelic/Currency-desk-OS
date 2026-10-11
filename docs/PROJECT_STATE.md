@@ -199,8 +199,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   row, the discard question, and the phone footer are not on that
   dialog.
 - **Phone Clients.** At 430px and under, Clients is a list a cashier
-  can search before anything else. Chips are All, Missing ID, Expired
-  ID, and Identified. A row is at least 84px and the whole row opens
+  can search before anything else. Chips are All, Missing ID, Expired,
+  and Identified — the same words as the row badge. A row is at least
+  84px and the whole row opens
   the file. The row says the name, the last deal (not a lifetime
   total), and the ID standing in words: Missing ID, Expired, or
   Identified. That standing is read from the document on file — type,
@@ -725,11 +726,16 @@ in, and the chip row keeps 16px after the last chip with a fade on
 the right.
 
 **2026-10-11**, phone Clients. At 430px and under, the Clients window is
-the shared phone column: search, then chips, then rows. ID standing
-is Missing ID, Expired, or Identified, from the document on file.
-Add client is the StickyAction. Amounts go through `formatPhoneMoney`.
-The client file and the add flow are the existing screens, full
-screen. Wider than 430px, the Clients window is unchanged.
+the shared phone column: search, then chips, then rows. The title and
+the first chip sit 16px in, the same inset as the search field. The
+chip row scrolls, fades at the right, and leaves 16px after the last
+chip. The screen is the flat surface token, not the desktop gradient.
+A name uses the full row, up to two lines. The last deal sits under
+the name, and the ID badge sits under that deal. Chips and badges
+use the same words: Missing ID, Expired, Identified, read from the
+document on file. Add client is the StickyAction. Amounts go through
+`formatPhoneMoney`. The client file and the add flow are the existing
+screens, full screen. Wider than 430px, the Clients window is unchanged.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

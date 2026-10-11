@@ -3103,11 +3103,85 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow: hidden !important;
     padding-bottom: var(--phone-dock-h) !important;
   }
+  /* The desktop window is glass, so its radial shows through a
+     transparent shell. A phone screen is the flat surface token. */
+  #desktop .win:has(.phone-clients),
+  #desktop .win:has(.phone-clients) > .win-body,
+  .phone-clients.phone-shell {
+    background: var(--color-surface, #fff);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-cdtheme="dark"] #desktop .win:has(.phone-clients),
+  html[data-cdtheme="dark"] #desktop .win:has(.phone-clients) > .win-body,
+  html[data-cdtheme="dark"] .phone-clients.phone-shell {
+    background: rgb(30, 29, 26);
+    background-image: none;
+  }
   .phone-clients.phone-shell {
     flex: 1 1 auto;
     min-height: 0;
   }
-  .phone-shell.phone-clients .phone-row.phone-client-row { min-height: 84px; }
+  /* The shared chip row pads 16px, then scroll-snap pulls the first
+     chip back to the screen edge. Spacers are real flex items, so
+     the first chip stays 16px in, the last has 16px after it, and
+     the fade stays on the right edge. */
+  .phone-clients .phone-chips {
+    padding-left: 0;
+    padding-right: 0;
+    scroll-padding-left: 16px;
+    scroll-padding-right: 16px;
+  }
+  .phone-clients .phone-chips::before,
+  .phone-clients .phone-chips::after {
+    content: "";
+    flex: 0 0 16px;
+    width: 16px;
+    height: 1px;
+    scroll-snap-align: none;
+  }
+  /* The badge used to sit beside the name and cut it off. The name
+     takes the row, up to two lines. The last deal, then the badge,
+     sit under it. */
+  .phone-shell.phone-clients .phone-row.phone-client-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 6px;
+    align-items: start;
+    min-height: 84px;
+    height: auto;
+  }
+  .phone-client-row > .phone-ini {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+  .phone-client-row > .phone-row-main {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .phone-client-row > .phone-row-end {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: none;
+    width: 100%;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .phone-client-row .phone-row-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .phone-client-row .phone-row-amt { order: 1; }
+  .phone-client-row .phone-row-meta { order: 2; }
+  .phone-client-row .phone-badge { order: 3; }
   .phone-ini {
     width: 44px;
     height: 44px;

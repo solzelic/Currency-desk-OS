@@ -189,7 +189,7 @@
     const chips = [
       { id: "all", label: "All", count: counts.all },
       { id: "missing", label: "Missing ID", count: counts.missing },
-      { id: "expired", label: "Expired ID", count: counts.expired },
+      { id: "expired", label: "Expired", count: counts.expired },
       { id: "identified", label: "Identified", count: counts.identified },
     ];
 
