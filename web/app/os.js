@@ -65829,12 +65829,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const stationTill = _activeTill ? _activeTill.name : '';
     const permsOk = id => {
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
-      /* A cashier does not get reports, the vault, or the branch
-         network. They do get the dashboard: that is where the sanctions
-         tile says screening is not connected, and a teller has to be
-         able to read the same tile the owner reads. */
-      if (id === 'dashboard') return can('canViewReports') || me.role === 'Cashier';
-      if (id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
+      if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;

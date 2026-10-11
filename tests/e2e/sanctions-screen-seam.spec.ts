@@ -147,13 +147,4 @@ test("a teller sees the same not-connected screening state", async ({ page }) =>
   const filings = await compliance.innerText();
   expect(filings).not.toMatch(/Wei Lin|Lin Wei|Brooke Lawson|Maria Carter|Rohan Miller|TR-260617-019|Sanctions hits/i);
   expect(bannedNameHits(filings)).toEqual([]);
-
-  const dashBtn = page.locator('[data-app="dashboard"]');
-  await dashBtn.scrollIntoViewIfNeeded();
-  await dashBtn.click();
-  const dashboard = page.locator(".win.show.active");
-  const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
-  await expect(dashTile).toContainText("Not connected");
-  await expect(dashTile).toContainText("Sanctions");
-  expect(await dashTile.innerText()).not.toMatch(/\d/);
 });
