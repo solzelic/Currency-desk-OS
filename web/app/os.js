@@ -62201,9 +62201,10 @@ window.CDOS_PERSIST = (function () {
     }, children), sticky || null, tabs || null);
   }
 
-  /* Texts and Branches are not in this catalog. The desktop dock still
-     has them. Search words sit beside the purpose line so "cash" finds
-     Cheques, Vault, Compliance, and Till. */
+  /* Branches and Assistant are front-end mocks, so they are not in
+     this catalog. Texts is, and the desk only passes it when Twilio
+     is set up. Search words sit beside the purpose line so "cash"
+     finds Cheques, Vault, Compliance, and Till. */
   const GROUPS = [{
     title: 'Money',
     ids: ['transfers', 'cheques', 'vault']
@@ -62215,7 +62216,7 @@ window.CDOS_PERSIST = (function () {
     ids: ['reports', 'dashboard']
   }, {
     title: 'Tools',
-    ids: ['calc', 'loan', 'assistant']
+    ids: ['telegraph', 'calc', 'loan']
   }, {
     title: 'Shop setup',
     ids: ['pricing', 'store', 'settings']
@@ -62269,6 +62270,12 @@ window.CDOS_PERSIST = (function () {
       words: 'today summary',
       icon: 'dashboardgrid'
     },
+    telegraph: {
+      title: 'Texts',
+      detail: 'Quote requests by text',
+      words: 'sms message',
+      icon: 'telegraphbubble'
+    },
     calc: {
       title: 'Calculator',
       detail: 'Add up, convert, margin',
@@ -62280,12 +62287,6 @@ window.CDOS_PERSIST = (function () {
       detail: 'Monthly loan payment',
       words: 'payment interest',
       icon: 'loancentre'
-    },
-    assistant: {
-      title: 'Assistant',
-      detail: 'Ask about your desk',
-      words: 'help question',
-      icon: 'aispark'
     },
     pricing: {
       title: 'Pricing',
@@ -62353,7 +62354,7 @@ window.CDOS_PERSIST = (function () {
     });
     const q = query.trim();
     const pick = id => {
-      if (id === 'telegraph' || id === 'branches' || !allow[id] || !CATALOG[id]) return null;
+      if (!allow[id] || !CATALOG[id]) return null;
       const item = CATALOG[id];
       if (q && !matches(item, q)) return null;
       return {
@@ -67674,10 +67675,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }
     const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
-    /* More shows apps this role can already open. Texts and Branches
-       stay on the desktop dock and off the phone list. Store is the
-       same door as the desktop edge rail, which is not an app-bar id. */
-    const phoneAllowed = visibleApps.filter(id => id !== 'telegraph' && id !== 'branches' && !phonePrimary.has(id));
+    /* More shows apps this role can already open. Texts is that list
+       only when the server says Twilio is set up — smsConfigured on
+       the session, the same flag sendSms uses. Branches invents cash
+       in the browser and never reads /api/desk/branches. Assistant
+       calls window.claude and has no model API. Both stay off the
+       phone. Store is the same door as the desktop edge rail, which
+       is not an app-bar id. */
+    const phoneAllowed = visibleApps.filter(id => {
+      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
+      if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
+      return true;
+    });
     if (planAllows('store') && permsOk('store') && phoneAllowed.indexOf('store') < 0) phoneAllowed.push('store');
     const phoneOn = phoneMore ? 'more' : phonePrimary.has(activeBase) ? activeBase : activeBase ? 'more' : '';
     /* The selected tab borrows the app's existing accent (--c on the

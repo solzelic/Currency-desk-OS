@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { smsConfigured } from "../src/sms.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -48,6 +49,7 @@ describe("auth", () => {
       legalEntityId: DEMO.legalEntityId,
       branchId: DEMO.branchId,
       authorizedBranchIds: [DEMO.branchId],
+      smsConfigured: smsConfigured(),
     });
     const cookie = res.cookies.find((c) => c.name === "cdos_session");
     expect(cookie).toBeDefined();
@@ -60,7 +62,7 @@ describe("auth", () => {
 
     const me = await app.inject({ method: "GET", url: "/api/auth/me", cookies });
     expect(me.statusCode).toBe(200);
-    expect(me.json().user).toMatchObject({ id: "j.masri", role: "administrator" });
+    expect(me.json().user).toMatchObject({ id: "j.masri", role: "administrator", smsConfigured: smsConfigured() });
 
     const out = await app.inject({ method: "POST", url: "/api/auth/logout", cookies });
     expect(out.statusCode).toBe(200);

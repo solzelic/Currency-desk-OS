@@ -172,7 +172,6 @@ test("more lists the apps this role can open", async ({ page }) => {
     "Dashboard",
     "Calculator",
     "Loan calculator",
-    "Assistant",
     "Pricing",
     "Apps",
   ]);
@@ -200,11 +199,10 @@ test("a teller only sees the apps a teller can open", async ({ page }) => {
     "Audit trail",
     "Calculator",
     "Loan calculator",
-    "Assistant",
     "Pricing",
     "Apps",
   ]);
-  for (const hidden of ["Reports", "Vault", "Branches", "Settings", "Dashboard", "Texts"]) {
+  for (const hidden of ["Reports", "Vault", "Branches", "Settings", "Dashboard", "Texts", "Assistant"]) {
     expect(labels, hidden).not.toContain(hidden);
   }
 });

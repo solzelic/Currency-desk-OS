@@ -22,6 +22,7 @@ import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
+import { smsConfigured } from "../sms.js";
 import { randomUUID } from "node:crypto";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 
@@ -149,6 +150,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: user.authorizedBranchIds,
         mustChangePassword: user.mustChangePassword,
         plan: await tenantPlan(db, user.tenantId),
+        smsConfigured: smsConfigured(),
       },
     };
   });
@@ -164,6 +166,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     authorizedBranchIds: user.authorizedBranchIds,
     mustChangePassword: user.mustChangePassword,
     plan: await tenantPlan(db, user.tenantId),
+    smsConfigured: smsConfigured(),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people.
@@ -402,6 +405,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: who.authorizedBranchIds,
         mustChangePassword: who.mustChangePassword,
         plan: await tenantPlan(db, who.tenantId),
+        smsConfigured: smsConfigured(),
       },
     };
   });

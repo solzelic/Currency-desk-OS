@@ -80,8 +80,11 @@ test("an owner sees Settings and a cashier does not", async ({ page }) => {
   expect(owner).toContain("Vault");
   expect(owner).not.toContain("Texts");
   expect(owner).not.toContain("Branches");
+  expect(owner).not.toContain("Assistant");
+  expect(owner).not.toContain("AI Assistant");
   await expect(page.locator("#phone-more [data-phone-app='telegraph']")).toHaveCount(0);
   await expect(page.locator("#phone-more [data-phone-app='branches']")).toHaveCount(0);
+  await expect(page.locator("#phone-more [data-phone-app='assistant']")).toHaveCount(0);
 
   await atDesk(page, "m.costa");
   const cashier = await moreNames(page);
@@ -91,6 +94,18 @@ test("an owner sees Settings and a cashier does not", async ({ page }) => {
   expect(cashier).not.toContain("Dashboard");
   expect(cashier).toContain("Cheques");
   expect(cashier).toContain("Apps");
+});
+
+test("the default desk hides Texts, Branches, and the AI Assistant", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  const names = await moreNames(page);
+  for (const hidden of ["Texts", "Branches", "Assistant", "AI Assistant"]) {
+    expect(names, hidden).not.toContain(hidden);
+  }
+  await expect(page.locator("#phone-more [data-phone-app='telegraph']")).toHaveCount(0);
+  await expect(page.locator("#phone-more [data-phone-app='branches']")).toHaveCount(0);
+  await expect(page.locator("#phone-more [data-phone-app='assistant']")).toHaveCount(0);
 });
 
 test("cash finds the apps that handle cash", async ({ page }) => {

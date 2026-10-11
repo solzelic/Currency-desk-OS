@@ -2269,10 +2269,18 @@
     }
 
     const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
-    /* More shows apps this role can already open. Texts and Branches
-       stay on the desktop dock and off the phone list. Store is the
-       same door as the desktop edge rail, which is not an app-bar id. */
-    const phoneAllowed = visibleApps.filter(id => id !== 'telegraph' && id !== 'branches' && !phonePrimary.has(id));
+    /* More shows apps this role can already open. Texts is that list
+       only when the server says Twilio is set up — smsConfigured on
+       the session, the same flag sendSms uses. Branches invents cash
+       in the browser and never reads /api/desk/branches. Assistant
+       calls window.claude and has no model API. Both stay off the
+       phone. Store is the same door as the desktop edge rail, which
+       is not an app-bar id. */
+    const phoneAllowed = visibleApps.filter(id => {
+      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
+      if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
+      return true;
+    });
     if (planAllows('store') && permsOk('store') && phoneAllowed.indexOf('store') < 0) phoneAllowed.push('store');
     const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
     /* The selected tab borrows the app's existing accent (--c on the

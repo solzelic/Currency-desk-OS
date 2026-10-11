@@ -10,6 +10,18 @@
 
 export type SmsStatus = "sent" | "simulated" | "failed";
 
+/* The desk's own answer to "is Twilio set up?". sendSms and the phone
+   More list both read this. Missing any required piece means the send
+   is simulated, which is not configured. */
+export function smsConfigured(): boolean {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM;
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM;
+  return !!(sid && token && (from || messagingServiceSid || whatsappFrom));
+}
+
 export async function sendSms(to: string, body: string): Promise<SmsStatus> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
@@ -23,7 +35,7 @@ export async function sendSms(to: string, body: string): Promise<SmsStatus> {
   // SMS — the sandbox delivers instantly (recipients join it once), which is
   // the fastest way to see the flow work end to end before SMS A2P clears.
   const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM;
-  if (!sid || !token || (!from && !messagingServiceSid && !whatsappFrom)) {
+  if (!smsConfigured()) {
     console.log(`[sms simulated] to=${to} :: ${body}`);
     return "simulated";
   }

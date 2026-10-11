@@ -227,14 +227,15 @@
     );
   }
 
-  /* Texts and Branches are not in this catalog. The desktop dock still
-     has them. Search words sit beside the purpose line so "cash" finds
-     Cheques, Vault, Compliance, and Till. */
+  /* Branches and Assistant are front-end mocks, so they are not in
+     this catalog. Texts is, and the desk only passes it when Twilio
+     is set up. Search words sit beside the purpose line so "cash"
+     finds Cheques, Vault, Compliance, and Till. */
   const GROUPS = [
     { title: 'Money', ids: ['transfers', 'cheques', 'vault'] },
     { title: 'Checks', ids: ['compliance', 'tagged', 'audit'] },
     { title: 'Numbers', ids: ['reports', 'dashboard'] },
-    { title: 'Tools', ids: ['calc', 'loan', 'assistant'] },
+    { title: 'Tools', ids: ['telegraph', 'calc', 'loan'] },
     { title: 'Shop setup', ids: ['pricing', 'store', 'settings'] },
   ];
   const CATALOG = {
@@ -246,9 +247,9 @@
     audit: { title: 'Audit trail', detail: 'Who did what, and when', words: 'log history', icon: 'audittrail' },
     reports: { title: 'Reports', detail: 'End of day, sales by currency', words: 'eod sales', icon: 'reportsdoc' },
     dashboard: { title: 'Dashboard', detail: 'Today at a glance', words: 'today summary', icon: 'dashboardgrid' },
+    telegraph: { title: 'Texts', detail: 'Quote requests by text', words: 'sms message', icon: 'telegraphbubble' },
     calc: { title: 'Calculator', detail: 'Add up, convert, margin', words: 'fx convert', icon: 'calcdevice' },
     loan: { title: 'Loan calculator', detail: 'Monthly loan payment', words: 'payment interest', icon: 'loancentre' },
-    assistant: { title: 'Assistant', detail: 'Ask about your desk', words: 'help question', icon: 'aispark' },
     pricing: { title: 'Pricing', detail: 'Spreads, fees, publish rates', words: 'spread fee rate', icon: 'pricingpercent' },
     store: { title: 'Apps', detail: 'Add or remove apps', words: 'store install', icon: 'storefront' },
     settings: { title: 'Settings', detail: 'Desk, staff, your PIN', words: 'pin staff', icon: 'gearsettings' },
@@ -274,7 +275,7 @@
     (allowed || []).forEach((id) => { allow[id] = true; });
     const q = query.trim();
     const pick = (id) => {
-      if (id === 'telegraph' || id === 'branches' || !allow[id] || !CATALOG[id]) return null;
+      if (!allow[id] || !CATALOG[id]) return null;
       const item = CATALOG[id];
       if (q && !matches(item, q)) return null;
       return { id, ...item };

@@ -186,11 +186,20 @@ apply.
 `allowed` string[] — app ids this role can already open. `accent` is the
 `APP_ACCENT` map. `onOpen(id)`, `onLock`, `onHandover`, `onSignOut`.
 
-More does not grant access. The desk passes `visibleApps` with Texts
-(`telegraph`) and Branches removed, then adds `store` when `planAllows('store')`
-and `permsOk('store')`. The desktop edge rail already opens the store.
-That is the same door, not a new one. Texts and Branches stay on the
-desktop dock and stay off this list.
+More does not grant access. The desk passes `visibleApps`, then adds
+`store` when `planAllows('store')` and `permsOk('store')`. The desktop
+edge rail already opens the store. That is the same door, not a new one.
+
+Texts (`telegraph`) is on this list only when the session says
+`smsConfigured`. That is the flag `sendSms` uses: Twilio account,
+token, and a from-number, messaging service, or WhatsApp sender.
+Without it, texts are simulated and the row stays off the phone.
+The desktop dock still has Texts.
+
+Branches and the AI Assistant stay off this list. The Branches window
+invents cash in the browser and does not read `/api/desk/branches`.
+The Assistant calls `window.claude.complete` and has no model API.
+Both remain on the desktop dock.
 
 Browse groups, in order. A group with nothing this role can open is omitted.
 
@@ -199,7 +208,7 @@ Browse groups, in order. A group with nothing this role can open is omitted.
 | Money | Transfers, Cheques, Vault |
 | Checks | Compliance, Tagged deals, Audit trail |
 | Numbers | Reports, Dashboard |
-| Tools | Calculator, Loan calculator, Assistant |
+| Tools | Texts (only when Twilio is set up), Calculator, Loan calculator |
 | Shop setup | Pricing, Apps, Settings |
 
 Each row is the app's coloured icon (accent on an 11% tint, 40px) and a

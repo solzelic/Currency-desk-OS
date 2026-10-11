@@ -89,8 +89,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   opened. When More itself is showing, that colour is #17140F. More is a grouped
   list — Money, Checks, Numbers, Tools, Shop setup — of the other
   apps that role can already open. Each row is that app's coloured
-  icon and a one-line purpose. Texts and Branches stay off the phone
-  list. Your session holds Lock the desk, Hand over the desk, and
+  icon and a one-line purpose. Texts stays off the phone list unless
+  the server says Twilio is set up. Branches and the AI Assistant are
+  front-end mocks, so they stay off the phone list. Your session holds Lock the desk, Hand over the desk, and
   Sign out, and Sign out asks before it runs. Search matches the job
   as well as the name. Amounts on a phone go through one formatter
   and show the currency code (`docs/PHONE_SHELL.md`). Each phone window
@@ -535,6 +536,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, phone More. Texts is on the phone list only when
+`smsConfigured` is true — the same Twilio check `sendSms` uses.
+Branches and the AI Assistant are front-end mocks and stay off
+the phone. The desktop dock still has all three.
+
 **2026-10-11**, phone screen inset. The shared screen paints
 `--color-surface`. The title and the first filter chip start 16px
 in, and the chip row keeps 16px after the last chip with a fade on
@@ -548,8 +554,9 @@ buttons use the app accent. The shared phone sweep lives in
 **2026-10-11**, phone shell. The desk shell still owns the one header and
 the five-tab bar. More is the shared phone column: grouped apps,
 a session group, and search that matches what an app does.
-`formatPhoneMoney` is the only phone amount format. Texts and
-Branches are not on the phone list. The ledger screen is unchanged.
+`formatPhoneMoney` is the only phone amount format. Texts is on
+the phone list only when Twilio is set up. Branches and the AI
+Assistant are front-end mocks and stay off it. The ledger screen is unchanged.
 Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
