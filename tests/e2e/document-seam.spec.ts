@@ -290,6 +290,13 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
     .toContain(`Session #${till.session.sessionNumber}`);
+  /* The session number is printed as soon as that fetch lands. The
+     day's figures are a second fetch, and the sheet says "reading
+     the ledger…" until it arrives. Wait for that sentence to leave
+     before holding the figures to the book. */
+  await expect
+    .poll(() => sheet(page), { timeout: 30_000 })
+    .not.toContain("reading the ledger");
   const doc = await sheet(page);
 
   // ---- the date and the day ----

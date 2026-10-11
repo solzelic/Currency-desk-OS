@@ -14,6 +14,13 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 const MESSAGE = "Money moved since you counted. Count again.";
 
 async function settleCashDrawerChrome(page: Page) {
+  /* The phone drawer is the count inside the phone shell. It does not
+     print the desktop "ledger till" line. The heading is the proof
+     the drawer is the one on screen. */
+  if (await page.locator(".till-phone").isVisible()) {
+    await expect(page.getByRole("heading", { name: "Cash drawer" })).toBeVisible({ timeout: 30_000 });
+    return;
+  }
   await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/server balances live/i)).toBeVisible();
   const scroller = page.locator(".win.show.active .win-body .overflow-auto").first();
@@ -49,6 +56,11 @@ async function press(locator: Locator) {
 
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
+  if (await page.locator(".till-phone").isVisible()) {
+    const phoneName = /cash drawer/i.test(name.source) ? /^Count$/ : /^Reconcile and close$/;
+    await press(page.getByRole("tab", { name: phoneName }).first());
+    return;
+  }
   const tab = page.locator(".win.show.active").getByRole("button", { name }).first();
   try {
     await clickWhenStable(tab);
@@ -61,8 +73,11 @@ async function clickDrawerTab(page: Page, name: RegExp) {
 }
 
 async function saveDrawerCount(page: Page) {
-  await press(page.locator(".win.show.active").getByRole("button", { name: /Save count/i }).first());
-  await expect(page.locator(".win.show.active").getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  const root = (await page.locator(".till-phone").isVisible())
+    ? page.locator(".till-phone")
+    : page.locator(".win.show.active");
+  await press(root.getByRole("button", { name: /Save count/i }).first());
+  await expect(root.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -107,16 +122,26 @@ async function openTill(page: Page) {
     await expect(title).toBeVisible();
   }
   await settleCashDrawerChrome(page);
-  const openButton = page.getByRole("button", { name: /Open the till/i }).first();
   const sessionLine = page.getByText(/Session #\d+ open/);
   /* The drawer paints "Open the till" while the session is still
      arriving, then takes the button away once the book says the till
      is open. Wait until that line is on screen. A click that lands
      after the button has gone is retried; the line being there
      already means there is nothing to open. */
+  /* A closed session offers "Open next day" on the desktop reconcile
+     tab, and "Open next session" on the phone. Neither is "Open the
+     till", which is only the banner before the first session. */
   await expect(async () => {
     if (await sessionLine.isVisible()) return;
-    await openButton.click({ timeout: 1_000 });
+    const skip = page.locator(".cdos-tour-skip");
+    if (await skip.isVisible()) await skip.click();
+    const next = page.getByRole("button", { name: /Open the till|Open next day|Open next session/i }).first();
+    if (await next.isVisible()) await next.click({ timeout: 1_000 });
+    else if (await page.locator(".till-phone").isVisible()) {
+      await page.getByRole("tab", { name: "Reconcile and close" }).click({ timeout: 1_000 });
+    } else {
+      await page.getByRole("button", { name: /Reconcile & close/i }).first().click({ timeout: 1_000 });
+    }
     await expect(sessionLine).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 }
@@ -126,11 +151,19 @@ async function countTheBook(page: Page, balances: Record<string, string>) {
   /* The phone ledger's summary buttons also say "CAD", and that
      window stays in the document after you leave it. The chip that
      counts is the open drawer's till chip. */
-  const drawer = page.locator(".win.show.active");
+  const phone = await page.locator(".till-phone").isVisible();
+  const root = phone ? page.locator(".till-phone") : page.locator(".win.show.active");
   for (const [ccy, amount] of Object.entries(balances)) {
-    await press(drawer.locator(`button.till-chip:has-text("${ccy}")`).first());
-    await press(drawer.getByRole("button", { name: /Enter total/i }).first());
-    await drawer.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
+    if (phone) {
+      await press(root.getByRole("tab", { name: new RegExp("^" + ccy + "\\b") }).first());
+      const enter = root.getByRole("button", { name: "Enter total instead" });
+      if (await enter.isVisible()) await press(enter);
+      await root.getByRole("textbox", { name: ccy + " total" }).fill(String(Number(amount)));
+    } else {
+      await press(root.locator(`button.till-chip:has-text("${ccy}")`).first());
+      await press(root.getByRole("button", { name: /Enter total/i }).first());
+      await root.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
+    }
   }
   await saveDrawerCount(page);
 }
@@ -157,6 +190,13 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
+  if (await page.locator(".till-phone").isVisible()) {
+    await press(page.locator(".phone-sticky-btn", { hasText: /Close till/i }));
+    const confirm = page.locator(".till-sheet .till-save");
+    await expect(confirm).toBeVisible();
+    await press(confirm);
+    return;
+  }
   const drawer = page.locator(".win.show.active");
   await press(drawer.getByRole("button", { name: /Close day & lock book/i }).first());
   await press(drawer.getByRole("button", { name: /Close day & lock book/i }).last());

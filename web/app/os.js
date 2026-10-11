@@ -63178,8 +63178,8 @@ window.CDOS_PERSIST = (function () {
 
    One currency at a time. The footer is the only primary action
    (Save count, or Close till). There is no round + on this screen.
-   Amounts go through window.CDOS.phoneMoney, which the phone shell
-   owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
+   Amounts go through window.CDOS.formatPhoneMoney, which the phone
+   shell owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
    A figure the ledger did not return is left out, not shown as 0.
    ============================================================ */
 (function () {
@@ -63309,6 +63309,10 @@ window.CDOS_PERSIST = (function () {
   }
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
+    /* Notes first, even when the book stored a total. The total stays
+       in the footer. The big field replaces the notes only when the
+       cashier asks for it, so the first screen keeps the rows. */
+    const [notes, setNotes] = useState(true);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const wait = useWait(loading);
     const who = operatorOf(p.current, p.roster);
@@ -63422,7 +63426,7 @@ window.CDOS_PERSIST = (function () {
       className: "till-phone-amount"
     }, amount(p.drawerTotal, p.homeCcy) || '—'), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-meta"
-    }, 'In drawer · ', p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' · ' + (clock12(p.openedAt) || '—') : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted'), /*#__PURE__*/React.createElement("div", {
+    }, 'In drawer · ', p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open · ' + (clock12(p.openedAt) || '—') : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted'), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-who"
     }, /*#__PURE__*/React.createElement("span", null, who ? 'On the drawer: ' + who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), p.tillName ? /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -63453,34 +63457,42 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("h2", null, "Count ", p.ccy), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-link",
-      onClick: () => p.setMode(m => ({
-        ...m,
-        [p.ccy]: mode === 'total' ? 'denom' : 'total'
-      }))
-    }, mode === 'total' ? 'Count notes' : 'Enter total instead')), mode === 'total' && /*#__PURE__*/React.createElement("label", {
-      className: "till-phone-total"
-    }, /*#__PURE__*/React.createElement("span", null, p.ccy), /*#__PURE__*/React.createElement("input", {
-      type: "text",
-      inputMode: "decimal",
-      autoComplete: "off",
-      "aria-label": p.ccy + ' total',
-      value: p.quick[p.ccy] ?? '',
-      onChange: e => {
-        p.setQuick(o => ({
-          ...o,
-          [p.ccy]: e.target.value.replace(/[^0-9.]/g, '')
-        }));
-        p.stamp(p.ccy);
-      }
-    })), /*#__PURE__*/React.createElement("div", {
+      onClick: () => setNotes(v => !v)
+    }, notes ? 'Enter total instead' : 'Count notes')), notes ? /*#__PURE__*/React.createElement("div", {
       className: "till-phone-list"
     }, denoms.map(d => /*#__PURE__*/React.createElement(QtyRow, {
       key: d.i,
       d: d,
       ccy: p.ccy,
       counts: p.counts,
-      setCount: p.setCount
-    })))), !loading && !noSession && !closed && p.tab === 'reconcile' && /*#__PURE__*/React.createElement("div", {
+      setCount: (ccy, i, value) => {
+        p.setMode(m => ({
+          ...m,
+          [ccy]: 'denom'
+        }));
+        p.setCount(ccy, i, value);
+      }
+    }))) : /*#__PURE__*/React.createElement("label", {
+      className: "till-phone-total"
+    }, /*#__PURE__*/React.createElement("span", null, p.ccy), /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      inputMode: "decimal",
+      autoComplete: "off",
+      placeholder: "0.00",
+      "aria-label": p.ccy + ' total',
+      value: p.quick[p.ccy] ?? '',
+      onChange: e => {
+        p.setMode(m => ({
+          ...m,
+          [p.ccy]: 'total'
+        }));
+        p.setQuick(o => ({
+          ...o,
+          [p.ccy]: e.target.value.replace(/[^0-9.]/g, '')
+        }));
+        p.stamp(p.ccy);
+      }
+    }))), !loading && !noSession && !closed && p.tab === 'reconcile' && /*#__PURE__*/React.createElement("div", {
       className: "till-phone-list"
     }, p.recon.map(r => /*#__PURE__*/React.createElement("div", {
       key: r.c,

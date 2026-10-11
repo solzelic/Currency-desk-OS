@@ -603,7 +603,9 @@ exists and nobody holds it. Granting it is a later decision.
 
 **2026-10-11**, phone till. At 430px and under, the cash drawer is the
 phone count inside `Phone.Screen`: one currency, sideways chips,
-large count fields, and one `StickyAction` on the bar. The till
+large count fields, and one `StickyAction` on the bar. The count
+opens on the notes; a saved total stays in the footer until the
+cashier asks to enter a total. The till
 switch is a sheet from the bottom. Amounts use `formatPhoneMoney`
 (`1,765.05 CAD`). There is no round + on the till. A missing ledger
 figure stays absent. Loading, a refused save, and a till that is

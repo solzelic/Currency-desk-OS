@@ -5,8 +5,8 @@
 
    One currency at a time. The footer is the only primary action
    (Save count, or Close till). There is no round + on this screen.
-   Amounts go through window.CDOS.phoneMoney, which the phone shell
-   owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
+   Amounts go through window.CDOS.formatPhoneMoney, which the phone
+   shell owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
    A figure the ledger did not return is left out, not shown as 0.
    ============================================================ */
 (function () {
@@ -97,6 +97,10 @@
 
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
+    /* Notes first, even when the book stored a total. The total stays
+       in the footer. The big field replaces the notes only when the
+       cashier asks for it, so the first screen keeps the rows. */
+    const [notes, setNotes] = useState(true);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const wait = useWait(loading);
     const who = operatorOf(p.current, p.roster);
@@ -194,7 +198,7 @@
               <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy) || '—'}</div>
               <div className="till-phone-meta">
                 {'In drawer · '}
-                {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' · ' + (clock12(p.openedAt) || '—')) : 'No open session'}
+                {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open · ' + (clock12(p.openedAt) || '—')) : 'No open session'}
                 {' · ' + p.countedN + ' of ' + p.reconCount + ' counted'}
               </div>
               <div className="till-phone-who">
@@ -218,17 +222,18 @@
               />
               <div className="till-phone-sec" data-tour="till-count">
                 <h2>Count {p.ccy}</h2>
-                <button type="button" className="till-phone-link" onClick={() => p.setMode(m => ({ ...m, [p.ccy]: mode === 'total' ? 'denom' : 'total' }))}>{mode === 'total' ? 'Count notes' : 'Enter total instead'}</button>
+                <button type="button" className="till-phone-link" onClick={() => setNotes(v => !v)}>{notes ? 'Enter total instead' : 'Count notes'}</button>
               </div>
-              {mode === 'total' && (
+              {notes ? (
+                <div className="till-phone-list">
+                  {denoms.map(d => <QtyRow key={d.i} d={d} ccy={p.ccy} counts={p.counts} setCount={(ccy, i, value) => { p.setMode(m => ({ ...m, [ccy]: 'denom' })); p.setCount(ccy, i, value); }} />)}
+                </div>
+              ) : (
                 <label className="till-phone-total">
                   <span>{p.ccy}</span>
-                  <input type="text" inputMode="decimal" autoComplete="off" aria-label={p.ccy + ' total'} value={p.quick[p.ccy] ?? ''} onChange={e => { p.setQuick(o => ({ ...o, [p.ccy]: e.target.value.replace(/[^0-9.]/g, '') })); p.stamp(p.ccy); }} />
+                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="0.00" aria-label={p.ccy + ' total'} value={p.quick[p.ccy] ?? ''} onChange={e => { p.setMode(m => ({ ...m, [p.ccy]: 'total' })); p.setQuick(o => ({ ...o, [p.ccy]: e.target.value.replace(/[^0-9.]/g, '') })); p.stamp(p.ccy); }} />
                 </label>
               )}
-              <div className="till-phone-list">
-                {denoms.map(d => <QtyRow key={d.i} d={d} ccy={p.ccy} counts={p.counts} setCount={p.setCount} />)}
-              </div>
             </>
           )}
 
