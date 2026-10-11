@@ -7,7 +7,8 @@ import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
-const SHOTS = "/opt/cursor/artifacts/screenshots";
+const SHOTS = "/opt/cursor/artifacts/pr117";
+const PHONE_ROOTS = [".pr-phone", ".phone-head", "#phone-dock"];
 
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
@@ -48,6 +49,13 @@ async function shot(page: Page, name: string): Promise<void> {
   }
 }
 
+async function frames(page: Page, name: string): Promise<void> {
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await shot(page, `${name}_${width}`);
+  }
+}
+
 function ratesGet(url: string, method: string): boolean {
   const path = new URL(url).pathname;
   return method === "GET" && path === "/api/rates";
@@ -77,6 +85,13 @@ test("desktop pricing is unchanged at 1280", async ({ page }) => {
       node = walker.nextNode();
     }
   });
+  try {
+    mkdirSync(SHOTS, { recursive: true });
+    await page.screenshot({ path: `${SHOTS}/pricing_desktop_1280.png` });
+    await win.screenshot({ path: `${SHOTS}/pricing_desktop_window_1280.png`, animations: "disabled", caret: "hide" });
+  } catch (err) {
+    console.error("pricing desktop screenshot skipped", err);
+  }
   await expect(win).toHaveScreenshot("desktop-pricing-1280.png", {
     maxDiffPixels: 0,
     animations: "disabled",
@@ -155,7 +170,7 @@ for (const width of [360, 390]) {
     expect(buy).toBe("rgb(30, 90, 168)");
     expect(sell).toBe("rgb(122, 62, 150)");
     await expect(sheet).toContainText("Nothing changes on the Rate Board until you tap Publish.");
-    await shot(page, `pricing_edit_${width}`);
+    await shot(page, `pricing_stepper_${width}`);
   });
 
   test(`publish hits the rate board once at ${width}`, async ({ page }) => {
@@ -181,7 +196,7 @@ for (const width of [360, 390]) {
     await button.click({ force: true });
     await page.waitForTimeout(400);
     expect(posts).toHaveLength(1);
-    await shot(page, `pricing_published_${width}`);
+    await shot(page, `pricing_toast_${width}`);
   });
 
   test(`pricing shows skeletons while the board loads at ${width}`, async ({ page }) => {
@@ -202,6 +217,7 @@ for (const width of [360, 390]) {
     await expect(page.getByRole("status", { name: "Loading pricing" })).toBeVisible();
     await expect(page.locator(".pr-phone .phone-sticky-btn")).toBeDisabled();
     await shot(page, `pricing_loading_${width}`);
+    if (width === 390) await phoneSweep(page, { roots: PHONE_ROOTS });
     release();
   });
 }
@@ -220,6 +236,8 @@ test("a failed board load keeps the saved spreads", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("The Rate Board didn't load.");
   await expect(page.locator("[data-pr='list']")).toContainText("USD");
   await expect(page.locator("[data-pr='list']")).toContainText("Not loaded");
+  await frames(page, "pricing_error");
+  await phoneSweep(page, { roots: PHONE_ROOTS });
 });
 
 test("no foreign currencies is an empty state", async ({ page }) => {
@@ -234,15 +252,52 @@ test("no foreign currencies is an empty state", async ({ page }) => {
 });
 
 test("pricing passes the phone sweep", async ({ page }) => {
+  test.setTimeout(180_000);
+  /* Installed before the desk opens so the toast timer is fake.
+     Time keeps moving until the toast is on screen, then it pauses,
+     so the four-second note is still there while both widths are checked. */
+  await page.clock.install({ time: new Date() });
   await page.setViewportSize({ width: 390, height: 844 });
   await atDesk(page, "j.masri");
   await openPricing(page);
   await expect(page.locator("[data-pr='list']")).toBeVisible();
-  await phoneSweep(page, { roots: [".pr-phone", ".phone-head", "#phone-dock"] });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await frames(page, "pricing_list");
+  await phoneSweep(page, { roots: PHONE_ROOTS });
+
   await page.getByRole("button", { name: /USD/ }).click();
   await expect(page.locator("[data-pr='sheet']")).toBeVisible();
+  await frames(page, "pricing_stepper");
   await phoneSweep(page, { roots: [".pr-sheet"] });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("[data-pr='sheet']")).toHaveCount(0);
+
+  let releasePublish: () => void = () => {};
+  const publishGate = new Promise<void>((resolve) => {
+    releasePublish = resolve;
+  });
+  await page.route("**/api/rates/publish", async (route) => {
+    if (route.request().method() === "POST") await publishGate;
+    await route.continue();
+  });
+  await page.locator(".pr-phone .phone-sticky-btn").click();
+  await expect(page.locator(".pr-phone .phone-sticky-btn")).toHaveText("Publishing…");
+  await frames(page, "pricing_publish");
+  await phoneSweep(page, { roots: PHONE_ROOTS });
+  releasePublish();
+  await expect(page.locator("[data-pr='toast']")).toBeVisible();
+  const frozen = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(frozen + 200);
+  await frames(page, "pricing_toast");
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    try {
+      mkdirSync(SHOTS, { recursive: true });
+      await page.locator("[data-pr='toast']").screenshot({ path: `${SHOTS}/pricing_toast_bar_${width}.png` });
+    } catch (err) {
+      console.error("pricing toast bar skipped", width, err);
+    }
+  }
+  await phoneSweep(page, { roots: [...PHONE_ROOTS, "[data-pr='toast']"] });
 });
 
 test("a teller cannot publish", async ({ page }) => {
@@ -260,4 +315,6 @@ test("a teller cannot publish", async ({ page }) => {
   await button.click({ force: true });
   await page.waitForTimeout(400);
   expect(posts).toHaveLength(0);
+  await frames(page, "pricing_teller");
+  await phoneSweep(page, { roots: PHONE_ROOTS });
 });
