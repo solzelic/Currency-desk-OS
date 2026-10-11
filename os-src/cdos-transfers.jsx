@@ -201,6 +201,16 @@
 
   const BKEY = 'cdos_beneficiaries_v1', CKEY = 'cdos_corridors_v1', TKEY = 'cdos_transfers_v1';
   const load = (k, def) => { try { const r = JSON.parse(localStorage.getItem(k) || 'null'); return r && (Array.isArray(r) ? r.length : true) ? r : def(); } catch (e) { return def(); } };
+  /* The four wires and three beneficiaries above are a demonstration
+     pipeline for the Transfers desk. A real transfer id is `t` plus
+     Date.now(), and a real beneficiary id is `b` plus Date.now(), so
+     these exact ids are only the sample. Compliance must not file them
+     or list them as people a customer sends money to — the same rule as
+     the demonstration cheques on a ledger desk. */
+  const DEMONSTRATION_TRANSFER_IDS = { t1: 1, t2: 1, t3: 1, t4: 1 };
+  const DEMONSTRATION_BENEFICIARY_IDS = { b1: 1, b2: 1, b3: 1 };
+  const bookTransfers = (list) => (list || []).filter(t => t && !DEMONSTRATION_TRANSFER_IDS[t.id]);
+  const bookBeneficiaries = (list) => (list || []).filter(b => b && !DEMONSTRATION_BENEFICIARY_IDS[b.id]);
 
   /* ===================== shared atoms ===================== */
   const inputSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
@@ -745,6 +755,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

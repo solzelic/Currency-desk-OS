@@ -6,7 +6,7 @@
    shows the count. This seam requires the not-connected sentence and
    no count. It does not post a deal.
    ============================================================ */
-import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
@@ -14,6 +14,19 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   test.setTimeout(120_000);
   await signInAtDesk(page, "j.masri");
   const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+
+  /* The Transfers desk keeps a sample pipeline in the same browser store
+     compliance reads. Plant it the way opening Transfers would, and the
+     compliance surfaces must not file it or name it. */
+  await page.evaluate(() => {
+    const sample = window.CDOS._transfers.defaultTransfers().find((t) => t.id === "t3");
+    localStorage.setItem("cdos_transfers_v1", JSON.stringify(window.CDOS._transfers.defaultTransfers()));
+    localStorage.setItem("cdos_beneficiaries_v1", JSON.stringify(window.CDOS._transfers.defaultBeneficiaries()));
+    if (!sample) throw new Error("sample wire t3 missing");
+  });
+  await page.reload();
+  await landOnDesktop(page);
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
 
   const packId = await page.evaluate(async () => {
@@ -30,6 +43,9 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   expect(screening).toMatch(/Check clients against your government's official lists yourself/);
   expect(screening).not.toMatch(/Every client and beneficiary screened against OFAC/i);
   expect(screening).not.toMatch(/Wei Lin/);
+  expect(screening).not.toMatch(/Lin Wei/);
+  expect(screening).not.toMatch(/Brooke Lawson/);
+  expect(screening).not.toMatch(/TR-260617-019/);
   expect(screening).not.toMatch(/Confirmed hit/);
   expect(screening).not.toMatch(/Possible match/);
 
@@ -40,6 +56,11 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await expect(compliance.getByTestId("sanctions-screening-tile")).toContainText("Not connected");
   await expect(compliance.getByTestId("sanctions-not-connected")).toContainText("Sanctions screening is not connected yet");
 
+  await compliance.locator(".fld-tab", { hasText: "Filings" }).click();
+  await expect(compliance.getByText("Brooke Lawson")).toHaveCount(0);
+  await expect(compliance.getByText("Lin Wei")).toHaveCount(0);
+  await expect(compliance.getByText("TR-260617-019")).toHaveCount(0);
+
   await page.locator('[data-app="dashboard"]').click();
   const dashboard = page.locator(".win.show.active");
   await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
@@ -47,6 +68,10 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await expect(dashTile).toContainText("Not connected");
   await expect(dashTile).toContainText("Sanctions");
   expect(await dashTile.innerText()).not.toMatch(/\d/);
+  const wireTile = dashboard.locator("button").filter({ hasText: /to file/ }).first();
+  const wireLines = (await wireTile.innerText()).split("\n").map((line) => line.trim()).filter(Boolean);
+  expect(wireLines[0]).toBe("0");
+  expect(await dashboard.innerText()).not.toMatch(/Brooke Lawson|Lin Wei|TR-260617-019/);
 
   await page.locator('[data-app="settings"]').click();
   await page

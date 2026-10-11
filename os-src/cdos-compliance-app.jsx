@@ -7,13 +7,25 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
   const C = window.CDOS._compliance;
-  const { REGIMES, getRegime, sanctionsListShips, screeningNote, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
+  const { REGIMES, getRegime, screeningNote, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const SUBKEY = 'cdos_submissions_v1';
   const HKEY = 'cdos_report_history_v1';
   const loadSubs = () => { try { return JSON.parse(localStorage.getItem(SUBKEY) || '{}') || {}; } catch (e) { return {}; } };
-  const loadTransfers = () => { try { return JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || []; } catch (e) { return []; } };
+  /* Demonstration wires (t1–t4) live in the same store as a transfer the
+     desk actually created. Filings, aggregation and the header count read
+     through here, so the sample never becomes a report. */
+  const loadTransfers = () => {
+    let all = [];
+    try { all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || []; } catch (e) { return []; }
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookTransfers;
+    return book ? book(all) : all;
+  };
+  const bookBeneficiaries = (list) => {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : (list || []);
+  };
 
   /* ===================== WHERE A FILED REPORT LIVES =====================
      On the ledger. `cdos_submissions_v1` is a cache of it.
@@ -195,7 +207,7 @@
       if (line != null && cad >= line) out.push({ id: 'E-' + t.ref, groupId: 'E-' + t.ref, kind: regime.wireCode, subject: t.senderName, amount: cad, detail: `Cross-border to ${t.corridor} · ${t.partner}`, date: t.date, refs: [t.ref] });
     });
     // EFTR 24h aggregates (wires) — same engine, different trigger
-    aggClustersEFT(transfers, beneficiaries, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-transfer ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
+    aggClustersEFT(transfers, bookBeneficiaries(beneficiaries), regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-transfer ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     return out.map(r => annotateCoverage({ ...r, reportRef: reportRefFor(r.kind, r.id) }, subs));
   }
   /* Which of this obligation's transactions a prior filing already covered.
@@ -262,7 +274,7 @@
   /* ===================== AGGREGATION (24h rule) ===================== */
   function Aggregation({ rows, settings, subs, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
     const regime = getRegime(settings);
-    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), beneficiaries, regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -792,17 +804,14 @@
         });
     };
 
-    /* No list, no hit count. A zero here used to read as "all clear".
-       Filings still use `philippines` and are not part of this flag. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    const listShips = sanctionsListShips(packNow);
-    const screenFlagged = 0;
+    /* No list, so the Screening tile is words and the tab has no badge.
+       A number here, including zero, used to read as a hit count. */
     const philippines = regime.id === 'pack-ph-v1';
-    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
+    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
@@ -814,8 +823,8 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="cd-tile-frame"><div className="cd-honest-tiles mt-3">
-          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], listShips ? ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag, true] : ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
-            <button key={l} data-testid={l === 'Screening' && !listShips ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
+          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
+            <button key={l} data-testid={l === 'Screening' ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
               <div className="font-bold" style={{ color: col, fontVariantNumeric: 'tabular-nums', fontSize: numeric ? 24 : 15, lineHeight: 1.15 }}>{v}</div>

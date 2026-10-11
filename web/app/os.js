@@ -11906,8 +11906,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const P = window.CDOS,
         comp = P._compliance;
       const transfers = J('cdos_transfers_v1', []),
-        cheques = J('cdos_cheques_v1', []),
-        beneficiaries = J('cdos_beneficiaries_v1', []);
+        cheques = J('cdos_cheques_v1', []);
+      /* The Transfers card may still show its demonstration pipeline.
+         The compliance count on this card must not: those wires are not
+         reports the desk owes. */
+      const filedTransfers = P._transfers && P._transfers.bookTransfers ? P._transfers.bookTransfers(transfers) : transfers;
       const tInProg = transfers.filter(t => t.status !== 'paid' && t.status !== 'cancelled').length;
       const tHold = transfers.filter(t => t.status === 'hold').length;
       const tVol = transfers.filter(t => t.status !== 'cancelled').reduce((s, t) => s + (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0), 0);
@@ -11926,23 +11929,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          from the jurisdiction pack the server states — never the hardcoded
          10,000 Canadian dollars this file used to inherit. */
       const limit = P.reportingLimit(settings);
-      const packNow = P.deskPack ? P.deskPack() : null;
-      const listShips = comp && comp.sanctionsListShips ? comp.sanctionsListShips(packNow) : false;
-      /* A missing list is not zero hits. Zero would paint the tile green. */
-      let sanc = null;
-      if (comp && listShips) {
-        sanc = 0;
-        Object.keys(clients || {}).forEach(n => {
-          if (comp.screen(n).status !== 'clear') sanc++;
-        });
-        beneficiaries.forEach(b => {
-          if (comp.screen(b.name).status !== 'clear') sanc++;
-        });
-      }
       const agg = comp ? comp.aggClusters(rows, Object.assign({}, regime, limit.amount != null ? {
         threshold: limit.amount
       } : null)).length : 0;
-      const eftr = limit.amount == null ? null : transfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
+      const eftr = limit.amount == null ? null : filedTransfers.filter(t => t.status !== 'cancelled' && (t.direction === 'send' ? t.payAmt : homeOf(t.recvAmt, homeCcy()) || 0) >= limit.amount).length;
       return {
         tInProg,
         tHold,
@@ -11952,8 +11942,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         chLoss,
         vaultTotals,
         vaultTracked,
-        sanc,
-        listShips,
         agg,
         eftr,
         regime,
@@ -12671,9 +12659,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', X.listShips ? X.sanc : 'Not connected', X.listShips ? X.sanc > 0 ? T.oxblood : T.green : T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Sanctions', 'Not connected', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
-      "data-testid": l === 'Sanctions' && !X.listShips ? 'dashboard-sanctions-tile' : undefined,
+      "data-testid": l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined,
       onClick: () => onOpenApp && onOpenApp('compliance'),
       className: "text-left",
       style: {
@@ -23470,6 +23458,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, 400);
   }
 
+  /* Sample beneficiaries (Maria Carter, Rohan Miller, Lin Wei) share the
+     store with people a teller actually added. A client file lists only
+     the latter. */
+  function bookBeneficiaries(list) {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : list || [];
+  }
+
   /* ---------- QUICK CARD (single click) ---------- */
   function QuickCard({
     name,
@@ -23490,7 +23486,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const st = clientStats(rows, name);
     const [stat, col, bg] = kycStatus(rec, settings, name);
     const corp = rec.kind === 'corporate';
-    const myBens = (beneficiaries || []).filter(b => b.sender === name);
+    const myBens = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -23763,7 +23759,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     const Tx = window.CDOS._transfers || {};
     const [edit, setEdit] = useState(null); // 'new' | beneficiary object
-    const mine = (beneficiaries || []).filter(b => b.sender === name);
+    const mine = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     const corOf = id => (corridors || []).find(c => c.id === id) || {};
     const first = (name || '').split(/\s+/)[0];
     const save = b => {
@@ -36037,6 +36033,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return def();
     }
   };
+  /* The four wires and three beneficiaries above are a demonstration
+     pipeline for the Transfers desk. A real transfer id is `t` plus
+     Date.now(), and a real beneficiary id is `b` plus Date.now(), so
+     these exact ids are only the sample. Compliance must not file them
+     or list them as people a customer sends money to — the same rule as
+     the demonstration cheques on a ledger desk. */
+  const DEMONSTRATION_TRANSFER_IDS = {
+    t1: 1,
+    t2: 1,
+    t3: 1,
+    t4: 1
+  };
+  const DEMONSTRATION_BENEFICIARY_IDS = {
+    b1: 1,
+    b2: 1,
+    b3: 1
+  };
+  const bookTransfers = list => (list || []).filter(t => t && !DEMONSTRATION_TRANSFER_IDS[t.id]);
+  const bookBeneficiaries = list => (list || []).filter(b => b && !DEMONSTRATION_BENEFICIARY_IDS[b.id]);
 
   /* ===================== shared atoms ===================== */
   const inputSty = {
@@ -37476,6 +37491,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       CKEY,
       TKEY,
       load,
+      bookTransfers,
+      bookBeneficiaries,
       FLOW,
       STATUS,
       statusLabel,
@@ -42992,7 +43009,6 @@ ${(filing.map || []).map(blockHTML).join('')}
   const {
     REGIMES,
     getRegime,
-    sanctionsListShips,
     screeningNote,
     aggClusters,
     aggClustersEFT,
@@ -43015,12 +43031,22 @@ ${(filing.map || []).map(blockHTML).join('')}
       return {};
     }
   };
+  /* Demonstration wires (t1–t4) live in the same store as a transfer the
+     desk actually created. Filings, aggregation and the header count read
+     through here, so the sample never becomes a report. */
   const loadTransfers = () => {
+    let all = [];
     try {
-      return JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
+      all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
     } catch (e) {
       return [];
     }
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookTransfers;
+    return book ? book(all) : all;
+  };
+  const bookBeneficiaries = list => {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : list || [];
   };
 
   /* ===================== WHERE A FILED REPORT LIVES =====================
@@ -43280,7 +43306,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
     });
     // EFTR 24h aggregates (wires) — same engine, different trigger
-    aggClustersEFT(transfers, beneficiaries, regime, settings).forEach(c => out.push({
+    aggClustersEFT(transfers, bookBeneficiaries(beneficiaries), regime, settings).forEach(c => out.push({
       id: c.id,
       groupId: c.groupId,
       kind: c.kind,
@@ -43398,7 +43424,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     onOpenTransfers
   }) {
     const regime = getRegime(settings);
-    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), beneficiaries, regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -45140,13 +45166,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
     };
 
-    /* No list, no hit count. A zero here used to read as "all clear".
-       Filings still use `philippines` and are not part of this flag. */
-    const packNow = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
-    const listShips = sanctionsListShips(packNow);
-    const screenFlagged = 0;
+    /* No list, so the Screening tile is words and the tab has no badge.
+       A number here, including zero, used to read as a hit count. */
     const philippines = regime.id === 'pack-ph-v1';
-    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), beneficiaries, regime, settings).length, [rows, settings, beneficiaries]);
+    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries]);
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
     const strN = useMemo(() => {
       const flags = computeFlags(rows, clients, settings);
@@ -45157,7 +45180,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
-    const TABS = [['screening', 'Screening', 'shield', listShips ? screenFlagged : 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
+    const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -45200,12 +45223,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "cd-tile-frame"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-honest-tiles mt-3"
-    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], listShips ? ['Screening', screenFlagged, 'Sanctions hits', 'screening', CD.flag, true] : ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
+    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
       const bad = numeric && v > 0;
       const col = numeric ? bad ? warn : CD.green : CD.mute;
       return /*#__PURE__*/React.createElement("button", {
         key: l,
-        "data-testid": l === 'Screening' && !listShips ? 'sanctions-screening-tile' : undefined,
+        "data-testid": l === 'Screening' ? 'sanctions-screening-tile' : undefined,
         onClick: () => setTab(go),
         className: "text-left px-3 py-2.5",
         style: {
@@ -45524,6 +45547,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     } catch (e) {}
     listeners.forEach(l => l());
   };
+  /* Every check this key has ever held was written here, and this file
+     has never sent one to a provider. Leaving them on screen shows a
+     verification, an ID read, or a sanctions result that did not happen. */
+  if (STORE && Object.keys(STORE).length) {
+    STORE = {};
+    persist();
+  }
   const useStore = () => {
     const [, force] = useState(0);
     useEffect(() => {
@@ -45581,10 +45611,12 @@ ${(filing.map || []).map(blockHTML).join('')}
   function resolve(check) {
     const t = tmpl(check.template);
     const sc = screenOf(check.subject);
-    let decision = 'approved',
-      database = t.db ? 'clear' : 'n/a',
-      pep = 'None found';
-    /* "clear" would say a list was checked. unavailable means it was not. */
+    let decision = 'not_run',
+      database = t.db ? 'not checked' : 'n/a',
+      pep = 'Not checked';
+    /* "clear" would say a list was checked. unavailable means it was not.
+       An address, a date of birth, or a document number is not invented
+       from the name. Persona is not connected, so nothing is read off an ID. */
     if (t.db) {
       if (sc.status === 'hit') {
         decision = 'review';
@@ -45594,20 +45626,19 @@ ${(filing.map || []).map(blockHTML).join('')}
         decision = 'review';
         database = 'possible';
         pep = 'Possible PEP / adverse media';
-      } else if (sc.status !== 'clear') {
-        database = 'not checked';
-        pep = 'Not checked';
+      } else if (sc.status === 'clear') {
+        decision = 'approved';
+        database = 'clear';
+        pep = 'None found';
       }
     }
     return {
       decision,
       sanctionsChecked: sc.status === 'clear' || sc.status === 'hit' || sc.status === 'review',
-      // the provider reads these off the ID and returns them so we can complete the contact.
-      // On a records match we already hold the ID, so nothing new is extracted.
-      extracted: t.idv && !check.matchedOnFile ? extractIdentity(check.subject) : null,
-      idCheck: t.idv ? 'pass' : 'n/a',
+      extracted: null,
+      idCheck: 'not checked',
       matchedOnFile: !!check.matchedOnFile,
-      biometric: t.bio ? 'pass' : 'n/a',
+      biometric: 'not checked',
       database,
       pep,
       watchlist: (sc.hits || []).slice(0, 3).map(h => ({
@@ -45616,7 +45647,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         program: h.w.program,
         score: Math.round(h.score * 100)
       })),
-      reportRef: 'PSA-' + refHash(check.id + check.requestedAt),
+      reportRef: decision === 'not_run' ? '' : 'PSA-' + refHash(check.id + check.requestedAt),
       completedAt: stampNow()
     };
   }
@@ -45625,6 +45656,11 @@ ${(filing.map || []).map(blockHTML).join('')}
     c: CD.green,
     bg: CD.greenSoft,
     icon: 'checkcircle'
+  } : d === 'not_run' ? {
+    label: 'Not connected',
+    c: CD.mute,
+    bg: CD.lineSoft,
+    icon: 'shield'
   } : d === 'declined' ? {
     label: 'Declined',
     c: CD.flag,
@@ -45652,6 +45688,8 @@ ${(filing.map || []).map(blockHTML).join('')}
   function logToHistory(check) {
     try {
       const r = check.result;
+      /* A check that did not run is not a KYC record. */
+      if (!r || r.decision === 'not_run') return;
       const dm = decisionMeta(r.decision);
       let hist = [];
       try {
@@ -45692,13 +45730,11 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
   function reconcile() {
     let changed = false;
-    const now = Date.now();
     Object.values(STORE).forEach(c => {
-      if (c.status === 'processing' && now >= c.dueMs) {
-        c.status = 'completed';
-        c.result = resolve(c);
-        logToHistory(c);
-        if (contactSink && c.result.extracted) contactSink(c.subject, c.result.extracted, c.result.completedAt);
+      /* An in-flight check was never sent. Completing it would invent a
+         result and write it onto the client. Drop it. */
+      if (c.status === 'processing') {
+        delete STORE[c.id];
         changed = true;
       }
     });
@@ -45746,42 +45782,25 @@ ${(filing.map || []).map(blockHTML).join('')}
     contact,
     by
   }) {
-    const now = Date.now();
-    const id = 'kyc_' + now.toString(36) + Math.random().toString(36).slice(2, 5);
     const t = tmpl(template);
-    // smart skip: a "Verify" on someone we already hold a verified ID for clears instantly
-    // with no provider inquiry — the margin is ours. Presented as an ordinary verification.
-    const matchedOnFile = !!(t.smart && onFileVerified(subject));
-    const ch = matchedOnFile ? 'instant' : channel || t.channel;
-    const check = {
-      id,
+    /* Persona is not connected. Storing a check would let a later paint
+       read it as a verification that happened. Nothing is written. */
+    return {
+      id: null,
       subject,
       kind: kind || 'individual',
       template,
       templateLabel: t.label,
-      price: net(t.price),
-      channel: ch,
-      contact: contact || (matchedOnFile ? {
-        via: 'instant'
-      } : {}),
+      price: 0,
+      channel: channel || 'none',
+      contact: contact || {},
       by: by || 'Desk',
       requestedAt: stampNow(),
-      ms: now,
-      dueMs: now + (DURATION[ch] || 8000),
-      matchedOnFile,
-      status: matchedOnFile ? 'completed' : 'processing',
-      result: null
+      ms: Date.now(),
+      status: 'not_connected',
+      result: null,
+      notConnected: true
     };
-    if (matchedOnFile) {
-      check.result = resolve(check);
-      logToHistory(check);
-    }
-    STORE = {
-      ...STORE,
-      [id]: check
-    };
-    persist();
-    return check;
   }
   const checksFor = name => Object.values(STORE).filter(c => c.subject === name).sort((a, b) => b.ms - a.ms);
   function summary() {
@@ -46423,7 +46442,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 11,
       c: CD.mute
-    }), " Encrypted \xB7 logged & audit-ready \xB7 billed to your account")), /*#__PURE__*/React.createElement("button", {
+    }), " Persona is not connected yet. No check is sent.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -46495,7 +46514,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       c: "var(--cd-on-ink)"
     }), " ", del.label))) :
     /*#__PURE__*/
-    /* SENT confirmation */
+    /* Nothing was sent. The button used to claim a check was running. */
     React.createElement("div", {
       className: "px-6 py-8 text-center"
     }, /*#__PURE__*/React.createElement("span", {
@@ -46504,44 +46523,28 @@ ${(filing.map || []).map(blockHTML).join('')}
         width: 54,
         height: 54,
         borderRadius: '50%',
-        background: CD.greenSoft
+        background: CD.lineSoft
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: "check",
+      n: "shield",
       s: 26,
-      c: CD.green
+      c: CD.mute
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[16px] font-semibold",
       style: {
         color: CD.ink
       }
-    }, sent.channel === 'instant' ? 'Verification started' : 'Verification link sent'), /*#__PURE__*/React.createElement("div", {
+    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
         maxWidth: 360
       }
-    }, sent.channel === 'instant' ? /*#__PURE__*/React.createElement(React.Fragment, null, "Database screening for ", /*#__PURE__*/React.createElement("b", {
+    }, "No check was sent for ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, subject), " is running now \u2014 a result lands in moments.") : /*#__PURE__*/React.createElement(React.Fragment, null, "A secure ", sent.contact.via === 'email' ? 'email' : 'text', " went to ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, sent.contact.email || sent.contact.phone), ". You'll see the result here the moment ", subject, " completes it.")), /*#__PURE__*/React.createElement("div", {
-      className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 999,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 13,
-      c: CD.mute
-    }), " ", tmpl(sent.template).label, " \xB7 ", money(sent.price), " billed"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    }, subject), ". Nothing was read off an ID, nothing was screened, and nothing was charged."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "mt-5 px-5 py-2.5 text-sm font-semibold text-white",
       style: {
@@ -47118,43 +47121,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       if (onDone) onDone(nm);
       onClose();
     };
-    // create the contact, fire the chosen verification, then watch it complete
+    /* The choose step's button used to start a check, wait, and then write
+       an invented address and ID number onto the contact as "Pulled from
+       the ID". Persona is not connected, so the contact is saved and that
+       is all. */
     const startCheck = () => {
-      const nm = name.trim();
-      if (!nm) return;
-      const del = deliveryFor({
-        tplId,
-        mode,
-        via,
-        email,
-        phone,
-        hasId: !!photo,
-        subject: nm
-      });
-      if (del.missing) return;
-      if (setClients) setClients(c => ({
-        ...c,
-        [nm]: {
-          ...(c[nm] || {}),
-          kind,
-          phone: phone.trim(),
-          email: email.trim() || c[nm] && c[nm].email || '',
-          photo: photo || c[nm] && c[nm].photo || null,
-          risk: c[nm] && c[nm].risk || houseRisk(),
-          createdAt: c[nm] && c[nm].createdAt || new Date().toISOString().slice(0, 10)
-        }
-      }));
-      publishContact(nm);
-      const chk = createCheck({
-        subject: nm,
-        kind,
-        template: tplId,
-        channel: del.channel,
-        contact: del.contact,
-        by
-      });
-      setCheckId(chk.id);
-      setStep('verifying');
+      saveManual();
     };
 
     // when the verification finishes, fold the extracted identity into the contact
@@ -47583,7 +47555,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 12,
       c: CD.faint
-    }), " Pulled from the ID"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
+    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       className: "flex items-center justify-between py-1.5 text-[12.5px]",
       style: {

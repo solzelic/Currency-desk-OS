@@ -138,11 +138,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 - **Sanctions screening is not connected.** The Compliance screen
   used to match client names against a sample of ten fictional
   names and present the result as OFAC, UN and OSFI screening. That
-  list is gone. The screen says screening is not connected and that
-  the owner checks their government's official lists. Settings shows
-  that same sentence. The dashboard tile says not connected, and it
-  does not show a count. A hit count of zero is not shown, because
-  zero would read as "all clear".
+  list is gone. The Screening tab says screening is not connected
+  and that the owner checks their government's official lists.
+  Settings shows that same sentence. The Compliance header tile and
+  the dashboard tile say not connected, and neither shows a count.
+  A hit count of zero is not shown, because zero would read as
+  "all clear". The built bundle Render serves has no hits count
+  and no "screened against OFAC, UN and OSFI" sentence. The sample
+  wires (t1–t4, including the $14,200 transfer) are not filings,
+  aggregates, or a cross-border report on the compliance surfaces.
+  The sample beneficiaries are not listed on a client file. Saving
+  a contact does not mark it verified and does not invent an
+  address or an ID number. The client file does not say a Persona
+  check is running. Settings billing does not show a check count
+  or a charge.
+  The Texts journey does not say an identity check was sent. Persona
+  is not connected.
   `sanctionsListShips()` stays false for the Philippines
   (`pack-ph-v1`), Singapore (`pack-sg-v1`) and Hong Kong
   (`pack-hk-v1`), and it is false for every other pack as well.
@@ -477,14 +488,20 @@ again. Migration 039. A book that already holds two live copies still
 boots: the older copy stays held and is left out of the unique index
 (`paper_guard` false). The newest copy is the row the index watches.
 
-**2026-10-09**, sanctions screening. The sample watchlist is not shown.
-The Compliance screen and Settings say screening is not connected.
-The dashboard tile says not connected and does not show a count.
-Philippines, Singapore and Hong Kong stay false
-in `sanctionsListShips()`, and so does every other pack. The
-Philippines line still states the owner's duty: the UNSC Consolidated
-List and the ATC list, freeze without delay, tell the AMLC the same
-day, and file an STR.
+**2026-10-11**, Sanctions screening. The sample watchlist is not shown.
+The Compliance screen, the header tile, Settings, and the dashboard
+tile say screening is not connected. The tiles do not show a count.
+The built `web/app/os.js` bundle is what Render serves, and it does
+not contain a hits count. Demonstration wires are not counted as
+filings. The client file does not offer a Persona check, does not
+list the sample beneficiaries, and does not fill in an invented ID.
+Settings billing
+says nothing was charged. The Texts journey does not say a check was
+sent. Philippines, Singapore
+and Hong Kong stay false in `sanctionsListShips()`, and so does every
+other pack. The Philippines line still states the owner's duty: the
+UNSC Consolidated List and the ATC list, freeze without delay, tell
+the AMLC the same day, and file an STR.
 
 **2026-10-07**, Tagged screen. Opening it threw `deskFacts is not defined`
 because the follow-up list named that version number without

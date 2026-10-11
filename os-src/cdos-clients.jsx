@@ -734,12 +734,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     setTimeout(() => { w.focus(); w.print(); }, 400);
   }
 
+  /* Sample beneficiaries (Maria Carter, Rohan Miller, Lin Wei) share the
+     store with people a teller actually added. A client file lists only
+     the latter. */
+  function bookBeneficiaries(list) {
+    const book = window.CDOS._transfers && window.CDOS._transfers.bookBeneficiaries;
+    return book ? book(list) : (list || []);
+  }
+
   /* ---------- QUICK CARD (single click) ---------- */
   function QuickCard({ name, rec, rows, flags, settings, me, canEdit, beneficiaries, corridors, setField, onUpload, onExpand, onOpenLedger, onClose }) {
     const st = clientStats(rows, name);
     const [stat, col, bg] = kycStatus(rec, settings, name);
     const corp = rec.kind === 'corporate';
-    const myBens = (beneficiaries || []).filter(b => b.sender === name);
+    const myBens = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} onDoubleClick={onExpand} className="w-full" style={{ maxWidth: 420, background: CD.panel, borderRadius: 16, boxShadow: '0 24px 60px -16px var(--cd-scrim)', overflow: 'hidden' }}>
         <div className="p-5" style={{ background: 'var(--cd-paper-soft)', borderBottom: `1px solid ${CD.line}` }}>
@@ -784,7 +792,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   function ClientBeneficiaries({ name, beneficiaries, setBeneficiaries, corridors, canEdit, log }) {
     const Tx = window.CDOS._transfers || {};
     const [edit, setEdit] = useState(null);   // 'new' | beneficiary object
-    const mine = (beneficiaries || []).filter(b => b.sender === name);
+    const mine = bookBeneficiaries(beneficiaries).filter(b => b.sender === name);
     const corOf = (id) => (corridors || []).find(c => c.id === id) || {};
     const first = (name || '').split(/\s+/)[0];
     const save = (b) => { setBeneficiaries(list => { const ex = list.find(x => x.id === b.id); return ex ? list.map(x => x.id === b.id ? b : x) : [b, ...list]; }); setEdit(null); log && log('Beneficiary saved', `${b.name} · for ${name}`); };
