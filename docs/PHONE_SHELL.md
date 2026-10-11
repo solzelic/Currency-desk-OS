@@ -591,7 +591,7 @@ the on-device log, not `ledger_audit_events`. Newest first, grouped
 Today / Yesterday / `Jun 18, 2026`. Chips: All, Deals, Cash, Sign-ins,
 Settings, Staff, matched from the action words already on the log.
 Each row's title is the action, full width. The subtitle is the time
-and the person (`3:02 pm · A. Singh`). A sign-in reads "A. Singh
+and the person (`3:02 PM · A. Singh`). A sign-in reads "A. Singh
 signed in", using the person named in the row, not a separate "By"
 column. Search matches the plain name, the detail, the person, and
 any reference. A dotted internal code is shown as plain words

@@ -149,8 +149,8 @@ test("audit trail lists and searches at 360 and 390", async ({ page }) => {
     await expect(trail.getByText("Signed in as")).toHaveCount(0);
     await expect(trail.getByText("2026-06-18")).toHaveCount(0);
     await expect(trail.getByText("Jun 18, 2026")).toBeVisible();
-    await expect(trail.locator(".phone-row").first()).toContainText(/\d{1,2}:\d{2} (am|pm)/);
-    await expect(trail).not.toContainText(" PM");
+    await expect(trail.locator(".phone-row").first()).toContainText(/\d{1,2}:\d{2} (AM|PM)/);
+    await expect(trail).not.toContainText(" pm");
     await expect(trail).not.toContainText(" p.m.");
     await shot(page, `longtail_audit_${width}`);
     await trail.getByLabel("Find an action, name or number").fill("Costa");

@@ -206,9 +206,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the caption says the list is actions on this device. It reads the
   on-device log, not `ledger_audit_events`. The desktop audit reads
   that same log. Amounts on that screen carry the currency code.
-  Times on the phone use `formatPhoneTime` (`3:02 pm`) from
-  `os-src/phone/format.js`. That file is not part of the phone shell.
-  The foundation takes it over. There is no "Example data" tag. A
+  Times on the phone use `formatPhoneTime` (`3:02 PM`) from
+  `os-src/phone/format.js`. The suffix is uppercase. There is no
+  "Example data" tag. A
   primary button uses `var(--brand-primary)` from `data-app`. Vault,
   Audit trail, and Calculator's locked accent is ink. Body text uses
   the `tokens.css` font stack. Inter loads only at 430px. Vault's
@@ -692,7 +692,7 @@ removed. The next Actions run writes the frozen ones.
 
 **2026-10-11**, phone formatters. `formatPhoneTime`, `formatPhoneDate`,
 and `formatPhoneMoney` live in `os-src/phone/format.js`. A clock is
-12-hour with a lowercase suffix (`3:02 pm`). A calendar day is
+12-hour with an uppercase suffix (`3:02 PM`). A calendar day is
 `Jun 18, 2026` and is read from the `YYYY-MM-DD` string, so it does
 not move through UTC. An instant is shown in the branch time zone.
 The default zone is `America/Toronto`.
