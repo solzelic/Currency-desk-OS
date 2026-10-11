@@ -457,8 +457,8 @@ const BRIDGE = `<script>
         /* THE LINK OPENS AT THE BEGINNING, NOT WHERE THEY STOPPED.
 
            s.at is the screen they last saved on, and restoring it meant
-           the button in the invitation — "Set up your desk, takes about
-           ten minutes" — dropped somebody straight onto "Confirm your
+           the button in the invitation, "Set up your desk", dropped
+           somebody straight onto "Confirm your
            email" with no idea how they got there and nothing they could
            check. An email that promises a beginning has to open on one.
 
@@ -610,7 +610,7 @@ patch(
   "cdIdHint: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
   "        if (s === 'ok') return 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
   "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
-  "        if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and try again \\u2014 your ID is probably fine.';\n" +
+  "        if (s === 'slow') return 'Too many tries from this connection. Wait, then try again. Your ID is probably fine.';\n" +
   "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +
   "        return 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.'; })(),",
 );
@@ -803,7 +803,7 @@ patch(
 patch(
   "the browser-only promo message — it claimed a three-month offer was applied",
   "R.promoMsg = pOk ? ('\\u2713 ' + pCode + ' applied — your first three months are on us.') : 'That code isn\\u2019t recognised. Check the invite email we sent you.';",
-  "R.promoMsg = 'Offers are applied securely at Stripe Checkout.';",
+  "R.promoMsg = 'Stripe checkout is not connected yet.';",
 );
 
 /* ------------------------------------------------------------------

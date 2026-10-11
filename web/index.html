@@ -537,7 +537,7 @@
         <div style="position: relative;">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Apply for early access</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.02em; margin: 13px 0 0;">Become a Founding Operator.</h2>
-          <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.9); margin: 16px 0 0; max-width: 450px;">Reserve your workspace, lock founding pricing, and get your charter card. Ninety seconds — no card, no commitment.</p>
+          <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.9); margin: 16px 0 0; max-width: 450px;">Reserve your workspace, lock founding pricing, and get your charter card. No card, no commitment.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px;">
             <a href="/signup" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
             <div style="font-family: var(--m); font-size: 11px; color: rgba(255,255,255,0.82);">Early access is open</div>
@@ -1071,7 +1071,7 @@ class Component extends DCLogic {
     return [
       { q:'Is CurrencyDesk live yet?', a:'Yes, in Canada. Canada is the only country live. We are onboarding the first desks now. FINTRAC\'s rulebook is listed. Early access is open to the first hundred desks, which is why the price you lock now is the price you keep.' },
       { q:'What do I need to run it?', a:'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter — your note counter and printer keep working exactly as they do now.' },
-      { q:'How long until my desk is running?', a:'Rates and your public board can be live the same afternoon. A full desk, with the ledger, clients and compliance, usually takes about a week, and we do it with you rather than handing you a manual. History is entered by hand. There is no import.' },
+      { q:'How long until my desk is running?', a:'We are onboarding the first desks now, so this has not been timed. We set the desk up with you, including the ledger, clients and compliance. History is entered by hand. There is no import.' },
       { q:'Does it change how a deal is done?', a:'The order stays exactly as it is — quote, count, hand over, record. The desk replaces the writing-down part, and does it while the customer is still at the window.' },
       { q:'What does it cost?', a:'Rates is $299 a month, Full System $599, and the AI Bundle $749. Annual billing saves ten percent, and founding members keep that rate for the life of the account.' },
       { q:'When will you support my country?', a:'Serbia is not live. A pack is drafted. Exchange identification is 5,000 EUR or more, and a transfer over 1,000 EUR, when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. The rulebooks still being mapped are dated: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC.' }
@@ -1347,7 +1347,7 @@ class Component extends DCLogic {
       ],
       steps: [
         { n: '1', icon: this.ic('board', 22), title: 'Set your rates', body: 'Pull live market rates, add your spread, and your buy/sell board builds itself.', wrap: stepWrap },
-        { n: '2', icon: this.ic('till', 22), title: 'Trade at the till', body: 'Serve a customer in seconds. The desk logs the deal, updates the float and flags ID when the law needs it.', wrap: stepWrap },
+        { n: '2', icon: this.ic('till', 22), title: 'Trade at the till', body: 'The desk logs the deal, updates the float and flags ID when the law needs it.', wrap: stepWrap },
         { n: '3', icon: this.ic('globe', 22), title: 'Publish everywhere', body: 'One tap pushes your board to your website and window — always current, never touched twice.', wrap: stepWrap }
       ],
       jurCountry: J.title,

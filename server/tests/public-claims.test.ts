@@ -149,4 +149,69 @@ describe("public marketing claims", () => {
     expect(result.ok).toBe(false);
     expect(result.out).toMatch(/best protection/);
   });
+
+  it("flags in seconds, including a zero-width split", () => {
+    const result = probe("serve a customer in&#8203;seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in seconds/);
+  });
+
+  it("flags in N seconds, including a soft hyphen", () => {
+    const result = probe("done in 4&shy;seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N seconds/);
+  });
+
+  it("flags in N minutes, including a soft hyphen", () => {
+    const result = probe("ready in 4&shy;minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N minutes/);
+  });
+
+  it("flags a minutes duration, including a zero-width split", () => {
+    const result = probe("wait 15&#8203;minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/minutes/);
+  });
+
+  it("flags a few minutes", () => {
+    const result = probe("within a few minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/minutes/);
+  });
+
+  it("flags N seconds, including a written number", () => {
+    const result = probe("ninety seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N seconds/);
+  });
+
+  it("flags same afternoon, including a zero-width split", () => {
+    const result = probe("live the same&#8203;afternoon");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same afternoon/);
+  });
+
+  it("flags same day, including a dotted split", () => {
+    const result = probe("usually the s.a.m.e day");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same day/);
+  });
+
+  it("flags about a week, including a soft hyphen", () => {
+    const result = probe("about a&shy;week");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/about a week/);
+  });
+
+  it("flags within a week, including an entity split", () => {
+    const result = probe("within&#8203;a week");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/within a week/);
+  });
+
+  it("allows the moment a deal is written and an untimed launch", () => {
+    const result = probe("the second it happens. a second shop. an on-site launch week. We have not timed it.");
+    expect(result.ok).toBe(true);
+  });
 });

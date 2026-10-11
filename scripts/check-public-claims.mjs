@@ -5,7 +5,9 @@
    a non-breaking space cannot hide a phrase. A soft hyphen or a
    zero-width character is read twice: deleted, so it cannot split a
    word, and replaced with a space, so it cannot hide a gap. A phrase
-   on either reading fails. */
+   on either reading fails. Timing phrases are included: a visit in
+   seconds, a count of minutes, the same afternoon or day, about a
+   week, or within a week. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +47,15 @@ const phrases = [
   [/\bun list\b/, "UN list"],
   [/united nations list/, "United Nations list"],
   [/best protection/, "best protection"],
+  [/\bin seconds\b/, "in seconds"],
+  [/\bin (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety) seconds?\b/, "in N seconds"],
+  [/\bin (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety) minutes?\b/, "in N minutes"],
+  [/\b(?:\d+|a few|few|several|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety) minutes?\b/, "minutes"],
+  [/\b(?:\d+|two|five|ten|fifteen|twenty|thirty|sixty|ninety) seconds\b/, "N seconds"],
+  [/\bsame afternoon\b/, "same afternoon"],
+  [/\bsame day\b/, "same day"],
+  [/\babout a week\b/, "about a week"],
+  [/\bwithin a week\b/, "within a week"],
 ];
 
 function normalize(html, invisible) {

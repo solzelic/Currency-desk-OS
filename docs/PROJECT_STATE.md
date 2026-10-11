@@ -455,6 +455,17 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, fifth pass. The mobile
+hero rates are labelled Sample. They do not move, and the strip
+does not show a clock or a pulsing dot. The public pages do not
+give a measured time for a visit, a reply, or setting a desk up.
+The claims check rejects "in seconds", "in N seconds", "in N
+minutes", a minutes duration, "N seconds", "same afternoon",
+"same day", "about a week", and "within a week", on both readings
+of a soft hyphen or a zero-width character. Onboarding says
+"Encrypted connection", and that Stripe checkout is not connected
+yet. The mobile copilot card is tagged Planned.
+
 **2026-10-11**, public site claims, fourth pass. The onboarding
 line about a rate board no longer says plenty of shops run on it.
 It says you can run on that alone and add a site whenever you want
