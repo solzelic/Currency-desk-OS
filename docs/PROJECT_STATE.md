@@ -148,13 +148,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   control, the reporting line in plain words, Reportable and Structuring
   cards, and Screening or the 24-hour list. Amounts use formatPhoneMoney,
   so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
-  used. Screening says Not connected and shows no count. Automatic ID
-  checks say not connected and open Clients. Possible split deals are
-  warnings. The desk does not send the report. A failed filings load
-  says Not loaded, with Try again, and does not show a zero. There is
-  no centre plus and no floating New transaction. Wider than 430px, the desk is
-  unchanged: the dots stay 12px, and the module tab bar ends before
-  the store and ID buttons.
+  used. Dates read like Oct 11, 2026, and times are 12-hour. A selected
+  filter chip is gray-900. Only the sticky primary button takes the
+  compliance accent. Each detail reached from the home is a phone list
+  or an empty state. Screening says Not connected and shows no count.
+  Automatic ID checks say not connected and open Clients. Possible split
+  deals are warnings. The desk does not send the report. The filing
+  worksheet is not shown on a phone: that screen says to open it on a
+  computer. A failed filings load says Not loaded, with Try again, and
+  does not show a zero. There is no centre plus and no floating New
+  transaction. Wider than 430px, the desk is unchanged: the dots stay
+  12px, and the module tab bar ends before the store and ID buttons.
 - **New transaction on a phone.** Under 600px the dialog is a
   full-screen sheet, one column. The type names are one scrolling
   row of pills, and the selected pill is in view when the sheet
@@ -715,12 +719,13 @@ in, and the chip row keeps 16px after the last chip with a fade on
 the right.
 
 **2026-10-11**, phone Compliance. At 430px and under, Compliance
-from More uses the shared phone shell. The threshold is
-`formatPhoneMoney`. Screening is Not connected, with no count.
-A failed load says Not loaded and does not show a zero. Try again
-is the one sticky button on that error. Wider than 430px the
-Compliance window is the desktop one. Phone detail views are still
-the desktop panels.
+from More uses the shared phone shell, including each detail reached
+from the home. Amounts use `formatPhoneMoney`. Dates are like
+Oct 11, 2026 and times are 12-hour. A selected filter chip is
+gray-900. Screening is Not connected, with no count. A failed load
+says Not loaded and does not show a zero. The filing worksheet is
+not on the phone. Wider than 430px the Compliance window is the
+desktop one.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

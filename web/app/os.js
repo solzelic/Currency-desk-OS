@@ -46197,6 +46197,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
+    const phoneClusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries, regime]);
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     /* The phone home needs the shared money formatter. Without it this
@@ -46277,6 +46278,9 @@ ${(filing.map || []).map(blockHTML).join('')}
         rows: rows,
         clients: clients,
         settings: settings,
+        beneficiaries: beneficiaries,
+        subs: subs,
+        clusters: phoneClusters,
         reportable: philippines ? 0 : draftN,
         structuring: strN,
         aggregates: aggN,
@@ -46288,6 +46292,8 @@ ${(filing.map || []).map(blockHTML).join('')}
         onOpenClient: onOpenClient,
         pane: phonePane,
         detail: tab,
+        computer: !!worksheet,
+        onCloseComputer: () => setWorksheet(null),
         onOpen: id => {
           if (id === 'missing') {
             setPhonePane('missing');
@@ -46297,7 +46303,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           setPhonePane('detail');
         },
         onBack: () => setPhonePane('home')
-      }, phonePane === 'detail' ? body : null), sheet);
+      }));
     }
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
@@ -63136,6 +63142,8 @@ window.CDOS_PERSIST = (function () {
    - The desk does not file. The owner files in the regulator's portal.
    - Possible split deals are warnings. Nothing here is blocked.
    - A failed load shows "Not loaded", not a stale zero.
+   - Detail views are phone lists. The filing worksheet says to open
+     it on a computer. A selected chip stays gray-900.
    ============================================================ */
 (function () {
   const {
@@ -63215,34 +63223,117 @@ window.CDOS_PERSIST = (function () {
     });
     return out;
   }
-  function clock(date) {
-    if (!date) return null;
-    return date.toLocaleTimeString('en-CA', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+
+  /* Dates read "Oct 11, 2026". Times read "2:05 PM". An ISO day or a
+     24-hour clock never reaches the screen. */
+  function asDate(value) {
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+    const text = String(value || '');
+    if (!text) return null;
+    const day = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (day) return new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+    if (text.indexOf('T') !== -1 || text.indexOf(':') !== -1) {
+      const parsed = new Date(text);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  }
+  function phoneDate(value) {
+    const date = asDate(value);
+    if (!date) return '';
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     });
   }
-  function backButton(label, onClick) {
+  function phoneClock(value) {
+    const date = value instanceof Date ? asDate(value) : null;
+    let hour = null;
+    let minute = null;
+    if (date) {
+      hour = date.getHours();
+      minute = date.getMinutes();
+    } else {
+      const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+      if (!match) return '';
+      hour = Number(match[1]);
+      minute = Number(match[2]);
+      if (hour > 23 || minute > 59) return '';
+    }
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const face = hour % 12 || 12;
+    return face + ':' + (minute < 10 ? '0' : '') + minute + ' ' + suffix;
+  }
+  function windowWords(start, end) {
+    const from = asDate(start);
+    const to = asDate(end);
+    if (!from) return '';
+    const left = phoneDate(from) + ', ' + phoneClock(from);
+    if (!to) return left;
+    const sameDay = from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth() && from.getDate() === to.getDate();
+    const right = sameDay ? phoneClock(to) : phoneDate(to) + ', ' + phoneClock(to);
+    return left + ' to ' + right;
+  }
+  function kindWords(regime, kind) {
+    if (regime && kind && kind === regime.largeCode) return 'Large cash';
+    if (regime && kind && kind === regime.wireCode) return 'Wire';
+    if (regime && kind && kind === regime.strCode) return 'Suspicious activity';
+    return 'Report';
+  }
+  function backControl(label, onClick) {
+    const Ic = window.CDOS.Ic;
     return /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: onClick,
-      style: {
-        minHeight: 44,
-        padding: 0,
-        border: 0,
-        background: 'transparent',
-        color: '#6B2E54',
-        fontWeight: 600,
-        fontSize: 13
-      }
-    }, label);
+      className: "cph-back",
+      onClick: onClick
+    }, Ic ? /*#__PURE__*/React.createElement(Ic, {
+      n: "arrowleft",
+      s: 18
+    }) : null, /*#__PURE__*/React.createElement("span", null, label));
+  }
+  function splitCases(rows, clients, settings) {
+    const flags = window.CDOS.computeFlags(rows, clients, settings);
+    const cashIn = window.CDOS._compliance && window.CDOS._compliance.cashIn;
+    const grouped = new Map();
+    (rows || []).forEach(row => {
+      const flag = flags[row.id];
+      if (!flag || flag.void || !flag.str) return;
+      const item = grouped.get(row.customer) || {
+        customer: row.customer,
+        txs: [],
+        lastDate: ''
+      };
+      item.txs.push(row);
+      if ((row.date || '') > item.lastDate) item.lastDate = row.date || '';
+      grouped.set(row.customer, item);
+    });
+    return [...grouped.values()].map(item => {
+      let sum = 0;
+      let seen = false;
+      item.txs.forEach(row => {
+        const amount = cashIn ? cashIn(row) : null;
+        if (typeof amount === 'number' && isFinite(amount)) {
+          sum += amount;
+          seen = true;
+        }
+      });
+      return {
+        customer: item.customer,
+        txs: item.txs,
+        lastDate: item.lastDate,
+        sum: seen ? sum : null
+      };
+    });
   }
   function PhoneCompliance({
     regime,
     rows,
     clients,
     settings,
+    beneficiaries,
+    subs,
+    clusters,
     reportable,
     structuring,
     aggregates,
@@ -63256,19 +63347,36 @@ window.CDOS_PERSIST = (function () {
     detail,
     onOpen,
     onBack,
-    children
+    computer,
+    onCloseComputer
   }) {
     const Phone = window.CDOS.Phone;
     const [section, setSection] = useState('screening');
+    const [drill, setDrill] = useState(null);
+    const [form, setForm] = useState(false);
+    useEffect(() => {
+      setDrill(null);
+      setForm(false);
+    }, [pane, detail]);
     const people = useMemo(() => missingId(rows, clients, settings), [rows, clients, settings]);
+    const splits = useMemo(() => splitCases(rows, clients, settings), [rows, clients, settings]);
+    const reportables = useMemo(() => {
+      const build = window.CDOS.computeReportables;
+      if (typeof build !== 'function') return [];
+      return build(rows, clients, settings, beneficiaries, subs) || [];
+    }, [rows, clients, settings, beneficiaries, subs]);
     const summed = regime && regime.aggregate !== false && regime.windowKind !== 'banking_day' && regime.windowKind !== 'calendar_month';
     const ready = countsState === 'ready';
     const failed = countsState === 'error';
     const loading = countsState === 'loading';
     const empty = ready && !reportable && !structuring && !people.length && (!summed || !aggregates);
+    const philippines = regime && regime.id === 'pack-ph-v1';
+    const showComputer = form || !!computer;
     const sub = regime && regime.threshold != null && regime.currency ? officeLine(regime) + ' · Reporting threshold ' + phoneMoney(regime.threshold, regime.currency) : officeLine(regime) + ' · No large-cash amount is set on this pack.';
     const notConnected = window.CDOS._compliance && window.CDOS._compliance.NOT_CONNECTED || "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
-    const loadedLine = clock(loadedAt) ? 'Last loaded ' + clock(loadedAt) : 'Not loaded yet';
+    const screeningCopy = notConnected + ' No list provider is connected yet. Clients are not checked against any sanctions or watchlist.';
+    const loadedLine = loadedAt ? 'Last loaded ' + phoneClock(loadedAt) : 'Not loaded yet';
+    const fileLine = "You file in the regulator's portal. This desk does not send the report.";
     const titles = {
       submissions: 'What you would file',
       structuring: 'Possible split deals',
@@ -63276,18 +63384,71 @@ window.CDOS_PERSIST = (function () {
       screening: 'Sanctions screening',
       missing: 'Clients missing ID'
     };
-    const title = pane === 'home' ? 'Compliance' : titles[pane === 'missing' ? 'missing' : detail] || 'Compliance';
+    const viewKey = pane === 'missing' ? 'missing' : detail;
+    let title = 'Compliance';
+    let subtitle = sub;
+    let backLabel = 'More';
+    let back = onLeave;
+    if (showComputer) {
+      title = 'Filing form';
+      subtitle = '';
+      backLabel = 'Compliance';
+      back = () => {
+        setForm(false);
+        if (onCloseComputer) onCloseComputer();
+      };
+    } else if (drill) {
+      title = drill.title;
+      subtitle = drill.note || '';
+      backLabel = 'Compliance';
+      back = () => setDrill(null);
+    } else if (pane !== 'home') {
+      title = titles[viewKey] || 'Compliance';
+      subtitle = viewKey === 'missing' ? 'ID is required on a deal and is not on the client file.' : viewKey === 'structuring' ? 'Warnings only. The desk does not stop the deal.' : viewKey === 'submissions' && reportables.length ? fileLine : viewKey === 'aggregation' && summed && clusters && clusters.length ? 'Cash in one static window. ' + fileLine : '';
+      backLabel = 'Compliance';
+      back = onBack;
+    }
+    const dealList = (list, note) => /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-detail-deals"
+    }, /*#__PURE__*/React.createElement("p", {
+      className: "cph-note"
+    }, note), !list.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No deals in this list",
+      message: "Nothing in this list can be shown."
+    }), !!list.length && /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "Deals"
+    }, list.map(deal => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: deal.id,
+      title: deal.title,
+      subtitle: deal.subtitle,
+      amount: deal.amount
+    }))));
+    const openDeals = (heading, note, txs, amountOf) => setDrill({
+      title: heading,
+      note,
+      rows: (txs || []).map((tx, index) => ({
+        id: tx.id || tx.ref || index,
+        title: phoneDate(tx.date) || 'Deal',
+        subtitle: phoneClock(tx.time),
+        amount: amountOf(tx)
+      }))
+    });
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "compliance",
       title: title,
-      subtitle: pane === 'home' ? sub : pane === 'missing' ? 'ID is required on a deal and is not on the client file.' : '',
-      action: backButton(pane === 'home' ? 'More' : 'Compliance', pane === 'home' ? onLeave : onBack),
-      sticky: failed ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      subtitle: subtitle,
+      top: backControl(backLabel, back),
+      sticky: failed && pane === 'home' && !showComputer ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
         label: "Try again",
         onClick: onRetry
       }) : null
-    }, pane === 'missing' && /*#__PURE__*/React.createElement("div", {
-      "data-testid": "compliance-detail"
+    }, showComputer && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-open-computer"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Open this on a computer",
+      message: "The filing worksheet is the regulator's form, field by field. This phone does not show that form, and this desk does not send the report."
+    })), !showComputer && drill && dealList(drill.rows, drill.note), !showComputer && !drill && pane === 'missing' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-detail-missing"
     }, !people.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No one is missing ID",
       message: "No one is missing ID on a deal."
@@ -63299,10 +63460,81 @@ window.CDOS_PERSIST = (function () {
       subtitle: person.reason,
       chevron: true,
       onClick: () => onOpenClient && onOpenClient(person.name)
-    })))), pane === 'detail' && /*#__PURE__*/React.createElement("div", {
-      className: "cph-detail",
-      "data-testid": "compliance-detail"
-    }, children), pane === 'home' && /*#__PURE__*/React.createElement("div", {
+    })))), !showComputer && !drill && pane === 'detail' && viewKey === 'screening' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-not-connected"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Not connected",
+      message: screeningCopy
+    })), !showComputer && !drill && pane === 'detail' && viewKey === 'submissions' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-detail-filings"
+    }, philippines && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Not filed here",
+      message: 'The owner files in the regulator\'s portal. ' + fileLine
+    }), !philippines && !reportables.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Nothing to file",
+      message: fileLine,
+      actionLabel: "Open this on a computer",
+      onAction: () => setForm(true)
+    }), !philippines && !!reportables.length && /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "Reports"
+    }, reportables.map(report => {
+      const filed = subs && subs[report.id] && subs[report.id].status === 'submitted';
+      return /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: report.id,
+        title: report.subject || 'Unnamed client',
+        subtitle: [kindWords(regime, report.kind), phoneDate(report.date)].filter(Boolean).join(' · '),
+        amount: regime && regime.currency ? phoneMoney(report.amount, regime.currency) : '',
+        badge: {
+          label: filed ? 'Filed' : 'You file',
+          tone: filed ? 'pos' : 'neutral'
+        },
+        chevron: true,
+        onClick: () => setForm(true)
+      });
+    }))), !showComputer && !drill && pane === 'detail' && viewKey === 'structuring' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-detail-structuring"
+    }, !splits.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No patterns to watch",
+      message: "No one is sitting just under the reporting line. The desk does not stop a deal."
+    }), !!splits.length && /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "Warnings only"
+    }, splits.map(item => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: item.customer,
+      title: item.customer,
+      subtitle: [item.txs.length + ' just-under deals', phoneDate(item.lastDate)].filter(Boolean).join(' · '),
+      amount: item.sum != null && regime && regime.currency ? phoneMoney(item.sum, regime.currency) : '',
+      badge: {
+        label: 'Warnings only',
+        tone: 'warn'
+      },
+      chevron: true,
+      onClick: () => openDeals(item.customer, 'Warnings only. The desk does not stop the deal.', item.txs, tx => {
+        const cashIn = window.CDOS._compliance && window.CDOS._compliance.cashIn;
+        const amount = cashIn ? cashIn(tx) : null;
+        return amount != null && regime && regime.currency ? phoneMoney(amount, regime.currency) : '';
+      })
+    })))), !showComputer && !drill && pane === 'detail' && viewKey === 'aggregation' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-detail-aggregation"
+    }, !summed && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Deals are not added together",
+      message: regime && regime.threshold != null && regime.currency ? 'A single amount of ' + phoneMoney(regime.threshold, regime.currency) + ' or more stands on its own. ' + fileLine : 'No large-cash amount is set on this pack. ' + fileLine
+    }), summed && !(clusters && clusters.length) && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Nothing to add up",
+      message: 'No total in this window is over the line. ' + fileLine
+    }), summed && !!(clusters && clusters.length) && /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "In this window"
+    }, clusters.map(cluster => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: cluster.id,
+      title: cluster.subject || 'Large cash',
+      subtitle: [(cluster.txs ? cluster.txs.length : 0) + (cluster.kind === (regime && regime.wireCode) ? ' transfers' : ' cash-ins'), windowWords(cluster.windowStart, cluster.windowEnd)].filter(Boolean).join(' · '),
+      amount: regime && regime.currency ? phoneMoney(cluster.total, regime.currency) : '',
+      badge: {
+        label: 'You file',
+        tone: 'neutral'
+      },
+      chevron: true,
+      onClick: () => openDeals(cluster.subject || 'Large cash', fileLine, cluster.txs, tx => tx.amt != null && regime && regime.currency ? phoneMoney(tx.amt, regime.currency) : '')
+    })))), pane === 'home' && !showComputer && !drill && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-phone-home",
       "data-state": countsState,
       "data-empty": empty ? 'true' : 'false'
@@ -63331,13 +63563,8 @@ window.CDOS_PERSIST = (function () {
         onClick: ready ? () => onOpen('structuring') : undefined
       }]
     }), ready && /*#__PURE__*/React.createElement("p", {
-      style: {
-        margin: '0 0 12px',
-        fontSize: 14,
-        lineHeight: '20px',
-        color: '#3D3A35'
-      }
-    }, "You file in the regulator's portal. This desk does not send the report."), ready && empty && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      className: "cph-note"
+    }, fileLine), ready && empty && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "Nothing needs attention",
       message: "Nothing to file, no split-deal pattern, and no one is missing ID on a deal."
     }), ready && /*#__PURE__*/React.createElement(Phone.FilterChips, {

@@ -835,6 +835,7 @@
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
+    const phoneClusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries, regime]);
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     /* The phone home needs the shared money formatter. Without it this
@@ -855,14 +856,16 @@
       return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
         <window.CDOS.PhoneCompliance
           regime={regime} rows={rows} clients={clients} settings={settings}
+          beneficiaries={beneficiaries} subs={subs} clusters={phoneClusters}
           reportable={philippines ? 0 : draftN} structuring={strN} aggregates={aggN}
           countsState={countsState} loadedAt={loadedAt} onRetry={() => setReloadToken(n => n + 1)}
           onLeave={onLeave} onOpenClients={onOpenClients} onOpenClient={onOpenClient}
           pane={phonePane} detail={tab}
+          computer={!!worksheet}
+          onCloseComputer={() => setWorksheet(null)}
           onOpen={(id) => { if (id === 'missing') { setPhonePane('missing'); return; } setTab(id); setPhonePane('detail'); }}
           onBack={() => setPhonePane('home')}
-        >{phonePane === 'detail' ? body : null}</window.CDOS.PhoneCompliance>
-        {sheet}
+        />
       </div>);
     }
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
