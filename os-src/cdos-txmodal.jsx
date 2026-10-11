@@ -118,7 +118,7 @@
   /* ---------- tiny shared bits ---------- */
   const inSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 9 };
   function Lbl({ children, hint }) {
-    return <div className="flex items-center justify-between mb-1"><span className="text-[11px]" style={{ color: CD.mute }}>{children}</span>{hint && <span className="text-[10px]" style={{ color: CD.faint }}>{hint}</span>}</div>;
+    return <div className="tx-lbl flex items-center justify-between mb-1"><span className="text-[11px]" style={{ color: CD.mute }}>{children}</span>{hint && <span className="text-[10px]" style={{ color: CD.faint }}>{hint}</span>}</div>;
   }
   /* ---------- currency picker (custom dropdown, board-ordered) ----------
      Native <select> can't show a short code in the trigger but a code+name in

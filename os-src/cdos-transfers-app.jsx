@@ -433,7 +433,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           </div>
           <button onClick={() => setModal(true)} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> New transfer</button>
         </div>
-        <div className="fld-bar" style={{ '--ft': '#1F7269', margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => { const badge = id === 'pipeline' && onHold ? onHold : 0; return (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>
               <Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}
