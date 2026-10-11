@@ -906,6 +906,21 @@ patch(
   "desc:'We build your site and wire your rate board in by hand.'",
 );
 patch(
+  "the board preview was a pulsing live label",
+  '<span style="width: 7px; height: 7px; border-radius: 50%; background: var(--green-live); animation: cdLive 1.9s infinite;"></span>\n                    <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;">Live board preview</span>',
+  '<span data-sample-label style="font-family: var(--m); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Board preview (sample)</span>',
+);
+patch(
+  "the website offer said the board built in is live",
+  "your live board built in",
+  "your rate board on the page",
+);
+patch(
+  "the recap said the embed is a live board",
+  "Live board embed ready",
+  "Rate board embed ready",
+);
+patch(
   "the ticker change marks made frozen rates look like a live feed",
   "const up = k % 2 === 0; const chg = (0.03 + (k % 5) * 0.04).toFixed(2);\n      return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate),\n        React.createElement('span', { key: 'g', style: { fontFamily: 'var(--m)', fontSize: '9.5px', fontWeight: 700, color: up ? 'var(--green-live)' : 'var(--flag)' } }, (up ? '▲' : '▼') + chg + '%')\n      ]);",
   "return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate)\n      ]);",

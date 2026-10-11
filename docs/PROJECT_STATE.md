@@ -455,6 +455,19 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, eighth pass. Unicode
+dashes fold to an ASCII hyphen before the two readings. A
+regulator deadline is kept only on the compliance page and the
+FAQ, and only when it is one of the deadlines those pages cite,
+each starting with the report name. A report name later in the
+sentence does not keep a different deadline. The checker also
+rejects 48h, Nh, N hrs, under N hours, and replying today. The
+homepage description names the rate board. The site feature says
+buy and sell rates are published from the desk. The onboarding
+preview says Board preview (sample), with no pulsing dot. Contact
+asks for a note and does not time the reply. The Rates plan keeps
+the name Live rate board, and the checker allows that exact phrase.
+
 **2026-10-11**, public site claims, seventh pass. The desktop
 footer has no clock. The public rate board says it is a sample, and
 its figures do not move. The onboarding landing has no clock and no

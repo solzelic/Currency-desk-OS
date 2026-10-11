@@ -8,13 +8,26 @@
    on either reading fails. Timing phrases are included: a visit in
    seconds, a count of minutes, an N-minute compound, the same
    afternoon or day (including same-day), a fortnight, about a week,
-   within a week, within N hours, in N hours, 24/7, real-time, and
-   live rates.
+   within a week, within N hours, in N hours, 48h, Nh, N hrs, under
+   N hours, replying today, 24/7, real-time, and live rates.
 
-   A regulator deadline may say "within N hours" when the same
-   sentence names the report: SMR, STR, SAR, TTR, CTR, or IVTS. That
-   is the rule's clock, not a promise about this product. "static 24
-   hours" and "within 3 business days" are not that pattern. */
+   Every dash variant (U+2010, U+2011, U+2012 to U+2015, U+2212,
+   and the named en dash, em dash, and minus) folds to an ASCII
+   hyphen before the two readings. A phrase on either reading fails.
+   Meta description content is read too. A tag no longer hides it.
+
+   "Live rate board" is the Rates plan's name. That exact phrase is
+   allowed. "live rates" anywhere else, including a meta description,
+   still fails.
+
+   A regulator deadline is allowed only on the compliance and FAQ
+   pages, and only as one of the exact phrases those pages cite.
+   Each phrase starts with the report name: "LCTR within 15 calendar
+   days", "CTR within 15 days", "SAR within 30 days", "CTR within 5
+   working days", "STR within 7 working days", "SMR within 24 hours".
+   A report name later in the sentence does not allow a different
+   deadline. "static 24 hours" and "within 3 business days" are not
+   a banned pattern. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,14 +80,30 @@ const phrases = [
   [/\b24\s*\/\s*7\b/, "24/7"],
   [/\breal[-\s]time\b/, "real-time"],
   [/\blive rates\b/, "live rates"],
+  [/\breplying today\b/, "replying today"],
   [/\babout a week\b/, "about a week"],
   [/\bwithin a week\b/, "within a week"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
 const HOURS = new RegExp(`\\b(?:within|in) ${HOUR_WORD} hours?\\b`, "g");
-/* The report name has to sit in the same sentence as the deadline. */
-const REPORT_DEADLINE = /\b(?:smr|str|sar|ttr|ctr|ivts)\b/;
+const UNDER_HOURS = new RegExp(`\\bunder ${HOUR_WORD} hours?\\b`, "g");
+/* A digit run inside a font or image blob can end in h. A real
+   "48h" is not glued to that alphabet. */
+const NH = /(?<![a-z0-9+/=])\d{1,3}\s*h\b/g;
+const NHRS = new RegExp(`\\b(?:\\d+|${HOUR_WORD}) hrs?\\b`, "g");
+
+/* Exact deadlines cited on the compliance and FAQ pages. Each one
+   starts with the report name. Blanked only on those two pages. */
+const REGULATOR_PAGES = new Set(["web/compliance.html", "web/faq.html"]);
+const REGULATOR_PHRASES = [
+  "lctr within 15 calendar days",
+  "ctr within 15 days",
+  "sar within 30 days",
+  "ctr within 5 working days",
+  "str within 7 working days",
+  "smr within 24 hours",
+];
 
 function normalize(html, invisible) {
   let text = String(html);
@@ -93,6 +122,9 @@ function normalize(html, invisible) {
     gt: ">",
     quot: '"',
     apos: "'",
+    ndash: "-",
+    mdash: "-",
+    minus: "-",
   };
   text = text.replace(/&([a-z]+);/gi, (all, name) =>
     Object.prototype.hasOwnProperty.call(named, name.toLowerCase()) ? named[name.toLowerCase()] : all,
@@ -101,7 +133,14 @@ function normalize(html, invisible) {
   text = decodeNumeric(text);
   text = text.replace(/&(?:shy|zwnj|zwj);/gi, invisible);
   text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-");
   text = text.replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, invisible);
+  text = text.replace(/<meta\b[^>]*>/gi, (tag) => {
+    const quoted = tag.match(/\bcontent\s*=\s*"([^"]*)"/i);
+    if (quoted) return ` ${quoted[1]} `;
+    const single = tag.match(/\bcontent\s*=\s*'([^']*)'/i);
+    return single ? ` ${single[1]} ` : " ";
+  });
   text = text.replace(/<[^>]*>/g, " ");
   text = text.replace(/\s+/g, " ").trim().toLowerCase();
   /* O.F.A.C. and U.N. become ofac and un before the phrase match. */
@@ -127,19 +166,31 @@ function nearby(text, needle, other, span) {
   return hits;
 }
 
-function claimsIn(text, problems) {
-  for (const [re, label] of phrases) {
-    if (re.test(text)) problems.push(label);
-    re.lastIndex = 0;
-  }
+function withoutAllowed(text, rel) {
+  let scanned = text.replace(/\blive rate board\b/g, " ");
+  if (!REGULATOR_PAGES.has(rel)) return scanned;
+  for (const phrase of REGULATOR_PHRASES) scanned = scanned.split(phrase).join(" ");
+  return scanned;
+}
+
+function claimPattern(re, text, label, problems) {
+  re.lastIndex = 0;
+  if (re.test(text)) problems.push(label);
+  re.lastIndex = 0;
+}
+
+function claimsIn(text, problems, rel) {
+  const scanned = withoutAllowed(text, rel);
+  for (const [re, label] of phrases) claimPattern(re, scanned, label, problems);
   HOURS.lastIndex = 0;
   let hoursMatch;
-  while ((hoursMatch = HOURS.exec(text))) {
-    const from = Math.max(0, hoursMatch.index - 80);
-    const to = Math.min(text.length, hoursMatch.index + hoursMatch[0].length + 40);
-    if (REPORT_DEADLINE.test(text.slice(from, to))) continue;
+  while ((hoursMatch = HOURS.exec(scanned))) {
     problems.push(hoursMatch[0].startsWith("within") ? "within N hours" : "in N hours");
   }
+  HOURS.lastIndex = 0;
+  claimPattern(UNDER_HOURS, scanned, "under N hours", problems);
+  claimPattern(NH, scanned, "Nh", problems);
+  claimPattern(NHRS, scanned, "N hrs", problems);
   /* "sanctions screening is not connected" is the honest sentence.
      Any other "sanctions screening" is a claim that a screen exists. */
   const screening = /sanctions screening/g;
@@ -157,22 +208,22 @@ function claimsIn(text, problems) {
   }
 }
 
-export function findClaims(html) {
+export function findClaims(html, rel = "") {
   const text = visibleText(html);
   const spaced = normalize(html, " ");
   const problems = [];
   /* "sanc&shy;tions" joins to "sanctions" only when the mark is
      deleted. A page that writes the word normally is left alone. */
   if (text.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
-  claimsIn(text, problems);
-  if (spaced !== text) claimsIn(spaced, problems);
+  claimsIn(text, problems, rel);
+  if (spaced !== text) claimsIn(spaced, problems, rel);
   return [...new Set(problems)];
 }
 
 export function checkFiles(rels, read = (rel) => readFileSync(path.join(root, rel), "utf8")) {
   const problems = [];
   for (const rel of rels) {
-    for (const problem of findClaims(read(rel))) problems.push(`${rel}: ${problem}`);
+    for (const problem of findClaims(read(rel), rel)) problems.push(`${rel}: ${problem}`);
   }
   return problems;
 }
@@ -180,7 +231,7 @@ export function checkFiles(rels, read = (rel) => readFileSync(path.join(root, re
 const isDirect = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isDirect) {
   if (process.argv[2] === "--probe") {
-    const problems = findClaims(process.argv[3] ?? "");
+    const problems = findClaims(process.argv[3] ?? "", process.argv[4] ?? "");
     if (problems.length) {
       console.error(problems.join("\n"));
       process.exit(1);

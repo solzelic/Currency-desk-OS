@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 
 const script = path.resolve(import.meta.dirname, "../../scripts/check-public-claims.mjs");
 
-function probe(html: string): { ok: boolean; out: string } {
+function probe(html: string, rel = ""): { ok: boolean; out: string } {
   try {
-    const out = execFileSync(process.execPath, [script, "--probe", html], { encoding: "utf8" });
+    const args = [script, "--probe", html];
+    if (rel) args.push(rel);
+    const out = execFileSync(process.execPath, args, { encoding: "utf8" });
     return { ok: true, out };
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string };
@@ -258,9 +260,69 @@ describe("public marketing claims", () => {
     expect(result.out).toMatch(/live rates/);
   });
 
-  it("allows a regulator deadline measured in hours", () => {
-    const result = probe("SMR within 24 hours for terrorism financing. Cash is added across a static 24 hours. A worksheet within 3 business days.");
-    expect(result.ok).toBe(true);
+  it("flags same-day, ten-minute and real-time when the hyphen is a dash variant", () => {
+    const dashes = ["&#8208;", "&#8209;", "&#8210;", "&#8211;", "&#8212;", "&#8213;", "&#8722;"];
+    for (const dash of dashes) {
+      const result = probe(`same${dash}day setup, a ten${dash}minute wait, real${dash}time rates`);
+      expect(result.ok).toBe(false);
+      expect(result.out).toMatch(/same-day/);
+      expect(result.out).toMatch(/N-minute/);
+      expect(result.out).toMatch(/real-time/);
+    }
+  });
+
+  it("flags 48h and Nh, including a zero-width split", () => {
+    const result = probe("ready within 48&#8203;h");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/Nh/);
+  });
+
+  it("flags N hrs, including a soft hyphen", () => {
+    const result = probe("back in 2&shy;hrs");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N hrs/);
+  });
+
+  it("flags under N hours, including a zero-width split", () => {
+    const result = probe("in under 2&#8203;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/under N hours/);
+  });
+
+  it("flags replying today, including a soft hyphen", () => {
+    const result = probe("replying&shy;today");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/replying today/);
+  });
+
+  it("flags live rates in a meta description", () => {
+    const result = probe('<meta name="description" content="live rates, till and ledger">');
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
+  it("allows the product name Live rate board and still flags live rates", () => {
+    expect(probe("Live rate board").ok).toBe(true);
+    expect(probe("Every plan includes the live rate board.").ok).toBe(true);
+    const rates = probe("the live rate board shows live rates");
+    expect(rates.ok).toBe(false);
+    expect(rates.out).toMatch(/live rates/);
+  });
+
+  it("allows an exact regulator deadline only on the compliance and FAQ pages", () => {
+    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. Cash is added across a static 24 hours. A worksheet within 3 business days.";
+    expect(probe(line).ok).toBe(false);
+    expect(probe(line, "web/index.html").ok).toBe(false);
+    expect(probe(line, "web/compliance.html").ok).toBe(true);
+    expect(probe(line, "web/faq.html").ok).toBe(true);
+  });
+
+  it("does not let a later report name allow a deadline", () => {
+    for (const line of ["Onboard within 2 hours, STR ready.", "in 2 hours (CTR included)"]) {
+      expect(probe(line).ok).toBe(false);
+      expect(probe(line, "web/compliance.html").ok).toBe(false);
+      expect(probe(line, "web/faq.html").ok).toBe(false);
+    }
   });
 
   it("allows the moment a deal is written and an untimed launch", () => {
