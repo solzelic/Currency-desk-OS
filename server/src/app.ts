@@ -78,15 +78,16 @@ const isPhone = (ua: string | undefined): boolean =>
    CurrencyDesk OS.html and os-src; a missing admin shell means
    admin.html, not os-src. Outside production the same boot is quiet.
 
-   One file under os-src/ is still part of the compiled desk.
-   web/app/index.html links os-src/york-os.css, and /login and /app fetch
-   it. That stylesheet stays public either way. */
+   Three files under os-src/ are still part of the compiled desk.
+   web/app/index.html links os-src/york-os.css, os-src/tokens.css and
+   os-src/phone-shell.css, and /login and /app fetch them. Those
+   stylesheets stay public either way. */
 const retiredUncompiledDesk = (
   pathname: string,
   compiled: { os: boolean; admin: boolean },
 ): boolean => {
   const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
-  if (file === "/os-src/york-os.css") return false;
+  if (file === "/os-src/york-os.css" || file === "/os-src/tokens.css" || file === "/os-src/phone-shell.css") return false;
   if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/"))) {
     return true;
   }

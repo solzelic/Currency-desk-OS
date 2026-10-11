@@ -5,9 +5,10 @@
    be a 404, including a browser navigation, which used to be answered
    with the marketing site.
 
-   One exception, checked below: web/app/index.html still links
-   os-src/york-os.css, so that stylesheet stays public or the desk
-   loads with a missing stylesheet. */
+   Three stylesheets stay public, checked below. web/app/index.html
+   links os-src/york-os.css, os-src/tokens.css, and
+   os-src/phone-shell.css. A 404 on any of them loads the desk
+   without that sheet. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -182,10 +183,17 @@ describe("compiled shells present: the uncompiled desk is not public", () => {
     });
   }
 
-  it("still serves the stylesheet the compiled shell links", async () => {
-    const res = await app.inject({ method: "GET", url: "/os-src/york-os.css", headers: asStyle });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("--desk");
+  it("still serves the stylesheets the compiled shell links", async () => {
+    const linked = [
+      ["/os-src/york-os.css", "--desk"],
+      ["/os-src/tokens.css", "--brand-primary"],
+      ["/os-src/phone-shell.css", "phone-shell"],
+    ] as const;
+    for (const [url, marker] of linked) {
+      const res = await app.inject({ method: "GET", url, headers: asStyle });
+      expect({ url, code: res.statusCode }).toEqual({ url, code: 200 });
+      expect(res.body).toContain(marker);
+    }
   });
 });
 

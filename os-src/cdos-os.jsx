@@ -12,6 +12,10 @@
     Ledger, Clients, Dashboard, TillDrawer, Audit, SettingsView, Calc, ReceiptModal, Tagged,
     Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Telegraph, SignIn, LockDesk, Handover
   } = window.CDOS;
+  const Phone = window.CDOS.Phone;
+  if (!Phone || !Phone.TopBar || !Phone.More || !Phone.TabIcon || !window.CDOS.formatPhoneMoney) {
+    throw new Error('The phone shell did not load.');
+  }
 
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
@@ -61,24 +65,10 @@
      keep their two-tone drawing. Ledger's green ribbon and Till's
      green circle are that drawing: neither one is a live state. */
   const PHONE_TABS = [
-    { id: 'rates', label: 'Rates', icon: 'rateboardbar' },
-    { id: 'ledger', label: 'Ledger', icon: 'ledgerbookbar' },
-    { id: 'clients', label: 'Clients', icon: 'clientskycbar' },
-    { id: 'till', label: 'Till', icon: 'tilldrawerbar' },
-  ];
-  const PHONE_MORE = [
-    { id: 'telegraph', label: 'Texts' },
-    { id: 'transfers', label: 'Transfers' },
-    { id: 'cheques', label: 'Cheques' },
-    { id: 'compliance', label: 'Compliance' },
-    { id: 'reports', label: 'Reports' },
-    { id: 'vault', label: 'Vault' },
-    { id: 'branches', label: 'Branches' },
-    { id: 'audit', label: 'Audit trail' },
-    { id: 'calc', label: 'Calculator' },
-    { id: 'loan', label: 'Loan centre' },
-    { id: 'tagged', label: 'Tagged' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'rates', label: 'Rates' },
+    { id: 'ledger', label: 'Ledger' },
+    { id: 'clients', label: 'Clients' },
+    { id: 'till', label: 'Till' },
   ];
   // the storefront opens as a window
   APPMETA.store = { title: 'Store', icon: 'storefront', w: 860, h: 640 };
@@ -2279,10 +2269,11 @@
     }
 
     const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
-    const phoneMoreNamed = new Set(PHONE_MORE.map(t => t.id));
-    const phoneMoreApps = PHONE_MORE.filter(t => visibleApps.includes(t.id)).concat(
-      visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({ id, label: (APPMETA[id] && APPMETA[id].title) || id }))
-    );
+    /* More shows apps this role can already open. Texts and Branches
+       stay on the desktop dock and off the phone list. Store is the
+       same door as the desktop edge rail, which is not an app-bar id. */
+    const phoneAllowed = visibleApps.filter(id => id !== 'telegraph' && id !== 'branches' && !phonePrimary.has(id));
+    if (planAllows('store') && permsOk('store') && phoneAllowed.indexOf('store') < 0) phoneAllowed.push('store');
     const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
     /* The selected tab borrows the app's existing accent (--c on the
        dock). More has none of its own: the sheet uses the ink, and an
@@ -2294,10 +2285,9 @@
       }
       return APP_ACCENT[id] || 'var(--cd-ink)';
     };
-    /* The header dot is the window-title dot. The title bar is hidden
-       on a phone, so the dot sits by the shop name and follows the
-       full-screen app. More's own sheet has no accent, so it uses the ink. */
-    const phoneChrome = (phoneMore || !activeBase) ? 'var(--cd-ink)' : (APP_ACCENT[activeBase] || 'var(--cd-ink)');
+    /* The window-title dot stays off the phone header. The till line
+       carries open or closed in words, and the More tab carries the
+       open app's accent. */
     const shopName = settings.operatingName || settings.bizName || 'Exchange house';
     const profileButton = (slot) => (
       <div className="mb-acct-wrap" ref={slot === 'desk' ? acctRef : undefined}>
@@ -2491,14 +2481,14 @@
       {/* PHONE HEADER — shop, till, profile. Hidden above 430px.
           It follows the tenant name in the document so a desktop
           lookup of the shop name finds the visible one first. */}
-      <header className="phone-head" style={{ '--c': phoneChrome }}>
-        <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shopName}</span></div>
-        <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
-          <i className="phone-till-dot" />
-          <span>{day.closed ? 'Till closed' : 'Till open'}</span>
-        </div>
-        {profileButton('phone')}
-      </header>
+      <Phone.TopBar
+        shop={shopName}
+        desk={[stationName, stationTill ? stationTill.replace(/\s+—.*/, '') : '', day.closed ? 'Till closed' : 'Till open'].filter(Boolean).join(' · ')}
+        tillOpen={!day.closed}
+        unread={alertCount > 0}
+        onBell={() => openApp('compliance')}
+        avatar={profileButton('phone')}
+      />
 
       {/* APP SUB-BAR */}
       <div id="appbar" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>
@@ -2543,13 +2533,14 @@
         ))}
         {phoneMore && (
           <div id="phone-more" role="dialog" aria-label="More">
-            {phoneMoreApps.length === 0 && <p className="phone-more-empty">No other apps for this role.</p>}
-            {phoneMoreApps.map(a => (
-              <button key={a.id} type="button" className="phone-more-row" data-phone-app={a.id} onClick={() => openApp(a.id)}>
-                <span className="phone-more-ico"><Ic n={(APPMETA[a.id] && APPMETA[a.id].icon) || 'grid4'} s={22} /></span>
-                <span className="phone-more-name">{a.label}</span>
-              </button>
-            ))}
+            <Phone.More
+              allowed={phoneAllowed}
+              accent={APP_ACCENT}
+              onOpen={openApp}
+              onLock={() => setDeskLocked(true)}
+              onHandover={() => setHandover(true)}
+              onSignOut={logout}
+            />
           </div>
         )}
       </div>
@@ -2558,12 +2549,12 @@
         <nav id="phonebar" aria-label="Desk">
           {PHONE_TABS.map(t => (
             <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id), '--brand-primary': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
-              <Ic n={t.icon || APPMETA[t.id].icon} s={22} />
+              <Phone.TabIcon name={t.id} />
               <span className="lbl">{t.label}</span>
             </button>
           ))}
           <button type="button" className={'phone-tab' + (phoneOn === 'more' ? ' is-on' : '')} data-phone-app="more" aria-current={phoneOn === 'more' ? 'page' : undefined} style={{ '--c': phoneTabColour('more'), '--brand-primary': phoneTabColour('more') }} onClick={() => setPhoneMore(v => !v)}>
-            <Ic n="grid4" s={22} />
+            <Phone.TabIcon name="more" />
             <span className="lbl">More</span>
           </button>
         </nav>

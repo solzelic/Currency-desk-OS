@@ -1759,10 +1759,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .phone-head {
     order: -1;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
     grid-template-rows: auto auto;
     align-items: center;
-    column-gap: 8px;
+    column-gap: 4px;
     row-gap: 0;
     flex: none;
     position: sticky;
@@ -1770,10 +1770,37 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     z-index: 540;
     height: calc(var(--phone-top-h) + env(safe-area-inset-top, 0px));
     box-sizing: border-box;
-    padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 14px;
+    padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 16px;
     background: #fff;
     border-bottom: 1px solid #E2DFD8;
   }
+  /* Alerts. The dot element is rendered only when a real count exists. */
+  .phone-bell {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #3D3A35;
+    cursor: pointer;
+  }
+  .phone-bell-dot {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #B42318;
+    box-shadow: 0 0 0 2px #fff;
+  }
+  .phone-tab-ico { display: contents; }
   .phone-shop {
     grid-column: 1;
     grid-row: 1;
@@ -1782,8 +1809,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     align-items: center;
     gap: 8px;
     font-family: var(--f-display);
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 17px;
+    font-weight: 600;
     letter-spacing: -0.01em;
     color: var(--ink, #111);
     line-height: 1.2;
@@ -1817,8 +1844,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: var(--f-display);
     font-size: 12px;
     font-weight: 600;
-    color: var(--ink, #111);
-    line-height: 1.2;
+    color: var(--color-text-muted, #6B6760);
+    line-height: 16px;
   }
   /* Open session. Closed is the ink, so the line still reads. */
   .phone-till-dot {
@@ -1833,7 +1860,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     background: var(--ink, #111);
     box-shadow: 0 0 0 2px #fff;
   }
-  .phone-head .mb-acct-wrap { grid-column: 2; grid-row: 1 / span 2; }
+  .phone-head .mb-acct-wrap { grid-column: 3; grid-row: 1 / span 2; }
   .phone-head .mb-acct-id,
   .phone-head .mb-acct > svg { display: none; }
   .phone-head .mb-acct {
@@ -1844,7 +1871,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding: 0;
     justify-content: center;
   }
-  .phone-head .mb-acct-av { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
+  .phone-head .mb-acct-av {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #161513;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
 
   /* The bar is fixed over the desk. The window runs under it.
      Scroll padding, not a shorter window, keeps the last row clear. */
@@ -1862,11 +1897,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     right: 0;
     top: 0;
     bottom: var(--phone-dock-h);
-    overflow: auto;
-    background: var(--cd-paper, #f4f3f0);
+    overflow: hidden;
+    background: var(--color-bg, #F7F6F3);
     -webkit-overflow-scrolling: touch;
-    /* The sheet runs under the bar. The last row can scroll clear. */
-    padding-bottom: calc(var(--phone-bar-h) + 16px);
+    padding: 0;
   }
   .phone-more-empty {
     margin: 0;
@@ -1973,6 +2007,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-tab:focus-visible,
   .phone-more-row:focus-visible,
+  .phone-bell:focus-visible,
   .phone-head .mb-acct:focus-visible {
     outline: 2px solid var(--ink, #111);
     outline-offset: -2px;

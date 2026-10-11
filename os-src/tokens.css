@@ -1,0 +1,131 @@
+/* Currency Desk OS design tokens v0.1 (11 Oct 2026)
+   Drop-in CSS variables. Light theme only for now.
+   BRAND = PLACEHOLDER. Every token marked [BRAND PLACEHOLDER] gets replaced
+   when Sol sends the brand identity. Nothing else should need to change. */
+
+:root {
+  /* ---------- BRAND [BRAND PLACEHOLDER] ---------- */
+  /* Brand green is used OUTSIDE apps only: front page, login, sign-up. */
+  --brand-green: #1F6B47;          /* [BRAND PLACEHOLDER] */
+  --brand-accent: #7FD6A8;         /* [BRAND PLACEHOLDER] accent on dark surfaces only */
+  --brand-on-primary: #FFFFFF;     /* text on brand-primary, keep 4.5:1 */
+  --font-display: "Instrument Serif", Georgia, serif;          /* [BRAND PLACEHOLDER] marketing headlines only */
+  --font-ui: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif; /* [BRAND PLACEHOLDER] all app text */
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;      /* [BRAND PLACEHOLDER] refs and IDs only */
+
+  /* ---------- PER-APP ACCENTS (LOCKED by Sol, 10 Oct 2026) ----------
+     Mirrors APP_ACCENT in os-src/cdos-base.jsx. Do not change here alone.
+     White text on every accent passes 4.5:1 (see design-system.md). */
+  --accent-rates: #274B8E;
+  --accent-ledger: #1D6B45;
+  --accent-transfers: #1F7269;
+  --accent-cheques: #8F6410;
+  --accent-clients: #3C3B78;
+  --accent-compliance: #6B2E54;
+  --accent-reports: #46506B;
+  --accent-pricing: #274B8E;
+  --accent-telegraph: #8A4B2F;
+  --accent-ink: #17140F;   /* till, vault, dashboard, assistant, branches, audit, calc, loan, tagged, settings, store */
+
+  /* Default (outside any app): brand-primary is brand green. */
+  --brand-primary: var(--brand-green);
+
+  /* ---------- NEUTRALS (structural) ---------- */
+  --tab-inactive: #6B6760;  /* bottom bar tabs that are not selected */
+  --gray-0: #FFFFFF;
+  --gray-50: #F7F6F3;   /* app background */
+  --gray-100: #EFEDE8;  /* subtle fill, pressed rows */
+  --gray-200: #E2DFD8;  /* borders, dividers */
+  --gray-300: #C9C5BC;  /* strong borders, disabled icons (never text) */
+  --gray-500: #6B6760;  /* secondary text, 5.2:1 on gray-50 */
+  --gray-700: #3D3A35;  /* body text alt */
+  --gray-900: #161513;  /* primary text, dark buttons */
+  --gray-950: #14130F;  /* dark surfaces (marketing hero) */
+
+  --color-bg: var(--gray-50);
+  --color-surface: var(--gray-0);
+  --color-border: var(--gray-200);
+  --color-text: var(--gray-900);
+  --color-text-muted: var(--gray-500);
+  --color-focus: #1E5AA8;
+
+  /* ---------- SEMANTIC (keep stable across brands) ---------- */
+  --color-positive: #157A3E;     --color-positive-bg: #E7F4EC;
+  --color-negative: #B42318;     --color-negative-bg: #FDECEA;
+  --color-warning: #8A5300;      --color-warning-bg: #FFF4DC;  --color-warning-border: #E8B04A;
+  --color-info: #1E5AA8;         --color-info-bg: #E8F0FB;
+  /* Buy / sell: from the shop's side. Never color-only, always with a label. */
+  --color-buy: #1E5AA8;          --color-buy-bg: #E8F0FB;   /* we buy */
+  --color-sell: #7A3E96;         --color-sell-bg: #F3EAF7;  /* we sell */
+
+  /* ---------- TYPE SCALE (size / line height) ---------- */
+  --text-display: 400 40px/44px var(--font-display);  /* marketing only */
+  --text-title-1: 700 24px/32px var(--font-ui);
+  --text-title-2: 600 20px/28px var(--font-ui);
+  --text-title-3: 600 17px/24px var(--font-ui);
+  --text-body: 400 16px/24px var(--font-ui);
+  --text-body-strong: 600 16px/24px var(--font-ui);
+  --text-small: 400 14px/20px var(--font-ui);
+  --text-label: 500 13px/16px var(--font-ui);
+  --text-caption: 400 12px/16px var(--font-ui);  /* smallest allowed */
+  --text-amount-lg: 700 24px/32px var(--font-ui); /* use with .num */
+  --text-amount: 600 16px/24px var(--font-ui);
+
+  /* ---------- SPACING (4/8 based) ---------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+  --page-gutter: var(--space-4);   /* phone side padding */
+
+  /* ---------- RADIUS ---------- */
+  --radius-sm: 6px;    /* badges, small chips */
+  --radius-md: 10px;   /* inputs, buttons */
+  --radius-lg: 14px;   /* cards, sheets */
+  --radius-pill: 999px;
+
+  /* ---------- SHADOWS ---------- */
+  --shadow-sm: 0 1px 2px rgba(22, 21, 19, 0.06);
+  --shadow-md: 0 4px 12px rgba(22, 21, 19, 0.08);
+  --shadow-lg: 0 12px 32px rgba(22, 21, 19, 0.14);
+
+  /* ---------- SIZES ---------- */
+  --tap-min: 44px;         /* every tappable thing */
+  --control-h: 48px;       /* buttons, inputs on phone */
+  --control-h-sm: 36px;    /* chips (hit area still 44px) */
+  --topbar-h: 56px;
+  --tabbar-h: 64px;        /* plus safe area */
+
+  /* ---------- MOTION ---------- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;  --dur: 200ms;
+}
+
+/* ---------- APP SCOPE ----------
+   Set data-app on the app root (phone shell). Inside it, --brand-primary
+   becomes that app's accent: selected bottom tab, primary buttons,
+   selected segmented tab, links and accents. Other tabs stay --tab-inactive. */
+[data-app="rates"]      { --brand-primary: var(--accent-rates); }
+[data-app="ledger"]     { --brand-primary: var(--accent-ledger); }
+[data-app="transfers"]  { --brand-primary: var(--accent-transfers); }
+[data-app="cheques"]    { --brand-primary: var(--accent-cheques); }
+[data-app="clients"]    { --brand-primary: var(--accent-clients); }
+[data-app="compliance"] { --brand-primary: var(--accent-compliance); }
+[data-app="reports"]    { --brand-primary: var(--accent-reports); }
+[data-app="pricing"]    { --brand-primary: var(--accent-pricing); }
+[data-app="telegraph"]  { --brand-primary: var(--accent-telegraph); }
+/* More has no accent of its own. The sheet and its selected tab stay ink. */
+[data-app="more"]       { --brand-primary: var(--accent-ink); }
+[data-app="till"], [data-app="vault"], [data-app="dashboard"], [data-app="assistant"],
+[data-app="branches"], [data-app="audit"], [data-app="calc"], [data-app="loan"],
+[data-app="tagged"], [data-app="settings"], [data-app="store"] { --brand-primary: var(--accent-ink); }
+
+/* Derived shades. Declared on every scope so they follow the local --brand-primary. */
+:root, [data-app] {
+  --brand-primary-strong: color-mix(in srgb, var(--brand-primary) 82%, #000); /* pressed */
+  --brand-primary-soft: color-mix(in srgb, var(--brand-primary) 10%, #fff);   /* selected tint */
+}
+
+/* Numbers: always tabular so columns line up */
+.num { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
+.ccy { font: var(--text-caption); font-weight: 500; color: var(--color-text-muted); letter-spacing: 0.02em; }
+@media (prefers-reduced-motion: reduce) { :root { --dur-fast: 0ms; --dur: 0ms; } }
